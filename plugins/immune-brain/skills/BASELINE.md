@@ -46,7 +46,7 @@ arbitrary shell command, so authority gates and review remain the real boundary.
 - Use bounded evidence to cover affected callers and state owners for shared-contract, security, migration, persistence, or authority changes; the category alone never requires full-directory reads. Stop expanding once the relevant behavior and verification are understood.
 - Lead with conclusion, evidence, and Next Action.
 - Advisory roles do not implement; Managed execution roles do not close QA.
-- An explicit Managed Skill entry stops host-native mutation and routes scope changes to `imm-planner`; Managed execution remains inside its accepted boundary.
+- An explicit Managed Skill entry stops host-native mutation and routes scope changes to `draw-up`; Managed execution remains inside its accepted boundary.
 
 Before local edits or checks, read Verification and Local Recovery below. Read-only
 framing does not load that execution guidance.
@@ -62,16 +62,16 @@ framing does not load that execution guidance.
 ## Workflow Activation
 
 Ordinary host input stays host-native and does not run natural-language Managed
-routing. A new Managed workflow starts only from explicit `imm-brainstorm`,
-`imm-planner`, or `imm-run` Skill entry. For `imm-planner` and `imm-brainstorm`
+routing. A new Managed workflow starts only from explicit `clarify`,
+`draw-up`, or `drive` Skill entry. For `draw-up` and `clarify`
 the user's request for that planning or clarification, by slash command or in
 natural language, is such an entry; a request that asks for neither stays
-host-native. `imm-run` starts only from a literal-user entry. A model-entered
+host-native. `drive` starts only from a literal-user entry. A model-entered
 Planner or Brainstorm leaves the session's run entry unchanged.
 
 1. **Continue an existing Managed owner explicitly**: an active Assurance
    projection, TaskIntent, TaskRecord, reviewer `follow_up`, or other nonterminal
-   Managed owner remains authoritative; the user resumes it with `imm-run`.
+   Managed owner remains authoritative; the user resumes it with `drive`.
    Once that entry binds this session, ordinary status questions and in-scope
    clarification retain automatic response continuation. Explicit cancel, planning
    entry or session replacement releases the binding; Host continuation metadata
@@ -100,7 +100,7 @@ Compounder state. It may explain, inspect, or review without Enrollment.
 
 The matching Managed owner drives execution, evidence, QA, Review, and
 completion without switching to a non-authoritative path. Scope expansion
-returns to `imm-planner`; an enrolled task resumes through `imm-run` from the
+returns to `draw-up`; an enrolled task resumes through `drive` from the
 current Assurance projection. Do not create or mutate workflow state while
 classifying a non-mutating request.
 
@@ -124,9 +124,9 @@ An existing grant for one of these never inherits another: a stage-only
 instruction stays stage-only, a commit is not push or publication authority,
 and a valid batch capability commits only its own scope-bounded child.
 
-Routine Managed enrollment is the first step of an explicit `imm-run` entry and uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment, whether or not the request also asks for execution; explicit Plan-only requests stop the same way. `imm-run` opens the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. Once the user has entered `imm-run`, the routine task proceeds from that single confirmation through enrollment, execution, and QA with no further confirmation. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, or unmanaged fallback.
+Routine Managed enrollment is the first step of an explicit `drive` entry and uses one current-Host native confirmation bound to the TaskIntent content hash after Planner validation. Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment, whether or not the request also asks for execution; explicit Plan-only requests stop the same way. `drive` opens the native gate directly without chat pre-confirmation. Enrollment validates intent, Git ownership, scope, workspace claim, and final authority preconditions without executing acceptance descriptors; deterministic QA executes them after implementation. Once the user has entered `drive`, the routine task proceeds from that single confirmation through enrollment, execution, and QA with no further confirmation. Do not request confirmation for local in-scope edits, local verification, ordinary Direct rework, scoped diff review, or completion reporting. Managed evidence, QA, Review, and completion authority remain governed by their Managed contracts; R2 does not weaken them. Managed native-authority failures fail closed with one stable reason and exactly one same-Host recovery action; never offer a Pi, Direct Path, cross-Host/worktree, or unmanaged fallback.
 
-Run entry decision hosting (ADR 0025): a literal-user `imm-run` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.
+Run entry decision hosting (ADR 0025): a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.
 
 For an unborn symbolic Git HEAD, the same Enrollment confirmation discloses an empty root commit. After approval, the Host creates that commit without staging project content or changing the index/worktree, then revalidates ownership and rehearses Enrollment against the new base. Git identity uses existing environment/config values with an explicit automation fallback, never config writes. Decline or pre-initialization cancellation leaves HEAD unborn; if later Enrollment fails or is cancelled, report the remaining commit. Invalid Git refs are errors, not initialization candidates.
 
@@ -211,7 +211,7 @@ An absence test is transitional scaffolding proving an in-progress deletion rath
 
 ## Hub skill anatomy
 
-The public Skills `imm-brainstorm`, `imm-planner`, and `imm-run` carry the
+The public Skills `clarify`, `draw-up`, and `drive` carry the
 repo's user-facing workflow authority. Execution, QA, review, repair,
 exploration, and learning are internal runtime roles dispatched by Loop through
 packaged role prompts; they are not additional public Skills. Keep explicit

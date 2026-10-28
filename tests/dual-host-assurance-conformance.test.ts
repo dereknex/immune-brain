@@ -54,7 +54,7 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
 	// The entry token binds the workspace the entry was typed in (ADR 0025).
 	const session = { session_id: "phase-entry-test-session", cwd: workspace ?? root };
-	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/drive", ...session }, { root, home: root });
 	return {
 		consumePhaseAdmission(toolCallId, operation) {
 			phaseEntryGateHookOutput({
@@ -2336,7 +2336,7 @@ describe("dual-host assurance conformance", () => {
 				// Claude Code: the plan entry is recorded by the real UserPromptSubmit hook.
 				const locations = { root: store, home: store };
 				const base = { session_id: "owner-parity-session", cwd: fixture };
-				recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/immune-brain:imm-planner revise", ...base }, locations);
+				recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/immune-brain:draw-up revise", ...base }, locations);
 				// Every Claude PreToolUse decision that sees a file-edit tool answers "no denial".
 				for (const tool_name of ["Edit", "Write", "MultiEdit"]) {
 					const payload = { hook_event_name: "PreToolUse", tool_name, tool_input: { file_path: "src/mod/a.ts" }, ...base };
@@ -2362,7 +2362,7 @@ describe("dual-host assurance conformance", () => {
 					sessionManager: { getSessionId: () => "owner-parity-pi" },
 					ui: { setWidget() {}, setStatus() {}, notify() {}, custom: async () => undefined },
 				};
-				await handlers.get("input")!({ type: "input", text: "/skill:imm-planner revise", source: "interactive" }, ctx);
+				await handlers.get("input")!({ type: "input", text: "/skill:draw-up revise", source: "interactive" }, ctx);
 				for (const toolName of ["edit", "write"]) {
 					const piDecision = (await handlers.get("tool_call")!({ toolName, input: { path: "src/mod/a.ts" } }, ctx)) as
 						| { block?: boolean }
@@ -2443,7 +2443,7 @@ describe("dual-host assurance conformance", () => {
 	});
 
 	// ADR 0019: the phase entry gate has one refusal contract. Each Host is driven
-	// at its real tool boundary in a session that never entered imm-run.
+	// at its real tool boundary in a session that never entered drive.
 	test("both Hosts refuse Enrollment and batch start without a run entry with one code and one recovery action", async () => {
 		const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-conformance-"));
 		try {

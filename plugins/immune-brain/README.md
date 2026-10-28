@@ -6,10 +6,10 @@ learning capture, backed by a deterministic TypeScript workflow runtime.
 Each of the eight public Skills is a compact `skills/<name>/SKILL.md`
 trigger shim that loads its full instructions from `dist/<name>.md` only on
 invocation. Execution, review, QA, and learning capabilities remain internal
-runtime roles or tools. `imm-pr-fix` is the standalone host-native repair
-entry, `imm-doc-prune` is the standalone host-native document maintenance
-entry, `imm-doc-slim` is the standalone host-native
-agent-instruction maintenance entry, and `imm-test-prune` is the standalone
+runtime roles or tools. `fix-pr` is the standalone host-native repair
+entry, `prune-docs` is the standalone host-native document maintenance
+entry, `slim` is the standalone host-native
+agent-instruction maintenance entry, and `prune-tests` is the standalone
 host-native test-suite maintenance entry; Loop's repair role remains internal.
 Shared rules live in [`BASELINE.md`](BASELINE.md); current workflow behavior
 lives in the focused modules under [`runtime/`](runtime/), while `imm_core.ts`
@@ -19,36 +19,36 @@ and repair roles; it is not a QA or style-only gate.
 
 ## Public Skill surface
 
-The package exposes eight Skills: `imm-brainstorm`, `imm-planner`, `imm-run`,
-`imm-pr-fix`, `imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro`. The first three enter or continue the Managed Path;
-`imm-pr-fix` repairs one PR directly, `imm-doc-prune` prunes stale current
-documentation, `imm-doc-slim` minimizes tracked agent-instruction
-context, `imm-test-prune` prunes redundant tests without weakening assertions,
-and `imm-retro` ranks models by review load and reports project usage, all without Managed authority. Internal roles
+The package exposes eight Skills: `clarify`, `draw-up`, `drive`,
+`fix-pr`, `prune-docs`, `slim`, `prune-tests`, and `revisit`. The first three enter or continue the Managed Path;
+`fix-pr` repairs one PR directly, `prune-docs` prunes stale current
+documentation, `slim` minimizes tracked agent-instruction
+context, `prune-tests` prunes redundant tests without weakening assertions,
+and `revisit` ranks models by review load and reports project usage, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
 
-Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or
-`imm-run` entry; ordinary host input and standalone `imm-pr-fix`,
-`imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro` stay
-host-native and are not classified by natural-language routing. `imm-planner`
-and `imm-brainstorm` also start on the user's request for a Spec, Plan,
+Managed Path starts only from explicit `clarify`, `draw-up`, or
+`drive` entry; ordinary host input and standalone `fix-pr`,
+`prune-docs`, `slim`, `prune-tests`, and `revisit` stay
+host-native and are not classified by natural-language routing. `draw-up`
+and `clarify` also start on the user's request for a Spec, Plan,
 TaskIntent or requirement clarification, by slash command or in natural
-language; `imm-run` starts only from a literal-user entry.
+language; `drive` starts only from a literal-user entry.
 
-- An active Assurance projection remains authoritative and resumes only when the user explicitly enters `imm-run`.
-- `imm-brainstorm` frames ambiguity and `imm-planner` plans clear work, each on the user's request.
-- `imm-run` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
+- An active Assurance projection remains authoritative and resumes only when the user explicitly enters `drive`.
+- `clarify` frames ambiguity and `draw-up` plans clear work, each on the user's request.
+- `drive` consumes validated plans and active task recovery; Planner artifacts remain candidates for later literal-user Enrollment in the current Host's native gate.
 - Fast-Track compresses Managed Path without bypassing TaskIntent scope, Enrollment, QA, Review, authorization, or completion.
-- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. Optional `max_parallel` selects lane mode instead of the serial default. See [Unattended Batch Opt-In](dist/imm-run-batch.md#unattended-batch-opt-in) and [Parallel Batch Opt-In](dist/imm-run-batch.md#parallel-batch-opt-in).
+- An opted-in serial batch hands each enrolled child to foreground Parent implementation before QA; the Parent dispatches required Review, then resumes the same valid batch for Kernel settlement reconciliation and one scope-bound commit. Optional `max_parallel` selects lane mode instead of the serial default. See [Unattended Batch Opt-In](dist/drive-batch.md#unattended-batch-opt-in) and [Parallel Batch Opt-In](dist/drive-batch.md#parallel-batch-opt-in).
 
 ```mermaid
 flowchart LR
   request[request] --> explicit{explicit Managed Skill?}
-  explicit -->|yes| skill[imm-brainstorm / imm-planner / imm-run]
+  explicit -->|yes| skill[clarify / draw-up / drive]
   explicit -->|no| host[host-native]
-  owner[active Assurance owner] --> loop[imm-run recovery]
+  owner[active Assurance owner] --> loop[drive recovery]
   skill --> native[Current Host native Enrollment]
   native --> loop
 ```
@@ -60,7 +60,7 @@ roles attach to this line but never own it.
 
 ```mermaid
 flowchart LR
-  loop[imm-run] --> executor[internal executor]
+  loop[drive] --> executor[internal executor]
   executor -->|evidence| qa[internal QA]
   qa -->|pass| review[internal Review]
   qa -->|rework| executor
@@ -96,7 +96,7 @@ Managed invariants (see `BASELINE.md`):
 - Evidence is recorded before closure; QA (`pass` / `rework` / `replan`) is the
   only closure authority.
 - Advisory roles never implement; execution roles never close QA.
-- Scope changes return to `imm-planner`.
+- Scope changes return to `draw-up`.
 
 ### Authority store
 
@@ -123,14 +123,14 @@ in the next major release.
 
 | Entry | Role | Boundary |
 | ------- | ---- | -------- |
-| `imm-brainstorm` | brainstorm; framing; canonical | Problem framing only; no implementation or QA closure. |
-| `imm-planner` | plan; authority; canonical | Owns plan creation and revision; no executor edits. |
-| `imm-run` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
-| `imm-pr-fix` | execute; repair; canonical | Repair one GitHub PR directly; no Managed authority mutation or scope expansion. |
-| `imm-doc-prune` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
-| `imm-doc-slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
-| `imm-test-prune` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
-| `imm-retro` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
+| `clarify` | brainstorm; framing; canonical | Problem framing only; no implementation or QA closure. |
+| `draw-up` | plan; authority; canonical | Owns plan creation and revision; no executor edits. |
+| `drive` | coordinate; coordinator; canonical | Coordinate the validated plan through execution, review, and settlement; no planning bypass. |
+| `fix-pr` | execute; repair; canonical | Repair one GitHub PR directly; no Managed authority mutation or scope expansion. |
+| `prune-docs` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
+| `slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
+| `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
+| `revisit` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).
@@ -142,7 +142,7 @@ and transitions live in the runtime bridge.
 Whether a change requires code review, UI review, or both is decided
 deterministically by `determineRequiredReviewGates` in
 [`runtime/imm_core.ts`](runtime/imm_core.ts) from the changed-file set — the
-runtime is the single source of truth. `imm-run` consumes Kernel / Loop
+runtime is the single source of truth. `drive` consumes Kernel / Loop
 `review_required` projections and invokes the pending gate automatically; a
 recorded reviewer `pass` is keyed to the changed-files signature, so a later
 follow-up that alters the signature reopens the gate.
@@ -212,4 +212,4 @@ Tests are Bun contract tests. Run the immune-brain suite from this directory:
 bun test tests/
 ```
 
-Broader `imm_core` / `imm-run` contract tests live in the repo-root `tests/` directory. Consistency guards (`plugins/immune-brain/tests/skill-registry-consistency.test.ts`, `plugins/immune-brain/tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist` files, and host manifests aligned.
+Broader `imm_core` / `drive` contract tests live in the repo-root `tests/` directory. Consistency guards (`plugins/immune-brain/tests/skill-registry-consistency.test.ts`, `plugins/immune-brain/tests/host-manifest-consistency.test.ts`) keep the registry, skill shims, `dist` files, and host manifests aligned.

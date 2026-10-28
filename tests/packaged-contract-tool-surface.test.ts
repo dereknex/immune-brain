@@ -139,7 +139,7 @@ describe("packaged contract tool surface", () => {
 	test("the guard rejects the pre-change contracts", () => {
 		// The commit immediately before S1's first contract change owns the actual
 		// pre-change text: a paraphrase of the old sentences could drift from what the
-		// guard actually rejected. That commit predates the imm-loop -> imm-run rename,
+		// guard actually rejected. That commit predates the imm-loop -> drive rename,
 		// so the contract is judged under its old path.
 		const path = "plugins/immune-brain/dist/imm-loop.md";
 		// Verbatim lines of the file at aecf5dd^, inlined so the guard stays checkable in

@@ -11,11 +11,11 @@ Ordinary host work that does not create or mutate Managed authority. It includes
 _Avoid_: Direct Path, unmanaged fallback
 
 **Managed Path**:
-The authority-governed workflow entered only through `imm-brainstorm`, `imm-planner`, or `imm-run`. Existing ownership remains authoritative; explicit `imm-run` binds execution to the session and retains continuation across status questions until settlement, a concrete blocker or explicit cancellation.
+The authority-governed workflow entered only through `clarify`, `draw-up`, or `drive`. Existing ownership remains authoritative; explicit `drive` binds execution to the session and retains continuation across status questions until settlement, a concrete blocker or explicit cancellation.
 _Avoid_: automatic routing, default mutation path
 
 **Run binding**:
-The session-local, non-authoritative association between an explicit `imm-run` entry and its single Task or whole Initiative. Releasing it ends response continuation without changing Kernel ownership.
+The session-local, non-authoritative association between an explicit `drive` entry and its single Task or whole Initiative. Releasing it ends response continuation without changing Kernel ownership.
 _Avoid_: run authority, second scheduler
 
 **Brainstorm**:
@@ -49,7 +49,7 @@ One TaskIntent acceptance item combining an observable assertion with a focused 
 _Avoid_: implementation step, enrollment rehearsal
 
 **Enrollment**:
-The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `imm-run` entry, never by the Planner or Brainstorm (ADR 0019). It does not execute acceptance descriptors.
+The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `drive` entry, never by the Planner or Brainstorm (ADR 0019). It does not execute acceptance descriptors.
 _Avoid_: task creation, planning confirmation, QA
 
 **Task**:
@@ -228,9 +228,26 @@ _Avoid_: current acceptance field, QA attestation
 - An Initiative may group Slices and TaskIntents, but it never replaces a Spec, TaskIntent, TaskRecord, or Assurance Projection.
 - An Initiative Publication exposes the complete Parent/Child decomposition for one granularity decision before any tracker mutation; its execution recommendation selects no authority action by itself.
 
+## Skill Names
+
+The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). Dated history under `docs/plans`, `docs/specs`, `docs/adr` and `docs/reports` keeps the old names; this table maps them.
+
+<!-- skill-rename-map:start -->
+| Old | New |
+|---|---|
+| `imm-brainstorm` | `clarify` |
+| `imm-planner` | `draw-up` |
+| `imm-run` (earlier `imm-loop`) | `drive` |
+| `imm-retro` (earlier `imm-review-retro`) | `revisit` |
+| `imm-doc-slim` (earlier `imm-agent-doc-maintain`) | `slim` |
+| `imm-doc-prune` | `prune-docs` |
+| `imm-test-prune` | `prune-tests` |
+| `imm-pr-fix` | `fix-pr` |
+<!-- skill-rename-map:end -->
+
 ## Architecture Map
 
-- Public entries: `plugins/immune-brain/skills/imm-brainstorm/`, `imm-planner/`, and `imm-run/` enter or continue the Managed Path; `imm-pr-fix/` is the standalone host-native PR repair Skill, `imm-doc-prune/` is the standalone host-native document maintenance Skill, `imm-doc-slim/` is the standalone host-native agent-instruction maintenance Skill, `imm-test-prune/` is the standalone host-native test-suite maintenance Skill, and `imm-retro/` is the standalone host-native review-load and project-usage retro Skill.
+- Public entries: `plugins/immune-brain/skills/clarify/`, `draw-up/`, and `drive/` enter or continue the Managed Path; `fix-pr/` is the standalone host-native PR repair Skill, `prune-docs/` is the standalone host-native document maintenance Skill, `slim/` is the standalone host-native agent-instruction maintenance Skill, `prune-tests/` is the standalone host-native test-suite maintenance Skill, and `revisit/` is the standalone host-native review-load and project-usage retro Skill.
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.

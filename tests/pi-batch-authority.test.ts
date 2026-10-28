@@ -100,7 +100,7 @@ function register(readInitiative: () => Promise<GithubInitiativeObservation>) {
 	return tools.find(tool => tool.name === "start_unattended_batch")!;
 }
 function context(root: string, selection: string, opened = { count: 0 }) {
-	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { cwd: root, sessionManager: SESSION });
+	recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { cwd: root, sessionManager: SESSION });
 	return { cwd: root, mode: "tui", sessionManager: SESSION, ui: { custom: async () => { opened.count++; return selection; } } };
 }
 const textOf = (result: any) => JSON.parse(result.content.map((item: any) => item.text).join("\n"));

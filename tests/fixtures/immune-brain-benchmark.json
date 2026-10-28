@@ -66,7 +66,7 @@
       "id": "entrypoint-routing",
       "title": "Planner runtime path parity",
       "purpose": "Check whether the plugin routes a planning request through the planner capability without broad repository exploration.",
-      "userInput": "Use explicit `imm-planner` in this copied Git fixture. Prepare a focused Spec and candidate TaskIntent for keeping README runtime adapter references aligned with `plugins/immune-brain/runtime/v4_runtime.ts`. This is plan-only: do not enroll or implement. Read README.md, CONTEXT.md, IMMUNE.md, HANDOFF.md, and tests/fixture-contract.test.ts first, then only the installed Skill and referenced wrappers needed for authoring. Author the candidate through imm-kernel, stage it, and require valid: true and enrollment_ready: true. Do not create prose Plans, inspect upstreams, or edit outside docs/specs and docs/plans.",
+      "userInput": "Use explicit `draw-up` in this copied Git fixture. Prepare a focused Spec and candidate TaskIntent for keeping README runtime adapter references aligned with `plugins/immune-brain/runtime/v4_runtime.ts`. This is plan-only: do not enroll or implement. Read README.md, CONTEXT.md, IMMUNE.md, HANDOFF.md, and tests/fixture-contract.test.ts first, then only the installed Skill and referenced wrappers needed for authoring. Author the candidate through imm-kernel, stage it, and require valid: true and enrollment_ready: true. Do not create prose Plans, inspect upstreams, or edit outside docs/specs and docs/plans.",
       "successChecklist": [
         "The run uses the planning slice of the plugin.",
         "The result leaves a Spec and Git-tracked, validated candidate TaskIntent on disk, without Enrollment.",
@@ -77,7 +77,7 @@
       "id": "multi-skill-follow-up",
       "title": "Run runtime contract check",
       "purpose": "Measure whether the plugin can execute a bounded follow-up and validate the result with local tests.",
-      "userInput": "Use explicit `imm-planner` to plan and execute this routine task in the copied Git fixture: change README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits` and update its focused test expectation. Invoke the current Host's native Enrollment gate directly after candidate validation; the operator must make the real decision. Then use explicit `imm-run` to implement, freeze artifacts, run deterministic QA, and reach Kernel done. Scope includes README.md, tests/fixture-contract.test.ts, and any bound active/archive Spec. Do not fabricate authorization, use CLI authority mutations, create worktrees, or edit upstreams. If an interactive native gate is unavailable, report blocked rather than completed.",
+      "userInput": "Use explicit `draw-up` to plan and execute this routine task in the copied Git fixture: change README Workflow Boundary wording from `Small one-off copy edits` to `Focused one-off copy edits` and update its focused test expectation. Invoke the current Host's native Enrollment gate directly after candidate validation; the operator must make the real decision. Then use explicit `drive` to implement, freeze artifacts, run deterministic QA, and reach Kernel done. Scope includes README.md, tests/fixture-contract.test.ts, and any bound active/archive Spec. Do not fabricate authorization, use CLI authority mutations, create worktrees, or edit upstreams. If an interactive native gate is unavailable, report blocked rather than completed.",
       "successChecklist": [
         "The task completes with native Enrollment evidence, fresh deterministic QA, and an exact terminal TaskRecord/tombstone, not merely a passing test.",
         "The run uses a bounded execution slice instead of redoing unrelated planning.",
@@ -99,9 +99,9 @@
       "id": "explicit-managed-boundary",
       "title": "Explicit Managed boundary for a public runtime contract",
       "purpose": "Check whether an explicit Planner entry handles a public runtime contract and compatibility decision before implementation.",
-      "userInput": "Use explicit `imm-planner` for this plan-only request in the copied Git fixture. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. Do not mutate runtime code or invent a compatibility layer. Resolve the source-repair and migration alternatives first; any necessary compatibility mechanism needs an owner, exit condition, and cleanup milestone. Keep candidate artifacts under docs/specs or docs/plans, author and stage a TaskIntent through the installed wrapper, and validate it without Enrollment.",
+      "userInput": "Use explicit `draw-up` for this plan-only request in the copied Git fixture. The requested change would rename the packaged public runtime contract `plugins/immune-brain/runtime/v4_runtime.ts` and retain compatibility for existing consumers. Do not mutate runtime code or invent a compatibility layer. Resolve the source-repair and migration alternatives first; any necessary compatibility mechanism needs an owner, exit condition, and cleanup milestone. Keep candidate artifacts under docs/specs or docs/plans, author and stage a TaskIntent through the installed wrapper, and validate it without Enrollment.",
       "successChecklist": [
-        "The explicit `imm-planner` entry selects Managed planning; request wording alone is not treated as a route trigger.",
+        "The explicit `draw-up` entry selects Managed planning; request wording alone is not treated as a route trigger.",
         "The run creates only the bounded Managed planning artifact needed for later enrollment and does not implement before authority exists.",
         "The response identifies compatibility and rollback verification instead of treating file count as the reason for Managed routing."
       ]

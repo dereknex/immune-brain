@@ -66,6 +66,6 @@ describe("generated snapshot Review coverage contract", () => {
 	test("packaged roles and Loop coverage point to the canonical proof", () => {
 		expect(read("plugins/immune-brain/dist/role-prompts/code-review.md").trim()).toBe(role);
 		expect(reviewerDefinitionDrift(root)).toBeNull();
-		expect(read("plugins/immune-brain/dist/imm-run.md")).toContain("role-prompts/code-review.md#generated-snapshot-proof");
+		expect(read("plugins/immune-brain/dist/drive.md")).toContain("role-prompts/code-review.md#generated-snapshot-proof");
 	});
 });

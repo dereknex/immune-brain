@@ -443,7 +443,7 @@ function retireConfirmationDetails(facts: StaleBatchFacts): {
 				(child) =>
 					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
 			)
-			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.`,
+			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative.`,
 	};
 }
 
@@ -514,7 +514,7 @@ export default function (
 		description: "Start an unattended Lane batch run for an Initiative after native confirmation.",
 		promptSnippet: "Start unattended batch run: invoke once in foreground after plan confirmation.",
 		promptGuidelines: [
-			"Call only inside an explicit imm-run entry, after plan confirmation; execute once in the foreground and consume the direct terminal result.",
+			"Call only inside an explicit drive entry, after plan confirmation; execute once in the foreground and consume the direct terminal result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand.",
 		],
 		parameters: Type.Object({

@@ -46,7 +46,7 @@ describe("machine-checked scope overlap", () => {
 	});
 
 	it("is required by the Planner contract instead of a hand-written verified", () => {
-		const planner = flat("plugins/immune-brain/dist/imm-planner.md");
+		const planner = flat("plugins/immune-brain/dist/draw-up.md");
 		expect(planner).toContain("run `imm-kernel intent overlap <path> <path>... --json`");
 		expect(planner).toContain('Never write "disjoint" or "verified" for scopes by hand');
 	});
@@ -116,7 +116,7 @@ describe("active task notice", () => {
 			expect(notice).toContain("which obligation it is waiting on");
 			expect(notice).toContain("src/work.ts");
 			expect(notice).toContain("Ordinary input does not resume it");
-			expect(notice).toContain("Only an explicit imm-run entry continues it.");
+			expect(notice).toContain("Only an explicit drive entry continues it.");
 			const hook = JSON.parse((await activeTaskHookOutput({ hook_event_name: "UserPromptSubmit", cwd: root }))!);
 			expect(hook.hookSpecificOutput).toMatchObject({ hookEventName: "UserPromptSubmit" });
 			expect(hook.hookSpecificOutput.additionalContext).toBe(notice);

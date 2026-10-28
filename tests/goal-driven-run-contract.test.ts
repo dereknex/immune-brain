@@ -9,8 +9,8 @@ const flat = (path: string) => read(path).replace(/\s+/g, " ");
 
 describe("published goal-driven run contract", () => {
  it("routes Parent and Child separately while retaining native authority boundaries", () => {
-  const loader = flat("skills/imm-run/SKILL.md");
-  const batch = flat("dist/imm-run-batch.md");
+  const loader = flat("skills/drive/SKILL.md");
+  const batch = flat("dist/drive-batch.md");
   expect(loader).toContain("`status` first");
   expect(loader).toContain("A Parent Issue selects its whole planned batch");
   expect(loader).toContain("A Child Issue selects only its TaskIntent");
@@ -24,7 +24,7 @@ describe("published goal-driven run contract", () => {
   expect(batch).toContain("fresh single-task native Enrollment");
  });
  it("keeps every Skill contract pointer reachable", () => {
-  const source = join(plugin, "skills/imm-run/SKILL.md");
+  const source = join(plugin, "skills/drive/SKILL.md");
   for (const match of readFileSync(source, "utf8").matchAll(/\]\(([^)]+)\)/g)) {
    const target = match[1]!.split("#")[0]!;
    if (target && !target.includes(":")) expect(existsSync(resolve(dirname(source), target))).toBe(true);

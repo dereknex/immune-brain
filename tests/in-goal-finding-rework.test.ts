@@ -19,7 +19,7 @@ const flat = (rel: string) => readFileSync(resolve(REPO_ROOT, rel), "utf-8").rep
 
 describe("contract distinguishes in-goal rework from Intent revision", () => {
 	test("the Loop treats an in-goal finding as rework and forbids appending a case to acceptance", () => {
-		const loop = flat("plugins/immune-brain/dist/imm-run.md");
+		const loop = flat("plugins/immune-brain/dist/drive.md");
 		expect(loop).toContain("lies inside the TaskIntent goal and acceptance is ordinary rework even when no acceptance names its exact case");
 		expect(loop).toContain("never append a single input case to an acceptance assertion in order to close a finding");
 		// branch-boundary-r2 D20: scope-only changes keeping the bound Spec path are compatible.
@@ -38,7 +38,7 @@ describe("contract distinguishes in-goal rework from Intent revision", () => {
 	});
 
 	test("the Planner declines a revision that only appends a case", () => {
-		const planner = flat("plugins/immune-brain/dist/imm-planner.md");
+		const planner = flat("plugins/immune-brain/dist/draw-up.md");
 		expect(planner).toContain("decline to prepare one that only appends a single input case to an acceptance assertion");
 	});
 });

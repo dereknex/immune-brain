@@ -4,17 +4,17 @@ Immune-Brain 的 shipped public Skill surface 固定为八个入口：三个 Man
 
 | Public Skill | 责任 | 下一步 |
 | --- | --- | --- |
-| `imm-brainstorm` | 澄清需求、范围、假设和风险；`adversarial`/`roundtable` 是内部模式 | `imm-planner` |
-| `imm-planner` | 创建或修订 Spec、Plan 和候选 TaskIntent；不自动 Enrollment | `imm-run` |
-| `imm-run` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
-| `imm-pr-fix` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
-| `imm-doc-prune` | 独立 host-native 文档清理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
-| `imm-doc-slim` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
-| `imm-test-prune` | 独立 host-native 测试套件瘦身；显式 manifest 批准后执行；不进入 Managed Path | host-native |
-| `imm-retro` | 独立 host-native 审查负载与项目使用量回顾；不进入 Managed Path | host-native |
+| `clarify` | 澄清需求、范围、假设和风险；`adversarial`/`roundtable` 是内部模式 | `draw-up` |
+| `draw-up` | 创建或修订 Spec、Plan 和候选 TaskIntent；不自动 Enrollment | `drive` |
+| `drive` | 消费 validated Plan，协调执行、QA、Review、repair、learning 和恢复 | Kernel Tool / Planner / terminal |
+| `fix-pr` | 独立 host-native PR repair；不进入 Managed Path | GitHub PR / host-native |
+| `prune-docs` | 独立 host-native 文档清理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `slim` | 独立 host-native agent instruction 整理；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `prune-tests` | 独立 host-native 测试套件瘦身；显式 manifest 批准后执行；不进入 Managed Path | host-native |
+| `revisit` | 独立 host-native 审查负载与项目使用量回顾；不进入 Managed Path | host-native |
 
 旧的 Executor、QA、Review、repair、explorer、advisory、Compounder 和 Init entry
-不再是可发现的 Skill。它们分别是 `imm-run` 的内部 role、runtime capability 或 TUI/Tool
+不再是可发现的 Skill。它们分别是 `drive` 的内部 role、runtime capability 或 TUI/Tool
 操作；没有 alias、feature flag 或第二个 public surface。
 
 ## 协作拓扑
@@ -25,10 +25,10 @@ Managed native authority failure 必须 fail closed，只报告稳定原因和�
 graph TD
     User([用户请求]) --> Route{请求分类}
     Route -->|只读/解释/review-only| Host[Host-native]
-    Route -->|重大歧义| Brainstorm[imm-brainstorm]
-    Route -->|清晰仓库变更| Planner[imm-planner]
+    Route -->|重大歧义| Brainstorm[clarify]
+    Route -->|清晰仓库变更| Planner[draw-up]
     Brainstorm --> Planner
-    Planner --> Loop[imm-run]
+    Planner --> Loop[drive]
     Loop --> Executor[internal executor]
     Loop --> QA[internal qa]
     Loop --> Review[internal code-review/ui-review]
@@ -40,19 +40,19 @@ graph TD
 
 ## Public Skill 合同
 
-### `imm-brainstorm`
+### `clarify`
 
 只在问题仍有 material ambiguity 时使用。它负责把假设、决策、风险和非目标整理成
 `BR-*` 清单，并在所有 `BR-Q-*` 得到回答前阻止 Planner 继续。它不修改实现、不激活
 workflow authority，也不替代 Planner 或 Loop。
 
-### `imm-planner`
+### `draw-up`
 
 Planner 是清晰仓库变更的默认规划阶段。它读取 routing projection，写入 Spec/Plan，
 声明 Scope、Result、Verification、风险和 rollback 约束。Plan-only 输出保持
 non-authoritative；Enrollment 由 literal user 和当前 Host 的原生 gate 拥有。
 
-### `imm-run`
+### `drive`
 
 Loop 是唯一的执行协调 public Skill。它通过 `buildLoopAction` 和
 `buildLoopRoleDispatch` 选择内部 action/role，并保持每个 boundary 的 authority：
@@ -79,7 +79,7 @@ the artifacts and parent directories needed for the current request; runtime doe
 not install or validate project-wide instruction files.
 
 Pi runtime 的 public loader 应发现八个 Skill，其中三个 Managed Path 入口与五个
-host-native 独立 Skill（`imm-pr-fix`、`imm-doc-prune`、`imm-doc-slim`、`imm-test-prune` 和 `imm-retro`）。Canary Enrollment、Kernel evidence、
+host-native 独立 Skill（`fix-pr`、`prune-docs`、`slim`、`prune-tests` 和 `revisit`）。Canary Enrollment、Kernel evidence、
 Review authorization 和 terminal settlement 通过当前 Host 的 foreground Tools/native gates 完成：
 
 - `imm_canary_enrollment`：准备、rehearsal、literal-user confirmation、revalidation、commit。
@@ -87,12 +87,24 @@ Review authorization 和 terminal settlement 通过当前 Host 的 foreground To
 - `imm-code-review` / `imm-ui-review`：Review Gate identifiers，实际 dispatch 由 Loop role bridge 负责。
 
 Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool source 仅作为 runtime
-实现保留，用户继续工作时进入 `imm-run`。
+实现保留，用户继续工作时进入 `drive`。
+
+## Naming checklist
+
+新 skill 名必须通过五项检查（#318，2026-10-28 采纳；ADR 0031）：
+
+1. 不是 Claude Code 内置命令（例如 `/plan`、`/run`、`/review`）。
+2. 不是 Pi 内置命令（例如 `/plan`）。
+3. 不与 mattpocock/skills、pstack 或 EGM 中已有的 skill 名重名。
+4. 不与本插件的其他 skill 重名。
+5. 不与本地 local user skill or command 重名：同名的用户或项目 command 会被当作 alias 解析，同名的用户或项目 skill 会让裸名入口不签发运行令牌（Pi 上 `skill:` 前缀同样不签发），只剩 Claude Code 上的 `/immune-brain:<name>` 可用。
+
+名字统一用动词（`clarify → draw-up → drive`），不加 `imm-` 前缀，不设 alias。
 
 ## Surface 与验证
 
 `plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、八个 `SKILL.md`、
-八个 `dist/imm-*.md` 和 package manifest 必须保持一致。未注册的旧 `imm-*.md`
+八个 `dist/<skill>.md` 和 package manifest 必须保持一致。未注册的旧 `dist/*.md`
 entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
 新 skill 立约定（2026-10-27 采纳，源自 google/elephant-goldfish-model 每个 skill

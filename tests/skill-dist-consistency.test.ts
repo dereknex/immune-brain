@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve, relative, sep } from "node:path";
 import {
@@ -24,13 +25,16 @@ function listFiles(dir: string): string[] {
 }
 
 function publicSkills(): Array<{ name: string; skill: string; dist: string }> {
-	return readdirSync(SKILLS_DIR, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory() && entry.name.startsWith("imm-"))
-		.map((entry) => ({
-			name: entry.name,
-			skill: join(SKILLS_DIR, entry.name, "SKILL.md"),
-			dist: join(DIST_DIR, `${entry.name}.md`),
-		}));
+	const names = readdirSync(SKILLS_DIR, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name);
+	// Every Skill directory is registered: an empty or partial list cannot pass vacuously.
+	expect(names.sort()).toEqual([...publicSkillNames()].sort());
+	return names.map((name) => ({
+		name,
+		skill: join(SKILLS_DIR, name, "SKILL.md"),
+		dist: join(DIST_DIR, `${name}.md`),
+	}));
 }
 
 // Load precisely the heading body promised by the loaders, excluding nested branches.
@@ -61,24 +65,62 @@ function routeLine(loader: string, prefix: string): string {
 // The Planner and Brainstorm start on the user's request, by slash command or in
 // natural language (ADR 0020); the other six public Skills need an explicit entry.
 const REQUEST_TRIGGERED: Record<string, string> = {
-	"imm-planner": "Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.",
-	"imm-brainstorm": "Use when the user asks to clarify or explore requirements before Immune-Brain planning.",
+	"draw-up": "Use when the user asks for an Immune-Brain Spec, Plan, or TaskIntent for a repository change.",
+	"clarify": "Use when the user asks to clarify or explore requirements before Immune-Brain planning.",
 };
 
 // These pair explicit entry with weak lexical matches; they assert metadata,
 // not a simulated classifier or a live model's selection rate.
 const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, scope: string]> = [
-	["imm-brainstorm", "clarify requirements with Immune-Brain", "explain this function", "clarify or explore requirements"],
-	["imm-planner", "plan a Spec with Immune-Brain", "fix this bug", "Spec, Plan, or TaskIntent"],
-	["imm-run", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
-	["imm-pr-fix", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
-	["imm-doc-prune", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
-	["imm-doc-slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
-	["imm-test-prune", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
-	["imm-retro", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
+	["clarify", "clarify requirements with Immune-Brain", "explain this function", "clarify or explore requirements"],
+	["draw-up", "plan a Spec with Immune-Brain", "fix this bug", "Spec, Plan, or TaskIntent"],
+	["drive", "resume my Immune-Brain task", "continue explaining", "execution or resumption"],
+	["fix-pr", "repair PR feedback with Immune-Brain", "review this function", "GitHub PR review feedback"],
+	["prune-docs", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
+	["slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
+	["prune-tests", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
+	["revisit", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
 ];
 
+
+// ADR 0031: the current surface names no retired Skill. Dated history and tests keep them.
+const RETIRED_SKILL_NAME = /(?<![A-Za-z0-9_-])imm-(?:brainstorm|planner|run|retro|doc-slim|doc-prune|test-prune|pr-fix|loop)(?![A-Za-z0-9_])/g;
+const CURRENT_SURFACE = [
+	"plugins/immune-brain",
+	":!plugins/immune-brain/tests",
+	"README.md",
+	"CONTEXT.md",
+	"AGENTS.md",
+	"CLAUDE.md",
+	"docs/agents",
+	"docs/reference",
+	"docs/user_manual.md",
+	"scripts",
+	":!scripts/stale-reference-baseline.json",
+];
+// The one permitted occurrence: the delimited old-to-new table in CONTEXT.md.
+const RENAME_MAP = /<!-- skill-rename-map:start -->[\s\S]*?<!-- skill-rename-map:end -->/;
+
+function retiredSkillNames(text: string): string[] {
+	return text.replace(RENAME_MAP, "").match(RETIRED_SKILL_NAME) ?? [];
+}
+
 describe("skill dist consistency", () => {
+	test("the current surface names no retired Skill (ADR 0031)", () => {
+		expect(retiredSkillNames("enter `imm-run` or dist/imm-run-batch.md")).toEqual(["imm-run", "imm-run"]);
+		expect(retiredSkillNames("bin/imm-plan, bin/imm-kernel, imm-canary-work.ts, imm-runtime, my-imm-run-helper")).toEqual([]);
+		const files = execFileSync("git", ["ls-files", "-z", "--", ...CURRENT_SURFACE], { cwd: ROOT, encoding: "utf8" })
+			.split("\0")
+			.filter((path) => path && existsSync(join(ROOT, path)));
+		expect(files).toContain("plugins/immune-brain/skills/drive/SKILL.md");
+		expect(files).toContain("CONTEXT.md");
+		const hits = files.flatMap((path) => {
+			const text = read(join(ROOT, path));
+			return text.includes("\0") ? [] : retiredSkillNames(text).map((name) => `${path}: ${name}`);
+		});
+		expect(hits).toEqual([]);
+	});
+
 	test("trigger cases cover every public Skill", () => {
 		expect(TRIGGER_CASES.map(([name]) => name)).toEqual(publicSkillNames());
 	});
@@ -120,7 +162,7 @@ describe("skill dist consistency", () => {
 				linkedSections(item.skill, route);
 			}
 			const common = linkedSections(item.skill, routeLine(loader, "common:"));
-			if (["imm-brainstorm", "imm-planner", "imm-run"].includes(item.name)) {
+			if (["clarify", "draw-up", "drive"].includes(item.name)) {
 				expect(common).toContain("Stage only explicit task-owned paths");
 				expect(common).toContain("Never use `git add .` or `git add -A` in a dirty worktree");
 				expect(common).toContain("Do not create, switch, or delete Git worktrees");
@@ -131,7 +173,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("ordinary planning excludes page design, carrier publication, and recovery branches", () => {
-		const path = join(SKILLS_DIR, "imm-planner/SKILL.md");
+		const path = join(SKILLS_DIR, "draw-up/SKILL.md");
 		const loader = read(path);
 		const initial = linkedSections(path, routeLine(loader, "common:")) +
 			linkedSections(path, routeLine(loader, "assess request:"));
@@ -147,7 +189,7 @@ describe("skill dist consistency", () => {
 		expect(handoff).toContain("Plan-only requests stop here");
 		expect(initial + preparation + validation).not.toContain("current Host's native Enrollment Tool");
 		expect(handoff).toContain("Do not invoke the current Host's native Enrollment Tool");
-		expect(handoff).toContain("name a literal-user `imm-run` entry as the only next step");
+		expect(handoff).toContain("name a literal-user `drive` entry as the only next step");
 		expect(loader.replace(/\s+/g, " ")).toContain("later stages retain earlier constraints");
 		for (const unrelated of ["visible_actions", "State inventory", "imm-tracker publish-initiative"]) {
 			expect(ordinary).not.toContain(unrelated);
@@ -173,7 +215,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("clear framing skips opt-in interrogation and Loop recovery exposes native guards", () => {
-		const brainPath = join(SKILLS_DIR, "imm-brainstorm/SKILL.md");
+		const brainPath = join(SKILLS_DIR, "clarify/SKILL.md");
 		const brain = read(brainPath);
 		const normal = linkedSections(brainPath, routeLine(brain, "common:"));
 		expect(normal).toContain("zero-question fast path");
@@ -181,7 +223,7 @@ describe("skill dist consistency", () => {
 		expect(normal).not.toContain("buildBrainstormEnsembleRequest");
 		expect(linkedSections(brainPath, routeLine(brain, "explicit thorough interrogation:")))
 			.toContain("Seed the fixed framing roots");
-		const loopPath = join(SKILLS_DIR, "imm-run/SKILL.md");
+		const loopPath = join(SKILLS_DIR, "drive/SKILL.md");
 		const loop = read(loopPath);
 		const steady = linkedSections(loopPath, routeLine(loop, "steady execution:"));
 		expect(steady).not.toContain("For `settlement_unknown`");
@@ -191,7 +233,7 @@ describe("skill dist consistency", () => {
 		const recoveryRules = linkedSections(loopPath, routeLine(loop, "steady execution:"));
 		expect(recoveryRules).toContain("local evidence never replaces Kernel-owned deterministic QA");
 		expect(recoveryRules).toContain("Never reduce required checks merely because they fail");
-		const repairPath = join(SKILLS_DIR, "imm-pr-fix/SKILL.md");
+		const repairPath = join(SKILLS_DIR, "fix-pr/SKILL.md");
 		const repairRules = linkedSections(repairPath, routeLine(read(repairPath), "confirmed blocker before editing:"));
 		expect(repairRules).toContain("Never overwrite user data or stop an unrelated process");
 		expect(repairRules).toContain("For each removal, identify the retired behavior or the remaining coverage");
@@ -204,7 +246,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test.each(["default", "roundtable", "adversarial", "exhaustive"])("%s framing inherits clarification, manifest, and handoff guards", (mode) => {
-		const path = join(SKILLS_DIR, "imm-brainstorm/SKILL.md");
+		const path = join(SKILLS_DIR, "clarify/SKILL.md");
 		const loader = read(path);
 		const framing = linkedSections(path, routeLine(loader, "common:")) +
 			(mode === "exhaustive" ? linkedSections(path, routeLine(loader, "explicit thorough interrogation:")) :
@@ -216,12 +258,12 @@ describe("skill dist consistency", () => {
 		expect(framing).toContain("`BR-SCN-*`");
 		expect(framing).toContain("If a decision delta is still unconfirmed");
 		expect(framing).toContain("omit the handoff manifest");
-		expect(framing).toContain("If gates pass: suggest `imm-planner`");
+		expect(framing).toContain("If gates pass: suggest `draw-up`");
 		if (mode !== "exhaustive") expect(framing).not.toContain("Seed the fixed framing roots");
 	});
 
 	test("maintenance audits stop at manifests and mutation routes expose all guards", () => {
-		for (const name of ["imm-doc-prune", "imm-doc-slim", "imm-test-prune"]) {
+		for (const name of ["prune-docs", "slim", "prune-tests"]) {
 			const path = join(SKILLS_DIR, name, "SKILL.md");
 			const loader = read(path);
 			const audit = linkedSections(path, routeLine(loader, "common:")) +
@@ -245,13 +287,13 @@ describe("skill dist consistency", () => {
 	});
 
 	test("standalone PR repair keeps remote diagnosis and Managed authority isolated", () => {
-		const contract = read(join(DIST_DIR, "imm-pr-fix.md"));
+		const contract = read(join(DIST_DIR, "fix-pr.md"));
 		expect(contract).toContain("imm-pr-diag <PR>");
 		expect(contract).toContain("untrusted data");
 		expect(contract).toContain("Stop on detached HEAD, zero matches, multiple matches");
 		expect(contract).toContain("without creating or mutating\nTaskIntent, TaskRecord, Kernel, Spec, or Plan authority");
-		expect(contract).toContain("An already active\nManaged task remains owned by `imm-run`");
-		const loaderPath = join(SKILLS_DIR, "imm-pr-fix/SKILL.md");
+		expect(contract).toContain("An already active\nManaged task remains owned by `drive`");
+		const loaderPath = join(SKILLS_DIR, "fix-pr/SKILL.md");
 		const loader = read(loaderPath);
 		const diagnosis = linkedSections(loaderPath, routeLine(loader, "diagnosis:"));
 		expect(diagnosis).toContain("head commit SHA");
@@ -329,7 +371,7 @@ describe("skill dist consistency", () => {
 	});
 
 	test("Planner and Loop entry points remain section-free loaders", () => {
-		for (const skill of ["imm-planner", "imm-run"]) {
+		for (const skill of ["draw-up", "drive"]) {
 			const text = read(join(SKILLS_DIR, skill, "SKILL.md"));
 			expect(text).toContain(`../../dist/${skill}.md`);
 			expect(text).toContain("canonical contract");

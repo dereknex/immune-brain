@@ -20,9 +20,9 @@ function flat(rel: string): string {
 	return read(rel).replace(/\s+/g, " ");
 }
 
-const LOOP = `${PLUGIN}/dist/imm-run.md`;
-const BATCH = `${PLUGIN}/dist/imm-run-batch.md`;
-const LOADER = `${PLUGIN}/skills/imm-run/SKILL.md`;
+const LOOP = `${PLUGIN}/dist/drive.md`;
+const BATCH = `${PLUGIN}/dist/drive-batch.md`;
+const LOADER = `${PLUGIN}/skills/drive/SKILL.md`;
 const EXECUTOR_SOURCE = `${PLUGIN}/runtime/prompts/executor.md`;
 const EXECUTOR_MIRROR = `${PLUGIN}/dist/role-prompts/executor.md`;
 
@@ -98,19 +98,19 @@ describe("batch, Lane and Herdr sections live in their own contract (CT-S4-A3)",
 		}
 	});
 
-	test("the batch contract is a packaged owned contract routed from the imm-run Skill", () => {
-		const entry = PACKAGED_CONTRACT_ENTRIES.find((candidate) => candidate.packaged === "imm-run-batch.md");
+	test("the batch contract is a packaged owned contract routed from the drive Skill", () => {
+		const entry = PACKAGED_CONTRACT_ENTRIES.find((candidate) => candidate.packaged === "drive-batch.md");
 		expect(entry?.kind).toBe("owned");
 		expect(entry?.source).toBeNull();
-		expect(entry?.skill).toBe("imm-run");
-		expect(read(LOADER)).toContain("../../dist/imm-run-batch.md#");
+		expect(entry?.skill).toBe("drive");
+		expect(read(LOADER)).toContain("../../dist/drive-batch.md#");
 	});
 
 	test("every loader route anchor resolves in the file that now holds it", () => {
 		const loader = read(LOADER);
 		for (const heading of BATCH_HEADINGS) {
-			expect(loader).toContain(`../../dist/imm-run-batch.md#${anchorOf(heading)}`);
-			expect(loader).not.toContain(`../../dist/imm-run.md#${anchorOf(heading)}`);
+			expect(loader).toContain(`../../dist/drive-batch.md#${anchorOf(heading)}`);
+			expect(loader).not.toContain(`../../dist/drive.md#${anchorOf(heading)}`);
 		}
 		expect(unresolvedLoopAnchors(loader, LOADER)).toEqual([]);
 	});
@@ -128,17 +128,17 @@ describe("batch, Lane and Herdr sections live in their own contract (CT-S4-A3)",
 		}
 		// The two documentation pages name the config anchor by path, not by link.
 		for (const file of ["docs/reference/immune-brain-config.md", `${PLUGIN}/dist/docs/reference/immune-brain-config.md`]) {
-			expect(read(file)).toContain("plugins/immune-brain/dist/imm-run-batch.md#lane-preferences");
-			expect(read(file)).not.toContain("plugins/immune-brain/dist/imm-run.md#lane-preferences");
+			expect(read(file)).toContain("plugins/immune-brain/dist/drive-batch.md#lane-preferences");
+			expect(read(file)).not.toContain("plugins/immune-brain/dist/drive.md#lane-preferences");
 		}
 	});
 
 	test("the anchor check fails for a link into the file a section moved out of", () => {
-		const stale = "see [Lane Preferences](../../dist/imm-run.md#lane-preferences)";
-		expect(unresolvedLoopAnchors(stale, LOADER)).toEqual([`${LOADER} -> ../../dist/imm-run.md#lane-preferences`]);
+		const stale = "see [Lane Preferences](../../dist/drive.md#lane-preferences)";
+		expect(unresolvedLoopAnchors(stale, LOADER)).toEqual([`${LOADER} -> ../../dist/drive.md#lane-preferences`]);
 	});
 
 	test("the Loop contract still states the supervision exception and links it in the batch contract", () => {
-		expect(flat(LOOP)).toContain("[Lane Executor Supervision](imm-run-batch.md#lane-executor-supervision)");
+		expect(flat(LOOP)).toContain("[Lane Executor Supervision](drive-batch.md#lane-executor-supervision)");
 	});
 });

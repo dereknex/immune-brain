@@ -71,10 +71,10 @@ describe("partially live runtime trim", () => {
 
 		expect(
 			resolveLoopRoute({ ownership: "plan", target: "step" }),
-		).toEqual({ entry: "imm-run", next: "executor" });
+		).toEqual({ entry: "drive", next: "executor" });
 		expect(
 			resolveLoopRoute({ ownership: "kernel", target: "step" }),
-		).toEqual({ entry: "imm-run", next: "imm_kernel_canary" });
+		).toEqual({ entry: "drive", next: "imm_kernel_canary" });
 		const action = buildLoopAction({
 			ownership: "plan",
 			target: "step",

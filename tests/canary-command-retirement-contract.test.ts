@@ -49,14 +49,14 @@ describe("Canary Slash Command retirement", () => {
 		}
 	});
 
-	test("public docs route lifecycle actions through natural language and imm-run", () => {
+	test("public docs route lifecycle actions through natural language and drive", () => {
 		for (const file of [
 			"README.md",
 			"plugins/immune-brain/README.md",
 			"plugins/immune-brain/USER_GUIDE.md",
 			"docs/user_manual.md",
-			"plugins/immune-brain/skills/imm-run/SKILL.md",
-			"plugins/immune-brain/dist/imm-run.md",
+			"plugins/immune-brain/skills/drive/SKILL.md",
+			"plugins/immune-brain/dist/drive.md",
 		]) {
 			const source = readFileSync(join(ROOT, file), "utf8");
 			expect(source, file).not.toMatch(/\/imm-canary-(new|enroll|assure|authorize|succeed)/);

@@ -9,7 +9,7 @@ const BASELINE = read("plugins/immune-brain/BASELINE.md");
 const ROOT_IMMUNE = read("IMMUNE.md");
 const README = read("plugins/immune-brain/README.md");
 const USER_GUIDE = read("plugins/immune-brain/USER_GUIDE.md");
-const PLANNER_SKILL = read("plugins/immune-brain/dist/imm-planner.md");
+const PLANNER_SKILL = read("plugins/immune-brain/dist/draw-up.md");
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md");
 const PACKAGED_QUALITY_GATE = read(
   "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
@@ -26,9 +26,9 @@ describe("Skill-explicit workflow routing contract", () => {
       "Ordinary host input stays host-native",
       "new Managed workflow starts only from explicit",
       "Continue an existing Managed owner",
-      "explicit `imm-brainstorm`",
-      "imm-planner",
-      "imm-run",
+      "explicit `clarify`",
+      "draw-up",
+      "drive",
     ]);
     expect(BASELINE).not.toContain("Repository-mutating requests use Managed Path by default");
   });
@@ -47,7 +47,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "Record reproducible evidence before reporting closure",
       "enrolled TaskIntent acceptance and `scope_hint`",
       "Collect missing in-scope evidence",
-      "routes scope changes to `imm-planner`",
+      "routes scope changes to `draw-up`",
     ]);
     expectAll(BASELINE, [
       "Record reproducible evidence before reporting closure",
@@ -59,13 +59,13 @@ describe("Skill-explicit workflow routing contract", () => {
 
   it("aligns project constitutions and packaged consumers", () => {
     expectAll(ROOT_IMMUNE, ["Skill-explicit Managed Path", "显式 Immune-Brain Skill", "literal-user Enrollment"]);
-    expectAll(README, ["Managed Path starts only from explicit `imm-brainstorm`, `imm-planner`, or", "standalone `imm-pr-fix`,\n`imm-doc-prune`, `imm-doc-slim`, `imm-test-prune`, and `imm-retro` stay", "ordinary host input"]);
-    expect(README.replace(/\s+/g, " ")).toContain("also start on the user's request for a Spec, Plan, TaskIntent or requirement clarification, by slash command or in natural language; `imm-run` starts only from a literal-user entry");
+    expectAll(README, ["Managed Path starts only from explicit `clarify`, `draw-up`, or", "standalone `fix-pr`,\n`prune-docs`, `slim`, `prune-tests`, and `revisit` stay", "ordinary host input"]);
+    expect(README.replace(/\s+/g, " ")).toContain("also start on the user's request for a Spec, Plan, TaskIntent or requirement clarification, by slash command or in natural language; `drive` starts only from a literal-user entry");
     expectAll(USER_GUIDE, ["Skill-explicit Managed Path", "普通 host input 保持 host-native"]);
-    expectAll(PLANNER_SKILL, ["never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `imm-run` entry"]);
+    expectAll(PLANNER_SKILL, ["never invokes the native Enrollment gate", "only that gate grants execution authority", "first step\nof a literal-user `drive` entry"]);
     const planner = PLANNER_SKILL.replace(/\s+/g, " ");
     expect(planner).toContain("starts on the user's request for a Spec, Plan, or TaskIntent for a repository change, by slash command or in natural language");
-    expect(planner).toContain("`imm-run` starts only from a literal-user entry");
+    expect(planner).toContain("`drive` starts only from a literal-user entry");
     expect(planner).not.toContain("is entered explicitly by the user");
     expect(planner).not.toContain("does not invoke this Skill through natural-language routing");
     expect(planner).not.toContain("ordinary host input does not invoke it through natural-language routing");
@@ -96,7 +96,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "写状态的命令会在首次修改前自动执行同一迁移",
       "所有决策历史保存在 State Ledger 中",
       "代码变更和 UI 变更会自动触发对应的审查流程",
-      "`imm-run` 是最省心的入口",
+      "`drive` 是最省心的入口",
     ]) {
       expect(USER_GUIDE).not.toContain(retiredClaim);
     }
@@ -121,7 +121,7 @@ describe("Skill-explicit workflow routing contract", () => {
       "does not create or inspect Immune-Brain workflow state",
     );
     expect([managed.userInput, ...managed.successChecklist].join("\n")).toContain(
-      "explicit `imm-planner`",
+      "explicit `draw-up`",
     );
     expect([managed.userInput, ...managed.successChecklist].join("\n")).toContain(
       "public runtime contract",

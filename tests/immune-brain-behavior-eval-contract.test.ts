@@ -66,7 +66,7 @@ describe("Immune-Brain behavior eval contract", () => {
 		const contract = [scenario.userInput, ...scenario.successChecklist].join(
 			"\n",
 		);
-		expect(contract).toContain("explicit `imm-planner`");
+		expect(contract).toContain("explicit `draw-up`");
 		expect(contract).toContain("public runtime contract");
 		expect(contract).toContain("compatibility");
 		expect(contract).toContain("Managed");

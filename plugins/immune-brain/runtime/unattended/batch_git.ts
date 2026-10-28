@@ -1054,7 +1054,7 @@ export async function observeNativeParent(root: string, initiativeSlug: string, 
 		task_id: taskId, proof, parent, native, next_action: action === "drive" ? `Drive active task ${taskId} from Kernel status` :
 			ready ? `Invoke native single-task Enrollment for ${ready.task_id}; no ordinary BatchAuthorization is needed` :
 			originalDelivered ? "Run recorded Parent final verification; diagnose failure and prepare a stable original-goal repair candidate before its fresh native Enrollment" :
-			blockedNativeTasks.length ? `Native gates parked for ${blockedNativeTasks.join(", ")}; resolve their same-Host recovery and enter imm-run explicitly` :
+			blockedNativeTasks.length ? `Native gates parked for ${blockedNativeTasks.join(", ")}; resolve their same-Host recovery and enter drive explicitly` :
 			"No dependency-ready required task remains; report concrete blocked predecessors" };
 }
 

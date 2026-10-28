@@ -103,8 +103,8 @@ const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extensi
 const RUN_ENTRY_SESSION = { getSessionId: () => "enrollment-confirmation-relocation-tests" };
 
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
-	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
-	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: cwdOverride ?? root });
+	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
+	recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: cwdOverride ?? root });
 	return {
 		mode,
 		sessionManager: RUN_ENTRY_SESSION,

@@ -11,7 +11,7 @@ describe("auto advisory benchmark contract", () => {
 	it("requires advisory budget metrics in both benchmark fixtures", () => {
 		for (const path of [
 			"fixtures/immune-brain-benchmark.json",
-			"fixtures/imm-brainstorm-behavior-benchmark.json",
+			"fixtures/clarify-behavior-benchmark.json",
 		]) {
 			const fixture = readJson(path);
 			expect(fixture.metrics.required).toContain("advisory_metrics");

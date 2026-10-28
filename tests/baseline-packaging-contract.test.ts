@@ -10,7 +10,7 @@ const BASELINE_SKILLS_REL = "plugins/immune-brain/skills/BASELINE.md"
 const BASELINE_SKILLS = resolve(REPO_ROOT, BASELINE_SKILLS_REL)
 const BASELINE_DIST = resolve(REPO_ROOT, "plugins/immune-brain/dist/BASELINE.md")
 const DIST_DIR = resolve(REPO_ROOT, "plugins/immune-brain/dist")
-const PLANNER = resolve(DIST_DIR, "imm-planner.md")
+const PLANNER = resolve(DIST_DIR, "draw-up.md")
 
 function read(abs: string): string {
   return readFileSync(abs, "utf-8")
@@ -45,7 +45,7 @@ describe("immune-brain BASELINE packaging contract", () => {
   // Spec run-entry-decision-hosting D9, D10; ADR 0025.
   it("states the run-entry retry rules, the kept native gates and the remaining user stops", () => {
     const baseline = read(BASELINE_ROOT).replace(/\s+/g, " ")
-    expect(baseline).toContain("a literal-user `imm-run` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate")
+    expect(baseline).toContain("a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate")
     expect(baseline).toContain("only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry")
     expect(baseline).toContain("`plan_changed`, `head_moved` and a claim conflict are never retried")
     expect(baseline).toContain("commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest")
@@ -60,7 +60,7 @@ describe("immune-brain BASELINE packaging contract", () => {
     expect(baseline).toContain("new Managed workflow starts only from explicit")
     const activation = baseline.replace(/\s+/g, " ")
     expect(activation).toContain("the user's request for that planning or clarification, by slash command or in natural language, is such an entry")
-    expect(activation).toContain("`imm-run` starts only from a literal-user entry")
+    expect(activation).toContain("`drive` starts only from a literal-user entry")
     expect(baseline).toContain("This path creates no Spec, Plan, TaskIntent, TaskRecord, State Ledger")
     expect(baseline).toContain("Planner output is a candidate for later literal-user")
     expect(baseline).toContain("Do not create or mutate workflow state while")
@@ -160,7 +160,7 @@ describe("immune-brain BASELINE packaging contract", () => {
   })
 
   it("keeps Kernel risk obligations in the canonical Loop contract", () => {
-    const loop = read(resolve(DIST_DIR, "imm-run.md"))
+    const loop = read(resolve(DIST_DIR, "drive.md"))
     expect(loop).toContain("Fresh QA suffices for routine work")
     expect(loop).toContain("material and critical work additionally require fresh independent Review")
     expect(loop).toContain("submit_review")

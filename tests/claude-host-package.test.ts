@@ -306,7 +306,7 @@ describe("claude host package", () => {
       "plugins/immune-brain/.claude-plugin/plugin.json",
       "plugins/immune-brain/.mcp.json",
       "plugins/immune-brain/runtime/claude/mcp_server.ts",
-      "plugins/immune-brain/skills/imm-run/SKILL.md",
+      "plugins/immune-brain/skills/drive/SKILL.md",
     ]) expect(files).toContain(required);
     expect(files.some((path: string) => path.startsWith("tests/"))).toBe(false);
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
@@ -523,12 +523,13 @@ describe("claude host package", () => {
   });
 
   it("does not fork the public Skill contracts", () => {
-    // `imm-run-batch.md` is the batch, Lane and Herdr half of the imm-run
-    // contract, loaded by anchor from the imm-run Skill; it is not a Skill.
-    const companions = ["imm-run-batch.md"];
-    const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.startsWith("imm-") && name.endsWith(".md"));
+    // `drive-batch.md` is the batch, Lane and Herdr half of the drive
+    // contract, loaded by anchor from the drive Skill; it is not a Skill.
+    const companions = ["drive-batch.md"];
+    // BASELINE.md is the shared guard document every Skill loads; it is not a Skill.
+    const dist = readdirSync(resolve(PLUGIN_ROOT, "dist")).filter((name) => name.endsWith(".md") && name !== "BASELINE.md");
     expect(dist.sort()).toEqual([...SKILLS.map((name) => `${name}.md`), ...companions].sort());
-    const runSkill = readFileSync(resolve(PLUGIN_ROOT, "skills/imm-run/SKILL.md"), "utf8");
+    const runSkill = readFileSync(resolve(PLUGIN_ROOT, "skills/drive/SKILL.md"), "utf8");
     for (const name of companions) expect(runSkill).toContain(`dist/${name}`);
   });
 });

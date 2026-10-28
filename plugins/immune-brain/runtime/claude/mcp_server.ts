@@ -38,8 +38,8 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
-	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user imm-run entry.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user drive entry.", privileged: true },
+	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
@@ -185,13 +185,13 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		if (!options.consumePhaseAdmission && !correlated)
 			throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
 		const grant = consumeAdmission(toolCallId, operation);
-		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
 		hookSessionId = correlated ?? hookSessionId;
 		if (grant === true || !grant.entry_token) return undefined;
 		let current: string | null = null;
 		try { current = realpathSync(workspace); } catch { /* an unresolvable workspace refuses */ }
 		if (!current || grant.workspace !== current)
-			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one imm-run was entered in`);
+			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
 		return grant.entry_token;
 	};
 	const refuseSuppliedAuthority = (args: Record<string, unknown>) => {
@@ -524,7 +524,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 				: null,
 			"Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
 			"A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
-			"After retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative.",
+			"After retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative.",
 		].filter(Boolean);
 		return {
 			mode: "form",

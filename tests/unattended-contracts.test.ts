@@ -23,9 +23,9 @@ function read(rel: string): string {
 	return readFileSync(resolve(REPO_ROOT, rel), "utf8");
 }
 
-const LOOP_CONTRACT = read("plugins/immune-brain/dist/imm-run.md");
-const BATCH_CONTRACT = read("plugins/immune-brain/dist/imm-run-batch.md");
-const LOOP_LOADER = read("plugins/immune-brain/skills/imm-run/SKILL.md");
+const LOOP_CONTRACT = read("plugins/immune-brain/dist/drive.md");
+const BATCH_CONTRACT = read("plugins/immune-brain/dist/drive-batch.md");
+const LOOP_LOADER = read("plugins/immune-brain/skills/drive/SKILL.md");
 const CONSTITUTION = read("IMMUNE.md");
 const CONTEXT = read("CONTEXT.md");
 const ADR = read("docs/adr/0005-unattended-initiative-batch-run.md");
@@ -256,7 +256,7 @@ describe("unattended batch contract text", () => {
 		expect(optIn).toContain(BATCH_TOOL);
 		expect(optIn).toContain("`initiative_slug`");
 		// The loader must route to the section, or the contract is unreachable.
-		expect(LOOP_LOADER).toContain("dist/imm-run-batch.md#unattended-batch-opt-in");
+		expect(LOOP_LOADER).toContain("dist/drive-batch.md#unattended-batch-opt-in");
 
 		// The opt-in tool and its single parameter are shipped facts, not prose.
 		const claudeServer = read("plugins/immune-brain/runtime/claude/mcp_server.ts");
@@ -373,12 +373,12 @@ describe("unattended batch contract text", () => {
 		expect(adr).toContain("Only in-scope content is compared");
 	});
 
-	it("keeps default imm-run behavior byte-identical when the batch tool is not invoked", () => {
+	it("keeps default drive behavior byte-identical when the batch tool is not invoked", () => {
 		// The opt-in path is a Tool registration; the loop contract's execution
 		// sequence must not make a batch step mandatory or implicit.
 		for (const contract of [LOOP_CONTRACT, BATCH_CONTRACT]) {
 			expect(contract).not.toContain("start_unattended_batch` automatically");
-			expect(contract).not.toMatch(/imm-run must start a batch|先调用 start_unattended_batch/i);
+			expect(contract).not.toMatch(/drive must start a batch|先调用 start_unattended_batch/i);
 		}
 
 		// The shipped entry requires a literal-user confirmation; a non-interactive

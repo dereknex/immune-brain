@@ -21,11 +21,11 @@ const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const flat = (text: string) => text.replace(/\s+/g, " ");
 
-const BRAINSTORM = read("plugins/immune-brain/dist/imm-brainstorm.md");
-const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
-const COMPACT_BRAINSTORM = read("plugins/immune-brain/skills/imm-brainstorm/SKILL.md");
-const COMPACT_PLANNER = read("plugins/immune-brain/skills/imm-planner/SKILL.md");
-const BENCHMARK_PATH = "tests/fixtures/imm-brainstorm-behavior-benchmark.json";
+const BRAINSTORM = read("plugins/immune-brain/dist/clarify.md");
+const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
+const COMPACT_BRAINSTORM = read("plugins/immune-brain/skills/clarify/SKILL.md");
+const COMPACT_PLANNER = read("plugins/immune-brain/skills/draw-up/SKILL.md");
+const BENCHMARK_PATH = "tests/fixtures/clarify-behavior-benchmark.json";
 const BENCHMARK_TEXT = read(BENCHMARK_PATH);
 const BENCHMARK = JSON.parse(BENCHMARK_TEXT);
 
@@ -170,7 +170,7 @@ describe("S1 relevant traversal and conserved handoff", () => {
 		expect(contract).toContain("the source does not have to be a `BR-DEC` item");
 		expect(contract).toContain("Direct Planner entry and delegated technical choices stay legitimate sources");
 		expect(contract).toContain(
-			"**Planning Bootstrap**: When no upstream `imm-brainstorm` manifest exists, preserve Direct Planner entry",
+			"**Planning Bootstrap**: When no upstream `clarify` manifest exists, preserve Direct Planner entry",
 		);
 		expect(contract).toContain(
 			"Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table",
@@ -178,8 +178,8 @@ describe("S1 relevant traversal and conserved handoff", () => {
 	});
 
 	test("both section-route loaders carry the closure and conservation constraints", () => {
-		for (const loader of [COMPACT_BRAINSTORM, COMPACT_PLANNER]) {
-			expect(loader).toContain("../../dist/imm-");
+		for (const [loader, skill] of [[COMPACT_BRAINSTORM, "clarify"], [COMPACT_PLANNER, "draw-up"]] as const) {
+			expect(loader).toContain(`../../dist/${skill}.md`);
 			expect(loader).not.toMatch(/^## /m);
 		}
 		expect(flat(COMPACT_BRAINSTORM)).toContain(

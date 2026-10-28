@@ -37,7 +37,7 @@ import {
 	writeNativeReviewEvidence,
 } from "./pi-canary-review-bundle";
 import type { InvocationToken } from "./pi-canary-invocations";
-import { readAliasFile } from "../runtime/assurance/alias_file";
+import { localSkillExists, readAliasFile } from "../runtime/assurance/alias_file";
 import { runDeterministicQa } from "../runtime/assurance/qa";
 import {
 	captureStagedIntent,
@@ -147,7 +147,7 @@ import {
 	applyPrompt,
 	NO_PHASE_ENTRY,
 	recognizePhaseEntry,
-	type AliasReader,
+	type LocalNames,
 	type PhaseAdmission,
 	type PhaseEntryState,
 } from "../runtime/assurance/phase_entry";
@@ -328,15 +328,18 @@ function piSessionId(ctx: PhaseEntryContext): string {
 	}
 }
 
-/** Prompt templates in the order Pi resolves them: the user's, then the project's. */
-function piAliasReader(cwd: string): AliasReader {
-	const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
-	return (name) => {
-		for (const dir of [join(agentDir, "prompts"), join(cwd, ".pi", "prompts")]) {
-			const body = readAliasFile(join(dir, `${name}.md`));
-			if (body !== null) return body;
-		}
-		return null;
+/** Prompt templates and skills in the order Pi resolves them: the user's, then the project's. */
+function piLocalNames(cwd: string): LocalNames {
+	const roots = [process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), join(cwd, ".pi")];
+	return {
+		alias: (name) => {
+			for (const root of roots) {
+				const body = readAliasFile(join(root, "prompts", `${name}.md`));
+				if (body !== null) return body;
+			}
+			return null;
+		},
+		skill: (name) => roots.some((root) => localSkillExists(join(root, "skills"), name)),
 	};
 }
 
@@ -356,7 +359,7 @@ export function recordPiPhaseInput(event: { text?: unknown; source?: unknown }, 
 	if (!sessionId) return;
 	const entries = piPhaseEntries();
 	const text = typeof event.text === "string" ? event.text : "";
-	const entry = recognizePhaseEntry(text, piAliasReader(ctx?.cwd ?? process.cwd()));
+	const entry = recognizePhaseEntry(text, piLocalNames(ctx?.cwd ?? process.cwd()), "pi");
 	const workspace = entry === "run" ? piWorkspace(ctx?.cwd) : null;
 	entries.set(sessionId, applyPrompt(entries.get(sessionId) ?? NO_PHASE_ENTRY, entry, workspace ? { token: randomUUID(), workspace } : undefined));
 }
@@ -456,7 +459,7 @@ export default function (
 
 	// Validate dispatch before the receipt observer records an Agent call.
 	const continuation = registerPiRunContinuation(pi, {
-		entry: (text, root) => recognizePhaseEntry(text, piAliasReader(root)),
+		entry: (text, root) => recognizePhaseEntry(text, piLocalNames(root), "pi"),
 		revokeEntry: revokePiPhaseEntry,
 	});
 	pi.registerCommand("imm-tasks", {

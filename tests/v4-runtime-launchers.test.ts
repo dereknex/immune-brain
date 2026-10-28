@@ -10,7 +10,7 @@ const LEGACY_RUNTIME = resolve(
 );
 const PACKAGED_FALLBACK = resolve(
 	REPO_ROOT,
-	"plugins/immune-brain/dist/imm-planner.md",
+	"plugins/immune-brain/dist/draw-up.md",
 );
 
 function runMise(task: string): { stdout: string; stderr: string } {

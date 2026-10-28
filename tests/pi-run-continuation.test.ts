@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
-import { recognizePhaseEntry } from "../plugins/immune-brain/runtime/assurance/phase_entry";
+import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 function fixture() {
@@ -31,10 +31,10 @@ function fixture() {
 	// The sessions whose entry token the boundary ended (ADR 0025).
 	const revoked: string[] = [];
 	registerPiRunContinuation({ on: (event: string, callback: Function) => handlers.set(event, callback) } as any,
-		{ entry: (text) => recognizePhaseEntry(text, () => null), revokeEntry: (sessionId) => revoked.push(sessionId) });
+		{ entry: (text) => recognizePhaseEntry(text, NO_LOCAL_NAMES, "pi"), revokeEntry: (sessionId) => revoked.push(sessionId) });
 	const emit = (name: string, event: unknown) => handlers.get(name)?.(event, ctx);
 	const enter = async () => {
-		await emit("input", { text: "/imm-run", source: "interactive" });
+		await emit("input", { text: "/drive", source: "interactive" });
 		await emit("tool_call", { toolName: "imm_kernel_canary", toolCallId: "status-1", input: { task_id: "slice-a", action: { op: "status" } } });
 		await emit("tool_result", { toolName: "imm_kernel_canary", toolCallId: "status-1", isError: false, details: {} });
 	};
@@ -57,7 +57,7 @@ describe("Pi run continuation boundary", () => {
 			await result("submit_review", { state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" }, "submit-1");
 			await result("advance_assurance", { state: "review_ready", agent_params: { prompt: "second prompt" } }, "advance-2");
 			expect(await agent("second prompt", "review-2")).toBeUndefined();
-			await result("submit_review", { state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter imm-run" }, "submit-2");
+			await result("submit_review", { state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter drive" }, "submit-2");
 			expect(await h.settle()).toMatchObject({ entries: [{ customType: "immune-brain-run-paused" }] });
 			expect(h.revoked).toEqual(["session-a"]);
 			expect(await h.settle()).toBeUndefined();
@@ -85,7 +85,7 @@ describe("Pi run continuation boundary", () => {
 		} finally { h.dispose(); }
 	});
 
-	test.each(["取消任务", "/imm-planner", "/imm-brainstorm"])("%s releases continuation without mutating authority", async (prompt) => {
+	test.each(["取消任务", "/draw-up", "/clarify"])("%s releases continuation without mutating authority", async (prompt) => {
 		const h = fixture(); try {
 			await h.enter(); await h.emit("input", { text: prompt, source: "interactive" });
 			expect(await h.settle()).toBeUndefined();

@@ -64,7 +64,7 @@ These generated paid-run artifacts stay inside the repository working directory
 but are ignored by Git.
 
 Focused Brainstorm prompt migrations use
-`tests/fixtures/imm-brainstorm-behavior-benchmark.json` instead of adding
+`tests/fixtures/clarify-behavior-benchmark.json` instead of adding
 narrowing-only cases to the five-route baseline. Run all scenarios through one
 parallel Pi `Agent` batch with the model and isolation contract declared in the
 config. Compare dependent-question count, independent-probe budget, conditional

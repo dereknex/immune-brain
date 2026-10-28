@@ -1,7 +1,7 @@
 // Pi phase entry gate (ADR 0019, Spec explicit-phase-entry T3). The registered
 // `input` handler records literal entries; `imm_canary_enrollment` and
 // `start_unattended_batch` refuse before the authority dialog without a live
-// imm-run entry. Every case drives the registered handler and Tool `execute`.
+// drive entry. Every case drives the registered handler and Tool `execute`.
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { execFileSync } from "node:child_process";
@@ -54,13 +54,15 @@ beforeAll(() => {
 	previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	agentDir = mkdtempSync(join(tmpdir(), "pi-phase-entry-agent-"));
 	mkdirSync(join(agentDir, "prompts"), { recursive: true });
-	writeFileSync(join(agentDir, "prompts", "loop.md"), "---\ndescription: run (imm-loop)\n---\n/skill:imm-loop ${@:-resume}\n");
-	writeFileSync(join(agentDir, "prompts", "planner.md"), "---\ndescription: plan\n---\n/skill:imm-planner $@\n");
-	writeFileSync(join(agentDir, "prompts", "both.md"), "Use imm-planner, then imm-run.\n");
+	writeFileSync(join(agentDir, "prompts", "loop.md"), "---\ndescription: run\n---\n/skill:drive ${@:-resume}\n");
+	writeFileSync(join(agentDir, "prompts", "planner.md"), "---\ndescription: plan\n---\n/skill:draw-up $@\n");
+	writeFileSync(join(agentDir, "prompts", "both.md"), "Use /skill:draw-up, then /skill:drive.\n");
+	writeFileSync(join(agentDir, "prompts", "old.md"), "---\ndescription: retired\n---\n/skill:imm-loop ${@:-resume}\n");
+	writeFileSync(join(agentDir, "prompts", "prose.md"), "drive the build to green.\n");
 	// Symlinked templates: one whose target is over the alias bound, one within it.
-	writeFileSync(join(agentDir, "big-target.md"), `/skill:imm-run $@\n${"x".repeat(64 * 1024)}`);
+	writeFileSync(join(agentDir, "big-target.md"), `/skill:drive $@\n${"x".repeat(64 * 1024)}`);
 	symlinkSync(join(agentDir, "big-target.md"), join(agentDir, "prompts", "big.md"));
-	writeFileSync(join(agentDir, "small-target.md"), "/skill:imm-run $@\n");
+	writeFileSync(join(agentDir, "small-target.md"), "/skill:drive $@\n");
 	symlinkSync(join(agentDir, "small-target.md"), join(agentDir, "prompts", "linked.md"));
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 });
@@ -219,13 +221,13 @@ const REFUSED = {
 };
 
 describe("Pi phase entry gate", () => {
-	test("a session with no imm-run entry refuses both tools before the dialog and writes nothing", async () => {
+	test("a session with no drive entry refuses both tools before the dialog and writes nothing", async () => {
 		const root = fixtureRoot();
 		const pi = session(root);
 		const head = git(root, "rev-parse", "HEAD");
 
-		expect(await pi.enroll()).toMatchObject({ ...REFUSED, message: "enroll needs a literal-user imm-run entry in this session" });
-		expect(await pi.batch()).toMatchObject({ ...REFUSED, message: "start_unattended_batch needs a literal-user imm-run entry in this session" });
+		expect(await pi.enroll()).toMatchObject({ ...REFUSED, message: "enroll needs a literal-user drive entry in this session" });
+		expect(await pi.batch()).toMatchObject({ ...REFUSED, message: "start_unattended_batch needs a literal-user drive entry in this session" });
 
 		expect(pi.dialogs.count).toBe(0);
 		expect(readBackendClaim(root)).toBeNull();
@@ -233,14 +235,34 @@ describe("Pi phase entry gate", () => {
 		expect(git(root, "status", "--porcelain", "--", "docs")).toBe("");
 	});
 
-	test("confirming a design, or mentioning imm-run mid-sentence, is not an entry", async () => {
+	test("confirming a design, or mentioning drive mid-sentence, is not an entry", async () => {
 		const pi = session(fixtureRoot());
-		for (const text of ["确认", "confirm", "全部建议，然后 /skill:imm-run", "go ahead and run imm-run for S1", " /skill:imm-run", "/unknown-command", "/both"]) {
+		for (const text of ["确认", "confirm", "全部建议，然后 /skill:drive", "go ahead and run drive for S1", " /skill:drive", "/unknown-command", "/both",
+			"/imm-run", "/skill:imm-run", "/imm-loop", "/old", "/prose", "/driver"]) {
 			await pi.input(text);
 			expect(await pi.enroll()).toMatchObject(REFUSED);
 			expect(await pi.batch()).toMatchObject(REFUSED);
 		}
 		expect(pi.dialogs.count).toBe(0);
+	});
+
+	test("a same-named user or project skill blocks both /drive and /skill:drive (ADR 0031)", async () => {
+		for (const where of ["user", "project"] as const) {
+			const root = fixtureRoot();
+			const skillDir = where === "user" ? join(agentDir, "skills", "drive") : join(root, ".pi", "skills", "drive");
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(join(skillDir, "SKILL.md"), "---\nname: drive\n---\nThe user's own skill.\n");
+			try {
+				const pi = session(root);
+				for (const text of ["/drive", "/skill:drive"]) {
+					await pi.input(text);
+					expect(await pi.enroll()).toMatchObject(REFUSED);
+				}
+				expect(pi.dialogs.count).toBe(0);
+			} finally {
+				rmSync(skillDir, { recursive: true, force: true });
+			}
+		}
 	});
 
 	test("a symlinked template is bounded by its target, not by the link", async () => {
@@ -255,13 +277,13 @@ describe("Pi phase entry gate", () => {
 
 	test("an entry carried by extension-sourced input is not the user's", async () => {
 		const pi = session(fixtureRoot());
-		expect(await pi.input("/skill:imm-run", "extension")).toEqual({ action: "continue" });
+		expect(await pi.input("/skill:drive", "extension")).toEqual({ action: "continue" });
 		expect(await pi.enroll()).toMatchObject(REFUSED);
 		expect(await pi.batch()).toMatchObject(REFUSED);
 		expect(pi.dialogs.count).toBe(0);
 	});
 
-	for (const entry of ["/skill:imm-run", `/skill:imm-run ${TASK}`, "/imm-run", "/loop", `/loop ${TASK}`]) {
+	for (const entry of ["/skill:drive", `/skill:drive ${TASK}`, "/drive", "/loop", `/loop ${TASK}`]) {
 		test(`the literal entry ${JSON.stringify(entry)} lets Enrollment reach its dialog`, async () => {
 			const pi = session(fixtureRoot());
 			expect(await pi.input(entry)).toEqual({ action: "continue" });
@@ -273,7 +295,7 @@ describe("Pi phase entry gate", () => {
 
 	test("a literal entry lets the batch start reach its dialog", async () => {
 		const pi = session(fixtureRoot());
-		await pi.input("/skill:imm-run");
+		await pi.input("/skill:drive");
 		const failure = await pi.batch();
 		expect(pi.dialogs.count).toBe(1);
 		expect(failure.code).not.toBe(RUN_ENTRY_REQUIRED);
@@ -281,23 +303,23 @@ describe("Pi phase entry gate", () => {
 
 	test("a run entry stays live across later ordinary prompts in the session", async () => {
 		const pi = session(fixtureRoot());
-		await pi.input("/skill:imm-run");
+		await pi.input("/skill:drive");
 		await pi.input("continue S2");
 		await pi.input("继续");
 		await pi.enroll();
 		expect(pi.dialogs.count).toBe(1);
 	});
 
-	for (const plan of ["/skill:imm-planner", "/skill:imm-brainstorm topic", "/planner"]) {
-		test(`a later plan entry ${JSON.stringify(plan)} revokes the run entry until imm-run is entered again`, async () => {
+	for (const plan of ["/skill:draw-up", "/skill:clarify topic", "/planner"]) {
+		test(`a later plan entry ${JSON.stringify(plan)} revokes the run entry until drive is entered again`, async () => {
 			const pi = session(fixtureRoot());
-			await pi.input("/skill:imm-run");
+			await pi.input("/skill:drive");
 			await pi.input(plan);
 			expect(await pi.enroll()).toMatchObject(REFUSED);
 			expect(await pi.batch()).toMatchObject(REFUSED);
 			expect(pi.dialogs.count).toBe(0);
 
-			await pi.input("/skill:imm-run");
+			await pi.input("/skill:drive");
 			await pi.enroll();
 			expect(pi.dialogs.count).toBe(1);
 		});
@@ -306,7 +328,7 @@ describe("Pi phase entry gate", () => {
 	test("an entry belongs to its session: another session and a session without identity both refuse", async () => {
 		const root = fixtureRoot();
 		const entered = session(root);
-		await entered.input("/skill:imm-run");
+		await entered.input("/skill:drive");
 
 		const other = session(root);
 		expect(await other.enroll()).toMatchObject(REFUSED);
@@ -315,7 +337,7 @@ describe("Pi phase entry gate", () => {
 
 		for (const identity of [null, {}, { getSessionId: () => "" }, { getSessionId: () => { throw new Error("no session"); } }]) {
 			const anonymous = session(root, identity as never);
-			await anonymous.input("/skill:imm-run");
+			await anonymous.input("/skill:drive");
 			expect(await anonymous.enroll()).toMatchObject(REFUSED);
 			expect(await anonymous.batch()).toMatchObject(REFUSED);
 			expect(anonymous.dialogs.count).toBe(0);
@@ -329,13 +351,13 @@ describe("Pi phase entry gate", () => {
 		const root = fixtureRoot();
 		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toMatchObject({ reason_code: RUN_ENTRY_REQUIRED });
 		const pi = session(root, identity);
-		await pi.input("/skill:imm-run");
+		await pi.input("/skill:drive");
 		expect(copy.piRunEntryRefusal("enroll", { cwd: root, sessionManager: identity })).toBeNull();
 	});
 	test("under a literal entry, enroll and batch start each open one dialog, a decline claims nothing, and retirement opens none (ADR 0025)", async () => {
 		const root = fixtureRoot();
 		const pi = session(root);
-		await pi.input("/skill:imm-run");
+		await pi.input("/skill:drive");
 
 		await pi.enroll();
 		expect(pi.dialogs.count).toBe(1);
@@ -357,37 +379,37 @@ describe("Pi phase entry gate", () => {
 	test("without a live entry token retirement refuses before any dialog and writes nothing", async () => {
 		const cases: Array<[string, (root: string) => Promise<ReturnType<typeof session>>]> = [
 			["no prior entry", async (root) => session(root)],
-			["only extension-sourced input naming imm-run", async (root) => {
+			["only extension-sourced input naming drive", async (root) => {
 				const pi = session(root);
-				await pi.input("/skill:imm-run", "extension");
+				await pi.input("/skill:drive", "extension");
 				return pi;
 			}],
 			["another session's entry", async (root) => {
-				await session(root).input("/skill:imm-run");
+				await session(root).input("/skill:drive");
 				return session(root);
 			}],
 			["an entry ended by session shutdown", async (root) => {
 				const pi = session(root);
-				await pi.input("/skill:imm-run");
+				await pi.input("/skill:drive");
 				await pi.shutdown();
 				return pi;
 			}],
 			["an entry made in another workspace", async (root) => {
 				const identity = stableIdentity();
-				await session(fixtureRoot(), identity).input("/skill:imm-run");
+				await session(fixtureRoot(), identity).input("/skill:drive");
 				return session(root, identity);
 			}],
 			["an entry ended by a run pause", async (root) => {
 				const identity = stableIdentity();
 				const pi = session(root, identity);
-				await pi.input("/skill:imm-run");
+				await pi.input("/skill:drive");
 				// The continuation boundary's pause port (pi-run-continuation revokeEntry).
 				revokePiPhaseEntry(identity.getSessionId());
 				return pi;
 			}],
 			["an entry ended by a user interrupt (AC4)", async (root) => {
 				const pi = session(root);
-				await pi.input("/skill:imm-run");
+				await pi.input("/skill:drive");
 				await pi.settle("aborted", false);
 				return pi;
 			}],
@@ -397,7 +419,7 @@ describe("Pi phase entry gate", () => {
 			const batch = staleBatch(root);
 			const before = batch.bytes();
 			const pi = await make(root);
-			expect({ name, failure: await pi.retire() }).toMatchObject({ name, failure: { ...REFUSED, message: "retire_stale_batch needs a literal-user imm-run entry in this session" } });
+			expect({ name, failure: await pi.retire() }).toMatchObject({ name, failure: { ...REFUSED, message: "retire_stale_batch needs a literal-user drive entry in this session" } });
 			expect({ name, dialogs: pi.dialogs.count }).toEqual({ name, dialogs: 0 });
 			expect(batch.bytes().equals(before)).toBe(true);
 			expect(batch.report()).toBeNull();
@@ -406,7 +428,7 @@ describe("Pi phase entry gate", () => {
 	test("a live entry token does not stand in for a rework-exit choice: its dialog still opens", async () => {
 		const root = fixtureRoot();
 		const pi = session(root);
-		await pi.input("/skill:imm-run");
+		await pi.input("/skill:drive");
 		pi.dialogs.answers.push("confirm");
 		await pi.enroll();
 		expect(readBackendClaim(root)?.task_id).toBe(TASK);

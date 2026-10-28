@@ -105,7 +105,7 @@ describe("stale-reference ratchet", () => {
 
     // Verify that without placeholder filtering the count would be higher (ratchet is tight)
     // This ensures gate is not loose: placeholder filtering keeps count low
-    expect(totalCount).toBeLessThan(1000) // was 2059 before filtering, now 846
+    expect(totalCount).toBeLessThan(1500) // was 2059 before filtering at 846; the #318 rename raised filtered history to 1152
     expect(activeCount).toBeLessThan(200) // was ~471 before filtering, now 138
   })
 })

@@ -24,7 +24,7 @@ const ROOT = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const flat = (text: string) => text.replace(/\s+/g, " ");
 
-const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
+const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
 const QA = read("plugins/immune-brain/runtime/prompts/qa.md");
 const QA_MIRROR = read("plugins/immune-brain/dist/role-prompts/qa.md");
 const REVIEW = read("plugins/immune-brain/runtime/prompts/code-review.md");

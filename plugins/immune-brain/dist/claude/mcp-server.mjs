@@ -14455,7 +14455,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     proof,
     parent,
     native,
-    next_action: action === "drive" ? `Drive active task ${taskId} from Kernel status` : ready ? `Invoke native single-task Enrollment for ${ready.task_id}; no ordinary BatchAuthorization is needed` : originalDelivered ? "Run recorded Parent final verification; diagnose failure and prepare a stable original-goal repair candidate before its fresh native Enrollment" : blockedNativeTasks.length ? `Native gates parked for ${blockedNativeTasks.join(", ")}; resolve their same-Host recovery and enter imm-run explicitly` : "No dependency-ready required task remains; report concrete blocked predecessors"
+    next_action: action === "drive" ? `Drive active task ${taskId} from Kernel status` : ready ? `Invoke native single-task Enrollment for ${ready.task_id}; no ordinary BatchAuthorization is needed` : originalDelivered ? "Run recorded Parent final verification; diagnose failure and prepare a stable original-goal repair candidate before its fresh native Enrollment" : blockedNativeTasks.length ? `Native gates parked for ${blockedNativeTasks.join(", ")}; resolve their same-Host recovery and enter drive explicitly` : "No dependency-ready required task remains; report concrete blocked predecessors"
   };
 }
 async function advanceNativeParent(root, initiativeSlug, commands, readInitiative, tracker, gate) {
@@ -15523,7 +15523,7 @@ init_batch_preflight();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync18, readdirSync as readdirSync10, realpathSync as realpathSync20 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join32 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -15573,22 +15573,22 @@ import { createHash as createHash22, randomUUID as randomUUID9 } from "node:cryp
 var RUN_ENTRY_REQUIRED = "run_entry_required";
 var PHASE_ENTRY_REQUIRED = "phase_entry_required";
 var PHASE_ENTRY_RECOVERY = {
-  [RUN_ENTRY_REQUIRED]: "ask the user to enter imm-run in the current Host",
+  [RUN_ENTRY_REQUIRED]: "ask the user to enter /drive (or /immune-brain:drive on Claude Code) in the current Host",
   [PHASE_ENTRY_REQUIRED]: "ask the user to enter the Skill themselves in the current Host"
 };
 var PACKAGED = {
-  "imm-planner": "plan",
-  "imm-brainstorm": "plan",
-  "imm-run": "run"
+  "draw-up": "plan",
+  clarify: "plan",
+  drive: "run"
 };
-var ALIAS_TARGETS = { ...PACKAGED, "imm-loop": "run" };
-var PREFIXES = ["immune-brain:", "skill:"];
+var PLUGIN_PREFIX = "immune-brain:";
+var SKILL_PREFIX = "skill:";
 var ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-var SKILL_MENTION = /(?<![A-Za-z0-9_-])imm-(?:planner|brainstorm|run|loop)(?![A-Za-z0-9_-])/g;
+var SKILL_MENTION = /(?<![A-Za-z0-9_-])(?:\/(?:immune-brain:|skill:)?|immune-brain:|skill:)(draw-up|clarify|drive)(?![A-Za-z0-9_-])/g;
 var EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
 var RAW = /^\/(\S+)/;
 function stripPrefix(name) {
-  for (const prefix of PREFIXES)
+  for (const prefix of [PLUGIN_PREFIX, SKILL_PREFIX])
     if (name.startsWith(prefix))
       return name.slice(prefix.length);
   return name;
@@ -15598,27 +15598,45 @@ function packagedPhaseSkill(name) {
   const bare = stripPrefix(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
   return Object.hasOwn(PACKAGED, bare) ? bare : null;
 }
-function recognizePhaseEntry(text, readAlias) {
+function packaged(name) {
+  return Object.hasOwn(PACKAGED, name) ? PACKAGED[name] : null;
+}
+function localSkill(names, name) {
+  try {
+    return names.skill(name);
+  } catch {
+    return true;
+  }
+}
+function aliasEntry(body) {
+  const targets = new Set([...body.matchAll(SKILL_MENTION)].map((match) => match[1]));
+  if (targets.size !== 1)
+    return null;
+  return PACKAGED[[...targets][0]];
+}
+function recognizePhaseEntry(text, names, host) {
   const command = (RAW.exec(text) ?? EXPANDED.exec(text))?.[1];
   if (!command)
     return null;
-  const packaged = packagedPhaseSkill(command);
-  if (packaged)
-    return PACKAGED[packaged];
+  if (command.startsWith(PLUGIN_PREFIX))
+    return packaged(command.slice(PLUGIN_PREFIX.length));
+  if (command.startsWith(SKILL_PREFIX)) {
+    const name = command.slice(SKILL_PREFIX.length);
+    const entry = packaged(name);
+    return entry && host === "pi" && localSkill(names, name) ? null : entry;
+  }
   if (!ALIAS_NAME.test(command))
     return null;
   let body;
   try {
-    body = readAlias(command);
+    body = names.alias(command);
   } catch {
     return null;
   }
-  if (!body)
-    return null;
-  const targets = new Set(body.match(SKILL_MENTION) ?? []);
-  if (targets.size !== 1)
-    return null;
-  return ALIAS_TARGETS[[...targets][0]] ?? null;
+  if (body !== null && body !== undefined)
+    return aliasEntry(body);
+  const entry = packaged(command);
+  return entry && !localSkill(names, command) ? entry : null;
 }
 var NO_PHASE_ENTRY = { run_live: false, token: null, workspace: null };
 function applyPrompt(state, entry, mint) {
@@ -15675,13 +15693,13 @@ function admitPhaseOperation(operation, state) {
   if (operation.kind === "tool") {
     if (state?.run_live)
       return { ok: true };
-    return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
+    return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
   }
-  if (operation.skill !== "imm-run")
+  if (operation.skill !== "drive")
     return { ok: true };
   if (state?.run_live)
     return { ok: true };
-  return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
+  return refuse(PHASE_ENTRY_REQUIRED, "drive is entered by the user, not by a model Skill call");
 }
 function phaseRefusalMessage(refusal) {
   return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
@@ -16368,7 +16386,7 @@ init_lane_workspace();
 import { lstatSync as lstatSync17, realpathSync as realpathSync17, rmSync as rmSync10 } from "node:fs";
 import { randomUUID as randomUUID10 } from "node:crypto";
 import { homedir, tmpdir as tmpdir6 } from "node:os";
-import { join as join25 } from "node:path";
+import { join as join26 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -16401,7 +16419,7 @@ async function activeTaskNotice(root) {
     `Immune-Brain: Managed task ${taskId} is active in this workspace (lifecycle ${lifecycle}, artifacts ${artifactState}).`,
     "Ordinary input does not resume it, and another session may be running its assurance right now.",
     `Before committing or modifying files inside its scope${shown ? ` (${shown})` : ""}, read its status and tell the user that this task is active and which obligation it is waiting on.`,
-    "Only an explicit imm-run entry continues it."
+    "Only an explicit drive entry continues it."
   ].join(" ");
 }
 
@@ -16728,27 +16746,44 @@ function decideRunContinuation(previous, observation) {
 }
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2 } from "node:fs";
+import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
+import { join as join25 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
   try {
     fd = openSync8(path, constants8.O_RDONLY | constants8.O_NONBLOCK);
-  } catch {
-    return null;
+  } catch (error) {
+    if (isAbsent(error))
+      return null;
+    throw error;
   }
   try {
     const stat = fstatSync5(fd);
-    if (!stat.isFile() || stat.size > maxBytes)
-      return null;
+    if (!stat.isFile())
+      throw new Error(`alias is not a regular file: ${path}`);
+    if (stat.size > maxBytes)
+      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
     const buf = Buffer.alloc(maxBytes + 1);
     const read = readSync2(fd, buf, 0, buf.length, 0);
-    return read > maxBytes ? null : buf.toString("utf8", 0, read);
-  } catch {
-    return null;
+    if (read > maxBytes)
+      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
+    return buf.toString("utf8", 0, read);
   } finally {
     closeSync8(fd);
   }
+}
+function localSkillExists(dir, name) {
+  try {
+    statSync6(join25(dir, name, "SKILL.md"));
+    return true;
+  } catch (error) {
+    return !isAbsent(error);
+  }
+}
+function isAbsent(error) {
+  const code = error.code;
+  return code === "ENOENT" || code === "ENOTDIR";
 }
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
@@ -16779,10 +16814,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join25(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+  return join26(cacheDir(root), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join25(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+  return join26(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -16790,14 +16825,18 @@ function sessionIdOf(payload) {
 function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
-function claudeAliasReader(cwd, home) {
-  return (name) => {
-    for (const dir of [join25(cwd, ".claude", "commands"), join25(home, ".claude", "commands")]) {
-      const body = readAliasFile(join25(dir, `${name}.md`));
-      if (body !== null)
-        return body;
-    }
-    return null;
+function claudeLocalNames(cwd, home) {
+  const roots = [join26(cwd, ".claude"), join26(home, ".claude")];
+  return {
+    alias: (name) => {
+      for (const root of roots) {
+        const body = readAliasFile(join26(root, "commands", `${name}.md`));
+        if (body !== null)
+          return body;
+      }
+      return null;
+    },
+    skill: (name) => roots.some((root) => localSkillExists(join26(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir6(), read = readPrivate) {
@@ -16851,7 +16890,7 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
   if (!sessionId)
     return false;
   const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-  const recognized = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
+  const recognized = recognizePhaseEntry(prompt, claudeLocalNames(cwdOf(payload), locations.home ?? homedir()), "claude");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
   let workspace = null;
   if (entry === "run") {
@@ -16878,7 +16917,7 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   const operation = gatedOperation(payload);
   if (!operation)
     return null;
-  if (operation.kind === "skill" && operation.skill !== "imm-run")
+  if (operation.kind === "skill" && operation.skill !== "drive")
     return null;
   const root = locations.root ?? tmpdir6();
   const sessionId = sessionIdOf(payload);
@@ -16949,7 +16988,7 @@ init_batch_git();
 init_batch_state();
 import { existsSync as existsSync14, realpathSync as realpathSync18, lstatSync as lstatSync18, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join26 } from "node:path";
+import { join as join27 } from "node:path";
 import { tmpdir as tmpdir7 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
@@ -17057,8 +17096,8 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (sessionId, root) => join26(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
-var callPath = (toolId, root) => join26(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (sessionId, root) => join27(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
+var callPath = (toolId, root) => join27(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
 function drop(path, root) {
   if (!existsSync14(path))
     return;
@@ -17221,7 +17260,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
   }
   if (event === "UserPromptSubmit") {
     const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-    const entry = recognizePhaseEntry(prompt, claudeAliasReader(workspace, homedir2()));
+    const entry = recognizePhaseEntry(prompt, claudeLocalNames(workspace, homedir2()), "claude");
     if (releasesRunBinding(prompt, entry === "plan" ? "planner" : null) || entry === "run")
       drop(statePath2(sessionId, root), root);
     return null;
@@ -17235,14 +17274,14 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
         return JSON.stringify({ hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: `Run paused: ${metadata.paused}; enter imm-run explicitly before another native gate`
+          permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate`
         } });
       const input = payload.tool_input ?? {};
       if (operation === "enroll" && metadata.state?.binding.kind === "parent" && metadata.state.binding.blocked_native_tasks?.includes(String(input.task_id)))
         return JSON.stringify({ hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter imm-run explicitly"
+          permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly"
         } });
       const correlation = {
         session_id: sessionId,
@@ -17378,7 +17417,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
     }
     if (metadata.state.binding.workspace !== workspace) {
       drop(statePath2(sessionId, root), root);
-      return warning("workspace changed; enter imm-run explicitly in this workspace");
+      return warning("workspace changed; enter drive explicitly in this workspace");
     }
     const boundary = stopBoundary(payload);
     if (!boundary)
@@ -17429,7 +17468,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
     }
     metadata.stop_blocks++;
     save(sessionId, root, metadata);
-    return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
+    return JSON.stringify({ decision: "block", reason: `Explicit drive is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
   } catch (error) {
     return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -17449,7 +17488,7 @@ init_canary_application();
 init_authority_port();
 import { existsSync as existsSync17, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
-import { join as join30 } from "node:path";
+import { join as join31 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -17975,11 +18014,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync11 } from "node:child_process";
 import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join27 } from "node:path";
+import { join as join28 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync21(join27(root, relativePath)),
+    bytes: readFileSync21(join28(root, relativePath)),
     index_state: execFileSync11("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -17987,7 +18026,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join27(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join28(root, snapshot.path), snapshot.bytes);
   execFileSync11("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -17999,7 +18038,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync21(join27(root, snapshot.path));
+  const restoredBytes = readFileSync21(join28(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -18045,7 +18084,7 @@ init_plugin_source_skew();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync15, realpathSync as realpathSync19 } from "node:fs";
-import { isAbsolute as isAbsolute9, join as join28 } from "node:path";
+import { isAbsolute as isAbsolute9, join as join29 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -18138,7 +18177,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join28(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join29(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -18567,7 +18606,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join28(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join29(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -18734,7 +18773,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync15(join28(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync15(join29(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -19316,12 +19355,12 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync16 } from "node:fs";
-import { join as join29 } from "node:path";
+import { join as join30 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
 var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
-var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
+var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
 function kernelLifecycleOf(root, taskId) {
   try {
     if (readActiveClaimTaskId(root) === taskId)
@@ -19336,7 +19375,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync16(join29(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync16(join30(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -19764,7 +19803,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync17(join30(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync17(join31(this.cwd, ".imm", "audit", taskId)))
         execFileSync12("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -19872,7 +19911,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join30(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join31(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -20007,7 +20046,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join30(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join31(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -20435,8 +20474,8 @@ var TOOLS = [
   { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user imm-run entry.", privileged: true },
-  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user imm-run entry.", privileged: true },
+  { name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user drive entry.", privileged: true },
+  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
   { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
@@ -20531,7 +20570,7 @@ function createMcpRuntime(options = {}) {
       throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
     const grant = consumeAdmission(toolCallId, operation);
     if (!grant)
-      throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user imm-run entry in this session`);
+      throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
     hookSessionId = correlated ?? hookSessionId;
     if (grant === true || !grant.entry_token)
       return;
@@ -20540,7 +20579,7 @@ function createMcpRuntime(options = {}) {
       current = realpathSync20(workspace);
     } catch {}
     if (!current || grant.workspace !== current)
-      throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one imm-run was entered in`);
+      throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
     return grant.entry_token;
   };
   const refuseSuppliedAuthority = (args) => {
@@ -20861,7 +20900,7 @@ ${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${
 `)}` : null,
       "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
       "A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
-      "After retiring, run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative."
+      "After retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative."
     ].filter(Boolean);
     return {
       mode: "form",
@@ -21247,7 +21286,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join31(cwd, ".imm", "state", "batches");
+    const batchesDir = join32(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync18(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;

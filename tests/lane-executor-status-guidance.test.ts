@@ -106,7 +106,7 @@ test("another obligation has no implementation warning", async () => {
 });
 
 test("Loop and Executor contracts tell fresh enrollments to implement first and accept Lane skew", () => {
- for (const path of ["plugins/immune-brain/dist/imm-run.md", "plugins/immune-brain/runtime/prompts/executor.md"]) {
+ for (const path of ["plugins/immune-brain/dist/drive.md", "plugins/immune-brain/runtime/prompts/executor.md"]) {
   const text = readFileSync(path, "utf8");
   expect(text).toContain("`submit_assurance` means implement first");
   expect(text).toContain("non-blocking in a Lane");

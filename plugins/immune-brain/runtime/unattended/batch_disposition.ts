@@ -42,7 +42,7 @@ import {
  * Child states the batch runner has not finished absorbing. Such a child is
  * mid-flight unless the Kernel store proves its run already ended outside the
  * batch (see `kernelLifecycleOf`): the record alone cannot tell a live run from
- * one a manual imm-run settled while the drifted batch could no longer resume.
+ * one a manual drive settled while the drifted batch could no longer resume.
  */
 const SERIAL_IN_FLIGHT: ReadonlySet<string> = new Set(["enrolled", "settled"]);
 const LANE_IN_FLIGHT: ReadonlySet<string> = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
@@ -89,7 +89,7 @@ const RETIRE_REASON_ENDED_OUTSIDE =
 	" A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
 
 const RETIRE_NEXT_ACTION =
-	"The Initiative has no active batch. Run each remaining child with imm-run under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
+	"The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
 
 /**
  * The terminal lifecycle the coordinator's Kernel store holds for a task, or
@@ -111,7 +111,7 @@ function kernelLifecycleOf(root: string, taskId: string): "done" | "stopped" | n
  * missing or unreadable store, an active claim, or a run other than the one the
  * batch observed at enrollment all read as null. Only a readable Lane store that
  * holds no run for the task defers to the coordinator store, for a child an
- * imm-run settled there; a stale coordinator run never overrides a Lane run.
+ * drive settled there; a stale coordinator run never overrides a Lane run.
  */
 function laneChildLifecycleOf(root: string, child: { task_id: string; lane?: BatchLaneBinding | null }): "done" | "stopped" | null {
 	const lane = child.lane;

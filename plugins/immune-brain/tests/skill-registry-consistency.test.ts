@@ -51,14 +51,14 @@ const registry = parseRegistry(readFileSync(REGISTRY_PATH, "utf-8"))
 describe("skill registry consistency", () => {
   it("publishes the three Managed Skills and five standalone host-native Skills", () => {
     expect(registry.map((entry) => entry.name)).toEqual([
-      "imm-brainstorm",
-      "imm-planner",
-      "imm-run",
-      "imm-pr-fix",
-      "imm-doc-prune",
-      "imm-doc-slim",
-      "imm-test-prune",
-      "imm-retro",
+      "clarify",
+      "draw-up",
+      "drive",
+      "fix-pr",
+      "prune-docs",
+      "slim",
+      "prune-tests",
+      "revisit",
     ])
   })
 

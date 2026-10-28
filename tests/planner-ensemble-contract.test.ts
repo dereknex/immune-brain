@@ -11,7 +11,7 @@ function read(rel: string): string {
 
 describe("planner ensemble contract", () => {
 	it("names the native Claude read-only dispatch route and keeps the Pi boundary as prompt text", () => {
-		const content = read("plugins/immune-brain/dist/imm-planner.md").replace(/\s+/g, " ");
+		const content = read("plugins/immune-brain/dist/draw-up.md").replace(/\s+/g, " ");
 		expect(content).toContain("On the Claude Host a read-only role is dispatched");
 		expect(content).toContain("through the `Agent` tool by its plugin agent type");
 		expect(content).toContain("immune-brain:immune-brain-advisory-reviewer");
@@ -24,7 +24,7 @@ describe("planner ensemble contract", () => {
 	});
 
 	it("keeps planner ensemble authority in the packaged contract without local model config", () => {
-		const content = read("plugins/immune-brain/dist/imm-planner.md");
+		const content = read("plugins/immune-brain/dist/draw-up.md");
 		expect(content).toContain("planner ensemble");
 		expect(content).not.toContain("workflow_models.planner_ensemble");
 		expect(content).toContain("advisory-only");
@@ -35,17 +35,17 @@ describe("planner ensemble contract", () => {
 	});
 
 	it("keeps Brainstorm ensemble authority in the packaged contract without local model config", () => {
-		const source = read("plugins/immune-brain/skills/imm-brainstorm/SKILL.md");
+		const source = read("plugins/immune-brain/skills/clarify/SKILL.md");
 		// the loader only routes; ensemble authority lives in the canonical contract
 		expect(source).toContain("Brainstorm Ensemble Advisory");
 		expect(source).not.toContain("workflow_models.brainstorm_ensemble");
 
-		const content = read("plugins/immune-brain/dist/imm-brainstorm.md");
+		const content = read("plugins/immune-brain/dist/clarify.md");
 		expect(content).toContain("Brainstorm ensemble");
 		expect(content).not.toContain("workflow_models.brainstorm_ensemble");
 		expect(content).toContain("advisory-only");
 		expect(content).toContain(
-			"Final Spec and Plan authority stays with `imm-planner`",
+			"Final Spec and Plan authority stays with `draw-up`",
 		);
 		expect(content).toContain(
 			"Pi's adapter may consume `brainstorm_ensemble` dispatch JSON",

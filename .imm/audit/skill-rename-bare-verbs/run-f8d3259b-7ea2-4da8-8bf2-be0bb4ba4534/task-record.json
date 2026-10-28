@@ -1,0 +1,406 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "skill-rename-bare-verbs",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "skill-rename-bare-verbs",
+    "goal": "Rename the eight packaged Immune-Brain skills to the bare verbs of #318 (clarify, draw-up, drive, revisit, slim, prune-docs, prune-tests, fix-pr) and make the run-entry gate on both Hosts recognize only the new names under the 2026-10-28 rules, with the current documentation surface, ADR 0031, a major changeset and CONTEXT.md mapping aligned; dated history stays unedited. Technical design: docs/specs/skill-rename-bare-verbs.spec.md.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per #318 Decisions and G-D2 (docs/specs/skill-rename-bare-verbs.spec.md D2): the run-entry gate recognizes only the new names, through the Host input hooks on both Hosts. Positive: /drive, /immune-brain:drive, /skill:drive, /clarify, /draw-up and an alias whose body contains /drive enter their phase and a run entry mints a token. Negative: /imm-run, /imm-loop, alias bodies naming imm-run or imm-loop, an alias body 'drive the build', /driver, an alias body with two distinct marked phase mentions, a same-named user or project skill for bare /drive (Claude Code and Pi) and for /skill:drive on Pi, and a throwing skill reader all enter nothing and mint no token. Bound: a same-named user command is parsed by alias rules, and /immune-brain:drive still mints on Claude Code when a same-named user skill exists. Agreed seams: tests/phase-entry.test.ts, tests/claude-phase-entry-gate.test.ts, tests/claude-phase-entry-skill-gate.test.ts, tests/pi-phase-entry-gate.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per the #318 mapping and docs/specs/skill-rename-bare-verbs.spec.md D1: the eight skills live under their new directory and dist names with matching frontmatter name, H1 'Immune-Brain: <Verb>', registry title and next_actions, and dist/drive-batch.md replaces dist/imm-run-batch.md; dist sync shows zero drift. Negative: any surviving old skill directory or old dist file, or an H1, title or next_actions entry that disagrees with the new name, fails. Agreed seams: plugins/immune-brain/tests/skill-registry-consistency.test.ts, tests/skill-registry-metadata-contract.test.ts, tests/skill-dist-consistency.test.ts, scripts/sync-dist-docs.ts --check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"for n in brainstorm planner run retro doc-slim doc-prune test-prune pr-fix; do test ! -e plugins/immune-brain/skills/imm-$n && test ! -e plugins/immune-brain/dist/imm-$n.md || exit 1; done; test ! -e plugins/immune-brain/dist/imm-run-batch.md && bun scripts/sync-dist-docs.ts --check && bun test plugins/immune-brain/tests/skill-registry-consistency.test.ts tests/skill-registry-metadata-contract.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per #318 Verification (revised) and G-D1 (docs/specs/skill-rename-bare-verbs.spec.md D4): a scan in tests/skill-dist-consistency.test.ts finds zero word-bounded old skill names (the eight old names and imm-loop) in plugins/immune-brain/** except plugins/immune-brain/tests/**, root README.md, CONTEXT.md (outside its delimited mapping table), AGENTS.md, CLAUDE.md, docs/agents/**, docs/reference/**, docs/user_manual.md and scripts/** except scripts/stale-reference-baseline.json. Negative: the scan helper reports a seeded imm-run in a sample. Bound: imm-plan, imm-kernel and imm-canary-work are not matches, and the stale-reference ratchet stays within its raised baseline. Agreed seams: tests/skill-dist-consistency.test.ts, tests/stale-reference-ratchet.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/stale-reference-ratchet.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Per repository evidence (docs/agents/derived-files.json, docs/specs/skill-rename-bare-verbs.spec.md reference closure): the checked-in Claude bundle matches a fresh generate after the runtime rename, and both Host packages load the renamed skills. Negative: a stale mcp-server.mjs or a packed Pi loader still resolving an old skill path fails. Agreed seams: scripts/build-claude-plugin.ts --check, tests/claude-host-package.test.ts, tests/pi-canary-packed-loader.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun test tests/claude-host-package.test.ts tests/pi-canary-packed-loader.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Per #318 Decisions (docs/specs/skill-rename-bare-verbs.spec.md D3, D5): docs/adr/0031-*.md records the rename and names ADR 0025 as the recognition part it amends; .changeset/skill-rename-bare-verbs.md is a major immune-brain changeset whose breaking note names /immune-brain:drive and Pi /reload; CONTEXT.md carries the delimited old-to-new mapping table; the skills guide checklist includes the local user skill or command check. Negative: a missing ADR, a non-major changeset, or a note lacking either entry form fails. Agreed seam: shell checks over those files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=$(ls docs/adr/0031-*.md) && grep -q 'ADR 0025' \\\"$f\\\" && grep -q 'drive' \\\"$f\\\" && c=.changeset/skill-rename-bare-verbs.md && grep -q '\\\"immune-brain\\\": major' $c && grep -q '/immune-brain:drive' $c && grep -q '/reload' $c && grep -q 'skill-rename-map:start' CONTEXT.md && grep -qi 'local user skill or command' docs/reference/immune-brain-skills-guide.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "Per #318 Verification (revised) (docs/specs/skill-rename-bare-verbs.spec.md D4): dated history stays unedited. Negative: any change since 5a0d9a1 to an accepted ADR, to docs/plans or docs/specs other than this intent and Spec, to docs/reports, docs/solutions, docs/brainstorms, docs/evidence, docs/archives, docs/proposals, benchmark-results or CHANGELOG.md, or a modified or deleted existing changeset fails. Bound: the new ADR 0031, this intent, this Spec and the new changeset are allowed. Agreed seam: git diff against the pinned base.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"git diff --quiet 5a0d9a1 -- docs/adr ':!docs/adr/0031-*' docs/reports docs/solutions docs/brainstorms docs/evidence docs/archives docs/proposals benchmark-results CHANGELOG.md && git diff --quiet 5a0d9a1 -- docs/plans docs/specs ':!docs/plans/skill-rename-bare-verbs.intent.json' ':!docs/specs/skill-rename-bare-verbs.spec.md' && test -z \\\"$(git diff --name-only --diff-filter=MD 5a0d9a1 -- .changeset)\\\"\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/skill-rename-bare-verbs.md",
+      "CONTEXT.md",
+      "README.md",
+      "docs/adr/0031-bare-verb-skill-names.md",
+      "docs/plans/skill-rename-bare-verbs.intent.json",
+      "docs/reference/**",
+      "docs/specs/skill-rename-bare-verbs.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/.pi-extension/**",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/EVALUATION.md",
+      "plugins/immune-brain/README.md",
+      "plugins/immune-brain/USER_GUIDE.md",
+      "plugins/immune-brain/dist/**",
+      "plugins/immune-brain/hooks/hooks.json",
+      "plugins/immune-brain/runtime/**",
+      "plugins/immune-brain/skills/**",
+      "plugins/immune-brain/tests/**",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/stale-reference-baseline.json",
+      "tests/**"
+    ],
+    "scope_size_reason": "One atomic rename: the run-entry gate, packaged skill names, dist pairs, generated bundle and the tests that assert them must change together or the gate, dist sync and registry checks are red in any intermediate state; #318 decided one Managed task with no Lanes.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/skill-rename-bare-verbs.intent.json",
+    "content_hash": "sha256:adb0adcba1b55903a436d49efdab0e992b1ac6de5dd0fa6cfed8c7200e8680a2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:adb0adcba1b55903a436d49efdab0e992b1ac6de5dd0fa6cfed8c7200e8680a2",
+  "git_base_head": "5a0d9a1391503cbaa4c24e8292a77a7663e44237",
+  "attestations": [
+    {
+      "id": "approval-qa-cc4e6aee",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:adb0adcba1b55903a436d49efdab0e992b1ac6de5dd0fa6cfed8c7200e8680a2",
+      "diff_hash": "sha256:5b4ddce4be2275cd6e8549d2e487f1f0f5dc68918babd9073623d25cc9b6be5c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:fef84ae221d5fe25fe7c6943f78a612e07cab1e6ae46d6b65e39f1b929d0c9ba"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3a8f560a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:adb0adcba1b55903a436d49efdab0e992b1ac6de5dd0fa6cfed8c7200e8680a2",
+      "diff_hash": "sha256:ed761d58e64dc84529031369dcc7a7421120bfca7f5130cb6a599f6103b9c05c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:cac80b59eb10a884922f2a26f5e1ada152ac0952529eed86563c1b8e8870cc9e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c6e1109d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:adb0adcba1b55903a436d49efdab0e992b1ac6de5dd0fa6cfed8c7200e8680a2",
+      "diff_hash": "sha256:ed761d58e64dc84529031369dcc7a7421120bfca7f5130cb6a599f6103b9c05c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Round 3 delta (alias_file.ts, phase_entry.ts, bundled mcp-server.mjs, phase-entry test) checked: a same-named command that is empty, unreadable, oversized or not a regular file now hides the bare name and mints nothing. All callers (claudeLocalNames, piLocalNames, run_continuation) go through recognizePhaseEntry's try/catch, the bundle matches the source change, /immune-brain:drive still mints, and the other paths carry forward from 6a96f69.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a0d9a1391503cbaa4c24e8292a77a7663e44237",
+        "review_commit": "244ad9d76ed6d65b45a15ccedb5823bc50039bdb",
+        "review_tree": "6e1220f0d6f2f4dd5a38ad36117c71d91c5a4797",
+        "manifest_digest": "sha256:3f3f6ca37dd0aac7bd497a152ad313678ad7c017913043b504682593f2bcaac4"
+      },
+      "reviewer_verdict_sha256": "sha256:36ff3d85cf9180e791371a8b5bfce21b4d2ca13b73c923b18c864737c4a734b0"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-3e3cb06cec0f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/agents/immune-brain-reviewer.md gains a new 'Two lenses' section that changes the shipped Claude Code reviewer's blocking criteria. The change has nothing to do with the rename, is outside the TaskIntent scope_hint and Spec, and is not covered by any acceptance or the major changeset note.",
+      "anchor": "sha256:9460aa56435ec69ae9a3890e8c4541cdf6ced582f9d2f2cc0f0008e1feca4d09",
+      "evidence": {
+        "trigger": "git diff 5a0d9a1..6a96f69e on plugins/immune-brain/agents/immune-brain-reviewer.md adds only the 'Two lenses' paragraph and no rename hunk. The path matches no scope_hint entry, the Spec's reference closure does not list it, and its only effect is behavioral. For any later Claude Code review whose diff adds a seam, default or dependency that the acceptance does not name, the dispatched immune-brain-reviewer is now told to file it as a finding and to state a blast-radius tier. That contradicts the same file's Code Quality Guard rule that design preference is not a finding, and turns approvals into rework with no acceptance, ADR or changeset that authorized the change. Remove the hunk from this task, or move it to its own task with its own acceptance.",
+        "caller_chain": [
+          "plugins/immune-brain/agents/immune-brain-reviewer.md",
+          "Claude Code plugin agent immune-brain-reviewer (Review dispatch)",
+          "imm-code-review Review Gate verdict"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "authority boundary: Review Gate approval criteria changed outside the TaskIntent scope_hint"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-AC4-05a07444-019a23",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=713B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-44750992be6c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "A same-named local command that exists but that readAliasFile reports as null or empty is treated as absent, so a bare /drive still mints a run entry token. This breaks the AC1 rule that a same-named user command is parsed by alias rules, and the ADR 0031 rule that a reader that cannot read fails closed.",
+      "anchor": "sha256:0122a8062149452c77aa69b33af004c7ca2a0ff507ff9b6f176d5b334d82c367",
+      "evidence": {
+        "trigger": "Setup: ~/.claude/commands/drive.md (or .claude/commands/drive.md, or Pi .pi/prompts/drive.md) exists but is empty, larger than MAX_ALIAS_BYTES (64 KiB), not a regular file, or unreadable (EACCES). readAliasFile returns null or an empty string for all of these. recognizePhaseEntry checks `if (body)`, which is false, and falls through to packaged('drive') with no local skill. Result: the Host runs the user's own drive command, but the hook records a run entry and mints the entry token (a probe of the review-commit phase_entry.ts returned 'run' for both alias:()=>'' and alias:()=>null). That token admits enroll, start_unattended_batch and retire_stale_batch without a real drive entry. Fix: the alias port should tell a clean ENOENT apart from present-but-unreadable or empty, and the bare form should mint nothing in the second case, the same way localSkillExists fails closed. Add a test that pins an empty and an oversized same-named drive.md with no token minted.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:recordPhaseEntryPrompt",
+          "plugins/immune-brain/runtime/claude/lane_guard.ts:claudeLocalNames.alias",
+          "plugins/immune-brain/runtime/assurance/alias_file.ts:readAliasFile",
+          "plugins/immune-brain/runtime/assurance/phase_entry.ts:recognizePhaseEntry"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:skill-rename-bare-verbs:2026-10-28T04:34:15.987Z",
+      "at": "2026-10-28T04:34:15.987Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/skill-rename-bare-verbs.intent.json"
+    },
+    {
+      "id": "record_approval:skill-rename-bare-verbs:2026-10-28T04:34:52.228Z",
+      "at": "2026-10-28T04:34:52.228Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cc4e6aee\naction_v2_sha256:b57102982f833fa564f542ab4961277fc38336ddb648107b13a81268ff498b5b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-28T04:34:52.228Z"
+      }
+    },
+    {
+      "id": "request_rework:skill-rename-bare-verbs:2026-10-28T04:39:51.557Z",
+      "at": "2026-10-28T04:39:51.557Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:c4c3c4badb403e993753acf5454ed1bedc5f2c06c4bb41d8d5e0b53f36c23ca7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-28T04:39:51.557Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a0d9a1391503cbaa4c24e8292a77a7663e44237",
+        "review_commit": "6a96f69e155442309c224000376eb364183b7544",
+        "review_tree": "a420fb8a1e9a60019120579f892b2700f07c17c2",
+        "manifest_digest": "sha256:e4a89486b9d2fd34ed1fcafc9df97c96f8b3d60e972b15ff6468b2b0c26a090c"
+      }
+    },
+    {
+      "id": "resolve_finding:skill-rename-bare-verbs:2026-10-28T04:44:57.676Z",
+      "at": "2026-10-28T04:44:57.676Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-3e3cb06cec0f-1-review-1\naction_v2_sha256:7aed7144a1a93153b8b040c8c0110d2a675db5ecb29cc2d57c08c4932990bb15"
+    },
+    {
+      "id": "freeze_artifacts:skill-rename-bare-verbs:2026-10-28T04:45:09.532Z",
+      "at": "2026-10-28T04:45:09.532Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/skill-rename-bare-verbs.intent.json"
+    },
+    {
+      "id": "request_rework:skill-rename-bare-verbs:2026-10-28T04:45:46.554Z",
+      "at": "2026-10-28T04:45:46.554Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:e78f9650640a6d57a9c691e1241f80012b2ffc054e09b4fca9f6b56a68a22cba",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-28T04:45:46.555Z"
+      }
+    },
+    {
+      "id": "resolve_finding:skill-rename-bare-verbs:2026-10-28T04:47:30.462Z",
+      "at": "2026-10-28T04:47:30.462Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC4-05a07444-019a23\naction_v2_sha256:5ac6f5518f810d84b265dc1e2eb5aa9ce0b0f2ba423405552ea26574bdebdefc"
+    },
+    {
+      "id": "freeze_artifacts:skill-rename-bare-verbs:2026-10-28T04:47:41.434Z",
+      "at": "2026-10-28T04:47:41.434Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/skill-rename-bare-verbs.intent.json"
+    },
+    {
+      "id": "request_rework:skill-rename-bare-verbs:2026-10-28T04:50:01.712Z",
+      "at": "2026-10-28T04:50:01.712Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:0311ef87946de8a0a9536621a48f273fe347c6b7094f0185ff07f98a261a58f4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-28T04:50:01.712Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a0d9a1391503cbaa4c24e8292a77a7663e44237",
+        "review_commit": "6a96f69e155442309c224000376eb364183b7544",
+        "review_tree": "a420fb8a1e9a60019120579f892b2700f07c17c2",
+        "manifest_digest": "sha256:daed6375d0842b0f86c28bd227d785f2602c7da7d7e1c7831f1bac276f4e359b"
+      }
+    },
+    {
+      "id": "resolve_finding:skill-rename-bare-verbs:2026-10-28T04:52:43.792Z",
+      "at": "2026-10-28T04:52:43.792Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-44750992be6c-1-review-1\naction_v2_sha256:6f247bfe4c0e5fa32b2a3b011abb6e80116dd9c7f0f5b858edea4558eabde048"
+    },
+    {
+      "id": "freeze_artifacts:skill-rename-bare-verbs:2026-10-28T04:52:56.305Z",
+      "at": "2026-10-28T04:52:56.305Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/skill-rename-bare-verbs.intent.json"
+    },
+    {
+      "id": "record_approval:skill-rename-bare-verbs:2026-10-28T04:53:35.643Z",
+      "at": "2026-10-28T04:53:35.643Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3a8f560a\naction_v2_sha256:4abca96af1cda84c052559e31c56cdf03a6290e2092de67eb0645a9440734a97",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-28T04:53:35.643Z"
+      }
+    },
+    {
+      "id": "record_approval:skill-rename-bare-verbs:2026-10-28T04:56:05.198Z",
+      "at": "2026-10-28T04:56:05.198Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c6e1109d\naction_v2_sha256:5c2f84ad42ccc3c3346f90f85f82a811da3a1cf66adbf7065ca21a9df5f4198d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-28T04:56:05.198Z"
+      }
+    },
+    {
+      "id": "complete:skill-rename-bare-verbs:2026-10-28T04:56:15.694Z",
+      "at": "2026-10-28T04:56:15.694Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9530fed09109b7ae38152ab7d32d2c76dd1dcba7ca2a7c70e830ca5cbd5ea93b"
+    }
+  ]
+}

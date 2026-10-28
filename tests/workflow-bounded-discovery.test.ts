@@ -26,8 +26,8 @@ const PROTOCOL = read("docs/reference/subagent-dispatch-protocol.md");
 const PROTOCOL_MIRROR = read(
 	"plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
 );
-const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
-const BRAINSTORM_LOADER = read("plugins/immune-brain/skills/imm-brainstorm/SKILL.md");
+const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
+const BRAINSTORM_LOADER = read("plugins/immune-brain/skills/clarify/SKILL.md");
 
 interface ProbeScope {
 	/** The question the probe answers. */
@@ -225,13 +225,13 @@ describe("S6 bounded discovery and partial local results", () => {
 	test("the packaged dispatch protocol mirror is byte-identical", () => {
 		expect(PROTOCOL_MIRROR).toBe(PROTOCOL);
 		// The loader still routes research without inlining the reference.
-		expect(flat(BRAINSTORM_LOADER)).toContain("../../dist/imm-brainstorm.md");
+		expect(flat(BRAINSTORM_LOADER)).toContain("../../dist/clarify.md");
 	});
 
 	test("a scoped probe passes and an unbounded or cross-project probe fails", () => {
 		const bounded = judgeProbe({
 			question: "which modules read the legacy discovery cache?",
-			paths: ["docs/reference/subagent-dispatch-protocol.md", "plugins/immune-brain/dist/imm-planner.md"],
+			paths: ["docs/reference/subagent-dispatch-protocol.md", "plugins/immune-brain/dist/draw-up.md"],
 			stopCondition: "the reference and its mirror are the only readers",
 			depth: "proved_callers",
 			crossProjectLogScan: false,
@@ -251,7 +251,7 @@ describe("S6 bounded discovery and partial local results", () => {
 
 		const crossProject = judgeProbe({
 			question: "did another project hit this?",
-			paths: ["plugins/immune-brain/dist/imm-planner.md"],
+			paths: ["plugins/immune-brain/dist/draw-up.md"],
 			stopCondition: "one matching session is found",
 			depth: "known_paths",
 			crossProjectLogScan: true,

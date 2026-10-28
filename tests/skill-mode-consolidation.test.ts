@@ -26,14 +26,14 @@ function registryBlock(name: string): string {
 
 describe("canonical Skill mode consolidation", () => {
 	it("declares the canonical framing modes", () => {
-		const block = registryBlock("imm-brainstorm");
+		const block = registryBlock("clarify");
 		expect(block).toContain("canonical: true");
 		expect(block).toContain("modes: [default, roundtable, adversarial]");
-		expect(block).toContain("next_actions: [imm-planner]");
-		expect(read("plugins/immune-brain/dist/imm-brainstorm.md")).toContain(
+		expect(block).toContain("next_actions: [draw-up]");
+		expect(read("plugins/immune-brain/dist/clarify.md")).toContain(
 			"`roundtable`",
 		);
-		expect(read("plugins/immune-brain/dist/imm-brainstorm.md")).toContain(
+		expect(read("plugins/immune-brain/dist/clarify.md")).toContain(
 			"`adversarial`",
 		);
 	});
@@ -55,10 +55,10 @@ describe("canonical Skill mode consolidation", () => {
 
 	it("keeps canonical docs authoritative without alias entry references", () => {
 		for (const doc of [
-			"plugins/immune-brain/dist/imm-brainstorm.md",
+			"plugins/immune-brain/dist/clarify.md",
 			"plugins/immune-brain/dist/role-prompts/advisory-reviewer.md",
-			"plugins/immune-brain/dist/imm-planner.md",
-			"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+			"plugins/immune-brain/dist/draw-up.md",
+			"plugins/immune-brain/skills/clarify/SKILL.md",
 		]) {
 			const content = read(doc);
 			for (const alias of RETIRED_ALIASES) {
@@ -75,7 +75,7 @@ describe("canonical Skill mode consolidation", () => {
 		expect(
 			read("plugins/immune-brain/dist/role-prompts/advisory-reviewer.md"),
 		).toContain("`debug_hypothesis`");
-		expect(read("plugins/immune-brain/dist/imm-planner.md")).toContain(
+		expect(read("plugins/immune-brain/dist/draw-up.md")).toContain(
 			"mode: page_design",
 		);
 	});

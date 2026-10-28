@@ -91,7 +91,7 @@ export const MANUAL_ADAPTED_ENTRIES = ADAPTED_ENTRIES.filter(
 // ── packaged-contract source-of-truth ───────────────────────────────────────
 // Every file under `plugins/immune-brain/dist/` must have a declared relationship.
 // The skill entry points (SKILL.md) are minimal loaders; the packaged contracts
-// (dist/imm-*.md) are the full agent instructions and are therefore their own
+// (dist/<skill>.md) are the full agent instructions and are therefore their own
 // authoring source. Byte identity is intentionally NOT the invariant for these
 // pairs: the loader only identifies and loads its substantially larger contract.
 export type PackagedContractKind = "mirror" | "adapted" | "owned";
@@ -109,68 +109,68 @@ export interface PackagedContractEntry {
 
 export const SKILL_OWNED_ENTRIES: PackagedContractEntry[] = [
 	{
-		packaged: "imm-brainstorm.md",
+		packaged: "clarify.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-brainstorm/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-brainstorm",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/clarify/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "clarify",
 	},
 	{
-		packaged: "imm-run.md",
+		packaged: "drive.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-run/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-run",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/drive/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "drive",
 	},
 	{
-		packaged: "imm-planner.md",
+		packaged: "draw-up.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-planner/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-planner",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/draw-up/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "draw-up",
 	},
 	{
-		packaged: "imm-pr-fix.md",
+		packaged: "fix-pr.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-pr-fix/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-pr-fix",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/fix-pr/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "fix-pr",
 	},
 	{
-		packaged: "imm-doc-prune.md",
+		packaged: "prune-docs.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-doc-prune/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-doc-prune",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/prune-docs/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "prune-docs",
 	},
 	{
-		packaged: "imm-doc-slim.md",
+		packaged: "slim.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-doc-slim/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-doc-slim",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/slim/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "slim",
 	},
 	{
-		packaged: "imm-test-prune.md",
+		packaged: "prune-tests.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-test-prune/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-test-prune",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/prune-tests/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "prune-tests",
 	},
 	{
-		packaged: "imm-retro.md",
+		packaged: "revisit.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-retro/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
-		skill: "imm-retro",
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/revisit/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "revisit",
 	},
 ];
 
@@ -207,12 +207,12 @@ export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
 	// owned skill contracts — self-sourced, loader references them
 	...SKILL_OWNED_ENTRIES,
 	{
-		packaged: "imm-run-batch.md",
+		packaged: "drive-batch.md",
 		source: null,
 		kind: "owned",
 		reason:
-			"Batch, Lane and Herdr sections split out of imm-run.md; plugins/immune-brain/skills/imm-run/SKILL.md routes to them by anchor. Its own authoring source, no byte identity.",
-		skill: "imm-run",
+			"Batch, Lane and Herdr sections split out of drive.md; plugins/immune-brain/skills/drive/SKILL.md routes to them by anchor. Its own authoring source, no byte identity.",
+		skill: "drive",
 	},
 	{
 		packaged: "claude/mcp-server.mjs",

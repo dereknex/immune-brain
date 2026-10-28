@@ -85,7 +85,7 @@ describe("Code Quality Guard contract", () => {
 	});
 
 	it("documents standalone repair and current user-facing boundaries", () => {
-		expect(read("plugins/immune-brain/dist/imm-pr-fix.md")).toContain("Code Quality Guard");
+		expect(read("plugins/immune-brain/dist/fix-pr.md")).toContain("Code Quality Guard");
 		expect(read("plugins/immune-brain/README.md")).toContain("Code Quality Guard");
 		expect(read("plugins/immune-brain/USER_GUIDE.md")).toContain("Code Quality Guard");
 		expect(read("docs/user_manual.md")).toContain("Code Quality Guard");

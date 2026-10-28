@@ -15,7 +15,7 @@ const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manu
 const ENROLL = "mcp__plugin_immune-brain_immune-brain__enroll";
 const BATCH = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
 const RETIRE = "mcp__plugin_immune-brain_immune-brain__retire_stale_batch";
-const RECOVERY = "ask the user to enter imm-run in the current Host";
+const RECOVERY = "ask the user to enter /drive (or /immune-brain:drive on Claude Code) in the current Host";
 const roots: string[] = [];
 
 afterEach(() => {
@@ -112,7 +112,7 @@ function expectHookDenial(output: string | null): void {
 describe("Claude phase entry gate: enroll", () => {
 	test("a live run entry and the hook admission let enroll reach the native gate", async () => {
 		const s = await session(["gate-a"]);
-		expect(s.prompt("/immune-brain:imm-run gate-a")).toBe(true);
+		expect(s.prompt("/immune-brain:drive gate-a")).toBe(true);
 		expect(s.hook(ENROLL, "toolu_1")).toBeNull();
 		const reply = await s.call("enroll", { task_id: "gate-a" }, "toolu_1");
 		expect(reply?.error).toBeUndefined();
@@ -124,7 +124,7 @@ describe("Claude phase entry gate: enroll", () => {
 		// The token sits in a same-uid cache file a model could write by hand
 		// (ADR 0025 Context), so it must not replace the gate on starting work.
 		const s = await session(["gate-a"], {}, "decline");
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		expect(s.hook(ENROLL, "toolu_forged")).toBeNull();
 		await s.call("enroll", { task_id: "gate-a" }, "toolu_forged");
 		expect(s.confirmations()).toEqual(["enroll"]);
@@ -133,7 +133,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("a supplied entry_token or native_decision argument refuses with no Kernel mutation", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		for (const [field, id] of [["entry_token", "toolu_t"], ["native_decision", "toolu_n"]] as const) {
 			expect(s.hook(ENROLL, id)).toBeNull();
 			const reply = await s.call("enroll", { task_id: "gate-a", [field]: "accept" }, id);
@@ -146,11 +146,11 @@ describe("Claude phase entry gate: enroll", () => {
 	test("another session's entry, a SessionEnd, a spent token and another workspace all refuse", async () => {
 		const s = await session(["gate-a"]);
 		// Minted by one session, called from another.
-		s.prompt("/imm-run gate-a", { session_id: "other-session" });
+		s.prompt("/drive gate-a", { session_id: "other-session" });
 		expectHookDenial(s.hook(ENROLL, "toolu_s"));
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_s"));
 		// SessionEnd drops the token the hook already admitted.
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		expect(s.hook(ENROLL, "toolu_e")).toBeNull();
 		await s.endSession();
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_e"));
@@ -158,7 +158,7 @@ describe("Claude phase entry gate: enroll", () => {
 		// A token minted in another workspace does not authorize this one.
 		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
 		roots.push(elsewhere);
-		s.prompt("/imm-run gate-a", { cwd: elsewhere });
+		s.prompt("/drive gate-a", { cwd: elsewhere });
 		expect(s.hook(ENROLL, "toolu_w")).toBeNull();
 		const reply = await s.call("enroll", { task_id: "gate-a" }, "toolu_w");
 		expect(reply?.error?.data?.reason_code).toBe("run_entry_required");
@@ -169,7 +169,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("a paused run refuses enroll, batch start and retire at tools/call even with admissions recorded before the pause", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		for (const [tool, id] of [[ENROLL, "toolu_pe"], [BATCH, "toolu_pb"], [RETIRE, "toolu_pr"]] as const) expect(s.hook(tool, id)).toBeNull();
 		// The third native-operation failure under this entry pauses the run (Spec D9).
 		for (let attempt = 1; attempt <= 3; attempt++) {
@@ -187,7 +187,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("the run entry stays live for a later Slice after ordinary prompts", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		s.prompt("continue with the next slice");
 		expect(s.hook(ENROLL, "toolu_later")).toBeNull();
 		expect((await s.call("enroll", { task_id: "gate-a" }, "toolu_later"))?.error).toBeUndefined();
@@ -212,8 +212,8 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("a later literal plan entry revokes the run entry", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
-		s.prompt("/imm-planner something else");
+		s.prompt("/drive gate-a");
+		s.prompt("/draw-up something else");
 		s.prompt("confirm");
 		expectHookDenial(s.hook(ENROLL, "toolu_1"));
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_1"));
@@ -222,7 +222,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("a live entry without the hook admission for this exact call refuses", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		// No PreToolUse hook ran for this call at all.
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_unseen"));
 		// The hook admitted a different call id.
@@ -234,7 +234,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("an admission is single-use and bound to its operation", async () => {
 		const s = await session(["gate-a"], { readInitiative: async () => { throw new Error("must not be read"); } });
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		expect(s.hook(BATCH, "toolu_batch")).toBeNull();
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_batch"));
 		// The mismatched read spent it: it no longer admits its own operation either.
@@ -247,7 +247,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("a hook that ran twice for one call still admits it exactly once", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		// Two enabled copies of the plugin both match the tool name.
 		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
 		expect(s.hook(ENROLL, "toolu_twice")).toBeNull();
@@ -259,7 +259,7 @@ describe("Claude phase entry gate: enroll", () => {
 
 	test("repeated admissions that disagree on the operation refuse", async () => {
 		const s = await session(["gate-a"]);
-		s.prompt("/imm-run gate-a");
+		s.prompt("/drive gate-a");
 		expect(s.hook(ENROLL, "toolu_mixed")).toBeNull();
 		expect(s.hook(BATCH, "toolu_mixed")).toBeNull();
 		expectRunEntryRequired(await s.call("enroll", { task_id: "gate-a" }, "toolu_mixed"));
@@ -312,7 +312,7 @@ describe("Claude phase entry gate: start_unattended_batch", () => {
 	test("one admitted start opens the gate once, returns the manifest, and the batch enrolls its child without another admission", async () => {
 		const b = batchOptions();
 		const s = await session([`${slug}-c1`], b.options);
-		s.prompt(`/imm-run ${slug}`);
+		s.prompt(`/drive ${slug}`);
 		expect(s.hook(BATCH, "toolu_b")).toBeNull();
 		const reply = await s.call("start_unattended_batch", { initiative_slug: slug, final_verification: ["bun test"] }, "toolu_b");
 		expect(reply?.error).toBeUndefined();

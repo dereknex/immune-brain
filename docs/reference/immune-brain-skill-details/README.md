@@ -10,7 +10,7 @@
 
 ## 当前专项入口
 
-- `imm-planner`（`page_design` mode）: 页面生成或重排前产出 `page_design`，先收敛页面结构、操作区和响应式；有设计来源或用户明确要求时才定义视觉字段，缺少来源时标记为 `unknown` / `not_applicable`。
+- `draw-up`（`page_design` mode）: 页面生成或重排前产出 `page_design`，先收敛页面结构、操作区和响应式；有设计来源或用户明确要求时才定义视觉字段，缺少来源时标记为 `unknown` / `not_applicable`。
 
 ---
 *注：未来如果有特定技能（例如 `imm-advisory-reviewer` 的 lens 新增细则或自定义 `ui-review` check sheet）需要编写独立的子说明文件，应统一放置于本目录下。*

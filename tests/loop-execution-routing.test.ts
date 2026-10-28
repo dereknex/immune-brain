@@ -122,28 +122,28 @@ describe("Loop execution and repair routing", () => {
 
 	it("keeps Kernel and non-Kernel work under Loop with explicit next authorities", () => {
 		expect(resolveLoopRoute({ ownership: "plan", target: "step" })).toEqual({
-		entry: "imm-run",
+		entry: "drive",
 		next: "executor",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "test-repair" })).toEqual({
-		entry: "imm-run",
+		entry: "drive",
 		next: "test-fixer",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "pr-repair" })).toEqual({
-		entry: "imm-run",
+		entry: "drive",
 		next: "pr-fix",
 	});
 		expect(resolveLoopRoute({ ownership: "kernel", target: "step" })).toEqual({
-		entry: "imm-run",
+		entry: "drive",
 		next: "imm_kernel_canary",
 	});
 		expect(resolveLoopRoute({ ownership: "kernel", target: "test-repair" })).toEqual({
-		entry: "imm-run",
+		entry: "drive",
 		next: "imm_kernel_canary",
 	});
 		expect(resolveLoopRoute({ ownership: "plan", target: "step", scope_expansion: true })).toEqual({
-			entry: "imm-run",
-			next: "imm-planner",
+			entry: "drive",
+			next: "draw-up",
 		});
 
 		const executorAction = buildLoopAction({
@@ -174,14 +174,14 @@ describe("Loop execution and repair routing", () => {
 			kernel_operation: "advance_assurance",
 		});
 		expect(kernelAction).toEqual({
-			entry: "imm-run",
+			entry: "drive",
 			next: "imm_kernel_canary",
 			tool: { name: "imm_kernel_canary", operation: "advance_assurance" },
 		});
 	});
 
 	it("documents internal execution routing with no public role shims", () => {
-		const loop = read("plugins/immune-brain/dist/imm-run.md");
+		const loop = read("plugins/immune-brain/dist/drive.md");
 		// Routing and Kernel ownership are stated as obligations: the packaged
 		// contract is shared by both Hosts, so it never names one Host's tools.
 		expect(loop.replace(/\s+/g, " ")).toContain("role-boundary route");
@@ -216,7 +216,7 @@ describe("lane-steward routing", () => {
 
 	it("routes lane supply to the lane-steward role only under Loop ownership", () => {
 		expect(resolveLoopRoute({ ownership: "loop", target: "lane-supply" })).toEqual({
-			entry: "imm-run",
+			entry: "drive",
 			next: "lane-steward",
 		});
 		for (const ownership of ["plan", "kernel", "brainstorm", "planner"] as const) {
@@ -260,7 +260,7 @@ describe("lane-steward routing", () => {
 		);
 	});
 
-	// `dist/imm-run.md` left this list on 2026-10-09: the Parent may drive Herdr
+	// `dist/drive.md` left this list on 2026-10-09: the Parent may drive Herdr
 	// panes for Lane Executors (ADR 0013). The steward and the runtime still may not.
 	it("keeps the role prompt and the runtime free of any workspace tool", () => {
 		for (const path of [

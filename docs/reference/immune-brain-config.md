@@ -78,7 +78,7 @@ runner reads none of them. None has a built-in default.
   them each Executor Host uses its own default.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
-Lane. The full contract is `plugins/immune-brain/dist/imm-run-batch.md#lane-preferences`.
+Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.
 
 ## Risk Floor
 

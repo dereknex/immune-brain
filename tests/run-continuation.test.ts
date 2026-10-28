@@ -24,7 +24,7 @@ describe("goal-driven continuation", () => {
 			expect(releasesRunBinding(prompt, null)).toBe(false);
 		for (const prompt of ["停止执行", "取消任务", "stop", "Cancel this run."])
 			expect(releasesRunBinding(prompt, null)).toBe(true);
-		expect(releasesRunBinding("/imm-planner", "planner")).toBe(true);
+		expect(releasesRunBinding("/draw-up", "planner")).toBe(true);
 		expect(() => bindRun({ ...binding, run_id: "" })).toThrow("exact session");
 	});
 

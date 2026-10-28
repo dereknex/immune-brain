@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
 
-const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
+const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
 const QUALITY_GATE = read("docs/reference/planning-quality-gate.md");
 const PACKAGED_QUALITY_GATE = read(
 	"plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",

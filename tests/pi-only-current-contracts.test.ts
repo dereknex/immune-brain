@@ -80,8 +80,8 @@ describe("current Pi-only contracts", () => {
 
   it("documents valid Pi native research subagent invocations", () => {
     for (const path of [
-      "plugins/immune-brain/dist/imm-brainstorm.md",
-      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/clarify.md",
+      "plugins/immune-brain/dist/draw-up.md",
     ]) {
       const content = readFileSync(resolve(ROOT, path), "utf8");
       expect({ path, nativeExplore: content.includes('subagent_type: "Explore"') }).toEqual({
@@ -98,7 +98,7 @@ describe("current Pi-only contracts", () => {
   it("does not publish retired host selectors or host-specific workflow fields", () => {
     const activePaths = [
       "plugins/immune-brain/runtime/commands/kernel.ts",
-      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/dist/drive.md",
       "plugins/immune-brain/dist/role-prompts/compounder.md",
     ];
     for (const path of activePaths) {

@@ -52,10 +52,10 @@ const BINDING_CONTRACTS = [
 	"docs/reference/subagent-dispatch-protocol.md",
 	"docs/reference/workflow-and-subagents.md",
 	"plugins/immune-brain/USER_GUIDE.md",
-	"plugins/immune-brain/skills/imm-planner/SKILL.md",
-	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
-	"plugins/immune-brain/dist/imm-planner.md",
-	"plugins/immune-brain/dist/imm-brainstorm.md",
+	"plugins/immune-brain/skills/draw-up/SKILL.md",
+	"plugins/immune-brain/skills/clarify/SKILL.md",
+	"plugins/immune-brain/dist/draw-up.md",
+	"plugins/immune-brain/dist/clarify.md",
 ] as const;
 
 const RETIRED_CONFIG_TOKENS = [

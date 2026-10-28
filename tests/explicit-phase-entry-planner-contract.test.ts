@@ -11,8 +11,8 @@ const read = (rel: string): string => readFileSync(join(PLUGIN, rel), "utf8");
 const flat = (rel: string): string => read(rel).replace(/\s+/g, " ");
 
 const BASELINE_COPIES = ["BASELINE.md", "skills/BASELINE.md", "dist/BASELINE.md"];
-const PLANNER_COPIES = ["dist/imm-planner.md", "skills/imm-planner/SKILL.md"];
-const BRAINSTORM_COPIES = ["dist/imm-brainstorm.md", "skills/imm-brainstorm/SKILL.md"];
+const PLANNER_COPIES = ["dist/draw-up.md", "skills/draw-up/SKILL.md"];
+const BRAINSTORM_COPIES = ["dist/clarify.md", "skills/clarify/SKILL.md"];
 const ALL_COPIES = [...BASELINE_COPIES, ...PLANNER_COPIES, ...BRAINSTORM_COPIES];
 
 // Wording of the retired route: a Planner or Brainstorm request reaching the
@@ -47,43 +47,43 @@ describe("explicit phase entry: Planner and Brainstorm never route to Enrollment
 		}
 	});
 
-	test("Planner Next Action reports the candidate and names imm-run as the only next step", () => {
-		const next = section(read("dist/imm-planner.md"), "## Next Action");
-		expect(next).toContain("name a literal-user `imm-run` entry as the only next step");
+	test("Planner Next Action reports the candidate and names drive as the only next step", () => {
+		const next = section(read("dist/draw-up.md"), "## Next Action");
+		expect(next).toContain("name a literal-user `drive` entry as the only next step");
 		expect(next).toContain("Do not invoke the current Host's native Enrollment Tool");
 		expect(next).toContain("a confirmation of the plan is not that entry");
 		expect(next).toContain("Plan-only requests stop here");
 	});
 
 	test("Planner routing, Initiative publication and Boundary all stop before Enrollment", () => {
-		const planner = read("dist/imm-planner.md");
+		const planner = read("dist/draw-up.md");
 		const routing = section(planner, "## Managed Request Routing");
 		expect(routing).toContain("Planner entry owns planning only");
 		expect(routing).toContain("never invokes the native Enrollment gate");
 		expect(routing).toContain("including a request that also asks for execution");
-		expect(routing).toContain("is not an `imm-run` entry and opens no gate");
+		expect(routing).toContain("is not an `drive` entry and opens no gate");
 		const all = planner.replace(/\s+/g, " ");
-		expect(all).toContain("Report that recommendation and stop; the user enrolls the recommended first TaskIntent through a literal-user `imm-run` entry");
-		expect(all).toContain("Execution starts only from a literal-user `imm-run` entry, whose first step is native Enrollment");
+		expect(all).toContain("Report that recommendation and stop; the user enrolls the recommended first TaskIntent through a literal-user `drive` entry");
+		expect(all).toContain("Execution starts only from a literal-user `drive` entry, whose first step is native Enrollment");
 	});
 
 	test("Planner loader states the same stop", () => {
-		const loader = flat("skills/imm-planner/SKILL.md");
+		const loader = flat("skills/draw-up/SKILL.md");
 		expect(loader).toContain("The Planner never invokes the current Host's native Enrollment gate, even when the request also asks for execution");
-		expect(loader).toContain("name a literal-user `imm-run` entry as the only next step");
+		expect(loader).toContain("name a literal-user `drive` entry as the only next step");
 		expect(loader).toContain("Plan-only requests stop there too");
 	});
 
 	test("Brainstorm hands off to a user-launched Planner and never enrolls", () => {
-		const dist = flat("dist/imm-brainstorm.md");
+		const dist = flat("dist/clarify.md");
 		expect(dist).toContain("Neither Brainstorm nor the Planner invokes Enrollment");
-		expect(dist).toContain("Brainstorm never enters `imm-planner` or `imm-run` on its own and never invokes Enrollment");
-		const loader = flat("skills/imm-brainstorm/SKILL.md");
-		expect(loader).toContain("Brainstorm stops after framing; the user launches `imm-planner`");
+		expect(dist).toContain("Brainstorm never enters `draw-up` or `drive` on its own and never invokes Enrollment");
+		const loader = flat("skills/clarify/SKILL.md");
+		expect(loader).toContain("Brainstorm stops after framing; the user launches `draw-up`");
 	});
 
 	test("Planner requires a threat model, enumerated negative cases and focused descriptors (RC-S4-A1)", () => {
-		const planner = read("dist/imm-planner.md");
+		const planner = read("dist/draw-up.md");
 		const discipline = section(planner, "### Verification Descriptor Discipline");
 		expect(discipline).toContain("`Threat model and supported environment` line");
 		expect(discipline).toContain("supported Git object formats, encodings, and platforms");
@@ -97,19 +97,19 @@ describe("explicit phase entry: Planner and Brainstorm never route to Enrollment
 		expect(flags).toContain("absolute any-malformed-input clause instead of enumerated negative cases");
 		expect(flags).toContain("runs a whole suite instead of focused test files");
 
-		const loader = flat("skills/imm-planner/SKILL.md");
+		const loader = flat("skills/draw-up/SKILL.md");
 		expect(loader).toContain("declares its threat model and supported environment");
 		expect(loader).toContain("enumerates concrete negative cases rather than absolute any-malformed-input clauses");
 		expect(loader).toContain("descriptors name focused test files, never whole suites");
 	});
 
-	test("every BASELINE copy assigns routine Enrollment to imm-run and keeps the Plan-only stop", () => {
+	test("every BASELINE copy assigns routine Enrollment to drive and keeps the Plan-only stop", () => {
 		for (const rel of BASELINE_COPIES) {
 			const text = flat(rel);
-			expect(text).toContain("Routine Managed enrollment is the first step of an explicit `imm-run` entry");
+			expect(text).toContain("Routine Managed enrollment is the first step of an explicit `drive` entry");
 			expect(text).toContain("Planner and Brainstorm stop with candidate artifacts and never invoke Enrollment");
 			expect(text).toContain("explicit Plan-only requests stop the same way");
-			expect(text).toContain("Once the user has entered `imm-run`");
+			expect(text).toContain("Once the user has entered `drive`");
 		}
 	});
 });

@@ -12,8 +12,8 @@ const read = (path: string) => readFileSync(resolve(ROOT, path), "utf8").replace
 
 describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 	it.each([
-		`${PLUGIN}/dist/imm-run.md`,
-		`${PLUGIN}/dist/imm-planner.md`,
+		`${PLUGIN}/dist/drive.md`,
+		`${PLUGIN}/dist/draw-up.md`,
 		`${PLUGIN}/runtime/prompts/executor.md`,
 	])("%s discloses delivery beyond the estimate and preserves frozen acceptance", (path) => {
 		const source = read(path);
@@ -26,7 +26,7 @@ describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 	});
 
 	it("batch revisions retain user authority without delegated approval or reseal", () => {
-		const batch = read(`${PLUGIN}/dist/imm-run-batch.md`);
+		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
 		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
 		expect(batch).toContain("cannot approve revisions or reseal `plan_digest`");
 		expect(batch).toContain("remain readable and retireable as historical evidence");

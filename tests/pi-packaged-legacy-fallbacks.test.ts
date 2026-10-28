@@ -11,7 +11,7 @@ const RETIRED_PACKAGED_ACTIVATION = [
 	"plugins/immune-brain/dist/docs/reference/review-host-dispatch-protocol.md",
 	"plugins/immune-brain/dist/docs/reference/subagent-trigger-catalog.yaml",
 ] as const;
-const DIST_PLANNER = resolve(ROOT, "plugins/immune-brain/dist/imm-planner.md");
+const DIST_PLANNER = resolve(ROOT, "plugins/immune-brain/dist/draw-up.md");
 const DIST_COMPOUNDER = resolve(
 	ROOT,
 	"plugins/immune-brain/dist/role-prompts/compounder.md",
@@ -74,7 +74,7 @@ describe("packaged legacy CLI fallbacks", () => {
 
 	it("removes retired planner mutation and dispatcher fallbacks", () => {
 		const planner = readFileSync(DIST_PLANNER, "utf8");
-		expectRetiredGuidanceAbsent(planner, "imm-planner.md");
+		expectRetiredGuidanceAbsent(planner, "draw-up.md");
 		expect(planner).toContain("Historical prose Plans are read-only artifacts");
 		expect(planner).toContain("imm-kernel intent author");
 		expect(planner).toContain("current Host's native Enrollment");
@@ -95,7 +95,7 @@ describe("packaged legacy CLI fallbacks", () => {
 		const { dir, pkgDir } = extractTarball();
 		try {
 			const planner = readFileSync(
-				join(pkgDir, "plugins/immune-brain/dist/imm-planner.md"),
+				join(pkgDir, "plugins/immune-brain/dist/draw-up.md"),
 				"utf8",
 			);
 			const compounder = readFileSync(
@@ -107,7 +107,7 @@ describe("packaged legacy CLI fallbacks", () => {
 					rel,
 					present: false,
 				});
-			expectRetiredGuidanceAbsent(planner, "packed/imm-planner.md");
+			expectRetiredGuidanceAbsent(planner, "packed/draw-up.md");
 			expectRetiredGuidanceAbsent(compounder, "packed/imm-compounder.md");
 			expect(planner).toContain("current Host's native Enrollment");
 			expect(planner).not.toContain("imm_canary_enrollment");

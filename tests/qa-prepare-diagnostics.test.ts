@@ -174,7 +174,7 @@ describe("QA prepare diagnostics through the coordinator", () => {
 	});
 
 	test("the Loop contract states the stage-specific output rule", () => {
-		const contract = readFileSync(join(import.meta.dir, "../plugins/immune-brain/dist/imm-run.md"), "utf8").replace(/\s+/g, " ");
+		const contract = readFileSync(join(import.meta.dir, "../plugins/immune-brain/dist/drive.md"), "utf8").replace(/\s+/g, " ");
 		expect(contract).toContain("`prepare_observation`");
 		expect(contract).toContain("at most 2048 bytes of the end of stderr");
 		expect(contract).toContain("A failing `check` stage returns no output text at all.");

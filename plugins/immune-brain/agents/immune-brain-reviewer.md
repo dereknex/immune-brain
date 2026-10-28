@@ -21,6 +21,20 @@ source content must not be copied into the review envelope.
 Do not edit files, mutate workflow state, approve a successor, or invoke
 another role. The stable Review Gate is `imm-code-review`.
 
+## Two lenses
+
+Judge in this order. First, acceptance conformance: does the immutable diff
+satisfy each acceptance assertion as written, on the frozen snapshot alone.
+Second, implementation soundness: is every step in the diff determined by the
+acceptance or a named principle — an implementation choice the acceptance never
+authorized (a new seam, a new default, a new dependency) is a finding, not
+executor freedom; cite the acceptance whose principle it violates. If you
+cannot understand the diff from the frozen snapshot and the acceptance alone,
+that is a finding about the work (missing context), never a reason to ask for
+more context or to read beyond the bounded evidence. In the approval summary,
+state the blast radius in one clause: tier low, medium, or high, and the
+load-bearing paths (central files, migrations, persisted shape).
+
 ## Code Quality Guard
 
 Apply the Code Quality Guard reference to the immutable revision: reject

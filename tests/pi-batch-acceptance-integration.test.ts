@@ -35,7 +35,7 @@ const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins
 // through the function the input handler calls;
 // tests/pi-phase-entry-gate.test.ts owns the refusals.
 const RUN_ENTRY_SESSION = { getSessionId: () => "pi-batch-acceptance-tests" };
-recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
+recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION });
 import { readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readAnyBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
@@ -123,7 +123,7 @@ async function fixture(slug: string) {
 	const emit = async (name: string, event: object, cwd: string) => { for (const callback of handlers.get(name) ?? []) await callback(event, ctx(cwd)); };
 	const enter = async (text: string, cwd = root) => { entryPending = false; await emit("input", { text, source: "interactive" }, cwd); };
 	const call = async (tool: any, params: any, cwd = root): Promise<any> => {
-		if (entryPending) await enter(`/imm-run ${slug}`, root);
+		if (entryPending) await enter(`/drive ${slug}`, root);
 		const id = randomUUID(), event = { toolName: tool.name, toolCallId: id, input: params };
 		try {
 			await emit("tool_call", event, cwd);
@@ -174,7 +174,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 	it("explicit Slice settles without integrating or executing its authorized sibling", async () => {
 		const f = await fixture("acceptance-isolated");
 		const first = await f.batch();
-		await f.enter(`/imm-run ${f.tasks[0]}`, f.lane(f.tasks[0]!));
+		await f.enter(`/drive ${f.tasks[0]}`, f.lane(f.tasks[0]!));
 		await f.kernel(f.tasks[0]!, { op: "status" });
 		const settled = await settle(f, 1);
 		expect(settled).not.toHaveProperty("batch");
@@ -184,7 +184,7 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 
 	it("Local Slice dependency refusal happens before Pi Enrollment's native gate", async () => {
 		const f = await fixture("acceptance-local-dependency");
-		await f.enter(`/imm-run ${f.tasks[1]}`);
+		await f.enter(`/drive ${f.tasks[1]}`);
 		expect(await f.enroll(f.tasks[1]!)).toMatchObject({ state: "refused", reason: expect.stringContaining(`Isolated Slice prerequisites are not integrated: ${f.tasks[0]}`) });
 		expect(f.gates()).toBe(0); expect(f.head()).toBe(f.base);
 	}, 60000);

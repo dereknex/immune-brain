@@ -51,11 +51,11 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 	pi.on("tool_call", (event) => {
 		const gateInput = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
 		const gate = `${event.toolName}:${gateInput.task_id ?? gateInput.initiative_slug ?? ""}:${gateInput.action?.op ?? ""}`;
-		if (failedGates.has(gate)) return { block: true, reason: `This native gate failed ${NATIVE_FAILURE_LIMIT} times under this entry; enter imm-run explicitly before retrying` };
+		if (failedGates.has(gate)) return { block: true, reason: `This native gate failed ${NATIVE_FAILURE_LIMIT} times under this entry; enter drive explicitly before retrying` };
 		if (!entered) return;
 		if (event.toolName === "imm_canary_enrollment" && state?.binding.kind === "parent" &&
 			state.binding.blocked_native_tasks?.includes(String(event.input.task_id)))
-			return { block: true, reason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter imm-run explicitly" };
+			return { block: true, reason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly" };
 		if (event.toolName === "Agent" && reviewerPrompt &&
 			(event.input.subagent_type === "Review" || event.input.prompt === reviewerPrompt)) {
 			if (event.input.prompt !== reviewerPrompt || event.input.subagent_type !== "Review" || event.input.run_in_background !== false)
@@ -174,7 +174,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 					content: `Run paused: ${decision.reason}${decision.next_action ? `. Recovery: ${decision.next_action}` : ""}` }] };
 			}
 			return { continue: true, entries: [{ type: "custom_message" as const, customType: "immune-brain-run-continuation", display: false,
-				content: `Explicit imm-run remains bound to task ${taskId}, run ${state.binding.kind === "task" ? state.binding.run_id : ""}. Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.` }] };
+				content: `Explicit drive remains bound to task ${taskId}, run ${state.binding.kind === "task" ? state.binding.run_id : ""}. Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.` }] };
 		} catch (error) {
 			revoke();
 			reset();

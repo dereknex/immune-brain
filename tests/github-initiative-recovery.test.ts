@@ -1487,7 +1487,7 @@ describe("S5 bounded publication recovery", () => {
 			expect(help).not.toContain(forbidden);
 		}
 		// The Planner contract still owns Initiative publication, unchanged here.
-		expect(readFileSync(resolve(import.meta.dir, "../plugins/immune-brain/dist/imm-planner.md"), "utf8")).toContain(
+		expect(readFileSync(resolve(import.meta.dir, "../plugins/immune-brain/dist/draw-up.md"), "utf8")).toContain(
 			"imm-tracker publish-initiative --stdin --json",
 		);
 	});

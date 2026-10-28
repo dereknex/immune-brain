@@ -102,7 +102,7 @@ widen scope, push to unrelated branches, merge, approve a successor, or invoke
 another role. Do not discover or load a Pi Skill.
 
 When feedback requires a new scope, authority, or product decision, stop and
-route the Parent to `imm-planner` with the concrete reason.
+route the Parent to `draw-up` with the concrete reason.
 
 ## Output
 

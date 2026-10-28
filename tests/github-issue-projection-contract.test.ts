@@ -209,7 +209,7 @@ describe("GitHub Issue presentation contract", () => {
 			expect((await runGithubInitiativePublication(root, input, gh)).status).toBe("created");
 			expect(gh.issues.find((issue) => issue.body.includes("<!-- immune-brain:task-id=widget-c -->"))?.title).toBe("[widget] S2 Ship C");
 		});
-		expect(readFileSync("plugins/immune-brain/dist/imm-planner.md", "utf8")).toContain("[<short_name>] <slice_id> <title>");
+		expect(readFileSync("plugins/immune-brain/dist/draw-up.md", "utf8")).toContain("[<short_name>] <slice_id> <title>");
 	});
 
 	it.each(["stopped", "same-event", "manual", "malformed", "completed"])("converges redelivery while preserving conflicting closures: %s", async (previous) => {

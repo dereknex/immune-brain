@@ -7,18 +7,18 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
 const flat = (text: string) => text.replace(/\s+/g, " ");
 
-const BRAINSTORM = read("plugins/immune-brain/dist/imm-brainstorm.md");
+const BRAINSTORM = read("plugins/immune-brain/dist/clarify.md");
 const COMPACT_BRAINSTORM = read(
-	"plugins/immune-brain/skills/imm-brainstorm/SKILL.md",
+	"plugins/immune-brain/skills/clarify/SKILL.md",
 );
 const COMPOUNDER = read("plugins/immune-brain/dist/role-prompts/compounder.md");
-const PLANNER = read("plugins/immune-brain/dist/imm-planner.md");
+const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
 const HISTORY = read("docs/solutions/grill-me-interaction-mechanics-borrow.md");
 const GENERAL_BENCHMARK = JSON.parse(
 	read("tests/fixtures/immune-brain-benchmark.json"),
 );
 const FOCUSED_BENCHMARK_TEXT = read(
-	"tests/fixtures/imm-brainstorm-behavior-benchmark.json",
+	"tests/fixtures/clarify-behavior-benchmark.json",
 );
 const FOCUSED_BENCHMARK = JSON.parse(FOCUSED_BENCHMARK_TEXT);
 const REJECTED_FIXTURE = read(
@@ -72,7 +72,7 @@ describe("Brainstorm decision probing contracts", () => {
 		]) {
 			expect(brainstorm).toContain(fragment);
 		}
-		expect(COMPACT_BRAINSTORM).toContain("../../dist/imm-brainstorm.md");
+		expect(COMPACT_BRAINSTORM).toContain("../../dist/clarify.md");
 		expect(COMPACT_BRAINSTORM).toContain(
 			"Default clarification",
 		);

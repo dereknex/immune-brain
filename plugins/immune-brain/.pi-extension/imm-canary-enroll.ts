@@ -255,7 +255,7 @@ async function classifyCommitFailure(
 				"completed",
 				"committing",
 				`Kernel enrollment committed for ${taskId}; terminal receipt was recovered from authoritative owners`,
-				"continue with imm-run",
+				"continue with drive",
 			);
 		}
 		if (
@@ -375,7 +375,7 @@ async function executeForegroundEnrollment(
 				"route_incumbent",
 				stage,
 				`Kernel task ${authority.owner_task_id} already owns this workspace`,
-				`continue ${authority.owner_task_id} through imm-run without re-enrollment`,
+				`continue ${authority.owner_task_id} through drive without re-enrollment`,
 			);
 		if (authority.state === "repairable_stale_claim")
 			return terminal(
@@ -577,7 +577,7 @@ async function executeForegroundEnrollment(
 				"completed",
 				stage,
 				`Kernel enrollment completed: task ${result.record.task_id} state=${result.record.lifecycle}:${result.record.artifact_state} backend=${result.backend_claim.backend}`,
-				"continue with imm-run",
+				"continue with drive",
 			);
 		} catch (error) {
 			if (error instanceof EnrollmentRehearsalError)
@@ -604,7 +604,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Run one exact Kernel new-task enrollment synchronously in the foreground with host cancellation before authority commit.",
 		promptSnippet: "Kernel enrollment: invoke once in foreground and consume the direct terminal result.",
 		promptGuidelines: [
-			"Call from the Parent only as the first step of an explicit imm-run entry, never from imm-planner or imm-brainstorm; execute once in the foreground and consume the terminal Tool result.",
+			"Call from the Parent only as the first step of an explicit drive entry, never from draw-up or clarify; execute once in the foreground and consume the terminal Tool result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand; host cancellation is the only pre-commit cancellation path.",
 		],
 		parameters: Type.Object(

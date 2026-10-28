@@ -37,7 +37,7 @@ function fixture() {
 	const tool = (operation = "status") => ({ tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`,
 		tool_use_id: `tool-${++sequence}`, tool_input: { task_id: "slice-a" } });
 	const enter = async () => {
-		await prompt("/imm-run slice-a"); const event = tool();
+		await prompt("/drive slice-a"); const event = tool();
 		await hook({ hook_event_name: "PreToolUse", ...event });
 		await hook({ hook_event_name: "PostToolUse", ...event, tool_response: {} });
 	};
@@ -61,7 +61,7 @@ describe("Claude run continuation", () => {
 			};
 			await result({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
 			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(true);
-			await result({ state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter imm-run" });
+			await result({ state: "review_incomplete", reason: "unfinished", recovery_action: "reduce scope and enter drive" });
 			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
 			expect(JSON.parse((await h.stop())!)).toMatchObject({ systemMessage: expect.stringContaining("review_incomplete") });
 		} finally { h.dispose(); }
@@ -77,7 +77,7 @@ describe("Claude run continuation", () => {
 
 	test("a wrong session or workspace cannot consume another Hook's result", async () => {
 		const h = fixture(); try {
-			await h.prompt("/imm-run slice-a"); const event = h.tool();
+			await h.prompt("/drive slice-a"); const event = h.tool();
 			await h.hook({ hook_event_name: "PreToolUse", ...event });
 			expect(readRunToolSession(event.tool_use_id, "status", h.root, h.root)).toBe("hook-session");
 			expect(readRunToolSession(event.tool_use_id, "enroll", h.root, h.root)).toBeNull();
@@ -115,7 +115,7 @@ describe("Claude run continuation", () => {
 		} finally { h.dispose(); }
 	});
 
-	test.each(["取消任务", "/imm-planner", "/imm-brainstorm"])("%s releases the binding", async prompt => {
+	test.each(["取消任务", "/draw-up", "/clarify"])("%s releases the binding", async prompt => {
 		const h = fixture(); try { await h.enter(); await h.prompt(prompt); expect(await h.stop()).toBeNull(); }
 		finally { h.dispose(); }
 	});

@@ -75,7 +75,7 @@ function claim(root: string, task_id: string) {
 		lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`, git_base_head: git(root, "rev-parse", "HEAD"), attestations: [], findings: [], history: [] } });
 }
 // These tests enter through the real hook. Dedicated phase-entry tests own refusals.
-function withRunEntry(workspace: string, prompt = "/imm-run") {
+function withRunEntry(workspace: string, prompt = "/drive") {
 	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-")); roots.push(root);
 	const session = { session_id: "phase-entry-test-session", cwd: workspace };
 	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt, ...session }, { root, home: root });
@@ -296,7 +296,7 @@ describe("acc-claude-batch-fail-closed", () => {
 		if (git(f.root, "remote").split("\n").includes("origin")) git(f.root, "remote", "remove", "origin");
 		mkdirSync(join(f.root, "docs/initiatives"), { recursive: true });
 		writeFileSync(join(f.root, `docs/initiatives/${f.slug}.md`), `# Parent\n## S1: predecessor\nTasks:\n- ${f.slug}-c1\n## S2: target\nTasks:\n- ${f.slug}-c2\nBlocked by: ${f.slug}-c1\n`);
-		const runtime = client(f, { ...withRunEntry(f.root, `/imm-run ${f.slug}-c2`), requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "local" }; } });
+		const runtime = client(f, { ...withRunEntry(f.root, `/drive ${f.slug}-c2`), requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "local" }; } });
 		await expect(runtime.callTool("enroll", { task_id: `${f.slug}-c2` })).rejects.toThrow(`Isolated Slice prerequisites are not integrated: ${f.slug}-c1`);
 		expect(gates).toBe(0);
 	});

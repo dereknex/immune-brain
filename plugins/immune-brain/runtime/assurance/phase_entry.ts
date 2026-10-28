@@ -1,39 +1,49 @@
 // Host-neutral phase entry: which literal user input enters planning or
 // execution, the per-session entry state, and whether an operation is admitted.
-// Pure: a Host supplies the alias reader and owns where the state is stored.
+// Pure: a Host supplies its local names and owns where the state is stored.
 // ADR 0025: a literal run entry mints the session's entry token, which stands in
 // for the native gate of the run-internal authority operations. Only the Host
 // input event writes it; no tool call or tool argument can.
 
 export type PhaseEntry = "plan" | "run";
 
-/** Returns the body of a user command alias, or nothing when it does not exist. */
-export type AliasReader = (name: string) => string | null | undefined;
+/** The Host this recognition runs for: Pi's `skill:` resolves a same-named local skill first. */
+export type PhaseHost = "claude" | "pi";
+
+/** The user's and project's local names that can shadow a packaged bare name (ADR 0031). */
+export interface LocalNames {
+	/** Body of a same-named user or project command alias (possibly empty), or nothing when it does not exist; throws when it exists but cannot be read. */
+	alias(name: string): string | null | undefined;
+	/** Whether a same-named user or project skill exists. */
+	skill(name: string): boolean;
+}
+
+export const NO_LOCAL_NAMES: LocalNames = { alias: () => null, skill: () => false };
 
 export const RUN_ENTRY_REQUIRED = "run_entry_required";
 export const PHASE_ENTRY_REQUIRED = "phase_entry_required";
 
 export const PHASE_ENTRY_RECOVERY: Record<typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQUIRED, string> = {
-	[RUN_ENTRY_REQUIRED]: "ask the user to enter imm-run in the current Host",
+	[RUN_ENTRY_REQUIRED]: "ask the user to enter /drive (or /immune-brain:drive on Claude Code) in the current Host",
 	[PHASE_ENTRY_REQUIRED]: "ask the user to enter the Skill themselves in the current Host",
 };
 
 const PACKAGED: Record<string, PhaseEntry> = {
-	"imm-planner": "plan",
-	"imm-brainstorm": "plan",
-	"imm-run": "run",
+	"draw-up": "plan",
+	"clarify": "plan",
+	"drive": "run",
 };
-// An alias body may still name the retired Loop skill.
-const ALIAS_TARGETS: Record<string, PhaseEntry> = { ...PACKAGED, "imm-loop": "run" };
-const PREFIXES = ["immune-brain:", "skill:"];
+const PLUGIN_PREFIX = "immune-brain:";
+const SKILL_PREFIX = "skill:";
 const ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-const SKILL_MENTION = /(?<![A-Za-z0-9_-])imm-(?:planner|brainstorm|run|loop)(?![A-Za-z0-9_-])/g;
+// ADR 0031: only a marked mention in an alias body names a phase Skill, never a bare prose word.
+const SKILL_MENTION = /(?<![A-Za-z0-9_-])(?:\/(?:immune-brain:|skill:)?|immune-brain:|skill:)(draw-up|clarify|drive)(?![A-Za-z0-9_-])/g;
 // The Host-expanded form of a slash command, anchored at the start of the prompt.
 const EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
 const RAW = /^\/(\S+)/;
 
 function stripPrefix(name: string): string {
-	for (const prefix of PREFIXES) if (name.startsWith(prefix)) return name.slice(prefix.length);
+	for (const prefix of [PLUGIN_PREFIX, SKILL_PREFIX]) if (name.startsWith(prefix)) return name.slice(prefix.length);
 	return name;
 }
 
@@ -45,23 +55,44 @@ export function packagedPhaseSkill(name: string): keyof typeof PACKAGED | null {
 	return Object.hasOwn(PACKAGED, bare) ? bare : null;
 }
 
+function packaged(name: string): PhaseEntry | null {
+	return Object.hasOwn(PACKAGED, name) ? PACKAGED[name] : null;
+}
+
+/** A local skill that cannot be read counts as present: the bare form then mints nothing. */
+function localSkill(names: LocalNames, name: string): boolean {
+	try { return names.skill(name); } catch { return true; }
+}
+
+function aliasEntry(body: string): PhaseEntry | null {
+	const targets = new Set([...body.matchAll(SKILL_MENTION)].map((match) => match[1]));
+	if (targets.size !== 1) return null;
+	return PACKAGED[[...targets][0]];
+}
+
 /**
  * The phase a literal prompt enters, or null. Only a leading slash command
- * counts: a packaged name, a prefixed packaged name, or a user alias whose body
- * names exactly one phase Skill. A mention anywhere else is not an entry.
+ * counts (ADR 0031): `immune-brain:<name>`; `skill:<name>` unless Pi resolves
+ * it to a same-named local skill; a bare packaged name unless a same-named
+ * local command (read as an alias) or skill shadows it; or a user alias whose
+ * body marks exactly one phase Skill. A mention anywhere else is not an entry.
  */
-export function recognizePhaseEntry(text: string, readAlias: AliasReader): PhaseEntry | null {
+export function recognizePhaseEntry(text: string, names: LocalNames, host: PhaseHost): PhaseEntry | null {
 	const command = (RAW.exec(text) ?? EXPANDED.exec(text))?.[1];
 	if (!command) return null;
-	const packaged = packagedPhaseSkill(command);
-	if (packaged) return PACKAGED[packaged];
+	if (command.startsWith(PLUGIN_PREFIX)) return packaged(command.slice(PLUGIN_PREFIX.length));
+	if (command.startsWith(SKILL_PREFIX)) {
+		const name = command.slice(SKILL_PREFIX.length);
+		const entry = packaged(name);
+		return entry && host === "pi" && localSkill(names, name) ? null : entry;
+	}
 	if (!ALIAS_NAME.test(command)) return null;
 	let body: string | null | undefined;
-	try { body = readAlias(command); } catch { return null; }
-	if (!body) return null;
-	const targets = new Set(body.match(SKILL_MENTION) ?? []);
-	if (targets.size !== 1) return null;
-	return ALIAS_TARGETS[[...targets][0]] ?? null;
+	try { body = names.alias(command); } catch { return null; }
+	// An empty alias is still a local command: it shadows the packaged name.
+	if (body !== null && body !== undefined) return aliasEntry(body);
+	const entry = packaged(command);
+	return entry && !localSkill(names, command) ? entry : null;
 }
 
 export interface PhaseEntryState {
@@ -138,16 +169,16 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
 /**
  * Whether the session's entry state admits one operation. `state` is null when
  * the store could not be read, which refuses `enroll`, `start_unattended_batch`,
- * `retire_stale_batch` and the `imm-run` Skill. The Planner and Brainstorm Skills are never refused.
+ * `retire_stale_batch` and the `drive` Skill. The Planner and Brainstorm Skills are never refused.
  */
 export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null): PhaseAdmission {
 	if (operation.kind === "tool") {
 		if (state?.run_live) return { ok: true };
-		return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user imm-run entry in this session`);
+		return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
 	}
-	if (operation.skill !== "imm-run") return { ok: true };
+	if (operation.skill !== "drive") return { ok: true };
 	if (state?.run_live) return { ok: true };
-	return refuse(PHASE_ENTRY_REQUIRED, "imm-run is entered by the user, not by a model Skill call");
+	return refuse(PHASE_ENTRY_REQUIRED, "drive is entered by the user, not by a model Skill call");
 }
 
 /** The single-line message both Hosts return for a refusal. */

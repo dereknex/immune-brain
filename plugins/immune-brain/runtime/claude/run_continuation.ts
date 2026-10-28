@@ -11,7 +11,7 @@ import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGat
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
 import { homedir } from "node:os";
-import { readPhaseEntryState, claudeAliasReader, dropPhaseEntryLog, revokeEntryToken } from "./lane_guard";
+import { readPhaseEntryState, claudeLocalNames, dropPhaseEntryLog, revokeEntryToken } from "./lane_guard";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
@@ -162,7 +162,7 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 	if (event === "SessionEnd") { drop(statePath(sessionId, root), root); dropPhaseEntryLog(sessionId, root); return null; }
 	if (event === "UserPromptSubmit") {
 		const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-		const entry = recognizePhaseEntry(prompt, claudeAliasReader(workspace, homedir()));
+		const entry = recognizePhaseEntry(prompt, claudeLocalNames(workspace, homedir()), "claude");
 		if (releasesRunBinding(prompt, entry === "plan" ? "planner" : null) || entry === "run")
 			drop(statePath(sessionId, root), root);
 		return null;
@@ -173,11 +173,11 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 		if (event === "PreToolUse" && operation && toolId && readPhaseEntryState(sessionId, root)?.run_live) {
 			const metadata = readMetadata(sessionId, root);
 			if (metadata.paused && NATIVE_OPERATIONS.has(operation)) return JSON.stringify({ hookSpecificOutput: {
-				hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Run paused: ${metadata.paused}; enter imm-run explicitly before another native gate` } });
+				hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate` } });
 			const input = (payload.tool_input ?? {}) as Record<string, unknown>;
 			if (operation === "enroll" && metadata.state?.binding.kind === "parent" &&
 				metadata.state.binding.blocked_native_tasks?.includes(String(input.task_id))) return JSON.stringify({ hookSpecificOutput: {
-					hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter imm-run explicitly" } });
+					hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly" } });
 			const correlation: Correlation = { session_id: sessionId, workspace, tool_use_id: toolId, operation,
 				task_id: typeof input.task_id === "string" ? input.task_id : null };
 			if (!appendPrivate(callPath(toolId, root), cacheDir(root), JSON.stringify(correlation) + "\n")) throw new Error("tool correlation could not be recorded");
@@ -261,7 +261,7 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 		if (!readPhaseEntryState(sessionId, root)?.run_live) { drop(statePath(sessionId, root), root); return null; }
 		if (metadata.state.binding.workspace !== workspace) {
 			drop(statePath(sessionId, root), root);
-			return warning("workspace changed; enter imm-run explicitly in this workspace");
+			return warning("workspace changed; enter drive explicitly in this workspace");
 		}
 		const boundary = stopBoundary(payload);
 		if (!boundary) return null;
@@ -296,7 +296,7 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 		}
 		metadata.stop_blocks++;
 		save(sessionId, root, metadata);
-		return JSON.stringify({ decision: "block", reason: `Explicit imm-run is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
+		return JSON.stringify({ decision: "block", reason: `Explicit drive is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
 	} catch (error) {
 		return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
 	}

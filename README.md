@@ -11,7 +11,7 @@
 Immune-Brain brings a structured engineering workflow to AI coding assistants (**Pi** and **Claude Code**):
 
 - **Zero overhead for normal chat & coding** — Ordinary questions, quick edits, and exploratory chat stay 100% host-native. Immune-Brain never interrupts normal conversation.
-- **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `imm-brainstorm`, `imm-planner`, or `imm-run`.
+- **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `clarify`, `draw-up`, or `drive`.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
 - **Ready Initiatives can run as a batch (serial or parallel lanes)** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; supports default serial progression or opt-in parallel lanes (Git worktree physical isolation, scope-disjoint scheduling, and integration verification guards), while every child is still enrolled, QA'd, reviewed, and settled on its own.
@@ -86,8 +86,8 @@ mise run check-dist-sync           # verify generated docs are in sync
 Immune-Brain follows a **Skill-explicit** model: ordinary conversation is just standard, lightweight AI coding. The managed workflow activates **only when you explicitly invoke a skill**.
 
 **1. Call a skill when you need structured engineering**:
-- Fuzzy idea, ambiguous design, or high-stakes feature? Run `/grill-me` (from `mattpocock/skills`, recommended) for relentless Socratic design interrogation (or use built-in `/imm-brainstorm` for lightweight framing).
-- Ready to design and build? Run `/imm-planner` (or ask the agent to use `imm-planner`).
+- Fuzzy idea, ambiguous design, or high-stakes feature? Run `/grill-me` (from `mattpocock/skills`, recommended) for relentless Socratic design interrogation (or use built-in `/clarify` for lightweight framing).
+- Ready to design and build? Run `/draw-up` (or ask the agent to use `draw-up`).
 
 *(Ordinary questions like "What does this function do?" or "Fix this typo" stay host-native — zero workflow ceremony.)*
 
@@ -98,8 +98,8 @@ Planner authors a `TaskIntent` and living Spec (scoped files, risk tier, accepta
 
 Review the scope and confirm enrollment. No code or authority writes happen before your explicit confirmation.
 
-**3. Run and verify with `imm-run`**:
-Run `/imm-run` (or say "Start imm-run"). The engine will:
+**3. Run and verify with `drive`**:
+Run `/drive` (or say "Start drive"). The engine will:
 - Dispatch an Executor to write code strictly within the frozen scope.
 - Run deterministic QA acceptance checks.
 - Dispatch an isolated Review subagent for material/critical changes.
@@ -114,21 +114,21 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Your situation | What to say / do | What happens |
 |---|---|---|
 | Daily coding, quick fix, general Q&A | Normal conversation ("Fix typo in README", "Explain this function") | **Host-native**: Standard Pi / Claude Code behavior. Zero workflow overhead. |
-| Fuzzy idea, needs architectural stress-testing & scoping | `/grill-me` (recommended) or `/imm-brainstorm` | → `/grill-me` interviews you through the design tree to lock decisions; `/imm-brainstorm` provides built-in read-only problem framing |
-| Clear goal, want formal plan & specs | `/imm-planner` "Plan the webhook feature" | → `imm-planner` writes `TaskIntent` + Specs with testable acceptance checks |
-| Plan confirmed, ready to build & verify | `/imm-run` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
-| Session interrupted or resuming a task | `/imm-run` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
+| Fuzzy idea, needs architectural stress-testing & scoping | `/grill-me` (recommended) or `/clarify` | → `/grill-me` interviews you through the design tree to lock decisions; `/clarify` provides built-in read-only problem framing |
+| Clear goal, want formal plan & specs | `/draw-up` "Plan the webhook feature" | → `draw-up` writes `TaskIntent` + Specs with testable acceptance checks |
+| Plan confirmed, ready to build & verify | `/drive` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
+| Session interrupted or resuming a task | `/drive` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
 | Ready Initiative to run unattended (serial or parallel lanes) | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or `Lane max parallel`) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Runs serially by default, or opt-in parallel Git worktree lanes with `max_parallel` |
-| Cross-host workflow (Claude plan + Pi code) | Run `/imm-planner` in Claude Code, switch to Pi and run `/imm-run` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
-| PR has review comments or failing CI | `/imm-pr-fix` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
-| Project docs out of date | `/imm-doc-prune` | → Read-only audit; deletes only user-approved stale docs from manifest |
-| Agent instructions bloated | `/imm-doc-slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
-| Test suite bloated with redundant cases | `/imm-test-prune` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
-| Which model's edits keep coming back for review | `/imm-retro` | → Ranks models by review load and reports project usage from session logs |
+| Cross-host workflow (Claude plan + Pi code) | Run `/draw-up` in Claude Code, switch to Pi and run `/drive` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
+| PR has review comments or failing CI | `/fix-pr` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
+| Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
+| Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
+| Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
+| Which model's edits keep coming back for review | `/revisit` | → Ranks models by review load and reports project usage from session logs |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
-> - **Managed work starts with explicit skills**: Use `/grill-me` (or `imm-brainstorm`) to clarify decisions, `imm-planner` to plan, and `imm-run` to execute and resume.
+> - **Managed work starts with explicit skills**: Use `/grill-me` (or `clarify`) to clarify decisions, `draw-up` to plan, and `drive` to execute and resume.
 
 ### Cross-Host Workflow: Plan in Claude Code, Build in Pi
 
@@ -139,22 +139,22 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
 ```text
 ┌───────────────────────────────────┐    Git-Tracked Artifacts on Disk   ┌───────────────────────────────────┐
 │            Claude Code            │ ─────────────────────────────────> │                Pi                 │
-│  1. /imm-brainstorm (Clarify)     │        docs/specs/*.spec.md        │  1. /imm-run (Native TUI Modal)  │
-│  2. /imm-planner    (Spec/Intent) │       docs/plans/*.intent.json     │  2. Executor (Code) + QA Engine   │
+│  1. /clarify (Clarify)            │        docs/specs/*.spec.md        │  1. /drive (Native TUI Modal)    │
+│  2. /draw-up (Spec/Intent)        │       docs/plans/*.intent.json     │  2. Executor (Code) + QA Engine   │
 └───────────────────────────────────┘                                    └───────────────────────────────────┘
 ```
 
 #### Recommended Workflow
 
 1. **Phase 1: Spec Authoring & Planning in Claude Code**
-   - **Clarify requirements (optional)**: If the problem is fuzzy or has unknown boundaries, run `/imm-brainstorm` in Claude Code to frame goals, constraints, and architecture risks.
-   - **Author the plan and spec**: Run `/imm-planner "Plan <feature>"`. Planner generates:
+   - **Clarify requirements (optional)**: If the problem is fuzzy or has unknown boundaries, run `/clarify` in Claude Code to frame goals, constraints, and architecture risks.
+   - **Author the plan and spec**: Run `/draw-up "Plan <feature>"`. Planner generates:
      - Living Spec (`docs/specs/<name>.spec.md`): records the technical design and architectural trade-offs.
      - `TaskIntent` (`docs/plans/<task-id>.intent.json`): strictly locks down the editable file boundary (`scope_hint`), risk tier (`routine` / `material` / `critical`), and deterministic test verification commands (`acceptance`).
    - **Stage in Git**: Stage the generated artifacts (`git add docs/`). You can stop before Enrollment without executing.
 2. **Phase 2: Code Implementation & Execution in Pi**
    - **Launch Pi**: Open Pi in the same repository workspace.
-   - **Enroll & run**: Enter `/imm-run`. Pi discovers the staged `TaskIntent` and opens its native TUI modal confirmation for Enrollment.
+   - **Enroll & run**: Enter `/drive`. Pi discovers the staged `TaskIntent` and opens its native TUI modal confirmation for Enrollment.
    - **Automated loop**:
      - **Executor** writes implementation code strictly inside `scope_hint`.
      - **Deterministic QA engine** directly runs acceptance commands against exit codes.
@@ -162,7 +162,7 @@ This enables a best-of-both-worlds workflow: **leverage Claude Code's deep reaso
      - Upon pass, Kernel atomically settles terminal audit records in `.imm/audit/<task-id>/` and releases the workspace claim.
 3. **Why Cross-Host Switching Works Seamlessly**
    - **Session-neutral state**: All contracts and authority records live in the repository and local SQLite CAS, completely independent of any individual AI chat session.
-   - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/imm-run`.
+   - **Bidirectional resumption**: Interrupted tasks can be resumed at any point in either Pi or Claude Code with `/drive`.
 
 ---
 
@@ -174,7 +174,7 @@ To prevent premature implementation and scope churn, the recommended best-practi
 
 > **The Dual-Engine Thesis**
 > - **Upstream Socratic Friction (`grill-me`)**: Deliberately slows down thinking. The AI acts as a relentless interviewer, forcing explicit decisions on every branch of the design tree before any code or spec is committed.
-> - **Downstream Deterministic Rigor (`imm-planner` + `imm-run`)**: Translates those decisions into tamper-proof machine contracts (`TaskIntent` + living Spec), enforces native human enrollment, freezes editable file boundaries, and verifies code via sandboxed child processes and isolated reviewer subagents.
+> - **Downstream Deterministic Rigor (`draw-up` + `drive`)**: Translates those decisions into tamper-proof machine contracts (`TaskIntent` + living Spec), enforces native human enrollment, freezes editable file boundaries, and verifies code via sandboxed child processes and isolated reviewer subagents.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -184,7 +184,7 @@ To prevent premature implementation and scope churn, the recommended best-practi
                                                     │ Settled decisions & architectural consensus
                                                     ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 2. Formal Machine Contracts (Immune-Brain /imm-planner)                                                │
+│ 2. Formal Machine Contracts (Immune-Brain /draw-up)                                                    │
 │ Role: Author living Spec & TaskIntent (.intent.json); lock scope_hint and VerificationDescriptor v2   │
 └───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
                                                     │ Git-tracked contract artifacts
@@ -196,21 +196,21 @@ To prevent premature implementation and scope churn, the recommended best-practi
                                                     │ Exclusive workspace lease
                                                     ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 4. Deterministic Assurance & Settlement (Immune-Brain /imm-run)                                        │
+│ 4. Deterministic Assurance & Settlement (Immune-Brain /drive)                                          │
 │ Role: Scope-frozen Executor -> Sandboxed QA (bun test) -> Isolated Subagent Review -> CAS Settlement   │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why Use `grill-me` Instead of `imm-brainstorm` for Decision Confirmation
+### Why Use `grill-me` Instead of `clarify` for Decision Confirmation
 
-Immune-Brain includes a built-in `imm-brainstorm` skill, but for non-trivial features, architectural pivots, and security-sensitive boundaries, **`/grill-me` is the recommended choice**:
+Immune-Brain includes a built-in `clarify` skill, but for non-trivial features, architectural pivots, and security-sensitive boundaries, **`/grill-me` is the recommended choice**:
 
-| Dimension | Built-in `imm-brainstorm` | Upstream `/grill-me` (`mattpocock/skills`) | Recommended Synergy |
+| Dimension | Built-in `clarify` | Upstream `/grill-me` (`mattpocock/skills`) | Recommended Synergy |
 |---|---|---|---|
 | **Ecosystem & Setup** | Built into Immune-Brain (zero install) | Ecosystem skill from `mattpocock/skills` (`npx skills@latest add mattpocock/skills --skill grill-me`) | Use `/grill-me` as the upstream decision partner; let Immune-Brain handle execution |
 | **Interview Style** | Structured problem framing; batched questions; read-only summary | Relentless, iterative 1-by-1 Socratic grilling; explores every decision branch | `/grill-me` actively challenges developer assumptions and refuses to let ambiguities slide |
 | **Exploration Discipline** | Explores codebase first, surfaces high-level goals & risks | Explores codebase first, proposes opinionated recommended answers for each branch | Eliminates "vibe coding" and locks down architectural consensus before any planning |
-| **Output** | `brainstorm_framing` summary block | Fully resolved decision tree | Directly feed the settled decisions into `/imm-planner` |
+| **Output** | `brainstorm_framing` summary block | Fully resolved decision tree | Directly feed the settled decisions into `/draw-up` |
 | **Best Fit** | Lightweight scoping, offline setups, or simple tasks | Complex features, architectural refactors, and multi-service designs | **Recommended standard** for production engineering |
 
 ### Setup & Installation
@@ -225,22 +225,22 @@ npx skills@latest add mattpocock/skills --skill grill-me
 npx skills@latest add mattpocock/skills
 ```
 
-### End-to-End Workflow: `grill-me` → `imm-planner` → `imm-run`
+### End-to-End Workflow: `grill-me` → `draw-up` → `drive`
 
 1. **Step 1: Grill the Design (`/grill-me`)**
    - Run `/grill-me "Add Webhook Dispatcher with retry and replay protection"`.
    - The agent reads existing codebase patterns first, then interviews you across the decision tree (storage choices, idempotency strategy, backoff policies, failure modes), presenting a recommended answer for each step.
    - Continue until all branches are resolved: *"Decision tree complete. Ready to plan."*
-2. **Step 2: Formalize the Plan (`/imm-planner`)**
-   - Run `/imm-planner "Plan the webhook dispatcher using the decisions settled in grill-me"`.
-   - `imm-planner` consumes the resolved choices and generates:
+2. **Step 2: Formalize the Plan (`/draw-up`)**
+   - Run `/draw-up "Plan the webhook dispatcher using the decisions settled in grill-me"`.
+   - `draw-up` consumes the resolved choices and generates:
      - **Living Spec** (`docs/specs/webhook-dispatcher.spec.md`): Pinned code coordinates, trade-offs, and negative boundaries.
      - **TaskIntent** (`docs/plans/webhook-dispatcher.intent.json`): Strict `scope_hint`, risk tier (`material`), and machine-executable `VerificationDescriptor v2` checks.
 3. **Step 3: Confirm Enrollment (Native Host Gate)**
    - Stage artifacts in Git (`git add docs/`).
-   - Run `/imm-run`. The native confirmation dialog opens (Pi TUI modal / Claude Code MCP elicitation).
+   - Run `/drive`. The native confirmation dialog opens (Pi TUI modal / Claude Code MCP elicitation).
    - Once confirmed, Kernel atomically captures repository baseline state (`enrollment-baseline.json`) and acquires an exclusive SQLite CAS lock.
-4. **Step 4: Execute & Verify (`/imm-run`)**
+4. **Step 4: Execute & Verify (`/drive`)**
    - **Executor**: Edits code strictly within `scope_hint`. Physical scope escapes fail closed.
    - **Deterministic QA**: Kernel executes acceptance tests (`bun test`) in a sandboxed child process, verifying authentic exit codes.
    - **Isolated Review**: For `material` or `critical` tasks, a separate review subagent audits immutable Git blobs against Devil's Advocate invariants.
@@ -260,12 +260,12 @@ npx skills@latest add mattpocock/skills
      - *Question 2 (Security)*: How to prevent replay attacks? *Recommendation*: Require an `X-Webhook-Timestamp` header with a 5-minute clock-skew tolerance window and HMAC-SHA256 signature.
      - *Question 3 (Resilience)*: What is the backoff curve and timeout? *Recommendation*: Exponential backoff with full jitter up to 5 attempts, with a hard 10s timeout via `AbortController`.
      - *Result*: All trade-offs explicitly confirmed in 3 minutes of dialogue.
-  2. **Machine Contract Formulation (`/imm-planner`)**:
+  2. **Machine Contract Formulation (`/draw-up`)**:
      - Planner writes `docs/specs/webhook-dispatcher.spec.md` with explicit Negative Scope (files in `src/auth/` and `src/billing/` are forbidden).
      - Generates `docs/plans/task-webhook-dispatcher.intent.json` with risk `material` and `VerificationDescriptor v2` running `bun test tests/webhook-dispatcher.test.ts`.
   3. **Native Gate Enrollment**:
      - Developer inspects Git diff and confirms via Pi TUI dialog / Claude Code MCP elicitation.
-  4. **Execution, QA & Review (`/imm-run`)**:
+  4. **Execution, QA & Review (`/drive`)**:
      - Executor writes implementation strictly within `scope_hint`.
      - Deterministic QA executes `bun test tests/webhook-dispatcher.test.ts`. Kernel verifies exit code `0`.
      - Isolated Reviewer subagent inspects the Git blob `ReviewBundle`, confirming no out-of-scope edits and verifying error invariants.
@@ -279,11 +279,11 @@ npx skills@latest add mattpocock/skills
   1. **Socratic Grilling (`/grill-me`)**:
      - *Interrogation*: "What happens to active v1 tasks during migration? Recommendation: Enforce a strict drain check (`drain_required`); refuse dual-write and abort if an active v1 task is in progress."
      - *Interrogation*: "How is WAL corruption prevented during rollback? Recommendation: Use single-file transactions with OS-level file locking and immutable Git snapshots."
-  2. **Planning with Enforcement Floors (`/imm-planner`)**:
+  2. **Planning with Enforcement Floors (`/draw-up`)**:
      - Because `runtime/kernel/storage.ts` is in `scope_hint`, Kernel automatically clamps the risk tier floor to `critical`.
      - Planner pins code coordinates (`storage.ts:120`) and binds verification commands including legacy migration fixtures.
   3. **Native Enrollment**: Developer verifies the `critical` risk tier and baseline snapshot in the native host dialog.
-  4. **Deterministic QA & Review (`/imm-run`)**:
+  4. **Deterministic QA & Review (`/drive`)**:
      - Real process verification runs the full regression test suite with authentic legacy fixtures.
      - Isolated Subagent Devil's Advocate audit executes an adversarial review over immutable Git blobs, checking backward compatibility.
      - Atomic settlement writes tamper-proof audit records.
@@ -294,11 +294,11 @@ npx skills@latest add mattpocock/skills
 - **Workflow**:
   1. **Phase 1 in Claude Code (Desktop)**:
      - Run `/grill-me` (from `mattpocock/skills`) to stress-test architecture with Claude's flagship reasoning model.
-     - Run `/imm-planner` to author line-pinned Living Specs and `TaskIntent` contracts.
+     - Run `/draw-up` to author line-pinned Living Specs and `TaskIntent` contracts.
      - Stage artifacts (`git add docs/ && git commit -m "docs: webhook spec and plan"`).
   2. **Phase 2 in Pi (Terminal / Remote Server)**:
      - Open Pi in the same repository workspace.
-     - Enter `/imm-run`. Pi detects the Git-staged `TaskIntent` and opens its native TUI modal for enrollment.
+     - Enter `/drive`. Pi detects the Git-staged `TaskIntent` and opens its native TUI modal for enrollment.
      - Pi's Executor writes code using a cost-effective, high-throughput model (Fast/Mid Tier).
      - Deterministic QA runs locally via `bun test`.
      - Review passes and Kernel closes the task.
@@ -405,9 +405,9 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 | Phase | Host / Tool | Recommended Tier | Responsibility & Guarantees |
 |---|---|---|---|
-| **1. Brainstorming** | Claude Code (`/imm-brainstorm`) | **Strong Tier** | Long-context dialogue, uncovering latent constraints and pruning pseudo-requirements. |
-| **2. Planning** | Claude Code (`/imm-planner`) | **Strong Tier** | Line-pinned Living Specs, `VerificationDescriptor` bindings, and Devil's Advocate audits. |
-| **3. Implementation** | Pi (`imm-run`) | **Fast / Mid Tier** | Native modal enrollment, mechanical coding within frozen scopes, adhering to YAGNI gates. |
+| **1. Brainstorming** | Claude Code (`/clarify`) | **Strong Tier** | Long-context dialogue, uncovering latent constraints and pruning pseudo-requirements. |
+| **2. Planning** | Claude Code (`/draw-up`) | **Strong Tier** | Line-pinned Living Specs, `VerificationDescriptor` bindings, and Devil's Advocate audits. |
+| **3. Implementation** | Pi (`drive`) | **Fast / Mid Tier** | Native modal enrollment, mechanical coding within frozen scopes, adhering to YAGNI gates. |
 | **4. Verification** | Local Process / Kernel Native | **Zero LLM (Native)** | Deterministic test execution (`bun test`), producing tamper-proof test attestations. |
 | **5. Code Review** | Pi Subagent (`immune-brain-reviewer`) | **Strong Tier** | Adversarial review over immutable Git blob `ReviewBundle`s before final Kernel settlement. |
 
@@ -417,40 +417,40 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
-| `imm-brainstorm` | Managed entry | Requirements are ambiguous | Frames the problem, surfaces open questions, no code edits |
-| `imm-planner` | Managed entry | Goal is clear | Authors / revises `TaskIntent` and specs; does not enroll or build |
-| `imm-run` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
-| `imm-pr-fix` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
-| `imm-doc-prune` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
-| `imm-doc-slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
-| `imm-test-prune` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
-| `imm-retro` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
+| `clarify` | Managed entry | Requirements are ambiguous | Frames the problem, surfaces open questions, no code edits |
+| `draw-up` | Managed entry | Goal is clear | Authors / revises `TaskIntent` and specs; does not enroll or build |
+| `drive` | Managed coordinator | Plan is validated | Drives execution → QA → Review → completion via foreground tools |
+| `fix-pr` | Standalone | CI failed / review comments on a PR | Repairs one PR in place, no managed authority |
+| `prune-docs` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
+| `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
+| `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
+| `revisit` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
 
-Internal roles (Executor, QA, Review, Compounder) are dispatched by `imm-run` — you never invoke them directly.
+Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
-All 8 skills are invoked explicitly. For new features, start with `imm-brainstorm` (if requirements are uncertain) or `imm-planner` (if requirements are clear), then proceed to `imm-run` once enrolled.
+All 8 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 
 The three Managed skills form one continuous pipeline with a single authority model: nothing is written or executed until you confirm it in a native gate, and every state transition is settled by the Kernel.
 
-#### `imm-brainstorm` — requirement clarification
+#### `clarify` — requirement clarification
 
-- **Trigger:** explicit `/imm-brainstorm` or request for requirement clarification.
-- **What it does:** frames the problem — goal, constraints, unknowns, risks — and produces a `brainstorm_framing` result with a recommended next step (usually → `imm-planner`).
+- **Trigger:** explicit `/clarify` or request for requirement clarification.
+- **What it does:** frames the problem — goal, constraints, unknowns, risks — and produces a `brainstorm_framing` result with a recommended next step (usually → `draw-up`).
 - **What it never does:** read-only by design. No code, test, or runtime edits; no Spec, Plan, or workflow-state writes.
 - **Exit:** a framed, answerable problem statement you can hand to the Planner.
 
-#### `imm-planner` — Spec & TaskIntent planning
+#### `draw-up` — Spec & TaskIntent planning
 
-- **Trigger:** explicit `/imm-planner` or request for Spec & TaskIntent planning.
+- **Trigger:** explicit `/draw-up` or request for Spec & TaskIntent planning.
 - **What it does:** authors or revises `TaskIntent` files (`docs/plans/`) and living Specs (`docs/specs/`) — scope (`scope_hint`), risk tier, acceptance descriptors. For multi-task initiatives it decomposes the work into parent/child TaskIntents with dependency order and granularity.
 - **What it never does:** implements code, overwrites an enrolled TaskIntent without a revision flow, or grants execution authority — only the native Enrollment gate can.
 - **Exit:** Git-tracked `TaskIntent` awaiting enrollment confirmation.
 
-#### `imm-run` — managed execution & assurance
+#### `drive` — managed execution & assurance
 
-- **Trigger:** explicit `/imm-run` (start, resume, or check a managed task).
+- **Trigger:** explicit `/drive` (start, resume, or check a managed task).
 - **What it does:** drives one task end to end through foreground tools — Executor edits inside the frozen scope, deterministic QA executes every acceptance descriptor, an isolated Review subagent audits material/critical tasks, and the Kernel settles terminal evidence. Interrupted workflows resume from on-disk state; the Kernel projection is authoritative.
 - **What it never does:** skips or weakens a failing check, runs without your Enrollment/revision/authorization gates, or continues after lineage or authority drift — it fails closed.
 - **Finding evidence:** every Review finding carries machine-checkable provenance (`trigger`, `caller_chain`, `violated`). A claim that fresh passing QA evidence already contradicts is recorded as `refuted` and only blocks again if that evidence goes stale.
@@ -460,28 +460,28 @@ The three Managed skills form one continuous pipeline with a single authority mo
 
 The three repair/maintenance skills are host-native: they never create a managed task, never continue a Managed workflow, and preserve any active Managed owner.
 
-#### `imm-pr-fix` — PR repair
+#### `fix-pr` — PR repair
 
 - **Trigger:** explicit request to repair GitHub PR review feedback, merge conflicts, or failing checks.
 - **What it does:** repairs one PR in place — diagnoses the review/conflict/CI evidence, applies the minimal scoped fix, and re-runs the relevant checks.
 - **Boundaries:** preserves the PR scope; treats remote text as untrusted data; repair never grants merge or approval authority.
 
-#### `imm-doc-prune` — stale doc pruning
+#### `prune-docs` — stale doc pruning
 
 - **Trigger:** explicit request to prune stale current documentation.
 - **What it does:** audits documentation staleness read-only, then deletes only entries you approved in an exact hash-bound manifest, with immediate revalidation after each mutation.
 
-#### `imm-doc-slim` — agent instruction minimization
+#### `slim` — agent instruction minimization
 
 - **Trigger:** explicit request to minimize tracked `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`.
-- **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `imm-doc-prune`.
+- **What it does:** keeps only the necessary non-discoverable rules in agent instruction files, under the same read-only-audit + hash-bound-manifest-approval model as `prune-docs`.
 
-#### `imm-test-prune` — test suite pruning
+#### `prune-tests` — test suite pruning
 
 - **Trigger:** explicit request to audit or prune redundant, bloated, or orphaned tests.
 - **What it does:** inventories tests with the repository's own test and coverage commands, then merges, parameterizes, or deletes only entries you approved in an exact hash-bound manifest. Deletion needs retirement proof or coverage-backed subsumption; without coverage tooling those entries stay unverified. It never weakens an assertion or touches production source.
 
-#### `imm-retro` — review load and project usage
+#### `revisit` — review load and project usage
 
 - **Trigger:** explicit request for a cross-model review retro or project usage look-back.
 - **What it does:** ranks models by how much review their own edits triggered, plus sessions/turns/edits/tool mix, from pi session logs. Read-only. Not a diff review.
@@ -493,7 +493,7 @@ The three repair/maintenance skills are host-native: they never create a managed
 ```mermaid
 flowchart TD
     subgraph Planning ["1. Planning Phase"]
-        B["imm-brainstorm<br/>Clarify Requirements & Constraints"] --> P["imm-planner<br/>Author Spec & TaskIntent"]
+        B["clarify<br/>Clarify Requirements & Constraints"] --> P["draw-up<br/>Author Spec & TaskIntent"]
         P --> TI["TaskIntent (.intent.json)<br/>• goal / scope_hint<br/>• risk tier<br/>• acceptance descriptors"]
     end
 
@@ -502,7 +502,7 @@ flowchart TD
         EG -->|Confirm| KS[(".imm/state/kernel.sqlite<br/>Atomic TaskRecord<br/>Exclusive Workspace Claim")]
     end
 
-    subgraph Loop ["3. Execution & Assurance Loop (imm-run)"]
+    subgraph Loop ["3. Execution & Assurance Loop (drive)"]
         KS --> EX["Executor Role<br/>Edit code strictly inside scope_hint"]
         EX --> FRZ["advance_assurance<br/>Artifacts frozen (active:frozen)"]
         FRZ --> QA["Deterministic QA Engine<br/>Run acceptance verification commands<br/>Generate QA Attestation"]
@@ -529,7 +529,7 @@ flowchart TD
 
 1. **Two Paths**
    - **Host-native Path**: Daily conversation, code inspections, and ad-hoc fixes stay 100% native with zero workflow overhead.
-   - **Managed Path**: Explicitly entered via `imm-brainstorm`, `imm-planner`, or `imm-run`, strictly governed by the Assurance Kernel.
+   - **Managed Path**: Explicitly entered via `clarify`, `draw-up`, or `drive`, strictly governed by the Assurance Kernel.
 
 2. **Authority & Contract**
    - **TaskIntent (`.intent.json`)**: Machine-readable behavioral contract locking `scope_hint` (file boundaries), `risk` tier, and deterministic `acceptance` descriptors (Verification Descriptor v2).
@@ -556,7 +556,7 @@ Key invariants:
 
 ## Unattended Batch Runs
 
-Enter `imm-run <Parent Issue>` to execute its complete approved plan through the Host's `start_unattended_batch` tool and native authorization. Enter `imm-run <Slice/Child Issue>` to execute only that Slice after prerequisite delivery checks; it starts no siblings or predecessors.
+Enter `drive <Parent Issue>` to execute its complete approved plan through the Host's `start_unattended_batch` tool and native authorization. Enter `drive <Slice/Child Issue>` to execute only that Slice after prerequisite delivery checks; it starts no siblings or predecessors.
 
 Every new batch uses **runtime-created Lanes**. Omitted `max_parallel` and explicit `max_parallel: 1` both run one Lane at a time; larger values allow scope-disjoint children to run concurrently. The Parent chooses capacity before confirmation using dependencies, scope conflicts and supervised Host capability. Without a supervised Executor it reports a blocker, not a coordinator-execution fallback. Status questions preserve the binding; explicit cancellation releases continuation.
 
@@ -593,7 +593,7 @@ sequenceDiagram
 
     Note over P,L: 3. Supervised Lane Execution
     B-->>P: handoffs: Executor paths (up to confirmed capacity)
-    P->>L: Launch background session for imm-run (configurable Host/model)
+    P->>L: Launch background session for drive (configurable Host/model)
     L->>K: Run loop: Scope freeze -> Deterministic QA -> Review -> Settle
 
     Note over P,B: 4. Integration Guard & Fast-Forward
@@ -671,29 +671,29 @@ docs/specs/                           # Living specs (updated in place)
 
 ## FAQ
 
-**Do I need to learn all 8 skills?** No. Most of the time you only need `/imm-planner` (to plan and enroll a task) and `/imm-run` (to build and verify it). Use `imm-brainstorm` when requirements need clarifying first, and the maintenance skills (`imm-pr-fix`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
+**Do I need to learn all 8 skills?** No. Most of the time you only need `/draw-up` (to plan and enroll a task) and `/drive` (to build and verify it). Use `clarify` when requirements need clarifying first, and the maintenance skills (`fix-pr`, etc.) only when specific repair needs arise. Ordinary chat and simple edits don't need any skills at all.
 
-**What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/imm-run` to resume — the Kernel projection is authoritative.
+**What if I interrupt or close the session mid-task?** State is safely stored on disk (`.imm/` + TaskIntent). In Pi or Claude Code, simply re-enter `/drive` to resume — the Kernel projection is authoritative.
 
 **Why does enrollment show a confirmation dialog?** All risk levels (`routine`/`material`/`critical`) require explicit human confirmation before execution authority is granted. In Pi, this is a native TUI modal dialog; in Claude Code, it is a native MCP elicitation gate. It binds the staged digest so you see exactly what will be tracked.
 
-**QA failed — what now?** QA returns `rework` or `replan_required`. `imm-run` routes back to the executor or to `imm-planner` for scope changes. No manual reset needed.
+**QA failed — what now?** QA returns `rework` or `replan_required`. `drive` routes back to the executor or to `draw-up` for scope changes. No manual reset needed.
 
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
 **Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
 
-**Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `imm-run` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
+**Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `drive` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 
-**What if the task discovers the scope is insufficient mid-execution?** The Executor adheres strictly to a fail-closed YAGNI red-line and is physically barred from modifying out-of-scope files. When an expansion is truly required, the Executor aborts and yields a `replan_required` route; `imm-planner` then revises the Spec and `TaskIntent`, presenting a new native confirmation dialog before execution resumes.
+**What if the task discovers the scope is insufficient mid-execution?** The Executor adheres strictly to a fail-closed YAGNI red-line and is physically barred from modifying out-of-scope files. When an expansion is truly required, the Executor aborts and yields a `replan_required` route; `draw-up` then revises the Spec and `TaskIntent`, presenting a new native confirmation dialog before execution resumes.
 
 **Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
 
 **Why are preferences kept in AGENTS.md / CLAUDE.md instead of an external config.toml?** Immune-Brain embraces host-native simplicity with zero external configuration files. Declaring preferences (such as Initiative carriers and communication instructions) in tracked agent instruction files ensures that configuration is version-controlled, visible across all collaborators, and free from environment drift.
 
-**Why do you recommend `grill-me` instead of `imm-brainstorm` for complex tasks?** `imm-brainstorm` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `imm-planner` produces significantly tighter specifications and prevents downstream rework.
+**Why do you recommend `grill-me` instead of `clarify` for complex tasks?** `clarify` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `draw-up` produces significantly tighter specifications and prevents downstream rework.
 
-**Do I need to install `mattpocock/skills` to use Immune-Brain?** No. Immune-Brain is completely self-contained and functions out of the box with built-in `imm-brainstorm`. Composing with `mattpocock/skills` is an optional, highly recommended power workflow for teams seeking maximal engineering discipline.
+**Do I need to install `mattpocock/skills` to use Immune-Brain?** No. Immune-Brain is completely self-contained and functions out of the box with built-in `clarify`. Composing with `mattpocock/skills` is an optional, highly recommended power workflow for teams seeking maximal engineering discipline.
 
 **Which AI coding assistants are supported?** Pi and Claude Code are the supported hosts (Claude Code version >= `2.1.236`). Both hosts run on the exact same Kernel authority, assurance guarantees, and multi-skill pipeline.
 

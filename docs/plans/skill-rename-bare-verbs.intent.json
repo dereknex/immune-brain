@@ -1,0 +1,64 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "skill-rename-bare-verbs",
+  "owner": "user",
+  "goal": "Rename the eight packaged Immune-Brain skills to the bare verbs of #318 (clarify, draw-up, drive, revisit, slim, prune-docs, prune-tests, fix-pr) and make the run-entry gate on both Hosts recognize only the new names under the 2026-10-28 rules, with the current documentation surface, ADR 0031, a major changeset and CONTEXT.md mapping aligned; dated history stays unedited. Technical design: docs/specs/skill-rename-bare-verbs.spec.md.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per #318 Decisions and G-D2 (docs/specs/skill-rename-bare-verbs.spec.md D2): the run-entry gate recognizes only the new names, through the Host input hooks on both Hosts. Positive: /drive, /immune-brain:drive, /skill:drive, /clarify, /draw-up and an alias whose body contains /drive enter their phase and a run entry mints a token. Negative: /imm-run, /imm-loop, alias bodies naming imm-run or imm-loop, an alias body 'drive the build', /driver, an alias body with two distinct marked phase mentions, a same-named user or project skill for bare /drive (Claude Code and Pi) and for /skill:drive on Pi, and a throwing skill reader all enter nothing and mint no token. Bound: a same-named user command is parsed by alias rules, and /immune-brain:drive still mints on Claude Code when a same-named user skill exists. Agreed seams: tests/phase-entry.test.ts, tests/claude-phase-entry-gate.test.ts, tests/claude-phase-entry-skill-gate.test.ts, tests/pi-phase-entry-gate.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/claude-phase-entry-skill-gate.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per the #318 mapping and docs/specs/skill-rename-bare-verbs.spec.md D1: the eight skills live under their new directory and dist names with matching frontmatter name, H1 'Immune-Brain: <Verb>', registry title and next_actions, and dist/drive-batch.md replaces dist/imm-run-batch.md; dist sync shows zero drift. Negative: any surviving old skill directory or old dist file, or an H1, title or next_actions entry that disagrees with the new name, fails. Agreed seams: plugins/immune-brain/tests/skill-registry-consistency.test.ts, tests/skill-registry-metadata-contract.test.ts, tests/skill-dist-consistency.test.ts, scripts/sync-dist-docs.ts --check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"for n in brainstorm planner run retro doc-slim doc-prune test-prune pr-fix; do test ! -e plugins/immune-brain/skills/imm-$n && test ! -e plugins/immune-brain/dist/imm-$n.md || exit 1; done; test ! -e plugins/immune-brain/dist/imm-run-batch.md && bun scripts/sync-dist-docs.ts --check && bun test plugins/immune-brain/tests/skill-registry-consistency.test.ts tests/skill-registry-metadata-contract.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per #318 Verification (revised) and G-D1 (docs/specs/skill-rename-bare-verbs.spec.md D4): a scan in tests/skill-dist-consistency.test.ts finds zero word-bounded old skill names (the eight old names and imm-loop) in plugins/immune-brain/** except plugins/immune-brain/tests/**, root README.md, CONTEXT.md (outside its delimited mapping table), AGENTS.md, CLAUDE.md, docs/agents/**, docs/reference/**, docs/user_manual.md and scripts/** except scripts/stale-reference-baseline.json. Negative: the scan helper reports a seeded imm-run in a sample. Bound: imm-plan, imm-kernel and imm-canary-work are not matches, and the stale-reference ratchet stays within its raised baseline. Agreed seams: tests/skill-dist-consistency.test.ts, tests/stale-reference-ratchet.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/stale-reference-ratchet.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per repository evidence (docs/agents/derived-files.json, docs/specs/skill-rename-bare-verbs.spec.md reference closure): the checked-in Claude bundle matches a fresh generate after the runtime rename, and both Host packages load the renamed skills. Negative: a stale mcp-server.mjs or a packed Pi loader still resolving an old skill path fails. Agreed seams: scripts/build-claude-plugin.ts --check, tests/claude-host-package.test.ts, tests/pi-canary-packed-loader.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun test tests/claude-host-package.test.ts tests/pi-canary-packed-loader.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Per #318 Decisions (docs/specs/skill-rename-bare-verbs.spec.md D3, D5): docs/adr/0031-*.md records the rename and names ADR 0025 as the recognition part it amends; .changeset/skill-rename-bare-verbs.md is a major immune-brain changeset whose breaking note names /immune-brain:drive and Pi /reload; CONTEXT.md carries the delimited old-to-new mapping table; the skills guide checklist includes the local user skill or command check. Negative: a missing ADR, a non-major changeset, or a note lacking either entry form fails. Agreed seam: shell checks over those files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=$(ls docs/adr/0031-*.md) && grep -q 'ADR 0025' \\\"$f\\\" && grep -q 'drive' \\\"$f\\\" && c=.changeset/skill-rename-bare-verbs.md && grep -q '\\\"immune-brain\\\": major' $c && grep -q '/immune-brain:drive' $c && grep -q '/reload' $c && grep -q 'skill-rename-map:start' CONTEXT.md && grep -qi 'local user skill or command' docs/reference/immune-brain-skills-guide.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "Per #318 Verification (revised) (docs/specs/skill-rename-bare-verbs.spec.md D4): dated history stays unedited. Negative: any change since 5a0d9a1 to an accepted ADR, to docs/plans or docs/specs other than this intent and Spec, to docs/reports, docs/solutions, docs/brainstorms, docs/evidence, docs/archives, docs/proposals, benchmark-results or CHANGELOG.md, or a modified or deleted existing changeset fails. Bound: the new ADR 0031, this intent, this Spec and the new changeset are allowed. Agreed seam: git diff against the pinned base.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"git diff --quiet 5a0d9a1 -- docs/adr ':!docs/adr/0031-*' docs/reports docs/solutions docs/brainstorms docs/evidence docs/archives docs/proposals benchmark-results CHANGELOG.md && git diff --quiet 5a0d9a1 -- docs/plans docs/specs ':!docs/plans/skill-rename-bare-verbs.intent.json' ':!docs/specs/skill-rename-bare-verbs.spec.md' && test -z \\\"$(git diff --name-only --diff-filter=MD 5a0d9a1 -- .changeset)\\\"\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/skill-rename-bare-verbs.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/adr/0031-bare-verb-skill-names.md",
+    "docs/plans/skill-rename-bare-verbs.intent.json",
+    "docs/reference/**",
+    "docs/specs/skill-rename-bare-verbs.spec.md",
+    "docs/user_manual.md",
+    "plugins/immune-brain/.pi-extension/**",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/EVALUATION.md",
+    "plugins/immune-brain/README.md",
+    "plugins/immune-brain/USER_GUIDE.md",
+    "plugins/immune-brain/dist/**",
+    "plugins/immune-brain/hooks/hooks.json",
+    "plugins/immune-brain/runtime/**",
+    "plugins/immune-brain/skills/**",
+    "plugins/immune-brain/tests/**",
+    "scripts/dist-sync-manifest.ts",
+    "scripts/stale-reference-baseline.json",
+    "tests/**"
+  ],
+  "scope_size_reason": "One atomic rename: the run-entry gate, packaged skill names, dist pairs, generated bundle and the tests that assert them must change together or the gate, dist sync and registry checks are red in any intermediate state; #318 decided one Managed task with no Lanes.",
+  "risk": "material",
+  "revision": 1
+}

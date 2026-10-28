@@ -69,8 +69,8 @@ const RUN_ENTRY_SESSION = { getSessionId: () => "pi-canary-lifecycle-package-tes
 const { recordPiPhaseInput } = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 
 function enrollmentContext(root: string) {
-	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
-	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
+	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
+	recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
 	return {
 		mode: "tui",
 		sessionManager: RUN_ENTRY_SESSION,
@@ -144,7 +144,7 @@ describe("pi canary lifecycle package composition", () => {
 		for (const f of [
 			"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 			"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
-			"plugins/immune-brain/skills/imm-run/SKILL.md",
+			"plugins/immune-brain/skills/drive/SKILL.md",
 		]) {
 			expect(existsSync(join(ROOT, f))).toBe(true);
 		}

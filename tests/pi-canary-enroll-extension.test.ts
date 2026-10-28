@@ -112,8 +112,8 @@ function makeFakeUI(confirmResult: boolean): FakeUI {
 }
 
 function makeCtx(root: string, ui: FakeUI, mode: Mode, cwdOverride?: string) {
-	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
-	recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: cwdOverride ?? root });
+	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
+	recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: cwdOverride ?? root });
 	return {
 		mode,
 		hasUI: mode === "tui" || mode === "rpc",
@@ -863,7 +863,7 @@ describe("pi canary enroll handler integration", () => {
 			expect(existsSync(join(root, ".imm/state/transactions"))).toBe(false);
 			const second = await runTool(root, makeFakeUI(true));
 			expect(second.details.state).toBe("route_incumbent");
-			expect(second.details.next_action).toContain("imm-run");
+			expect(second.details.next_action).toContain("drive");
 			expect(second.details.summary).toMatch(/already owns/i);
 			// The refused second enrollment wrote nothing.
 			expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);

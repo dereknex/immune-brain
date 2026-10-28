@@ -14,7 +14,7 @@ import { observeNativeParent } from "../plugins/immune-brain/runtime/unattended/
 import { readBatchLaneRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { observeParentRun } from "../plugins/immune-brain/runtime/assurance/run_continuation";
 import { registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
-import { recognizePhaseEntry } from "../plugins/immune-brain/runtime/assurance/phase_entry";
+import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { runFinalVerification, parseFinalVerificationReport } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
@@ -124,7 +124,7 @@ describe("native task transitions inside a Parent", () => {
   try {
    const base = { cwd: h.root, session_id: h.binding.session_id };
    const hook = (event: Record<string, unknown>) => runContinuationHookOutput({ ...base, ...event }, h.root);
-   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/imm-run parent" };
+   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/drive parent" };
    recordPhaseEntryPrompt(entry, { root: h.root }); await hook(entry);
    const batch = { tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "batch", tool_input: { initiative_slug: "parent" } };
    await hook({ ...batch, hook_event_name: "PreToolUse" });
@@ -148,10 +148,10 @@ describe("native task transitions inside a Parent", () => {
   try {
    const handlers = new Map<string, Function>();
    registerPiRunContinuation({ on: (name: string, callback: Function) => handlers.set(name, callback) } as any,
-    { entry: text => recognizePhaseEntry(text, () => null) });
+    { entry: text => recognizePhaseEntry(text, NO_LOCAL_NAMES, "pi") });
    const ctx = { cwd: h.root, sessionManager: { getSessionId: () => h.binding.session_id, getLeafId: () => "boundary" } };
    const emit = (name: string, event: unknown) => handlers.get(name)?.(event, ctx);
-   await emit("input", { text: "/imm-run parent", source: "interactive" });
+   await emit("input", { text: "/drive parent", source: "interactive" });
    await emit("tool_call", { toolName: "start_unattended_batch", toolCallId: "batch", input: { initiative_slug: "parent" } });
    await emit("tool_result", { toolName: "start_unattended_batch", toolCallId: "batch", isError: false, details: { state: "started", batch_id: h.binding.batch_id } });
    const gate = { toolName: "imm_canary_enrollment", toolCallId: "gate", input: { task_id: "other-task" } };
@@ -171,7 +171,7 @@ describe("native task transitions inside a Parent", () => {
   try {
    const base = { cwd: h.root, session_id: h.binding.session_id };
    const hook = (event: Record<string, unknown>) => runContinuationHookOutput({ ...base, ...event }, h.root);
-   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/imm-run parent" };
+   const entry = { ...base, hook_event_name: "UserPromptSubmit", prompt: "/drive parent" };
    recordPhaseEntryPrompt(entry, { root: h.root }); await hook(entry);
    const batch = { tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "batch", tool_input: { initiative_slug: "parent" } };
    await hook({ ...batch, hook_event_name: "PreToolUse" });

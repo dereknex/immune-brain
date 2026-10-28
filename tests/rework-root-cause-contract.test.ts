@@ -38,7 +38,7 @@ describe("rework generalization rule", () => {
 	});
 
 	it("requires the second rework to generalize or refute", () => {
-		const loop = readFlat("plugins/immune-brain/dist/imm-run.md");
+		const loop = readFlat("plugins/immune-brain/dist/drive.md");
 		expect(loop).toContain("On the second rework of one acceptance id or anchor");
 		expect(loop).toContain("covers every known trigger class of the violated invariant");
 		expect(loop).toContain("`refute_finding` bound to fresh QA evidence");
@@ -48,7 +48,7 @@ describe("rework generalization rule", () => {
 
 describe("state-machine consumer enumeration", () => {
 	it("is required before authoring the intent", () => {
-		const planner = readFlat("plugins/immune-brain/dist/imm-planner.md");
+		const planner = readFlat("plugins/immune-brain/dist/draw-up.md");
 		expect(planner).toContain("adds a field or verdict branch to a state machine");
 		expect(planner).toContain("every consumer of that value and of the version gates");
 		expect(planner).toContain("Name all of them in `scope_hint`.");

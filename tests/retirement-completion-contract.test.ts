@@ -8,7 +8,7 @@ const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
 const BASELINE_CANONICAL = read("plugins/immune-brain/BASELINE.md");
 const BASELINE_DIST = read("plugins/immune-brain/dist/BASELINE.md");
 const BASELINE_SKILLS = read("plugins/immune-brain/skills/BASELINE.md");
-const PLANNER_DIST = read("plugins/immune-brain/dist/imm-planner.md");
+const PLANNER_DIST = read("plugins/immune-brain/dist/draw-up.md");
 const BASELINES = [BASELINE_CANONICAL, BASELINE_DIST, BASELINE_SKILLS];
 const PLANNERS = [PLANNER_DIST];
 

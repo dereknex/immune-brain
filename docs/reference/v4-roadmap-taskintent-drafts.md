@@ -81,7 +81,7 @@ into three chains, because two files are contended by four slices each.
 **Contention points, verified rather than assumed.**
 `scripts/dist-sync-manifest.ts` holds both `BASELINE_COPIES` and
 `ROLE_PROMPT_SOURCE_DIR`/`ROLE_PROMPT_DIST_DIR`, so 2.2 and 2.3 cannot run
-together. `plugins/immune-brain/dist/imm-planner.md` is claimed by 2.3, 4.1 and
+together. `plugins/immune-brain/dist/draw-up.md` is claimed by 2.3, 4.1 and
 the contract-document half of 3.3. Every Phase 3 slice writes
 `.pi-extension/imm-canary-enroll.ts`. The original 2.2 draft named
 `scripts/sync-dist-docs.ts`, which is the wrong file; the manifest is where the
@@ -283,25 +283,25 @@ Until that lands, either run Managed work serially in the main worktree, or copy
 
 Found while sizing Wave A, and it outranks every remaining draft. The documents
 agents load at runtime are the `dist` copies, and each dwarfs the skill that
-nominally sources it: `imm-planner` 5,570 bytes of skill against 34,155 of dist,
-`imm-brainstorm` 2,393 against 13,374, `imm-loop` 3,371 against 13,086. About
+nominally sources it: `draw-up` 5,570 bytes of skill against 34,155 of dist,
+`clarify` 2,393 against 13,374, `drive` 3,371 against 13,086. About
 60KB of binding instruction sits downstream of 11KB of source.
 
 The only guard, `tests/skill-dist-consistency.test.ts`, compares presence of an
 eight-entry `RUNTIME_SURFACE` token list, so it says nothing about the other
-~50KB. Demonstration: `dist/imm-planner.md` mentions Roadmap four times,
-`skills/imm-planner/SKILL.md` mentions it zero times, and the guard passes.
-Neither `sync-dist-docs.ts` nor `dist-sync-manifest.ts` names `imm-planner`, so
+~50KB. Demonstration: `dist/draw-up.md` mentions Roadmap four times,
+`skills/draw-up/SKILL.md` mentions it zero times, and the guard passes.
+Neither `sync-dist-docs.ts` nor `dist-sync-manifest.ts` names `draw-up`, so
 no generation step binds the pair either.
 
-Phase 0 fixed one symptom of this — `dist/imm-loop.md` directing agents to a
+Phase 0 fixed one symptom of this — `dist/drive.md` directing agents to a
 retired command. The mechanism that allowed it was never touched. This promotes
 4.2 from a routine cleanup gated behind 4.1 into the highest-value remaining
 slice, authored as 012.
 
 ### Wave A — three slices in parallel, plus direct bookkeeping
 
-The one real contention point is `dist/imm-planner.md`, touched by 2.3, 3.3 and
+The one real contention point is `dist/draw-up.md`, touched by 2.3, 3.3 and
 4.1, so those three serialize into a single lane. `imm-canary-enroll.ts` is
 shared by 3.3 and 3.4, and 3.4 was already downstream. Everything else is
 independent.
@@ -361,7 +361,7 @@ tests/fast-track-detection.test.ts
 tests/handoff-projection.test.ts
 tests/handoff-scope-exclusion.test.ts
 tests/heal-activation.test.ts
-tests/imm-loop-review-lifecycle-state.test.ts
+tests/loop-review-lifecycle-state.test.ts
 tests/immune-brain-config-runtime.test.ts
 tests/loop-child-output-contract.test.ts
 tests/loop-execution-routing.test.ts
@@ -434,8 +434,8 @@ off the deletion chain rather than sitting in it
 **Product decision, not a cleanup.** The loader has no caller anywhere:
 `runtime/v4_runtime.ts` and every `.pi-extension/*` module ignore it. Meanwhile
 `[subagent_activation]` is asserted as binding policy by `AGENTS.md`, the
-bootstrap `AGENTS.md` template, the packaged `dist/imm-planner.md` and
-`dist/imm-brainstorm.md` contracts — which define `auto`, `explicit_only`, and
+bootstrap `AGENTS.md` template, the packaged `dist/draw-up.md` and
+`dist/clarify.md` contracts — which define `auto`, `explicit_only`, and
 `disabled` and instruct agents to honor them before dispatching subagents — and
 six reference documents including `docs/reference/immune-brain-config.md` with
 its override-precedence table.
@@ -593,7 +593,7 @@ both inside the island.
 Axis 1, test importers (17): `plugins/immune-brain/tests/review-gates.test.ts`,
 `advisory-budget-contract`, `advisory-dispatch-core`, `authority-commit-receipts`,
 `bounded-ledger-history`, `execution-evidence-runtime`, `handoff-projection`,
-`heal-activation`, `imm-loop-review-lifecycle-state`, `immune-brain-config-runtime`,
+`heal-activation`, `loop-review-lifecycle-state`, `immune-brain-config-runtime`,
 `pi-brainstorm-agent-result-contract`, `pi-only-runtime-host-contract`,
 `planner-ensemble-contract`, `roadmap-plan-transition-state`, `role-prompt-bridge`,
 `runtime-state`, `state-ledger-migration`.
@@ -813,10 +813,10 @@ Deleting the prompts would break the dispatch surface. Drop
 `acc-unreachable-prompts-absent` entirely.
 
 **What survives is narrower and still real.** v3 Plan mutation is retired, so no
-new prose Plan can be created, yet `dist/imm-planner.md` still instructs agents
+new prose Plan can be created, yet `dist/draw-up.md` still instructs agents
 to produce Roadmap-backed Plans and to record `roadmap-slice/v1` fields (lines
 113, 190, 197, 232). Those are instructions that can never be followed — the same
-defect Phase 0 removed from `dist/imm-loop.md`. A re-scoped slice would trim the
+defect Phase 0 removed from `dist/drive.md`. A re-scoped slice would trim the
 planner contract only, leave `plan_core.ts` parsing intact for backward
 compatibility, and decide whether `CONTEXT.md` keeps the terms marked historical
 rather than deleting definitions the parser still relies on.
@@ -826,7 +826,7 @@ rather than deleting definitions the parser still relies on.
 **goal**
 
 > Close the vocabulary deferral recorded in Phase 0. Remove the Roadmap-family
-> terms from `CONTEXT.md` together with the `dist/imm-planner.md` Roadmap-Backed
+> terms from `CONTEXT.md` together with the `dist/draw-up.md` Roadmap-Backed
 > Planning section that mandates recording them, so no contract requires a field
 > the vocabulary no longer defines. Delete the `ui-review` and `qa` role prompts,
 > which cannot be dispatched on the Kernel path because native review hardcodes
@@ -840,7 +840,7 @@ rather than deleting definitions the parser still relies on.
 - `acc-unreachable-prompts-absent` — the `ui-review` and `qa` role prompts and
   their packaged copies do not exist.
 
-**scope_hint** — `CONTEXT.md`, `plugins/immune-brain/dist/imm-planner.md`,
+**scope_hint** — `CONTEXT.md`, `plugins/immune-brain/dist/draw-up.md`,
 `runtime/prompts/`, `dist/role-prompts/`, plus `RE-VERIFY` for `plan_core.ts`
 roadmap validation if the fields are removed from Plan parsing too.
 
@@ -1005,7 +1005,7 @@ on the reducer.
 - `acc-absence-tests-scoped` — the contract states absence tests are transitional
   and may not stand in place of deletion.
 
-**scope_hint** — `plugins/immune-brain/dist/imm-planner.md`, the BASELINE
+**scope_hint** — `plugins/immune-brain/dist/draw-up.md`, the BASELINE
 authoring source, plus a contract test.
 
 ### 4.2 `packaged-contract-coverage-check`

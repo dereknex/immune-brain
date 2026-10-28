@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
-const DIST_PLANNER = resolve(REPO_ROOT, "plugins/immune-brain/dist/imm-planner.md")
+const DIST_PLANNER = resolve(REPO_ROOT, "plugins/immune-brain/dist/draw-up.md")
 const CONTRACTS_HUB = resolve(REPO_ROOT, "docs/solutions/contracts.md")
 
 // Settlement-class intent surface: the requirement keywords the packaged
@@ -25,16 +25,16 @@ describe("planner settlement-design contract", () => {
   it("packaged planner contract mandates the settlement enumeration", () => {
     const dist = readFileSync(DIST_PLANNER, "utf-8").replace(/\s+/g, " ")
     for (const phrase of REQUIRED_SURFACE) {
-      expect(dist, `dist/imm-planner.md must contain ${JSON.stringify(phrase)}`).toContain(phrase)
+      expect(dist, `dist/draw-up.md must contain ${JSON.stringify(phrase)}`).toContain(phrase)
     }
   })
 
   it("source skill entry point loads the canonical packaged contract", () => {
     const skill = readFileSync(
-      resolve(REPO_ROOT, "plugins/immune-brain/skills/imm-planner/SKILL.md"),
+      resolve(REPO_ROOT, "plugins/immune-brain/skills/draw-up/SKILL.md"),
       "utf-8",
     )
-    expect(skill).toContain("dist/imm-planner.md")
+    expect(skill).toContain("dist/draw-up.md")
     expect(skill).toContain("canonical contract")
   })
 

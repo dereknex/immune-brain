@@ -902,7 +902,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			ctx,
 		);
 		expect(JSON.parse(action.content[0].text)).toMatchObject({
-			entry: "imm-run",
+			entry: "drive",
 			next: "executor",
 			context: { role: "executor", tool_policy: "workspace tools" },
 		});
@@ -1009,7 +1009,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			expect(explanation).toEqual({ action: "continue" });
 			expect(existsSync(join(readOnly, "AGENTS.md"))).toBe(false);
 			expect(await handler!(
-				{ source: "interactive", text: "/skill:imm-planner explicit" },
+				{ source: "interactive", text: "/skill:draw-up explicit" },
 				makeCtx(readOnly, makeUI()),
 			)).toEqual({ action: "continue" });
 			expect(await handler!(

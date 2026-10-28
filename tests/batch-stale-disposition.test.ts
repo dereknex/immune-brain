@@ -327,7 +327,7 @@ describe("stale batch disposition", () => {
 		const reportRecord = report as { reason: string; next_action: string; handoff?: unknown };
 		expect(reportRecord.reason).toContain("explicit literal-user disposition");
 		expect(reportRecord.reason).toContain("no batch trailer and no approval");
-		expect(reportRecord.next_action).toContain("imm-run");
+		expect(reportRecord.next_action).toContain("drive");
 		// The retired authorization grants no handoff to the children it never ran.
 		expect(reportRecord.handoff).toBeUndefined();
 	});
@@ -415,11 +415,11 @@ describe("stale batch disposition", () => {
 		};
 	}
 
-	it("a literal imm-run entry retires through the hook admission and tools/call with no gate, recording an entry reference", async () => {
+	it("a literal drive entry retires through the hook admission and tools/call with no gate, recording an entry reference", async () => {
 		const r = repo();
 		write(r, serialRecord(r));
 		const s = await seamSession(r);
-		expect(s.prompt(`/imm-run ${SLUG}`)).toBe(true);
+		expect(s.prompt(`/drive ${SLUG}`)).toBe(true);
 		expect(s.hook("toolu_retire")).toBeNull();
 		const reply = await s.retire("toolu_retire");
 		expect(reply?.error).toBeUndefined();

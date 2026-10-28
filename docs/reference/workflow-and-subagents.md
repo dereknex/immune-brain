@@ -1,8 +1,8 @@
 # Public Skill 目录与系统 Subagent 参考
 
 本页描述 Immune-Brain 的六个 user-facing Skill 入口及其内部 role/runtime 合同。
-Managed Path 入口是 `imm-brainstorm`、`imm-planner` 和 `imm-run`；`imm-pr-fix`、
-`imm-doc-prune` 和 `imm-doc-slim` 是独立 host-native 维护 Skill。下文的 executor、QA、Review、explorer、advisory、
+Managed Path 入口是 `clarify`、`draw-up` 和 `drive`；`fix-pr`、
+`prune-docs` 和 `slim` 是独立 host-native 维护 Skill。下文的 executor、QA、Review、explorer、advisory、
 Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 本页从主 [README.md](../../README.md) 拆出，便于单独阅读与打印。内容与仓库契约测试中的「用户文档表面」一致：**契约测试会将本文与 README 合并后做断言**。
@@ -11,7 +11,7 @@ Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 ## 六个 public Skill 入口与内部 role 合同
 
-### `imm-brainstorm`
+### `clarify`
 对问题先做结构化头脑风暴，明确范围、边界和假设，并把任务转换成可规划状态。
 
 *   **特色**：扮演批判性“内省质询哨兵”，实施深度 Gap 扫描，主动挑战复杂过度工程。
@@ -20,8 +20,8 @@ Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 内嵌原则：Think before coding。先暴露假设和分歧，不静默选择。
 
-### `imm-brainstorm`（`adversarial` mode）
-可选高压闸门：仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录时使用 `imm-brainstorm` 的 `adversarial` mode；大多数任务由 `imm-brainstorm` 内联挑战后直接进入 `imm-planner`。这个阶段只决定 scope 应保持、收缩，还是有限扩展，并确认工程边界是否已足够闭合。
+### `clarify`（`adversarial` mode）
+可选高压闸门：仅在 scope 不稳且存在显著多方分歧、或需要结构化审计记录时使用 `clarify` 的 `adversarial` mode；大多数任务由 `clarify` 内联挑战后直接进入 `draw-up`。这个阶段只决定 scope 应保持、收缩，还是有限扩展，并确认工程边界是否已足够闭合。
 
 *   **特色**：非侵入式只读压力测试，纯粹聚焦于范围裁剪与闭环逻辑审计，严禁触碰代码或重编细节。
 *   **优势**：强力拦截无节制的 ambition 膨胀，确保进入规划前具备 100% 确定性的工程着陆面。
@@ -35,7 +35,7 @@ Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 职责：
 - 判断是否有可执行计划
 - 激活或定位当前可执行 step
-- 跟踪当前状态并进入 internal executor、internal QA 或 `imm-planner` 语义
+- 跟踪当前状态并进入 internal executor、internal QA 或 `draw-up` 语义
 - 让一次“继续”只推进当前 step，不静默跨入下一个 step
 - 当前 step 需要执行时，同一轮进入 executor 语义并留下 evidence
 - 在 `pass` 后报告下一个可继续 step，但不默认自动跑完整 plan
@@ -50,7 +50,7 @@ Compounder 以及 Loop 内部 repair role 都不是额外可安装 Skill。
 
 内嵌原则：Goal-driven execution。每次只围绕当前可验收目标协调状态。
 
-### `imm-planner`
+### `draw-up`
 负责定义边界和拆解任务。
 
 职责：
@@ -113,9 +113,9 @@ Loop Engineering Discipline enhances the existing `Step` evidence loop; it is no
 对单步外的代码审查进行结构化处理（PR review、反馈回路、CI 失败归并）；
 输出 blocker/fix/defer，并明确区分“当前边界可直接修”与“需要新 follow-up plan”；
 review 还应附带一个 bounded `follow_up` handoff，把最小修复边界、成功目标和验证提示交给下一轮；
-前者进入 `imm-planner` 收敛成 validated one-step / small-step plan，再由 `imm-run` 的
+前者进入 `draw-up` 收敛成 validated one-step / small-step plan，再由 `drive` 的
 internal executor 执行，
-后者则直接路由回 `imm-planner` 生成新的 follow-up slice。
+后者则直接路由回 `draw-up` 生成新的 follow-up slice。
 
 *   **特色**：代码联检宿主，引入“文件级上下文分片（Context Sharding）”，分发任务给各专项只读顾问。
 *   **优势**：利用分片提高审计吞吐率以规避大文件审查死角，采用可观察准则（verification criteria）进行 Findings 排重，将小问题降级回流直修而无需 planner重写计划。
@@ -163,13 +163,13 @@ internal executor 执行，
 ### Public Skills and internal role boundaries
 
 The table below deliberately separates the three discoverable Managed Skills from roles that only
-`imm-run` dispatches internally.
+`drive` dispatches internally.
 
 | Surface | Write boundary | Output |
 |---|---|---|
-| `imm-brainstorm` | Read-only by default; optional `docs/brainstorms/` artifact | Problem frame, assumptions, risks, next-stage handoff |
-| `imm-planner` | `docs/specs/`, `docs/plans/`, and planning memory | Validated Spec/Plan and verification paths |
-| `imm-run` | Current workflow boundary through explicit runtime actions | Execution, QA, Review, repair, learning, or terminal next action |
+| `clarify` | Read-only by default; optional `docs/brainstorms/` artifact | Problem frame, assumptions, risks, next-stage handoff |
+| `draw-up` | `docs/specs/`, `docs/plans/`, and planning memory | Validated Spec/Plan and verification paths |
+| `drive` | Current workflow boundary through explicit runtime actions | Execution, QA, Review, repair, learning, or terminal next action |
 | Internal `executor` | Active Step or accepted same-boundary follow-up only | Execution evidence |
 | Internal `qa` | Evidence and review decision fields only | `pass` / `rework` / `replan` |
 | Internal `code-review` / `ui-review` | Read-only review evidence | Findings and stable gate decisions |
@@ -187,28 +187,28 @@ Immune-Brain 的系统级 subagents 按三层设计，避免把上游的大型 a
 2. **条件风险层**：仅在任务触及对应风险时启用，例如 security、data、API、reliability、UI 或 release readiness；不作为每次任务的默认参与者。
 3. **项目专用层**：仅面向特定项目类型启用，例如 AI eval、prompt contract、docs verification 或 debug investigation。
 
-这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `imm-run` 的 active-step
-或 authority gate，也不能替代 `imm-brainstorm`、`imm-planner` 或 `imm-run` 的边界判断。
+这些 subagents 只能提供受控执行或 advisory 输入，不能绕过 `drive` 的 active-step
+或 authority gate，也不能替代 `clarify`、`draw-up` 或 `drive` 的边界判断。
 
 #### Authority 与 Routing Boundary
 
 在 Immune-Brain 里，需要把 3 类东西分开看：
 
-- `imm-brainstorm`（`roundtable` mode）：独立的只读会诊层，只负责暴露多角色观点；它不是 system subagent roster，也不拥有 scope、plan、execution 或 QA authority。
+- `clarify`（`roundtable` mode）：独立的只读会诊层，只负责暴露多角色观点；它不是 system subagent roster，也不拥有 scope、plan、execution 或 QA authority。
 - system subagents：父 orchestrator 按需调用的辅助能力；它们可以提供 advisory、planning artifact、active-step bounded execution 或 review evidence，但都不能静默升级成 authority role。
-- `imm-*` authority roles：真正拥有流程决策权的闭环内部角色，例如 `imm-planner`、internal executor、internal QA；system subagents 只能映射或服务于这些角色，不能取代它们。
+- `imm-*` authority roles：真正拥有流程决策权的闭环内部角色，例如 `draw-up`、internal executor、internal QA；system subagents 只能映射或服务于这些角色，不能取代它们。
 
 runtime 只存在 4 类 system subagent authority class，举例一律使用 runtime role 名：
 
 - **advisory**：只给出研究、评审或风险意见，例如 internal `arch-explorer`、internal `code-review`、internal `ui-review`、internal `advisory-reviewer`。
-- **planning artifact writer**：只写 planning artifact，不改实现，例如 `imm-planner`。
-- **active-step bounded executor**：只在 `imm-run` 已激活当前 step 后，改动当前 step 范围内的文件，例如 internal `executor`、internal `pr-fix`、internal `test-fixer`。
+- **planning artifact writer**：只写 planning artifact，不改实现，例如 `draw-up`。
+- **active-step bounded executor**：只在 `drive` 已激活当前 step 后，改动当前 step 范围内的文件，例如 internal `executor`、internal `pr-fix`、internal `test-fixer`。
 - **review evidence producer**：只产出闭合判断或复用沉淀所需 evidence / artifact，例如 internal `qa`、internal `compounder`。
 
 无论哪一类 subagent：
 
 - 都不能直接决定最终 scope posture；
-- 都不能跳过 `imm-run` 的 active-step gate；
+- 都不能跳过 `drive` 的 active-step gate；
 - 都不能把 advisory 结果直接转成 plan rewrite、code edit 或 QA `pass`；
 - 一旦需要超出当前 authority class 的行为，必须回到对应的 `imm-*` role 继续闭环。
 
@@ -275,9 +275,9 @@ separate model-tier mapping or provider configuration.
 |---|---|---|---|---|
 | `debug_hypothesis`（`imm-advisory-reviewer` lens） | incident、tricky bug、复现困难或需要系统性排查的故障场景 | 它面向调查型任务，不是 steady-state 开发闭环的常驻角色 | 由 internal `arch-explorer` + internal `code-review` + 当前 active step 的最小复现组合替代 | hypotheses、repro path、missing signals、next probes |
 
-对 AI/agent 项目中的 prompt、tool contract、instruction、structured output 或 safety boundary 变更，`imm-advisory-reviewer` 通过 `prompt_contract` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `imm-planner` + `imm-code-review` 的基础一致性审查，而不是把它提升成默认 gate。
+对 AI/agent 项目中的 prompt、tool contract、instruction、structured output 或 safety boundary 变更，`imm-advisory-reviewer` 通过 `prompt_contract` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `draw-up` + `imm-code-review` 的基础一致性审查，而不是把它提升成默认 gate。
 
-对 AI/agent 项目中的 behavior、eval set、rubric、guardrail 或 production monitoring 设计变更，`imm-advisory-reviewer` 通过 `ai_eval` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `imm-planner` 的最小 eval 方案或人工验收路径，而不是把它提升成默认 gate。
+对 AI/agent 项目中的 behavior、eval set、rubric、guardrail 或 production monitoring 设计变更，`imm-advisory-reviewer` 通过 `ai_eval` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 `draw-up` 的最小 eval 方案或人工验收路径，而不是把它提升成默认 gate。
 
 对 README、用户文档、setup instructions、usage examples 或 behavior-to-docs delta 变化，`imm-advisory-reviewer` 通过 `docs` lens 只在显式触发时加入；如果当前环境没有这条 dedicated reviewer 路径，回退到 internal `executor` 的手动 docs check 或 `imm-code-review` 的基础文档一致性检查，而不是把它提升成默认 gate。
 
@@ -293,6 +293,6 @@ system subagents 的首版只做治理与契约，不做以下事情：
 
 - 不实现完整自动调度平台或 runtime registry。
 - 不复制任何上游项目的完整 agent roster。
-- 不允许 subagent 绕过 `imm-run` 激活 step、绕过 internal executor 改实现，或绕过 internal QA 记录闭合结论。
+- 不允许 subagent 绕过 `drive` 激活 step、绕过 internal executor 改实现，或绕过 internal QA 记录闭合结论。
 - 不引入 agent-to-agent 通信、长期 party state 或全局 subagent memory。
 - 不在首版默认常驻大规模项目专用 roster。

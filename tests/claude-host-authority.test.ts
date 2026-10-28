@@ -45,7 +45,7 @@ function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId:
 	const root = mkdtempSync(join(tmpdir(), "imm-phase-entry-"));
 	// The entry token binds the workspace the entry was typed in (ADR 0025).
 	const session = { session_id: "phase-entry-test-session", cwd: workspace ?? root };
-	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/imm-run", ...session }, { root, home: root });
+	recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/drive", ...session }, { root, home: root });
 	return {
 		consumePhaseAdmission(toolCallId, operation) {
 			phaseEntryGateHookOutput({
@@ -1770,7 +1770,7 @@ describe("hook entry writes only for active work", () => {
 	test("UserPromptSubmit records run entry before a task exists", () => {
 		const root = fixture();
 		const store = fixture();
-		const result = hook(root, store, "UserPromptSubmit", { prompt: "/imm-run" });
+		const result = hook(root, store, "UserPromptSubmit", { prompt: "/drive" });
 		expect(result.status).toBe(0);
 		expect(result.stdout).toBe("");
 		expect(result.stderr).toBe("");

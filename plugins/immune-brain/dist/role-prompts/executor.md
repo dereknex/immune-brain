@@ -89,7 +89,7 @@ A finding whose defect lies inside the TaskIntent goal and acceptance is
 ordinary rework even when no acceptance names its exact case: fix the code and
 add the test that pins the case. Do not propose an Intent revision for it, and
 never append a single input case to an acceptance assertion to close a finding;
-acceptance states principles, tests enumerate cases. Route to `imm-planner` only
+acceptance states principles, tests enumerate cases. Route to `draw-up` only
 when the goal, bound Spec design, or a user-visible commitment must change.
 
 ## Code Quality Guard
@@ -114,6 +114,6 @@ Fix task-owned integrity defects before Verification. Autonomously diagnose,
 repair, and rerun failing ordinary local checks for the accepted outcome;
 disclose paths beyond the estimate. If fixing requires a change to the goal,
 bound Spec design, or an accepted user-visible commitment, stop and route the
-concrete reason to `imm-planner`. An unavailable or still-failing required
+concrete reason to `draw-up`. An unavailable or still-failing required
 check is an explicit blocker: report it to the Parent; never present failed
 verification as completion.

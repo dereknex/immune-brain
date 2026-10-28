@@ -34,13 +34,13 @@ describe("Roadmap successor workflow role contracts", () => {
 				expect(packaged).toContain(contract);
 			}
 		}
-		const loader = read("plugins/immune-brain/skills/imm-run/SKILL.md");
-		expect(loader).toContain("dist/imm-run.md");
+		const loader = read("plugins/immune-brain/skills/drive/SKILL.md");
+		expect(loader).toContain("dist/drive.md");
 		expect(loader).toContain("canonical contract");
 	});
 
 	it("orders Compounder and finish before the terminal user decision stop", () => {
-		const loop = read("plugins/immune-brain/dist/imm-run.md");
+		const loop = read("plugins/immune-brain/dist/drive.md");
 		for (const content of [loop]) {
 			expect(content).toContain("internal Compounder");
 			expect(content).toContain("terminal settlement");

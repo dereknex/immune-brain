@@ -1,5 +1,5 @@
 /**
- * Runtime validation for `imm-run` subagent output.
+ * Runtime validation for `drive` subagent output.
  *
  * The loop parent collects QA and reviewer decisions from isolated children.
  * Those decisions are untrusted input: they arrive as free-form JSON produced
@@ -42,10 +42,10 @@ export type LoopRouteNext =
 	| "compounder"
 	| "lane-steward"
 	| "imm_kernel_canary"
-	| "imm-planner";
+	| "draw-up";
 
 export interface LoopRoute {
-	entry: "imm-run";
+	entry: "drive";
 	next: LoopRouteNext;
 }
 
@@ -62,33 +62,33 @@ export function resolveLoopRoute(input: {
 	 */
 	scope_expansion?: boolean;
 }): LoopRoute {
-	if (input.scope_expansion) return { entry: "imm-run", next: "imm-planner" };
+	if (input.scope_expansion) return { entry: "drive", next: "draw-up" };
 	if (
 		input.target === "architecture-exploration" &&
 		(input.ownership === "brainstorm" || input.ownership === "planner")
 	) {
-		return { entry: "imm-run", next: "arch-explorer" };
+		return { entry: "drive", next: "arch-explorer" };
 	}
 	if (
 		input.target === "advisory-review" &&
 		(input.ownership === "brainstorm" || input.ownership === "planner")
 	) {
-		return { entry: "imm-run", next: "advisory-reviewer" };
+		return { entry: "drive", next: "advisory-reviewer" };
 	}
 	if (input.target === "compounder") {
 		if (input.ownership !== "loop") {
 			throw new Error("Compounder routing requires Loop ownership");
 		}
-		return { entry: "imm-run", next: "compounder" };
+		return { entry: "drive", next: "compounder" };
 	}
 	if (input.target === "lane-supply") {
 		if (input.ownership !== "loop") {
 			throw new Error("Lane supply routing requires Loop ownership");
 		}
-		return { entry: "imm-run", next: "lane-steward" };
+		return { entry: "drive", next: "lane-steward" };
 	}
 	if (input.ownership === "kernel") {
-		return { entry: "imm-run", next: "imm_kernel_canary" };
+		return { entry: "drive", next: "imm_kernel_canary" };
 	}
 	const nextByTarget: Record<"step" | "test-repair" | "pr-repair", LoopRouteNext> = {
 		step: "executor",
@@ -101,7 +101,7 @@ export function resolveLoopRoute(input: {
 		);
 	}
 	return {
-		entry: "imm-run",
+		entry: "drive",
 		next: nextByTarget[
 			input.target as "step" | "test-repair" | "pr-repair"
 		],
@@ -109,9 +109,9 @@ export function resolveLoopRoute(input: {
 }
 
 export type LoopAction =
-	| { entry: "imm-run"; next: "executor"; context: LoopRoleContext }
+	| { entry: "drive"; next: "executor"; context: LoopRoleContext }
 	| {
-			entry: "imm-run";
+			entry: "drive";
 			next:
 				| "test-fixer"
 				| "pr-fix"
@@ -122,7 +122,7 @@ export type LoopAction =
 			dispatch: LoopRoleDispatch;
 	  }
 	| {
-			entry: "imm-run";
+			entry: "drive";
 			next: "imm_kernel_canary";
 			tool: {
 				name: "imm_kernel_canary";
@@ -135,8 +135,8 @@ export type LoopAction =
 					| "complete";
 			};
 	  }
-	| { entry: "imm-run"; next: "imm-planner"; reason: "scope_expansion" }
-	| { entry: "imm-run"; next: "none"; reason: "no_reusable_learning" };
+	| { entry: "drive"; next: "draw-up"; reason: "scope_expansion" }
+	| { entry: "drive"; next: "none"; reason: "no_reusable_learning" };
 
 function hasReusableLearningEvidence(context: RoleDelegationContext): boolean {
 	if (
@@ -198,19 +198,19 @@ export function buildLoopAction(input: {
 	kernel_operation?: Extract<LoopAction, { next: "imm_kernel_canary" }>["tool"]["operation"];
 }): LoopAction {
 	const route = resolveLoopRoute(input);
-	if (route.next === "imm-planner") {
-		return { entry: "imm-run", next: "imm-planner", reason: "scope_expansion" };
+	if (route.next === "draw-up") {
+		return { entry: "drive", next: "draw-up", reason: "scope_expansion" };
 	}
 	if (route.next === "compounder") {
 		if (!input.context || !hasReusableLearningEvidence(input.context)) {
 			return {
-				entry: "imm-run",
+				entry: "drive",
 				next: "none",
 				reason: "no_reusable_learning",
 			};
 		}
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "compounder",
 			dispatch: buildLoopRoleDispatch({ role: "compounder", context: input.context }),
 		};
@@ -218,28 +218,28 @@ export function buildLoopAction(input: {
 	if (!input.context) throw new Error(`Loop ${route.next} action requires context`);
 	if (route.next === "executor") {
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "executor",
 			context: buildRoleDelegationPacket({ role: "executor", context: input.context }),
 		};
 	}
 	if (route.next === "test-fixer") {
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "test-fixer",
 			dispatch: buildLoopRoleDispatch({ role: "test-fixer", context: input.context }),
 		};
 	}
 	if (route.next === "pr-fix") {
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "pr-fix",
 			dispatch: buildLoopRoleDispatch({ role: "pr-fix", context: input.context }),
 		};
 	}
 	if (route.next === "arch-explorer") {
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "arch-explorer",
 			dispatch: buildLoopRoleDispatch({ role: "arch-explorer", context: input.context }),
 		};
@@ -247,7 +247,7 @@ export function buildLoopAction(input: {
 	if (route.next === "lane-steward") {
 		assertLaneStewardHandoff(input.context);
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "lane-steward",
 			dispatch: buildLoopRoleDispatch({ role: "lane-steward", context: input.context }),
 		};
@@ -257,13 +257,13 @@ export function buildLoopAction(input: {
 			throw new Error("advisory review requires an explicit lens");
 		}
 		return {
-			entry: "imm-run",
+			entry: "drive",
 			next: "advisory-reviewer",
 			dispatch: buildLoopRoleDispatch({ role: "advisory-reviewer", context: input.context }),
 		};
 	}
 	return {
-		entry: "imm-run",
+		entry: "drive",
 		next: "imm_kernel_canary",
 		tool: {
 			name: "imm_kernel_canary",

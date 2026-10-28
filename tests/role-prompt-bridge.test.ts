@@ -59,7 +59,7 @@ describe("internal role-prompt bridge", () => {
 				ownership: "brainstorm",
 				target: "architecture-exploration",
 			}),
-		).toEqual({ entry: "imm-run", next: "arch-explorer" });
+		).toEqual({ entry: "drive", next: "arch-explorer" });
 		const archAction = buildLoopAction({
 			ownership: "brainstorm",
 			target: "architecture-exploration",
@@ -146,7 +146,7 @@ describe("internal role-prompt bridge", () => {
 				},
 			}),
 		).toEqual({
-			entry: "imm-run",
+			entry: "drive",
 			next: "none",
 			reason: "no_reusable_learning",
 		});
@@ -164,7 +164,7 @@ describe("internal role-prompt bridge", () => {
 				},
 			}),
 		).toEqual({
-			entry: "imm-run",
+			entry: "drive",
 			next: "none",
 			reason: "no_reusable_learning",
 		});
@@ -272,9 +272,9 @@ describe("internal role-prompt bridge", () => {
 		expect(pkg.files).toContain("plugins/immune-brain/dist");
 	});
 	it("keeps canonical Loop role dispatch on the internal bridge", () => {
-		const content = read("plugins/immune-brain/dist/imm-run.md");
+		const content = read("plugins/immune-brain/dist/drive.md");
 		expect(content.replace(/\s+/g, " ")).toContain("role-boundary route");
-		expect(content.replace(/\s+/g, " ")).toContain("standalone `imm-pr-fix`, `imm-doc-prune`, `imm-doc-slim`, and `imm-test-prune` are host-native");
+		expect(content.replace(/\s+/g, " ")).toContain("standalone `fix-pr`, `prune-docs`, `slim`, and `prune-tests` are host-native");
 		expect(content).toContain("never dispatched as the Loop role");
 		expect(content).not.toMatch(/public\s+Skills\s+remain available as rollback shims/);
 		expect(content).not.toContain("dispatch an isolated read-only `imm-qa`");
@@ -298,7 +298,7 @@ describe("internal role-prompt bridge", () => {
 				expect(existsSync(resolve(ROOT, `plugins/immune-brain/skills/imm-${role}/SKILL.md`))).toBe(false);
 			}
 		}
-		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/imm-pr-fix/SKILL.md"))).toBe(true);
+		expect(existsSync(resolve(ROOT, "plugins/immune-brain/skills/fix-pr/SKILL.md"))).toBe(true);
 	});
 	it("keeps Executor Host launch with the Parent, not the lane-steward", () => {
 		const prompt = read("plugins/immune-brain/runtime/prompts/lane-steward.md").replace(/\s+/g, " ");
@@ -306,7 +306,7 @@ describe("internal role-prompt bridge", () => {
 		expect(prompt).toContain("report every one the prepared Lane can run, not only the Host you are running in");
 		expect(prompt).not.toContain("Start exactly one Executor Host");
 
-		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
 			"The Parent launches and supervises every Lane's Executor Host; no other role starts one",
 			"A subagent that runs inside the Parent's process shares the Parent's root and is never a Lane Executor",
@@ -319,15 +319,15 @@ describe("internal role-prompt bridge", () => {
 			expect(loop).toContain(fragment);
 		}
 		// The standing rule the supervision section narrows stays in the main Loop contract.
-		expect(read("plugins/immune-brain/dist/imm-run.md").replace(/\s+/g, " ")).toContain("Do not poll or create detached jobs");
+		expect(read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ")).toContain("Do not poll or create detached jobs");
 		// Each supported Parent Host has its own row, plus the no-capability row.
 		for (const row of ["| Claude Code |", "| Pi |", "| Any Host without one |"]) expect(loop).toContain(row);
-		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run-batch.md#lane-executor-supervision");
+		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-executor-supervision");
 	});
 	// Spec batch-resource-safety-s2 AC4: without trusted Executor exit evidence no contract
 	// promises automatic Lane deletion or recreation, and the restoration gate stays recorded.
 	it("aligns Lane lifecycle contracts with conservative retention", () => {
-		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
 			"the runtime never removes or recreates a Lane it created",
 			"`lane_refusals` reports `batch_lane_retained`",
@@ -352,15 +352,15 @@ describe("internal role-prompt bridge", () => {
 		expect(loop).toContain("the Parent removes no Lane and dispatches no one to remove it");
 	});
 	it("launches Lane Executors in Herdr tabs without asking, and never answers their dialogs", () => {
-		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
 			"| Either Host, inside Herdr (`HERDR_ENV=1`) |",
 			"the first matching row applies, and the user is not asked to choose",
 			'herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus',
 			"Without `--workspace` the tab lands in whichever workspace has focus",
 			"herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>",
-			'herdr agent prompt <pane_id> "<imm-run entry> <task_id>" --wait --until working --until blocked --timeout 30000',
-			"names it `/immune-brain:imm-run`",
+			'herdr agent prompt <pane_id> "<drive entry> <task_id>" --wait --until working --until blocked --timeout 30000',
+			"names it `/immune-brain:drive`",
 			"Supervise with `herdr agent wait <pane_id>` as a Host background command",
 			"Start it only after step 4 reported `working`",
 			"The Parent sends that tab no keys and no prompt",
@@ -376,12 +376,12 @@ describe("internal role-prompt bridge", () => {
 		]) {
 			expect(loop).toContain(fragment);
 		}
-		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run-batch.md#herdr-lane-tabs");
+		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#herdr-lane-tabs");
 		// The steward still knows no workspace tool.
 		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
 	});
 	it("resolves Lane Preferences in the Parent and passes model and effort as launch arguments", () => {
-		const loop = read("plugins/immune-brain/dist/imm-run-batch.md").replace(/\s+/g, " ");
+		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
 			"#### Lane Preferences",
 			"1. a literal user instruction for the current request;",
@@ -398,7 +398,7 @@ describe("internal role-prompt bridge", () => {
 		]) {
 			expect(loop).toContain(fragment);
 		}
-		expect(read("plugins/immune-brain/skills/imm-run/SKILL.md")).toContain("../../dist/imm-run-batch.md#lane-preferences");
+		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-preferences");
 		// The directives stay a Parent concern: no runtime source names them.
 		for (const file of ["plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/role_prompt_bridge.ts"])
 			expect({ file, named: /Lane (max parallel|Executor (Host|model|effort)):/.test(read(file)) }).toEqual({ file, named: false });

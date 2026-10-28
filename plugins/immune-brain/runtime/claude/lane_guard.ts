@@ -7,10 +7,10 @@
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution, and a run entry mints the session's entry token (ADR
 // 0025); PreToolUse denies `enroll`, `start_unattended_batch`,
-// `retire_stale_batch` and the `imm-run` Skill without a live run entry, and
+// `retire_stale_batch` and the `drive` Skill without a live run entry, and
 // otherwise leaves an admission carrying that token, which the tool handler
 // consumes by tool-use id. A model Skill call for
-// `imm-planner` or `imm-brainstorm` is never denied and changes no entry state.
+// `draw-up` or `clarify` is never denied and changes no entry state.
 import { lstatSync, realpathSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { laneWriteRefusal } from "../unattended/lane_workspace";
 import { activeTaskNotice } from "../assurance/active_task_notice";
 import { releasesRunBinding } from "../assurance/run_continuation";
-import { readAliasFile } from "../assurance/alias_file";
+import { localSkillExists, readAliasFile } from "../assurance/alias_file";
 import {
 	admitPhaseOperation,
 	entryRevocationLogLine,
@@ -30,7 +30,7 @@ import {
 	recognizePhaseEntry,
 	reducePhaseEntryLog,
 	RUN_ENTRY_REQUIRED,
-	type AliasReader,
+	type LocalNames,
 	type EntryTokenRevocation,
 	type PhaseEntryState,
 	type PhaseOperation,
@@ -107,14 +107,18 @@ function cwdOf(payload: Record<string, unknown>): string {
 	return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 
-/** Project aliases first, then the user's, as Claude Code resolves commands. */
-export function claudeAliasReader(cwd: string, home: string): AliasReader {
-	return (name) => {
-		for (const dir of [join(cwd, ".claude", "commands"), join(home, ".claude", "commands")]) {
-			const body = readAliasFile(join(dir, `${name}.md`));
-			if (body !== null) return body;
-		}
-		return null;
+/** Project commands first, then the user's, as Claude Code resolves commands; and the same two skill roots. */
+export function claudeLocalNames(cwd: string, home: string): LocalNames {
+	const roots = [join(cwd, ".claude"), join(home, ".claude")];
+	return {
+		alias: (name) => {
+			for (const root of roots) {
+				const body = readAliasFile(join(root, "commands", `${name}.md`));
+				if (body !== null) return body;
+			}
+			return null;
+		},
+		skill: (name) => roots.some((root) => localSkillExists(join(root, "skills"), name)),
 	};
 }
 
@@ -173,7 +177,7 @@ export function recordPhaseEntryPrompt(payload: Record<string, unknown>, locatio
 	const sessionId = sessionIdOf(payload);
 	if (!sessionId) return false;
 	const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-	const recognized = recognizePhaseEntry(prompt, claudeAliasReader(cwdOf(payload), locations.home ?? homedir()));
+	const recognized = recognizePhaseEntry(prompt, claudeLocalNames(cwdOf(payload), locations.home ?? homedir()), "claude");
 	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
 	let workspace: string | null = null;
 	if (entry === "run") { try { workspace = realpathSync(cwdOf(payload)); } catch { /* no workspace, no token */ } }
@@ -202,7 +206,7 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	if (payload.hook_event_name !== "PreToolUse") return null;
 	const operation = gatedOperation(payload);
 	if (!operation) return null;
-	if (operation.kind === "skill" && operation.skill !== "imm-run") return null;
+	if (operation.kind === "skill" && operation.skill !== "drive") return null;
 	const root = locations.root ?? tmpdir();
 	const sessionId = sessionIdOf(payload);
 	let state: PhaseEntryState | null = null;

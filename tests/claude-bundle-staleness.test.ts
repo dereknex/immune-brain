@@ -128,7 +128,7 @@ describe("Claude MCP server bundle staleness", () => {
 	});
 	test("a changed bundle refuses every authority call before an admission is consumed and with no Kernel mutation", async () => {
 		const s = await session();
-		s.prompt("/imm-run stale-a");
+		s.prompt("/drive stale-a");
 		writeFileSync(s.bundlePath, "// build 2, a longer bundle\n");
 		for (const name of AUTHORITY) {
 			const id = `toolu_${name}`;
@@ -145,7 +145,7 @@ describe("Claude MCP server bundle staleness", () => {
 		const s = await session();
 		const later = new Date(Date.now() + 60_000);
 		utimesSync(s.bundlePath, later, later);
-		s.prompt("/imm-run stale-a");
+		s.prompt("/drive stale-a");
 		expect(s.hook("enroll", "toolu_enroll")).toBeNull();
 		const enrolled = await s.call("enroll", { task_id: "stale-a" }, "toolu_enroll");
 		expect(enrolled?.error).toBeUndefined();
@@ -170,7 +170,7 @@ describe("Claude MCP server bundle staleness", () => {
 	test("an unreadable bundle at check time refuses with the same reason code", async () => {
 		const s = await session();
 		rmSync(s.bundlePath);
-		s.prompt("/imm-run stale-a");
+		s.prompt("/drive stale-a");
 		expect(s.hook("enroll", "toolu_gone")).toBeNull();
 		expectStale(await s.call("enroll", { task_id: "stale-a" }, "toolu_gone"));
 		expect(s.consumed()).toBe(0);

@@ -2,7 +2,7 @@
 // the workspace. It tells the model, and through it the user, that the task
 // exists and what it is waiting for, so a fresh session does not commit or edit
 // inside that task's scope blind. It never resumes the task: ordinary input
-// stays host-native, and only an explicit `imm-run` entry continues it.
+// stays host-native, and only an explicit `drive` entry continues it.
 import { readTaskRecordRaw } from "../kernel/storage";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 
@@ -37,6 +37,6 @@ export async function activeTaskNotice(root: string): Promise<string | null> {
 		`Immune-Brain: Managed task ${taskId} is active in this workspace (lifecycle ${lifecycle}, artifacts ${artifactState}).`,
 		"Ordinary input does not resume it, and another session may be running its assurance right now.",
 		`Before committing or modifying files inside its scope${shown ? ` (${shown})` : ""}, read its status and tell the user that this task is active and which obligation it is waiting on.`,
-		"Only an explicit imm-run entry continues it.",
+		"Only an explicit drive entry continues it.",
 	].join(" ");
 }

@@ -99,8 +99,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 				} });
 				result = await runtime.enroll(candidateId, { taskId: candidateId, sessionId: "test", toolCallId: "enroll", signal });
 			} else {
-				// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters imm-run itself.
-				recordPiPhaseInput({ text: "/skill:imm-run", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
+				// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
+				recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
 				let tool: any;
 				enrollExtension({ registerTool: (value: unknown) => { tool = value; }, on: () => {}, events: { emit: () => {} } } as never);
 				result = await tool.execute("enroll", { action: "new", task_id: candidateId }, signal, (update: any) => {

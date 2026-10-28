@@ -7,11 +7,11 @@ const read = (path: string) =>
 	readFileSync(join(ROOT, path), "utf8").replace(/\s+/g, " ");
 
 const brainstormContracts = [
-	"plugins/immune-brain/dist/imm-brainstorm.md",
+	"plugins/immune-brain/dist/clarify.md",
 ];
-const brainstormLoader = "plugins/immune-brain/skills/imm-brainstorm/SKILL.md";
+const brainstormLoader = "plugins/immune-brain/skills/clarify/SKILL.md";
 const plannerContracts = [
-	"plugins/immune-brain/dist/imm-planner.md",
+	"plugins/immune-brain/dist/draw-up.md",
 ];
 
 const expectAll = (paths: string[], phrases: string[]) => {
@@ -28,7 +28,7 @@ const expectAll = (paths: string[], phrases: string[]) => {
 describe("Brainstorm-owned clarification contract", () => {
 	test("the loader resolves the canonical contract and section routes", () => {
 		const loader = read(brainstormLoader);
-		expect(loader).toContain("../../dist/imm-brainstorm.md");
+		expect(loader).toContain("../../dist/clarify.md");
 		expect(loader).toContain("Default clarification");
 		expect(loader).toContain("roundtable");
 		expect(loader).toContain("adversarial");
@@ -106,7 +106,7 @@ describe("Brainstorm-owned clarification contract", () => {
 			"reopens multiple product branches",
 			"Direct Planner entry",
 			"ordinary technical choices",
-			"return to `imm-brainstorm`",
+			"return to `clarify`",
 			"TaskIntent",
 		]);
 		for (const path of plannerContracts) {
