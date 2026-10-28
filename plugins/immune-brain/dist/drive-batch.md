@@ -166,7 +166,9 @@ checkout. No Host reports a trusted Executor exit, so the runtime never removes
 or recreates a Lane it created: after integration the Lane, its branch and all
 its files are kept, and `lane_refusals` reports `batch_lane_retained` for it,
 also in a completed report. Delivery is complete; cleanup is the user's: stop
-the Lane's Executor, keep the files needed, then remove the Lane. Removing it
+the Lane's Executor, keep the files needed, then remove the Lane. Reclaim a Lane
+in this order: (1) stop the Lane's Executor; (2) keep the files still needed
+from the Lane; (3) remove the Lane. Removing it
 records `released` and never enables an automatic redo. Final verification runs in a
 detached worktree at the Parent tip and removes that worktree afterwards; a
 failure is reported without moving the Parent ref.

@@ -156,6 +156,9 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    accepted contract and answer with `refute_finding` bound to fresh QA evidence
    for that acceptance. Escalating a local heuristic a third time instead of
    choosing one of those two responses is the loop this step exists to break.
+   When two fixes that share one premise fail the same gate, write the premise
+   in one sentence, name the actors that hold it, and remove the assignment
+   embodying it. Do not start another fix until that is done.
    A finding whose defect lies inside the TaskIntent goal and acceptance is
    ordinary rework even when no acceptance names its exact case: fix the code,
    add the test that pins the case, and dispose the finding. It is never a
@@ -399,6 +402,10 @@ scenarios owned by the settled Task's Slice, add one line naming those scenario
 IDs as pending manual walkthrough; the line is informational and changes no
 stop reason, obligation, or completion fact, and is absent when that Slice owns
 no manual scenario.
+
+Append a history digest to the exit summary: the TaskRecord `history[]`
+action-and-reason entries, condensed, so the completed work is traceable to the
+recorded actions that produced it.
 
 ## Failure Output
 
