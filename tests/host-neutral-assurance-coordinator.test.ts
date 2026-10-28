@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { buildAssuranceSnapshot, createVerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -906,17 +907,22 @@ describe("host-neutral assurance coordinator", () => {
 
 const authorityRoots: string[] = [];
 afterAll(() => { for (const root of authorityRoots) rmSync(root, { recursive: true, force: true }); });
-function authorityFixture(environment: object = { prepare: null, writable_paths: [] }) {
+function authorityFixture(environment: object = { prepare: null, writable_paths: [] }, roundTwo = false) {
  const root = mkdtempSync(join(tmpdir(), "s4-authority-")); authorityRoots.push(root);
  const taskId = "s4-verdict";
  const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: taskId,
   owner: "user", goal: "exercise shared verdict authority", risk: "material", revision: 1,
-  scope_hint: ["src/work.ts", `docs/plans/archive/${taskId}.intent.json`],
+  scope_hint: ["src/work.ts", `docs/plans/archive/${taskId}.intent.json`, ...(roundTwo ? [`docs/plans/${taskId}.intent.json`, `docs/specs/${taskId}.spec.md`, `docs/specs/archive/${taskId}.spec.md`] : [])],
   acceptance: [{ id: "A1", assertion: "work passes", verification: JSON.stringify({
    contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["test", "src/work.ts"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 }, environment }) }] });
  mkdirSync(join(root, "src"), { recursive: true }); mkdirSync(join(root, "docs/plans/archive"), { recursive: true });
  writeFileSync(join(root, "src/work.ts"), "export const value = 1;\n");
  writeFileSync(join(root, `docs/plans/archive/${taskId}.intent.json`), JSON.stringify(intent, null, 2)+"\n");
+ if (roundTwo) {
+  mkdirSync(join(root, "docs/specs"), { recursive: true });
+  writeFileSync(join(root, `docs/specs/${taskId}.spec.md`), "# Fixture spec\n");
+  writeFileSync(join(root, `docs/plans/${taskId}.intent.json`), JSON.stringify(intent, null, 2)+"\n");
+ }
  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "fixture", GIT_AUTHOR_EMAIL: "f@f", GIT_COMMITTER_NAME: "fixture", GIT_COMMITTER_EMAIL: "f@f" } }).trim();
  git("init", "-q"); git("add", "-A"); git("commit", "-qm", "base"); const base = git("rev-parse", "HEAD");
  writeFileSync(join(root, "src/work.ts"), "export const value = 2;\n"); git("add", "src/work.ts");
@@ -929,7 +935,8 @@ function authorityFixture(environment: object = { prepare: null, writable_paths:
  seedKernelRunForTest(root, { task_id: taskId, created_at: "2026-08-12T10:00:00.000Z", updated_at: "2026-08-12T10:00:00.000Z", record: {
   contract: "assurance_kernel/task_record/v4", task_id: taskId, intent_snapshot: intent,
   intent_ref: { path: `docs/plans/archive/${taskId}.intent.json`, content_hash: hash }, lifecycle: "active", artifact_state: "frozen",
-  baseline: hash, git_base_head: base, attestations: [], findings: [], history: [],
+  baseline: hash, git_base_head: base, attestations: [], findings: roundTwo ? [{ id: "prior-review", kind: "blocking", status: "resolved", acceptance_id: "A1", source: "review", review_round: 1, summary: "prior issue" }] : [],
+  history: roundTwo ? [{ id: "prior-rework", at: "2026-08-12T09:00:00.000Z", type: "request_rework", from_state: "active:frozen", to_state: "active:active", reason: "review_round_1", authority: { authority_kind: "review", actor_id: "reviewer", confirmation_ref: "prior-review", issued_at: "2026-08-12T09:00:00.000Z" } }] : [],
  } });
  return { root, taskId, git };
 }
@@ -950,6 +957,35 @@ describe("shared verdict authority through host-configured coordinators", () => 
    Object.assign(coordinator.authority, authority);
    return { coordinator, issued };
   }
+  test(`${host}: round 2 Review rework persists the revision used by the round 3 delta`, async () => {
+   const f = authorityFixture(undefined, true); const h = configured(f);
+   const round2 = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
+   const invocation = h.coordinator.openInvocation(f.taskId);
+   const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId,
+    snapshot_digest: snapshotDigest(round2), decision: "rework", findings: [{ id: "round2", kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: null, summary: "repair the work" }] } as const;
+   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: round2, verdict, invocation, actorId: "reviewer" });
+   h.coordinator.closeInvocation(invocation);
+   const entry = readTaskRecordRaw(f.root, f.taskId).record!.history.find(e => e.type === "request_rework" && e.reason.split("\n")[0] === "review_round_2");
+   expect(entry?.review_revision).toEqual(round2.review_revision);
+   writeFileSync(join(f.root, "src/work.ts"), "export const value = 3;\n"); f.git("add", "src/work.ts");
+   const app = createCanaryApplication(createMutationAuthorityRegistry());
+   const execute = (operation: Parameters<typeof app.execute>[0]["operation"]) => {
+    const record = readTaskRecordRaw(f.root, f.taskId).record!;
+    return app.execute({ root: f.root, task_id: f.taskId, operation, prior_intent_token: readTaskIntent(f.root, f.taskId, record.intent_ref.path, record.intent_snapshot).token });
+   };
+   execute({ op: "resolve_finding", finding_id: "round2", actor_id: "executor" });
+   execute({ op: "freeze_artifacts", actor_id: "executor" });
+   const qa = (await buildAssuranceSnapshot(f.root, f.taskId, "qa", await projectAssurance(f.root, f.taskId))).snapshot;
+   const qaInvocation = h.coordinator.openInvocation(f.taskId);
+   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: qa, invocation: qaInvocation, actorId: "deterministic-qa", verdict: {
+    contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId, snapshot_digest: snapshotDigest(qa), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" },
+   } });
+   h.coordinator.closeInvocation(qaInvocation);
+   const projection = await projectAssurance(f.root, f.taskId);
+   expect(projection.projection.next_obligation).toBe("run_review");
+   const round3 = (await buildAssuranceSnapshot(f.root, f.taskId, "review", projection)).snapshot;
+   expect(round3.review_delta).toEqual({ round: 3, prior_review_commit: round2.review_revision!.review_commit, delta_paths: ["src/work.ts"] });
+  });
   test(`${host}: capture validates all three identities and the v4 base`, async () => {
    const f = authorityFixture(); const h = configured(f); const p = await projectAssurance(f.root,f.taskId);
    expect((await h.coordinator.authority.buildAssurance(f.root,f.taskId,"qa",p)).snapshot.task_id).toBe(f.taskId);

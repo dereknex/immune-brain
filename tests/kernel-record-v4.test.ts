@@ -112,6 +112,22 @@ describe("TaskRecord v4 schema", () => {
 		}))).toThrow(/sha256/);
 	});
 
+	test("binds Review rework history to the v4 Enrollment base without changing v3", () => {
+		const entry = {
+			id: "rework-1", type: "request_rework", at: "2026-09-06T00:00:00.000Z",
+			from_state: "active:frozen", to_state: "active:active", reason: "review_round_2",
+			authority: { authority_kind: "review", actor_id: "reviewer", confirmation_ref: "review-1", issued_at: "2026-09-06T00:00:00.000Z" },
+			review_revision: reviewRevision(),
+		};
+		expect(parseTaskRecordV4(record({ history: [entry] })).history[0].review_revision).toEqual(entry.review_revision);
+		const foreign = { ...entry, review_revision: { ...reviewRevision(), base_head: "e".repeat(40) } };
+		expect(() => parseTaskRecordV4(record({ history: [foreign] }))).toThrow(/record\.history\[0\]\.review_revision\.base_head/);
+		const { review_revision: _, ...withoutRevision } = entry;
+		expect(parseTaskRecordV4(record({ history: [withoutRevision] })).history[0].review_revision).toBeUndefined();
+		const { git_base_head: _base, ...v3 } = record({ contract: "assurance_kernel/task_record/v3", history: [foreign] });
+		expect(parseTaskRecordV3(v3).history[0].review_revision).toEqual(foreign.review_revision);
+	});
+
 	test("rejects missing or malformed base and cross-version identity fields", () => {
 		expect(() => parseTaskRecordV4(record({ git_base_head: undefined }))).toThrow();
 		expect(() => parseTaskRecordV4(record({ git_base_head: "A".repeat(40) }))).toThrow();

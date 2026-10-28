@@ -1,0 +1,151 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-revision-history-base",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-revision-history-base",
+    "goal": "Parsing a TaskRecord v4 rejects a history review_revision whose base_head differs from git_base_head, as it already does for attestations, and one end-to-end test proves a round-2 Review rework persists its revision and the round-3 Review snapshot receives prior_review_commit and delta_paths (#244; Spec docs/specs/review-revision-history-base.spec.md D1-D4). no user-visible change: internal parse invariant on Kernel-written state plus test coverage.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/kernel-record-v4.test.ts, parseTaskRecordV4 throws, naming record.history[<i>].review_revision.base_head, for a v4 record whose review-authored request_rework history entry carries review_revision.base_head different from git_base_head; the same entry with a matching base parses and keeps review_revision; a v4 history entry without review_revision parses; a v3 record carrying a review-authored history review_revision still parses (Spec D1, D2; BR-REQ-1, BR-REQ-2, BR-REQ-4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-record-v4.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/host-neutral-assurance-coordinator.test.ts, over authorityFixture, a Review rework verdict applied through createVerdictAuthority at round 2 persists a review_round_2 request_rework history entry whose review_revision equals the round-2 snapshot revision; after staging an edit to exactly one in-scope path and returning to Review, buildAssuranceSnapshot yields review_delta with round 3, prior_review_commit equal to the round-2 review_commit, delta_paths equal to exactly that path (an unchanged path absent), and no skipped field (Spec D3; BR-REQ-3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The existing write-time revision and manifest delta cases in tests/kernel-canary-rework-authority.test.ts, including rounds 1-2 digest stability, pass with unchanged assertions (Spec D2; BR-OUT-1, BR-OUT-2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The generated Claude bundle matches its sources and .changeset/review-revision-history-base.md declares a patch release (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: patch$\\\" .changeset/review-revision-history-base.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-revision-history-base.md",
+      "docs/plans/review-revision-history-base.intent.json",
+      "docs/specs/review-revision-history-base.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-record-v4.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-revision-history-base.intent.json",
+    "content_hash": "sha256:93c96ace4e8c1751ff7caf7cec8dc38ee7eafb167526451e077033d66fa05b04"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:93c96ace4e8c1751ff7caf7cec8dc38ee7eafb167526451e077033d66fa05b04",
+  "git_base_head": "5449f3dce7a00b05c36ed5ed56b7e33c5315674f",
+  "attestations": [
+    {
+      "id": "approval-qa-cf89ebd7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:93c96ace4e8c1751ff7caf7cec8dc38ee7eafb167526451e077033d66fa05b04",
+      "diff_hash": "sha256:ff4c90aca89fecbdf65073ade8b3cbd3652e3066be9cf38368c9314cafc38933",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:b139cee81322995bf86af39149dbe56b0c3863aa3272727be8e169b05e1ae462",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b139cee81322995bf86af39149dbe56b0c3863aa3272727be8e169b05e1ae462"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b139cee81322995bf86af39149dbe56b0c3863aa3272727be8e169b05e1ae462"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b139cee81322995bf86af39149dbe56b0c3863aa3272727be8e169b05e1ae462"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:b139cee81322995bf86af39149dbe56b0c3863aa3272727be8e169b05e1ae462"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e5c24037",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:93c96ace4e8c1751ff7caf7cec8dc38ee7eafb167526451e077033d66fa05b04",
+      "diff_hash": "sha256:ff4c90aca89fecbdf65073ade8b3cbd3652e3066be9cf38368c9314cafc38933",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；已验证 revision 的唯一 parent、tree、manifest digest 及全部五个文件的完整 diff，AC1–AC4 与实现和 Kernel QA 通过证据一致。Blast radius: tier medium，承重路径为 kernel/validation.ts 的 persisted TaskRecord v4 history 校验及其 Claude bundle 镜像，不改变持久化结构或 writer。未重新运行测试，沿用本次冻结证据中的 QA outcomes；损坏且 base 不匹配的历史记录将按预期被拒绝。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5449f3dce7a00b05c36ed5ed56b7e33c5315674f",
+        "review_commit": "32f0a3faff9721472408fda188d66ad4c12fd478",
+        "review_tree": "a71969c0500f5879555f13794df591dad83573d0",
+        "manifest_digest": "sha256:f582111c07c2a6804fde68b9ce80d8cc90b96d4d2489dfe8e57d554b08b77d5b"
+      },
+      "reviewer_verdict_sha256": "sha256:7c0072c043131931d86a7b327b864ae8d8fe0e5ad9e515d6a834da1c2e93bbdb"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-revision-history-base:2026-10-28T09:29:28.702Z",
+      "at": "2026-10-28T09:29:28.702Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-revision-history-base.intent.json"
+    },
+    {
+      "id": "record_approval:review-revision-history-base:2026-10-28T09:30:35.227Z",
+      "at": "2026-10-28T09:30:35.227Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cf89ebd7\naction_v2_sha256:88a88cde78459c1b05f4ff2da0de49441caca15ddad493c9d14523de039ee0be",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ee932fc64044f792",
+        "issued_at": "2026-10-28T09:30:35.227Z"
+      }
+    },
+    {
+      "id": "record_approval:review-revision-history-base:2026-10-28T09:32:03.721Z",
+      "at": "2026-10-28T09:32:03.721Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e5c24037\naction_v2_sha256:f4f259a6aa9d04d5ae34c83753e570b9fd3ea04f362697982d64ed6d41650081",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3c87e9d3049980e3",
+        "issued_at": "2026-10-28T09:32:03.721Z"
+      }
+    },
+    {
+      "id": "complete:review-revision-history-base:2026-10-28T09:32:05.021Z",
+      "at": "2026-10-28T09:32:05.021Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:856076c8bc83e18d952a9f8c651c65c84d28a1d23a36e6dd44d2d21b10782012"
+    }
+  ]
+}

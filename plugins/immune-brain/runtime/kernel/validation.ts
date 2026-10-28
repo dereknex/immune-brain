@@ -599,6 +599,12 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 	}
 	const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
 	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations));
+	if (version === 4) {
+		for (const [index, entry] of history.entries()) {
+			if (entry.review_revision && entry.review_revision.base_head !== gitBaseHead)
+				violations.push(`record.history[${index}].review_revision.base_head must equal record.git_base_head`);
+		}
+	}
 	for (const [index, finding] of findings.entries()) {
 		const path = `record.findings[${index}]`;
 		if (finding.replan_cause !== undefined && finding.kind !== "replan_required")
