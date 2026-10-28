@@ -12573,10 +12573,33 @@ async function assertIsolatedTaskPrerequisites(root, taskId, transport) {
   const child = observation.tasks.find((candidate) => candidate.task_id === taskId);
   if (!child)
     throw new Error("Task Issue is absent from its Parent topology");
-  if (!child.blocked_by.length)
+  const parent = initiativeLookup(source.issues, source.repository.id, initiative);
+  if (parent.kind !== "found")
+    throw new Error(`Cannot read published plan for Slice ${child.slice_id}`);
+  const sliceMarker = marker("slice-id", child.slice_id);
+  const body = parent.issue.body.split(/\r?\n/);
+  const at = body.flatMap((line, index) => line.includes(sliceMarker) ? [index] : []);
+  if (at.length !== 1 || countLiteral(body[at[0]], sliceMarker) !== 1)
+    throw new Error(`Published plan must contain exactly one marker for Slice ${child.slice_id}`);
+  const next = body.findIndex((line, index) => index > at[0] && line.includes("<!-- immune-brain:slice-id="));
+  const entry = body.slice(at[0], next === -1 ? body.length : next).join(`
+`);
+  const annotation = entry.match(/\(blocked by:([^)\n]*)\)[ \t]*$/m);
+  if (countLiteral(entry, "(blocked by:") > 1 || entry.includes("(blocked by:") && !annotation)
+    throw new Error(`Invalid prerequisites for Slice ${child.slice_id}`);
+  const prerequisites = annotation ? annotation[1].split(",").map((id) => id.trim()) : [];
+  try {
+    for (const id of prerequisites)
+      identifier(id, "prerequisite task_id");
+    if (new Set(prerequisites).size !== prerequisites.length || prerequisites.some((id) => id === taskId || !observation.tasks.some((task) => task.task_id === id)))
+      throw new Error("invalid prerequisite topology");
+  } catch {
+    throw new Error(`Invalid prerequisites for Slice ${child.slice_id}`);
+  }
+  if (!prerequisites.length)
     return;
   await Promise.resolve().then(() => init_batch_git());
-  const proof = await observeParentCompletion(root, initiative, child.blocked_by);
+  const proof = await observeParentCompletion(root, initiative, prerequisites);
   if (proof.missing_task_ids.length)
     throw new Error(`Isolated Slice prerequisites are not integrated: ${proof.missing_task_ids.join(", ")}; execute only this Slice after its prerequisites are delivered`);
 }

@@ -1,0 +1,161 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "isolated-prereq-published-plan",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "isolated-prereq-published-plan",
+    "goal": "On the GitHub carrier, isolated Slice Enrollment takes its prerequisite set from the Parent Issue's published Slice line '(blocked by: ...)' annotation instead of native blocked_by relations, so adding or removing an edge no longer changes which prerequisites are verified (#285; Spec docs/specs/isolated-prereq-published-plan.spec.md D1-D6). Local carrier and batch plan projection are unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/goal-driven-batch-run.test.ts, assertIsolatedTaskPrerequisites with a scripted GhTransport over the settled-delivery Git fixture: a Parent Slice line declaring '(blocked by: T-a)' with the native edge removed rejects naming T-a when T-a is not content-settled and resolves when it is; with the edge present and matching, settled resolves and unsettled rejects with the existing 'Isolated Slice prerequisites are not integrated' message; a native edge to T-a with no Parent annotation resolves without verifying T-a (Spec D1, D3; BR-SCN-1, BR-SCN-2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/goal-driven-batch-run.test.ts, GitHub-carrier Enrollment rejects naming the Slice for each of: Parent body without the Slice marker line, Parent body with the marker duplicated, an empty '(blocked by: )' annotation, an annotation naming a Task outside the Initiative's Sub-issue topology, and an annotation naming the Task itself (Spec D2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The existing Local-carrier cases in tests/goal-driven-batch-run.test.ts (unsettled 'Blocked by:' rejects, unrelated or malformed Initiative files do not block, a malformed file naming the Task rejects) pass with unchanged assertions (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "plugins/immune-brain/runtime/unattended/batch_plan.ts has no diff against HEAD and tests/unattended-batch-plan.test.ts still projects the GitHub batch plan from native blocked_by relations (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"git diff --quiet HEAD -- plugins/immune-brain/runtime/unattended/batch_plan.ts && bun test tests/unattended-batch-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The generated Claude bundle matches its sources and .changeset/isolated-prereq-published-plan.md declares a patch release (Spec D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: patch$\\\" .changeset/isolated-prereq-published-plan.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/isolated-prereq-published-plan.md",
+      "docs/plans/isolated-prereq-published-plan.intent.json",
+      "docs/specs/isolated-prereq-published-plan.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/fixtures/settled-delivery.ts",
+      "tests/goal-driven-batch-run.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/isolated-prereq-published-plan.intent.json",
+    "content_hash": "sha256:3459f078864d474af67a1fc64b3c1f556322117afe01a87454d5c4dfc3415646"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3459f078864d474af67a1fc64b3c1f556322117afe01a87454d5c4dfc3415646",
+  "git_base_head": "77d4fe7344dc65ce86c8a86226c3c5a518eb2a89",
+  "attestations": [
+    {
+      "id": "approval-qa-32c7fb75",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3459f078864d474af67a1fc64b3c1f556322117afe01a87454d5c4dfc3415646",
+      "diff_hash": "sha256:cdff2a22825304c1eb17622d3b6c018777d3333e0a2857da4982649a688ca66e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:6ca92ce56fd7e3e246ecb23ead1e208543220f9ae0033c371228ff5cad11b040"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-870f2ccf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3459f078864d474af67a1fc64b3c1f556322117afe01a87454d5c4dfc3415646",
+      "diff_hash": "sha256:cdff2a22825304c1eb17622d3b6c018777d3333e0a2857da4982649a688ca66e",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；已验证 packet 与 manifest 摘要、revision parent/tree、全部五个文件的完整 diff，并核对 AC1–AC5、调用方及 settlement proof。Blast radius: tier medium，承重路径为 github_issue_tracker.ts 的 Enrollment guard 及生成的 Claude bundle；无持久化形状变更。未重新执行测试，采用 Kernel 提供的全部 acceptance passed 证据；GitHub batch projection 仍按约定使用 native edges。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "77d4fe7344dc65ce86c8a86226c3c5a518eb2a89",
+        "review_commit": "07a751708d273734283bd2955f9334a1de2ba43d",
+        "review_tree": "712bbdfd10b6200af84a9f0049f7b6c1d68d1b28",
+        "manifest_digest": "sha256:d638461e6430ab372fc974f3641fece15f4ecbedf36ff9a1f41a3cd489fa5c30"
+      },
+      "reviewer_verdict_sha256": "sha256:b87f88b5ab2f2ce6a909eb635e090280883af3dd880db1bd0f671ad7cbcc0d37"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:isolated-prereq-published-plan:2026-10-28T07:05:17.024Z",
+      "at": "2026-10-28T07:05:17.024Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/isolated-prereq-published-plan.intent.json"
+    },
+    {
+      "id": "record_approval:isolated-prereq-published-plan:2026-10-28T07:05:50.862Z",
+      "at": "2026-10-28T07:05:50.862Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-32c7fb75\naction_v2_sha256:dd69b538555cb7cfa68c79e46f09c5a7bae26e5c01253c13c20cb9722ba5c910",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-39898e85c041978c",
+        "issued_at": "2026-10-28T07:05:50.863Z"
+      }
+    },
+    {
+      "id": "record_approval:isolated-prereq-published-plan:2026-10-28T07:08:09.629Z",
+      "at": "2026-10-28T07:08:09.629Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-870f2ccf\naction_v2_sha256:5612ed59708d4f4fc74ab11acba33e9f6f07476ac272da1af2c9580920376470",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9c8b92881b0bc7b1",
+        "issued_at": "2026-10-28T07:08:09.629Z"
+      }
+    },
+    {
+      "id": "complete:isolated-prereq-published-plan:2026-10-28T07:08:10.957Z",
+      "at": "2026-10-28T07:08:10.957Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:87a962c83aef56aa899ed997b4475e4adfb38a28b10a78f51976206ff837c9cf"
+    }
+  ]
+}
