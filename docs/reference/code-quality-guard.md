@@ -9,7 +9,7 @@ This contract protects correctness and review signal in LLM-assisted implementat
 - Do not ship mocks, fixtures, hard-coded success, placeholder output, disabled assertions, or weakened tests as production completion.
 - If required behavior cannot be implemented with the available evidence or scope, stop and report the missing condition. Do not manufacture a passing result.
 - Do not silence the compiler: a suppression that hides a real type error is not a fix.
-- A test that would still pass if every function returned nothing is not a test; discard it.
+- Each test must detect its intended regression, and the tests together must reject a no-op implementation. Keep negative tests that verify forbidden side effects stay absent, even when a no-op would pass them individually.
 - If an honest test is impractical, do not write a bad one.
 
 ### Error semantics
