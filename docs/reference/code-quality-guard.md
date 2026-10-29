@@ -8,16 +8,21 @@ This contract protects correctness and review signal in LLM-assisted implementat
 
 - Do not ship mocks, fixtures, hard-coded success, placeholder output, disabled assertions, or weakened tests as production completion.
 - If required behavior cannot be implemented with the available evidence or scope, stop and report the missing condition. Do not manufacture a passing result.
+- Do not silence the compiler: a suppression that hides a real type error is not a fix.
+- Each test must detect its intended regression, and the tests together must reject a no-op implementation. Keep negative tests that verify forbidden side effects stay absent, even when a no-op would pass them individually.
+- If an honest test is impractical, do not write a bad one.
 
 ### Error semantics
 
 - Catch only errors that the code can recover from, translate, or enrich.
 - Do not turn an unknown or unrecoverable error into `null`, `undefined`, empty output, or a success result.
 - When translating an error, preserve its cause and the contract-visible meaning.
+- Fix the cause, not the symptom: a guard that only hides the crash is not a fix.
 
 ### Trust boundaries
 
 - Validate user input, file contents, network payloads, deserialized data, and cross-process data at the boundary where they enter the system.
+- Parse outside data once, where it comes in: a single parse at the boundary, not a re-parse at each use.
 - Once an invariant is established by a trusted caller or validator, avoid speculative internal guards that hide a violated invariant or change failure semantics.
 
 ### Dependency and API authenticity
@@ -29,6 +34,8 @@ This contract protects correctness and review signal in LLM-assisted implementat
 ### Behavior integrity
 
 - Refactoring preserves observable inputs, outputs, errors, side effects, and ordering unless the accepted task authorizes a behavior change.
+- Refactor in three steps: pin the behavior with a characterization test, change the structure, then prove the behavior did not change.
+- Make operations idempotent: running an operation twice, or retrying it after a crash halfway through, ends in the same state.
 - Do not mix unrelated bug fixes, cleanup, or speculative refactors into the task.
 
 ### Executable relevance
