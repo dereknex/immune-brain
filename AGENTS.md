@@ -43,6 +43,6 @@
 
 - Initiative carrier default: github
 - Lane max parallel: 4                 
-- Lane Executor Host: pi 
-- Lane Executor model:  openai/gpt-6.1-terra
-- Lane Executor effort: xhigh
+- Lane Executor Host: claude-code 
+- Lane Executor model:  sonnet-5.5
+- Lane Executor effort: high
