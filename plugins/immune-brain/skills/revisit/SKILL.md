@@ -1,6 +1,6 @@
 ---
 name: revisit
-description: Use when the user explicitly requests Immune-Brain ranking of models by cross-model review load or a project usage retro.
+description: Use when the user explicitly requests an Immune-Brain workflow-health retro over recent pi session logs.
 ---
 
 # Immune-Brain: Revisit

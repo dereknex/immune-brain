@@ -1,12 +1,12 @@
 ---
 name: revisit
-description: Use when the user explicitly requests Immune-Brain ranking of models by cross-model review load or a project usage retro.
+description: Use when the user explicitly requests an Immune-Brain workflow-health retro over recent pi session logs.
 ---
 
 # Immune-Brain: Revisit
 
-Rank models by how much code review their own edits triggered, and report
-basic project usage over a look-back window the user supplies in days. This
+Report workflow health — usage, review rework signal and finding totals — over
+a look-back window the user supplies in days. It ranks no models. This
 is a standalone host-native analysis entry, not a Managed Path continuation
 and not an `drive` internal-role dispatch. It reviews no diff — a diff
 review is `code-review`.
@@ -30,10 +30,11 @@ Ordinary questions such as "which model is worse" stay host-native and do
 not enter this Skill.
 
 The look-back window in days is required input. If the user named one, use
-it. If not, ask before running, because the ranking moves with the window.
+it. If not, ask before running, because every count moves with the window.
 
 Default scan is the user's full session-log tree. Pass `--project <substr>`
-when the user wants one repo or worktree. Do not invent a project filter.
+when the user wants one repo or worktree, and `--exclude <substr>` (repeatable)
+to drop sessions, for example a Lane worktree tree. Do not invent a filter.
 
 No daemon, no cron, no CI, no automatic commit.
 
@@ -42,54 +43,45 @@ No daemon, no cron, no CI, no automatic commit.
 These rules keep numbers comparable across runs. Read the analyzer header
 aloud in the report so the 口径 stays visible.
 
-- `review` = an `Agent` tool call with `subagent_type` equal to `Review`,
-  compared case-insensitively.
-- Attribution = the model behind the most recent `edit`, `write`,
-  `multiedit`, or `apply_patch` in that session. If none, the row is
-  `no-edit (review-only)`. Edits made through `bash` or `codemode` are not
-  attributed.
-- `uniq` counts distinct (session, description+prompt prefix) pairs. A wide
-  gap versus `reviews` is the same review re-run on the same code.
-- `rev/100ed` is `100 * reviews / devEdits`. Rank on both absolute `reviews`
-  and this intensity. A model can lead one axis and sit mid-pack on the
-  other.
-- `avgSc` parses the `[SCORE: …]` tag from the matching Review `toolResult`.
-  The `assurance_verdict` contract carries no score, so untagged reviews show
-  `-` and are left out of the average.
-- `pass%` is PASS over judged reviews. A review is judged by the `decision`
-  of the `assurance_kernel/assurance_verdict` contract in its `toolResult`
-  (`pass` counts as PASS); without a contract, by the `[VERDICT: …]` tag. A
-  review with neither is unjudged and left out of the denominator.
-- The quality table (`PASS` / `REVISE` / `REJECT` / `highRisk`) covers tagged
-  reviews only, so its `PASS` count can differ from `pass%`.
+- One session file is one session; its header `cwd` drives `--project` and
+  `--exclude`.
+- Timestamps are parsed to epoch milliseconds (ISO strings with any offset, or
+  numeric milliseconds) and compared with the window. A line with a missing or
+  unparsable timestamp is skipped and counted in the header
+  (`skipped lines (no usable timestamp)`); report that count.
 - `registr` counts the Kernel `submit_review` registration in the session log.
-  It is the registration of the same review and is never added into `reviews`.
-- `rounds/task` is registrations per distinct `(cwd, task_id)`. High values
-  can be canary/QA harness re-registration, not human-visible rework.
+  `rounds/task` is registrations per distinct `(cwd, task_id)` over all kept
+  sessions. Registrations without a `task_id` are counted separately and are
+  not a task. High values can be canary/QA harness re-registration, not
+  human-visible rework.
 - Findings are the `verdict.findings` entries of `submit_review` calls plus
   legacy `record_finding` calls, deduped per session by summary, so a finding
   re-submitted across rounds counts once. The Review `toolResult` copy of the
   same verdict is not counted. Summaries that match `recorded cleanly`,
-  `receipt recorded`, `round recorded`, or `no finding(s)` are `bookkeep` /
-  `noisy`, excluded from `block`/`advis`.
+  `receipt recorded`, `round recorded`, or `no finding(s)` are `bookkeeping`,
+  excluded from `blocking` / `advisory`.
+- The analyzer still records the last editor model (`edit`, `write`,
+  `multiedit`, `apply_patch`) as an `author` field on each review and finding
+  event for downstream readers. The report prints no per-author or per-model
+  table; do not rank models from it.
 
 Usage counters on the same pass: sessions with activity, assistant turns,
-edit counts, a tool-call name histogram, and the project × author table.
+edit counts, and a tool-call name histogram.
 
 ## CLI
 
-Run the bundled analyzer. Prefer `bun`; `node` (≥23.6, type stripping) is
-an allowed equivalent. The script is erasable TypeScript with `node:` APIs
-only.
+Run the bundled analyzer with `bun`. The script imports only `node:` APIs.
 
 ```
-bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--project <substr>] [--top N]
+bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
 ```
 
 - `<days>` must be `> 0`.
 - `--root` defaults to `~/.pi/agent/sessions`.
 - `--project` keeps sessions whose `cwd` contains the substring.
-- `--top` is the project-table row cap (default 15).
+- `--exclude` drops sessions whose `cwd` contains the substring; repeat it for
+  several. Combined with `--project`, a session must match the project and none
+  of the exclusions. The header names the active filters.
 - Malformed JSONL lines are skipped. `days <= 0` is a hard error.
 
 Do not scan live `.imm/` directories. Tests use committed fixtures under
@@ -99,32 +91,23 @@ Do not scan live `.imm/` directories. Tests use committed fixtures under
 
 Write-up order:
 
-1. Window and 口径 in one line (copy the analyzer header).
-2. Ranked model table, including scores.
-3. Usage section: sessions, turns, edits, tool mix.
-4. Quality and score findings.
-5. Three to five bullets of what the table means (volume versus intensity,
-   quality versus rework, where it concentrated).
+1. Window, filters and 口径 in one line (copy the analyzer header, including
+   the skipped-line count).
+2. Usage section: sessions, turns, edits, tool mix.
+3. Rework signal: `rounds/task` and the separate task_id-less registrations.
+4. Finding totals: blocking, advisory, bookkeeping, and the dedupe line.
+5. Three to five bullets of what the numbers mean (where the work
+   concentrated, how much rework the kernel path shows).
 6. Caveats last.
 
-Rank on both axes, never one. Name the axis you are ranking by, and call
-out models that flip order between `reviews` and `rev/100ed`.
-
-Separate one-pass from rework: compare `uniq` to `reviews`, and read
-`rounds/task` on the kernel path.
-
-Evaluate quality: high intensity plus high score is frequent review of
-mostly minor issues; low intensity plus low score is rare review of severe
-defects. Call out REJECT or highRisk ratings.
-
-Ground each model in its projects. Cite the two or three worktrees where
-that model's reviews concentrated.
+Separate one-pass from rework by reading `rounds/task` on the kernel path.
+Call out a nonzero skipped count: the window is then a lower bound.
 
 ## Caveats
 
-Anything the script splits out as `bookkeep` stays visible next to the
-column it contaminates. Flag any finding count you cannot trace to a real
-defect.
+Anything the script splits out as `bookkeeping` stays visible next to the
+totals it would contaminate. Flag any finding count you cannot trace to a
+real defect.
 
 High `rounds/task` can be canary/QA harness re-registration, not
 human-visible rework.

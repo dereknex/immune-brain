@@ -124,7 +124,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
 | Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 | Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
-| Which model's edits keep coming back for review | `/revisit` | → Ranks models by review load and reports project usage from session logs |
+| How healthy the workflow has been lately | `/revisit` | → Reports usage, review rework signal and finding totals from session logs |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
@@ -424,7 +424,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `prune-docs` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
 | `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 | `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
-| `revisit` | Standalone | Compare models by review load | Ranks authors of reviewed code and reports project usage |
+| `revisit` | Standalone | Workflow-health look-back | Reports usage, rounds per task and finding totals; no model ranking |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
@@ -481,10 +481,10 @@ The three repair/maintenance skills are host-native: they never create a managed
 - **Trigger:** explicit request to audit or prune redundant, bloated, or orphaned tests.
 - **What it does:** inventories tests with the repository's own test and coverage commands, then merges, parameterizes, or deletes only entries you approved in an exact hash-bound manifest. Deletion needs retirement proof or coverage-backed subsumption; without coverage tooling those entries stay unverified. It never weakens an assertion or touches production source.
 
-#### `revisit` — review load and project usage
+#### `revisit` — workflow health
 
-- **Trigger:** explicit request for a cross-model review retro or project usage look-back.
-- **What it does:** ranks models by how much review their own edits triggered, plus sessions/turns/edits/tool mix, from pi session logs. Read-only. Not a diff review.
+- **Trigger:** explicit request for a workflow-health retro or project usage look-back.
+- **What it does:** reports sessions/turns/edits/tool mix, review rounds per task and finding totals from pi session logs, with `--project` / `--exclude` filters and a skipped-line count. It ranks no models. Read-only. Not a diff review.
 
 ---
 

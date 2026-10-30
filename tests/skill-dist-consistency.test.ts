@@ -79,7 +79,7 @@ const TRIGGER_CASES: Array<[name: string, explicit: string, ordinary: string, sc
 	["prune-docs", "prune stale docs with Immune-Brain", "explain this document", "stale current documentation"],
 	["slim", "minimize AGENTS.md with Immune-Brain", "what does this instruction mean", "tracked AGENTS.md"],
 	["prune-tests", "prune redundant tests with Immune-Brain", "is this test redundant", "redundant, bloated, or orphaned tests"],
-	["revisit", "review-retro with Immune-Brain", "review this function", "cross-model review load"],
+	["revisit", "review-retro with Immune-Brain", "review this function", "workflow-health retro"],
 ];
 
 

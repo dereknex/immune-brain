@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "revisit-s1-workflow-health-report",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:revisit-s1-workflow-health-report:2026-10-30T05:41:05.132Z",
+  "final_record_hash": "sha256:91b679ca9485a1d438086e3a1d3af33b703b0af3e5b4b8bc05ac03424d7df15a",
+  "terminalized_at": "2026-10-30T05:41:05.132Z"
+}

@@ -1,0 +1,177 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-s1-workflow-health-report",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-s1-workflow-health-report",
+    "goal": "The revisit session report becomes a workflow-health report: the model-load ranking retires, timestamps are parsed to epoch with a skipped count, --exclude filters sessions, rounds/task and finding totals lose the model key, author stays an event field, and the description names workflow health (#322 S1; Spec docs/specs/revisit-workflow-health.spec.md D1, D2, D9, D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/review-retro-analyzer.test.ts, run() over the committed session fixtures prints no model-ranking, review quality-and-score, or project x author table (no rev/100ed, avgSc, pass% or REJECT column) and still prints the usage section (sessions, turns, edits, tool histogram), rounds/task over all kept (cwd, task_id) pairs with task_id-less registrations counted separately, blocking/advisory/bookkeeping finding totals without a model key, and the dedupe line (Spec D1, D2; #322-D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/review-retro-analyzer.test.ts, a session fixture whose lines carry an ISO timestamp with a non-UTC offset, a numeric epoch-millisecond timestamp, a missing timestamp, and an unparsable timestamp yields a report in which the first two are counted inside the window when they fall in it, and the header prints a skipped count of 2 for the missing and unparsable lines (Spec D2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/review-retro-analyzer.test.ts, run() with --exclude <substr> drops sessions whose cwd contains the substring, --exclude is repeatable, --project combined with --exclude keeps only sessions matching the project and none of the exclusions, and the header names the active filters (Spec D2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/review-retro-analyzer.test.ts, the session reader exported from review_retro.ts returns review and finding events carrying an author field equal to the model behind the most recent edit, write, multiedit or apply_patch in that session, and no-edit (review-only) when none precedes them (Spec D1; #322-D10).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The revisit description in plugins/immune-brain/skills/revisit/SKILL.md and plugins/immune-brain/dist/revisit.md names a workflow-health retro and no longer names ranking models by cross-model review load; tests/skill-dist-consistency.test.ts asserts the new trigger tuple, and tests/direct-first-routing-contract.test.ts stays green over README.md (Spec D9; #322-D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/direct-first-routing-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": ".changeset/revisit-s1-workflow-health-report.md declares a minor release of immune-brain and states that the model-load ranking retired (Spec D10).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-s1-workflow-health-report.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-s1-workflow-health-report.md",
+      "CONTEXT.md",
+      "README.md",
+      "docs/plans/revisit-s1-workflow-health-report.intent.json",
+      "docs/specs/revisit-workflow-health.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/SKILL.md",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "tests/fixtures/review-retro-contract/contract-app/s1.jsonl",
+      "tests/fixtures/review-retro/immune-brain/s1.jsonl",
+      "tests/fixtures/review-retro/other-app/s2.jsonl",
+      "tests/review-retro-analyzer.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-s1-workflow-health-report.intent.json",
+    "content_hash": "sha256:f5eea719d30b00e0edcefc3f3090d5ef784822b7699bd627d2e8d1cdc5b32f4b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f5eea719d30b00e0edcefc3f3090d5ef784822b7699bd627d2e8d1cdc5b32f4b",
+  "git_base_head": "7c6406ac5a890b320007ef5e4304807359ceadd2",
+  "attestations": [
+    {
+      "id": "approval-qa-027a75ae",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f5eea719d30b00e0edcefc3f3090d5ef784822b7699bd627d2e8d1cdc5b32f4b",
+      "diff_hash": "sha256:fc13677e5e6137a0c1a1e6676c8c0fff4bf77d0b9f9ef76941317900fcc7380c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:4c75142e712d8f3b837a4dbf3cf254f5a67805ac88bd41819def4fd2a65cf392"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-36e6f495",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f5eea719d30b00e0edcefc3f3090d5ef784822b7699bd627d2e8d1cdc5b32f4b",
+      "diff_hash": "sha256:fc13677e5e6137a0c1a1e6676c8c0fff4bf77d0b9f9ef76941317900fcc7380c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius: tier low-medium; load-bearing path is plugins/immune-brain/skills/revisit/scripts/review_retro.ts, plus the dist/revisit.md contract and public docs. AC1-AC6 are met. The ranking, quality and author tables are gone. Timestamps parse to epoch ms with a skipped count, --exclude is repeatable and shown in the header, readSession is exported with an author field, the description and trigger tuple changed, and the changeset is minor and states that the ranking retired.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7c6406ac5a890b320007ef5e4304807359ceadd2",
+        "review_commit": "f886485ee9dc7f2a4710a3bec12492537ac45d56",
+        "review_tree": "660f140e848b175c8955665b1b5ff56a2f076195",
+        "manifest_digest": "sha256:e4a7887423397d732b30e7c86983beb59927a48e6e9c90a228750549ef408e5b"
+      },
+      "reviewer_verdict_sha256": "sha256:71eec01ae10a0623e31c99937241746729d689cb5c694b6a8bbeffae8a5d3976"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-s1-workflow-health-report:2026-10-30T05:39:07.198Z",
+      "at": "2026-10-30T05:39:07.198Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-s1-workflow-health-report.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-s1-workflow-health-report:2026-10-30T05:39:16.347Z",
+      "at": "2026-10-30T05:39:16.347Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-027a75ae\naction_v2_sha256:0a03f26cc124eae8c9db8305b5c2a47618fc39f4d3a086a51b1804db3b13e236",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-30T05:39:16.347Z"
+      }
+    },
+    {
+      "id": "record_approval:revisit-s1-workflow-health-report:2026-10-30T05:41:03.831Z",
+      "at": "2026-10-30T05:41:03.831Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-36e6f495\naction_v2_sha256:112ae6e4ab8b40ca24c40ab7fbe04a31c2641ebf946a4ff1733e7ffcfb5b23fb",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-30T05:41:03.831Z"
+      }
+    },
+    {
+      "id": "complete:revisit-s1-workflow-health-report:2026-10-30T05:41:05.132Z",
+      "at": "2026-10-30T05:41:05.132Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:24b1ae1715f321cb21d4d501a5a478043ee40eb3afeb2204cc733261bdf46d51"
+    }
+  ]
+}

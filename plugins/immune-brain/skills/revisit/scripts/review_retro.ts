@@ -1,15 +1,18 @@
 #!/usr/bin/env bun
 /**
- * Retro: how many code reviews did each model's own code trigger, across recent pi sessions.
+ * Workflow-health retro over recent pi sessions: usage, rework signal and finding totals.
  *
- * Usage: bun review_retro.ts <days> [--root <sessions-dir>] [--project <substr>] [--top N]
+ * Usage: bun review_retro.ts <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
  *
  * Counting rules (the 口径 that keeps the numbers honest):
+ *   session              = one pi JSONL file; its header `cwd` drives --project / --exclude
+ *   window               = timestamps parsed to epoch ms (ISO with any offset, or numeric ms);
+ *                          a line with a missing or unparsable timestamp is skipped and counted
  *   review executed      = Agent(subagent_type="Review", any case) tool call
- *   avgSc                = average score (0-10) from [SCORE: ...] tags in Review toolResult (the contract has no score)
- *   pass%                = PASS rate over judged reviews: assurance_verdict `decision`, else the [VERDICT: ...] tag
- *   kernel:submit_review = the *registration* of that same review, reported separately (never added)
- *   attribution          = the model behind the most recent edit/write/apply_patch before the review (the code's author)
+ *   kernel:submit_review = the *registration* of a review; rounds/task is registrations per (cwd, task_id),
+ *                          registrations without a task_id are counted separately
+ *   author               = the model behind the most recent edit/write/multiedit/apply_patch before a
+ *                          review or finding; kept on events for downstream readers, never ranked
  *   findings             = submit_review verdict.findings plus legacy record_finding, deduped per session,
  *                          harness bookkeeping split out
  */
@@ -21,59 +24,8 @@ import { pathToFileURL } from "node:url";
 
 const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no findings?\b/i;
 const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
-const SCORE_RE = /\[SCORE:\s*([\d.]+)\s*(?:\/\s*10)?\]/i;
-const VERDICT_RE = /\[VERDICT:\s*(\w+)\]/i;
-const RISK_RE = /\[RISK:\s*(\w+)\]/i;
-const BLOCK_RE = /\[BLOCKING:\s*(\d+)\]/i;
-const ADVIS_RE = /\[ADVISORY:\s*(\d+)\]/i;
-const VERDICT_CONTRACT = "assurance_kernel/assurance_verdict";
-const DECISION_RE = /"decision"\s*:\s*"(\w+)"/;
-
-type ReviewTag = {
-	score: number;
-	verdict: string;
-	risk: string;
-	blocking: number;
-	advisory: number;
-};
-
-function parseReviewTag(text: string): ReviewTag | null {
-	if (!text.includes("[SCORE:")) return null;
-	const sc = SCORE_RE.exec(text);
-	if (!sc) return null;
-	const score = Number(sc[1]);
-	if (!Number.isFinite(score)) return null;
-	return {
-		score,
-		verdict: (VERDICT_RE.exec(text)?.[1] ?? "UNKNOWN").toUpperCase(),
-		risk: (RISK_RE.exec(text)?.[1] ?? "UNKNOWN").toUpperCase(),
-		blocking: Number(BLOCK_RE.exec(text)?.[1] ?? 0),
-		advisory: Number(ADVIS_RE.exec(text)?.[1] ?? 0),
-	};
-}
-
-function parseDecision(text: string): string | null {
-	if (!text.includes(VERDICT_CONTRACT)) return null;
-	return DECISION_RE.exec(text)?.[1]?.toLowerCase() ?? null;
-}
-
-function extractText(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (Array.isArray(content)) {
-		return content
-			.map((item) => {
-				if (typeof item === "string") return item;
-				if (item && typeof item === "object") {
-					const rec = item as Record<string, unknown>;
-					if ("text" in rec) return String(rec.text);
-					if ("result" in rec) return String(rec.result);
-				}
-				return "";
-			})
-			.join("\n");
-	}
-	return "";
-}
+const NO_EDIT = "no-edit (review-only)";
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T/;
 
 function norm(a: unknown): Record<string, unknown> {
 	if (typeof a === "string") {
@@ -90,29 +42,127 @@ function bump(map: Map<string, number>, key: string, n = 1): void {
 	map.set(key, (map.get(key) ?? 0) + n);
 }
 
-type Args = { days: number; root: string; project: string; top: number };
+/** Epoch milliseconds from an ISO string (any offset) or a numeric millisecond value; NaN otherwise. */
+function parseTimestamp(value: unknown): number {
+	if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
+	if (typeof value === "string" && ISO_TIMESTAMP.test(value)) return Date.parse(value);
+	return Number.NaN;
+}
+
+export type SessionEvent =
+	| { type: "review"; author: string; key: string }
+	| { type: "registration"; author: string; taskId: string }
+	| { type: "finding"; author: string; kind: string; summary: string };
+
+export type SessionFilter = { cutMs: number; project: string; exclude: string[] };
+
+export type SessionRead = {
+	cwd: string;
+	used: boolean;
+	skipped: number;
+	turns: number;
+	edits: number;
+	tools: Map<string, number>;
+	events: SessionEvent[];
+};
+
+function cwdKept(cwd: string, filter: SessionFilter): boolean {
+	if (filter.project && !cwd.includes(filter.project)) return false;
+	return !filter.exclude.some((s) => cwd.includes(s));
+}
+
+/** Read one session file. Returns null when its cwd is filtered out by --project / --exclude. */
+export async function readSession(path: string, filter: SessionFilter): Promise<SessionRead | null> {
+	const out: SessionRead = { cwd: "", used: false, skipped: 0, turns: 0, edits: 0, tools: new Map(), events: [] };
+	let editor: string | null = null;
+	const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }) });
+	for await (const raw of rl) {
+		const line = raw.trim();
+		if (!line) continue;
+		let o: Record<string, unknown>;
+		try {
+			o = JSON.parse(line) as Record<string, unknown>;
+		} catch {
+			continue;
+		}
+		if (o.type === "session") {
+			out.cwd = String(o.cwd ?? "");
+			if (!cwdKept(out.cwd, filter)) {
+				rl.close();
+				return null;
+			}
+			continue;
+		}
+		const ms = parseTimestamp(o.timestamp);
+		if (Number.isNaN(ms)) {
+			out.skipped += 1;
+			continue;
+		}
+		if (ms < filter.cutMs) continue;
+		const m = (o.message && typeof o.message === "object" ? o.message : {}) as Record<string, unknown>;
+		if (m.role !== "assistant") continue;
+		out.used = true;
+		const mo = `${m.provider ?? "?"}/${m.model ?? "?"}`;
+		out.turns += 1;
+		const content = Array.isArray(m.content) ? m.content : [];
+		for (const c of content) {
+			if (!c || typeof c !== "object") continue;
+			const call = c as Record<string, unknown>;
+			if (call.type !== "toolCall") continue;
+			const name = String(call.name ?? "");
+			const a = norm(call.arguments);
+			bump(out.tools, name || "?");
+			const author = editor ?? NO_EDIT;
+			if (EDIT_TOOLS.has(name)) {
+				out.edits += 1;
+				editor = mo;
+			} else if (name === "Agent" && String(a.subagent_type ?? "").toLowerCase() === "review") {
+				out.events.push({
+					type: "review",
+					author,
+					key: `${String(a.description ?? "")}${String(a.prompt ?? "").slice(0, 240)}`,
+				});
+			} else if (name === "imm_kernel_canary") {
+				const act = norm(a.action);
+				if (act.op === "submit_review") {
+					out.events.push({ type: "registration", author, taskId: String(a.task_id ?? "") });
+					const found = norm(act.verdict).findings;
+					if (Array.isArray(found)) for (const f of found) out.events.push(findingEvent(author, f));
+				} else if (act.op === "record_finding") {
+					out.events.push(findingEvent(author, act.finding));
+				}
+			}
+		}
+	}
+	return out;
+}
+
+function findingEvent(author: string, finding: unknown): SessionEvent {
+	const f = norm(finding);
+	const summary = String(f.summary ?? "");
+	return { type: "finding", author, kind: BOOKKEEPING.test(summary) ? "bookkeeping" : String(f.kind ?? ""), summary };
+}
+
+type Args = { days: number; root: string; project: string; exclude: string[] };
+
+const USAGE = "usage: review_retro.ts <days> [--root <dir>] [--project <substr>] [--exclude <substr>]...";
 
 function parseArgs(argv: string[]): Args {
-	const out: Args = {
-		days: NaN,
-		root: join(homedir(), ".pi/agent/sessions"),
-		project: "",
-		top: 15,
-	};
+	const out: Args = { days: Number.NaN, root: join(homedir(), ".pi/agent/sessions"), project: "", exclude: [] };
 	const rest: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i]!;
 		if (a === "--root") out.root = argv[++i] ?? "";
 		else if (a === "--project") out.project = argv[++i] ?? "";
-		else if (a === "--top") out.top = Number(argv[++i]);
-		else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
+		else if (a === "--exclude") {
+			const v = argv[++i] ?? "";
+			if (!v) throw new Error(`--exclude needs a value; ${USAGE}`);
+			out.exclude.push(v);
+		} else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
 		else rest.push(a);
 	}
 	out.days = Number(rest[0]);
-	if (!(out.days > 0) || rest[1] !== undefined) {
-		throw new Error("usage: review_retro.ts <days> [--root <dir>] [--project <substr>] [--top N]");
-	}
-	if (!Number.isFinite(out.top) || out.top <= 0) throw new Error("--top must be > 0");
+	if (!(out.days > 0) || rest[1] !== undefined) throw new Error(USAGE);
 	return out;
 }
 
@@ -131,238 +181,85 @@ function listJsonl(root: string): string[] {
 
 export async function run(argv: string[]): Promise<string> {
 	const args = parseArgs(argv);
-	const cut = new Date(Date.now() - args.days * 86400000).toISOString().slice(0, 19);
-	const home = homedir();
-	const dev = new Map<string, number>();
-	const turns = new Map<string, number>();
-	const rev = new Map<string, number>();
-	const sub = new Map<string, number>();
+	const cutMs = Date.now() - args.days * 86400000;
+	const cut = new Date(cutMs).toISOString().slice(0, 19);
+	const filter: SessionFilter = { cutMs, project: args.project, exclude: args.exclude };
 	const tools = new Map<string, number>();
-	const proj = new Map<string, number>();
-	const episode = new Map<string, Set<string>>();
-	const tasks = new Map<string, Set<string>>();
+	const tasks = new Set<string>();
+	const findRaw = new Map<string, number>();
 	const findUniq = new Map<string, Set<string>>();
-	const findingsRaw = new Map<string, number>();
-	const scores = new Map<string, number[]>();
-	const verdicts = new Map<string, number>();
-	const judged = new Map<string, number>();
-	const passed = new Map<string, number>();
-	const risks = new Map<string, number>();
 	let files = 0;
+	let skipped = 0;
+	let turns = 0;
+	let edits = 0;
+	let registrations = 0;
+	let anonymous = 0;
 
 	for (const path of listJsonl(args.root)) {
-		let editor: string | null = null;
-		let cwd = "";
-		let used = false;
-		const pending = new Map<string, string>();
-		const addFinding = (owner: string, finding: unknown) => {
-			const f = norm(finding);
-			const summ = String(f.summary ?? "");
-			const kind = BOOKKEEPING.test(summ) ? "bookkeeping" : String(f.kind ?? "");
-			const rawKey = `${owner}\0${kind}`;
-			bump(findingsRaw, rawKey);
-			const uniq = findUniq.get(rawKey) ?? new Set();
-			uniq.add(`${path}\0${summ.slice(0, 160)}`);
-			findUniq.set(rawKey, uniq);
-		};
-		const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }) });
-		for await (const raw of rl) {
-			const line = raw.trim();
-			if (!line) continue;
-			let o: Record<string, unknown>;
-			try {
-				o = JSON.parse(line) as Record<string, unknown>;
-			} catch {
-				continue;
-			}
-			if (o.type === "session") {
-				cwd = String(o.cwd ?? "");
-				continue;
-			}
-			const m = (o.message && typeof o.message === "object" ? o.message : {}) as Record<string, unknown>;
-			const role = m.role;
-			if (String(o.timestamp ?? "") < cut) continue;
-			if (args.project && !cwd.includes(args.project)) continue;
-
-			if (role === "assistant") {
-				used = true;
-				const mo = `${m.provider ?? "?"}/${m.model ?? "?"}`;
-				bump(turns, mo);
-				const content = Array.isArray(m.content) ? m.content : [];
-				for (const c of content) {
-					if (!c || typeof c !== "object") continue;
-					const call = c as Record<string, unknown>;
-					if (call.type !== "toolCall") continue;
-					const name = String(call.name ?? "");
-					const a = norm(call.arguments);
-					const cid = typeof call.id === "string" ? call.id : "";
-					bump(tools, name || "?");
-					if (EDIT_TOOLS.has(name)) {
-						bump(dev, mo);
-						editor = mo;
-					} else if (name === "Agent" && String(a.subagent_type ?? "").toLowerCase() === "review") {
-						const owner = editor ?? "no-edit (review-only)";
-						bump(rev, owner);
-						const ep = episode.get(owner) ?? new Set();
-						ep.add(`${path}\0${String(a.description ?? "")}${String(a.prompt ?? "").slice(0, 240)}`);
-						episode.set(owner, ep);
-						const projKey = `${cwd.replace(home, "~")}\0${owner}`;
-						bump(proj, projKey);
-						if (cid) pending.set(cid, owner);
-					} else if (name === "imm_kernel_canary") {
-						const act = norm(a.action);
-						const op = act.op;
-						const owner = editor ?? "no-edit (review-only)";
-						if (op === "submit_review") {
-							bump(sub, owner);
-							const t = tasks.get(owner) ?? new Set();
-							t.add(`${cwd}\0${String(a.task_id ?? "")}`);
-							tasks.set(owner, t);
-							const found = norm(act.verdict).findings;
-							if (Array.isArray(found)) for (const f of found) addFinding(owner, f);
-						} else if (op === "record_finding") {
-							addFinding(owner, act.finding);
-						}
-					}
-				}
-			} else if (role === "toolResult") {
-				const tcid = String(m.toolCallId ?? "");
-				const owner = pending.get(tcid);
-				if (!owner) continue;
-				pending.delete(tcid);
-				const text = extractText(m.content);
-				const tag = parseReviewTag(text);
-				const decision = parseDecision(text);
-				if (decision || tag) {
-					bump(judged, owner);
-					if (decision ? decision === "pass" : tag?.verdict === "PASS") bump(passed, owner);
-				}
-				if (!tag) continue;
-				const sl = scores.get(owner) ?? [];
-				sl.push(tag.score);
-				scores.set(owner, sl);
-				bump(verdicts, `${owner}\0${tag.verdict}`);
-				bump(risks, `${owner}\0${tag.risk}`);
+		const session = await readSession(path, filter);
+		if (!session) continue;
+		if (session.used) files += 1;
+		skipped += session.skipped;
+		turns += session.turns;
+		edits += session.edits;
+		for (const [name, n] of session.tools) bump(tools, name, n);
+		for (const ev of session.events) {
+			if (ev.type === "registration") {
+				registrations += 1;
+				if (ev.taskId) tasks.add(`${session.cwd}\0${ev.taskId}`);
+				else anonymous += 1;
+			} else if (ev.type === "finding") {
+				bump(findRaw, ev.kind);
+				const uniq = findUniq.get(ev.kind) ?? new Set();
+				uniq.add(`${path}\0${ev.summary.slice(0, 160)}`);
+				findUniq.set(ev.kind, uniq);
 			}
 		}
-		if (used) files += 1;
 	}
 
 	const lines: string[] = [];
 	const emit = (s = "") => lines.push(s);
-	emit(`window: last ${args.days}d (UTC >= ${cut}Z) | sessions with activity: ${files} | root: ${args.root}`);
-	emit("review = Agent(Review) executed; attributed to the model that last edited the code under review");
-	emit("avgSc = parsed from Review [SCORE: .../10] tags (shows '-' if untagged)");
-	emit("pass% = assurance_verdict decision, else the [VERDICT: ...] tag, over judged reviews (shows '-' if none)");
-	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
-	emit("");
-	const hdr =
-		`${"model".padEnd(42)}${"devEdits".padStart(9)}${"turns".padStart(6)}${"reviews".padStart(8)}${"uniq".padStart(5)}${"rev/100ed".padStart(10)}${"avgSc".padStart(6)}${"pass%".padStart(6)}${"registr".padStart(8)}${"block".padStart(6)}${"advis".padStart(6)}${"noisy".padStart(6)}`;
-	emit(hdr);
-	emit("-".repeat(hdr.length));
-
-	const models = [...new Set([...rev.keys(), ...dev.keys()])].sort(
-		(a, b) => (rev.get(b) ?? 0) - (rev.get(a) ?? 0),
-	);
-	const shown: string[] = [];
-	for (const mo of models) {
-		if (!rev.get(mo) && (dev.get(mo) ?? 0) < 30) continue;
-		shown.push(mo);
-		const uq = episode.get(mo)?.size ?? 0;
-		const d = dev.get(mo) ?? 0;
-		const r = rev.get(mo) ?? 0;
-		const rate = d ? ((100 * r) / d).toFixed(1) : "-";
-		const sl = scores.get(mo) ?? [];
-		const avgSc = sl.length ? (sl.reduce((x, y) => x + y, 0) / sl.length).toFixed(1) : "-";
-		const judgedCnt = judged.get(mo) ?? 0;
-		const passPct = judgedCnt ? `${Math.round((100 * (passed.get(mo) ?? 0)) / judgedCnt)}%` : "-";
-		const block = findUniq.get(`${mo}\0blocking`)?.size ?? 0;
-		const advis = findUniq.get(`${mo}\0advisory`)?.size ?? 0;
-		const noisy = findUniq.get(`${mo}\0bookkeeping`)?.size ?? 0;
-		emit(
-			`${mo.padEnd(42)}${String(d).padStart(9)}${String(turns.get(mo) ?? 0).padStart(6)}${String(r).padStart(8)}${String(uq).padStart(5)}${rate.padStart(10)}${avgSc.padStart(6)}${passPct.padStart(6)}${String(sub.get(mo) ?? 0).padStart(8)}${String(block).padStart(6)}${String(advis).padStart(6)}${String(noisy).padStart(6)}`,
-		);
-	}
-	emit("-".repeat(hdr.length));
-	const totalScores = [...scores.values()].flat();
-	const totAvg = totalScores.length
-		? (totalScores.reduce((x, y) => x + y, 0) / totalScores.length).toFixed(1)
-		: "-";
-	const totPass = shown.reduce((n, mo) => n + (passed.get(mo) ?? 0), 0);
-	const totJudged = shown.reduce((n, mo) => n + (judged.get(mo) ?? 0), 0);
-	const totPassPct = totJudged ? `${Math.round((100 * totPass) / totJudged)}%` : "-";
-	const totBlock = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0blocking") ? v.size : 0), 0);
-	const totAdvis = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0advisory") ? v.size : 0), 0);
-	const totNoisy = [...findUniq.entries()].reduce((n, [k, v]) => n + (k.endsWith("\0bookkeeping") ? v.size : 0), 0);
-	const totDev = [...dev.values()].reduce((a, b) => a + b, 0);
-	const totTurns = [...turns.values()].reduce((a, b) => a + b, 0);
-	const totRev = [...rev.values()].reduce((a, b) => a + b, 0);
-	const totUniq = [...episode.values()].reduce((n, s) => n + s.size, 0);
-	const totSub = [...sub.values()].reduce((a, b) => a + b, 0);
+	const filters = [
+		...(args.project ? [`project~${args.project}`] : []),
+		...args.exclude.map((s) => `exclude~${s}`),
+	];
 	emit(
-		`${"TOTAL".padEnd(42)}${String(totDev).padStart(9)}${String(totTurns).padStart(6)}${String(totRev).padStart(8)}${String(totUniq).padStart(5)}${"".padStart(10)}${totAvg.padStart(6)}${totPassPct.padStart(6)}${String(totSub).padStart(8)}${String(totBlock).padStart(6)}${String(totAdvis).padStart(6)}${String(totNoisy).padStart(6)}`,
+		`window: last ${args.days}d (UTC >= ${cut}Z) | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped} | root: ${args.root}`,
 	);
+	emit(`filters: ${filters.length ? filters.join(", ") : "none"}`);
+	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
 
 	emit("");
 	emit("=== usage (sessions / turns / edits / tools) ===");
-	emit(`sessions: ${files} | turns: ${totTurns} | edits: ${totDev}`);
+	emit(`sessions: ${files} | turns: ${turns} | edits: ${edits}`);
 	const toolRows = [...tools.entries()].sort((a, b) => b[1] - a[1]);
 	if (toolRows.length === 0) emit("(no tool calls in this window)");
 	else for (const [name, n] of toolRows) emit(`${String(n).padStart(5)}  ${name}`);
 
 	emit("");
-	emit("=== review quality & scores (tagged reviews only) ===");
-	const scoredModels = [...scores.keys()]
-		.filter((m) => (scores.get(m) ?? []).length > 0)
-		.sort((a, b) => (scores.get(b)?.length ?? 0) - (scores.get(a)?.length ?? 0));
-	if (scoredModels.length) {
-		const qHdr = `${"model".padEnd(42)}${"scored".padStart(7)}${"avgScore".padStart(9)}${"PASS".padStart(6)}${"REVISE".padStart(7)}${"REJECT".padStart(7)}${"highRisk".padStart(9)}`;
-		emit(qHdr);
-		emit("-".repeat(qHdr.length));
-		for (const mo of scoredModels) {
-			const sl = scores.get(mo) ?? [];
-			const avgS = (sl.reduce((x, y) => x + y, 0) / sl.length).toFixed(2);
-			const pC = verdicts.get(`${mo}\0PASS`) ?? 0;
-			const revC = verdicts.get(`${mo}\0REVISE`) ?? 0;
-			const rejC = verdicts.get(`${mo}\0REJECT`) ?? 0;
-			const highR = (risks.get(`${mo}\0HIGH`) ?? 0) + (risks.get(`${mo}\0CRITICAL`) ?? 0);
-			emit(
-				`${mo.padEnd(42)}${String(sl.length).padStart(7)}${avgS.padStart(9)}${String(pC).padStart(6)}${String(revC).padStart(7)}${String(rejC).padStart(7)}${String(highR).padStart(9)}`,
-			);
-		}
-	} else {
-		emit("(no scored reviews found in this window yet; reviews with [SCORE: .../10] will appear here)");
-	}
-
-	emit("");
-	emit("=== where the reviews landed (project x author) ===");
-	const projRows = [...proj.entries()].sort((a, b) => b[1] - a[1]).slice(0, args.top);
-	for (const [key, v] of projRows) {
-		const [p, mo] = key.split("\0");
-		emit(`${String(v).padStart(5)}  ${String(p).padEnd(58)} ${mo}`);
-	}
-
-	emit("");
 	emit("=== review rounds per kernel task (rework signal) ===");
-	const taskModels = [...tasks.keys()].sort((a, b) => (sub.get(b) ?? 0) - (sub.get(a) ?? 0));
-	for (const mo of taskModels) {
-		const nt = tasks.get(mo)?.size ?? 0;
-		if (!nt) continue;
-		const s = sub.get(mo) ?? 0;
+	const withTask = registrations - anonymous;
+	if (tasks.size) {
 		emit(
-			`${(s / nt).toFixed(1).padStart(6)} rounds/task   ${String(s).padStart(4)} registrations / ${String(nt).padStart(3)} tasks   ${mo}`,
+			`${(withTask / tasks.size).toFixed(1).padStart(6)} rounds/task   ${String(withTask).padStart(4)} registrations / ${String(tasks.size).padStart(3)} tasks`,
 		);
+	} else {
+		emit("(no kernel tasks with registrations in this window)");
 	}
+	if (anonymous) emit(`${String(anonymous).padStart(6)} registrations without task_id (not counted as a task)`);
 
-	const rawSum = [...findingsRaw.values()].reduce((a, b) => a + b, 0);
+	emit("");
+	emit("=== findings (deduped per session) ===");
+	const uniqOf = (kind: string) => findUniq.get(kind)?.size ?? 0;
+	emit(`blocking: ${uniqOf("blocking")} | advisory: ${uniqOf("advisory")} | bookkeeping: ${uniqOf("bookkeeping")}`);
+	const rawSum = [...findRaw.values()].reduce((a, b) => a + b, 0);
 	const uniqSum = [...findUniq.values()].reduce((n, s) => n + s.size, 0);
 	if (rawSum && rawSum !== uniqSum) {
-		emit("");
 		emit(
 			`(findings: ${rawSum} raw calls deduped to ${uniqSum} distinct — re-submits of the same finding are counted once)`,
 		);
 	}
-	emit("caveats: 'bookkeep' = kernel self-entries mislabelled as findings, excluded from blocking/advisory;");
+	emit("caveats: 'bookkeeping' = kernel self-entries mislabelled as findings, excluded from blocking/advisory;");
 	emit("         high rounds/task can be canary/QA harness re-registration, not human-visible rework.");
 	return `${lines.join("\n")}\n`;
 }
