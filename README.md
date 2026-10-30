@@ -124,7 +124,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
 | Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 | Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
-| How healthy the workflow has been lately | `/revisit` | → Reports usage, review rework signal and finding totals from session logs |
+| Where workflow friction occurs and what to improve | `/revisit` | → Workflow-friction diagnosis from session evidence |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
@@ -424,7 +424,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `prune-docs` | Standalone | Stale current docs | Deletes only the hash-approved manifest entries |
 | `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 | `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
-| `revisit` | Standalone | Workflow-health look-back | Reports usage, rounds per task and finding totals; no model ranking |
+| `revisit` | Standalone | Workflow-friction diagnosis | Traces evidence, recommends one next step; no model ranking |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
@@ -483,8 +483,8 @@ The three repair/maintenance skills are host-native: they never create a managed
 
 #### `revisit` — workflow health
 
-- **Trigger:** explicit request for a workflow-health retro or project usage look-back.
-- **What it does:** reports sessions/turns/edits/tool mix, review rounds per task and finding totals from pi session logs, with `--project` / `--exclude` filters and a skipped-line count. It ranks no models. Read-only. Not a diff review.
+- **Trigger:** explicit request for a workflow-health retro or workflow-friction diagnosis.
+- **What it does:** locates and verifies evidence chains from pi session logs and optional committed audit, then recommends one improvement or reports insufficient evidence. Usage and rework counts are locating context, not causes. It ranks no models. Read-only. Not a diff review.
 
 ---
 

@@ -73,4 +73,4 @@ skills:
     canonical: true
     output_artifacts: [retro_report]
     next_actions: []
-    boundary: Report workflow health (usage, rework signal, finding totals) from pi session logs. Read-only. No Managed Path mutation.
+    boundary: Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation.

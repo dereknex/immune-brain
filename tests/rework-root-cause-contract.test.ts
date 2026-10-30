@@ -80,7 +80,8 @@ describe("retro per-task aggregation", () => {
 		const retro = readFlat("plugins/immune-brain/dist/revisit.md");
 		expect(retro).toContain("Aggregate per task before proposing any pattern");
 		expect(retro).toContain("for every task at three or more rounds");
-		expect(retro).toContain("as infrastructure jitter and keep it out of the content-rework count");
+		expect(retro).toContain("jitter marker (unverified)");
+		expect(retro).toContain("keep it out of the content-rework count");
 	});
 });
 
@@ -96,9 +97,38 @@ describe("revisit follow-through", () => {
 		expect(revisit).toContain("architecture > types > lint > test > docs");
 	});
 
-	it("is report-only and ends each candidate with a copy-ready draft", () => {
-		expect(revisit).toContain("each candidate ends with a copy-ready TaskIntent or issue draft");
+	it("routes cause, friction and improvement questions to follow-through and report", () => {
+		const skill = readFlat("plugins/immune-brain/skills/revisit/SKILL.md");
+		expect(skill).toMatch(/causes.*friction.*improv.*\[Follow-through\].*\[Report\]/i);
+	});
+
+	it("locates, verifies selected candidates and recommends from causal evidence", () => {
+		const follow = revisit.split("## Follow-through")[1].split("## Caveats")[0];
+		expect(follow.indexOf("**Locate**")).toBeLessThan(follow.indexOf("**Verify**"));
+		expect(follow.indexOf("**Verify**")).toBeLessThan(follow.indexOf("**Recommend**"));
+		for (const rule of ["only locate", "default about three", "prior state → actual stop or failure → user or Host action → next state", "necessary decision, valid quality catch, avoidable process friction, or unknown", "which candidates were checked and which were not", "at most three findings", "observation → causal evidence → counterexample or unknown → direction", "not enough evidence to change anything"]) {
+			expect(follow).toContain(rule);
+		}
+	});
+
+	it("keeps sources distinct and leads with the workflow answer", () => {
+		for (const rule of ["sessions show human interaction, failures and recovery", "committed audit confirms terminal state, formal findings and assurance history", "Neither proves what only the other records", "asked once", "`--since`/`--until`"]) expect(revisit).toContain(rule);
+		const report = revisit.split("## Report")[1].split("## Follow-through")[0];
+		expect(report).toContain("workflow answer");
+		expect(report).toContain("usage, the tool histogram and `rounds/task`");
+		expect(report).toContain("appendix");
+		expect(report).toContain("never used as a cause");
+	});
+
+	it("judges stops from context, not calls or markers", () => {
+		for (const rule of ["A tool call is never a human confirmation", "read `request_stop` with its result", "quota error or tool interruption", "`continue` message alone", "pointed context, never by a regex", "bookkeeping and jitter labels are unverified markers"]) expect(revisit).toContain(rule);
+	});
+
+	it("is report-only and writes copy-ready drafts only on request", () => {
+		expect(revisit).toContain("copy-ready TaskIntent or issue draft only on request");
+		expect(revisit).not.toContain("each candidate ends with a copy-ready TaskIntent or issue draft");
 		expect(revisit).toContain("`revisit` creates no issue, TaskIntent, branch or commit");
+		expect(revisit).toContain("never resumes a stopped managed run");
 	});
 
 	it("retires the project-local workflow-evidence-retro Skill", () => {
