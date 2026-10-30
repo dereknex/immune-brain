@@ -1,5 +1,25 @@
 # Changelog
 
+## 7.0.0
+
+### Major Changes
+
+- [`b4fc3db`](https://github.com/dereknex/immune-brain/commit/b4fc3dbbb7155144d46fd4d9ce56d9c1acf7aa10) Thanks [@dereknex](https://github.com/dereknex)! - Lane preferences move to a personal, gitignored preset `.imm/lanes.local.json` with named `profiles` and an `active` field; a request may name a profile and overlay single fields for one batch, and a malformed file, unknown profile, unknown key or invalid value stops the batch from starting. **Breaking:** the `Lane max parallel`, `Lane Executor Host`, `Lane Executor model` and `Lane Executor effort` directives in `AGENTS.md`, `CLAUDE.md` or a user-level instruction file are no longer read, and the `Batch final verification` directive is removed. Migration: copy the old directive values into a profile of `.imm/lanes.local.json` (`max_parallel`, `executor_host`, `executor_model`, `executor_effort`), set it as `active`, add the file to `.gitignore`, and delete the old lines; name final-verification commands in the request or as the full test and type-check commands in your instruction file's prose. See ADR 0033.
+
+### Minor Changes
+
+- [#328](https://github.com/dereknex/immune-brain/pull/328) [`e48941a`](https://github.com/dereknex/immune-brain/commit/e48941a82419c07b8a91675025145c3f33b7a0b6) Thanks [@dereknex](https://github.com/dereknex)! - `revisit` becomes a workflow-health retro over pi session logs. The model-load ranking retired: the ranking table, the review quality-and-score table and the project × author table (`rev/100ed`, `avgSc`, `pass%`) are gone, and rounds/task and finding totals no longer carry a model key. Timestamps are parsed to epoch milliseconds (ISO with any offset, or numeric) with a skipped-line count in the header, `--exclude <substr>` (repeatable) filters sessions beside `--project`, and `--top` is removed. The session reader still records the last editor model as an `author` field on review and finding events.
+
+- [#328](https://github.com/dereknex/immune-brain/pull/328) [`ace0094`](https://github.com/dereknex/immune-brain/commit/ace00943d10b595a6aa6286b10a895415419927c) Thanks [@dereknex](https://github.com/dereknex)! - `revisit --audit <project-root>` reports lifecycle and raw review counts per committed terminal run, read from the project's HEAD Git tree through the Kernel's `readAuditTaskPair`. Its header names the project root, the HEAD commit, schema counts, skipped pairs by reason and the sample bias (only merged terminal runs are present). Per run it shows QA and Review attestations, rework events, findings by source and status, revisions, user-authorized rework, stop events and distinct evidence bindings; a field an older record schema cannot carry prints `-`. Session logs are read alongside only with `--sessions`; `--sample <n>` caps the rows. ADR 0032 records the boundary change, and the analyzer now needs Bun because it imports Kernel runtime modules.
+
+- [#328](https://github.com/dereknex/immune-brain/pull/328) [`87f7f62`](https://github.com/dereknex/immune-brain/commit/87f7f6228434af84a11e2b666dca0a69419f581c) Thanks [@dereknex](https://github.com/dereknex)! - `revisit --audit` adds a Candidate improvements evidence section over in-window review findings: repeat groups (the same normalized summary in at least two distinct runs, with run count, finding count and up to three `run-path#finding-id` pointers), infrastructure jitter (a missing or cleaned-up reviewer agent or an empty verdict, kept out of the content rework count) and, for every run with three or more review rework events, one line per round with that round's finding acceptance ids and repeats marked. The analyzer suggests no improvement level or disposition. The `revisit` contract now carries the follow-through method (per-task aggregation, cross-boundary trace, one smallest improvement, the fix ladder architecture > types > lint > test > docs, and the report-only rule), and the project-local `workflow-evidence-retro` Skill is retired.
+
+### Patch Changes
+
+- [`d03982c`](https://github.com/dereknex/immune-brain/commit/d03982c95a7027897ffd98cfc640a61b43503d95) Thanks [@dereknex](https://github.com/dereknex)! - Use the published Parent Slice plan to verify isolated GitHub Slice prerequisites.
+
+- [`f3208bc`](https://github.com/dereknex/immune-brain/commit/f3208bc774f0e6376e1be6217d7a9dda0f3d4cd4) Thanks [@dereknex](https://github.com/dereknex)! - Reject TaskRecord v4 Review rework history whose revision does not match the Enrollment base.
+
 ## 6.0.0
 
 ### Major Changes
