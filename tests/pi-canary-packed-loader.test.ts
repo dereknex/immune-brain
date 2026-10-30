@@ -57,6 +57,7 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/skills/draw-up/SKILL.md",
 				"plugins/immune-brain/skills/revisit/SKILL.md",
 				"plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+				"plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
 				"plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
 				"plugins/immune-brain/skills/registry.yaml",
 				"plugins/immune-brain/dist/clarify.md",

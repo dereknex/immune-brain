@@ -68,7 +68,7 @@ describe("revisit --audit committed pairs", () => {
 		const after = await run([WIDE, "--audit", root]);
 
 		// The window cutoff derives from the clock, so it may differ by a second between the two runs.
-		const stable = (out: string) => out.replace(/terminalized_at >= \S+/, "terminalized_at >= <cut>");
+		const stable = (out: string) => out.replace(/window: terminalized_at .*? \| terminal runs:/, "window: <cut> | terminal runs:");
 		expect(stable(after)).toBe(stable(before));
 		expect([...rowsOf(after).keys()].sort()).toEqual([DONE_V2, DONE_V4, STOPPED_V4].sort());
 		expect(after).toContain(`project root ${root}`);
@@ -363,8 +363,8 @@ describe("revisit --audit candidate improvements", () => {
 		commitAll(root);
 
 		const out = await run([WIDE, "--audit", root]);
-		expect(out).toContain("review findings: 3 | content rework: 1 | infrastructure jitter: 2");
-		const jitter = block(out, "infrastructure jitter");
+		expect(out).toContain("review findings: 3 | content rework: 1 | jitter marker (unverified): 2");
+		const jitter = block(out, "jitter marker (unverified");
 		expect(jitter).toContain(`${rel}#r1-f1`);
 		expect(jitter).toContain(`${rel}#r1-f2`);
 		expect(jitter).not.toContain("r1-f3");

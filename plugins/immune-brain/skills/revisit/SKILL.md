@@ -1,6 +1,6 @@
 ---
 name: revisit
-description: Use when the user explicitly requests an Immune-Brain workflow-health retro over recent pi session logs.
+description: Use when the user explicitly requests an Immune-Brain workflow-health retro and workflow-friction diagnosis over recent pi session logs.
 ---
 
 # Immune-Brain: Revisit
@@ -23,3 +23,4 @@ or all references as an entry prerequisite.
 - common: [Boundary](../../dist/revisit.md#boundary), [Invocation](../../dist/revisit.md#invocation)
 - running the analyzer: [Counting rules](../../dist/revisit.md#counting-rules), [CLI](../../dist/revisit.md#cli)
 - interpreting the report: [Report](../../dist/revisit.md#report), [Caveats](../../dist/revisit.md#caveats)
+- questions about causes, workflow friction or how to improve: [Follow-through](../../dist/revisit.md#follow-through), [Report](../../dist/revisit.md#report)

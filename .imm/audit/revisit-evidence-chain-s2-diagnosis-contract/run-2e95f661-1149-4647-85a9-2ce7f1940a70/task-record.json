@@ -1,0 +1,140 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-evidence-chain-s2-diagnosis-contract",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-evidence-chain-s2-diagnosis-contract",
+    "goal": "The revisit SKILL.md routes cause, friction and improvement questions to the follow-through method, dist/revisit.md carries locate -> verify -> recommend with source roles, the workflow-answer-first Report order and the judgment rules for #330 regression cases 1, 2, 5 and 6, the per-candidate copy-ready draft is retired, and README and registry follow (#330 S2; Spec docs/specs/revisit-evidence-chain.spec.md D5-D9).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "tests/rework-root-cause-contract.test.ts reads plugins/immune-brain/skills/revisit/SKILL.md and finds a route that sends questions about causes, workflow friction or how to improve to the Follow-through and Report sections of dist/revisit.md, beside the existing analyzer and report-reading routes (Spec D8; #330 CD6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/rework-root-cause-contract.test.ts reads plugins/immune-brain/dist/revisit.md Follow-through and finds the three steps locate, verify and recommend in that order: counts and matches only locate; verify rebuilds prior state -> actual stop or failure -> user or Host action -> next state for selected candidates (default about three), classifies each as necessary decision, valid quality catch, avoidable process friction or unknown, and states which candidates were and were not checked (Spec D7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "tests/rework-root-cause-contract.test.ts finds in dist/revisit.md that recommend yields at most three findings in the form observation -> causal evidence -> counterexample or unknown -> direction and one recommended next step or an explicit statement that the evidence is not enough to change anything, that a copy-ready TaskIntent or issue draft is written only on request, and no longer finds the sentence that each candidate ends with a copy-ready TaskIntent or issue draft; the cross-boundary trace, fix-ladder order and report-only rule are still found (Spec D7; #330 CD4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "tests/rework-root-cause-contract.test.ts finds in dist/revisit.md that sessions show human interaction, failures and recovery while committed audit confirms terminal state, formal findings and assurance history and neither proves what only the other records, and that the Report section leads with the workflow answer and places usage, the tool histogram and rounds/task in an appendix never used as a cause, with window and project scope asked once and reused through --since/--until (Spec D6, D8; #330 CD2, CD3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "tests/rework-root-cause-contract.test.ts finds in dist/revisit.md these judgment rules: a tool call is never a human confirmation; request_stop is read with its result; resuming after a quota error or tool interruption is not judged a premature stop from a \"continue\" message alone; whether a stop was unjustified is judged over the pointed context, never by a regex; and bookkeeping and jitter labels are unverified markers (Spec D5, D7; #330 RC1, RC2, RC5, RC6, CD5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "tests/skill-dist-consistency.test.ts passes with the revisit description still containing \"workflow-health retro\"; README.md and plugins/immune-brain/skills/registry.yaml describe revisit as a workflow-friction diagnosis; and .changeset/revisit-evidence-chain-s2-diagnosis-contract.md declares a minor release of immune-brain (Spec D8, D9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/skill-dist-consistency.test.ts && grep -qi 'workflow-friction diagnosis' README.md && grep -qi 'workflow-friction diagnosis' plugins/immune-brain/skills/registry.yaml && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-evidence-chain-s2-diagnosis-contract.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-evidence-chain-s2-diagnosis-contract.md",
+      "README.md",
+      "docs/plans/revisit-evidence-chain-s2-diagnosis-contract.intent.json",
+      "docs/specs/revisit-evidence-chain.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/registry.yaml",
+      "plugins/immune-brain/skills/revisit/SKILL.md",
+      "tests/rework-root-cause-contract.test.ts",
+      "tests/skill-dist-consistency.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-evidence-chain-s2-diagnosis-contract.intent.json",
+    "content_hash": "sha256:88aa47150ed2a449f4b290e417707981394a2aae05479989c0fc482cad6dcdd7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:88aa47150ed2a449f4b290e417707981394a2aae05479989c0fc482cad6dcdd7",
+  "git_base_head": "abbe38a899c6be0e6ea3826844c795260597fccb",
+  "attestations": [
+    {
+      "id": "approval-qa-7416fa4e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:88aa47150ed2a449f4b290e417707981394a2aae05479989c0fc482cad6dcdd7",
+      "diff_hash": "sha256:7ec3270acc001d876a13cb38da32e5e543d5a87ca57a10210c82d1842b42bfe9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f085d8e5195c115c3c49b50f69eb75f14ca06820f4fdbd31057dbea1d4d46ac9"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-evidence-chain-s2-diagnosis-contract:2026-10-30T09:30:10.761Z",
+      "at": "2026-10-30T09:30:10.761Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-evidence-chain-s2-diagnosis-contract.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-evidence-chain-s2-diagnosis-contract:2026-10-30T09:30:27.031Z",
+      "at": "2026-10-30T09:30:27.031Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7416fa4e\naction_v2_sha256:2b85a6b51201a80317c9a12b93d09d58cf67d757982c3f8d1290f9a4d7608949",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c046a4091722a06c",
+        "issued_at": "2026-10-30T09:30:27.031Z"
+      }
+    },
+    {
+      "id": "complete:revisit-evidence-chain-s2-diagnosis-contract:2026-10-30T09:30:29.550Z",
+      "at": "2026-10-30T09:30:29.550Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:69fd02387f0158e50ef3f86f87efb96782d75150c33c3a9fda12e95ba52775df"
+    }
+  ]
+}

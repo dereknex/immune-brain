@@ -130,7 +130,7 @@ in the next major release.
 | `prune-docs` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
 | `slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
 | `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
-| `revisit` | execute; discovery; canonical | Report workflow health (usage, rework signal, finding totals) from pi session logs. Read-only. No Managed Path mutation. |
+| `revisit` | execute; discovery; canonical | Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).

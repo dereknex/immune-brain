@@ -1,0 +1,161 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-evidence-chain-s1-evidence-output",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-evidence-chain-s1-evidence-output",
+    "goal": "The revisit session reader reads user, assistant and toolResult lines into pointed events with call-result links, review_retro.ts --json emits one evidence document with a fixed absolute window, scope and candidate chains, --since/--until reproduce a window, the text report leads with candidate chains and moves usage, the tool histogram and rounds/task to an appendix, and regex labels become unverified markers (#330 S1; Spec docs/specs/revisit-evidence-chain.spec.md D1-D5).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/review-retro-analyzer.test.ts, run([..., \"--json\"]) prints one JSON document with contract \"immune_brain/revisit_evidence/v1\", absolute ISO window since/until, scope and skipped_lines; every event carries session, line, entry_id, timestamp, role, cwd, task_id and run_id, with the literal \"unknown\" when the line and its linked call carry no id; a tool_result links to its tool_call by toolCallId through call_line, an unmatched toolResult has call_line null, and tool_call events keep the author field (Spec D1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/review-retro-analyzer.test.ts, --since/--until select lines with since <= t < until (a line at since is in, a line at until is out), two runs with the same --since/--until print byte-identical output, <days> prints the absolute since/until it resolved once, and each of these exits non-zero with a usage error: <days> together with --since, --until without --since, an unparsable ISO value, and until <= since (Spec D2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/review-retro-analyzer.test.ts, a user line holding a <skill name=\"revisit\" ...> block followed by an instruction yields one user_input event with skill \"revisit\" and the instruction text, a Skill-only user line yields user_input with an empty instruction, and a session of 19 imm_kernel_canary tool calls with no user line reports \"user inputs: 0\" and no user_input event (Spec D1, D3; #330 RC1, RC3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/review-retro-analyzer.test.ts, a request_stop call whose toolResult reports state \"applied\" and lifecycle \"stopped\" yields a tool_result with stop_applied, and a later user input plus a Kernel call on the same task_id produces no user_resume candidate for that stop (Spec D3; #330 RC2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "In tests/review-retro-analyzer.test.ts, candidates[] lists each kind of Spec D3 with kind, key and at most five session#line pointers and no cause, class or severity field: repeated_block for one blocking acceptance_id in two registrations of the same (cwd, task_id) but not in one; review_without_verdict for a verdict-less submit_review without a receipt but not with one; batch_oscillation for one batch_id entering needs_human twice with another state between but not once; user_resume for a stop/error/aborted turn_end then a user_input then a Kernel call on the same task_id but not on a different task_id (Spec D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "In tests/review-retro-analyzer.test.ts, the text report prints the header with absolute window, then \"=== candidate chains (locating only; not causes) ===\", then \"user inputs: <n>\", then finding totals, then \"=== appendix: locating context (never a cause) ===\" holding usage, the tool histogram and rounds/task, in that order (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "In tests/review-retro-analyzer.test.ts and tests/review-retro-audit.test.ts, a finding whose summary matches the bookkeeping pattern keeps its structured kind and gains markers [\"bookkeeping\"], text totals read \"blocking: <n> | advisory: <n> | bookkeeping marker (unverified): <n>\" with the same counts as before, and the audit candidate-improvements section labels jitter matches \"jitter marker (unverified)\" with unchanged membership and content-rework count (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC8",
+        "assertion": "tests/pi-canary-packed-loader.test.ts finds plugins/immune-brain/skills/revisit/scripts/session_evidence.ts in the packed tarball; plugins/immune-brain/dist/revisit.md documents --json, --since and --until; and .changeset/revisit-evidence-chain-s1-evidence-output.md declares a minor release of immune-brain (Spec D1, D2, D9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-canary-packed-loader.test.ts && grep -q -- '--json' plugins/immune-brain/dist/revisit.md && grep -q -- '--since' plugins/immune-brain/dist/revisit.md && grep -q -- '--until' plugins/immune-brain/dist/revisit.md && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-evidence-chain-s1-evidence-output.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-evidence-chain-s1-evidence-output.md",
+      "docs/plans/revisit-evidence-chain-s1-evidence-output.intent.json",
+      "docs/specs/revisit-evidence-chain.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+      "tests/fixtures/review-retro",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/review-retro-analyzer.test.ts",
+      "tests/review-retro-audit.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-evidence-chain-s1-evidence-output.intent.json",
+    "content_hash": "sha256:73c3df2d3840163ac155b0bcc81c3a40b537d2b69fe541e066c9557e5301364d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:73c3df2d3840163ac155b0bcc81c3a40b537d2b69fe541e066c9557e5301364d",
+  "git_base_head": "4abfcdb689758f1466a58520cdb5819e3de9d5f9",
+  "attestations": [
+    {
+      "id": "approval-qa-b0fc5eb2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:73c3df2d3840163ac155b0bcc81c3a40b537d2b69fe541e066c9557e5301364d",
+      "diff_hash": "sha256:3f44c7da092cad4c6e4288084587b10c0899e8efebe47b604da1dfcafbb6ca6c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        },
+        {
+          "acceptance_id": "AC8",
+          "status": "passed",
+          "summary": "host-attested QA: all 9 project verification check(s) passed; execution=sha256:f64a3866929fbbebd08869c36999d8013306b40bf68a51ef647cb209a3285018"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-evidence-chain-s1-evidence-output:2026-10-30T09:13:23.930Z",
+      "at": "2026-10-30T09:13:23.930Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-evidence-chain-s1-evidence-output.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-evidence-chain-s1-evidence-output:2026-10-30T09:13:56.750Z",
+      "at": "2026-10-30T09:13:56.750Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b0fc5eb2\naction_v2_sha256:c45e2b4ee59479e8d2a3502c29378301d933193ac1d888b501d01b156063998d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-19aef1b88c437ad6",
+        "issued_at": "2026-10-30T09:13:56.750Z"
+      }
+    },
+    {
+      "id": "complete:revisit-evidence-chain-s1-evidence-output:2026-10-30T09:13:59.582Z",
+      "at": "2026-10-30T09:13:59.582Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4288bf007fb94517356a9d5c2b0c905ad342b23820ff457347a9b34d331ef905"
+    }
+  ]
+}

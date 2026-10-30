@@ -21,187 +21,29 @@
  *                          harness bookkeeping split out; a submit_review without a verdict takes the observed
  *                          receipt (the verdict JSON in the latest Review Agent toolResult), as the Kernel does
  */
-import { createReadStream, existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { type AuditRun, AuditUsageError, readCommittedAudit, type ReviewFinding, SKIP_REASONS } from "./audit_reader.ts";
+import { readSession, parseTimestamp, type SessionEvent, type SessionFilter } from "./session_evidence.ts";
+export { readSession } from "./session_evidence.ts";
+export type { SessionEvent, SessionFilter, SessionRead } from "./session_evidence.ts";
 
-const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no findings?\b/i;
-const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
-const NO_EDIT = "no-edit (review-only)";
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T/;
-const VERDICT_START = /\{\s*"contract"\s*:\s*"assurance_kernel\/assurance_verdict\//;
-/** A review finding that records a missing or cleaned-up reviewer agent, or an empty verdict, not a content defect. */
 const JITTER =
 	/(?:review(?:er)? agent|reserved foreground agent)\b[^.\n]{0,80}?\b(?:missing|cleaned[- ]?up|not found|not observed|no longer exists?|disappeared)\b|\b(?:missing|cleaned[- ]?up)\b[^.\n]{0,40}?review(?:er)? agent|\bempty (?:review )?verdict\b|\bverdict (?:was |is )?empty\b/i;
 const GROUP_POINTERS = 3;
 const HIGH_ROUND_REWORK = 3;
 
-function norm(a: unknown): Record<string, unknown> {
-	if (typeof a === "string") {
-		try {
-			return JSON.parse(a) as Record<string, unknown>;
-		} catch {
-			return {};
-		}
-	}
-	return a && typeof a === "object" ? (a as Record<string, unknown>) : {};
-}
-
 function bump(map: Map<string, number>, key: string, n = 1): void {
 	map.set(key, (map.get(key) ?? 0) + n);
 }
 
-/** Epoch milliseconds from an ISO string (any offset) or a numeric millisecond value; NaN otherwise. */
-function parseTimestamp(value: unknown): number {
-	if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
-	if (typeof value === "string" && ISO_TIMESTAMP.test(value)) return Date.parse(value);
-	return Number.NaN;
-}
-
-/** The first balanced JSON object starting at `start`, string-aware; null when unbalanced or unparsable. */
-function jsonObjectAt(text: string, start: number): Record<string, unknown> | null {
-	let depth = 0;
-	let quoted = false;
-	for (let i = start; i < text.length; i++) {
-		const ch = text[i];
-		if (quoted) {
-			if (ch === "\\") i += 1;
-			else if (ch === '"') quoted = false;
-		} else if (ch === '"') quoted = true;
-		else if (ch === "{") depth += 1;
-		else if (ch === "}" && --depth === 0) {
-			const parsed = norm(text.slice(start, i + 1));
-			return Object.keys(parsed).length ? parsed : null;
-		}
-	}
-	return null;
-}
-
-/** The assurance verdict a Review Agent returned in its toolResult text, or null for prose and score lines. */
-function observedVerdict(content: unknown): Record<string, unknown> | null {
-	const text = typeof content === "string"
-		? content
-		: Array.isArray(content)
-			? content.map((c) => (c && typeof c === "object" ? String((c as Record<string, unknown>).text ?? "") : "")).join("\n")
-			: "";
-	const at = text.search(VERDICT_START);
-	return at < 0 ? null : jsonObjectAt(text, at);
-}
-
-export type SessionEvent =
-	| { type: "review"; author: string; key: string }
-	| { type: "registration"; author: string; taskId: string }
-	| { type: "finding"; author: string; kind: string; summary: string };
-
-export type SessionFilter = { cutMs: number; project: string; exclude: string[] };
-
-export type SessionRead = {
-	cwd: string;
-	used: boolean;
-	skipped: number;
-	turns: number;
-	edits: number;
-	tools: Map<string, number>;
-	events: SessionEvent[];
-};
-
-function cwdKept(cwd: string, filter: SessionFilter): boolean {
-	if (filter.project && !cwd.includes(filter.project)) return false;
-	return !filter.exclude.some((s) => cwd.includes(s));
-}
-
-/** Read one session file. Returns null when its cwd is filtered out by --project / --exclude. */
-export async function readSession(path: string, filter: SessionFilter): Promise<SessionRead | null> {
-	const out: SessionRead = { cwd: "", used: false, skipped: 0, turns: 0, edits: 0, tools: new Map(), events: [] };
-	let editor: string | null = null;
-	// Review Agent calls awaiting their toolResult, and the latest observed verdict not yet consumed by submit_review.
-	const reviewCalls = new Set<string>();
-	let receipt: Record<string, unknown> | null = null;
-	const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }) });
-	for await (const raw of rl) {
-		const line = raw.trim();
-		if (!line) continue;
-		let o: Record<string, unknown>;
-		try {
-			o = JSON.parse(line) as Record<string, unknown>;
-		} catch {
-			continue;
-		}
-		if (o.type === "session") {
-			out.cwd = String(o.cwd ?? "");
-			if (!cwdKept(out.cwd, filter)) {
-				rl.close();
-				return null;
-			}
-			continue;
-		}
-		const ms = parseTimestamp(o.timestamp);
-		if (Number.isNaN(ms)) {
-			out.skipped += 1;
-			continue;
-		}
-		const m = (o.message && typeof o.message === "object" ? o.message : {}) as Record<string, unknown>;
-		if (ms < filter.cutMs) continue;
-		if (m.role === "toolResult" && reviewCalls.delete(String(m.toolCallId ?? ""))) {
-			receipt = observedVerdict(m.content);
-			continue;
-		}
-		if (m.role !== "assistant") continue;
-		out.used = true;
-		const mo = `${m.provider ?? "?"}/${m.model ?? "?"}`;
-		out.turns += 1;
-		const content = Array.isArray(m.content) ? m.content : [];
-		for (const c of content) {
-			if (!c || typeof c !== "object") continue;
-			const call = c as Record<string, unknown>;
-			if (call.type !== "toolCall") continue;
-			const name = String(call.name ?? "");
-			const a = norm(call.arguments);
-			bump(out.tools, name || "?");
-			const author = editor ?? NO_EDIT;
-			if (EDIT_TOOLS.has(name)) {
-				out.edits += 1;
-				editor = mo;
-			} else if (isReviewAgent(name, a)) {
-				reviewCalls.add(String(call.id ?? ""));
-				out.events.push({
-					type: "review",
-					author,
-					key: `${String(a.description ?? "")}${String(a.prompt ?? "").slice(0, 240)}`,
-				});
-			} else if (name === "imm_kernel_canary") {
-				const act = norm(a.action);
-				if (act.op === "submit_review") {
-					out.events.push({ type: "registration", author, taskId: String(a.task_id ?? "") });
-					// An omitted verdict applies the observed receipt (ADR 0017); either way that receipt is consumed.
-					const verdict = act.verdict === undefined ? receipt : norm(act.verdict);
-					receipt = null;
-					const found = verdict?.findings;
-					if (Array.isArray(found)) for (const f of found) out.events.push(findingEvent(author, f));
-				} else if (act.op === "record_finding") {
-					out.events.push(findingEvent(author, act.finding));
-				}
-			}
-		}
-	}
-	return out;
-}
-
-function isReviewAgent(name: string, args: Record<string, unknown>): boolean {
-	return name === "Agent" && String(args.subagent_type ?? "").toLowerCase() === "review";
-}
-
-function findingEvent(author: string, finding: unknown): SessionEvent {
-	const f = norm(finding);
-	const summary = String(f.summary ?? "");
-	return { type: "finding", author, kind: BOOKKEEPING.test(summary) ? "bookkeeping" : String(f.kind ?? ""), summary };
-}
-
 type Args = {
 	days: number;
+	since: number;
+	until: number;
+	json: boolean;
 	root: string;
 	project: string;
 	exclude: string[];
@@ -216,6 +58,9 @@ const USAGE =
 function parseArgs(argv: string[]): Args {
 	const out: Args = {
 		days: Number.NaN,
+		since: Number.NaN,
+		until: Number.NaN,
+		json: false,
 		root: join(homedir(), ".pi/agent/sessions"),
 		project: "",
 		exclude: [],
@@ -226,7 +71,14 @@ function parseArgs(argv: string[]): Args {
 	const rest: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i]!;
-		if (a === "--root") out.root = argv[++i] ?? "";
+		if (a === "--json") out.json = true;
+		else if (a === "--since" || a === "--until") {
+			const value = argv[++i];
+			const parsed = parseTimestamp(value);
+			if (!Number.isFinite(parsed)) throw new Error(USAGE);
+			if (a === "--since") out.since = parsed; else out.until = parsed;
+		}
+		else if (a === "--root") out.root = argv[++i] ?? "";
 		else if (a === "--project") out.project = argv[++i] ?? "";
 		else if (a === "--exclude") {
 			const v = argv[++i] ?? "";
@@ -242,8 +94,18 @@ function parseArgs(argv: string[]): Args {
 		} else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
 		else rest.push(a);
 	}
-	out.days = Number(rest[0]);
-	if (!(out.days > 0) || rest[1] !== undefined) throw new Error(USAGE);
+	const now = Date.now();
+	if (rest.length) {
+		out.days = Number(rest[0]);
+		if (rest.length !== 1 || !Number.isFinite(out.days) || !(out.days > 0) || Number.isFinite(out.since) || Number.isFinite(out.until)) throw new Error(USAGE);
+		out.until = now;
+		out.since = now - out.days * 86400000;
+	} else {
+		if (!Number.isFinite(out.since)) throw new Error(USAGE);
+		if (!Number.isFinite(out.until)) out.until = now;
+	}
+	if (!(out.until > out.since) || !Number.isFinite(new Date(out.since).getTime())) throw new Error(USAGE);
+	if (out.json && out.audit) throw new Error(`--json is only supported for session reports; ${USAGE}`);
 	return out;
 }
 
@@ -257,12 +119,7 @@ function listJsonl(root: string): string[] {
 			if (name.endsWith(".jsonl")) paths.push(join(folder, name));
 		}
 	}
-	return paths;
-}
-
-function cutOf(days: number): { cutMs: number; cut: string } {
-	const cutMs = Date.now() - days * 86400000;
-	return { cutMs, cut: new Date(cutMs).toISOString().slice(0, 19) };
+	return paths.sort();
 }
 
 export async function run(argv: string[]): Promise<string> {
@@ -325,7 +182,7 @@ function candidateImprovements(inWindow: AuditRun[], emit: (s?: string) => void)
 
 	emit("");
 	emit("=== candidate improvements (evidence only; no improvement level or disposition is suggested) ===");
-	emit(`review findings: ${all.length} | content rework: ${content.length} | infrastructure jitter: ${jitter.length}`);
+	emit(`review findings: ${all.length} | content rework: ${content.length} | jitter marker (unverified): ${jitter.length}`);
 
 	const groups = new Map<string, Pointed[]>();
 	for (const f of content) groups.set(summaryKey(f.summary), [...(groups.get(summaryKey(f.summary)) ?? []), f]);
@@ -340,7 +197,7 @@ function candidateImprovements(inWindow: AuditRun[], emit: (s?: string) => void)
 		emit(`    ${g.items.slice(0, GROUP_POINTERS).map((f) => `${f.run.path}#${f.id}`).join(" ")}`);
 	}
 
-	emit("-- infrastructure jitter (kept out of the content rework count) --");
+	emit("-- jitter marker (unverified; kept out of the content rework count) --");
 	if (jitter.length === 0) emit("(none)");
 	for (const f of jitter) emit(`${f.run.path}#${f.id} ${f.summary.replace(/\s+/g, " ").slice(0, 120)}`);
 
@@ -362,7 +219,7 @@ function candidateImprovements(inWindow: AuditRun[], emit: (s?: string) => void)
 			const jitterOnly =
 				ids.length > 0 && r.reviewFindings.filter((f) => f.round === round).every((f) => JITTER.test(f.summary));
 			const shown = ids.map((id) => (seen.get(id)! > 1 ? `${id}*` : id)).join(" ") || "(no findings)";
-			emit(`    round ${round}: ${shown}${jitterOnly ? " [infrastructure jitter]" : ""}`);
+			emit(`    round ${round}: ${shown}${jitterOnly ? " [jitter marker (unverified)]" : ""}`);
 		}
 	}
 }
@@ -375,8 +232,8 @@ function auditReport(args: Args): string {
 		if (err instanceof AuditUsageError) throw new Error(`${err.message}; ${USAGE}`);
 		throw err;
 	}
-	const { cutMs, cut } = cutOf(args.days);
-	const inWindow = audit.runs.filter((r) => r.terminalizedMs >= cutMs);
+	const cut = new Date(args.since).toISOString();
+	const inWindow = audit.runs.filter((r) => r.terminalizedMs >= args.since && r.terminalizedMs < args.until);
 	const schemas = (["v4", "v3", "v2"] as const).map((v) => `${v}=${inWindow.filter((r) => r.schema === v).length}`);
 	const lifecycle = (state: string) => inWindow.filter((r) => r.lifecycle === state).length;
 	const ordered = [...inWindow].sort(
@@ -389,7 +246,7 @@ function auditReport(args: Args): string {
 	const emit = (s = "") => lines.push(s);
 	emit(`audit: project root ${audit.projectRoot} | HEAD ${audit.head}`);
 	emit(
-		`window: last ${args.days}d (terminalized_at >= ${cut}Z) | terminal runs: ${inWindow.length} (done ${lifecycle("done")}, stopped ${lifecycle("stopped")}) | outside window: ${audit.runs.length - inWindow.length}`,
+		`window: terminalized_at ${cut} <= t < ${new Date(args.until).toISOString()} | terminal runs: ${inWindow.length} (done ${lifecycle("done")}, stopped ${lifecycle("stopped")}) | outside window: ${audit.runs.length - inWindow.length}`,
 	);
 	emit(`schemas: ${schemas.join(" ")}`);
 	emit(`skipped: ${SKIP_REASONS.map((reason) => `${reason}=${audit.skipped[reason]}`).join(" ")}`);
@@ -425,86 +282,98 @@ function auditReport(args: Args): string {
 	return `${lines.join("\n")}\n`;
 }
 
-async function sessionReport(args: Args): Promise<string> {
-	const { cutMs, cut } = cutOf(args.days);
-	const filter: SessionFilter = { cutMs, project: args.project, exclude: args.exclude };
-	const tools = new Map<string, number>();
-	const tasks = new Set<string>();
-	const findRaw = new Map<string, number>();
-	const findUniq = new Map<string, Set<string>>();
-	let files = 0;
-	let skipped = 0;
-	let turns = 0;
-	let edits = 0;
-	let registrations = 0;
-	let anonymous = 0;
+type Candidate = { kind: string; key: string; pointers: string[] };
+function candidates(events: SessionEvent[]): Candidate[] {
+	const result: Candidate[] = [];
+	const blocks = new Map<string, Map<string, SessionEvent>>();
+	const batches = new Map<string, { first: SessionEvent; gap?: SessionEvent }>();
+	const states = new Map<string, { last?: SessionEvent; stop?: SessionEvent; user?: SessionEvent; stopped: Set<number> }>();
+	const pointer = (event: SessionEvent) => `${event.session}#${event.line}`;
+	for (const e of events) {
+		const state = states.get(e.session) ?? { stopped: new Set<number>() };
+		states.set(e.session, state);
+		if (e.type === "finding" && e.kind === "blocking" && e.registration_line !== null && e.task_id !== "unknown" && e.acceptance_id !== "unknown") {
+			const key = `${e.cwd} / ${e.task_id} / ${e.acceptance_id}`;
+			const registrations = blocks.get(key) ?? new Map<string, SessionEvent>();
+			registrations.set(`${e.session}#${e.registration_index}`, e); blocks.set(key, registrations);
+		}
+		if (e.type === "registration" && e.without_verdict) result.push({ kind: "review_without_verdict", key: `${e.cwd} / ${e.task_id}`, pointers: [pointer(e)] });
+		if (e.type === "tool_result") {
+			if (e.stop_applied && e.call_line !== null) state.stopped.add(e.call_line);
+			if (typeof e.batch_id === "string" && typeof e.batch_state === "string") {
+				const previous = batches.get(e.batch_id);
+				if (e.batch_state === "needs_human") {
+					if (previous?.gap) result.push({ kind: "batch_oscillation", key: e.batch_id, pointers: [pointer(previous.first), pointer(previous.gap), pointer(e)] });
+					batches.set(e.batch_id, { first: e });
+				} else if (previous && !previous.gap) previous.gap = e;
+			}
+		}
+		if (e.type === "turn_end" && ["stop", "error", "aborted"].includes(e.stop_reason)) {
+			state.stop = e; state.user = undefined;
+		} else if (e.type === "user_input" && state.stop) state.user = e;
+		else if (e.type === "tool_call" && e.name === "imm_kernel_canary") {
+			if (state.stop && state.user && state.last && state.last.task_id !== "unknown" && e.task_id === state.last.task_id && !state.stopped.has(state.last.line)) {
+				result.push({ kind: "user_resume", key: `${e.cwd} / ${e.task_id} / ${state.stop.type === "turn_end" ? state.stop.stop_reason : ""}`, pointers: [pointer(state.last), pointer(state.stop), pointer(state.user), pointer(e)] });
+			}
+			state.last = e; state.stop = undefined; state.user = undefined;
+		}
+	}
+	for (const [key, registrations] of blocks) if (registrations.size >= 2) result.push({ kind: "repeated_block", key, pointers: [...registrations.values()].slice(0, 5).map(pointer) });
+	return result;
+}
 
+async function sessionReport(args: Args): Promise<string> {
+	const filter: SessionFilter = { cutMs: args.since, untilMs: args.until, project: args.project, exclude: args.exclude };
+	const tools = new Map<string, number>(), tasks = new Set<string>(), findRaw = new Map<string, number>(), findUniq = new Map<string, Set<string>>();
+	const sessions: { path: string; cwd: string; session_id: string }[] = [], events: SessionEvent[] = [];
+	let files = 0, skipped = 0, turns = 0, edits = 0, registrations = 0, anonymous = 0;
 	for (const path of listJsonl(args.root)) {
 		const session = await readSession(path, filter);
 		if (!session) continue;
-		if (session.used) files += 1;
-		skipped += session.skipped;
-		turns += session.turns;
-		edits += session.edits;
+		sessions.push({ path, cwd: session.cwd, session_id: session.session_id });
+		events.push(...session.events);
+		if (session.used) files++;
+		skipped += session.skipped; turns += session.turns; edits += session.edits;
 		for (const [name, n] of session.tools) bump(tools, name, n);
 		for (const ev of session.events) {
 			if (ev.type === "registration") {
-				registrations += 1;
-				if (ev.taskId) tasks.add(`${session.cwd}\0${ev.taskId}`);
-				else anonymous += 1;
+				registrations++;
+				if (ev.taskId) tasks.add(`${session.cwd}\0${ev.taskId}`); else anonymous++;
 			} else if (ev.type === "finding") {
-				bump(findRaw, ev.kind);
-				const uniq = findUniq.get(ev.kind) ?? new Set();
-				uniq.add(`${path}\0${ev.summary.slice(0, 160)}`);
-				findUniq.set(ev.kind, uniq);
+				const kind = ev.markers.includes("bookkeeping") ? "bookkeeping" : ev.kind;
+				bump(findRaw, kind);
+				const uniq = findUniq.get(kind) ?? new Set<string>(); uniq.add(`${path}\0${ev.summary.slice(0, 160)}`); findUniq.set(kind, uniq);
 			}
 		}
 	}
-
-	const lines: string[] = [];
-	const emit = (s = "") => lines.push(s);
-	const filters = [
-		...(args.project ? [`project~${args.project}`] : []),
-		...args.exclude.map((s) => `exclude~${s}`),
-	];
-	emit(
-		`window: last ${args.days}d (UTC >= ${cut}Z) | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped} | root: ${args.root}`,
-	);
+	const window = { since: new Date(args.since).toISOString(), until: new Date(args.until).toISOString() };
+	const chains = candidates(events);
+	if (args.json) return `${JSON.stringify({ contract: "immune_brain/revisit_evidence/v1", window, scope: { root: args.root, project: args.project, exclude: args.exclude }, skipped_lines: skipped, sessions, events, candidates: chains }, null, 2)}\n`;
+	const lines: string[] = [], emit = (s = "") => lines.push(s);
+	const filters = [...(args.project ? [`project~${args.project}`] : []), ...args.exclude.map(s => `exclude~${s}`)];
+	emit(`window: ${window.since} <= t < ${window.until} | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped} | root: ${args.root}`);
 	emit(`filters: ${filters.length ? filters.join(", ") : "none"}`);
 	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
-
-	emit("");
+	emit(""); emit("=== candidate chains (locating only; not causes) ===");
+	if (!chains.length) emit("(none)");
+	for (const c of chains) emit(`${c.kind}: ${c.key} ${c.pointers.join(" ")}`);
+	emit(`user inputs: ${events.filter(e => e.type === "user_input").length}`);
+	emit(""); emit("=== findings (deduped per session) ===");
+	const uniqOf = (kind: string) => findUniq.get(kind)?.size ?? 0;
+	emit(`blocking: ${uniqOf("blocking")} | advisory: ${uniqOf("advisory")} | bookkeeping marker (unverified): ${uniqOf("bookkeeping")}`);
+	const rawSum = [...findRaw.values()].reduce((a, b) => a + b, 0), uniqSum = [...findUniq.values()].reduce((n, set) => n + set.size, 0);
+	if (rawSum && rawSum !== uniqSum) emit(`(findings: ${rawSum} raw calls deduped to ${uniqSum} distinct — re-submits of the same finding are counted once)`);
+	emit("caveats: marker matches are excluded from blocking/advisory totals.");
+	emit(""); emit("=== appendix: locating context (never a cause) ===");
 	emit("=== usage (sessions / turns / edits / tools) ===");
 	emit(`sessions: ${files} | turns: ${turns} | edits: ${edits}`);
-	const toolRows = [...tools.entries()].sort((a, b) => b[1] - a[1]);
-	if (toolRows.length === 0) emit("(no tool calls in this window)");
-	else for (const [name, n] of toolRows) emit(`${String(n).padStart(5)}  ${name}`);
-
-	emit("");
-	emit("=== review rounds per kernel task (rework signal) ===");
+	const toolRows = [...tools.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+	if (!toolRows.length) emit("(no tool calls in this window)"); else for (const [name, n] of toolRows) emit(`${String(n).padStart(5)}  ${name}`);
+	emit(""); emit("=== review rounds per kernel task (rework signal) ===");
 	const withTask = registrations - anonymous;
-	if (tasks.size) {
-		emit(
-			`${(withTask / tasks.size).toFixed(1).padStart(6)} rounds/task   ${String(withTask).padStart(4)} registrations / ${String(tasks.size).padStart(3)} tasks`,
-		);
-	} else {
-		emit("(no kernel tasks with registrations in this window)");
-	}
+	if (tasks.size) emit(`${(withTask / tasks.size).toFixed(1).padStart(6)} rounds/task   ${String(withTask).padStart(4)} registrations / ${String(tasks.size).padStart(3)} tasks`);
+	else emit("(no kernel tasks with registrations in this window)");
 	if (anonymous) emit(`${String(anonymous).padStart(6)} registrations without task_id (not counted as a task)`);
-
-	emit("");
-	emit("=== findings (deduped per session) ===");
-	const uniqOf = (kind: string) => findUniq.get(kind)?.size ?? 0;
-	emit(`blocking: ${uniqOf("blocking")} | advisory: ${uniqOf("advisory")} | bookkeeping: ${uniqOf("bookkeeping")}`);
-	const rawSum = [...findRaw.values()].reduce((a, b) => a + b, 0);
-	const uniqSum = [...findUniq.values()].reduce((n, s) => n + s.size, 0);
-	if (rawSum && rawSum !== uniqSum) {
-		emit(
-			`(findings: ${rawSum} raw calls deduped to ${uniqSum} distinct — re-submits of the same finding are counted once)`,
-		);
-	}
-	emit("caveats: 'bookkeeping' = kernel self-entries mislabelled as findings, excluded from blocking/advisory;");
-	emit("         high rounds/task can be canary/QA harness re-registration, not human-visible rework.");
 	return `${lines.join("\n")}\n`;
 }
 
