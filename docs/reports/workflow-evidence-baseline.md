@@ -94,7 +94,7 @@ QA 列为成功 QA attestation 条数；Review 返工列按 `request_rework.auth
 
 ## 可复用经验与复验
 
-复用入口：[workflow-evidence-retro Skill](../../.agents/skills/workflow-evidence-retro/SKILL.md)。本项目的 `imm-review-retro` 面向会话与模型评审负载，本 Skill 面向终态任务证据；它是项目本地分析工具，不加入插件公开 Managed 入口。
+复用入口：`revisit --audit` 与其[后续方法](../../plugins/immune-brain/dist/revisit.md#follow-through)。`revisit` 读取已提交的终态审计证据并生成工作流健康报告（原项目本地 Skill 的方法已并入该契约）；本报告保留为历史示例。
 
 以下 Python 只读检查可在仓库根目录运行，复核固定样本及主要数字；完整样本路径直接取本文表格，因此新增审计不会改变历史基线。
 

@@ -1,7 +1,7 @@
 // Rework root-cause lessons from the workflow retro must stay written into the
 // contracts that were changed to carry them: the reviewer prompt (and its
 // packaged mirror), the Loop rework step, the Planner authoring rule, the
-// authority-key ADR, and the retro Skill's per-task aggregation step.
+// authority-key ADR, and the `revisit` follow-through method.
 //
 // These are prose contracts, so the check is on the sentences that carry the
 // rule, normalized for line wrapping.
@@ -77,9 +77,31 @@ describe("authority uniqueness keys ADR", () => {
 
 describe("retro per-task aggregation", () => {
 	it("groups rounds per task and separates infrastructure jitter", () => {
-		const retro = readFlat(".agents/skills/workflow-evidence-retro/SKILL.md");
+		const retro = readFlat("plugins/immune-brain/dist/revisit.md");
 		expect(retro).toContain("Aggregate per task before proposing any pattern");
 		expect(retro).toContain("for every task at three or more rounds");
 		expect(retro).toContain("as infrastructure jitter and keep it out of the content-rework count");
+	});
+});
+
+describe("revisit follow-through", () => {
+	const revisit = readFlat("plugins/immune-brain/dist/revisit.md");
+
+	it("traces repeated cross-boundary findings through the real entry to the downstream consumer", () => {
+		expect(revisit).toContain("real public/host entry, authorization and preconditions");
+		expect(revisit).toContain("reload and downstream consumer");
+	});
+
+	it("orders the fix ladder", () => {
+		expect(revisit).toContain("architecture > types > lint > test > docs");
+	});
+
+	it("is report-only and ends each candidate with a copy-ready draft", () => {
+		expect(revisit).toContain("each candidate ends with a copy-ready TaskIntent or issue draft");
+		expect(revisit).toContain("`revisit` creates no issue, TaskIntent, branch or commit");
+	});
+
+	it("retires the project-local workflow-evidence-retro Skill", () => {
+		expect(existsSync(resolve(REPO_ROOT, ".agents/skills/workflow-evidence-retro"))).toBe(false);
 	});
 });

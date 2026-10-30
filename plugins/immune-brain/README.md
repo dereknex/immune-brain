@@ -24,7 +24,7 @@ The package exposes eight Skills: `clarify`, `draw-up`, `drive`,
 `fix-pr` repairs one PR directly, `prune-docs` prunes stale current
 documentation, `slim` minimizes tracked agent-instruction
 context, `prune-tests` prunes redundant tests without weakening assertions,
-and `revisit` ranks models by review load and reports project usage, all without Managed authority. Internal roles
+and `revisit` reports workflow health from session logs, all without Managed authority. Internal roles
 are dispatched by the runtime through packaged prompts under
 `dist/role-prompts/`; Loop never discovers them through Skill loading. Skills use the project's existing files and create only the artifacts
 the user explicitly requested.
@@ -130,7 +130,7 @@ in the next major release.
 | `prune-docs` | execute; repair; canonical | Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion. |
 | `slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
 | `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
-| `revisit` | execute; discovery; canonical | Rank models by review load and report project usage from pi session logs. Read-only. No Managed Path mutation. |
+| `revisit` | execute; discovery; canonical | Report workflow health (usage, rework signal, finding totals) from pi session logs. Read-only. No Managed Path mutation. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).

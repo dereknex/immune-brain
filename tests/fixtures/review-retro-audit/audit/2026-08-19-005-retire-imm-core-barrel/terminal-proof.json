@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v1",
+  "task_id": "2026-08-19-005-retire-imm-core-barrel",
+  "lifecycle_status": "terminal",
+  "terminal_phase": "done",
+  "terminal_event_id": "complete:2026-08-19-005-retire-imm-core-barrel:2026-08-19T12:28:01.860Z",
+  "final_record_hash": "sha256:5eebefd217c7568154172eb70b1a280e5dd31032d57c1b834e215d0130a40a9a",
+  "terminalized_at": "2026-08-19T12:28:01.860Z"
+}
