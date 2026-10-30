@@ -137,6 +137,53 @@ describe("review-retro analyzer", () => {
 		}
 	});
 
+	test("submit_review without a verdict counts the observed Review receipt once", async () => {
+		const reviewResult = (id: string, text: string, timestamp: string) =>
+			JSON.stringify({ timestamp, message: { role: "toolResult", toolCallId: id, content: [{ type: "text", text }] } });
+		const verdict = {
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: "t1",
+			decision: "rework",
+			findings: [{ id: "review-1", kind: "blocking", acceptance_id: "A1", summary: "relative KUBECONFIG breaks after cd" }],
+		};
+		const submit = (id: string, timestamp: string, withVerdict = false) =>
+			turn(timestamp, {
+				name: "imm_kernel_canary",
+				id,
+				arguments: { task_id: "t1", action: { op: "submit_review", ...(withVerdict ? { verdict } : {}) } },
+			});
+		const review = (id: string, timestamp: string) =>
+			turn(timestamp, { name: "Agent", id, arguments: { subagent_type: "Review", prompt: id } });
+		const { root, cleanup } = sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/tmp/receipt-app" }),
+			review("r1", "2099-01-01T00:00:00Z"),
+			reviewResult("r1", `Agent completed in 9.0s.\n\n${JSON.stringify(verdict, null, 2)}`, "2099-01-01T00:00:01Z"),
+			submit("s1", "2099-01-01T00:00:02Z"),
+			// the receipt is consumed: a second bare submit and an explicit resubmit add no new finding
+			submit("s2", "2099-01-01T00:00:03Z"),
+			submit("s3", "2099-01-01T00:00:04Z", true),
+			// a prose result carries no verdict, so the next bare submit has no receipt
+			review("r2", "2099-01-01T00:00:05Z"),
+			reviewResult("r2", "Agent completed in 3.0s.\n\n**Findings**\n\n1. prose only", "2099-01-01T00:00:06Z"),
+			submit("s4", "2099-01-01T00:00:07Z"),
+		]);
+		try {
+			const session = await readSession(join(root, "proj", "s.jsonl"), WIDE_WINDOW);
+			const findings = session!.events.filter((e) => e.type === "finding");
+			expect(findings.map((e) => e.type === "finding" && e.summary)).toEqual([
+				"relative KUBECONFIG breaks after cd",
+				"relative KUBECONFIG breaks after cd",
+			]);
+			const out = await run(["7", "--root", root]);
+			expect(out).toContain("4.0 rounds/task");
+			expect(out).toContain("blocking: 1 | advisory: 0 | bookkeeping: 0");
+			expect(out).toContain("findings: 2 raw calls deduped to 1 distinct");
+		} finally {
+			cleanup();
+		}
+	});
+
 	test("rejects a non-positive window", async () => {
 		await expect(run(["0", "--root", ROOT])).rejects.toThrow(/usage:/);
 	});

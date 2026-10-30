@@ -18,7 +18,8 @@
  *   author               = the model behind the most recent edit/write/multiedit/apply_patch before a
  *                          review or finding; kept on events for downstream readers, never ranked
  *   findings             = submit_review verdict.findings plus legacy record_finding, deduped per session,
- *                          harness bookkeeping split out
+ *                          harness bookkeeping split out; a submit_review without a verdict takes the observed
+ *                          receipt (the verdict JSON in the latest Review Agent toolResult), as the Kernel does
  */
 import { createReadStream, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -31,6 +32,7 @@ const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no finding
 const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
 const NO_EDIT = "no-edit (review-only)";
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T/;
+const VERDICT_START = /\{\s*"contract"\s*:\s*"assurance_kernel\/assurance_verdict\//;
 /** A review finding that records a missing or cleaned-up reviewer agent, or an empty verdict, not a content defect. */
 const JITTER =
 	/(?:review(?:er)? agent|reserved foreground agent)\b[^.\n]{0,80}?\b(?:missing|cleaned[- ]?up|not found|not observed|no longer exists?|disappeared)\b|\b(?:missing|cleaned[- ]?up)\b[^.\n]{0,40}?review(?:er)? agent|\bempty (?:review )?verdict\b|\bverdict (?:was |is )?empty\b/i;
@@ -59,6 +61,36 @@ function parseTimestamp(value: unknown): number {
 	return Number.NaN;
 }
 
+/** The first balanced JSON object starting at `start`, string-aware; null when unbalanced or unparsable. */
+function jsonObjectAt(text: string, start: number): Record<string, unknown> | null {
+	let depth = 0;
+	let quoted = false;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i];
+		if (quoted) {
+			if (ch === "\\") i += 1;
+			else if (ch === '"') quoted = false;
+		} else if (ch === '"') quoted = true;
+		else if (ch === "{") depth += 1;
+		else if (ch === "}" && --depth === 0) {
+			const parsed = norm(text.slice(start, i + 1));
+			return Object.keys(parsed).length ? parsed : null;
+		}
+	}
+	return null;
+}
+
+/** The assurance verdict a Review Agent returned in its toolResult text, or null for prose and score lines. */
+function observedVerdict(content: unknown): Record<string, unknown> | null {
+	const text = typeof content === "string"
+		? content
+		: Array.isArray(content)
+			? content.map((c) => (c && typeof c === "object" ? String((c as Record<string, unknown>).text ?? "") : "")).join("\n")
+			: "";
+	const at = text.search(VERDICT_START);
+	return at < 0 ? null : jsonObjectAt(text, at);
+}
+
 export type SessionEvent =
 	| { type: "review"; author: string; key: string }
 	| { type: "registration"; author: string; taskId: string }
@@ -85,6 +117,9 @@ function cwdKept(cwd: string, filter: SessionFilter): boolean {
 export async function readSession(path: string, filter: SessionFilter): Promise<SessionRead | null> {
 	const out: SessionRead = { cwd: "", used: false, skipped: 0, turns: 0, edits: 0, tools: new Map(), events: [] };
 	let editor: string | null = null;
+	// Review Agent calls awaiting their toolResult, and the latest observed verdict not yet consumed by submit_review.
+	const reviewCalls = new Set<string>();
+	let receipt: Record<string, unknown> | null = null;
 	const rl = createInterface({ input: createReadStream(path, { encoding: "utf8" }) });
 	for await (const raw of rl) {
 		const line = raw.trim();
@@ -108,8 +143,12 @@ export async function readSession(path: string, filter: SessionFilter): Promise<
 			out.skipped += 1;
 			continue;
 		}
-		if (ms < filter.cutMs) continue;
 		const m = (o.message && typeof o.message === "object" ? o.message : {}) as Record<string, unknown>;
+		if (ms < filter.cutMs) continue;
+		if (m.role === "toolResult" && reviewCalls.delete(String(m.toolCallId ?? ""))) {
+			receipt = observedVerdict(m.content);
+			continue;
+		}
 		if (m.role !== "assistant") continue;
 		out.used = true;
 		const mo = `${m.provider ?? "?"}/${m.model ?? "?"}`;
@@ -126,7 +165,8 @@ export async function readSession(path: string, filter: SessionFilter): Promise<
 			if (EDIT_TOOLS.has(name)) {
 				out.edits += 1;
 				editor = mo;
-			} else if (name === "Agent" && String(a.subagent_type ?? "").toLowerCase() === "review") {
+			} else if (isReviewAgent(name, a)) {
+				reviewCalls.add(String(call.id ?? ""));
 				out.events.push({
 					type: "review",
 					author,
@@ -136,7 +176,10 @@ export async function readSession(path: string, filter: SessionFilter): Promise<
 				const act = norm(a.action);
 				if (act.op === "submit_review") {
 					out.events.push({ type: "registration", author, taskId: String(a.task_id ?? "") });
-					const found = norm(act.verdict).findings;
+					// An omitted verdict applies the observed receipt (ADR 0017); either way that receipt is consumed.
+					const verdict = act.verdict === undefined ? receipt : norm(act.verdict);
+					receipt = null;
+					const found = verdict?.findings;
 					if (Array.isArray(found)) for (const f of found) out.events.push(findingEvent(author, f));
 				} else if (act.op === "record_finding") {
 					out.events.push(findingEvent(author, act.finding));
@@ -145,6 +188,10 @@ export async function readSession(path: string, filter: SessionFilter): Promise<
 		}
 	}
 	return out;
+}
+
+function isReviewAgent(name: string, args: Record<string, unknown>): boolean {
+	return name === "Agent" && String(args.subagent_type ?? "").toLowerCase() === "review";
 }
 
 function findingEvent(author: string, finding: unknown): SessionEvent {
