@@ -42,7 +42,3 @@
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github
-- Lane max parallel: 4                 
-- Lane Executor Host: claude-code 
-- Lane Executor model:  claude-sonnet-5-5
-- Lane Executor effort: high

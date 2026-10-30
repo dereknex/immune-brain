@@ -74,6 +74,12 @@ describe("current Pi-only contracts", () => {
     expect(preferencesDoc).toContain("Initiative carrier default: local");
     expect(preferencesDoc).toContain("Initiative carrier default: github");
     expect(preferencesDoc).toContain("does not load an\nagent-local TOML file");
+    // Lane preferences are the one exception: a personal gitignored preset, not directives.
+    expect(preferencesDoc).toContain("Lane preferences are the one exception");
+    expect(preferencesDoc).toContain("../adr/0033-lane-preferences-local-preset.md");
+    expect(preferencesDoc).toContain("`.imm/lanes.local.json`");
+    for (const retired of ["Lane max parallel:", "Lane Executor Host:", "Lane Executor model:", "Lane Executor effort:"])
+      expect(preferencesDoc).not.toContain(retired);
     for (const token of ["IMMUNE_BRAIN_AGENT_CONFIG", "IMMUNE_BRAIN_CONFIG", "[subagent_activation]", "[workflow_models]", "[subagent_models]"])
       expect(preferencesDoc).not.toContain(token);
   });

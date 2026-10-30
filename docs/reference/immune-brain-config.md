@@ -4,6 +4,11 @@ Pi and Claude Code are supported code-agent hosts. Immune-Brain does not load an
 agent-local TOML file or Immune-Brain-specific environment overrides. User and
 project preferences belong in the Host's agent instruction files.
 
+Lane preferences are the one exception: they live in a personal, gitignored
+preset, `.imm/lanes.local.json`, described under
+[Lane Preferences](#lane-preferences) and recorded in
+[ADR 0033](../adr/0033-lane-preferences-local-preset.md).
+
 ## Precedence
 
 Planner preferences resolve in this order:
@@ -55,27 +60,42 @@ complete batch succeeds. It never silently switches carrier.
 
 ## Lane Preferences
 
-Four optional directives hold standing lane-mode choices. The Parent resolves
-them before the first `start_unattended_batch` call for an Initiative; the batch
-runner reads none of them. None has a built-in default.
+Lane-mode choices are personal and per clone, so they live in
+`.imm/lanes.local.json` at the checkout root, not in `AGENTS.md` or `CLAUDE.md`.
+Add `.imm/lanes.local.json` to `.gitignore`. The Parent reads the file directly
+before the first `start_unattended_batch` call for an Initiative; the batch
+runner, the runtime and Lane worktrees read none of it. Instruction-file lane
+directives are not read.
 
-```md
-## Immune-Brain Preferences
-
-- Lane max parallel: 4
-- Lane Executor Host: claude-code
-- Lane Executor model: <model id>
-- Lane Executor effort: high
+```json
+{
+  "active": "fast",
+  "profiles": {
+    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  }
+}
 ```
 
-- `Lane max parallel` is passed as `max_parallel` and turns lane mode on.
-  Without it a batch stays serial unless you ask for lanes in that request. A
-  resumed batch keeps the value it recorded.
-- `Lane Executor Host` is `claude-code` or `pi`. Every Lane uses it, with no
-  fallback to the other Host. Without it the Parent prefers its own Host type.
-- `Lane Executor model` and `Lane Executor effort` apply only when
-  `Lane Executor Host` is set, because a model ID belongs to one Host. Without
-  them each Executor Host uses its own default.
+- The file has only `active` (optional, a profile name) and `profiles`. With no
+  file, or no `active`, a batch runs one Lane at a time on the Parent's own
+  Host type with that Host's default model and effort.
+- `max_parallel` is passed as `max_parallel` and turns lane mode on. A resumed
+  batch keeps the value it recorded.
+- `executor_host` is `claude-code` or `pi`. Every Lane uses it, with no
+  fallback to the other Host.
+- `executor_model` and `executor_effort` apply only when the same profile sets
+  `executor_host`, because a model ID belongs to one Host; otherwise they are
+  reported and not applied.
+- A request may name a profile and state single fields, such as "use `cheap`,
+  but max parallel 3", for that batch only. The Parent shows each value with
+  its source: `request`, `preset:<profile>` or `default`.
+- Malformed JSON, an unknown profile, an unknown key or an invalid value is
+  reported and no batch starts.
+
+Final verification commands for a batch come from the request, else the full
+test and type-check commands the repository instruction file names in prose,
+else none.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.

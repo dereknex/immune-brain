@@ -5,6 +5,7 @@ __pycache__/
 data/
 plugins/immune-brain/.plugin-eval/
 .imm/migrations/
+.imm/lanes.local.json
 # Storage-layout cutover: .imm/state/ is wholly ignored worktree-local
 # mutable authority; .imm/audit/ is tracked terminal evidence and is never
 # ignored here. The legacy runtime-path rules below are a temporary

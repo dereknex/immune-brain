@@ -380,27 +380,74 @@ describe("internal role-prompt bridge", () => {
 		// The steward still knows no workspace tool.
 		expect(/herdr/i.test(read("plugins/immune-brain/runtime/prompts/lane-steward.md"))).toBe(false);
 	});
-	it("resolves Lane Preferences in the Parent and passes model and effort as launch arguments", () => {
+	it("resolves Lane Preferences from the local preset in the Parent and passes model and effort as launch arguments", () => {
 		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
 		for (const fragment of [
 			"#### Lane Preferences",
-			"1. a literal user instruction for the current request;",
-			"| `Lane max parallel: <n>` | positive integer |",
-			"| `Lane Executor Host: <host>` | `claude-code` or `pi` |",
+			"one personal, gitignored preset, `.imm/lanes.local.json`, at the Parent's checkout root. The Parent alone reads it",
+			"Lane worktrees, the runner and the runtime read none of it",
+			"two top-level keys only: optional `active`, a profile name, and `profiles`",
+			"There is no `contract` field",
+			"| `max_parallel` | positive integer |",
+			"| `executor_host` | `claude-code` or `pi` |",
 			"the Parent does not fall back to the other one",
-			"| `Lane Executor model: <model>` |",
+			"| `executor_model` |",
+			"| `executor_effort` |",
 			"Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi`",
-			"apply only together with `Lane Executor Host`",
-			"Report an invalid value and ask instead of guessing or clamping",
+			"The selected profile is the one the request names, else `active`, else none.",
+			"With no file, or no selected profile, every field takes its default.",
+			"for that batch only (source `request`); else the selected profile's field (source `preset:<profile>`); else the column above (source `default`)",
+			"apply only when that same profile names `executor_host`",
+			"Otherwise they are reported and not applied, never attached to the default-resolved Host",
+			"display one non-blocking line with each selected value and its per-field source",
 			"On a resume the recorded `max_parallel` stands",
-			"the runner reads none of them, and they grant no permission or trust option",
+			"it grants no permission or trust option",
 			"those that [Lane Preferences](#lane-preferences) resolved for model and effort",
 		]) {
 			expect(loop).toContain(fragment);
 		}
+		// Every user mistake is reported and no batch starts on a guessed value.
+		expect(loop).toContain("Report each of these and start no batch on guessed or default values");
+		for (const errorCase of [
+			"malformed JSON",
+			"`active` naming a profile that does not exist",
+			"a request naming a profile that does not exist",
+			"an unknown key at top level or inside a profile",
+			"a `max_parallel` that is not a positive integer",
+			"an `executor_host` outside `pi` and `claude-code`",
+		])
+			expect(loop).toContain(errorCase);
+		// The instruction-file directive table is retired.
+		for (const retired of ["Lane max parallel:", "Lane Executor Host:", "Lane Executor model:", "Lane Executor effort:", "Lane Executor Host` directive"])
+			expect({ retired, present: loop.includes(retired) }).toEqual({ retired, present: false });
 		expect(read("plugins/immune-brain/skills/drive/SKILL.md")).toContain("../../dist/drive-batch.md#lane-preferences");
-		// The directives stay a Parent concern: no runtime source names them.
-		for (const file of ["plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/role_prompt_bridge.ts"])
-			expect({ file, named: /Lane (max parallel|Executor (Host|model|effort)):/.test(read(file)) }).toEqual({ file, named: false });
+		// The preset stays a Parent concern: no runtime source names it or the old directives.
+		for (const file of [
+			"plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+			"plugins/immune-brain/runtime/unattended/batch_runner.ts",
+			"plugins/immune-brain/runtime/role_prompt_bridge.ts",
+		])
+			expect({ file, named: /lanes\.local\.json|Lane (max parallel|Executor (Host|model|effort)):/.test(read(file)) }).toEqual({ file, named: false });
+	});
+	it("resolves batch final verification from the request, then repository prose, then none", () => {
+		const loop = read("plugins/immune-brain/dist/drive-batch.md").replace(/\s+/g, " ");
+		for (const fragment of [
+			"take plain commands without shell syntax or quoting, at most 8, whatever their source",
+			"1. commands the current request states literally; else",
+			"2. the full test suite and type-check commands the repository instruction file names in prose",
+			"3. none, and the completion report says nothing was run.",
+			"The Parent never invents a command the repository does not name.",
+		])
+			expect(loop).toContain(fragment);
+		expect(loop).not.toContain("Batch final verification");
+	});
+	it("keeps lane preferences out of tracked instruction files and ignores the preset", () => {
+		expect(read(".gitignore").split("\n")).toContain(".imm/lanes.local.json");
+		for (const file of ["AGENTS.md", "IMMUNE.md", "README.md", "README.zh-CN.md"]) {
+			const content = read(file);
+			for (const retired of ["Lane max parallel", "Lane Executor Host:", "Lane Executor model:", "Lane Executor effort:", "Batch final verification"])
+				expect({ file, retired, present: content.includes(retired) }).toEqual({ file, retired, present: false });
+		}
+		expect(read("AGENTS.md")).toContain("Initiative carrier default: github");
 	});
 });

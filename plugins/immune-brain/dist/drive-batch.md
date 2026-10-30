@@ -256,39 +256,74 @@ state and its Host session never re-enters the batch.
 
 #### Lane Preferences
 
-A repository can keep standing lane-mode choices next to its other Immune-Brain
-preferences. Before the first `start_unattended_batch` call for an Initiative,
-the Parent resolves each of the four directives below in this order, reading the
-source directly rather than assuming the Host injected it into context:
+Lane-mode choices live in one personal, gitignored preset,
+`.imm/lanes.local.json`, at the Parent's checkout root. The Parent alone reads
+it, directly, before the first `start_unattended_batch` call for an Initiative;
+Lane worktrees, the runner and the runtime read none of it. Instruction-file
+lane directives are not read.
 
-1. a literal user instruction for the current request;
-2. the directive in the repository root agent instruction file, whichever this
-   repository tracks: `AGENTS.md` or `CLAUDE.md`;
-3. the same directive in the Host's user-level agent instruction file; or
-4. the behavior without a directive, given in the table.
+```json
+{
+  "active": "fast",
+  "profiles": {
+    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  }
+}
+```
 
-| Directive | Value | Effect | Without it |
+The file has two top-level keys only: optional `active`, a profile name, and
+`profiles`, mapping each name to a profile. There is no `contract` field. Every
+profile field is optional:
+
+| Field | Value | Effect | Without it |
 | --- | --- | --- | --- |
-| `Lane max parallel: <n>` | positive integer | The Parent passes it as `max_parallel` when it starts a batch. The native confirmation shows the Lane capacity. | No `max_parallel`: one Lane at a time |
-| `Lane Executor Host: <host>` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
-| `Lane Executor model: <model>` | a model identifier of the configured Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
-| `Lane Executor effort: <level>` | a level the configured Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
-| `Batch final verification: <command>; <command>` | plain commands without shell syntax or quoting, at most 8 | Passed as `final_verification` when a new lane batch starts and shown in its native confirmation; the runner runs them on the batch branch once every child is integrated and writes each command's exit status and timing into the completion report as `final_verification`. A failing command reports the batch as not passed; integrated commits are never rolled back | The commands the repository instruction file names for its full test suite and type check, else none and the completion report says nothing was run |
+| `max_parallel` | positive integer | The Parent passes it as `max_parallel` when it starts a batch. The native confirmation shows the Lane capacity. | No `max_parallel`: one Lane at a time |
+| `executor_host` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
+| `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
+| `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
 
-A model identifier and an effort level mean something only to one Host, so
-`Lane Executor model` and `Lane Executor effort` apply only together with
-`Lane Executor Host` from the same or a higher source; without it they are
-reported and not applied. A repository directive overrides the user-level one.
-Report an invalid value and ask instead of guessing or clamping. After resolving
-them, display one non-blocking line with each selected value and its source. On
-a resume the recorded `max_parallel` stands and the directive is not passed
-again. The directives configure how the Parent starts sessions; the runner reads
-none of them, and they grant no permission or trust option.
+Each field resolves on its own:
 
-A repository that names its full test and type-check commands in prose (for
-example "uses `bun test`; type checking is `bun run typecheck`") supplies them as
-the final verification without a directive; the Parent never invents a command
-the repository does not name.
+1. The selected profile is the one the request names, else `active`, else none.
+   With no file, or no selected profile, every field takes its default.
+2. A field the request states literally wins, for that batch only (source
+   `request`); else the selected profile's field (source `preset:<profile>`);
+   else the column above (source `default`). For example "use `cheap`, but max
+   parallel 3" takes `cheap` and overlays `max_parallel`.
+3. A model identifier and an effort level mean something only to one Host, so a
+   profile's `executor_model` and `executor_effort` apply only when that same
+   profile names `executor_host`; a request-stated model or effort applies only
+   with a request- or profile-named host. Otherwise they are reported and not
+   applied, never attached to the default-resolved Host.
+
+After resolving, display one non-blocking line with each selected value and its
+per-field source, for example
+`max_parallel 3 (request), executor_host pi (preset:cheap), executor_model - (default), executor_effort low (preset:cheap)`.
+On a resume the recorded `max_parallel` stands and nothing is passed again.
+
+Report each of these and start no batch on guessed or default values: malformed
+JSON; `active` naming a profile that does not exist; a request naming a profile
+that does not exist; an unknown key at top level or inside a profile (for
+example `executor_modle`); a `max_parallel` that is not a positive integer; an
+`executor_host` outside `pi` and `claude-code`. The preset configures how the
+Parent starts sessions; it grants no permission or trust option.
+
+The `final_verification` commands of a new lane batch take plain commands
+without shell syntax or quoting, at most 8, whatever their source. They are
+shown in its native confirmation; the runner runs them on the batch branch once
+every child is integrated and writes each command's exit status and timing into
+the completion report as `final_verification`. A failing command reports the
+batch as not passed; integrated commits are never rolled back. The Parent takes
+them from:
+
+1. commands the current request states literally; else
+2. the full test suite and type-check commands the repository instruction file
+   names in prose (for example "uses `bun test`; type checking is
+   `bun run typecheck`"); else
+3. none, and the completion report says nothing was run.
+
+The Parent never invents a command the repository does not name.
 
 #### Lane Executor Supervision
 
@@ -311,7 +346,7 @@ A supervised session is defined by what it guarantees, not by a Host's name:
 
 The Parent Host and the Executor Host are chosen independently. The Executor
 Host is any allowlisted Host (`claude-code` or `pi`) that the `lane-steward`
-reported available in that Lane. A `Lane Executor Host` directive under
+reported available in that Lane. An `executor_host` resolved under
 [Lane Preferences](#lane-preferences) decides it; without one, prefer the
 Parent's own Host type, and use the other when only it is available. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
@@ -319,7 +354,7 @@ same Immune-Brain plugin or package the Parent runs: a Parent started from a
 local plugin directory passes that same directory to the Executor Host. The
 Parent adds no permission or trust option of its own; the Executor Host runs
 under the user's own settings, with the model and effort of its own defaults
-unless Lane Preferences name them. How the Parent obtains a supervised session
+unless [Lane Preferences](#lane-preferences) resolve them. How the Parent obtains a supervised session
 depends on where the Parent runs; the first matching row applies, and the user
 is not asked to choose:
 

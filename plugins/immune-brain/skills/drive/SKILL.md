@@ -33,7 +33,7 @@ or all references as an entry prerequisite.
 - parallel batch (`max_parallel`, `lane_offers`, Lane admission or integration): [Parallel Batch Opt-In](../../dist/drive-batch.md#parallel-batch-opt-in)
 - a lane-mode report carries an `executor` handoff, or a Lane's Executor Host session has ended: [Lane Executor Supervision](../../dist/drive-batch.md#lane-executor-supervision)
 - that Parent runs inside Herdr (`HERDR_ENV=1`): [Herdr Lane Tabs](../../dist/drive-batch.md#herdr-lane-tabs)
-- a lane-mode batch is about to start, to resolve the repository's parallelism, Executor Host, model and effort: [Lane Preferences](../../dist/drive-batch.md#lane-preferences)
+- a lane-mode batch is about to start, to resolve parallelism, Executor Host, model and effort from the `.imm/lanes.local.json` preset and the request: [Lane Preferences](../../dist/drive-batch.md#lane-preferences)
 - steady execution: [Verification and Local Recovery](../../dist/BASELINE.md#verification-and-local-recovery), [Execution Loop](../../dist/drive.md#execution-loop), [Observable Output](../../dist/drive.md#observable-output)
 - rework, scope expansion, breaking revision, user decision, stop, interruption or unknown state before any action: [Decisions and Recovery](../../dist/drive.md#decisions-and-recovery), [Failure Output](../../dist/drive.md#failure-output); re-read `status`, then the pending obligation. Rework submits the verdict before editing, and an uncertain interruption resumes from exact task/run authority facts rather than a summary.
 - review or post-settlement learning: [Review and Learning](../../dist/drive.md#review-and-learning)

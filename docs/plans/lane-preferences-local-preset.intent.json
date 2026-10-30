@@ -1,0 +1,52 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-preferences-local-preset",
+  "owner": "user",
+  "goal": "Lane preferences move from tracked instruction-file directives to one personal gitignored preset .imm/lanes.local.json with named profiles and an active field (default = current host config), the request may name a profile and overlay fields per batch, the Batch final verification directive is removed in favor of request -> repository prose -> none, and a new ADR, reference exception and major changeset record the breaking change (#327; Spec docs/specs/lane-preferences-local-preset.spec.md D1-D9).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D1-D4 of docs/specs/lane-preferences-local-preset.spec.md (sources #327-Design, G-Q3..Q6): plugins/immune-brain/dist/drive-batch.md '#### Lane Preferences' (heading and anchor kept) states that the Parent alone reads .imm/lanes.local.json at its checkout root, with top-level keys active and profiles only (no contract field), profile fields max_parallel, executor_host, executor_model, executor_effort, unnamed fields falling back to the default column, a request naming a profile and overlaying fields for one batch, and a display line with per-field sources request / preset:<profile> / default. Positive: those fragments are present. Negative: each D4 case is named as reported with no batch started (malformed JSON, unknown profile in active, unknown profile in a request, unknown key, non-positive max_parallel, host outside pi/claude-code), profile model/effort without that profile's executor_host is reported and not applied, and the rows 'Lane max parallel:', 'Lane Executor Host:', 'Lane Executor model:', 'Lane Executor effort:' are absent. Bound: batch_lanes.ts, batch_runner.ts and role_prompt_bridge.ts name neither lanes.local.json nor the old directives. Agreed seam: tests/role-prompt-bridge.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D5-D6 of docs/specs/lane-preferences-local-preset.spec.md (sources #327-Batch final verification, G-Q1, G-Q9): drive-batch.md resolves final_verification as commands stated in the request, else the full test and type-check commands the repository instruction file names in prose, else none with the completion report saying nothing was run, and states the plain-commands / at-most-8 constraint on the final_verification parameter. Negative: no 'Batch final verification:' directive remains in drive-batch.md. Agreed seam: tests/role-prompt-bridge.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D7 of docs/specs/lane-preferences-local-preset.spec.md (sources #327-Documentation, G-Q2): docs/reference/immune-brain-config.md keeps its opening 'does not load an agent-local TOML file' sentence and both Initiative carrier directives, names the lane-preferences preset exception with a link to ADR 0033, and its Lane Preferences section describes .imm/lanes.local.json with no 'Lane max parallel:' or 'Lane Executor ...:' directive lines; the packaged mirror under plugins/immune-brain/dist/docs/reference/ stays byte-identical; skills/drive/SKILL.md still routes to drive-batch.md#lane-preferences. Agreed seams: tests/pi-only-current-contracts.test.ts, tests/dist-docs-sync-contract.test.ts, tests/ceremony-trim-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/ceremony-trim-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per D1, D5, D8 of docs/specs/lane-preferences-local-preset.spec.md (sources #327-Acceptance, G-Q7): .gitignore contains the line .imm/lanes.local.json. Negative: AGENTS.md, IMMUNE.md, README.md and README.zh-CN.md contain none of 'Lane max parallel', 'Lane Executor Host:', 'Lane Executor model:', 'Lane Executor effort:', 'Batch final verification'. Bound: AGENTS.md still contains 'Initiative carrier default: github'. Agreed seam: tests/role-prompt-bridge.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Per D7 and D9 of docs/specs/lane-preferences-local-preset.spec.md (sources #327-Documentation, G-Q2, G-Q10): docs/adr/0033-lane-preferences-local-preset.md exists, names ADR 0013 and .imm/lanes.local.json; .changeset/lane-preferences-local-preset.md declares a major bump for immune-brain and names the migration into a preset profile. Negative: a missing ADR, a missing 0013 reference, or a non-major changeset fails the check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test -f docs/adr/0033-lane-preferences-local-preset.md && grep -q '0013' docs/adr/0033-lane-preferences-local-preset.md && grep -q 'lanes.local.json' docs/adr/0033-lane-preferences-local-preset.md && grep -q '\\\"immune-brain\\\": major' .changeset/lane-preferences-local-preset.md && grep -q 'lanes.local.json' .changeset/lane-preferences-local-preset.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-preferences-local-preset.md",
+    ".gitignore",
+    "AGENTS.md",
+    "IMMUNE.md",
+    "README.md",
+    "README.zh-CN.md",
+    "docs/adr/0033-lane-preferences-local-preset.md",
+    "docs/plans/lane-preferences-local-preset.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/lane-preferences-local-preset.spec.md",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/skills/drive/SKILL.md",
+    "tests/pi-only-current-contracts.test.ts",
+    "tests/role-prompt-bridge.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

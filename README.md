@@ -118,7 +118,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Clear goal, want formal plan & specs | `/draw-up` "Plan the webhook feature" | → `draw-up` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/drive` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/drive` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
-| Ready Initiative to run unattended (serial or parallel lanes) | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or `Lane max parallel`) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Runs serially by default, or opt-in parallel Git worktree lanes with `max_parallel` |
+| Ready Initiative to run unattended (serial or parallel lanes) | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a `.imm/lanes.local.json` profile) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Runs serially by default, or opt-in parallel Git worktree lanes with `max_parallel` |
 | Cross-host workflow (Claude plan + Pi code) | Run `/draw-up` in Claude Code, switch to Pi and run `/drive` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/fix-pr` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
@@ -562,7 +562,7 @@ Every new batch uses **runtime-created Lanes**. Omitted `max_parallel` and expli
 
 ### 1. Batch Execution Overview
 
-- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / configure `Lane max parallel: <n>`.
+- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / set `max_parallel` in a `.imm/lanes.local.json` profile.
 - **Workspace topology:** the runtime creates each child's worktree under the Git common directory at `imm/worktrees/<slug>/<task_id>` and keeps Parent progress on `refs/heads/imm/<slug>` without changing the coordinator checkout.
 - **Authority:** each Lane has its own Authority Store, Enrollment, QA, Review and settlement.
 - **Integration:** the runtime commits scoped delivery, reruns Integration Guard descriptors and fast-forwards the Parent ref before admitting dependent work.
@@ -619,16 +619,24 @@ sequenceDiagram
 
 ## Configuration
 
-Immune-Brain has **no separate config file**. Preferences live in your host's agent instruction file at the repo root — `AGENTS.md` (Pi) or `CLAUDE.md` (Claude Code):
+Preferences live in your host's agent instruction file at the repo root — `AGENTS.md` (Pi) or `CLAUDE.md` (Claude Code):
 
 ```md
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github   # or: local
-- Lane max parallel: 4                 # optional; default: one Lane at a time
-- Lane Executor Host: claude-code      # optional; or: pi
-- Lane Executor model: <model id>      # optional; needs Lane Executor Host
-- Lane Executor effort: high           # optional; needs Lane Executor Host
+```
+
+Lane preferences are the one exception: they are personal, so they live in a gitignored preset `.imm/lanes.local.json`:
+
+```json
+{
+  "active": "fast",
+  "profiles": {
+    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  }
+}
 ```
 
 | Preference | Options | Default | Notes |
@@ -636,12 +644,12 @@ Immune-Brain has **no separate config file**. Preferences live in your host's ag
 | Reply language | any natural language | repo `AGENTS.md` | Machine contracts / paths stay literal |
 | Initiative carrier | `local` / `github` | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
 | Advisory subagents | allowed / solo | allowed | Respects Pi host policy + explicit user instruction |
-| Lane max parallel | integer ≥ 1 | none — batches stay serial | Passed as `max_parallel` when a batch starts; a resumed batch keeps its recorded value |
-| Lane Executor Host | `claude-code` / `pi` | none — prefers the Parent's own Host type | Every Lane uses this Host, with no fallback to the other one |
-| Lane Executor model | a model ID of that Host | none — the Executor Host's own default | Applies only when `Lane Executor Host` is set |
-| Lane Executor effort | an effort level of that Host | none — the Executor Host's own default | Applies only when `Lane Executor Host` is set; `--effort` on Claude Code, `--thinking` on Pi |
+| `max_parallel` (preset) | integer ≥ 1 | none — one Lane at a time | Passed as `max_parallel` when a batch starts; a resumed batch keeps its recorded value |
+| `executor_host` (preset) | `claude-code` / `pi` | none — prefers the Parent's own Host type | Every Lane uses this Host, with no fallback to the other one |
+| `executor_model` (preset) | a model ID of that Host | none — the Executor Host's own default | Applies only when the same profile sets `executor_host` |
+| `executor_effort` (preset) | an effort level of that Host | none — the Executor Host's own default | Applies only when the same profile sets `executor_host`; `--effort` on Claude Code, `--thinking` on Pi |
 
-Precedence: **current message > repo agent instruction file > user-level agent instruction file > ask**. Skills read these files directly, so a preference works even when the host does not auto-load that file.
+Precedence: **current message > repo agent instruction file > user-level agent instruction file > ask**. Skills read these files directly, so a preference works even when the host does not auto-load that file. Lane fields resolve **current message > selected preset profile > default**; a request may name a profile (`use cheap, but max parallel 3`), and a malformed file, unknown profile, unknown key or invalid value stops the batch from starting.
 
 See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
 

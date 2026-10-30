@@ -118,7 +118,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 目标明确，需要正规计划与规格 | `/imm-planner` "规划一下深色模式功能" | → `imm-planner` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/imm-run` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/imm-run` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
-| 已发布的 Initiative 批次推进（串行 / 多 Lane 并行） | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或配置 `Lane max parallel`） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。无配置时单工作区串行推进；配置并行度时开启多 Lane Git worktree 物理隔离并发执行 |
+| 已发布的 Initiative 批次推进（串行 / 多 Lane 并行） | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `.imm/lanes.local.json` profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。无配置时单工作区串行推进；配置并行度时开启多 Lane Git worktree 物理隔离并发执行 |
 | 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/imm-planner`，切到 Pi 输入 `/imm-run` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/imm-pr-fix` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/imm-doc-prune` | → 只读审计过时文档，仅删除经哈希审批的条目 |
@@ -567,7 +567,7 @@ Parent 在确认前根据依赖、scope 冲突、Lane 容量及受监督 Host �
 
 | 维度 | 串行批次 (Serial Batch，默认) | 多 Lane 并行批次 (Parallel Batch Lanes) |
 |---|---|---|
-| **开启方式** | 调用 `start_unattended_batch(slug)` | 显式传入 `max_parallel` 或在配置中设定 `Lane max parallel: <n>` |
+| **开启方式** | 调用 `start_unattended_batch(slug)` | 显式传入 `max_parallel` 或在 `.imm/lanes.local.json` profile 中设定 `max_parallel` |
 | **工作区拓扑** | 共享唯一的专属批次分支（`imm-batch/<slug>`） | Coordinator 维护主批次分支；各并发任务独占独立 Git worktree（`imm-lane/<task-id>` 分支） |
 | **调度策略** | 严格按依赖拓扑层级单任务逐个串行推进 | 互不依赖且物理修改范围（`scope_hint`）**完全不重叠（Scope-disjoint）**的任务并发执行 |
 | **Authority 边界** | 协调者按序推进单个任务的本地 Authority Store | 每个 Lane 拥有完全隔离的本地 Authority Store，各自独立加锁，零全局 CAS 竞争 |
@@ -633,16 +633,24 @@ sequenceDiagram
 
 ## 配置
 
-Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下当前 Host 的 agent 指令文件里——`AGENTS.md`（Pi）或 `CLAUDE.md`（Claude Code）：
+偏好设置写在仓库根目录下当前 Host 的 agent 指令文件里——`AGENTS.md`（Pi）或 `CLAUDE.md`（Claude Code）：
 
 ```md
 ## Immune-Brain Preferences
 
 - Initiative carrier default: github   # 或 local
-- Lane max parallel: 4                 # 可选；开启 lane mode
-- Lane Executor Host: claude-code      # 可选；或 pi
-- Lane Executor model: <model id>      # 可选；需同时配置 Lane Executor Host
-- Lane Executor effort: high           # 可选；需同时配置 Lane Executor Host
+```
+
+Lane 偏好是唯一例外：它属于个人设置，写在 gitignore 的 preset `.imm/lanes.local.json` 里：
+
+```json
+{
+  "active": "fast",
+  "profiles": {
+    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  }
+}
 ```
 
 | 偏好 | 选项 | 默认 | 说明 |
@@ -650,12 +658,12 @@ Immune-Brain **没有独立配置文件**，偏好设置写在仓库根目录下
 | 回复语言 | 任意自然语言 | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
 | Initiative 载体 | `local` / `github` | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
 | Advisory subagent | 允许 / 单人 | 允许 | 受 Pi host 策略与用户显式指令约束 |
-| Lane max parallel | ≥ 1 的整数 | 无默认，批次保持串行 | 启动批次时作为 `max_parallel` 传入；续跑沿用批次记录的值 |
-| Lane Executor Host | `claude-code` / `pi` | 无默认，优先用 Parent 同类 Host | 所有 Lane 都用该 Host，不回退到另一个 |
-| Lane Executor model | 该 Host 的 model ID | 无默认，用 Executor Host 自己的默认 | 仅在配置了 `Lane Executor Host` 时生效 |
-| Lane Executor effort | 该 Host 的强度档位 | 无默认，用 Executor Host 自己的默认 | 仅在配置了 `Lane Executor Host` 时生效；Claude Code 传 `--effort`，Pi 传 `--thinking` |
+| `max_parallel`（preset） | ≥ 1 的整数 | 无默认，一次一个 Lane | 启动批次时作为 `max_parallel` 传入；续跑沿用批次记录的值 |
+| `executor_host`（preset） | `claude-code` / `pi` | 无默认，优先用 Parent 同类 Host | 所有 Lane 都用该 Host，不回退到另一个 |
+| `executor_model`（preset） | 该 Host 的 model ID | 无默认，用 Executor Host 自己的默认 | 仅在同一 profile 设置了 `executor_host` 时生效 |
+| `executor_effort`（preset） | 该 Host 的强度档位 | 无默认，用 Executor Host 自己的默认 | 仅在同一 profile 设置了 `executor_host` 时生效；Claude Code 传 `--effort`，Pi 传 `--thinking` |
 
-优先级：**当前消息 > 仓库 agent 指令文件 > 用户级 agent 指令文件 > 询问**。Skill 会直接读取这些文件，因此即使 Host 不自动加载该文件，偏好依然生效。
+优先级：**当前消息 > 仓库 agent 指令文件 > 用户级 agent 指令文件 > 询问**。Skill 会直接读取这些文件，因此即使 Host 不自动加载该文件，偏好依然生效。Lane 字段按 **当前消息 > 选中的 preset profile > 默认值** 解析；请求可以指定 profile（"用 cheap，但 max parallel 3"）；文件格式错误、profile 不存在、key 拼错或取值非法时，批次不启动。
 
 详见 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 
