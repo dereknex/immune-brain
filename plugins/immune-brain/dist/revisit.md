@@ -67,8 +67,11 @@ aloud in the report so the 口径 stays visible.
   human-visible rework.
 - Findings are the `verdict.findings` entries of `submit_review` calls plus
   legacy `record_finding` calls, deduped per session by summary, so a finding
-  re-submitted across rounds counts once. The Review `toolResult` copy of the
-  same verdict is not counted. Summaries that match `recorded cleanly`,
+  re-submitted across rounds counts once. A `submit_review` without a verdict
+  takes the observed receipt, as the Kernel does (ADR 0017): the assurance
+  verdict JSON in the latest Review `Agent` toolResult of that session. Each
+  `submit_review` consumes the receipt, so a bare resubmit counts nothing and
+  the Review `toolResult` copy is never counted on its own. Summaries that match `recorded cleanly`,
   `receipt recorded`, `round recorded`, or `no finding(s)` are `bookkeeping`,
   excluded from `blocking` / `advisory`.
 - The analyzer still records the last editor model (`edit`, `write`,
