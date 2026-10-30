@@ -5,8 +5,10 @@ description: Use when the user explicitly requests an Immune-Brain workflow-heal
 
 # Immune-Brain: Revisit
 
-Report workflow health — usage, review rework signal and finding totals — over
-a look-back window the user supplies in days. It ranks no models. This
+Report workflow health — usage, review rework signal and finding totals from
+Pi session logs, or lifecycle and raw review counts per committed terminal run
+with `--audit` — over a look-back window the user supplies in days. It ranks no
+models. This
 is a standalone host-native analysis entry, not a Managed Path continuation
 and not an `drive` internal-role dispatch. It reviews no diff — a diff
 review is `code-review`.
@@ -14,11 +16,15 @@ review is `code-review`.
 ## Boundary
 
 Allowed: read pi session JSONL under `~/.pi/agent/sessions` (or `--root`),
+read the committed `.imm/audit/` of one named project at HEAD through
+`--audit <project-root>` ([ADR 0032](../../../docs/adr/0032-revisit-reads-committed-audit.md)),
 run the bundled analyzer, and write a stdout report.
 
 Blocked: code, test, Spec, Plan, or `.imm/` edits; session-log writes;
 Kernel, TaskIntent, or TaskRecord mutation; Compounder or scheduled runs;
-`.imm/audit/` lifecycle statistics.
+reading live `.imm/` state, SQLite or the authority store; working-tree audit
+files; derived review metrics (rounds-to-pass median or p95, shares, per-model
+breakdowns).
 
 An already active Managed task remains owned by `drive`. This Skill does
 not create or resume Managed authority.
@@ -35,6 +41,11 @@ it. If not, ask before running, because every count moves with the window.
 Default scan is the user's full session-log tree. Pass `--project <substr>`
 when the user wants one repo or worktree, and `--exclude <substr>` (repeatable)
 to drop sessions, for example a Lane worktree tree. Do not invent a filter.
+
+Pass `--audit <project-root>` to report the project's committed terminal runs
+instead of session logs; the root must be the top level of a Git work tree with
+a HEAD commit. Add `--sessions` to also read session logs. One project per
+call: there is no default audit scan and no multi-project scan.
 
 No daemon, no cron, no CI, no automatic commit.
 
@@ -65,15 +76,42 @@ aloud in the report so the 口径 stays visible.
   event for downstream readers. The report prints no per-author or per-model
   table; do not rank models from it.
 
+Committed audit (`--audit`):
+
+- The reader exports `.imm/audit/**` from the project's HEAD commit into a
+  temporary directory (`git archive`) and parses each pair, flat `<task>/` or
+  run-scoped `<task>/run-<id>/`, with the Kernel's `readAuditTaskPair`. It never
+  opens working-tree audit files; uncommitted edits and untracked pairs do not
+  appear. The temporary directory is removed afterwards.
+- A pair that is incomplete, fails the proof check (`final_record_hash`) or does
+  not parse is skipped and counted by reason (`incomplete`, `proof_mismatch`,
+  `invalid`, `no_terminal_time`). The window applies to the proof's
+  `terminalized_at`; pairs outside it are not counted.
+- Per run: lifecycle and schema version; QA pass attestations; QA execution
+  failures (`findings[source=execution]`); review rework events (`request_rework`
+  with review authority); review pass attestations; findings by source and
+  status; compatible revisions, breaking revisions, user-authorized rework and
+  stop events; distinct evidence bindings (`<n>i/<n>d` = distinct
+  `intent_content_hash` / `diff_hash` over attestations). A field the record's
+  schema cannot carry prints `-`, never `0`.
+- Rows are ordered newest `terminalized_at` first, path as tie-breaker, and
+  `--sample` caps them; the totals cover every in-window run.
+- The header names the project root, the HEAD commit, schema counts, skipped
+  counts and the sample-bias line. Copy it into the write-up: only merged
+  terminal runs are present.
+- Counts are raw. `revisit` computes no median, p95, share, rounds-to-pass,
+  per-acceptance series or model column from audit records.
+
 Usage counters on the same pass: sessions with activity, assistant turns,
 edit counts, and a tool-call name histogram.
 
 ## CLI
 
-Run the bundled analyzer with `bun`. The script imports only `node:` APIs.
+Run the bundled analyzer with `bun`. The session reader imports only `node:` APIs; the audit reader imports the
+Kernel's `readAuditTaskPair`, so Bun is the supported runtime.
 
 ```
-bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
+bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]
 ```
 
 - `<days>` must be `> 0`.
@@ -82,10 +120,15 @@ bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--
 - `--exclude` drops sessions whose `cwd` contains the substring; repeat it for
   several. Combined with `--project`, a session must match the project and none
   of the exclusions. The header names the active filters.
+- `--audit` names one project root and switches to the committed-audit report;
+  session logs are read only when `--sessions` is also given (`--root`,
+  `--project` and `--exclude` then apply to them). A root that is not a Git work
+  tree with a HEAD commit is a usage error. `--sample` caps the per-run rows
+  (default 10).
 - Malformed JSONL lines are skipped. `days <= 0` is a hard error.
 
 Do not scan live `.imm/` directories. Tests use committed fixtures under
-`tests/fixtures/review-retro/`.
+`tests/fixtures/review-retro/` and `tests/fixtures/review-retro-audit/`.
 
 ## Report
 
@@ -99,6 +142,9 @@ Write-up order:
 5. Three to five bullets of what the numbers mean (where the work
    concentrated, how much rework the kernel path shows).
 6. Caveats last.
+
+For an audit report, lead with the header (project root, HEAD commit, skipped
+counts and the sample-bias line), then the totals and the per-run rows.
 
 Separate one-pass from rework by reading `rounds/task` on the kernel path.
 Call out a nonzero skipped count: the window is then a lower bound.

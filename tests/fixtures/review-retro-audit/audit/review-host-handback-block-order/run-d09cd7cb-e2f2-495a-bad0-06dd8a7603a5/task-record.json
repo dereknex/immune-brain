@@ -1,0 +1,155 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-host-handback-block-order",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-host-handback-block-order",
+    "goal": "Make the Claude Review Host honor content-block order inside a single reviewer transcript record, so a text preamble written before a SubagentHandback call in the same record no longer replaces the handed-back report.",
+    "acceptance": [
+      {
+        "id": "RHBO-A1",
+        "assertion": "Within one assistant record of the observed agent, readAgentTranscriptResult returns the SubagentHandback report when text blocks precede it, and returns the text written after the report when text blocks follow it. A record holding only text blocks still yields their concatenation, cross-record last-wins is unchanged, and a foreign agentId, another tool name, and a non-string or blank message still never answer for the reviewer. No new authority path, schema or Kernel change. The generated Claude bundle matches the runtime source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\",\n      \"tests/claude-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "tests/claude-review-host-async-agent.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-host-handback-block-order.intent.json",
+    "content_hash": "sha256:0bcf3e24780ba0f56100b51248a88ee6f26d32498d107a3192045fd3bfaf16ba"
+  },
+  "lifecycle": "stopped",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0bcf3e24780ba0f56100b51248a88ee6f26d32498d107a3192045fd3bfaf16ba",
+  "git_base_head": "cc61c406a1bd9a099dac4670c818980e20bfc2a9",
+  "attestations": [
+    {
+      "id": "approval-qa-2e8d6572",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0bcf3e24780ba0f56100b51248a88ee6f26d32498d107a3192045fd3bfaf16ba",
+      "diff_hash": "sha256:8aa27f576d9e00395533bb42dda6f6a2b1aeceaf1433a18b9c46e8f914e7c0ea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:f62f0887252ffa263ff0b43913f13c82c465d08098e261f90b580c51dc9dd75c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RHBO-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:f62f0887252ffa263ff0b43913f13c82c465d08098e261f90b580c51dc9dd75c"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-c4d4949bb35c-1-review-1",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "RHBO-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The review revision carries no change: its tree equals the base tree, so the task's work is absent from the immutable snapshot and cannot be reviewed or credited to RHBO-A1.",
+      "anchor": "sha256:affd42c1bff2809064bb0e78cda69a41766328d033e15e980f012665cef93260",
+      "evidence": {
+        "trigger": "git rev-parse cc61c406a1bd9a099dac4670c818980e20bfc2a9^{tree} and d0dd542b86d1e6edb507ad55cd198ff36baa73c4^{tree} both resolve to de0b74cfe5e30d88751dc506fa75477395fb7e99; git diff between base and review commit is empty (sha256 e3b0c442..., the empty-input hash, not the declared diff sha256:8aa27f57...); the manifest's changed_paths is {} although scope lists three paths. Commit parentage and tree otherwise match the request. The passed RHBO-A1 outcome therefore attests bytes that are not in this revision.",
+        "caller_chain": [
+          "/private/var/folders/zf/31fnphh957jc1gw0tmpsnl6h0000gn/T/imm-canary-native-review-S24ohZ/evidence.json#changed_paths",
+          "refs/immune-brain/reviews/1187a6824336ae79/run-d09cd7cb-e2f2-495a-bad0-06dd8a7603a5/review-host-handback-block-order/d0dd542b86d1e6edb507ad55cd198ff36baa73c4",
+          "plugins/immune-brain/runtime/claude/review_host.ts",
+          "plugins/immune-brain/dist/claude/mcp-server.mjs",
+          "tests/claude-review-host-async-agent.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RHBO-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c4d4949bb35c-2-review-2",
+      "kind": "blocking",
+      "status": "open",
+      "acceptance_id": "RHBO-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "readAgentTranscriptResult in the review revision still lets same-record text override the SubagentHandback report regardless of block order, and no test covers a mixed text plus handback record.",
+      "anchor": "sha256:7a10995d743a2302ab98696e563c1d1a752769c0bfb897024b27d75982ef1e02",
+      "evidence": {
+        "trigger": "One assistant record of the observed agent with content [ {type:text,text:'checking the diff'}, {type:tool_use,name:'SubagentHandback',input:{message:VERDICT}} ]: the block loop sets last = report, then the post-loop `if (text.trim()) last = text;` overwrites it, returning 'checking the diff' instead of VERDICT. Text is accumulated across the whole record, so text before and after the handback are indistinguishable. Tests in the revision (tests/claude-review-host-async-agent.test.ts lines 140-155) only put text and handback in separate records.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/review_host.ts:readAgentTranscriptResult",
+          "tests/claude-review-host-async-agent.test.ts:handbackLine"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RHBO-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-host-handback-block-order:2026-10-04T15:27:21.084Z",
+      "at": "2026-10-04T15:27:21.084Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-host-handback-block-order.intent.json"
+    },
+    {
+      "id": "record_approval:review-host-handback-block-order:2026-10-04T15:27:28.523Z",
+      "at": "2026-10-04T15:27:28.523Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2e8d6572\naction_v2_sha256:1b76a008800872324d0ca6866012d329b92a74dfd2bad9e7ed0037eaeddc6045",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-04T15:27:28.523Z",
+        "expires_at": "2026-10-04T15:37:28.523Z"
+      }
+    },
+    {
+      "id": "request_rework:review-host-handback-block-order:2026-10-04T15:28:52.197Z",
+      "at": "2026-10-04T15:28:52.197Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:27305ba27998e54cd61143107f066b6f8f18aa780de7508f96a5a17bb2aedaf1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-04T15:28:52.197Z",
+        "expires_at": "2026-10-04T15:38:52.197Z"
+      }
+    },
+    {
+      "id": "stop:review-host-handback-block-order:2026-10-04T15:30:16.964Z",
+      "at": "2026-10-04T15:30:16.964Z",
+      "type": "stop",
+      "from_state": "active:active",
+      "to_state": "stopped:frozen",
+      "reason": "Task edits were staged before Enrollment, so the enrollment baseline excluded them and the frozen review revision was empty. Re-enrolling under a new task id from a clean workspace.\naction_v2_sha256:922afcfa6477b967c7d418ceb1d1527ea44119755f7920a15fd9503453fdc703",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "claude-confirm-fbadf52919c0b91e",
+        "issued_at": "2026-10-04T15:31:09.862Z",
+        "expires_at": "2026-10-04T15:41:09.862Z"
+      }
+    }
+  ]
+}

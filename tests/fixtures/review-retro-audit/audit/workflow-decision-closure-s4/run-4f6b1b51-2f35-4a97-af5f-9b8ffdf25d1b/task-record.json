@@ -1,0 +1,214 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "workflow-decision-closure-s4",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "workflow-decision-closure-s4",
+    "goal": "Tie acceptance verification to observable invariant seams, combination/boundary controls and executable isolated-environment prerequisites rather than test counts or local tool availability.",
+    "acceptance": [
+      {
+        "id": "WDC-S4-A1",
+        "assertion": "Implement S4 of docs/specs/workflow-decision-closure.spec.md through Planner and existing QA/Review role contracts. Map acceptance to positive/negative/bound controls for the six generalized normalization, merge-validation, lifecycle deadline, missing-signal ranking, serialized-budget and duration-evidence classes. Descriptors must state focused paths, prerequisite provenance, preparation and writable outputs; absent/skipped/zero-match required checks fail, structural Enrollment readiness never proves execution. Require authorized preparation and failure/interruption cleanup, separate automated behavior/geometry from human motion judgment, and retain Role/Kernel evidence boundaries. Update packaged role mirrors and focused tests. Do not edit original app code, change the QA engine/Kernel core, install browser/simulator infrastructure or claim provider compliance from contract strings.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-verification-invariants.test.ts\",\n      \"tests/imm-planner-kernel-intent-contract.test.ts\",\n      \"tests/role-prompt-bundled-layout.test.ts\",\n      \"tests/kernel-verification-descriptor.test.ts\",\n      \"tests/pi-canary-verification-descriptor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/workflow-decision-closure-s4.intent.json",
+      "docs/specs/workflow-decision-closure.spec.md",
+      "plugins/immune-brain/dist/imm-planner.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/dist/role-prompts/qa.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/qa.md",
+      "tests/imm-planner-kernel-intent-contract.test.ts",
+      "tests/kernel-verification-descriptor.test.ts",
+      "tests/pi-canary-verification-descriptor.test.ts",
+      "tests/role-prompt-bundled-layout.test.ts",
+      "tests/workflow-verification-invariants.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/workflow-decision-closure-s4.intent.json",
+    "content_hash": "sha256:2fea2dc12c4e1c8553321098aa581a6af80c058bd9c6c32973bbdcd15ad83184"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2fea2dc12c4e1c8553321098aa581a6af80c058bd9c6c32973bbdcd15ad83184",
+  "git_base_head": "0f2e1d47dfe9675a80717fa5b1318deec2aaf831",
+  "attestations": [
+    {
+      "id": "approval-qa-cd202192",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2fea2dc12c4e1c8553321098aa581a6af80c058bd9c6c32973bbdcd15ad83184",
+      "diff_hash": "sha256:3b3bca8d3f0455f3ad58d91b4548d37020d74a85ed188e7a610651fcb17f17db",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:d8d6d930173bb248df2966629acf7167b34377ca9fdf38a7d6006b50ebf029e4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:d8d6d930173bb248df2966629acf7167b34377ca9fdf38a7d6006b50ebf029e4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0af1f6cf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2fea2dc12c4e1c8553321098aa581a6af80c058bd9c6c32973bbdcd15ad83184",
+      "diff_hash": "sha256:ef37e4a048c735dc1aba4999a4a91c05c926cdb3391e8dee2b9bffd5010f1ca4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 1 project verification check(s) passed; execution=sha256:7cbedc15e2d7097f441bf1096fc8e99af6c126d5c534c9260b64d4fb77998d28",
+      "acceptance_results": [
+        {
+          "acceptance_id": "WDC-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 1 project verification check(s) passed; execution=sha256:7cbedc15e2d7097f441bf1096fc8e99af6c126d5c534c9260b64d4fb77998d28"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-555590ee",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2fea2dc12c4e1c8553321098aa581a6af80c058bd9c6c32973bbdcd15ad83184",
+      "diff_hash": "sha256:ef37e4a048c735dc1aba4999a4a91c05c926cdb3391e8dee2b9bffd5010f1ca4",
+      "actor_id": "parent-mediated-review",
+      "summary": "已核验 base/review commit、唯一 parent、tree、manifest digest 和全部六个变更路径的对象身份；S4 的 Planner 与 QA/Review 契约及 packaged mirrors 保持一致，focused tests 的模拟证据未冒充 provider 行为验证，Kernel QA 已记录验收通过，未发现阻断性正确性、回归或权限边界问题。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0f2e1d47dfe9675a80717fa5b1318deec2aaf831",
+        "review_commit": "f0f46d8dd64f0ed12adc1c09cf9081ae95122039",
+        "review_tree": "a861af4a5c78d16b60cebdfc66fb18bf912b0e96",
+        "manifest_digest": "sha256:b48ecf4604275b3eb4f5fef16e6b97ac101b84be88fde5eca5b891124adab87a"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2ac8d49d6560-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "WDC-S4-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "tests/workflow-verification-invariants.test.ts:81-89、111-114、204-209：测试模型未检查 bound control，且六类“完整”fixture 都只有 positive/negative，却被断言通过。这缺少 acceptance 明确要求的 bound 覆盖。最小修复是在测试模型中检查 bound，将其加入完整 fixtures，并为六类加入缺失 bound 时失败的控制；无需修改 QA engine 或 Kernel。",
+      "anchor": "sha256:6169f26543163ca3429f47046d310bf777dfbb42cbd54f7cf8155489390f727f",
+      "evidence": {
+        "trigger": "控制集合完整性这一 invariant class 存在覆盖缺口：对 SIX 中任意类别调用 judgeDescriptor(complete(invariant)) 时，controls 为 [\"positive\", \"negative\"]，不含 \"bound\"；judgeDescriptor 只检查 positive 和 negative，因此返回 ok:true，现有测试还明确要求这一结果。plugins/immune-brain/dist/imm-planner.md:346-349、389 要求 positive、negative、bound 三类控制，但当前测试模型没有缺失 bound 的拒绝路径或测试。这个结论针对 S4 的本地 fixture 覆盖，不要求提前实现 S7 的 provider 行为验证。",
+        "caller_chain": [
+          "tests/workflow-verification-invariants.test.ts:complete",
+          "tests/workflow-verification-invariants.test.ts:judgeDescriptor",
+          "tests/workflow-verification-invariants.test.ts:every motivating invariant class has a complete positive/negative control"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "WDC-S4-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s4:2026-10-03T14:12:31.966Z",
+      "at": "2026-10-03T14:12:31.966Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s4.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s4:2026-10-03T14:12:49.245Z",
+      "at": "2026-10-03T14:12:49.245Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cd202192\naction_v2_sha256:c60c68dd76bd83c122fd16e5179dcc53a603d0865cfd4a6f4cf18db05fb7c9c4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-aa21d3ade378561b",
+        "issued_at": "2026-10-03T14:12:49.245Z",
+        "expires_at": "2026-10-03T14:22:49.245Z"
+      }
+    },
+    {
+      "id": "request_rework:workflow-decision-closure-s4:2026-10-03T14:15:40.292Z",
+      "at": "2026-10-03T14:15:40.292Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ad9d01bffab83ad00c4556678098ee627cc27fd4dba1828fa4795b5658afa9b0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-258add55b640b45d",
+        "issued_at": "2026-10-03T14:15:40.292Z",
+        "expires_at": "2026-10-03T14:25:40.292Z"
+      }
+    },
+    {
+      "id": "resolve_finding:workflow-decision-closure-s4:2026-10-03T14:17:32.792Z",
+      "at": "2026-10-03T14:17:32.792Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2ac8d49d6560-1-review-1\naction_v2_sha256:3edbc36ef7e7b62ccd30605b0cdaf49a806f9530250b2857de06383e530e572a"
+    },
+    {
+      "id": "freeze_artifacts:workflow-decision-closure-s4:2026-10-03T14:17:50.382Z",
+      "at": "2026-10-03T14:17:50.382Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/workflow-decision-closure-s4.intent.json"
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s4:2026-10-03T14:18:10.274Z",
+      "at": "2026-10-03T14:18:10.274Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0af1f6cf\naction_v2_sha256:6df144869ceddb313f4159f2cb6e49893d4bc8feccbf24741bf63f0acd01ab6a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-5e03d8393a19541c",
+        "issued_at": "2026-10-03T14:18:10.274Z",
+        "expires_at": "2026-10-03T14:28:10.274Z"
+      }
+    },
+    {
+      "id": "record_approval:workflow-decision-closure-s4:2026-10-03T14:21:22.883Z",
+      "at": "2026-10-03T14:21:22.883Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-555590ee\naction_v2_sha256:1fc7df3ab7bc263b2416bdbfc96d62af05de2d9297a0d900f7a6dd0a0158414f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6f0c0c6802891e63",
+        "issued_at": "2026-10-03T14:21:22.884Z",
+        "expires_at": "2026-10-03T14:31:22.884Z"
+      }
+    },
+    {
+      "id": "complete:workflow-decision-closure-s4:2026-10-03T14:21:23.970Z",
+      "at": "2026-10-03T14:21:23.970Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5d761bdb0f9cf93cfeec8db328ea71bd4526bd21fd9484e1e31aa0545bb738b1"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "revisit-s2-committed-audit-reader",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:revisit-s2-committed-audit-reader:2026-10-30T06:03:59.303Z",
+  "final_record_hash": "sha256:cbfa0570e55a22a670aa09c4c456a18bf84d65526b29bf45e2c110991ac2c46a",
+  "terminalized_at": "2026-10-30T06:03:59.303Z"
+}

@@ -1,0 +1,176 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-s2-committed-audit-reader",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-s2-committed-audit-reader",
+    "goal": "revisit --audit <project-root> reports lifecycle and raw review counts per committed terminal run read from the project's HEAD Git tree through the Kernel's readAuditTaskPair, with a sample-bias header, and ADR 0032 records the D2-partial boundary (#322 S2; Spec docs/specs/revisit-workflow-health.spec.md D3, D4, D5, D8, D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/review-retro-audit.test.ts, run() with --audit <tmp repo> over a temporary Git repository whose HEAD commits copied fixture pairs reports exactly the committed pairs: a working-tree edit to a committed record and an untracked extra pair do not change the output, and the header prints the project root, the HEAD commit hash, schema counts, skipped counts by reason, and the merged-terminal-runs-only bias line (Spec D4; #322-D9).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/review-retro-audit.test.ts, for a v4 done pair, a v4 stopped pair and a v2 pair the per-run rows show lifecycle, schema version, QA pass attestations, QA execution failures, review rework events, review pass attestations, findings by source x status, compatible and breaking revisions, user-authorized rework, stop events and distinct evidence bindings equal to expected values pinned in the test for those fixture pairs; fields the v2 schema lacks print '-' not 0; rows are ordered newest terminalized_at first with path as tie-breaker and --sample caps them; the report has no median, p95, share, rounds-to-pass or model column (Spec D5; #322-D11).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/review-retro-audit.test.ts, these negative cases hold: --audit on a directory that is not a Git work tree exits with a usage error; a repository whose HEAD has no .imm/audit reports 0 terminal runs; a committed record whose proof final_record_hash does not match is skipped as proof_mismatch; a committed record without its proof is skipped as incomplete; a pair outside the <days> window by terminalized_at is not counted (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/review-retro-audit.test.ts, run() without --audit over the session fixtures prints the session report (usage section present, no audit header), and run() with --audit but without --sessions prints no session usage section even when --root names a session fixture tree (Spec D3; #322-D8).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "In tests/review-retro-audit.test.ts, docs/adr/0032-revisit-reads-committed-audit.md exists with status accepted and states that revisit reads committed .imm/audit of one named project at HEAD and computes lifecycle and raw review counts only; docs/specs/review-verifier-eval.spec.md D2 still carries its superseded-in-part note (written in planning) and ADR 0032 links back to it; the Boundary of plugins/immune-brain/dist/revisit.md allows committed .imm/audit through --audit and blocks live .imm/ state, SQLite and the authority store (Spec D8; #322-D2, #322-D7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "tests/pi-canary-packed-loader.test.ts asserts that the packed tarball ships plugins/immune-brain/skills/revisit/scripts/audit_reader.ts, and .changeset/revisit-s2-committed-audit-reader.md declares a minor release of immune-brain (Spec D10).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-canary-packed-loader.test.ts && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-s2-committed-audit-reader.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-s2-committed-audit-reader.md",
+      "CONTEXT.md",
+      "docs/adr/0032-revisit-reads-committed-audit.md",
+      "docs/plans/revisit-s2-committed-audit-reader.intent.json",
+      "docs/specs/revisit-workflow-health.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/SKILL.md",
+      "plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "tests/fixtures/review-retro-audit",
+      "tests/pi-canary-packed-loader.test.ts",
+      "tests/review-retro-audit.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-s2-committed-audit-reader.intent.json",
+    "content_hash": "sha256:9a8ae57aad0d721771c0f7a486b411de7cc46149b5342b974738cff218ad61d9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9a8ae57aad0d721771c0f7a486b411de7cc46149b5342b974738cff218ad61d9",
+  "git_base_head": "e48941a82419c07b8a91675025145c3f33b7a0b6",
+  "attestations": [
+    {
+      "id": "approval-qa-5166450a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9a8ae57aad0d721771c0f7a486b411de7cc46149b5342b974738cff218ad61d9",
+      "diff_hash": "sha256:6479e32612bd6b73600b6bd0847f48abf6a6ac8e443a0251d57e49479ae336c8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f02cdb1d2ed8f3f0052390687838849f5940a275823bf26c9d4bfe607112c7d4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-844b2c79",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9a8ae57aad0d721771c0f7a486b411de7cc46149b5342b974738cff218ad61d9",
+      "diff_hash": "sha256:6479e32612bd6b73600b6bd0847f48abf6a6ac8e443a0251d57e49479ae336c8",
+      "actor_id": "parent-mediated-review",
+      "summary": "Tier medium; the load-bearing paths are plugins/immune-brain/skills/revisit/scripts/audit_reader.ts (new HEAD-tree reader that calls the Kernel readAuditTaskPair), review_retro.ts (argument and mode dispatch) and the dist/revisit.md Boundary. All six acceptance assertions are met in the immutable diff. The reader exports only HEAD's .imm/audit through git archive into a temp directory and removes it in finally. Skip reasons are counted, absent schema fields print '-', rows are ordered and capped as specified, and the session report runs only without --audit or with --sessions. The tests assert each scenario's Then at the run() seam, ADR 0032 and the dist Boundary match AC5, and the packed-tarball and minor changeset checks match AC6. The base already carries the D2 superseded note in review-verifier-eval.spec.md. The Kernel-attested outcomes for AC1 to AC6 are all passed. I did not read the three fixture task-record.json files in full: they are copied real audit data, and I read their terminal-proof files and checked them for host paths, emails and secrets.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e48941a82419c07b8a91675025145c3f33b7a0b6",
+        "review_commit": "cad31dfbc1f4faad70cd7750e83172a01e5bb9ab",
+        "review_tree": "30b3e4d3406c29157a7736b8c9d03bb648ebb3d8",
+        "manifest_digest": "sha256:41289587280cbe90f402f36667460d66216c6cd44010f2e6f6750e1971dc7cc8"
+      },
+      "reviewer_verdict_sha256": "sha256:70c4c07fc6dd14d207010fd56b0131adac4ef2935bec9841d4a4c3cb206ac51f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-s2-committed-audit-reader:2026-10-30T06:02:08.717Z",
+      "at": "2026-10-30T06:02:08.717Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-s2-committed-audit-reader.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-s2-committed-audit-reader:2026-10-30T06:02:27.455Z",
+      "at": "2026-10-30T06:02:27.455Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5166450a\naction_v2_sha256:e8080ebd03f00b27929cab9ba8d570190cb9585a36409b2cbd2b369cb3cbeddc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-30T06:02:27.455Z"
+      }
+    },
+    {
+      "id": "record_approval:revisit-s2-committed-audit-reader:2026-10-30T06:03:56.725Z",
+      "at": "2026-10-30T06:03:56.725Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-844b2c79\naction_v2_sha256:cb6e1e1a570df44f4369e2b926bbc595a82409dafa146195b10acf4c27d6eea5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-10-30T06:03:56.725Z"
+      }
+    },
+    {
+      "id": "complete:revisit-s2-committed-audit-reader:2026-10-30T06:03:59.303Z",
+      "at": "2026-10-30T06:03:59.303Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:74f1283bd28ad8fafccea9fb827af2d41e9a89bb16ec330a9e0b9973f0c05464"
+    }
+  ]
+}

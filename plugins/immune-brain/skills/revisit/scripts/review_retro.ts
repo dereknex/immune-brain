@@ -3,6 +3,10 @@
  * Workflow-health retro over recent pi sessions: usage, rework signal and finding totals.
  *
  * Usage: bun review_retro.ts <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
+ *                                   [--audit <project-root> [--sessions] [--sample <n>]]
+ *
+ * Without --audit the session report runs. With --audit the committed-audit report runs (HEAD of one project,
+ * see audit_reader.ts) and session logs are read only when --sessions is also given.
  *
  * Counting rules (the 口径 that keeps the numbers honest):
  *   session              = one pi JSONL file; its header `cwd` drives --project / --exclude
@@ -21,6 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
+import { type AuditRun, AuditUsageError, readCommittedAudit, SKIP_REASONS } from "./audit_reader.ts";
 
 const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no findings?\b/i;
 const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
@@ -143,12 +148,29 @@ function findingEvent(author: string, finding: unknown): SessionEvent {
 	return { type: "finding", author, kind: BOOKKEEPING.test(summary) ? "bookkeeping" : String(f.kind ?? ""), summary };
 }
 
-type Args = { days: number; root: string; project: string; exclude: string[] };
+type Args = {
+	days: number;
+	root: string;
+	project: string;
+	exclude: string[];
+	audit: string;
+	sessions: boolean;
+	sample: number;
+};
 
-const USAGE = "usage: review_retro.ts <days> [--root <dir>] [--project <substr>] [--exclude <substr>]...";
+const USAGE =
+	"usage: review_retro.ts <days> [--root <dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]";
 
 function parseArgs(argv: string[]): Args {
-	const out: Args = { days: Number.NaN, root: join(homedir(), ".pi/agent/sessions"), project: "", exclude: [] };
+	const out: Args = {
+		days: Number.NaN,
+		root: join(homedir(), ".pi/agent/sessions"),
+		project: "",
+		exclude: [],
+		audit: "",
+		sessions: false,
+		sample: 10,
+	};
 	const rest: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i]!;
@@ -158,6 +180,13 @@ function parseArgs(argv: string[]): Args {
 			const v = argv[++i] ?? "";
 			if (!v) throw new Error(`--exclude needs a value; ${USAGE}`);
 			out.exclude.push(v);
+		} else if (a === "--audit") {
+			out.audit = argv[++i] ?? "";
+			if (!out.audit) throw new Error(`--audit needs a project root; ${USAGE}`);
+		} else if (a === "--sessions") out.sessions = true;
+		else if (a === "--sample") {
+			out.sample = Number(argv[++i]);
+			if (!Number.isInteger(out.sample) || out.sample < 1) throw new Error(`--sample needs a positive integer; ${USAGE}`);
 		} else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
 		else rest.push(a);
 	}
@@ -179,10 +208,110 @@ function listJsonl(root: string): string[] {
 	return paths;
 }
 
+function cutOf(days: number): { cutMs: number; cut: string } {
+	const cutMs = Date.now() - days * 86400000;
+	return { cutMs, cut: new Date(cutMs).toISOString().slice(0, 19) };
+}
+
 export async function run(argv: string[]): Promise<string> {
 	const args = parseArgs(argv);
-	const cutMs = Date.now() - args.days * 86400000;
-	const cut = new Date(cutMs).toISOString().slice(0, 19);
+	if (!args.audit) return sessionReport(args);
+	const audit = auditReport(args);
+	return args.sessions ? `${audit}\n${await sessionReport(args)}` : audit;
+}
+
+const DASH = "-";
+
+function cell(n: number | null): string {
+	return n === null ? DASH : String(n);
+}
+
+function sumOf(runs: AuditRun[], pick: (r: AuditRun) => number | null): number | null {
+	const values = runs.map(pick).filter((n): n is number => n !== null);
+	return values.length ? values.reduce((a, b) => a + b, 0) : null;
+}
+
+function findingCell(findings: Map<string, number>): string {
+	return [...findings.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : 1))
+		.map(([k, n]) => `${k}:${n}`)
+		.join(" ") || DASH;
+}
+
+function metrics(r: AuditRun): string {
+	return [
+		`qa_pass=${r.qaPass}`,
+		`qa_exec_fail=${r.qaExecutionFailures}`,
+		`review_rework=${r.reviewRework}`,
+		`review_pass=${r.reviewPass}`,
+		`compat_rev=${cell(r.compatibleRevisions)}`,
+		`breaking_rev=${r.breakingRevisions}`,
+		`user_rework=${cell(r.authorizedRework)}`,
+		`stops=${r.stops}`,
+		`bindings=${r.intentBindings}i/${r.diffBindings}d`,
+		`findings=${findingCell(r.findings)}`,
+	].join(" ");
+}
+
+function auditReport(args: Args): string {
+	let audit: ReturnType<typeof readCommittedAudit>;
+	try {
+		audit = readCommittedAudit(args.audit);
+	} catch (err) {
+		if (err instanceof AuditUsageError) throw new Error(`${err.message}; ${USAGE}`);
+		throw err;
+	}
+	const { cutMs, cut } = cutOf(args.days);
+	const inWindow = audit.runs.filter((r) => r.terminalizedMs >= cutMs);
+	const schemas = (["v4", "v3", "v2"] as const).map((v) => `${v}=${inWindow.filter((r) => r.schema === v).length}`);
+	const lifecycle = (state: string) => inWindow.filter((r) => r.lifecycle === state).length;
+	const ordered = [...inWindow].sort(
+		(a, b) => b.terminalizedMs - a.terminalizedMs || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+	);
+	const findings = new Map<string, number>();
+	for (const r of inWindow) for (const [k, n] of r.findings) findings.set(k, (findings.get(k) ?? 0) + n);
+
+	const lines: string[] = [];
+	const emit = (s = "") => lines.push(s);
+	emit(`audit: project root ${audit.projectRoot} | HEAD ${audit.head}`);
+	emit(
+		`window: last ${args.days}d (terminalized_at >= ${cut}Z) | terminal runs: ${inWindow.length} (done ${lifecycle("done")}, stopped ${lifecycle("stopped")}) | outside window: ${audit.runs.length - inWindow.length}`,
+	);
+	emit(`schemas: ${schemas.join(" ")}`);
+	emit(`skipped: ${SKIP_REASONS.map((reason) => `${reason}=${audit.skipped[reason]}`).join(" ")}`);
+	emit(
+		"bias: only merged terminal runs are present; unmerged Lane branches, non-terminal runs and stopped runs whose pair was never committed are absent.",
+	);
+	emit("counts are raw per-run facts; '-' marks a field the record schema cannot carry (not zero).");
+
+	emit("");
+	emit("=== totals ===");
+	emit(
+		[
+			`qa_pass=${cell(sumOf(inWindow, (r) => r.qaPass))}`,
+			`qa_exec_fail=${cell(sumOf(inWindow, (r) => r.qaExecutionFailures))}`,
+			`review_rework=${cell(sumOf(inWindow, (r) => r.reviewRework))}`,
+			`review_pass=${cell(sumOf(inWindow, (r) => r.reviewPass))}`,
+			`compat_rev=${cell(sumOf(inWindow, (r) => r.compatibleRevisions))}`,
+			`breaking_rev=${cell(sumOf(inWindow, (r) => r.breakingRevisions))}`,
+			`user_rework=${cell(sumOf(inWindow, (r) => r.authorizedRework))}`,
+			`stops=${cell(sumOf(inWindow, (r) => r.stops))}`,
+			`findings=${findingCell(findings)}`,
+		].join(" "),
+	);
+
+	emit("");
+	emit(`=== runs (newest terminalized_at first; ${Math.min(args.sample, ordered.length)} of ${ordered.length}) ===`);
+	if (ordered.length === 0) emit("(no committed terminal runs in this window)");
+	for (const r of ordered.slice(0, args.sample)) {
+		emit(`${r.terminalizedAt} ${r.lifecycle} ${r.schema} ${r.path}`);
+		emit(`    ${metrics(r)}`);
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+async function sessionReport(args: Args): Promise<string> {
+	const { cutMs, cut } = cutOf(args.days);
 	const filter: SessionFilter = { cutMs, project: args.project, exclude: args.exclude };
 	const tools = new Map<string, number>();
 	const tasks = new Set<string>();
