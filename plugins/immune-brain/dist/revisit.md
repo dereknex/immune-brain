@@ -123,10 +123,11 @@ Run the bundled analyzer with `bun`. The session reader imports only `node:` API
 Kernel's `readAuditTaskPair`, so Bun is the supported runtime.
 
 ```
-bun "<path-to-skill>/scripts/review_retro.ts" <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]
+bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <iso>]) [--json] [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]
 ```
 
-- `<days>` must be `> 0`.
+- `<days>` must be `> 0`; it resolves one absolute window. `--since` and `--until` select a reproducible half-open ISO window; `--until` defaults to now.
+- `--json` outputs the session evidence document with line pointers and candidate chains instead of the text report.
 - `--root` defaults to `~/.pi/agent/sessions`.
 - `--project` keeps sessions whose `cwd` contains the substring.
 - `--exclude` drops sessions whose `cwd` contains the substring; repeat it for

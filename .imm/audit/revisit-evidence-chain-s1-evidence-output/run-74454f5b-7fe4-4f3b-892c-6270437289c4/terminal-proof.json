@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "revisit-evidence-chain-s1-evidence-output",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:revisit-evidence-chain-s1-evidence-output:2026-10-30T09:13:59.582Z",
+  "final_record_hash": "sha256:f27ecc2ef13cb2f6df51f2af4a3e7b8d09e19a3b097b4c533810335c7a3050fc",
+  "terminalized_at": "2026-10-30T09:13:59.582Z"
+}
