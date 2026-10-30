@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "revisit-s3-candidate-improvements",
+  "owner": "user",
+  "goal": "The revisit audit report adds a Candidate improvements evidence section (repeat groups, infrastructure jitter, high-round per-run listings), dist/revisit.md carries the WER section 3-4 follow-through method with the fix ladder and the report-only rule, and the project-local workflow-evidence-retro Skill is deleted (#322 S3; Spec docs/specs/revisit-workflow-health.spec.md D6, D7, D10).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/review-retro-audit.test.ts, the Candidate improvements section groups in-window review findings by the normalized summary key of Spec D6; a group spanning two distinct runs is shown with its run count, finding count and up to three run-path#finding-id pointers, and a summary seen in only one run forms no group (Spec D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/review-retro-audit.test.ts, a finding whose summary records a missing or cleaned-up reviewer agent or an empty verdict is listed under infrastructure jitter and is not counted in the content-rework count, while an ordinary review finding in the same run is (Spec D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/review-retro-audit.test.ts, for a run with three or more review rework events the section prints one line per round with that round's finding acceptance ids and marks ids that repeat across rounds; a run with two review rework events gets no such listing (Spec D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "tests/rework-root-cause-contract.test.ts reads plugins/immune-brain/dist/revisit.md and finds the three per-task aggregation sentences formerly locked in the workflow-evidence-retro Skill, the cross-boundary trace, the fix-ladder order architecture > types > lint > test > docs, and the rule that each candidate ends with a copy-ready TaskIntent or issue draft and revisit creates no issue, TaskIntent, branch or commit (Spec D6, D7; #322-D1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": ".agents/skills/workflow-evidence-retro no longer exists, docs/reports/workflow-evidence-baseline.md no longer names workflow-evidence-retro and names revisit, and .changeset/revisit-s3-candidate-improvements.md declares a minor release of immune-brain (Spec D7, D10).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test ! -e .agents/skills/workflow-evidence-retro && ! grep -q workflow-evidence-retro docs/reports/workflow-evidence-baseline.md && grep -q revisit docs/reports/workflow-evidence-baseline.md && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-s3-candidate-improvements.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".agents/skills/workflow-evidence-retro/SKILL.md",
+    ".changeset/revisit-s3-candidate-improvements.md",
+    "docs/plans/revisit-s3-candidate-improvements.intent.json",
+    "docs/reports/workflow-evidence-baseline.md",
+    "docs/specs/revisit-workflow-health.spec.md",
+    "plugins/immune-brain/dist/revisit.md",
+    "plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
+    "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+    "tests/fixtures/review-retro-audit",
+    "tests/review-retro-audit.test.ts",
+    "tests/rework-root-cause-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

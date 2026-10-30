@@ -478,6 +478,7 @@ stateDiagram-v2
   recommended), or amend `imm-retro` to also read *committed* audit
   snapshots (never live `.imm/`)? The boundary was deliberate; this spec
   does not quietly reverse it.
+  **Superseded in part (2026-10-30, Derek; #322 decisions 2 and 11; ADR 0032 lands with `revisit-s2-committed-audit-reader`):** `revisit` (formerly `imm-retro`) reads committed `.imm/audit/**` of one named project at HEAD and computes lifecycle counts and raw per-run review counts only. Derived review metrics (rounds-to-pass median/p95, shares, the per-acceptance series, per-model breakdown) stay with S1's eval tooling as written; S1's TaskIntent is unchanged. See `docs/specs/revisit-workflow-health.spec.md` D5 and D8.
 - **D3 — Partial refutation.** **Adopted (2026-10-20): project kept-only rework, refuted claims archived on the record (S3 as written).** Project kept-only rework with refuted claims
   archived on the record (as designed above), or redispatch the reviewer
   on any refutation? The latter preserves a stricter reading of "never

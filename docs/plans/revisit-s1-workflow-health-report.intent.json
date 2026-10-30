@@ -1,0 +1,55 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "revisit-s1-workflow-health-report",
+  "owner": "user",
+  "goal": "The revisit session report becomes a workflow-health report: the model-load ranking retires, timestamps are parsed to epoch with a skipped count, --exclude filters sessions, rounds/task and finding totals lose the model key, author stays an event field, and the description names workflow health (#322 S1; Spec docs/specs/revisit-workflow-health.spec.md D1, D2, D9, D10).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/review-retro-analyzer.test.ts, run() over the committed session fixtures prints no model-ranking, review quality-and-score, or project x author table (no rev/100ed, avgSc, pass% or REJECT column) and still prints the usage section (sessions, turns, edits, tool histogram), rounds/task over all kept (cwd, task_id) pairs with task_id-less registrations counted separately, blocking/advisory/bookkeeping finding totals without a model key, and the dedupe line (Spec D1, D2; #322-D3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/review-retro-analyzer.test.ts, a session fixture whose lines carry an ISO timestamp with a non-UTC offset, a numeric epoch-millisecond timestamp, a missing timestamp, and an unparsable timestamp yields a report in which the first two are counted inside the window when they fall in it, and the header prints a skipped count of 2 for the missing and unparsable lines (Spec D2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/review-retro-analyzer.test.ts, run() with --exclude <substr> drops sessions whose cwd contains the substring, --exclude is repeatable, --project combined with --exclude keeps only sessions matching the project and none of the exclusions, and the header names the active filters (Spec D2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "In tests/review-retro-analyzer.test.ts, the session reader exported from review_retro.ts returns review and finding events carrying an author field equal to the model behind the most recent edit, write, multiedit or apply_patch in that session, and no-edit (review-only) when none precedes them (Spec D1; #322-D10).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "The revisit description in plugins/immune-brain/skills/revisit/SKILL.md and plugins/immune-brain/dist/revisit.md names a workflow-health retro and no longer names ranking models by cross-model review load; tests/skill-dist-consistency.test.ts asserts the new trigger tuple, and tests/direct-first-routing-contract.test.ts stays green over README.md (Spec D9; #322-D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/direct-first-routing-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": ".changeset/revisit-s1-workflow-health-report.md declares a minor release of immune-brain and states that the model-load ranking retired (Spec D10).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-s1-workflow-health-report.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/revisit-s1-workflow-health-report.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/plans/revisit-s1-workflow-health-report.intent.json",
+    "docs/specs/revisit-workflow-health.spec.md",
+    "plugins/immune-brain/dist/revisit.md",
+    "plugins/immune-brain/skills/revisit/SKILL.md",
+    "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+    "tests/fixtures/review-retro-contract/contract-app/s1.jsonl",
+    "tests/fixtures/review-retro/immune-brain/s1.jsonl",
+    "tests/fixtures/review-retro/other-app/s2.jsonl",
+    "tests/review-retro-analyzer.test.ts",
+    "tests/skill-dist-consistency.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
