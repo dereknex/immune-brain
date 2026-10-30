@@ -102,6 +102,15 @@ Committed audit (`--audit`):
 - Counts are raw. `revisit` computes no median, p95, share, rounds-to-pass,
   per-acceptance series or model column from audit records.
 
+- Candidate improvements section (evidence only, `--audit`): over in-window
+  review findings, repeat groups (same normalized summary in at least two
+  distinct runs, with run count, finding count and up to three
+  `run-path#finding-id` pointers), infrastructure jitter (a missing or
+  cleaned-up reviewer agent, or an empty verdict, kept out of the content
+  rework count) and, for every run with three or more review rework events,
+  one line per round with that round's finding acceptance ids, repeats marked
+  `*`. The analyzer suggests no improvement level and no disposition.
+
 Usage counters on the same pass: sessions with activity, assistant turns,
 edit counts, and a tool-call name histogram.
 
@@ -148,6 +157,57 @@ counts and the sample-bias line), then the totals and the per-run rows.
 
 Separate one-pass from rework by reading `rounds/task` on the kernel path.
 Call out a nonzero skipped count: the window is then a lower bound.
+
+## Follow-through
+
+Apply this method to the Candidate improvements section and the per-run rows.
+It is judgment over evidence, not analyzer output.
+
+1. Read all findings and the relevant event sequences for the sample, not only
+   keyword matches. For each proposed pattern, cite exact record paths and
+   finding or event IDs; separate observed facts, plausible explanations and
+   unknowns. Classify useful quality catches separately from process faults and
+   literal user decisions. Check counterexamples before ranking.
+2. Aggregate per task before proposing any pattern: group rounds by task identity
+   (working directory plus task id), report rounds per task, and for every task
+   at three or more rounds list each round's finding acceptance ids and mark
+   which ids repeat. Label a round whose recorded cause is a missing or cleaned-up
+   reviewer agent, or an empty verdict, as infrastructure jitter and keep it out
+   of the content-rework count. Zero-valued block or advisory columns in an
+   aggregate table do not describe a clean run; read the per-round findings for
+   any task with a high rounds-per-task value.
+3. For repeated cross-boundary findings, trace the evidence through the real
+   public/host entry, authorization and preconditions, changed behavior and state
+   owner, serialization or durable write, and reload and downstream consumer. For
+   rejection tests, ask whether the original state could succeed, whether only the
+   target condition changed, and whether the asserted rejection reason proves the
+   intended invariant. A test that fails because another prerequisite is missing
+   does not prove the claimed protection.
+4. Historical resolved findings show past rework, not current bugs. Before
+   proposing a current fix, inspect the named current paths or explicitly mark the
+   proposal as requiring reproduction. Repeated rework alone does not establish
+   that a task was too large or an authorization gate was unnecessary.
+5. Name up to three distinct opportunities, each with evidence, practical
+   consequence, uncertainty and a countercheck; return fewer if the evidence does
+   not support three.
+6. Choose one next improvement: the smallest change that addresses the
+   best-supported recurring pattern, with target behavior, likely files, focused
+   verification and a bounded follow-up sample. Prefer existing prompts, tests and
+   recovery mechanisms, and check that existing instructions do not already cover
+   it before adding text. Preserve authority and assurance boundaries; reduced
+   friction is not permission to bypass them.
+7. Fix ladder: place the fix at the strongest level that can hold it, in the order
+   architecture > types > lint > test > docs. A docs-only fix is justified only
+   when no higher level can express the rule.
+8. Report-only: each candidate ends with a copy-ready TaskIntent or issue draft.
+   `revisit` creates no issue, TaskIntent, branch or commit, and never resumes a
+   stopped managed run.
+
+Keep unavailable cost, escaped-defect and post-delivery outcome metrics unknown,
+and do not copy local metrics into standing rules.
+
+[The ten-task baseline](../../docs/reports/workflow-evidence-baseline.md) is a
+fixed historical worked example of this method, not a threshold for future tasks.
 
 ## Caveats
 

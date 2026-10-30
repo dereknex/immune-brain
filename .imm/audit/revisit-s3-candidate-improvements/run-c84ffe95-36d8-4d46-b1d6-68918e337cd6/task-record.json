@@ -1,0 +1,175 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-s3-candidate-improvements",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-s3-candidate-improvements",
+    "goal": "The revisit audit report adds a Candidate improvements evidence section (repeat groups, infrastructure jitter, high-round per-run listings), dist/revisit.md carries the WER section 3-4 follow-through method with the fix ladder and the report-only rule, and the project-local workflow-evidence-retro Skill is deleted (#322 S3; Spec docs/specs/revisit-workflow-health.spec.md D6, D7, D10).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/review-retro-audit.test.ts, the Candidate improvements section groups in-window review findings by the normalized summary key of Spec D6; a group spanning two distinct runs is shown with its run count, finding count and up to three run-path#finding-id pointers, and a summary seen in only one run forms no group (Spec D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/review-retro-audit.test.ts, a finding whose summary records a missing or cleaned-up reviewer agent or an empty verdict is listed under infrastructure jitter and is not counted in the content-rework count, while an ordinary review finding in the same run is (Spec D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/review-retro-audit.test.ts, for a run with three or more review rework events the section prints one line per round with that round's finding acceptance ids and marks ids that repeat across rounds; a run with two review rework events gets no such listing (Spec D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-audit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "tests/rework-root-cause-contract.test.ts reads plugins/immune-brain/dist/revisit.md and finds the three per-task aggregation sentences formerly locked in the workflow-evidence-retro Skill, the cross-boundary trace, the fix-ladder order architecture > types > lint > test > docs, and the rule that each candidate ends with a copy-ready TaskIntent or issue draft and revisit creates no issue, TaskIntent, branch or commit (Spec D6, D7; #322-D1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/rework-root-cause-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": ".agents/skills/workflow-evidence-retro no longer exists, docs/reports/workflow-evidence-baseline.md no longer names workflow-evidence-retro and names revisit, and .changeset/revisit-s3-candidate-improvements.md declares a minor release of immune-brain (Spec D7, D10).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test ! -e .agents/skills/workflow-evidence-retro && ! grep -q workflow-evidence-retro docs/reports/workflow-evidence-baseline.md && grep -q revisit docs/reports/workflow-evidence-baseline.md && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-s3-candidate-improvements.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".agents/skills/workflow-evidence-retro/SKILL.md",
+      ".changeset/revisit-s3-candidate-improvements.md",
+      "docs/plans/revisit-s3-candidate-improvements.intent.json",
+      "docs/reports/workflow-evidence-baseline.md",
+      "docs/specs/revisit-workflow-health.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "tests/fixtures/review-retro-audit",
+      "tests/review-retro-audit.test.ts",
+      "tests/rework-root-cause-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-s3-candidate-improvements.intent.json",
+    "content_hash": "sha256:b15ccaa35e79ed25c35b2fc347aafa7f742ccf14e910ca163c30b3299254e3b6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:b15ccaa35e79ed25c35b2fc347aafa7f742ccf14e910ca163c30b3299254e3b6",
+  "git_base_head": "ace00943d10b595a6aa6286b10a895415419927c",
+  "attestations": [
+    {
+      "id": "approval-qa-a8138a21",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:b15ccaa35e79ed25c35b2fc347aafa7f742ccf14e910ca163c30b3299254e3b6",
+      "diff_hash": "sha256:15cf32a3ba66df65dfe1bceffbc95b46f3251019c4b050a1d1601a8a3acdffcd",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:2020ec64a5c155b075ced042110fc4377e659c6822c240346aa451ae0db1a41e"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC1-3cfb2626-05da1a",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=1272B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-s3-candidate-improvements:2026-10-30T06:12:11.860Z",
+      "at": "2026-10-30T06:12:11.860Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-s3-candidate-improvements.intent.json"
+    },
+    {
+      "id": "request_rework:revisit-s3-candidate-improvements:2026-10-30T06:12:28.114Z",
+      "at": "2026-10-30T06:12:28.114Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:3d3fcc0457d9b22637cf3620bddf1fd7762d3e820ff5c6820c1dead3b3acaca1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-30T06:12:28.115Z"
+      }
+    },
+    {
+      "id": "resolve_finding:revisit-s3-candidate-improvements:2026-10-30T06:13:30.434Z",
+      "at": "2026-10-30T06:13:30.434Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC1-3cfb2626-05da1a\naction_v2_sha256:2a8833746a8ba83867055805d7d5a8a9161843c08313014fde93678e6447a148"
+    },
+    {
+      "id": "freeze_artifacts:revisit-s3-candidate-improvements:2026-10-30T06:13:35.547Z",
+      "at": "2026-10-30T06:13:35.547Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-s3-candidate-improvements.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-s3-candidate-improvements:2026-10-30T06:13:50.866Z",
+      "at": "2026-10-30T06:13:50.866Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a8138a21\naction_v2_sha256:b1ae3528711d3ccc60d72e8e9174ff69bd2a82094c3ec15b9aa22403351574f6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-10-30T06:13:50.867Z"
+      }
+    },
+    {
+      "id": "complete:revisit-s3-candidate-improvements:2026-10-30T06:13:52.543Z",
+      "at": "2026-10-30T06:13:52.543Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3274cad194215c4d8284823a21f38480182ab7ac645577a32f8d2c0e606ac7ea"
+    }
+  ]
+}

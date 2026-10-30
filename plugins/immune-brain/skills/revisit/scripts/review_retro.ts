@@ -25,12 +25,17 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import { type AuditRun, AuditUsageError, readCommittedAudit, SKIP_REASONS } from "./audit_reader.ts";
+import { type AuditRun, AuditUsageError, readCommittedAudit, type ReviewFinding, SKIP_REASONS } from "./audit_reader.ts";
 
 const BOOKKEEPING = /recorded cleanly|receipt recorded|round recorded|no findings?\b/i;
 const EDIT_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch"]);
 const NO_EDIT = "no-edit (review-only)";
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T/;
+/** A review finding that records a missing or cleaned-up reviewer agent, or an empty verdict, not a content defect. */
+const JITTER =
+	/(?:review(?:er)? agent|reserved foreground agent)\b[^.\n]{0,80}?\b(?:missing|cleaned[- ]?up|not found|not observed|no longer exists?|disappeared)\b|\b(?:missing|cleaned[- ]?up)\b[^.\n]{0,40}?review(?:er)? agent|\bempty (?:review )?verdict\b|\bverdict (?:was |is )?empty\b/i;
+const GROUP_POINTERS = 3;
+const HIGH_ROUND_REWORK = 3;
 
 function norm(a: unknown): Record<string, unknown> {
 	if (typeof a === "string") {
@@ -253,6 +258,68 @@ function metrics(r: AuditRun): string {
 	].join(" ");
 }
 
+/** Spec D6 key: lowercase, collapsed whitespace; backtick-quoted paths, hex digests and digits become placeholders. */
+export function summaryKey(summary: string): string {
+	return summary
+		.toLowerCase()
+		.replace(/`[^`]*(?:\/|\.[a-z0-9]+)[^`]*`/g, "<path>")
+		.replace(/\b(?:sha\d+:)?[0-9a-f]{8,}\b/g, "<hex>")
+		.replace(/\d+/g, "<n>")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+type Pointed = ReviewFinding & { run: AuditRun };
+
+function candidateImprovements(inWindow: AuditRun[], emit: (s?: string) => void): void {
+	const all: Pointed[] = inWindow.flatMap((run) => run.reviewFindings.map((f) => ({ ...f, run })));
+	const jitter = all.filter((f) => JITTER.test(f.summary));
+	const content = all.filter((f) => !JITTER.test(f.summary));
+
+	emit("");
+	emit("=== candidate improvements (evidence only; no improvement level or disposition is suggested) ===");
+	emit(`review findings: ${all.length} | content rework: ${content.length} | infrastructure jitter: ${jitter.length}`);
+
+	const groups = new Map<string, Pointed[]>();
+	for (const f of content) groups.set(summaryKey(f.summary), [...(groups.get(summaryKey(f.summary)) ?? []), f]);
+	const repeats = [...groups.entries()]
+		.map(([key, items]) => ({ key, items, runs: new Set(items.map((f) => f.run.path)).size }))
+		.filter((g) => g.runs >= 2)
+		.sort((a, b) => b.runs - a.runs || b.items.length - a.items.length || (a.key < b.key ? -1 : 1));
+	emit("-- repeat groups (same normalized summary in at least 2 runs) --");
+	if (repeats.length === 0) emit("(none)");
+	for (const g of repeats) {
+		emit(`runs=${g.runs} findings=${g.items.length} key: ${g.key.slice(0, 160)}`);
+		emit(`    ${g.items.slice(0, GROUP_POINTERS).map((f) => `${f.run.path}#${f.id}`).join(" ")}`);
+	}
+
+	emit("-- infrastructure jitter (kept out of the content rework count) --");
+	if (jitter.length === 0) emit("(none)");
+	for (const f of jitter) emit(`${f.run.path}#${f.id} ${f.summary.replace(/\s+/g, " ").slice(0, 120)}`);
+
+	emit(`-- high-round runs (>= ${HIGH_ROUND_REWORK} review rework events; acceptance ids per round, '*' = id repeats across rounds) --`);
+	const high = inWindow
+		.filter((r) => r.reworkRounds.length >= HIGH_ROUND_REWORK)
+		.sort((a, b) => b.reworkRounds.length - a.reworkRounds.length || (a.path < b.path ? -1 : 1));
+	if (high.length === 0) emit("(none)");
+	for (const r of high) {
+		emit(`${r.path} review_rework=${r.reworkRounds.length}`);
+		const rounds = [...new Set([...r.reworkRounds, ...r.reviewFindings.flatMap((f) => (f.round === null ? [] : [f.round]))])].sort(
+			(a, b) => a - b,
+		);
+		const idsOf = (round: number) => [...new Set(r.reviewFindings.filter((f) => f.round === round).map((f) => f.acceptanceId))];
+		const seen = new Map<string, number>();
+		for (const round of rounds) for (const id of idsOf(round)) seen.set(id, (seen.get(id) ?? 0) + 1);
+		for (const round of rounds) {
+			const ids = idsOf(round);
+			const jitterOnly =
+				ids.length > 0 && r.reviewFindings.filter((f) => f.round === round).every((f) => JITTER.test(f.summary));
+			const shown = ids.map((id) => (seen.get(id)! > 1 ? `${id}*` : id)).join(" ") || "(no findings)";
+			emit(`    round ${round}: ${shown}${jitterOnly ? " [infrastructure jitter]" : ""}`);
+		}
+	}
+}
+
 function auditReport(args: Args): string {
 	let audit: ReturnType<typeof readCommittedAudit>;
 	try {
@@ -307,6 +374,7 @@ function auditReport(args: Args): string {
 		emit(`${r.terminalizedAt} ${r.lifecycle} ${r.schema} ${r.path}`);
 		emit(`    ${metrics(r)}`);
 	}
+	candidateImprovements(inWindow, emit);
 	return `${lines.join("\n")}\n`;
 }
 

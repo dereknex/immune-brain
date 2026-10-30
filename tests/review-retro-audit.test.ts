@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -66,7 +67,9 @@ describe("revisit --audit committed pairs", () => {
 		cpSync(join(AUDIT_FIXTURES, DONE_V4), join(root, ".imm/audit", extra), { recursive: true });
 		const after = await run([WIDE, "--audit", root]);
 
-		expect(after).toBe(before);
+		// The window cutoff derives from the clock, so it may differ by a second between the two runs.
+		const stable = (out: string) => out.replace(/terminalized_at >= \S+/, "terminalized_at >= <cut>");
+		expect(stable(after)).toBe(stable(before));
 		expect([...rowsOf(after).keys()].sort()).toEqual([DONE_V2, DONE_V4, STOPPED_V4].sort());
 		expect(after).toContain(`project root ${root}`);
 		expect(after).toContain(`HEAD ${git(root, ["rev-parse", "HEAD"])}`);
@@ -185,15 +188,20 @@ describe("revisit --audit negative cases", () => {
 
 	test("the temporary export is removed after a read", async () => {
 		const root = auditRepo([DONE_V4]);
-		const before = exportDirs();
-		await run([WIDE, "--audit", root]);
-		expect(exportDirs()).toEqual(before);
+		// A private TMPDIR keeps concurrent runs of this file from adding exports to the listing.
+		const scratch = mkdtempSync(join(tmpdir(), "review-retro-scratch-"));
+		tmpDirs.push(scratch);
+		const saved = process.env.TMPDIR;
+		process.env.TMPDIR = scratch;
+		try {
+			await run([WIDE, "--audit", root]);
+			expect(readdirSync(scratch)).toEqual([]);
+		} finally {
+			if (saved === undefined) delete process.env.TMPDIR;
+			else process.env.TMPDIR = saved;
+		}
 	});
 });
-
-function exportDirs(): string[] {
-	return readdirSync(tmpdir()).filter((name) => name.startsWith("revisit-audit-"));
-}
 
 describe("revisit input selection", () => {
 	test("without --audit the session report runs and prints no audit header", async () => {
@@ -245,5 +253,168 @@ describe("revisit boundary contract", () => {
 		expect(blocked).toContain("SQLite");
 		expect(blocked).toContain("authority store");
 		expect(blocked).not.toContain("`.imm/audit/` lifecycle statistics");
+	});
+});
+
+type RecordShape = {
+	findings: Record<string, unknown>[];
+	history: { type: string; reason: string; authority?: { authority_kind: string } }[];
+};
+type Spec = { acceptance: string; round: number; summary: string };
+
+/**
+ * Add a run under `.imm/audit/` derived from the real DONE_V4 pair: its review findings and review rework events are
+ * replaced by `specs`, and the proof's `final_record_hash` is recomputed so the pair still verifies.
+ */
+function addRun(root: string, runId: string, specs: Spec[], reworkRounds: number[]): string {
+	const rel = `workflow-decision-closure-s4/run-${runId}`;
+	const dir = join(root, ".imm/audit", rel);
+	cpSync(join(AUDIT_FIXTURES, DONE_V4), dir, { recursive: true });
+	const record = JSON.parse(readFileSync(join(dir, "task-record.json"), "utf8")) as RecordShape;
+	const template = record.findings[0]!;
+	const rework = record.history.find((h) => h.type === "request_rework")!;
+	record.findings = specs.map((s, i) => ({
+		...template,
+		id: `${runId}-f${i + 1}`,
+		acceptance_id: s.acceptance,
+		review_round: s.round,
+		summary: s.summary,
+	}));
+	record.history = [
+		...record.history.filter((h) => h.type !== "request_rework"),
+		...reworkRounds.map((n) => ({ ...rework, id: `${rework.id}-${n}`, reason: `review_round_${n}\naction_v2_sha256:x` })),
+	];
+	const bytes = `${JSON.stringify(record, null, 2)}\n`;
+	writeFileSync(join(dir, "task-record.json"), bytes);
+	const proofPath = join(dir, "terminal-proof.json");
+	const proof = JSON.parse(readFileSync(proofPath, "utf8")) as Record<string, unknown>;
+	proof.final_record_hash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+	writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+	return rel;
+}
+
+function commitAll(root: string): void {
+	git(root, ["add", "-A"]);
+	git(root, ["commit", "-q", "-m", "runs"]);
+}
+
+/** The text of one `-- <title> ... --` block of the Candidate improvements section. */
+function block(out: string, title: string): string {
+	const section = out.slice(out.indexOf("=== candidate improvements"));
+	const start = section.indexOf(`-- ${title}`);
+	const rest = section.slice(start + 3);
+	const end = rest.search(/\n-- |\n===|$/);
+	return rest.slice(0, end);
+}
+
+describe("revisit --audit candidate improvements", () => {
+	const SUMMARY = "`src/a.ts`:10: handler ignores `src/path/x.ts` for sha256:0123456789abcdef0123 on round 3";
+
+	test("groups findings by normalized summary and needs two distinct runs", async () => {
+		const root = auditRepo([]);
+		const r1 = addRun(root, "r1", [{ acceptance: "A1", round: 1, summary: SUMMARY }], [1]);
+		const r2 = addRun(root, "r2", [{ acceptance: "A2", round: 1, summary: "`SRC/B.ts`:99:  Handler ignores `lib/other/y.ts` for sha256:fedcba9876543210fedc on  round 7" }], [1]);
+		const r3 = addRun(root, "r3", [{ acceptance: "A1", round: 1, summary: "something only this run says" }, { acceptance: "A1", round: 2, summary: "something only this run says" }], [1, 2]);
+		commitAll(root);
+
+		const out = await run([WIDE, "--audit", root]);
+		const repeat = block(out, "repeat groups");
+		expect(repeat).toContain("runs=2 findings=2 key:");
+		expect(repeat).toContain(`${r1}#r1-f1`);
+		expect(repeat).toContain(`${r2}#r2-f1`);
+		// Two findings with one summary inside a single run are not a repeat group.
+		expect(repeat).not.toContain("something only this run says");
+		expect(repeat).not.toContain(r3);
+	});
+
+	test("a group lists at most three run-path#finding-id pointers but counts every finding", async () => {
+		const root = auditRepo([]);
+		for (const id of ["r1", "r2", "r3", "r4"]) {
+			addRun(root, id, [{ acceptance: "A1", round: 1, summary: "same defect everywhere" }], [1]);
+		}
+		commitAll(root);
+
+		const repeat = block(await run([WIDE, "--audit", root]), "repeat groups");
+		expect(repeat).toContain("runs=4 findings=4");
+		expect(repeat.match(/#r\d-f1/g)).toHaveLength(3);
+	});
+
+	test("a summary seen in only one run forms no group", async () => {
+		const root = auditRepo([]);
+		addRun(root, "r1", [{ acceptance: "A1", round: 1, summary: "unique one" }], [1]);
+		addRun(root, "r2", [{ acceptance: "A1", round: 1, summary: "unique two" }], [1]);
+		commitAll(root);
+
+		expect(block(await run([WIDE, "--audit", root]), "repeat groups")).toContain("(none)");
+	});
+
+	test("infrastructure jitter is listed apart and left out of the content rework count", async () => {
+		const root = auditRepo([]);
+		const rel = addRun(
+			root,
+			"r1",
+			[
+				{ acceptance: "A1", round: 1, summary: "The reviewer agent was cleaned up before it returned a verdict." },
+				{ acceptance: "A1", round: 2, summary: "Review returned an empty verdict." },
+				{ acceptance: "A1", round: 3, summary: "handler drops the bound check in src/x.ts" },
+			],
+			[1, 2, 3],
+		);
+		commitAll(root);
+
+		const out = await run([WIDE, "--audit", root]);
+		expect(out).toContain("review findings: 3 | content rework: 1 | infrastructure jitter: 2");
+		const jitter = block(out, "infrastructure jitter");
+		expect(jitter).toContain(`${rel}#r1-f1`);
+		expect(jitter).toContain(`${rel}#r1-f2`);
+		expect(jitter).not.toContain("r1-f3");
+		// Jitter never forms a repeat group, even when it repeats across runs.
+		addRun(root, "r2", [{ acceptance: "A1", round: 1, summary: "The reviewer agent was cleaned up before it returned a verdict." }], [1]);
+		commitAll(root);
+		expect(block(await run([WIDE, "--audit", root]), "repeat groups")).toContain("(none)");
+	});
+
+	test("a run with three review rework events lists each round's acceptance ids and marks repeats", async () => {
+		const root = auditRepo([]);
+		const rel = addRun(
+			root,
+			"r1",
+			[
+				{ acceptance: "A1", round: 1, summary: "s1" },
+				{ acceptance: "A2", round: 1, summary: "s2" },
+				{ acceptance: "A1", round: 2, summary: "s3" },
+				{ acceptance: "A3", round: 3, summary: "s4" },
+			],
+			[1, 2, 3],
+		);
+		commitAll(root);
+
+		const high = block(await run([WIDE, "--audit", root]), "high-round runs");
+		expect(high).toContain(`${rel} review_rework=3`);
+		expect(high).toContain("round 1: A1* A2");
+		expect(high).toContain("round 2: A1*");
+		expect(high).toContain("round 3: A3");
+	});
+
+	test("a run with two review rework events gets no per-round listing", async () => {
+		const root = auditRepo([]);
+		addRun(
+			root,
+			"r1",
+			[
+				{ acceptance: "A1", round: 1, summary: "s1" },
+				{ acceptance: "A1", round: 2, summary: "s2" },
+			],
+			[1, 2],
+		);
+		commitAll(root);
+
+		const high = block(await run([WIDE, "--audit", root]), "high-round runs");
+		expect(high).toContain("(none)");
+		expect(high).not.toContain("round 1:");
+	});
+
+	test("the session-only report has no candidate improvements section", async () => {
+		expect(await run(["7", "--root", SESSION_FIXTURES])).not.toContain("candidate improvements");
 	});
 });

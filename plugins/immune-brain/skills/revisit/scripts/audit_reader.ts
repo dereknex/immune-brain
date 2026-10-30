@@ -21,6 +21,14 @@ export const SKIP_REASONS: AuditSkipReason[] = ["incomplete", "proof_mismatch", 
 
 export type AuditSchema = "v2" | "v3" | "v4";
 
+export type ReviewFinding = {
+	id: string;
+	acceptanceId: string;
+	/** The `review_round` the record stamped on the finding; null when the schema carries none. */
+	round: number | null;
+	summary: string;
+};
+
 export type AuditRun = {
 	/** `<task>` for a flat pair, `<task>/run-<id>` for a run-scoped pair. */
 	path: string;
@@ -35,6 +43,10 @@ export type AuditRun = {
 	reviewPass: number;
 	/** `<source>/<status>` → finding count. */
 	findings: Map<string, number>;
+	/** Findings with `source: "review"`, in record order. */
+	reviewFindings: ReviewFinding[];
+	/** One entry per review rework event: the `review_round_<n>` it names, else its 1-based position. */
+	reworkRounds: number[];
 	/** null when the schema's history vocabulary has no such event. */
 	compatibleRevisions: number | null;
 	breakingRevisions: number;
@@ -52,8 +64,15 @@ export type CommittedAudit = {
 };
 
 type Attestation = { kind?: string; intent_content_hash?: string; diff_hash?: string };
-type HistoryEntry = { type?: string; authority?: { authority_kind?: string } };
-type Finding = { source?: string; status?: string };
+type HistoryEntry = { type?: string; reason?: string; authority?: { authority_kind?: string } };
+type Finding = {
+	id?: string;
+	source?: string;
+	status?: string;
+	acceptance_id?: string;
+	review_round?: number;
+	summary?: string;
+};
 type AnyRecord = {
 	contract: string;
 	approvals?: Attestation[];
@@ -110,6 +129,17 @@ function toRun(path: string, taskId: string, pair: NonNullable<ReturnType<typeof
 		findings.set(key, (findings.get(key) ?? 0) + 1);
 	}
 	const events = (type: string) => count(history, (h) => h.type === type);
+	const reviewFindings = record.findings
+		.filter((f) => f.source === "review")
+		.map((f) => ({
+			id: String(f.id ?? ""),
+			acceptanceId: String(f.acceptance_id ?? ""),
+			round: typeof f.review_round === "number" ? f.review_round : null,
+			summary: String(f.summary ?? ""),
+		}));
+	const reworkRounds = history
+		.filter((h) => h.type === "request_rework" && h.authority?.authority_kind === "review")
+		.map((h, i) => Number(/^review_round_(\d+)/.exec(h.reason ?? "")?.[1] ?? i + 1));
 	return {
 		path,
 		taskId,
@@ -119,9 +149,11 @@ function toRun(path: string, taskId: string, pair: NonNullable<ReturnType<typeof
 		terminalizedMs,
 		qaPass: count(attestations, (a) => a.kind === "qa"),
 		qaExecutionFailures: count(record.findings, (f) => f.source === "execution"),
-		reviewRework: count(history, (h) => h.type === "request_rework" && h.authority?.authority_kind === "review"),
+		reviewRework: reworkRounds.length,
 		reviewPass: count(attestations, (a) => a.kind === "review"),
 		findings,
+		reviewFindings,
+		reworkRounds,
 		compatibleRevisions: schema === "v2" ? null : events("revise_intent"),
 		breakingRevisions: events("approve_breaking_intent_revision"),
 		authorizedRework: schema === "v2" ? null : events("authorize_rework"),
