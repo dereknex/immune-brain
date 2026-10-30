@@ -1,5 +1,17 @@
 # Changelog
 
+## 7.1.0
+
+### Minor Changes
+
+- [#335](https://github.com/dereknex/immune-brain/pull/335) [`abbe38a`](https://github.com/dereknex/immune-brain/commit/abbe38a899c6be0e6ea3826844c795260597fccb) Thanks [@dereknex](https://github.com/dereknex)! - Emit pointed revisit session evidence and reproducible windows, with candidate chains and unverified markers.
+
+- [#335](https://github.com/dereknex/immune-brain/pull/335) [`431ad3e`](https://github.com/dereknex/immune-brain/commit/431ad3e37b10fca27b036e7b416049992ea193a5) Thanks [@dereknex](https://github.com/dereknex)! - Make `revisit` diagnose workflow friction through evidence-chain verification and a focused recommendation.
+
+### Patch Changes
+
+- [#329](https://github.com/dereknex/immune-brain/pull/329) [`efef21c`](https://github.com/dereknex/immune-brain/commit/efef21c8927168e22138ef0aad7af4711a638a32) Thanks [@dereknex](https://github.com/dereknex)! - `revisit` session finding totals now count a `submit_review` that omits its verdict: the analyzer applies the observed Review receipt (the verdict JSON in the latest Review `Agent` toolResult), as the Kernel does, and each submit consumes that receipt so findings are not counted twice. Previously these findings, the common case, were missing from blocking and advisory totals.
+
 ## 7.0.0
 
 ### Major Changes
