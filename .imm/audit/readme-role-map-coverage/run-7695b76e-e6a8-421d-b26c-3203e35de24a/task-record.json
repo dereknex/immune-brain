@@ -1,0 +1,95 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "readme-role-map-coverage",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "readme-role-map-coverage",
+    "goal": "bun test fails when the generated role map in plugins/immune-brain/README.md drifts from plugins/immune-brain/skills/registry.yaml, so a Managed run's focused QA catches the drift that only CI's sync-dist-docs --check caught before (observed: 431ad3e changed the registry without the plugin README, repaired by hand in 072d5aa). One README rendering function in scripts/skill-registry.ts serves both scripts/sync-dist-docs.ts and the test (#339). No user-visible change: test and build-script refactor only; scripts/ and tests/ are outside package.json files, so the packaged plugin and its README bytes do not change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/skill-registry-metadata-contract.test.ts, using renderReadmeWithRoleSection and readSkillRegistry imported from scripts/skill-registry.ts (the test holds no copy of the row or marker rendering): (positive) renderReadmeWithRoleSection(<current plugins/immune-brain/README.md>, readSkillRegistry(<repo root>)) returns the README unchanged byte for byte, which fails when a registry entry changes without the README as in 431ad3e; (negative) the same call with one entry's boundary changed returns text different from the README; (negative) a README source without the GENERATED start marker throws, and a source with the start marker but without the END marker throws.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-registry-metadata-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "scripts/sync-dist-docs.ts imports renderReadmeWithRoleSection from scripts/skill-registry.ts and no longer defines its own renderReadme function or END marker constant, and `bun scripts/sync-dist-docs.ts --check` exits 0 on the delivered tree (no README role map drift reported).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q 'renderReadmeWithRoleSection' scripts/sync-dist-docs.ts && ! grep -q 'function renderReadme(' scripts/sync-dist-docs.ts && ! grep -q 'END GENERATED: skill-registry-role-map' scripts/sync-dist-docs.ts && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/readme-role-map-coverage.intent.json",
+      "scripts/skill-registry.ts",
+      "scripts/sync-dist-docs.ts",
+      "tests/skill-registry-metadata-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/readme-role-map-coverage.intent.json",
+    "content_hash": "sha256:6b88764349a3a9e706449b68bb7916f67cb5cc6193749f7bc83c00f7e1e045da"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6b88764349a3a9e706449b68bb7916f67cb5cc6193749f7bc83c00f7e1e045da",
+  "git_base_head": "6565100d330dc2b1e26513b1a5a72ca828ca0de3",
+  "attestations": [
+    {
+      "id": "approval-qa-1f4e2690",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b88764349a3a9e706449b68bb7916f67cb5cc6193749f7bc83c00f7e1e045da",
+      "diff_hash": "sha256:b46b0e9d42816d5812c039cbfb8f7c043add3427aa0d1c85ba94ab1712ddc5bc",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:a7224eb663a9d740dec16540f7ec1b6f212ae1830f666c106c8b21ee15591e09",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a7224eb663a9d740dec16540f7ec1b6f212ae1830f666c106c8b21ee15591e09"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:a7224eb663a9d740dec16540f7ec1b6f212ae1830f666c106c8b21ee15591e09"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:readme-role-map-coverage:2026-11-01T12:24:53.738Z",
+      "at": "2026-11-01T12:24:53.738Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/readme-role-map-coverage.intent.json"
+    },
+    {
+      "id": "record_approval:readme-role-map-coverage:2026-11-01T12:24:58.163Z",
+      "at": "2026-11-01T12:24:58.163Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1f4e2690\naction_v2_sha256:7aa04763cd53771a17abd4b006e7c07b7c987d56b9cda546c4b09cb879d115ac",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-01T12:24:58.163Z"
+      }
+    },
+    {
+      "id": "complete:readme-role-map-coverage:2026-11-01T12:24:59.021Z",
+      "at": "2026-11-01T12:24:59.021Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b21cb9600d4ea408e3c32b00471142954be67132283a3997919fc3227aa1fc3f"
+    }
+  ]
+}

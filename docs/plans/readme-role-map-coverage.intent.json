@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "readme-role-map-coverage",
+  "owner": "user",
+  "goal": "bun test fails when the generated role map in plugins/immune-brain/README.md drifts from plugins/immune-brain/skills/registry.yaml, so a Managed run's focused QA catches the drift that only CI's sync-dist-docs --check caught before (observed: 431ad3e changed the registry without the plugin README, repaired by hand in 072d5aa). One README rendering function in scripts/skill-registry.ts serves both scripts/sync-dist-docs.ts and the test (#339). No user-visible change: test and build-script refactor only; scripts/ and tests/ are outside package.json files, so the packaged plugin and its README bytes do not change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/skill-registry-metadata-contract.test.ts, using renderReadmeWithRoleSection and readSkillRegistry imported from scripts/skill-registry.ts (the test holds no copy of the row or marker rendering): (positive) renderReadmeWithRoleSection(<current plugins/immune-brain/README.md>, readSkillRegistry(<repo root>)) returns the README unchanged byte for byte, which fails when a registry entry changes without the README as in 431ad3e; (negative) the same call with one entry's boundary changed returns text different from the README; (negative) a README source without the GENERATED start marker throws, and a source with the start marker but without the END marker throws.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-registry-metadata-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "scripts/sync-dist-docs.ts imports renderReadmeWithRoleSection from scripts/skill-registry.ts and no longer defines its own renderReadme function or END marker constant, and `bun scripts/sync-dist-docs.ts --check` exits 0 on the delivered tree (no README role map drift reported).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q 'renderReadmeWithRoleSection' scripts/sync-dist-docs.ts && ! grep -q 'function renderReadme(' scripts/sync-dist-docs.ts && ! grep -q 'END GENERATED: skill-registry-role-map' scripts/sync-dist-docs.ts && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/readme-role-map-coverage.intent.json",
+    "scripts/skill-registry.ts",
+    "scripts/sync-dist-docs.ts",
+    "tests/skill-registry-metadata-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
