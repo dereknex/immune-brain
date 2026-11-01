@@ -29,9 +29,8 @@ import {
 	ROLE_PROMPT_FILES,
 } from "./dist-sync-manifest.ts";
 import {
-	README_ROLE_MARKER,
 	readSkillRegistry,
-	renderReadmeRoleSection,
+	renderReadmeWithRoleSection,
 } from "./skill-registry.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,22 +82,11 @@ let wroteCount = 0;
 const missingSources: string[] = [];
 
 const readmePath = resolve(REPO_ROOT, "plugins/immune-brain/README.md");
-const readmeEndMarker = "<!-- END GENERATED: skill-registry-role-map -->";
-function renderReadme(source: string): string {
-	const start = source.indexOf(README_ROLE_MARKER);
-	const end = source.indexOf(
-		readmeEndMarker,
-		start + README_ROLE_MARKER.length,
-	);
-	if (start < 0 || end < 0) {
-		throw new Error(`README.md is missing ${README_ROLE_MARKER} markers`);
-	}
-	const generated = renderReadmeRoleSection(readSkillRegistry(REPO_ROOT));
-	return `${source.slice(0, start + README_ROLE_MARKER.length)}\n${generated}\n${source.slice(end)}`;
-}
-
 const readmeBefore = readFileSync(readmePath, "utf8");
-const readmeAfter = renderReadme(readmeBefore);
+const readmeAfter = renderReadmeWithRoleSection(
+	readmeBefore,
+	readSkillRegistry(REPO_ROOT),
+);
 if (readmeBefore !== readmeAfter) {
 	driftCount++;
 	if (checkOnly) console.log("DRIFT plugins/immune-brain/README.md role map");

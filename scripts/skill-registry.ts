@@ -118,3 +118,27 @@ ${rows}`;
 export const REGISTRY_CANONICAL = "plugins/immune-brain/skills/registry.yaml";
 export const REGISTRY_COPIES = ["plugins/immune-brain/dist/registry.yaml"];
 export const README_ROLE_MARKER = "<!-- GENERATED: skill-registry-role-map -->";
+export const README_ROLE_END_MARKER =
+	"<!-- END GENERATED: skill-registry-role-map -->";
+
+// Return `source` with the block between the role-map markers replaced by the
+// role map rendered from `entries`. Throws when either marker is missing, so a
+// README that lost its generated block fails instead of silently passing.
+export function renderReadmeWithRoleSection(
+	source: string,
+	entries: SkillRegistryEntry[],
+): string {
+	const start = source.indexOf(README_ROLE_MARKER);
+	if (start < 0) {
+		throw new Error(`README.md is missing ${README_ROLE_MARKER}`);
+	}
+	const end = source.indexOf(
+		README_ROLE_END_MARKER,
+		start + README_ROLE_MARKER.length,
+	);
+	if (end < 0) {
+		throw new Error(`README.md is missing ${README_ROLE_END_MARKER}`);
+	}
+	const generated = renderReadmeRoleSection(entries);
+	return `${source.slice(0, start + README_ROLE_MARKER.length)}\n${generated}\n${source.slice(end)}`;
+}

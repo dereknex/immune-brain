@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "readme-role-map-coverage",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:readme-role-map-coverage:2026-11-01T12:24:59.021Z",
+  "final_record_hash": "sha256:cd8977ef7df2607734bea097f51dadbf6b1ba15f0eb9bcacffb0e109ca8514ee",
+  "terminalized_at": "2026-11-01T12:24:59.021Z"
+}

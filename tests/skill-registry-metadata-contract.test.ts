@@ -2,6 +2,12 @@ import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { dirname, resolve } from "node:path"
+import {
+  README_ROLE_END_MARKER,
+  README_ROLE_MARKER,
+  readSkillRegistry,
+  renderReadmeWithRoleSection,
+} from "../scripts/skill-registry.ts"
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const SKILLS_REGISTRY = resolve(REPO_ROOT, "plugins/immune-brain/skills/registry.yaml")
@@ -139,5 +145,36 @@ describe("skill registry metadata contract", () => {
     const source = skillsEntries.map(serialize).sort()
     const dist = distEntries.map(serialize).sort()
     expect(dist).toEqual(source)
+  })
+
+  // The plugin README's role map is generated from the registry. Before this
+  // guard only CI's `sync-dist-docs --check` caught drift (431ad3e changed the
+  // registry without the plugin README; 072d5aa repaired it by hand) (#339).
+  describe("plugin README role map", () => {
+    const readme = readFileSync(resolve(REPO_ROOT, "plugins/immune-brain/README.md"), "utf-8")
+    const registry = readSkillRegistry(REPO_ROOT)
+
+    it("matches the role map rendered from the current registry", () => {
+      expect(renderReadmeWithRoleSection(readme, registry)).toBe(readme)
+    })
+
+    it("differs from the README when one registry entry changes", () => {
+      const changed = registry.map((entry, index) =>
+        index === 0 ? { ...entry, boundary: `${entry.boundary} (changed)` } : entry,
+      )
+      expect(renderReadmeWithRoleSection(readme, changed)).not.toBe(readme)
+    })
+
+    it("throws when the start marker is missing", () => {
+      expect(() => renderReadmeWithRoleSection(readme.replace(README_ROLE_MARKER, ""), registry)).toThrow(
+        README_ROLE_MARKER,
+      )
+    })
+
+    it("throws when the end marker is missing", () => {
+      expect(() =>
+        renderReadmeWithRoleSection(readme.replace(README_ROLE_END_MARKER, ""), registry),
+      ).toThrow(README_ROLE_END_MARKER)
+    })
   })
 })
