@@ -120,6 +120,14 @@ describe("revisit follow-through", () => {
 		expect(report).toContain("never used as a cause");
 	});
 
+	it("answers from events[] and pointed lines, reusing one window and scope", () => {
+		const cli = revisit.split("## CLI")[1].split("## Report")[0];
+		for (const field of ["`tool_call` (`tool_call_id`, `name`, `op`", "`tool_result` (`tool_call_id`, `call_line`, `is_error`", "`turn_end` (`stop_reason`)", "read it at `session#line`"]) expect(cli).toContain(field);
+		const locate = revisit.split("**Locate**")[1].split("**Verify**")[0];
+		for (const rule of ["filter by `type`", "join a result to its call through `call_line`", "Do not grep or parse raw session files"]) expect(locate).toContain(rule);
+		expect(revisit).toContain("the same `--project`/`--exclude`; never rerun with `<days>`");
+	});
+
 	it("judges stops from context, not calls or markers", () => {
 		for (const rule of ["A tool call is never a human confirmation", "read `request_stop` with its result", "quota error or tool interruption", "`continue` message alone", "pointed context, never by a regex", "bookkeeping and jitter labels are unverified markers"]) expect(revisit).toContain(rule);
 	});
