@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "decision-model-core",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:decision-model-core:2026-11-01T15:34:14.109Z",
+  "final_record_hash": "sha256:79391c5a4f7c0fdaa99d1525884918cda28c36aa4c97e143988467eb8f856fde",
+  "terminalized_at": "2026-11-01T15:34:14.109Z"
+}
