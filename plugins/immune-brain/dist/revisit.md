@@ -128,7 +128,13 @@ bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <
 ```
 
 - `<days>` must be `> 0`; it resolves one absolute window. `--since` and `--until` select a reproducible half-open ISO window; `--until` defaults to now.
-- `--json` outputs the session evidence document with line pointers and candidate chains instead of the text report.
+- `--json` outputs the `immune_brain/revisit_evidence/v2` session evidence
+  document instead of the text report: line pointers, sessions with activity in
+  the window, and candidates grouped by kind and key (`occurrences` plus every
+  chain). A resume after an `error` or `aborted` stop is an `error_resume`; a
+  `user_resume` chain also carries `last_result`, `last_result_is_error`,
+  `last_result_state` and `reply_chars` to locate it. The text report prints
+  one line per group and at most five groups per kind.
 - `--root` defaults to `~/.pi/agent/sessions`.
 - `--project` keeps sessions whose `cwd` contains the substring.
 - `--exclude` drops sessions whose `cwd` contains the substring; repeat it for
@@ -166,7 +172,11 @@ formal findings and assurance history. Neither proves what only the other record
 
 1. **Locate** candidates from pointers and chains: counts, short-message matches
    and repeated acceptance ids only locate; they do not establish causes.
-2. **Verify** selected candidates (default about three). Rebuild prior state →
+2. **Verify** selected candidates (default about three). Select the candidate
+   groups that answer the user's question first. When the question points at no
+   specific kind, take the group with the most occurrences of each kind until
+   about three are selected. List every unselected group as not checked. Kinds
+   carry no fixed priority. Rebuild prior state →
    actual stop or failure → user or Host action → next state from the pointed
    evidence; classify each as necessary decision, valid quality catch, avoidable
    process friction, or unknown. State which candidates were checked and which

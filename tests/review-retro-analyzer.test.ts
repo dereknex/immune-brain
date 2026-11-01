@@ -20,12 +20,23 @@ function turn(timestamp: unknown, call: { name: string; id: string; arguments?: 
 	});
 }
 
-function sessionRoot(lines: string[]): { root: string; cleanup: () => void } {
+function sessionFiles(files: Record<string, string[]>): { root: string; cleanup: () => void } {
 	const root = mkdtempSync(join(tmpdir(), "review-retro-"));
 	mkdirSync(join(root, "proj"));
-	writeFileSync(join(root, "proj", "s.jsonl"), `${lines.join("\n")}\n`);
+	for (const [name, lines] of Object.entries(files)) writeFileSync(join(root, "proj", name), `${lines.join("\n")}\n`);
 	return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
+
+function sessionRoot(lines: string[]): { root: string; cleanup: () => void } {
+	return sessionFiles({ "s.jsonl": lines });
+}
+
+const stamp = (n: number) => `2099-01-01T00:00:${String(n).padStart(2, "0")}Z`;
+const kernelCall = (n: number, id: string, action: object, task = "t") => turn(stamp(n), { name: "imm_kernel_canary", id, arguments: { task_id: task, action } });
+const toolResult = (n: number, id: string, value: object, isError = false) => JSON.stringify({ timestamp: stamp(n), message: { role: "toolResult", toolCallId: id, isError, content: JSON.stringify(value) } });
+const userInput = (n: number, text = "continue") => JSON.stringify({ timestamp: stamp(n), message: { role: "user", content: text } });
+const turnEnd = (n: number, stopReason: string) => JSON.stringify({ timestamp: stamp(n), message: { role: "assistant", stopReason, content: [] } });
+const candidateSection = (report: string) => report.slice(report.indexOf("=== candidate chains"), report.indexOf("user inputs:")).split("\n").slice(1).filter(Boolean);
 
 describe("review-retro analyzer", () => {
 	test("reports usage, rounds/task and finding totals without any model ranking", async () => {
@@ -204,7 +215,7 @@ describe("review-retro analyzer", () => {
 			const output = await run([...args, "--json"]);
 			expect(await run([...args, "--json"])).toBe(output);
 			const doc = JSON.parse(output);
-			expect(doc.contract).toBe("immune_brain/revisit_evidence/v1");
+			expect(doc.contract).toBe("immune_brain/revisit_evidence/v2");
 			expect(doc.window).toEqual({ since: "2099-01-01T00:00:00.000Z", until: "2099-01-01T00:00:05.000Z" });
 			expect(doc.scope.root).toBe(root);
 			expect(doc.sessions[0].session_id).toBe("session-1");
@@ -225,36 +236,116 @@ describe("review-retro analyzer", () => {
 		} finally { cleanup(); }
 	});
 
-	test("locates candidate chains without assigning causes", async () => {
-		const stamp = (n: number) => `2099-01-01T00:00:${String(n).padStart(2, "0")}Z`;
-		const call = (n: number, id: string, action: object, task = "t") => turn(stamp(n), { name: "imm_kernel_canary", id, arguments: { task_id: task, action } });
-		const result = (n: number, id: string, value: object) => JSON.stringify({ timestamp: stamp(n), message: { role: "toolResult", toolCallId: id, content: JSON.stringify(value) } });
-		const user = (n: number) => JSON.stringify({ timestamp: stamp(n), message: { role: "user", content: "continue" } });
-		const end = (n: number) => JSON.stringify({ timestamp: stamp(n), message: { role: "assistant", stopReason: "error", content: [] } });
+	test("groups candidate chains by kind and key without assigning causes", async () => {
 		const finding = { kind: "blocking", acceptance_id: "A", summary: "defect" };
 		const { root, cleanup } = sessionRoot([
 			JSON.stringify({ type: "session", cwd: "/project" }),
-			call(0, "a", { op: "submit_review", verdict: { findings: [finding] } }),
-			call(1, "b", { op: "submit_review", verdict: { findings: [finding] } }),
-			call(2, "c", { op: "submit_review" }),
-			call(3, "d", { op: "status" }),
-			result(4, "d", { batch_id: "batch", batch_state: "needs_human" }),
-			result(5, "d", { batch_id: "batch", batch_state: "running" }),
-			result(6, "d", { batch_id: "batch", batch_state: "needs_human" }),
-			end(7), user(8), call(9, "e", { op: "status" }),
-			call(10, "stop", { op: "request_stop" }),
-			result(11, "stop", { state: "applied", lifecycle: "stopped" }),
-			end(12), user(13), call(14, "f", { op: "status" }),
-			end(15), user(16), call(17, "g", { op: "status" }, "other"),
+			kernelCall(0, "a", { op: "submit_review", verdict: { findings: [finding] } }),
+			kernelCall(1, "b", { op: "submit_review", verdict: { findings: [finding] } }),
+			kernelCall(2, "c", { op: "submit_review" }),
+			kernelCall(3, "c2", { op: "submit_review" }),
+			kernelCall(4, "u", { op: "submit_review" }, "u"),
+			kernelCall(5, "d", { op: "status" }),
+			toolResult(6, "d", { batch_id: "batch", batch_state: "needs_human" }),
+			toolResult(7, "d", { batch_id: "batch", batch_state: "running" }),
+			toolResult(8, "d", { batch_id: "batch", batch_state: "needs_human" }),
+			turnEnd(9, "error"), userInput(10), kernelCall(11, "e", { op: "status" }),
 		]);
 		try {
-			const doc = JSON.parse(await run(["--since", stamp(0), "--until", stamp(18), "--root", root, "--json"]));
-			expect(doc.events.find((e: any) => e.type === "tool_result" && e.tool_call_id === "stop").stop_applied).toBe(true);
-			expect(doc.candidates.map((c: any) => c.kind).sort()).toEqual(["batch_oscillation", "repeated_block", "review_without_verdict", "user_resume"]);
-			for (const c of doc.candidates) {
-				expect(c.pointers.length).toBeLessThanOrEqual(5);
-				expect(Object.keys(c).sort()).toEqual(["key", "kind", "pointers"]);
+			const doc = JSON.parse(await run(["--since", stamp(0), "--until", stamp(12), "--root", root, "--json"]));
+			expect(doc.contract).toBe("immune_brain/revisit_evidence/v2");
+			expect(doc.candidates.map((g: any) => [g.kind, g.key, g.occurrences])).toEqual([
+				["repeated_block", "/project / t / A", 1],
+				["review_without_verdict", "/project / t", 2],
+				["review_without_verdict", "/project / u", 1],
+				["batch_oscillation", "batch", 1],
+				["error_resume", "/project / t", 1],
+			]);
+			for (const g of doc.candidates) {
+				expect(Object.keys(g).sort()).toEqual(["chains", "key", "kind", "occurrences"]);
+				expect(g.occurrences).toBe(g.chains.length);
+				for (const chain of g.chains) {
+					expect(Object.keys(chain)).toEqual(["pointers"]);
+					expect(chain.pointers.length).toBeLessThanOrEqual(5);
+					for (const p of chain.pointers) expect(p).toMatch(/#\d+$/);
+				}
 			}
+			expect(JSON.stringify(doc.candidates)).not.toMatch(/"(cause|class|severity)"/);
+		} finally { cleanup(); }
+	});
+
+	test("splits error_resume from user_resume and locates normal-stop resumes", async () => {
+		const { root, cleanup } = sessionFiles({
+			"a.jsonl": [
+				JSON.stringify({ type: "session", cwd: "/project" }),
+				kernelCall(0, "a", { op: "status" }),
+				toolResult(1, "a", { state: "blocked" }, true),
+				turnEnd(2, "stop"), userInput(3, "please go on"), kernelCall(4, "b", { op: "status" }),
+				turnEnd(5, "error"), userInput(6), kernelCall(7, "c", { op: "status" }),
+				turnEnd(8, "aborted"), userInput(9), kernelCall(10, "d", { op: "status" }),
+				turnEnd(11, "stop"), userInput(12), kernelCall(13, "e", { op: "status" }, "other"),
+				kernelCall(14, "s", { op: "request_stop" }),
+				toolResult(15, "s", { state: "applied", lifecycle: "stopped" }),
+				turnEnd(16, "stop"), userInput(17), kernelCall(18, "f", { op: "status" }),
+			],
+			"b.jsonl": [
+				JSON.stringify({ type: "session", cwd: "/fresh" }),
+				kernelCall(0, "x", { op: "status" }),
+				turnEnd(1, "stop"), userInput(2, "go"), kernelCall(3, "y", { op: "status" }),
+			],
+		});
+		try {
+			const doc = JSON.parse(await run(["--since", stamp(0), "--until", stamp(19), "--root", root, "--json"]));
+			expect(doc.events.find((e: any) => e.type === "tool_result" && e.tool_call_id === "s").stop_applied).toBe(true);
+			const resultA = doc.events.find((e: any) => e.type === "tool_result" && e.tool_call_id === "a");
+			expect(doc.candidates.map((g: any) => [g.kind, g.key, g.occurrences])).toEqual([
+				["user_resume", "/fresh / t", 1],
+				["user_resume", "/project / t", 1],
+				["error_resume", "/project / t", 2],
+			]);
+			const [fresh, located, errors] = doc.candidates;
+			expect(located.chains[0]).toEqual({
+				pointers: located.chains[0].pointers,
+				last_result: `${resultA.session}#${resultA.line}`,
+				last_result_is_error: true,
+				last_result_state: "blocked",
+				reply_chars: "please go on".length,
+			});
+			expect(fresh.chains[0]).toMatchObject({ last_result: null, last_result_is_error: null, last_result_state: null, reply_chars: 2 });
+			for (const chain of errors.chains) expect(Object.keys(chain)).toEqual(["pointers"]);
+		} finally { cleanup(); }
+	});
+
+	test("text report prints one line per group and at most five groups per kind", async () => {
+		const bareSubmits = (tasks: number) => sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/project" }),
+			...Array.from({ length: tasks }, (_, i) => kernelCall(i, `s${i}`, { op: "submit_review" }, `t${i}`)),
+			kernelCall(tasks, "again", { op: "submit_review" }, "t3"),
+		]);
+		const six = bareSubmits(6), five = bareSubmits(5);
+		try {
+			const sixLines = candidateSection(await run(["--since", stamp(0), "--until", stamp(10), "--root", six.root]));
+			expect(sixLines).toHaveLength(6);
+			expect(sixLines[0]).toMatch(/^review_without_verdict: \/project \/ t3 x2 \S+#\d+$/);
+			expect(sixLines.slice(1, 5).map(l => l.split(" ")[3])).toEqual(["t0", "t1", "t2", "t4"]);
+			for (const l of sixLines.slice(1, 5)) expect(l).toMatch(/ x1 \S+#\d+$/);
+			expect(sixLines[5]).toBe("review_without_verdict: +1 more groups (see --json)");
+			const fiveLines = candidateSection(await run(["--since", stamp(0), "--until", stamp(10), "--root", five.root]));
+			expect(fiveLines).toHaveLength(5);
+			expect(fiveLines.join("\n")).not.toContain("more groups");
+		} finally { six.cleanup(); five.cleanup(); }
+	});
+
+	test("sessions[] lists only sessions with activity in the window", async () => {
+		const { root, cleanup } = sessionFiles({
+			"active.jsonl": [JSON.stringify({ type: "session", id: "active", cwd: "/project" }), kernelCall(0, "a", { op: "status" })],
+			"idle.jsonl": [JSON.stringify({ type: "session", id: "idle", cwd: "/project" }), turn("2000-01-01T00:00:00Z", { name: "bash", id: "b" })],
+		});
+		try {
+			const args = ["--since", stamp(0), "--until", stamp(1), "--root", root];
+			const doc = JSON.parse(await run([...args, "--json"]));
+			expect(doc.sessions.map((s: any) => s.session_id)).toEqual(["active"]);
+			expect(await run(args)).toContain(`sessions with activity: ${doc.sessions.length} `);
 		} finally { cleanup(); }
 	});
 
