@@ -35,7 +35,9 @@ not enter this Skill.
 
 The window and project scope are asked once if not supplied, then reused for
 follow-up questions. Record the analyzer's absolute window and reuse it through
-`--since`/`--until`; do not ask again or silently move the window.
+`--since`/`--until`; do not ask again or silently move the window. Every
+later analyzer run in the same conversation passes that `--since`/`--until`
+and the same `--project`/`--exclude`; never rerun with `<days>`.
 
 Default scan is the user's full session-log tree. Pass `--project <substr>`
 when the user wants one repo or worktree, and `--exclude <substr>` (repeatable)
@@ -135,6 +137,13 @@ bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <
   `user_resume` chain also carries `last_result`, `last_result_is_error`,
   `last_result_state` and `reply_chars` to locate it. The text report prints
   one line per group and at most five groups per kind.
+- Every `events[]` entry carries `session`, `line`, `entry_id`, `timestamp`,
+  `role`, `cwd`, `task_id`, `run_id` and `type`: `user_input` (`skill`,
+  `instruction`, `chars`); `tool_call` (`tool_call_id`, `name`, `op`,
+  `author`); `tool_result` (`tool_call_id`, `call_line`, `is_error`, and
+  `state`, `lifecycle`, `batch_id`, `batch_state`, `stop_applied` when
+  present); `turn_end` (`stop_reason`); `review`; `registration`; `finding`.
+  Result text is not copied into events; read it at `session#line`.
 - `--root` defaults to `~/.pi/agent/sessions`.
 - `--project` keeps sessions whose `cwd` contains the substring.
 - `--exclude` drops sessions whose `cwd` contains the substring; repeat it for
@@ -172,6 +181,11 @@ formal findings and assurance history. Neither proves what only the other record
 
 1. **Locate** candidates from pointers and chains: counts, short-message matches
    and repeated acceptance ids only locate; they do not establish causes.
+   Answer intervention and gate questions from `events[]`: filter by `type`,
+   `name` and `op`, join a result to its call through `call_line`, and read
+   result text only at the pointed `session#line`. Do not grep or parse raw
+   session files to rebuild what `events[]` already holds; a fact the document
+   lacks is reported as unknown or read at a pointed line.
 2. **Verify** selected candidates (default about three). Select the candidate
    groups that answer the user's question first. When the question points at no
    specific kind, take the group with the most occurrences of each kind until
