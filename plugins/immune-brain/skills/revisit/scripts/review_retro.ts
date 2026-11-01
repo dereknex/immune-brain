@@ -282,12 +282,30 @@ function auditReport(args: Args): string {
 	return `${lines.join("\n")}\n`;
 }
 
-type Candidate = { kind: string; key: string; pointers: string[] };
-function candidates(events: SessionEvent[]): Candidate[] {
-	const result: Candidate[] = [];
+// Fixed display order; presentation only, never a priority (Spec revisit-candidate-triage D1).
+const KIND_ORDER = ["repeated_block", "review_without_verdict", "batch_oscillation", "user_resume", "error_resume"] as const;
+const GROUPS_PER_KIND = 5;
+type Chain = { pointers: string[]; last_result?: string | null; last_result_is_error?: boolean | null; last_result_state?: unknown; reply_chars?: number };
+type Occurrence = { kind: (typeof KIND_ORDER)[number]; key: string; chain: Chain };
+type CandidateGroup = { kind: string; key: string; occurrences: number; chains: Chain[] };
+
+function groupCandidates(found: Occurrence[]): CandidateGroup[] {
+	const groups = new Map<string, CandidateGroup>();
+	for (const { kind, key, chain } of found) {
+		const id = `${kind}\0${key}`;
+		const group = groups.get(id) ?? { kind, key, occurrences: 0, chains: [] };
+		group.chains.push(chain); group.occurrences = group.chains.length; groups.set(id, group);
+	}
+	const rank = (kind: string) => KIND_ORDER.indexOf(kind as Occurrence["kind"]);
+	return [...groups.values()].sort((a, b) => rank(a.kind) - rank(b.kind) || b.occurrences - a.occurrences || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+function candidates(events: SessionEvent[]): CandidateGroup[] {
+	const result: Occurrence[] = [];
 	const blocks = new Map<string, Map<string, SessionEvent>>();
 	const batches = new Map<string, { first: SessionEvent; gap?: SessionEvent }>();
-	const states = new Map<string, { last?: SessionEvent; stop?: SessionEvent; user?: SessionEvent; stopped: Set<number> }>();
+	type ResumeState = { last?: SessionEvent; stop?: SessionEvent; stopResult?: SessionEvent; user?: SessionEvent; result?: SessionEvent; stopped: Set<number> };
+	const states = new Map<string, ResumeState>();
 	const pointer = (event: SessionEvent) => `${event.session}#${event.line}`;
 	for (const e of events) {
 		const state = states.get(e.session) ?? { stopped: new Set<number>() };
@@ -297,29 +315,36 @@ function candidates(events: SessionEvent[]): Candidate[] {
 			const registrations = blocks.get(key) ?? new Map<string, SessionEvent>();
 			registrations.set(`${e.session}#${e.registration_index}`, e); blocks.set(key, registrations);
 		}
-		if (e.type === "registration" && e.without_verdict) result.push({ kind: "review_without_verdict", key: `${e.cwd} / ${e.task_id}`, pointers: [pointer(e)] });
+		if (e.type === "registration" && e.without_verdict) result.push({ kind: "review_without_verdict", key: `${e.cwd} / ${e.task_id}`, chain: { pointers: [pointer(e)] } });
 		if (e.type === "tool_result") {
+			state.result = e;
 			if (e.stop_applied && e.call_line !== null) state.stopped.add(e.call_line);
 			if (typeof e.batch_id === "string" && typeof e.batch_state === "string") {
 				const previous = batches.get(e.batch_id);
 				if (e.batch_state === "needs_human") {
-					if (previous?.gap) result.push({ kind: "batch_oscillation", key: e.batch_id, pointers: [pointer(previous.first), pointer(previous.gap), pointer(e)] });
+					if (previous?.gap) result.push({ kind: "batch_oscillation", key: e.batch_id, chain: { pointers: [pointer(previous.first), pointer(previous.gap), pointer(e)] } });
 					batches.set(e.batch_id, { first: e });
 				} else if (previous && !previous.gap) previous.gap = e;
 			}
 		}
 		if (e.type === "turn_end" && ["stop", "error", "aborted"].includes(e.stop_reason)) {
-			state.stop = e; state.user = undefined;
+			state.stop = e; state.stopResult = state.result; state.user = undefined;
 		} else if (e.type === "user_input" && state.stop) state.user = e;
 		else if (e.type === "tool_call" && e.name === "imm_kernel_canary") {
-			if (state.stop && state.user && state.last && state.last.task_id !== "unknown" && e.task_id === state.last.task_id && !state.stopped.has(state.last.line)) {
-				result.push({ kind: "user_resume", key: `${e.cwd} / ${e.task_id} / ${state.stop.type === "turn_end" ? state.stop.stop_reason : ""}`, pointers: [pointer(state.last), pointer(state.stop), pointer(state.user), pointer(e)] });
+			const { stop, user, last, stopResult } = state;
+			if (stop?.type === "turn_end" && user?.type === "user_input" && last && last.task_id !== "unknown" && e.task_id === last.task_id && !state.stopped.has(last.line)) {
+				const pointers = [pointer(last), pointer(stop), pointer(user), pointer(e)];
+				const key = `${e.cwd} / ${e.task_id}`;
+				if (stop.stop_reason === "stop") {
+					const located = stopResult?.type === "tool_result" ? stopResult : undefined;
+					result.push({ kind: "user_resume", key, chain: { pointers, last_result: located ? pointer(located) : null, last_result_is_error: located ? located.is_error : null, last_result_state: located?.state ?? null, reply_chars: user.chars } });
+				} else result.push({ kind: "error_resume", key, chain: { pointers } });
 			}
 			state.last = e; state.stop = undefined; state.user = undefined;
 		}
 	}
-	for (const [key, registrations] of blocks) if (registrations.size >= 2) result.push({ kind: "repeated_block", key, pointers: [...registrations.values()].slice(0, 5).map(pointer) });
-	return result;
+	for (const [key, registrations] of blocks) if (registrations.size >= 2) result.push({ kind: "repeated_block", key, chain: { pointers: [...registrations.values()].slice(0, 5).map(pointer) } });
+	return groupCandidates(result);
 }
 
 async function sessionReport(args: Args): Promise<string> {
@@ -330,9 +355,11 @@ async function sessionReport(args: Args): Promise<string> {
 	for (const path of listJsonl(args.root)) {
 		const session = await readSession(path, filter);
 		if (!session) continue;
-		sessions.push({ path, cwd: session.cwd, session_id: session.session_id });
+		if (session.used) {
+			files++;
+			sessions.push({ path, cwd: session.cwd, session_id: session.session_id });
+		}
 		events.push(...session.events);
-		if (session.used) files++;
 		skipped += session.skipped; turns += session.turns; edits += session.edits;
 		for (const [name, n] of session.tools) bump(tools, name, n);
 		for (const ev of session.events) {
@@ -347,16 +374,20 @@ async function sessionReport(args: Args): Promise<string> {
 		}
 	}
 	const window = { since: new Date(args.since).toISOString(), until: new Date(args.until).toISOString() };
-	const chains = candidates(events);
-	if (args.json) return `${JSON.stringify({ contract: "immune_brain/revisit_evidence/v1", window, scope: { root: args.root, project: args.project, exclude: args.exclude }, skipped_lines: skipped, sessions, events, candidates: chains }, null, 2)}\n`;
+	const groups = candidates(events);
+	if (args.json) return `${JSON.stringify({ contract: "immune_brain/revisit_evidence/v2", window, scope: { root: args.root, project: args.project, exclude: args.exclude }, skipped_lines: skipped, sessions, events, candidates: groups }, null, 2)}\n`;
 	const lines: string[] = [], emit = (s = "") => lines.push(s);
 	const filters = [...(args.project ? [`project~${args.project}`] : []), ...args.exclude.map(s => `exclude~${s}`)];
 	emit(`window: ${window.since} <= t < ${window.until} | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped} | root: ${args.root}`);
 	emit(`filters: ${filters.length ? filters.join(", ") : "none"}`);
 	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
 	emit(""); emit("=== candidate chains (locating only; not causes) ===");
-	if (!chains.length) emit("(none)");
-	for (const c of chains) emit(`${c.kind}: ${c.key} ${c.pointers.join(" ")}`);
+	if (!groups.length) emit("(none)");
+	for (const kind of KIND_ORDER) {
+		const ofKind = groups.filter(g => g.kind === kind);
+		for (const g of ofKind.slice(0, GROUPS_PER_KIND)) emit(`${g.kind}: ${g.key} x${g.occurrences} ${g.chains[0]!.pointers.join(" ")}`);
+		if (ofKind.length > GROUPS_PER_KIND) emit(`${kind}: +${ofKind.length - GROUPS_PER_KIND} more groups (see --json)`);
+	}
 	emit(`user inputs: ${events.filter(e => e.type === "user_input").length}`);
 	emit(""); emit("=== findings (deduped per session) ===");
 	const uniqOf = (kind: string) => findUniq.get(kind)?.size ?? 0;

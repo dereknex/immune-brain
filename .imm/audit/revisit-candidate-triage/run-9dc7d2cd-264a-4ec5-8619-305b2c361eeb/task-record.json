@@ -1,0 +1,128 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-candidate-triage",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-candidate-triage",
+    "goal": "revisit groups candidate chains by kind and key in a v2 evidence document, lists at most five groups per kind in the text report, splits error_resume from user_resume and gives user_resume chains locating fields, lists only sessions with activity in sessions[], and dist/revisit.md carries the candidate-group selection rule (#336; Spec docs/specs/revisit-candidate-triage.spec.md D1-D6).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/review-retro-analyzer.test.ts, run([..., \"--json\"]) prints contract \"immune_brain/revisit_evidence/v2\"; candidates[] holds exactly one group per distinct (kind, key) with keys kind, key, occurrences and chains, where two occurrences of one key form one group with occurrences 2 and a single occurrence forms a group with occurrences 1; occurrences equals chains.length; every chain has at most five session#line pointers; no group or chain has a cause, class or severity field; groups are ordered by kind (repeated_block, review_without_verdict, batch_oscillation, user_resume, error_resume), then occurrences descending, then key ascending (Spec D1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/review-retro-analyzer.test.ts, the text report under \"=== candidate chains (locating only; not causes) ===\" prints one line per group as \"<kind>: <key> x<occurrences> <pointers of its first chain>\"; a kind with six groups prints five group lines plus \"<kind>: +1 more groups (see --json)\", and a kind with exactly five groups prints five group lines and no \"more groups\" line (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/review-retro-analyzer.test.ts, a turn_end with stopReason error or aborted, then a user_input, then a Kernel call on the same task_id yields an error_resume group and no user_resume; the same chain after stopReason stop yields user_resume and no error_resume; a resume on a different task_id yields neither; an applied request_stop followed by a user input and a same-task call yields neither; both kinds key on \"<cwd> / <task_id>\"; each user_resume chain carries last_result (the session#line of the last tool_result before the turn_end, or null when the session has none), last_result_is_error, last_result_state (null when the result has no state) and reply_chars equal to the chars of the last user_input before the resume (Spec D2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/review-retro-analyzer.test.ts, with two session files under --root where one has in-window lines and the other only out-of-window lines, --json sessions[] lists only the first, and sessions.length equals the \"sessions with activity\" count in the text header for the same arguments (Spec D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "tests/rework-root-cause-contract.test.ts finds in the Follow-through Verify step of plugins/immune-brain/dist/revisit.md the sentences \"Select the candidate groups that answer the user's question first\", \"take the group with the most occurrences of each kind until about three are selected\", \"List every unselected group as not checked\" and \"Kinds carry no fixed priority\"; the dist/revisit.md --json CLI bullet names revisit_evidence/v2 and error_resume; and .changeset/revisit-candidate-triage.md declares a minor release of immune-brain (Spec D5, D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/rework-root-cause-contract.test.ts && grep -q 'revisit_evidence/v2' plugins/immune-brain/dist/revisit.md && grep -q 'error_resume' plugins/immune-brain/dist/revisit.md && grep -Eq \\\"^['\\\\\\\"]?immune-brain['\\\\\\\"]?: minor$\\\" .changeset/revisit-candidate-triage.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-candidate-triage.md",
+      "docs/plans/revisit-candidate-triage.intent.json",
+      "docs/specs/revisit-candidate-triage.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "tests/review-retro-analyzer.test.ts",
+      "tests/rework-root-cause-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-candidate-triage.intent.json",
+    "content_hash": "sha256:f80ba5434b764e6302298899f258a089dffd45e752358d19a39d50dd8f007000"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f80ba5434b764e6302298899f258a089dffd45e752358d19a39d50dd8f007000",
+  "git_base_head": "dd3a3aef1dfa2f504f8bd756b99d7ac468362256",
+  "attestations": [
+    {
+      "id": "approval-qa-9ceb3830",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f80ba5434b764e6302298899f258a089dffd45e752358d19a39d50dd8f007000",
+      "diff_hash": "sha256:24821239ae3ab4a82e5289569646164af302dd0204095f674b0a2f4d4d160841",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:dab3175a4d71a432d43ac5548a15fc671b7c383c9ac6ea5d4661e0f1a6bd920d"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-candidate-triage:2026-11-01T04:30:27.131Z",
+      "at": "2026-11-01T04:30:27.131Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-candidate-triage.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-candidate-triage:2026-11-01T04:30:33.256Z",
+      "at": "2026-11-01T04:30:33.256Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9ceb3830\naction_v2_sha256:2d6c50340495c355cf758b5760d47a6fb8a493bb9e8b4357d63dd8941369a059",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-01T04:30:33.256Z"
+      }
+    },
+    {
+      "id": "complete:revisit-candidate-triage:2026-11-01T04:30:34.276Z",
+      "at": "2026-11-01T04:30:34.276Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:80c9bd6e60a896275e27c2a556aca8256239f3843ec796a23b4df1c1a323b8a7"
+    }
+  ]
+}

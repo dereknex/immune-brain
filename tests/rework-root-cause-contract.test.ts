@@ -106,7 +106,7 @@ describe("revisit follow-through", () => {
 		const follow = revisit.split("## Follow-through")[1].split("## Caveats")[0];
 		expect(follow.indexOf("**Locate**")).toBeLessThan(follow.indexOf("**Verify**"));
 		expect(follow.indexOf("**Verify**")).toBeLessThan(follow.indexOf("**Recommend**"));
-		for (const rule of ["only locate", "default about three", "prior state → actual stop or failure → user or Host action → next state", "necessary decision, valid quality catch, avoidable process friction, or unknown", "which candidates were checked and which were not", "at most three findings", "observation → causal evidence → counterexample or unknown → direction", "not enough evidence to change anything"]) {
+		for (const rule of ["only locate", "default about three", "Select the candidate groups that answer the user's question first", "take the group with the most occurrences of each kind until about three are selected", "List every unselected group as not checked", "Kinds carry no fixed priority","prior state → actual stop or failure → user or Host action → next state", "necessary decision, valid quality catch, avoidable process friction, or unknown", "which candidates were checked and which were not", "at most three findings", "observation → causal evidence → counterexample or unknown → direction", "not enough evidence to change anything"]) {
 			expect(follow).toContain(rule);
 		}
 	});
