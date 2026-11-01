@@ -1,0 +1,79 @@
+{
+  "pr_target": {
+    "number": 7,
+    "repository": "acme/widgets",
+    "head_repository": "acme/widgets",
+    "head_sha": "0123456789abcdef0123456789abcdef01234567",
+    "branch": "feature/retry",
+    "base": "main",
+    "url": "https://github.com/acme/widgets/pull/7",
+    "mergeable": "MERGEABLE"
+  },
+  "checks": [],
+  "reviews": [
+    {
+      "id": 9001,
+      "url": "https://github.com/acme/widgets/pull/7#pullrequestreview-9001",
+      "author": "rev-a",
+      "state": "CHANGES_REQUESTED",
+      "body": "The retry loop never gives up; please bound it.",
+      "submitted_at": "2026-10-01T10:00:00Z",
+      "commit_id": "0123456789abcdef0123456789abcdef01234567"
+    },
+    {
+      "id": 9002,
+      "url": "https://github.com/acme/widgets/pull/7#pullrequestreview-9002",
+      "author": "rev-b",
+      "state": "APPROVED",
+      "body": "",
+      "submitted_at": "2026-10-02T10:00:00Z",
+      "commit_id": "0123456789abcdef0123456789abcdef01234567"
+    }
+  ],
+  "comments": [
+    {
+      "id": 501,
+      "url": "https://github.com/acme/widgets/pull/7#issuecomment-501",
+      "author": "rev-b",
+      "body": "Could we also add metrics for retries? Maybe in a follow-up.",
+      "created_at": "2026-10-01T11:00:00Z",
+      "updated_at": "2026-10-01T11:00:00Z"
+    },
+    {
+      "id": 502,
+      "url": "https://github.com/acme/widgets/pull/7#issuecomment-502",
+      "author": "rev-c",
+      "body": "   ",
+      "created_at": "2026-10-01T12:00:00Z",
+      "updated_at": "2026-10-01T12:00:00Z"
+    }
+  ],
+  "review_threads": [
+    {
+      "id": "PRRT_a",
+      "path": "src/retry.ts",
+      "line": 12,
+      "body": "This loop has no upper bound.",
+      "comments": [
+        { "id": "PRRC_1", "url": "https://github.com/acme/widgets/pull/7#discussion_r1", "author": { "login": "rev-a" }, "body": "This loop has no upper bound.", "createdAt": "2026-10-01T10:00:01Z", "updatedAt": "2026-10-01T10:00:01Z" },
+        { "id": "PRRC_2", "url": "https://github.com/acme/widgets/pull/7#discussion_r2", "author": { "login": "author" }, "body": "Fixed, capped at 5.", "createdAt": "2026-10-01T13:00:00Z", "updatedAt": "2026-10-01T13:00:00Z" }
+      ],
+      "isResolved": true,
+      "isOutdated": false,
+      "viewerCanResolve": true
+    },
+    {
+      "id": "PRRT_b",
+      "path": "src/retry.ts",
+      "line": 30,
+      "body": "nit: prefer const here",
+      "comments": [
+        { "id": "PRRC_3", "url": "https://github.com/acme/widgets/pull/7#discussion_r3", "author": { "login": "rev-c" }, "body": "nit: prefer const here", "createdAt": "2026-10-01T14:00:00Z", "updatedAt": "2026-10-01T14:00:00Z" }
+      ],
+      "isResolved": false,
+      "isOutdated": false,
+      "viewerCanResolve": true
+    }
+  ],
+  "conflicts": { "has_conflicts": false, "files": [] }
+}

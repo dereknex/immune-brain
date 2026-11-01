@@ -184,6 +184,10 @@ _Avoid_: progressive ticket creation, Enrollment, task activation
 A presentation-level compression of the Managed Path for small tasks. It may reduce ceremony but never bypasses TaskIntent scope, Enrollment, QA, Review, authorization, or settlement.
 _Avoid_: bypass, reduced assurance
 
+**Decision model**:
+A hosted model that answers a closed question with a probability for every allowed option (for example Cloudflare Clef). Offline tooling reaches it only through `decide()` in `scripts/decision-model/`, which binds one profile per application point, enforces the sensitive-input egress allowlist and returns a result envelope or an `unavailable` reason; the runtime never calls it (ADR 0006).
+_Avoid_: LLM judge, classifier service, model authority
+
 **Domain Mapper**:
 A read-only bounded architecture probe that returns structural evidence for its host. It is an advisory Internal Role pattern, not an execution or planning authority.
 _Avoid_: autonomous refactoring agent, Planner
@@ -257,6 +261,7 @@ The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). D
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude and Pi host adapters are callers only.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.
+- Decision models: `scripts/decision-model/` holds the offline `decide()` component, its provider adapters and the code-owned application-point registry; `.imm/decision-bindings.json` (tracked) binds points to profiles and lists sensitive egress, `.imm/decision-models.local.json` (ignored) names the local profiles. `scripts/decision-eval/` holds the offline evals that consume it. Nothing under `plugins/immune-brain/` imports either directory.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.
 - Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
 - Module documentation: when a module gains its own documentation, structure it as Interface / Invariants / Side Effects / Verification (the test command that proves it). Interface names what the module exposes, Invariants state what always holds, Side Effects name what it changes outside itself, Verification names the command — a module document without a Verification command is incomplete.

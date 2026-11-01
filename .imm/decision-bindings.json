@@ -1,0 +1,6 @@
+{
+  "contract": "immune_brain/decision_bindings/v1",
+  "default_profile": "default",
+  "bindings": {},
+  "egress": {}
+}

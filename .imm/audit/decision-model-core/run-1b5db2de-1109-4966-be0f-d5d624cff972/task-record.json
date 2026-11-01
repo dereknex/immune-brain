@@ -1,0 +1,210 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "decision-model-core",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "decision-model-core",
+    "goal": "A shared offline decision-model component (scripts/decision-model/) resolves one provider profile from the user-local .imm/decision-models.local.json and the tracked .imm/decision-bindings.json, enforces the sensitive-input egress allowlist before any request, calls Clef through Workers AI REST or a fake provider, validates the answer and returns a result envelope or an unavailable reason; the A14 PR comment triage eval (scripts/decision-eval/a14/) extracts a corpus from saved imm-pr-diag JSON and writes a dated JSON and Markdown report against the all_blocking baseline (#204, #286; Spec docs/specs/decision-model-core.spec.md D1-D8).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-model.test.ts, decide() with a temp root resolves bindings[point] over default_profile, and a bindings key present with null returns unavailable/no_binding even when default_profile is non-null; default_profile null with no binding returns no_binding; a missing local file returns no_local_config; a binding naming a profile absent from the local file returns unknown_profile; malformed JSON, an unknown top-level or profile key, an unknown application point in bindings and an unknown provider kind each return config_invalid; a jev profile returns unsupported_provider_kind; and none of these cases invokes the injected fetch (Spec D2, D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/decision-model.test.ts, for an application point with a sensitive input category (diff) and an egress map that does not list it for the profile's kind, decide() returns unavailable/egress_denied with a detail naming the category and the kind, and the injected fetch records zero calls (fake kind included, which records zero adapter invocations); with egress listing diff for clef the same request reaches fetch exactly once; listing a non-sensitive category (pr_comment) in egress returns config_invalid (Spec D4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/decision-model.test.ts, a clef profile with a stubbed fetch returning {success:true,result:{model,answers,usage}} yields a decided envelope, and the recorded request is POST https://api.cloudflare.com/client/v4/accounts/<env account id>/ai/run/@cf/cloudflare/clef with Authorization Bearer <env token> and a body holding model, state and one choice question keyed by the point id with the registry's criteria; an unset token env returns credential_missing with zero fetch calls; HTTP 500 and success:false return provider_error; probability keys differing from the option set, a probability sum of 1.002 and a choice outside the option set return invalid_response while a sum of 1.0009 is accepted; a fetch that never resolves within timeout_ms returns provider_error with detail timeout; usage.input_tokens equal to floor(0.99*context_window) gives truncation possible and one less gives none; and no result detail contains the token or account id value (Spec D5).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/decision-model.test.ts, a fake profile returns an envelope with exactly the fields application_point, question_type, option_set, probabilities, choice, confidence, provider_kind, profile, model, model_version, threshold_set_version, input_tokens, context_window and truncation, with threshold_set_version a14/v0 for a14_pr_comment_triage and truncation unknown; a fake adapter that throws returns unavailable/provider_error instead of throwing; and an import scan finds no import of plugins/immune-brain/runtime or plugins/immune-brain/.pi-extension in scripts/decision-model or scripts/decision-eval, and no import of scripts/decision-model or scripts/decision-eval under plugins/immune-brain (Spec D1, D5, D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "In tests/decision-eval-a14.test.ts, scripts/decision-eval/a14/extract.ts run on tests/fixtures/decision-eval/a14/pr-diag-sample.json writes one corpus row per review thread, non-empty PR comment and non-empty review body, with id <repository>#<number>/<thread|comment|review>/<item id>, gold unlabeled and rows sorted by id, and writes no row for an empty-body comment or review; re-extraction into a corpus holding a labelled row keeps its gold, labeler and labelled_at and keeps a row absent from the new diag; an existing row with gold \"maybe\" exits 1 printing invalid_gold_label and leaves the corpus file byte-identical (Spec D7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "In tests/decision-eval-a14.test.ts, scripts/decision-eval/a14/run.ts with --date 2026-11-01, a temp local config whose default profile is fake and a 4-row labelled corpus writes a14-2026-11-01.json with contract immune_brain/decision_eval_report/v1, counts, metrics (accuracy, decided_accuracy, macro_f1, per_class, brier, ece, coverage_at for 0.50..0.95), baseline all_blocking with accuracy and macro_f1, and cases[] each holding gold and either an envelope or {unavailable: reason}, plus a14-2026-11-01.md listing each case's choice, every option probability, model, model version, threshold-set version and truncation; when one case is unavailable, accuracy is lower than decided_accuracy; a corpus with no labelled rows exits 1 printing no_labelled_cases; and when every case is unavailable the run exits 2 printing no_cases_decided with the JSON report still written (Spec D8; BR-SCN-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "In tests/decision-model.test.ts, the committed .imm/decision-bindings.json parses to exactly {contract: immune_brain/decision_bindings/v1, default_profile: default, bindings: {}, egress: {}}, git check-ignore reports .imm/decision-models.local.json as ignored, and CONTEXT.md defines the term Decision model and names scripts/decision-model/ (Spec D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".gitignore",
+      ".imm/decision-bindings.json",
+      "CONTEXT.md",
+      "docs/plans/decision-model-core.intent.json",
+      "docs/specs/decision-model-core.spec.md",
+      "scripts/decision-eval/a14/extract.ts",
+      "scripts/decision-eval/a14/run.ts",
+      "scripts/decision-model/config.ts",
+      "scripts/decision-model/contract.ts",
+      "scripts/decision-model/decide.ts",
+      "scripts/decision-model/providers/clef.ts",
+      "scripts/decision-model/providers/fake.ts",
+      "scripts/decision-model/thresholds.ts",
+      "tests/decision-eval-a14.test.ts",
+      "tests/decision-model.test.ts",
+      "tests/fixtures/decision-eval/a14/README.md",
+      "tests/fixtures/decision-eval/a14/pr-diag-sample.json"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/decision-model-core.intent.json",
+    "content_hash": "sha256:fe95cd368cc57914311acfdc3c7b7b4e69803e13963815973963c6522c848117"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fe95cd368cc57914311acfdc3c7b7b4e69803e13963815973963c6522c848117",
+  "git_base_head": "c354ae84be74de586c3301ab011394bbe607b0da",
+  "attestations": [
+    {
+      "id": "approval-qa-2bd0fb5e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fe95cd368cc57914311acfdc3c7b7b4e69803e13963815973963c6522c848117",
+      "diff_hash": "sha256:cfc80eea6ba3ae36f8c8f783029c2a722a690c6f18d4e8cef1814c14ac68a110",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:e13e2d72a73e76e49f0965d2fd3ab1bc2be827bcd3c8f649cb4e8f2b7b409810"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6835eb01",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fe95cd368cc57914311acfdc3c7b7b4e69803e13963815973963c6522c848117",
+      "diff_hash": "sha256:cfc80eea6ba3ae36f8c8f783029c2a722a690c6f18d4e8cef1814c14ac68a110",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (commit 1022b08 has the single parent c354ae8 and tree 9a70d2c). Read all 17 added or modified paths in full. AC1 through AC7 are met at the Spec seams: decide() is tested with a temp root, injected env/fetch and a recording fetch, and the eval tests run both CLIs as subprocesses. The egress gate runs before credential lookup and before the adapter call, and the AC2 tests include a positive fetch-once control. One AbortSignal plus a race deadline covers both the request and the body read. Error details carry only status, error name or env var names, never credential values. Labels are validated before the merge and before any write. Accuracy counts unavailable cases as incorrect, and exit 2 happens after the report is written. Import isolation in both directions is pinned by a scan. Blast radius: tier low. The load-bearing paths are .gitignore (new ignore rule), the tracked config .imm/decision-bindings.json and the CONTEXT.md vocabulary. All code is new, offline and isolated under scripts/, with no runtime caller, migration or persisted Kernel shape.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c354ae84be74de586c3301ab011394bbe607b0da",
+        "review_commit": "1022b08022c8f57329b631428022cb280f6f8683",
+        "review_tree": "9a70d2ce31a451a7b607f19203ef51c3b10f3372",
+        "manifest_digest": "sha256:e7ecdbd825702d306d5c7f1e626d8f483704a557b091a55b08fbf30083aac019"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0ae780c814cf-1-review-1",
+          "acceptance_id": null,
+          "summary": "run.ts reports an invalid gold label as corpus_invalid: <parsed-row index + 1>, not the file line number, so the number shifts when the corpus has blank lines.",
+          "anchor": "sha256:a947357929f90071139ea7062c13b8dc3006a438d75c9f319dc948078a9672c9",
+          "evidence": {
+            "trigger": "A corpus with a blank first line and gold \"maybe\" on file line 2 → stderr prints corpus_invalid: 1 instead of corpus_invalid: 2, because parseCorpus skips blank lines and run.ts numbers its gold check by rows.forEach index.",
+            "caller_chain": [
+              "scripts/decision-eval/a14/run.ts:main",
+              "scripts/decision-eval/a14/extract.ts:parseCorpus"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC6"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b616f00b439f56a442c5ecdf8a5c160fbcd79f3e28fa58b7945d4e423eaa1bad"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:decision-model-core:2026-11-01T15:31:32.031Z",
+      "at": "2026-11-01T15:31:32.031Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/decision-model-core.intent.json"
+    },
+    {
+      "id": "record_approval:decision-model-core:2026-11-01T15:31:45.143Z",
+      "at": "2026-11-01T15:31:45.143Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2bd0fb5e\naction_v2_sha256:c083f7423bdf405561e390ac178a364c4b8d37b55b249c8ac576a5634e39d9da",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-01T15:31:45.143Z"
+      }
+    },
+    {
+      "id": "record_approval:decision-model-core:2026-11-01T15:34:12.175Z",
+      "at": "2026-11-01T15:34:12.175Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6835eb01\naction_v2_sha256:2eb22c2ad13f5d0c771be1ee67495cfe278f344ce28c91be90b15cfac754ee0e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-01T15:34:12.175Z"
+      }
+    },
+    {
+      "id": "complete:decision-model-core:2026-11-01T15:34:14.109Z",
+      "at": "2026-11-01T15:34:14.109Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:16f7f492fb85b3e05b4edd4285cc2ee4500eae5367dd4005e7f5055ded18cdaf"
+    }
+  ]
+}
