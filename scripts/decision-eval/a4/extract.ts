@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readCommittedAudit, AuditUsageError } from "../../../plugins/immune-brain/skills/revisit/scripts/audit_reader.ts";
-import { A4_FINDING_EQUIVALENCE } from "../../decision-model/thresholds.ts";
+import { A4_FINDING_EQUIVALENCE } from "../../../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 import { CliError, goldLabelsFor, parseJsonl } from "../harness.ts";
 
 export { CliError };

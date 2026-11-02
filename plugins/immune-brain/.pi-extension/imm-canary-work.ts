@@ -741,7 +741,8 @@ export default function (
 				const warnings = projection.warnings ?? [];
 				const gitIntegration = projection.git_integration ? { git_integration: projection.git_integration } : {};
 				const batchEvidence = projection.batch ? { batch: projection.batch } : {};
-				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...batchEvidence, ...(warnings.length > 0 ? { warnings } : {}) };
+				const configEvidence = projection.config ? { config: projection.config } : {};
+				const status = { plugin_version: PLUGIN_VERSION, ...state, ...gitIntegration, ...configEvidence, ...batchEvidence, ...(warnings.length > 0 ? { warnings } : {}) };
 				const details = {
 					state: "status",
 					operation: "status",
@@ -750,6 +751,7 @@ export default function (
 					artifact_state: state.artifact_state,
 					task_state: state,
 					...gitIntegration,
+					...configEvidence,
 					...batchEvidence,
 					...(warnings.length > 0 ? { warnings } : {}),
 					result: `${fresh}/${total} acceptance items fresh; ${blockers} blocker${blockers === 1 ? "" : "s"}${warnings.map((warning) => `; ${warning.message}`).join("")}`,

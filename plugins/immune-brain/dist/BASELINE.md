@@ -16,8 +16,9 @@
   operation, target, and impact — including a valid batch capability — stays
   usable without another gate.
 - The repository's `Git integration` preference decides whether the runtime
-  writes commits on its own (ADR 0024). `manual`, the default, writes none
-  outside batches: Enrollment stages its TaskIntent and Spec, and migration
+  writes commits on its own (ADR 0024). Set `git_integration` in tracked
+  `.imm/config.json`; the legacy instruction-file directive is deprecated.
+  `manual`, the default, writes none outside batches: Enrollment stages its TaskIntent and Spec, and migration
   leaves its diff for the user to commit however they prefer. `auto` keeps the
   precondition commits and commits each task's settled scoped paths when it
   settles `done`. Either way the runtime runs Git hooks normally and grants no

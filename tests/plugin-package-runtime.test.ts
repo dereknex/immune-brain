@@ -589,7 +589,8 @@ describe("plugin package runtime cutover parity", () => {
 		for (const contract of [packedCarrier]) {
 			expect(contract).toContain("Initiative carrier default: local");
 			expect(contract).toContain("Initiative carrier default: github");
-			expect(contract).toContain("A repository directive overrides the user-level directive");
+			expect(contract).toContain("`imm-kernel config --json`: use `initiative_carrier.value` and report its `source`");
+			expect(contract).not.toContain("A repository directive overrides the user-level directive");
 			expect(contract).toContain("There is no silent carrier default");
 			expect(contract).toContain(
 				"Never resolve to `local` or `github` because a source was absent or unreadable",

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR 0034
 ---
 
 # Lane preferences live in a local preset

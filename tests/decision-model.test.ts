@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import type { ApplicationPoint, DecideDeps, FetchLike, PointRegistry } from "../scripts/decision-model/contract.ts";
-import { decide } from "../scripts/decision-model/decide.ts";
-import { POINT_REGISTRY } from "../scripts/decision-model/thresholds.ts";
+import type { ApplicationPoint, DecideDeps, FetchLike, PointRegistry } from "../plugins/immune-brain/runtime/decision_model/contract.ts";
+import { decide } from "../plugins/immune-brain/runtime/decision_model/decide.ts";
+import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
+import { projectIdentity } from "../plugins/immune-brain/runtime/config/project_identity.ts";
+import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const A14 = "a14_pr_comment_triage";
@@ -37,8 +39,12 @@ function makeRoot(files: { bindings?: unknown; local?: unknown }): string {
 	const root = mkdtempSync(join(tmpdir(), "decision-model-"));
 	roots.push(root);
 	mkdirSync(join(root, ".imm"));
+	spawnSync("git", ["init", "-q"], { cwd: root });
 	const write = (name: string, value: unknown) => writeFileSync(join(root, ".imm", name), typeof value === "string" ? value : JSON.stringify(value));
-	if (files.bindings !== undefined) write("decision-bindings.json", files.bindings);
+	if (files.bindings !== undefined) {
+		write("decision-bindings.json", files.bindings);
+		spawnSync("git", ["add", ".imm/decision-bindings.json"], { cwd: root });
+	}
 	if (files.local !== undefined) write("decision-models.local.json", files.local);
 	return root;
 }
@@ -81,9 +87,63 @@ function deps(root: string, fetchImpl: FetchLike, over: Partial<DecideDeps> = {}
 	return { root, env: ENV, fetch: fetchImpl, ...over };
 }
 
+describe("layered decision configuration", () => {
+	test("applies project overrides, enabled points and the egress ceiling before fetch", async () => {
+		const root = makeRoot({});
+		const original = process.env.XDG_CONFIG_HOME;
+		process.env.XDG_CONFIG_HOME = join(root, "config");
+		const userDir = join(root, "config/immune-brain");
+		mkdirSync(userDir, { recursive: true });
+		const user = { contract: "immune_brain/user_config/v1", decision_models: { profiles: { global: fakeProfile(), chosen: fakeProfile(), sensitive: clefProfile() }, bindings: { [A14]: "global", [DIFF_POINT.id]: "sensitive" }, egress: { clef: ["diff"] } }, projects: { [projectIdentity(root)]: { decision_models: { bindings: { [A14]: "chosen" } } } } };
+		const project = { contract: "immune_brain/project_config/v1", decision_models: { enabled_points: [A14], egress: { clef: [] } } };
+		try {
+			writeFileSync(join(userDir, "config.json"), JSON.stringify(user));
+			writeFileSync(join(root, ".imm/config.json"), JSON.stringify(project));
+			spawnSync("git", ["add", ".imm/config.json"], { cwd: root });
+			const rec = recordingFetch();
+			const chosen = await decide({ point: A14, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }));
+			expect(chosen.status === "decided" && chosen.envelope.profile).toBe("chosen");
+			expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "point_disabled" });
+			project.decision_models.enabled_points.push(DIFF_POINT.id);
+			writeFileSync(join(root, ".imm/config.json"), JSON.stringify(project));
+			expect(await decide({ point: DIFF_POINT.id, state: "s" }, deps(root, rec.fetch, { registry: DIFF_REGISTRY }))).toMatchObject({ reason: "egress_denied" });
+			expect(rec.calls).toHaveLength(0);
+		} finally {
+			if (original === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = original;
+		}
+	});
+
+	test("legacy sources answer with a deprecation warning", async () => {
+		const root = makeRoot({ bindings: bindingsFile(), local: { profiles: { default: fakeProfile() } } });
+		expect((await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch))).status).toBe("decided");
+		expect(resolveConfig(root).diagnostics.some((d) => d.code === "deprecated_config_source")).toBe(true);
+	});
+
+	test("an undefined user profile preserves unknown_profile without fetch", async () => {
+		const root = makeRoot({});
+		const original = process.env.XDG_CONFIG_HOME;
+		process.env.XDG_CONFIG_HOME = join(root, "config");
+		mkdirSync(join(root, "config/immune-brain"), { recursive: true });
+		writeFileSync(join(root, "config/immune-brain/config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: { default_profile: "missing", profiles: { other: fakeProfile() } } }));
+		try {
+			const rec = recordingFetch();
+			expect(await decide({ point: A14, state: "s" }, deps(root, rec.fetch))).toMatchObject({ reason: "unknown_profile" });
+			expect(rec.calls).toHaveLength(0);
+		} finally {
+			if (original === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = original;
+		}
+	});
+
+	test("missing profiles identify the user configuration path", async () => {
+		const result = await decide({ point: A14, state: "s" }, deps(makeRoot({}), recordingFetch().fetch));
+		expect(result).toMatchObject({ reason: "no_local_config" });
+		if (result.status === "unavailable") expect(result.detail).toContain("~/.config/immune-brain/config.json");
+	});
+});
+
 describe("decide() resolution (AC1)", () => {
 	test("a per-point binding wins over the default profile", async () => {
-		const root = makeRoot({ bindings: bindingsFile({ default_profile: "missing", bindings: { [A14]: "chosen" } }), local: { profiles: { chosen: fakeProfile() } } });
+		const root = makeRoot({ bindings: bindingsFile({ default_profile: "chosen", bindings: { [A14]: "chosen" } }), local: { profiles: { chosen: fakeProfile() } } });
 		const result = await decide({ point: A14, state: "s" }, deps(root, recordingFetch().fetch));
 		expect(result.status).toBe("decided");
 		if (result.status === "decided") expect(result.envelope.profile).toBe("chosen");
@@ -419,13 +479,13 @@ describe("envelope and isolation (AC4)", () => {
 		expect(result).toMatchObject({ status: "unavailable", reason: "provider_error" });
 	});
 
-	test("decision-model code and the plugin do not import each other", () => {
+	test("decision-model imports respect the plugin and authority boundaries", () => {
 		const SPEC = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)["']([^"']+)["']/g;
 		const walk = (dir: string): string[] =>
 			readdirSync(dir).flatMap((name) => {
 				if (name === "node_modules") return [];
 				const path = join(dir, name);
-				return statSync(path).isDirectory() ? walk(path) : /\.(ts|mts|js|mjs)$/.test(name) ? [path] : [];
+				return statSync(path).isDirectory() ? walk(path) : /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(name) ? [path] : [];
 			});
 		const targets = (file: string) =>
 			[...readFileSync(file, "utf8").matchAll(SPEC)].map((m) => {
@@ -433,26 +493,27 @@ describe("envelope and isolation (AC4)", () => {
 				return spec.startsWith(".") ? relative(REPO, resolve(dirname(file), spec)) : spec;
 			});
 
-		const ours = [...walk(join(REPO, "scripts/decision-model")), ...walk(join(REPO, "scripts/decision-eval"))];
-		expect(ours.length).toBeGreaterThan(5);
-		for (const file of ours) {
-			for (const target of targets(file)) {
-				expect(target.includes("plugins/immune-brain/runtime") || target.includes("plugins/immune-brain/.pi-extension") || target.includes(".pi-extension")).toBe(false);
+		const component = "plugins/immune-brain/runtime/decision_model";
+		expect(existsSync(join(REPO, "scripts/decision-model"))).toBe(false);
+		const authorityPaths = ["runtime/kernel", "runtime/assurance", "runtime/unattended", "runtime/claude", ".pi-extension"];
+		for (const dir of authorityPaths) {
+			for (const file of walk(join(REPO, "plugins/immune-brain", dir))) {
+				for (const target of targets(file)) expect(target === component || target.startsWith(`${component}/`)).toBe(false);
 			}
 		}
-		const plugin = walk(join(REPO, "plugins/immune-brain"));
-		for (const file of plugin) {
-			for (const target of targets(file)) {
-				expect(target.includes("scripts/decision-model") || target.includes("scripts/decision-eval")).toBe(false);
-			}
+		for (const file of walk(join(REPO, "plugins/immune-brain"))) {
+			for (const target of targets(file)) expect(target === "scripts" || target.startsWith("scripts/")).toBe(false);
 		}
+		const evalImports = walk(join(REPO, "scripts/decision-eval")).flatMap(targets);
+		expect(evalImports.some((target) => target.startsWith(`${component}/`))).toBe(true);
+		for (const target of evalImports) expect(target.includes("scripts/decision-model")).toBe(false);
 	});
 });
 
 describe("configuration files (AC7)", () => {
-	test("the tracked bindings file ships with no binding and no egress", () => {
-		const raw = JSON.parse(readFileSync(join(REPO, ".imm/decision-bindings.json"), "utf8"));
-		expect(raw).toEqual({ contract: "immune_brain/decision_bindings/v1", default_profile: "default", bindings: {}, egress: {} });
+	test("the legacy bindings file is no longer tracked", () => {
+		const check = spawnSync("git", ["ls-files", "--error-unmatch", ".imm/decision-bindings.json"], { cwd: REPO });
+		expect(check.status).not.toBe(0);
 	});
 
 	test("the user-local profiles file is ignored by Git", () => {
@@ -463,6 +524,7 @@ describe("configuration files (AC7)", () => {
 	test("CONTEXT.md defines Decision model and names its directory", () => {
 		const context = readFileSync(join(REPO, "CONTEXT.md"), "utf8");
 		expect(context).toContain("**Decision model**:");
-		expect(context).toContain("scripts/decision-model/");
+		expect(context).toContain("plugins/immune-brain/runtime/decision_model/");
+		expect(context).not.toContain("scripts/decision-model/");
 	});
 });

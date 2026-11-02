@@ -258,25 +258,10 @@ state and its Host session never re-enters the batch.
 
 #### Lane Preferences
 
-Lane-mode choices live in one personal, gitignored preset,
-`.imm/lanes.local.json`, at the Parent's checkout root. The Parent alone reads
-it, directly, before the first `start_unattended_batch` call for an Initiative;
-Lane worktrees, the runner and the runtime read none of it. Instruction-file
-lane directives are not read.
-
-```json
-{
-  "active": "fast",
-  "profiles": {
-    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
-  }
-}
-```
-
-The file has two top-level keys only: optional `active`, a profile name, and
-`profiles`, mapping each name to a profile. There is no `contract` field. Every
-profile field is optional:
+The Parent reads the layered config through `imm-kernel config --json` before
+the first `start_unattended_batch` call for an Initiative. The resolver reports
+values, their sources and diagnostics; the Parent overlays the literal request.
+Instruction-file lane directives are not read.
 
 | Field | Value | Effect | Without it |
 | --- | --- | --- | --- |
@@ -285,31 +270,30 @@ profile field is optional:
 | `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
 
-Each field resolves on its own:
+Each field resolves on its own, in order: literal request, selected user Lane
+profile, project `lanes` defaults, then the default above. Select the profile
+named by the request, else `projects[<key>].lanes.active`, else `lanes.active`,
+else none. Use `lanes.profiles.value` for the selected profile and
+`lanes.project_defaults.value` for project values, even when the resolver's
+active profile has shadowed them. Recompute the fields and host-pairing warnings
+for the selected profile and request rather than reusing values or `not_applied`
+warnings computed for a different active profile. A request naming an unknown
+profile is reported and starts no batch. Project Lane values are defaults, not caps.
 
-1. The selected profile is the one the request names, else `active`, else none.
-   With no file, or no selected profile, every field takes its default.
-2. A field the request states literally wins, for that batch only (source
-   `request`); else the selected profile's field (source `preset:<profile>`);
-   else the column above (source `default`). For example "use `cheap`, but max
-   parallel 3" takes `cheap` and overlays `max_parallel`.
-3. A model identifier and an effort level mean something only to one Host, so a
-   profile's `executor_model` and `executor_effort` apply only when that same
-   profile names `executor_host`; a request-stated model or effort applies only
-   with a request- or profile-named host. Otherwise they are reported and not
-   applied, never attached to the default-resolved Host.
+A model or effort applies only with an `executor_host` from the same layer. If
+a higher layer overrides that host, report the model or effort as `not_applied`
+and drop it; never attach it to a default-resolved Host. Report resolver
+diagnostics, including legacy-source warnings. If the `lanes` section fails
+validation (`lanes.valid: false`), start no batch on guessed or default values,
+even when another section resolves successfully. Lane configuration grants no
+permission or trust option.
 
 After resolving, display one non-blocking line with each selected value and its
-per-field source, for example
-`max_parallel 3 (request), executor_host pi (preset:cheap), executor_model - (default), executor_effort low (preset:cheap)`.
-On a resume the recorded `max_parallel` stands and nothing is passed again.
-
-Report each of these and start no batch on guessed or default values: malformed
-JSON; `active` naming a profile that does not exist; a request naming a profile
-that does not exist; an unknown key at top level or inside a profile (for
-example `executor_modle`); a `max_parallel` that is not a positive integer; an
-`executor_host` outside `pi` and `claude-code`. The preset configures how the
-Parent starts sessions; it grants no permission or trust option.
+per-field source: `request`, `user`, `user:project`, `project`, `legacy:<path>`
+or `default`, as reported by the resolver or supplied by the request. A
+request-selected profile's fields retain the source of `lanes.profiles`, while
+an active profile's fields retain the source of `lanes.active`. On a resume the
+recorded `max_parallel` stands and nothing is passed again.
 
 The `final_verification` commands of a new lane batch take plain commands
 without shell syntax or quoting, at most 8, whatever their source. They are
@@ -320,12 +304,14 @@ batch as not passed; integrated commits are never rolled back. The Parent takes
 them from:
 
 1. commands the current request states literally; else
-2. the full test suite and type-check commands the repository instruction file
+2. project `batch.final_verification`; else
+3. the full test suite and type-check commands the repository instruction file
    names in prose (for example "uses `bun test`; type checking is
    `bun run typecheck`"); else
-3. none, and the completion report says nothing was run.
+4. none, and the completion report says nothing was run.
 
-The Parent never invents a command the repository does not name.
+The Parent never invents a command the repository does not name unless the
+request or project config supplies it.
 
 #### Lane Executor Supervision
 

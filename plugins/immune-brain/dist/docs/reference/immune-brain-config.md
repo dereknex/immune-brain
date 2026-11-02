@@ -1,101 +1,187 @@
-# Immune-Brain Host Preferences
+# Immune-Brain Configuration
 
-Pi and Claude Code are supported code-agent hosts. Immune-Brain does not load an
-agent-local TOML file or Immune-Brain-specific environment overrides. User and
-project preferences belong in the Host's agent instruction files.
+Pi and Claude Code are supported code-agent hosts. Both read the same two
+configuration files through one runtime resolver, recorded in
+[ADR 0034](../adr/0034-layered-configuration.md):
 
-Lane preferences are the one exception: they live in a personal, gitignored
-preset, `.imm/lanes.local.json`, described under
-[Lane Preferences](#lane-preferences) and recorded in
-[ADR 0033](../adr/0033-lane-preferences-local-preset.md).
+- the **user file**, `~/.config/immune-brain/config.json`
+  (`$XDG_CONFIG_HOME/immune-brain/config.json` when `XDG_CONFIG_HOME` is an
+  absolute path), for personal choices and credential environment-variable
+  names; and
+- the **project file**, `.imm/config.json` at the checkout root, for repository
+  facts and policy. It is honoured only when Git tracks it.
 
-## Precedence
+Either file may be absent. Immune-Brain reads no Immune-Brain-specific
+environment override and no agent-local TOML file. Communication, reply-language
+and subagent preferences stay in the Host's agent instruction files (see
+[Other Preferences](#other-preferences)).
 
-Planner preferences resolve in this order:
-
-1. a literal instruction in the current request;
-2. the repository root agent instruction file, whichever the repository tracks:
-   `AGENTS.md` or `CLAUDE.md`;
-3. the Host's user-level agent instruction file; or
-4. an explicit user question.
-
-Hosts differ in which files they auto-load: Pi injects `AGENTS.md`, while Claude
-Code auto-loads `CLAUDE.md` and does not read `~/.pi/agent/AGENTS.md` at all. A
-Skill therefore reads sources 2 and 3 directly instead of assuming the Host
-placed them in context, and reports which sources it checked.
-
-Invalid values are reported rather than guessed. A preference with no documented
-default resolves to a user question, never to a silently chosen value.
-
-## Initiative Carrier
-
-The Initiative carrier preference applies only to proposals split across
-multiple TaskIntents. Ordinary TaskIntents remain tracked by Kernel
-TaskRecords. There is no built-in carrier default; when no directive is found,
-Planner asks. Set one of these fixed directives in the repository root
-`AGENTS.md` or `CLAUDE.md`:
-
-```md
-## Immune-Brain Preferences
-
-- Initiative carrier default: local
-```
-
-```md
-## Immune-Brain Preferences
-
-- Initiative carrier default: github
-```
-
-A repository directive overrides the user-level directive. A configured `github`
-default is standing opt-in for GitHub projection, but the literal user still
-confirms the Initiative name, immutable slug, complete Parent/Child decomposition,
-granularity, and dependencies before the first remote mutation. Planner reports
-the selected carrier and its source. After confirmation it publishes the complete
-Issue graph in one idempotent batch and reports the recommended first unblocked
-Task, stable dependency order, and parallel groups. Projection failure is reported
-with a batch retry action and does not invalidate the authored planning files,
-but it blocks Enrollment and execution handoff for that Initiative until the same
-complete batch succeeds. It never silently switches carrier.
-
-## Lane Preferences
-
-Lane-mode choices are personal and per clone, so they live in
-`.imm/lanes.local.json` at the checkout root, not in `AGENTS.md` or `CLAUDE.md`.
-Add `.imm/lanes.local.json` to `.gitignore`. The Parent reads the file directly
-before the first `start_unattended_batch` call for an Initiative; the batch
-runner, the runtime and Lane worktrees read none of it. Instruction-file lane
-directives are not read.
+## User File
 
 ```json
 {
-  "active": "fast",
-  "profiles": {
-    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  "contract": "immune_brain/user_config/v1",
+  "decision_models": {
+    "profiles": { "edge": { "kind": "clef", "model": "clef", "account_id_env": "CLOUDFLARE_ACCOUNT_ID", "token_env": "CLOUDFLARE_AUTH_TOKEN" } },
+    "default_profile": "edge",
+    "bindings": { "a14_pr_comment_triage": "edge" },
+    "egress": { "clef": ["finding"] }
+  },
+  "lanes": {
+    "active": "fast",
+    "profiles": {
+      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+      "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+    }
+  },
+  "initiative_carrier": "github",
+  "projects": {
+    "github.com/owner/repo": {
+      "decision_models": { "default_profile": "edge" },
+      "lanes": { "active": "cheap" },
+      "initiative_carrier": "local"
+    }
   }
 }
 ```
 
-- The file has only `active` (optional, a profile name) and `profiles`. With no
-  file, or no `active`, a batch runs one Lane at a time on the Parent's own
+- Every key is optional except `contract`. An unknown key at any level is
+  invalid.
+- Profiles are defined only at the top level. A `projects` entry may select a
+  profile (`default_profile`, `bindings`, `lanes.active`) but not define one.
+- A `*_env` value names an environment variable (`^[A-Z_][A-Z0-9_]*$`); the file
+  never holds the credential itself.
+- A `projects` key is the repository's normalized `origin` fetch URL: scheme,
+  `user@`, port and a trailing `.git` or `/` removed, `git@host:owner/repo`
+  rewritten to `host/owner/repo`, host lower-cased. With no `origin`, the key is
+  the real path of the main checkout root. A Lane worktree gets the same key as
+  its main checkout. `imm-kernel config --json` reports the key in use as
+  `project_key`.
+
+## Project File
+
+```json
+{
+  "contract": "immune_brain/project_config/v1",
+  "git_integration": "manual",
+  "initiative_carrier": "github",
+  "decision_models": { "enabled_points": ["a14_pr_comment_triage"], "egress": { "clef": [] } },
+  "lanes": { "max_parallel": 2, "executor_host": "pi" },
+  "batch": { "final_verification": ["bun run typecheck"] }
+}
+```
+
+- Every key is optional except `contract`. An unknown key is invalid.
+- `batch.final_verification` holds at most 8 plain command strings.
+- `.imm/risk-floor.json` stays a separate file (see [Risk Floor](#risk-floor)).
+
+## Precedence
+
+First set wins in each row. **Request** values come from the literal current
+request; the Parent or the Planner applies them on top of the resolved files.
+
+| Kind | Keys | Order |
+|---|---|---|
+| personal | `decision_models.default_profile`, `decision_models.bindings.<point>`, `lanes.active` | request → user per-project → user |
+| personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort` | request → selected user Lane profile → project `lanes` → default |
+| repository fact | `initiative_carrier` | request → project → user per-project → user → none (the Planner asks) |
+| policy | `git_integration` | project → default (`manual`) |
+| policy | `decision_models.enabled_points` | project → default (every registered point) |
+| policy ceiling | `decision_models.egress.<kind>` | project list, intersected with the user per-project list if set, else with the user list if set |
+| repository fact | `batch.final_verification` | request → project → test and type-check commands the repository instruction file names in prose → none |
+
+- A user egress category outside the project ceiling is dropped and reported as
+  `egress_beyond_project_ceiling`. The user file can only narrow egress.
+- Project Lane values are defaults, not caps.
+- A Lane `executor_model` or `executor_effort` applies only with an
+  `executor_host` from the same layer; otherwise it is reported as `not_applied`
+  and dropped.
+
+## Inspecting the Effective Configuration
+
+`imm-kernel config --json` prints the resolved configuration. Every leaf value is
+`{ "value": ..., "source": ... }`, where `source` is `user`, `user:project`,
+`project`, `legacy:<path>` or `default`. The command exits 1 when any diagnostic
+has severity `error`, else 0. `--check-env` also reports, per decision-model
+profile, whether each named variable is `set` or `unset`, never its value.
+
+The status Tool on both Hosts carries the same object as `config` and adds every
+`error` diagnostic to its warnings as `config_invalid`.
+
+Each diagnostic is `{ code, severity, file, key_path, message }` with code
+`config_invalid`, `unknown_profile`, `egress_beyond_project_ceiling`,
+`not_applied`, `deprecated_config_source` or `legacy_source_ignored`. Messages
+never contain a configured `*_env` value or any environment variable's value.
+An error fails closed only in its own section:
+
+- `decision_models` invalid: a decision returns `unavailable` / `config_invalid`;
+- `lanes` invalid: the Parent reports it and starts no batch;
+- `git_integration` invalid: `manual`;
+- `initiative_carrier` invalid: none, and the Planner asks;
+- a file that is not JSON or has the wrong `contract` fails every section it
+  could set.
+
+## Legacy Sources
+
+These sources are read for one major version, each only when no new layer sets
+the same section. A value read from one has source `legacy:<path>` and adds a
+`deprecated_config_source` warning naming its replacement key. When a new layer
+sets the section, the legacy source is not used and `legacy_source_ignored`
+names it.
+
+| Legacy source | Section it fills | Replacement key |
+|---|---|---|
+| `.imm/lanes.local.json` | `lanes` profiles and `active` | user `lanes` |
+| `.imm/decision-models.local.json` | `decision_models.profiles` | user `decision_models.profiles` |
+| `.imm/decision-bindings.json` | `default_profile`, `bindings` and `egress` | user `decision_models`, project `decision_models.egress` |
+| `- Git integration:` in tracked `AGENTS.md`/`CLAUDE.md` | `git_integration` | project `git_integration` |
+| `- Initiative carrier default:` in tracked `AGENTS.md`/`CLAUDE.md` | `initiative_carrier` | project `initiative_carrier` |
+
+The Planner also reads, as its last step before asking, the deprecated
+`Initiative carrier default: local` or `Initiative carrier default: github`
+directive in the Host's user-level agent instruction file. It does not take the
+carrier from a `legacy:AGENTS.md` or `legacy:CLAUDE.md` value.
+
+## Initiative Carrier
+
+The carrier applies only to proposals split across multiple TaskIntents.
+Ordinary TaskIntents remain tracked by Kernel TaskRecords. There is no built-in
+default: with no value from the request or the configuration, the Planner asks.
+Set it in `.imm/config.json` for the repository, or in the user file for
+yourself:
+
+```json
+{ "contract": "immune_brain/project_config/v1", "initiative_carrier": "github" }
+```
+
+A configured `github` value is standing opt-in for GitHub projection, but the
+literal user still confirms the Initiative name, immutable slug, complete
+Parent/Child decomposition, granularity, and dependencies before the first remote
+mutation. Planner reports the selected carrier and its source. After confirmation
+it publishes the complete Issue graph in one idempotent batch and reports the
+recommended first unblocked Task, stable dependency order, and parallel groups.
+Projection failure is reported with a batch retry action and does not invalidate
+the authored planning files, but it blocks Enrollment and execution handoff for
+that Initiative until the same complete batch succeeds. It never silently
+switches carrier.
+
+## Lane Preferences
+
+The Parent resolves Lane choices from `imm-kernel config --json` before the first
+`start_unattended_batch` call for an Initiative; the batch runner and Lane
+worktrees read no configuration of their own.
+
+- With no `lanes` value, a batch runs one Lane at a time on the Parent's own
   Host type with that Host's default model and effort.
 - `max_parallel` is passed as `max_parallel` and turns lane mode on. A resumed
   batch keeps the value it recorded.
-- `executor_host` is `claude-code` or `pi`. Every Lane uses it, with no
-  fallback to the other Host.
-- `executor_model` and `executor_effort` apply only when the same profile sets
-  `executor_host`, because a model ID belongs to one Host; otherwise they are
-  reported and not applied.
+- `executor_host` is `claude-code` or `pi`. Every Lane uses it, with no fallback
+  to the other Host.
 - A request may name a profile and state single fields, such as "use `cheap`,
-  but max parallel 3", for that batch only. The Parent shows each value with
-  its source: `request`, `preset:<profile>` or `default`.
-- Malformed JSON, an unknown profile, an unknown key or an invalid value is
-  reported and no batch starts.
-
-Final verification commands for a batch come from the request, else the full
-test and type-check commands the repository instruction file names in prose,
-else none.
+  but max parallel 3", for that batch only. The Parent shows each value with its
+  source.
+- An invalid `lanes` section or an unknown profile is reported and no batch
+  starts.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.
@@ -142,29 +228,29 @@ records the decision.
 
 ## Git Integration
 
-One line in the tracked repository root `AGENTS.md`, else in the tracked root
-`CLAUDE.md`, decides whether the runtime writes commits to your branch on its
-own:
+`git_integration` in the tracked `.imm/config.json` decides whether the runtime
+writes commits to your branch on its own:
 
-```markdown
-- Git integration: manual
+```json
+{ "contract": "immune_brain/project_config/v1", "git_integration": "manual" }
 ```
 
-- `manual` is the default, used when the line is absent. The runtime writes no
-  commit outside batches. Enrollment stages its TaskIntent and Spec instead of
-  committing them; with an unborn HEAD, in-scope changes are claimed as task
-  work; storage-layout migration leaves its diff in the working tree and lists
-  the paths. A settled task is delivered without any commit: commit however you
-  prefer.
+- `manual` is the default. The runtime writes no commit outside batches.
+  Enrollment stages its TaskIntent and Spec instead of committing them; with an
+  unborn HEAD, in-scope changes are claimed as task work; storage-layout
+  migration leaves its diff in the working tree and lists the paths. A settled
+  task is delivered without any commit: commit however you prefer.
 - `auto` keeps the precondition commits of ADR 0023 and, when a task settles
   `done`, commits exactly its settled scoped paths as
   `imm(<task-id>): settled delivery`.
-- Any other value behaves as `manual`. The status Tool reports it as an
-  `invalid_git_integration` warning naming the file and the value.
+- An invalid value behaves as `manual` and is reported as a diagnostic.
 - The status Tool reports the resolved preference as `git_integration`.
 - The confirmed empty root commit for an unborn HEAD is made in both modes.
 
-ADR 0024 records the decision.
+The legacy line `- Git integration: manual` (or `auto`) in the tracked root
+`AGENTS.md`, else `CLAUDE.md`, is still read when `.imm/config.json` sets no
+value, with a `deprecated_config_source` warning. ADR 0024 records the decision;
+ADR 0034 moves it to the project file.
 
 ## Other Preferences
 

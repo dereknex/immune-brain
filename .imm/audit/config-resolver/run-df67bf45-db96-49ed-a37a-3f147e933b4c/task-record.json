@@ -1,0 +1,555 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "config-resolver",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "config-resolver",
+    "goal": "layered-config S2 (#360-C1, #360-C3, #360-P; Spec docs/specs/layered-config.spec.md D1-D6, D9-D11). One runtime resolver, resolveConfig(root), reads the user file $XDG_CONFIG_HOME/immune-brain/config.json (default ~/.config/immune-brain/config.json) and the tracked project file .imm/config.json, keys per-repository user overrides by the normalized origin URL (else the main checkout real path), applies the D4 precedence, reads the D9 legacy sources with deprecation warnings, and reports every value with its source and every diagnostic. imm-kernel config --json prints it; status on Claude Code and Pi carries it as config. The test preload isolates XDG_CONFIG_HOME. ADR 0034 records the design and supersedes ADR 0033 and ADR 0024 item 1. The repository gets its own tracked .imm/config.json with initiative_carrier github. No consumer reads the resolver yet.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/layered-config.test.ts, with a temporary repository and user file: each D4 row resolves in its stated order with source user, user:project, project, legacy:<path> or default; the effective egress is the project list intersected with the user list and a user category outside the ceiling is dropped with egress_beyond_project_ceiling; a project executor_model whose executor_host is overridden by a user Lane profile is dropped with not_applied; enabled_points absent resolves to every registered point.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/layered-config.test.ts, origin URLs https://github.com/O/R.git, ssh://git@github.com/O/R and git@github.com:O/R.git give project_key github.com/O/R; a git worktree of the repository resolves the same project_key and the same projects override as its main checkout; a repository without origin uses the real path of its main checkout root.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/layered-config.test.ts each refused case yields a diagnostic naming the file and key path and fails closed only its own section: malformed JSON, a wrong contract, an unknown nested key, a lanes.active naming no profile, executor_host \"codex\", and a token_env holding \"sk-live-123\" (the value is absent from the whole output); an untracked .imm/config.json is ignored.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/layered-config.test.ts each D9 legacy source alone (.imm/lanes.local.json, .imm/decision-models.local.json, .imm/decision-bindings.json, a tracked AGENTS.md `- Git integration: auto` line, a tracked AGENTS.md `- Initiative carrier default: local` line) resolves its section with source legacy:<path> and a deprecated_config_source warning naming the replacement key; when the new layer sets the same section the new value wins and legacy_source_ignored names the legacy file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "In tests/layered-config.test.ts, imm-kernel config --json prints the effective config and exits 0 with only warnings and 1 with an error diagnostic; --check-env reports set or unset per named variable and never its value. In tests/dual-host-assurance-conformance.test.ts, tests named with \"layered config\" prove the Claude and Pi status outputs both carry the same config object and list an error diagnostic in warnings as config_invalid.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/layered-config.test.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'layered config'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "In tests/layered-config.test.ts the test process's XDG_CONFIG_HOME points inside the OS temp directory and holds no immune-brain/config.json unless the test wrote it; docs/adr/0034-layered-configuration.md exists and ADR 0033 and ADR 0024 each carry a status line naming 0034; the tracked .imm/config.json resolves initiative_carrier github with source project.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "The Claude bundle is current and the repository typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/config-resolver.md",
+      ".imm/config.json",
+      "CONTEXT.md",
+      "docs/adr/0024-git-integration-preference.md",
+      "docs/adr/0033-lane-preferences-local-preset.md",
+      "docs/adr/0034-layered-configuration.md",
+      "docs/plans/config-resolver.intent.json",
+      "docs/specs/layered-config.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/commands/kernel.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/config/project_identity.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/test-timeout.ts",
+      "tests/layered-config.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/config-resolver.intent.json",
+    "content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+  "git_base_head": "709b7c9a37ee0972a51e71a4c3fbb54590294191",
+  "attestations": [
+    {
+      "id": "approval-qa-065d8410",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+      "diff_hash": "sha256:6b3fa260c2c05e2ec8e8f82083877d73291099d9fefd1b5670e1adc977e7be17",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:a55f25406284d84fa07f1dc8d68a2de4d26d1ef357b8233d564687cd2a7d26d5"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-aff14bf7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+      "diff_hash": "sha256:0158c960d47612787ed7792a2e0cac4ce2766bfc07681e4e4e6342d4a7bec876",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:50b8b3321c88cbe04b977d9f0ad1e78f576b4c9ce71655fd9cfbaba0f20fe710"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-95d9ee74",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+      "diff_hash": "sha256:482e1e18f38f1e88b7e7b60bd6bb06201d5e66f517e019cdd51667ec5500c832",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:259e49fef575265ad58856175661ec4766acfb49d98a605d4980956b459929d2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-23bc773e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+      "diff_hash": "sha256:5dae6fc65caba69965bda5fc9c0aab55992e5475e807f50bcc482f8b9521ca05",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:4f0875b46421a1be8b9afdfaf2e98c77d0e6f590158189ad4741a4af72b446d9"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b961c1fd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:55bbea9697194d4e3ff8142314cbc1e63a985eb129d7180ea0c88e0a333eab9f",
+      "diff_hash": "sha256:5dae6fc65caba69965bda5fc9c0aab55992e5475e807f50bcc482f8b9521ca05",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；packet、manifest 摘要及 Git parent、tree、文件对象均已核验，第 4 轮 delta 完整审查并追踪 CLI、Claude/Pi status 调用：无效 Lane 清空有效输出，保留其他 section，回归测试覆盖 user、project、legacy 及凭据脱敏。影响范围 tier medium，关键路径为 layered_config.ts 与 Claude bundle，无持久化形状变更；其余文件沿用上一轮覆盖，未重跑测试，采用 Kernel 对 AC1–AC7 的通过证据。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "709b7c9a37ee0972a51e71a4c3fbb54590294191",
+        "review_commit": "2d2d459ac68ddb7c0dd7eb82a22565a4bb29e1be",
+        "review_tree": "77ddd6af92ca2cddca476d0d4645958d87f025e5",
+        "manifest_digest": "sha256:d026283a6adba64a862e08fcacaadb1f284d3b8d03b01f0dd4df5c28402214b8"
+      },
+      "reviewer_verdict_sha256": "sha256:94fe3b11580d1b6211f7872f5a5690d01fdf821188cc4f43c7b5107ad723cee6"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-70808a5a96e8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/config/layered_config.ts:147 使用普通属性访问查找 Lane profile，误将继承属性视为已定义 profile，违反未知 profile 必须失败关闭的要求。应对 user 和 legacy profile map 均使用 Object.hasOwn 后再读取，并在 tests/layered-config.test.ts 补充 constructor、toString 等未定义名称的回归测试。",
+      "anchor": "sha256:0172e0e43ad4bed09d9f739766caed11063fe8ff1268876e44a18bb1426cb48f",
+      "evidence": {
+        "trigger": "用户配置为 {\"contract\":\"immune_brain/user_config/v1\",\"lanes\":{\"active\":\"constructor\",\"profiles\":{}}}，且没有 legacy Lane 文件 → laneProfiles.constructor 命中 Object 构造函数，resolver 返回 lanes.valid=true、diagnostics=[]；CLI 因而退出 0，未报告 lanes.active 指向不存在的 profile。已使用冻结 revision 的函数与内存输入复现。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/v4_runtime.ts:runKernelCli",
+          "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig:147"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c8775ec95fc9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC4",
+      "source": "review",
+      "review_round": 2,
+      "summary": "P2 — plugins/immune-brain/runtime/config/layered_config.ts:151 始终将 lanes.profiles 输出为用户层的 laneProfiles，导致仅使用旧配置时丢失整个 profiles 映射且错误标记 source 为 user。应输出实际采用的 legacyLane.profiles，并标记 legacy:.imm/lanes.local.json；扩展现有 legacy 测试，断言 profiles 的完整值和来源。",
+      "anchor": "sha256:5d7b5a1e674f34685a2fd59f3471d172ba604af8cc2882f02b7aece5fcd0e823",
+      "evidence": {
+        "trigger": "新配置文件均不存在，.imm/lanes.local.json 为 {\"active\":\"local\",\"profiles\":{\"local\":{\"max_parallel\":3,\"executor_host\":\"pi\"}}} → config 输出 lanes.active.value 为 local、lanes.max_parallel.value 为 3，但 lanes.profiles 为 {\"value\":{},\"source\":\"user\"}，遗漏实际生效的旧配置 profile，违反 D9 对 lanes profiles 和 active 的解析及来源报告要求。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/v4_runtime.ts:runKernelCli",
+          "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig",
+          "plugins/immune-brain/runtime/config/layered_config.ts:151"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC4"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-2ec8012a70b2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC3",
+      "source": "review",
+      "review_round": 3,
+      "summary": "P1：plugins/immune-brain/runtime/config/layered_config.ts:151 将未经清理的 legacy Lane profiles 放入输出，导致被拒绝的 token_env 值泄露。第 143 行的校验只记录错误，未移除原始 profile；lanes.valid=false 也不会阻止 CLI 和 status 序列化它。最小修复是在 legacy Lane 校验失败后清空待输出的 profiles，并补充测试，断言错误仍具名、整个输出不包含粘贴的 token。该问题属于凭据拒绝后不得回显的不变量覆盖缺口。",
+      "anchor": "sha256:4403224940a67efd59e6c8ccaa4f88572d1a38ebfcf5ae89696b04bce3b19d49",
+      "evidence": {
+        "trigger": "没有新配置覆盖 lanes，.imm/lanes.local.json 内容为 {\"active\":\"local\",\"profiles\":{\"local\":{\"max_parallel\":3,\"token_env\":\"sk-live-123\"}}} → 校验报告 lanes.profiles.local.token_env 为 unknown key，但 imm-kernel config --json 的 lanes.profiles.value.local.token_env 仍输出 sk-live-123。本次对冻结源码进行仅使用内存依赖的执行，确认 secret_echoed=true。此前对 decision_models legacy profiles 的凭据清理不覆盖本轮新增的 legacy Lane profiles 原样输出路径。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/v4_runtime.ts:runKernelCli",
+          "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig",
+          "plugins/immune-brain/runtime/config/layered_config.ts:151"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC3"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:config-resolver:2026-11-02T10:12:32.818Z",
+      "at": "2026-11-02T10:12:32.818Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-resolver.intent.json"
+    },
+    {
+      "id": "record_approval:config-resolver:2026-11-02T10:12:58.449Z",
+      "at": "2026-11-02T10:12:58.449Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-065d8410\naction_v2_sha256:d6eece627ad2beb35e58d56f0fadf657b1373c3fd88192c1d5430b476b97762b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0539596680a37ebe",
+        "issued_at": "2026-11-02T10:12:58.449Z"
+      }
+    },
+    {
+      "id": "request_rework:config-resolver:2026-11-02T10:16:30.812Z",
+      "at": "2026-11-02T10:16:30.812Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9ec6a2052a3ccd0e58a5887e3dc73d203b2e996dd5afb4bae6a70e36466f7696",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-7c10a5d834b99d02",
+        "issued_at": "2026-11-02T10:16:30.812Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "709b7c9a37ee0972a51e71a4c3fbb54590294191",
+        "review_commit": "d050ace9786616ea116771e71c09bf93fb9d5186",
+        "review_tree": "8afa72daa8d8f2d170506005b491f5403b7a7dda",
+        "manifest_digest": "sha256:109a55a45d3cf56949512bf82754c402943a7d98cd4585eafc159c50b6e68807"
+      }
+    },
+    {
+      "id": "resolve_finding:config-resolver:2026-11-02T10:18:06.257Z",
+      "at": "2026-11-02T10:18:06.257Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-70808a5a96e8-1-review-1\naction_v2_sha256:0e06c1ce6fab7a8ac51430503b35d9583339df1b558c3c351b3e329e9628109d"
+    },
+    {
+      "id": "freeze_artifacts:config-resolver:2026-11-02T10:18:17.289Z",
+      "at": "2026-11-02T10:18:17.289Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-resolver.intent.json"
+    },
+    {
+      "id": "record_approval:config-resolver:2026-11-02T10:18:43.815Z",
+      "at": "2026-11-02T10:18:43.815Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-aff14bf7\naction_v2_sha256:7409eac125d2199ec37b468b56936c0211900b73b9299d074aa644dbd6e5a5c9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-af72f2979145005f",
+        "issued_at": "2026-11-02T10:18:43.815Z"
+      }
+    },
+    {
+      "id": "request_rework:config-resolver:2026-11-02T10:22:58.391Z",
+      "at": "2026-11-02T10:22:58.391Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:8891634c87aebd9f8a60c618cfc3a120d3ec389b92697feb647fb4917b045156",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d6e21d57016f5233",
+        "issued_at": "2026-11-02T10:22:58.391Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "709b7c9a37ee0972a51e71a4c3fbb54590294191",
+        "review_commit": "fff8bb8f5ee3f6d647bc4a9e41eb3292054aec2b",
+        "review_tree": "7d6391d128938a7d3cec6d5092b9227205d93bd5",
+        "manifest_digest": "sha256:dc45321552d62d9a587371efab42c731ee0d838954f1aebcca91114ea209a12a"
+      }
+    },
+    {
+      "id": "resolve_finding:config-resolver:2026-11-02T10:24:19.106Z",
+      "at": "2026-11-02T10:24:19.106Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c8775ec95fc9-1-review-1\naction_v2_sha256:d742a5fe15ae258540e738dce07d80ee269f3fdf954cfc4a0e93cebc56a93f6a"
+    },
+    {
+      "id": "freeze_artifacts:config-resolver:2026-11-02T10:24:27.754Z",
+      "at": "2026-11-02T10:24:27.754Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-resolver.intent.json"
+    },
+    {
+      "id": "record_approval:config-resolver:2026-11-02T10:24:54.531Z",
+      "at": "2026-11-02T10:24:54.531Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-95d9ee74\naction_v2_sha256:815582dc4bb314d015b479969e99ac7a29f76b21ad8503e4accfe4d55f52d554",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ba29555cfd3bd5ee",
+        "issued_at": "2026-11-02T10:24:54.531Z"
+      }
+    },
+    {
+      "id": "request_rework:config-resolver:2026-11-02T10:27:54.465Z",
+      "at": "2026-11-02T10:27:54.465Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:88f7942da32c344e6f964beed4da06bea9df77cc88f64943e8c240c086cba94a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e35388cdaecac905",
+        "issued_at": "2026-11-02T10:27:54.465Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "709b7c9a37ee0972a51e71a4c3fbb54590294191",
+        "review_commit": "9de120b15ba15ab537332019d1af1ccba4301050",
+        "review_tree": "4f94d52f1d4e020ae9f37d8cf1578c4b7b7f3f21",
+        "manifest_digest": "sha256:b0cd536f6b4516e593343bfdaac2ba1a56ed90a896a745fdd4724e5c0d490c13"
+      }
+    },
+    {
+      "id": "resolve_finding:config-resolver:2026-11-02T10:29:39.730Z",
+      "at": "2026-11-02T10:29:39.730Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2ec8012a70b2-1-review-1\naction_v2_sha256:dcac363042cdf9af9d83df2d0a5bb8363767b4ce424fc2cbce23a50f6a0370c7"
+    },
+    {
+      "id": "freeze_artifacts:config-resolver:2026-11-02T10:29:49.237Z",
+      "at": "2026-11-02T10:29:49.237Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-resolver.intent.json"
+    },
+    {
+      "id": "record_approval:config-resolver:2026-11-02T10:30:18.195Z",
+      "at": "2026-11-02T10:30:18.195Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-23bc773e\naction_v2_sha256:965232767622c9103daf76e17ab7f6239a4412618dfb9e623fe50c4bfe7d2538",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a4efc19127da3c96",
+        "issued_at": "2026-11-02T10:30:18.195Z"
+      }
+    },
+    {
+      "id": "record_approval:config-resolver:2026-11-02T10:33:15.607Z",
+      "at": "2026-11-02T10:33:15.607Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b961c1fd\naction_v2_sha256:816e3434d51e9db6ca55f4821fcdb6a83b9ef580ca64f20a4866853f423c4ad3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-5a2f4f4c7d7ed759",
+        "issued_at": "2026-11-02T10:33:15.607Z"
+      }
+    },
+    {
+      "id": "complete:config-resolver:2026-11-02T10:33:17.278Z",
+      "at": "2026-11-02T10:33:17.278Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e56e0281f029d6582ae9e7c73b739bc2b519abaee5cacc8dd90a354870091770"
+    }
+  ]
+}

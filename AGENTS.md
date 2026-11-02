@@ -38,7 +38,3 @@
 - 仅在用户选定的启动目录工作。
 - 涉及 GitHub Issue 时，使用 `gh` 与 `dereknex/immune-brain`，读取 docs/agents/issue-tracker.md。
 - 涉及领域词汇或架构决策时，参考 CONTEXT.md、相关 docs/adr/ 和 docs/agents/domain.md。
-
-## Immune-Brain Preferences
-
-- Initiative carrier default: github

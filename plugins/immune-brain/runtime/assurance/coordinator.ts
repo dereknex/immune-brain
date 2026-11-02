@@ -6,6 +6,7 @@
 // structured verdict. No lifecycle work survives a Tool call except the
 // evidence reservation.
 
+import { resolveConfig } from "../config/layered_config.ts";
 import { readGitIntegrationPreference, type GitIntegrationMode, type GitIntegrationPreference } from "../git_integration_preference";
 import { createHash, randomUUID } from "node:crypto";
 import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
@@ -384,7 +385,7 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "implementation_pending" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "deprecated_git_integration" | "implementation_pending" | "config_invalid" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
@@ -393,6 +394,7 @@ export type StatusProjectionResult = AssuranceProjectionResult & {
 	batch?: NonNullable<BatchRecordLookup>;
 	/** The resolved `Git integration` preference (ADR 0024); set by the status read only. */
 	git_integration?: { mode: GitIntegrationMode; source: GitIntegrationPreference["source"] };
+	config?: ReturnType<typeof resolveConfig>;
 	warnings?: StatusProjectionWarning[];
 };
 /**
@@ -436,7 +438,7 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 	const skew = pluginSourceSkewWarning(root, loadedFrom);
 	if (skew) warnings.push(skew);
 	const preference = readGitIntegrationPreference(root);
-	if (preference.diagnostic) warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
+	if (preference.diagnostic) warnings.push({ code: preference.diagnostic.includes("deprecated;") ? "deprecated_git_integration" : "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
 	const git_integration = { mode: preference.mode, source: preference.source };
 	let batch = findExistingActiveBatch(root, taskId);
 	if (batch === null) {
@@ -446,7 +448,9 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 			if (record) batch = { corrupt: false, record };
 		}
 	}
-	const status = { ...result, git_integration, ...(batch ? { batch } : {}) };
+	const config = resolveConfig(root);
+	for (const diagnostic of config.diagnostics) if (diagnostic.severity === "error") warnings.push({ code: "config_invalid", paths: [diagnostic.file], message: diagnostic.message });
+	const status = { ...result, git_integration, config, ...(batch ? { batch } : {}) };
 	return warnings.length === 0 ? status : { ...status, warnings };
 }
 

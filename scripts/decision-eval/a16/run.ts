@@ -11,8 +11,8 @@
 // 2 no_cases_decided (checked after the report is written).
 
 import { readFileSync } from "node:fs";
-import { decide, resolveProfile } from "../../decision-model/decide.ts";
-import { A16_REVISIT_CHAIN_CLASS } from "../../decision-model/thresholds.ts";
+import { decide, resolveProfile } from "../../../plugins/immune-brain/runtime/decision_model/decide.ts";
+import { A16_REVISIT_CHAIN_CLASS } from "../../../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 import { CliError, runEval } from "../harness.ts";
 import { type CorpusRow, isCorpusRow } from "./extract.ts";
 

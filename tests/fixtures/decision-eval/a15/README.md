@@ -31,7 +31,7 @@ that differs from what the row's labels imply) and every row no longer in the li
 
 ## Running the eval
 
-Configure a profile in `.imm/decision-models.local.json` (gitignored) as for A14
+Configure a profile in `~/.config/immune-brain/config.json` as for A14
 (`tests/fixtures/decision-eval/a14/README.md`), then run
 `bun scripts/decision-eval/a15/run.ts --corpus <corpus.jsonl> --out <dir>`.
 `issue_text` is a non-sensitive category because the repository is public, so no

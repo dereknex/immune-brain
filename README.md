@@ -118,7 +118,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Clear goal, want formal plan & specs | `/draw-up` "Plan the webhook feature" | → `draw-up` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/drive` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/drive` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
-| Ready Initiative to run unattended through Lanes | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a `.imm/lanes.local.json` profile) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Capacity 1 runs one Lane at a time; larger `max_parallel` values allow scope-disjoint children to run concurrently in isolated Git worktrees |
+| Ready Initiative to run unattended through Lanes | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a Lane profile from `~/.config/immune-brain/config.json`) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Capacity 1 runs one Lane at a time; larger `max_parallel` values allow scope-disjoint children to run concurrently in isolated Git worktrees |
 | Cross-host workflow (Claude plan + Pi code) | Run `/draw-up` in Claude Code, switch to Pi and run `/drive` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/fix-pr` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
@@ -562,7 +562,7 @@ Every new batch uses **runtime-created Lanes**. Omitted `max_parallel` and expli
 
 ### 1. Batch Execution Overview
 
-- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / set `max_parallel` in a `.imm/lanes.local.json` profile.
+- **Activation:** call `start_unattended_batch(slug)` for capacity 1, or pass `max_parallel` / set `max_parallel` in a Lane profile of the user config file.
 - **Workspace topology:** the runtime creates each child's worktree under the Git common directory at `imm/worktrees/<slug>/<task_id>` and keeps Parent progress on `refs/heads/imm/<slug>` without changing the coordinator checkout.
 - **Authority:** each Lane has its own Authority Store, Enrollment, QA, Review and settlement.
 - **Integration:** the runtime commits scoped delivery, reruns Integration Guard descriptors and fast-forwards the Parent ref before admitting dependent work.
@@ -619,37 +619,37 @@ sequenceDiagram
 
 ## Configuration
 
-Preferences live in your host's agent instruction file at the repo root — `AGENTS.md` (Pi) or `CLAUDE.md` (Claude Code):
+Immune-Brain reads two JSON files, the same on Pi and Claude Code:
 
-```md
-## Immune-Brain Preferences
-
-- Initiative carrier default: github   # or: local
-```
-
-Lane preferences are the one exception: they are personal, so they live in a gitignored preset `.imm/lanes.local.json`:
+- **User file** `~/.config/immune-brain/config.json` (`$XDG_CONFIG_HOME/immune-brain/config.json` when set): personal choices — Lane profiles, decision-model profiles (credential environment-variable *names* only), and per-repository overrides under `projects`.
+- **Project file** `.imm/config.json`, tracked in Git: repository facts and policy — `git_integration`, `initiative_carrier`, enabled decision points and the egress ceiling, Lane defaults and batch final verification.
 
 ```json
 {
-  "active": "fast",
-  "profiles": {
-    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  "contract": "immune_brain/user_config/v1",
+  "lanes": {
+    "active": "fast",
+    "profiles": {
+      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+      "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+    }
   }
 }
 ```
 
-| Preference | Options | Default | Notes |
-|---|---|---|---|
-| Reply language | any natural language | repo `AGENTS.md` | Machine contracts / paths stay literal |
-| Initiative carrier | `local` / `github` | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
-| Advisory subagents | allowed / solo | allowed | Respects Pi host policy + explicit user instruction |
-| `max_parallel` (preset) | integer ≥ 1 | none — one Lane at a time | Passed as `max_parallel` when a batch starts; a resumed batch keeps its recorded value |
-| `executor_host` (preset) | `claude-code` / `pi` | none — prefers the Parent's own Host type | Every Lane uses this Host, with no fallback to the other one |
-| `executor_model` (preset) | a model ID of that Host | none — the Executor Host's own default | Applies only when the same profile sets `executor_host` |
-| `executor_effort` (preset) | an effort level of that Host | none — the Executor Host's own default | Applies only when the same profile sets `executor_host`; `--effort` on Claude Code, `--thinking` on Pi |
+```json
+{ "contract": "immune_brain/project_config/v1", "git_integration": "manual", "initiative_carrier": "github" }
+```
 
-Precedence: **current message > repo agent instruction file > user-level agent instruction file > ask**. Skills read these files directly, so a preference works even when the host does not auto-load that file. Lane fields resolve **current message > selected preset profile > default**; a request may name a profile (`use cheap, but max parallel 3`), and a malformed file, unknown profile, unknown key or invalid value stops the batch from starting.
+| Preference | File | Default | Notes |
+|---|---|---|---|
+| Reply language | agent instruction file (`AGENTS.md` / `CLAUDE.md`) | repo `AGENTS.md` | Machine contracts / paths stay literal |
+| Initiative carrier | project, else user | none — Planner asks | Only matters when a proposal splits across multiple TaskIntents |
+| Git integration | project | `manual` | `auto` commits settled deliveries |
+| Advisory subagents | agent instruction file | allowed | Respects Pi host policy + explicit user instruction |
+| `lanes.active` / Lane profiles | user | none — one Lane at a time | `max_parallel`, `executor_host` (`claude-code` / `pi`), `executor_model`, `executor_effort`; model and effort apply only with a host from the same layer |
+
+Personal values resolve **current message > user per-repository override > user file > project default > built-in default**; policy values (`git_integration`, enabled decision points, egress) come from the project file, and the user file may only narrow egress. `imm-kernel config --json` prints every effective value with its source, and both Hosts' status Tool carries it as `config`. An invalid section fails closed with a named diagnostic. `.imm/lanes.local.json`, `.imm/decision-models.local.json`, `.imm/decision-bindings.json` and the `Initiative carrier default:` / `Git integration:` instruction-file lines are deprecated legacy sources, still read for one major version with a warning.
 
 See [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md) for details.
 
@@ -697,7 +697,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **Where is the terminal Audit Trail stored and how is it verified?** Settled records are saved to `.imm/audit/<task-id>/` and tracked in Git. Each directory contains the immutable `TaskRecord`, the bound `diff_hash`, raw QA process exit-code attestations, and the Reviewer's signed verdict bundle.
 
-**Why are preferences kept in AGENTS.md / CLAUDE.md instead of an external config.toml?** Immune-Brain embraces host-native simplicity with zero external configuration files. Declaring preferences (such as Initiative carriers and communication instructions) in tracked agent instruction files ensures that configuration is version-controlled, visible across all collaborators, and free from environment drift.
+**Why two config files instead of AGENTS.md / CLAUDE.md directives?** Configuration belongs to the plugin, not to one Host's instruction file. Personal choices (Lane profiles, decision-model credentials by env-var name) live in `~/.config/immune-brain/config.json` and follow you across clones and Hosts; repository policy (`git_integration`, carrier, egress ceiling) lives in the tracked `.imm/config.json`, version-controlled and shared with collaborators. Communication instructions stay in the agent instruction files.
 
 **Why do you recommend `grill-me` instead of `clarify` for complex tasks?** `clarify` is a lightweight, built-in tool designed for quick problem framing without external dependencies. However, `grill-me` (from `mattpocock/skills`) provides an active, relentless Socratic interview that explores every branch of your design tree with opinionated recommendations. For non-trivial features, architectural refactors, or security boundaries, grilling the design with `grill-me` before passing the settled decisions to `draw-up` produces significantly tighter specifications and prevents downstream rework.
 

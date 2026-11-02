@@ -1,12 +1,5 @@
-// Parsers for the two decision-model configuration files (Spec D3).
-//
-// - `.imm/decision-bindings.json` (tracked): application point -> profile name,
-//   default profile, and the per-kind sensitive egress allowlist.
-// - `.imm/decision-models.local.json` (user-local, gitignored): named profiles.
-//   Credentials appear only as environment variable names.
-
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+// Parsers shared by the layered configuration resolver and decision models.
+// Credentials appear only as environment variable names.
 import {
 	type ClefProfile,
 	type FakeProfile,
@@ -45,33 +38,12 @@ function invalid(file: string, why: string): { ok: false; error: Unavailable } {
 	return { ok: false, error: unavailable("config_invalid", `${file}: ${why}`) };
 }
 
-function readJson(path: string, file: string): Parsed<unknown> | "missing" {
-	if (!existsSync(path)) return "missing";
-	let text: string;
-	try {
-		text = readFileSync(path, "utf8");
-	} catch {
-		return invalid(file, "unreadable");
-	}
-	try {
-		return { ok: true, value: JSON.parse(text) };
-	} catch {
-		return invalid(file, "malformed JSON");
-	}
-}
-
 function unknownKey(obj: JsonObject, allowed: readonly string[]): string | null {
 	for (const key of Object.keys(obj)) if (!allowed.includes(key)) return key;
 	return null;
 }
 
 const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.length > 0;
-
-export function loadBindings(root: string, registry: PointRegistry): Parsed<Bindings> | "missing" {
-	const read = readJson(join(root, BINDINGS_PATH), BINDINGS_PATH);
-	if (read === "missing" || !read.ok) return read;
-	return parseBindings(read.value, registry);
-}
 
 export function parseBindings(raw: unknown, registry: PointRegistry): Parsed<Bindings> {
 	const file = BINDINGS_PATH;
@@ -107,12 +79,6 @@ export function parseBindings(raw: unknown, registry: PointRegistry): Parsed<Bin
 	}
 
 	return { ok: true, value: { default_profile: defaultProfile, bindings, egress } };
-}
-
-export function loadProfiles(root: string): Parsed<Record<string, Profile>> | "missing" {
-	const read = readJson(join(root, LOCAL_CONFIG_PATH), LOCAL_CONFIG_PATH);
-	if (read === "missing" || !read.ok) return read;
-	return parseProfiles(read.value);
 }
 
 export function parseProfiles(raw: unknown): Parsed<Record<string, Profile>> {

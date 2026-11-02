@@ -1,0 +1,61 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-decision-model-move",
+  "owner": "user",
+  "goal": "layered-config S1 (#360-C2; Spec docs/specs/layered-config.spec.md D8). The decision-model component ships with the plugin: decide(), its config parsers, the clef/jev/fake provider adapters and the application-point registry move unchanged in behaviour from scripts/decision-model/ to plugins/immune-brain/runtime/decision_model/, and scripts/decision-eval/ imports them from there. No authority-path runtime file imports the component (ADR 0006). Delegated choices: directory name decision_model (snake_case like the runtime's other modules); CONTEXT.md vocabulary and Architecture Map name the new path.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "tests/decision-model.test.ts imports decide, the contract types and POINT_REGISTRY from plugins/immune-brain/runtime/decision_model/ and passes; scripts/decision-model/ no longer exists in the tree; CONTEXT.md names plugins/immune-brain/runtime/decision_model/ and no longer names scripts/decision-model/.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/decision-model.test.ts an import scan proves that no file under plugins/immune-brain/runtime/kernel/, runtime/assurance/, runtime/unattended/, runtime/claude/ or plugins/immune-brain/.pi-extension/ imports plugins/immune-brain/runtime/decision_model/, that no file under plugins/immune-brain/ imports scripts/, and that every scripts/decision-eval/ file that uses the component imports it from plugins/immune-brain/runtime/decision_model/; the five decision-eval test files pass unchanged in behaviour.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\",\n      \"tests/decision-eval-a4.test.ts\",\n      \"tests/decision-eval-a14.test.ts\",\n      \"tests/decision-eval-a15.test.ts\",\n      \"tests/decision-eval-a16.test.ts\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "docs/plans/config-decision-model-move.intent.json",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/decision_model/config.ts",
+    "plugins/immune-brain/runtime/decision_model/contract.ts",
+    "plugins/immune-brain/runtime/decision_model/decide.ts",
+    "plugins/immune-brain/runtime/decision_model/providers/clef.ts",
+    "plugins/immune-brain/runtime/decision_model/providers/fake.ts",
+    "plugins/immune-brain/runtime/decision_model/providers/jev.ts",
+    "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+    "scripts/decision-eval/a14/extract.ts",
+    "scripts/decision-eval/a14/run.ts",
+    "scripts/decision-eval/a15/extract.ts",
+    "scripts/decision-eval/a15/run.ts",
+    "scripts/decision-eval/a16/extract.ts",
+    "scripts/decision-eval/a16/run.ts",
+    "scripts/decision-eval/a4/extract.ts",
+    "scripts/decision-eval/a4/run.ts",
+    "scripts/decision-eval/harness.ts",
+    "scripts/decision-model/config.ts",
+    "scripts/decision-model/contract.ts",
+    "scripts/decision-model/decide.ts",
+    "scripts/decision-model/providers/clef.ts",
+    "scripts/decision-model/providers/fake.ts",
+    "scripts/decision-model/providers/jev.ts",
+    "scripts/decision-model/thresholds.ts",
+    "tests/decision-eval-a14.test.ts",
+    "tests/decision-eval-a15.test.ts",
+    "tests/decision-eval-a16.test.ts",
+    "tests/decision-eval-a4.test.ts",
+    "tests/decision-eval-harness.test.ts",
+    "tests/decision-model.test.ts"
+  ],
+  "scope_size_reason": "One atomic move: each of the seven component files appears twice (old path removed, new path added), and the nine eval scripts and five eval tests that import it must switch in the same commit or the eval tests and typecheck are red in any intermediate state; the generated bundle and CONTEXT.md vocabulary follow the move.",
+  "risk": "material",
+  "revision": 1
+}

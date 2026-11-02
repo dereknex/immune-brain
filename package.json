@@ -72,6 +72,8 @@
     "plugins/immune-brain/runtime/plan_core.ts",
     "plugins/immune-brain/runtime/commands/kernel.ts",
     "plugins/immune-brain/runtime/kernel",
+    "plugins/immune-brain/runtime/decision_model",
+    "plugins/immune-brain/runtime/config",
     "plugins/immune-brain/runtime/authorization_operation.ts",
     "plugins/immune-brain/runtime/canonical_json.ts",
     "plugins/immune-brain/runtime/staged_intent.ts",

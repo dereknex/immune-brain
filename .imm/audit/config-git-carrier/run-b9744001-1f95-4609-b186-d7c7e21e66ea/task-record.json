@@ -1,0 +1,266 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "config-git-carrier",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "config-git-carrier",
+    "goal": "layered-config S4 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Git integration reader takes git_integration from the tracked .imm/config.json through resolveConfig, falls back to the instruction-file directive with a deprecation warning, and keeps manual for an absent or invalid value; every existing caller is unchanged. The Planner's Initiative carrier resolution in draw-up reads initiative_carrier and its source from imm-kernel config --json after a literal request, keeps the Host's user-level instruction-file directive only as a deprecated last step, and still asks when nothing resolves. The baseline prose names .imm/config.json as the Git integration source, and AGENTS.md drops its carrier directive because .imm/config.json now carries it.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/git-integration-preference.test.ts: a tracked .imm/config.json git_integration auto resolves auto with source .imm/config.json even when AGENTS.md declares manual; with no project key an AGENTS.md `- Git integration: auto` line still resolves auto with a deprecation diagnostic naming git_integration in .imm/config.json; git_integration \"sometimes\" resolves manual with a diagnostic naming .imm/config.json and the key; an untracked .imm/config.json is ignored.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/carrier-enrollment-gate-contract.test.ts, draw-up.md's carrier resolution names a literal user instruction, then `imm-kernel config --json` initiative_carrier with its source, then the deprecated user-level directive, then asking, and no longer names the repository root instruction file as a carrier source; the Planner still reports an invalid value and asks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "AGENTS.md no longer contains `Initiative carrier default`; the repository's imm-kernel config --json resolves initiative_carrier github from source project; skill and dist mirrors are consistent.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'Initiative carrier default' AGENTS.md && plugins/immune-brain/bin/imm-kernel config --json | bun -e 'const c=JSON.parse(await Bun.stdin.text()); if (c.initiative_carrier?.value!==\\\"github\\\"||c.initiative_carrier?.source!==\\\"project\\\") process.exit(1)' && bun test tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The Claude bundle is current and the repository typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/config-git-carrier.md",
+      "AGENTS.md",
+      "docs/plans/config-git-carrier.intent.json",
+      "docs/specs/layered-config.spec.md",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/draw-up.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/git_integration_preference.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/git-integration-preference.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/config-git-carrier.intent.json",
+    "content_hash": "sha256:10dc080692fda1b208547fcd23a8398f1ff030aa9430fd298fd6e25cf33cc35a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:10dc080692fda1b208547fcd23a8398f1ff030aa9430fd298fd6e25cf33cc35a",
+  "git_base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+  "attestations": [
+    {
+      "id": "approval-qa-5b42beb5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:10dc080692fda1b208547fcd23a8398f1ff030aa9430fd298fd6e25cf33cc35a",
+      "diff_hash": "sha256:8571b61f02ef90c080884231155c0fcf7f93099dc05327cb08f4341eaa09f6b6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:7b5c10ee89764b3589416a14e3d0121b57bafaf906bb0b61646109d5f3be7141",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7b5c10ee89764b3589416a14e3d0121b57bafaf906bb0b61646109d5f3be7141"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7b5c10ee89764b3589416a14e3d0121b57bafaf906bb0b61646109d5f3be7141"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7b5c10ee89764b3589416a14e3d0121b57bafaf906bb0b61646109d5f3be7141"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:7b5c10ee89764b3589416a14e3d0121b57bafaf906bb0b61646109d5f3be7141"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-11dc90e4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:10dc080692fda1b208547fcd23a8398f1ff030aa9430fd298fd6e25cf33cc35a",
+      "diff_hash": "sha256:32d9590a2fd40b299683a8bc9791b96a4f9515027635c139b03fe3d93c089213",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:8cac4786fb9d0c91547aedc5e97a2a641ec4e0177a9496ca59b1e2d50a9c9562",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8cac4786fb9d0c91547aedc5e97a2a641ec4e0177a9496ca59b1e2d50a9c9562"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8cac4786fb9d0c91547aedc5e97a2a641ec4e0177a9496ca59b1e2d50a9c9562"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8cac4786fb9d0c91547aedc5e97a2a641ec4e0177a9496ca59b1e2d50a9c9562"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8cac4786fb9d0c91547aedc5e97a2a641ec4e0177a9496ca59b1e2d50a9c9562"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-328711c4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:10dc080692fda1b208547fcd23a8398f1ff030aa9430fd298fd6e25cf33cc35a",
+      "diff_hash": "sha256:32d9590a2fd40b299683a8bc9791b96a4f9515027635c139b03fe3d93c089213",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；packet 和 manifest 摘要、commit 单一 parent、tree 及全部 changed_paths 的 blob/mode 已核对，完整差异及 Git integration 调用链已审查；AC1–AC4 采用 manifest 中 Kernel QA passed 证据。Blast radius: tier medium，承重路径为 git_integration_preference.ts、assurance/coordinator.ts、dist/draw-up.md 与 Claude bundle，无持久化形状变更。未重跑测试，Planner 实际对话行为未做人工验证。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+        "review_commit": "1bb09457d6c91d589757dc6d43e69d6f34a7b65f",
+        "review_tree": "73eb8cc0d8b0e83fa656232d49ad29e6e468404e",
+        "manifest_digest": "sha256:c5052f75f86507b22abfcd16dd76d37f380499f0959ef004eda4ce854942742b"
+      },
+      "reviewer_verdict_sha256": "sha256:c2398969e57be27a1449a0004053df72fe0bca7fddfb6344138f9f4ce9e1f72a"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-2e05f2534491-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "plugins/immune-brain/runtime/git_integration_preference.ts:16 将 user 文件中名为 git_integration 的错误也当作项目 Git policy 错误，但第 22 行仍返回 project 的 auto，导致 diagnostic 声称 using manual，实际仍允许自动提交。应按配置文件及受影响 section 筛选诊断，确保诊断与返回 mode 一致，并补充此场景的回归测试。",
+      "anchor": "sha256:ea72e67e7c918fc6580b5a8bf20bc81a71187aa9966812c27a9f759117369c6c",
+      "evidence": {
+        "trigger": "tracked .imm/config.json 设置有效 git_integration: \"auto\"，user config 包含不受支持的顶层 git_integration: \"manual\" → resolveConfig 为 user 文件产生 key_path=git_integration 的 unknown-key error，同时保留 project auto；reader 返回 mode=auto，却报告 using manual，status 展示该矛盾警告，commitSettledDelivery 仍进入自动提交分支。",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig",
+          "plugins/immune-brain/runtime/git_integration_preference.ts:16-24",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:440-442",
+          "plugins/immune-brain/runtime/assurance/workflow_autocommit.ts:249-268"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:config-git-carrier:2026-11-02T12:59:37.996Z",
+      "at": "2026-11-02T12:59:37.996Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-git-carrier.intent.json"
+    },
+    {
+      "id": "record_approval:config-git-carrier:2026-11-02T12:59:54.473Z",
+      "at": "2026-11-02T12:59:54.473Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5b42beb5\naction_v2_sha256:1d453b236bc8bdf40c278e3ce0337d54c1697f81908e3bbb8e382c9694a19072",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f6487d79ed553faf",
+        "issued_at": "2026-11-02T12:59:54.473Z"
+      }
+    },
+    {
+      "id": "request_rework:config-git-carrier:2026-11-02T13:03:09.339Z",
+      "at": "2026-11-02T13:03:09.339Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:34dd060edb87f37fab0b1eb3bfd861cb6a4b386e3883c4776b8c7334c489d313",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-719d09653dd9485c",
+        "issued_at": "2026-11-02T13:03:09.340Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+        "review_commit": "9e3fcaee3173bb8ab02e8fd92635b668efaa404f",
+        "review_tree": "9608d6595013c670a7987c6d9888714cf2dfa735",
+        "manifest_digest": "sha256:227638ebfc02a8d880d8bd96ddb81a1e7593f03f7bb5a2f6e7e82c3c3bcfa012"
+      }
+    },
+    {
+      "id": "resolve_finding:config-git-carrier:2026-11-02T13:06:24.589Z",
+      "at": "2026-11-02T13:06:24.589Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2e05f2534491-1-review-1\naction_v2_sha256:286d99f97b6a0e87b361e2b2a7202a9111b59bd8ed45e3d609c7adc17edbaf58"
+    },
+    {
+      "id": "freeze_artifacts:config-git-carrier:2026-11-02T13:06:33.085Z",
+      "at": "2026-11-02T13:06:33.085Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-git-carrier.intent.json"
+    },
+    {
+      "id": "record_approval:config-git-carrier:2026-11-02T13:06:53.174Z",
+      "at": "2026-11-02T13:06:53.174Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-11dc90e4\naction_v2_sha256:51ae8f7963d7e9ce8c913bed7eb37acbb72b3f39d7780b7f4a9f1b9099eea047",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-af1a4a8903a55d34",
+        "issued_at": "2026-11-02T13:06:53.174Z"
+      }
+    },
+    {
+      "id": "record_approval:config-git-carrier:2026-11-02T13:09:37.199Z",
+      "at": "2026-11-02T13:09:37.199Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-328711c4\naction_v2_sha256:b869490b5d368fe339e7b26aab92cdd017e5f66c1dcee003dae768f7722582d7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-857d7be71b2a6947",
+        "issued_at": "2026-11-02T13:09:37.199Z"
+      }
+    },
+    {
+      "id": "complete:config-git-carrier:2026-11-02T13:09:38.639Z",
+      "at": "2026-11-02T13:09:38.639Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6e68b0bb5cb3e8fa5af50409d29596154b407c148913714b1181925ab74471dc"
+    }
+  ]
+}

@@ -66,9 +66,13 @@ The component lives in `scripts/decision-model/` and the A14 eval in `scripts/de
 
 Choosing `scripts/` over a shipped plugin directory is a delegated choice. The only consumer in this slice is offline. The module has no host coupling, so the live A14 slice can move it under `plugins/immune-brain/` together with the packaging change that slice needs anyway.
 
+> **Superseded by `docs/specs/layered-config.spec.md` D8 (Initiative `layered-config`, #360).** The component moves to `plugins/immune-brain/runtime/decision_model/` and ships with the plugin; `scripts/decision-eval/` imports it from there. No authority-path runtime file (`runtime/kernel/`, `runtime/assurance/`, `runtime/unattended/`, `runtime/claude/`, `.pi-extension/`) imports it, which replaces the import scan of AC4. The text above stays as the record of the original slice.
+
 ### D2 — Provider kinds (source: BR-DEC-5; Clef API source)
 
 Kinds known to the parser: `clef`, `fake`, `jev`. `clef` and `fake` have adapters. A profile of kind `jev` parses but resolves to `unavailable` with reason `unsupported_provider_kind` until the Jev adapter slice, because the Jev API is unverified. Any other kind is `config_invalid`. There is no generic-LLM kind (BR-OUT-2).
+
+> **Superseded by decision-models S3 (`jev-adapter`, #351).** `jev` now has an adapter: `scripts/decision-model/providers/jev.ts`, wired in `scripts/decision-model/decide.ts:30`. A `jev` profile takes `api_key_env` (required) and optional `base_url`, `context_window` and `timeout_ms` (`scripts/decision-model/config.ts` `parseJevProfile`), and no longer resolves to `unsupported_provider_kind`. The adapter is still unverified against TypeSafe's own reference. The header of `jev.ts` and `tests/fixtures/decision-eval/a14/README.md` record its sources and what they did not confirm, and a response that does not match the Clef choice shape surfaces as `unavailable`. The text above describes this slice as delivered.
 
 - **`clef`** profile fields: `kind`, `model` (`"clef"` or `"clef-flash"`), `account_id_env`, `token_env` (environment variable names, both required), optional `context_window` (positive integer, default 65536) and optional `timeout_ms` (1000–120000, default 30000).
 - **`fake`** profile fields: `kind`, `answers` (map of `trace_id` → probability map) and `default` (probability map, optional). It returns the entry for the request's `trace_id`, else `default`, else `unavailable/provider_error`. It never touches the network. It reports `model: "fake"`, `model_version: null`, `input_tokens: null`.
@@ -101,6 +105,8 @@ The only top-level key is `profiles`, and each profile's keys are the ones its k
 An unknown application point, an unknown kind, an unknown category, an unknown key or malformed JSON is `config_invalid`. A missing file means nothing is bound (`no_binding`). Profile names are local and the bindings name them, so a clone with no local file, or with a local file that lacks the named profile, resolves to `no_local_config` or `unknown_profile`, never to a call.
 
 Resolution for a point: `bindings[point]` if the key is present, else `default_profile`. `null` means `no_binding`. Then the profile is looked up in the local file. Exactly one profile answers a call (BR-DEC-2).
+
+> **Superseded by `docs/specs/layered-config.spec.md` D2, D4, D7 and D9 (#360).** Profiles, the default profile and bindings move to the user file `~/.config/immune-brain/config.json`, with per-repository overrides; the egress ceiling and enabled points move to the tracked `.imm/config.json`. Both files above are read as deprecated legacy sources for one major version, and `.imm/decision-bindings.json` is deleted from this repository. The text above stays as the record of the original slice.
 
 ### D4 — Egress gate (source: BR-DEC-4)
 
@@ -250,6 +256,6 @@ Seams: `tests/decision-model.test.ts` exercises `decide()` through its public si
 ## Remaining gap after this slice
 
 - Real A14 report: run `imm-pr-diag` on chosen PRs, extract, label the corpus under the README protocol, set Clef credentials, run the eval. Needs BR-DEP-1.
-- Jev adapter slice, once its API is verified (BR-DEC-5).
+- ~~Jev adapter slice, once its API is verified (BR-DEC-5).~~ Delivered by decision-models S3 (#351). Its API is still unverified (see the D2 note).
 - Live A14 in `fix-pr`: move the module to a shipped path, set thresholds from the report, apply BR-DEC-1's live rules, deliver BR-SCN-2.
 - Other application points, phased per #286-§7; BR-DEFER-1…5; BR-DEC-7's parallel line; Issue edits (BR-DEP-2).

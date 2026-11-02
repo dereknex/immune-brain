@@ -118,7 +118,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 目标明确，需要正规计划与规格 | `/draw-up` "规划一下深色模式功能" | → `draw-up` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/drive` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/drive` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
-| 已发布的 Initiative 通过 Lane 批次推进 | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `.imm/lanes.local.json` profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。容量为 1 时一次运行一个 Lane；更大的 `max_parallel` 允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行 |
+| 已发布的 Initiative 通过 Lane 批次推进 | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `~/.config/immune-brain/config.json` 中的 Lane profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。容量为 1 时一次运行一个 Lane；更大的 `max_parallel` 允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行 |
 | 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/draw-up`，切到 Pi 输入 `/drive` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/fix-pr` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/prune-docs` | → 只读审计过时文档，仅删除经哈希审批的条目 |
@@ -565,7 +565,7 @@ flowchart TD
 
 ### 1. 批次运行模式概览
 
-- **开启方式：** 调用 `start_unattended_batch(slug)` 使用容量 1，或传入 `max_parallel` / 在 `.imm/lanes.local.json` profile 中设定 `max_parallel`。
+- **开启方式：** 调用 `start_unattended_batch(slug)` 使用容量 1，或传入 `max_parallel` / 在用户配置文件的 Lane profile 中设定 `max_parallel`。
 - **工作区拓扑：** runtime 在 Git common directory 下的 `imm/worktrees/<slug>/<task_id>` 为每个 child 创建 worktree，使用 `imm-lane/<slug>/<task_id>` 分支；Parent 进度保存在 `refs/heads/imm/<slug>`，不切换协调者的 checkout。
 - **Authority 边界：** 每个 Lane 都有自己的 Authority Store、Enrollment、QA、Review 与结算。
 - **集成机制：** runtime 提交 scope 内的交付，重跑 Integration Guard 验收命令，并在准入依赖任务前 fast-forward Parent ref。
@@ -630,37 +630,37 @@ sequenceDiagram
 
 ## 配置
 
-偏好设置写在仓库根目录下当前 Host 的 agent 指令文件里——`AGENTS.md`（Pi）或 `CLAUDE.md`（Claude Code）：
+Immune-Brain 读取两个 JSON 文件，Pi 与 Claude Code 共用：
 
-```md
-## Immune-Brain Preferences
-
-- Initiative carrier default: github   # 或 local
-```
-
-Lane 偏好是唯一例外：它属于个人设置，写在 gitignore 的 preset `.imm/lanes.local.json` 里：
+- **用户文件** `~/.config/immune-brain/config.json`（设置了 `XDG_CONFIG_HOME` 时为 `$XDG_CONFIG_HOME/immune-brain/config.json`）：个人选择——Lane profile、决策模型 profile（只写凭据环境变量的*名字*），以及 `projects` 下按仓库的覆盖。
+- **项目文件** `.imm/config.json`，由 Git 跟踪：仓库事实与策略——`git_integration`、`initiative_carrier`、启用的决策点与 egress 上限、Lane 默认值和批次最终验证命令。
 
 ```json
 {
-  "active": "fast",
-  "profiles": {
-    "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
-    "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+  "contract": "immune_brain/user_config/v1",
+  "lanes": {
+    "active": "fast",
+    "profiles": {
+      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+      "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
+    }
   }
 }
 ```
 
-| 偏好 | 选项 | 默认 | 说明 |
-|---|---|---|---|
-| 回复语言 | 任意自然语言 | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
-| Initiative 载体 | `local` / `github` | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
-| Advisory subagent | 允许 / 单人 | 允许 | 受 Pi host 策略与用户显式指令约束 |
-| `max_parallel`（preset） | ≥ 1 的整数 | 无默认，一次一个 Lane | 启动批次时作为 `max_parallel` 传入；续跑沿用批次记录的值 |
-| `executor_host`（preset） | `claude-code` / `pi` | 无默认，优先用 Parent 同类 Host | 所有 Lane 都用该 Host，不回退到另一个 |
-| `executor_model`（preset） | 该 Host 的 model ID | 无默认，用 Executor Host 自己的默认 | 仅在同一 profile 设置了 `executor_host` 时生效 |
-| `executor_effort`（preset） | 该 Host 的强度档位 | 无默认，用 Executor Host 自己的默认 | 仅在同一 profile 设置了 `executor_host` 时生效；Claude Code 传 `--effort`，Pi 传 `--thinking` |
+```json
+{ "contract": "immune_brain/project_config/v1", "git_integration": "manual", "initiative_carrier": "github" }
+```
 
-优先级：**当前消息 > 仓库 agent 指令文件 > 用户级 agent 指令文件 > 询问**。Skill 会直接读取这些文件，因此即使 Host 不自动加载该文件，偏好依然生效。Lane 字段按 **当前消息 > 选中的 preset profile > 默认值** 解析；请求可以指定 profile（"用 cheap，但 max parallel 3"）；文件格式错误、profile 不存在、key 拼错或取值非法时，批次不启动。
+| 偏好 | 文件 | 默认 | 说明 |
+|---|---|---|---|
+| 回复语言 | agent 指令文件（`AGENTS.md` / `CLAUDE.md`） | 仓库 `AGENTS.md` | 机器契约/路径/标识符保持原文 |
+| Initiative 载体 | 项目文件，其次用户文件 | 无默认，Planner 询问 | 仅当提案拆分为多个 TaskIntent 时生效 |
+| Git integration | 项目文件 | `manual` | `auto` 会提交已结算的交付 |
+| Advisory subagent | agent 指令文件 | 允许 | 受 Pi host 策略与用户显式指令约束 |
+| `lanes.active` / Lane profile | 用户文件 | 无默认，一次一个 Lane | 字段 `max_parallel`、`executor_host`（`claude-code` / `pi`）、`executor_model`、`executor_effort`；model 与 effort 只在同一层设置了 host 时生效 |
+
+个人值按 **当前消息 > 用户文件中的仓库覆盖 > 用户文件 > 项目默认值 > 内置默认** 解析；策略值（`git_integration`、启用的决策点、egress）以项目文件为准，用户文件只能收窄 egress。`imm-kernel config --json` 打印每个生效值及其来源，两个 Host 的 status Tool 也以 `config` 字段返回。某一节非法时只有该节 fail closed，并给出带名字的诊断。`.imm/lanes.local.json`、`.imm/decision-models.local.json`、`.imm/decision-bindings.json` 以及指令文件中的 `Initiative carrier default:` / `Git integration:` 行是已弃用的旧来源，在一个大版本内仍会读取并给出警告。
 
 详见 [`docs/reference/immune-brain-config.md`](docs/reference/immune-brain-config.md)。
 
@@ -708,7 +708,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **任务结算后的审计凭证（Audit Trail）保存在哪里？** 保存在仓库的 `.imm/audit/<task-id>/` 目录下，并作为 Git-tracked 资产提交。其中包含最终的 `TaskRecord`、绑定的代码 `diff_hash`、真实执行的 QA 退出码/输出 Attestation、以及 Reviewer 签署的验证凭据，保证交付全流程可追溯、可审计。
 
-**偏好配置为什么写在 AGENTS.md / CLAUDE.md 而不是独立配置文件？** 遵循“零外部负担、宿主原生”原则。将偏好（如 Initiative 载体、交互语言）声明在项目根目录受版本控制的指令文件中，既能在不同 Host 之间透明生效，又避免了本地全局配置文件容易漂移、团队成员无法共享的痛点。
+**为什么用两个配置文件，而不是 AGENTS.md / CLAUDE.md 里的指令行？** 配置属于插件，不属于某个 Host 的指令文件。个人选择（Lane profile、按环境变量名引用的决策模型凭据）写在 `~/.config/immune-brain/config.json`，跨 clone、跨 Host 生效；仓库策略（`git_integration`、载体、egress 上限）写在受 Git 跟踪的 `.imm/config.json`，可审阅、与协作者共享。交互语言等沟通指令仍写在 agent 指令文件里。
 
 **为什么在复杂任务中推荐用 `grill-me` 替代 `clarify` 进行决策确认？** `clarify` 是轻量内置的免安装工具，用于快速对齐顶层问题框架。而来自 `mattpocock/skills` 的 `grill-me` 则具备极具侵略性的苏格拉底式发问机制，能够沿着设计树分支主动提供带偏好的推荐方案并穷追猛打，促使开发者做出明确抉择。对于非平凡功能开发、重大架构重构或安全门禁边界，在上游先用 `grill-me` 彻底敲定决策树再输入给 `draw-up`，能产出颗粒度极高、无后顾之忧的 Living Spec，从根源上杜绝下游返工。
 

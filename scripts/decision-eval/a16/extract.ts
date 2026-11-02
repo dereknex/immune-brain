@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { CliError, parseJsonl } from "../harness.ts";
-import { A16_REVISIT_CHAIN_CLASS } from "../../decision-model/thresholds.ts";
+import { A16_REVISIT_CHAIN_CLASS } from "../../../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 export { CliError };
 

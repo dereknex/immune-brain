@@ -39,7 +39,7 @@ class is decided by stop reason alone.
 
 ## Running the eval
 
-Configure a profile in `.imm/decision-models.local.json` (gitignored); see
+Configure a profile in `~/.config/immune-brain/config.json`; see
 `tests/fixtures/decision-eval/a14/README.md` for the `clef` and `jev` shapes. Then:
 
 `bun scripts/decision-eval/a16/run.ts --corpus <corpus.jsonl> --out <dir>`

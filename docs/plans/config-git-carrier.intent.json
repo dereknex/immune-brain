@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-git-carrier",
+  "owner": "user",
+  "goal": "layered-config S4 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Git integration reader takes git_integration from the tracked .imm/config.json through resolveConfig, falls back to the instruction-file directive with a deprecation warning, and keeps manual for an absent or invalid value; every existing caller is unchanged. The Planner's Initiative carrier resolution in draw-up reads initiative_carrier and its source from imm-kernel config --json after a literal request, keeps the Host's user-level instruction-file directive only as a deprecated last step, and still asks when nothing resolves. The baseline prose names .imm/config.json as the Git integration source, and AGENTS.md drops its carrier directive because .imm/config.json now carries it.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/git-integration-preference.test.ts: a tracked .imm/config.json git_integration auto resolves auto with source .imm/config.json even when AGENTS.md declares manual; with no project key an AGENTS.md `- Git integration: auto` line still resolves auto with a deprecation diagnostic naming git_integration in .imm/config.json; git_integration \"sometimes\" resolves manual with a diagnostic naming .imm/config.json and the key; an untracked .imm/config.json is ignored.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/carrier-enrollment-gate-contract.test.ts, draw-up.md's carrier resolution names a literal user instruction, then `imm-kernel config --json` initiative_carrier with its source, then the deprecated user-level directive, then asking, and no longer names the repository root instruction file as a carrier source; the Planner still reports an invalid value and asks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "AGENTS.md no longer contains `Initiative carrier default`; the repository's imm-kernel config --json resolves initiative_carrier github from source project; skill and dist mirrors are consistent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'Initiative carrier default' AGENTS.md && plugins/immune-brain/bin/imm-kernel config --json | bun -e 'const c=JSON.parse(await Bun.stdin.text()); if (c.initiative_carrier?.value!==\\\"github\\\"||c.initiative_carrier?.source!==\\\"project\\\") process.exit(1)' && bun test tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/config-git-carrier.md",
+    "AGENTS.md",
+    "docs/plans/config-git-carrier.intent.json",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/BASELINE.md",
+    "plugins/immune-brain/dist/BASELINE.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/draw-up.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/git_integration_preference.ts",
+    "plugins/immune-brain/skills/BASELINE.md",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/exhaustive-decision-tree-contract.test.ts",
+    "tests/git-integration-preference.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ApplicationPoint, Envelope, UnavailableReason } from "../decision-model/contract.ts";
+import type { ApplicationPoint, Envelope, UnavailableReason } from "../../plugins/immune-brain/runtime/decision_model/contract.ts";
 
 export const REPORT_CONTRACT = "immune_brain/decision_eval_report/v1";
 export const UNLABELED = "unlabeled";

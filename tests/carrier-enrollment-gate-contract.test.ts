@@ -11,7 +11,6 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { deriveGithubTerminalProjectionInput } from "../plugins/immune-brain/runtime/assurance/coordinator";
-import { resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const read = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf-8");
@@ -20,6 +19,22 @@ const PLANNER = read("plugins/immune-brain/dist/draw-up.md");
 const LOOP = read("plugins/immune-brain/dist/drive.md");
 
 describe("Initiative carrier Enrollment gate", () => {
+	it("resolves carrier in request, layered configuration, user directive, ask order", () => {
+		const section = PLANNER.slice(PLANNER.indexOf("### Initiative Carrier Preference"), PLANNER.indexOf("Once decomposition is complete"));
+		const request = section.indexOf("1. a literal user instruction");
+		const config = section.indexOf("2. `imm-kernel config --json`");
+		const user = section.indexOf("3. the deprecated");
+		const ask = section.indexOf("4. ask the user");
+		expect(request).toBeGreaterThanOrEqual(0);
+		expect(config).toBeGreaterThan(request);
+		expect(user).toBeGreaterThan(config);
+		expect(ask).toBeGreaterThan(user);
+		expect(section).toContain("`initiative_carrier.value`");
+		expect(section).toContain("`source`");
+		expect(section).toContain("Host's user-level agent instruction file");
+		expect(section).toContain("Report an invalid `initiative_carrier` configuration value and ask");
+		expect(section).not.toContain("in the repository root agent instruction file");
+	});
 	it("the Planner still declares the gate", () => {
 		expect(PLANNER).toContain("tracker_associated");
 		expect(PLANNER).toContain("tracker_projection_failed");
