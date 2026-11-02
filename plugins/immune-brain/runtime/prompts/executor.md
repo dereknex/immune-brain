@@ -83,7 +83,11 @@ the violated invariant, all known trigger classes and their controls in Finding
 coverage; account for affected callers sharing that invariant within scope.
 Record missing evidence as blocked and repair it before handoff. The Loop owns
 verdict submission, finding disposition and the second-rework generalize-or-refute
-rule.
+rule. When the handoff carries a `convergence` entry for an acceptance
+(`obligation: "generalize_or_refute"`), that acceptance drew a blocking Review
+finding in consecutive rounds: Finding coverage must show the fix covers every
+known trigger class of the violated invariant, or the Loop answers with
+`refute_finding`; a further local patch of the reported path alone is neither.
 
 A finding whose defect lies inside the TaskIntent goal and acceptance is
 ordinary rework even when no acceptance names its exact case: fix the code and

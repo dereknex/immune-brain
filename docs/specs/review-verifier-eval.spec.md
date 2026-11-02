@@ -315,6 +315,11 @@ never rewrite" invariant is preserved — see Architecture invariants).
    series once, here, means the batch convergence trigger and the review
    quality report read the same numbers. The report decides nothing by
    itself; wiring a trigger into imm-run remains #204 S1's own follow-up.
+   The series is delivered by the decision-models S1 task
+   `acceptance-repeat-series` (a pure `acceptanceRepeatSeries` in
+   `plugins/immune-brain/runtime/kernel/acceptance_repeats.ts` and the
+   read-only `scripts/review-eval/acceptance-repeats.ts`), and #284 S1
+   reuses it instead of building a second one.
 8. **Review timing instrumentation (added 2026-10-20).** Item 3's
    rounds-to-pass numbers say how many rounds a task took, never how long
    a round's review took: no TaskRecord version timestamps the review

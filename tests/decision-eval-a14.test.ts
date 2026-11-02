@@ -121,6 +121,7 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 		expect(typeof m.macro_f1).toBe("number");
 		expect(typeof m.brier).toBe("number");
 		expect(typeof m.ece).toBe("number");
+		expect(report.calibration).toEqual({ brier: m.brier, excluded: 1 });
 		expect(m.coverage_at.map((c: { confidence: number }) => c.confidence)).toEqual([0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]);
 		expect(m.coverage_at[0]).toEqual({ confidence: 0.5, coverage: 3 / 4, accuracy: 2 / 3 });
 		expect(report.baseline).toMatchObject({ name: "all_blocking", accuracy: 0.25 });
@@ -133,6 +134,30 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 		expect(md).toContain("| Baseline (all_blocking) |");
 		expect(md).toContain("- `acme/widgets#7/comment/2` gold nit, choice nit (blocking=0.100, nit=0.700, out_of_scope=0.100, duplicate=0.100); model fake, model version null, threshold set a14/v0, truncation unknown");
 		expect(md).toContain("- `acme/widgets#7/comment/4` gold duplicate, unavailable: provider_error");
+	});
+
+	test("a jev profile with a replaced fetch writes a report whose provider_kind is jev", async () => {
+		const { root, corpus, out } = evalSetup({ profiles: { default: { kind: "jev", api_key_env: "A14_JEV_KEY_TEST" } } }, [corpusRow(1, "blocking"), corpusRow(2, "nit")]);
+		const answer = { type: "choice", choice: "blocking", probabilities: p(0.7, 0.1, 0.1, 0.1), confidence: 0.7 };
+		const urls: string[] = [];
+		const realFetch = globalThis.fetch;
+		const realKey = process.env.A14_JEV_KEY_TEST;
+		globalThis.fetch = (async (url: string) => {
+			urls.push(url);
+			return Response.json({ model: "jev-test", answers: { a14_pr_comment_triage: answer } });
+		}) as unknown as typeof fetch;
+		process.env.A14_JEV_KEY_TEST = "jev-test-key";
+		try {
+			const { main } = await import("../scripts/decision-eval/a14/run.ts");
+			expect(await main(["--corpus", corpus, "--out", out, "--root", root, "--date", "2026-11-02"])).toBe(0);
+		} finally {
+			globalThis.fetch = realFetch;
+			if (realKey === undefined) delete process.env.A14_JEV_KEY_TEST;
+			else process.env.A14_JEV_KEY_TEST = realKey;
+		}
+		expect(urls).toEqual(["https://api.typesafe.ai/v1/systemone", "https://api.typesafe.ai/v1/systemone"]);
+		const report = JSON.parse(readFileSync(join(out, "a14-2026-11-02.json"), "utf8"));
+		expect(report).toMatchObject({ provider_kind: "jev", profile: "default", model: "jev-test", counts: { decided: 2 } });
 	});
 
 	test("a corpus with no labelled rows exits 1 with no_labelled_cases", () => {

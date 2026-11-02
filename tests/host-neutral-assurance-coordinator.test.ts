@@ -568,6 +568,68 @@ describe("host-neutral assurance coordinator", () => {
 			}
 		});
 	});
+	describe("rework convergence", () => {
+		type Drawn = { acceptance_id: string | null; kind?: "blocking" | "advisory"; source?: "review" | "execution" };
+		/** `rounds[n - 1]` are the findings Review drew in round n; the committed record holds every round up to the one just submitted. */
+		async function submitRound(rounds: Drawn[][]) {
+			const record = {
+				findings: rounds.flatMap((drawn, index) => drawn.map((finding, position) => ({
+					id: `f-${index + 1}-${position}`, kind: finding.kind ?? "blocking", status: "open", acceptance_id: finding.acceptance_id,
+					source: finding.source ?? "review", review_round: index + 1, summary: "s",
+				}))),
+			};
+			const h = makeCoordinator({ record: async () => ({ revision: "record-1", record: record as never }) });
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+				snapshot_digest: snapshotDigest(snapshot("review")), decision: "rework", findings: [{ id: "review-A1", kind: "blocking", acceptance_id: "A1",
+					summary: "fixture review repair", evidence: { trigger: "fixture violated assertion", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+			return h.coordinator.submitReview(TASK, ctx, verdict);
+		}
+
+		test("the same acceptance in two consecutive rounds names generalize_or_refute with streak 2", async () => {
+			const result = await submitRound([[{ acceptance_id: "A1" }], [{ acceptance_id: "A1" }]]);
+			expect(result).toMatchObject({ state: "rework", convergence: [{ acceptance_id: "A1", streak: 2, obligation: "generalize_or_refute" }] });
+		});
+
+		test("a third consecutive round on the acceptance returns streak 3", async () => {
+			const result = await submitRound([[{ acceptance_id: "A1" }], [{ acceptance_id: "A1" }], [{ acceptance_id: "A1" }]]);
+			expect((result as { convergence?: unknown }).convergence).toEqual([{ acceptance_id: "A1", streak: 3, obligation: "generalize_or_refute" }]);
+		});
+
+		test("a first-round rework and a changed acceptance carry no convergence key", async () => {
+			for (const rounds of [[[{ acceptance_id: "A1" }]], [[{ acceptance_id: "A1" }], [{ acceptance_id: "A2" }]]]) {
+				const result = await submitRound(rounds);
+				expect(result.state).toBe("rework");
+				expect(Object.hasOwn(result, "convergence")).toBe(false);
+			}
+		});
+
+		test("a null acceptance, non-blocking and non-review findings never appear in convergence", async () => {
+			const result = await submitRound([
+				[{ acceptance_id: null }, { acceptance_id: "A2", kind: "advisory" }, { acceptance_id: "A3", source: "execution" }],
+				[{ acceptance_id: null }, { acceptance_id: "A2", kind: "advisory" }, { acceptance_id: "A3", source: "execution" }],
+			]);
+			expect(result.state).toBe("rework");
+			expect(Object.hasOwn(result, "convergence")).toBe(false);
+		});
+
+		test("an unreadable record leaves the rework result unchanged", async () => {
+			let unreadable = false;
+			const h = makeCoordinator({ record: async () => {
+				if (unreadable) throw new Error("record unreadable");
+				return { revision: "record-1", record: { findings: [] } as never };
+			} });
+			expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
+			unreadable = true;
+			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+				snapshot_digest: snapshotDigest(snapshot("review")), decision: "rework", findings: [{ id: "review-A1", kind: "blocking", acceptance_id: "A1",
+					summary: "fixture review repair", evidence: { trigger: "fixture violated assertion", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+			const result = await h.coordinator.submitReview(TASK, ctx, verdict);
+			expect(result.state).toBe("rework");
+			expect(Object.hasOwn(result, "convergence")).toBe(false);
+		});
+	});
+
 	describe("review rework carries only blocking findings", () => {
 		const evidence = {
 			trigger: "a caller ignores the frozen tree → the stale bytes are approved",

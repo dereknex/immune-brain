@@ -1,0 +1,140 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "acceptance-repeat-series",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "acceptance-repeat-series",
+    "goal": "decision-models S1 (from #204; BR-DEC-7; delivers #284 S1 item 7, docs/specs/review-verifier-eval.spec.md:307-317). A maintainer can see, per run and acceptance ID, how review findings repeated across rounds, from committed records only. Delegated choices: a pure acceptanceRepeatSeries(findings, latestRound) in plugins/immune-brain/runtime/kernel/acceptance_repeats.ts returns per acceptance key (null kept as a key) finding_count, rounds_with_findings, last_finding_round, rounds_since_last_finding and current_streak; findings without review_round count only in finding_count and unrounded. No runtime caller yet. A read-only CLI scripts/review-eval/acceptance-repeats.ts reads committed audit at HEAD via the revisit audit reader and writes no file. The #284 Spec item 7 notes this delivery; #284 TaskIntents are not edited.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/acceptance-repeat-series.test.ts, acceptanceRepeatSeries returns: for key A with findings in rounds 1, 2 and 3 and latestRound 3, finding_count 3, rounds_with_findings 3, last_finding_round 3, rounds_since_last_finding 0, current_streak 3; for key B with one finding in round 1 and latestRound 3, rounds_since_last_finding 2 and current_streak 0; two findings of one key in the same round give finding_count 2 and rounds_with_findings 1; a finding with acceptance_id null is reported under the null key; a finding with review_round null raises finding_count and unrounded but no round metric; an empty findings list returns an empty series.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/acceptance-repeat-series.test.ts, scripts/review-eval/acceptance-repeats.ts run as a subprocess with --root on a temporary git repository whose HEAD commits one run-scoped audit pair with findings on two acceptance IDs prints, with --json, one row per (run, acceptance) whose counts equal acceptanceRepeatSeries over that run; an audit pair present only in the working tree and not committed is absent from the output; git status --porcelain of the temporary repository is unchanged after the run; a --root that is not a git repository exits 1 with the error on stderr and no stdout rows.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "docs/specs/review-verifier-eval.spec.md item 7 (Per-acceptance repeat counts) states that the series is delivered by the decision-models S1 task acceptance-repeat-series and that #284 S1 reuses it.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"acceptance-repeat-series\",\n      \"docs/specs/review-verifier-eval.spec.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/acceptance-repeat-series.intent.json",
+      "docs/specs/review-verifier-eval.spec.md",
+      "plugins/immune-brain/runtime/kernel/acceptance_repeats.ts",
+      "plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
+      "scripts/review-eval/acceptance-repeats.ts",
+      "tests/acceptance-repeat-series.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/acceptance-repeat-series.intent.json",
+    "content_hash": "sha256:8ca07608c03a87b8ab5975a0e5e03fe2db7e9f7d9b46473f06183f377b64dc8f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8ca07608c03a87b8ab5975a0e5e03fe2db7e9f7d9b46473f06183f377b64dc8f",
+  "git_base_head": "c3363a81f4ccd25b99df7de11146b12c94bf67ff",
+  "attestations": [
+    {
+      "id": "approval-qa-2c704bcb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ca07608c03a87b8ab5975a0e5e03fe2db7e9f7d9b46473f06183f377b64dc8f",
+      "diff_hash": "sha256:70c3146a00ec76282c7dfc2aee607657802f77e19b7d6b4ba62d27560b1dd052",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:43708adf31853042c7bdcfb1ab22b881ce76285e71ab77af68829f658abec974",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43708adf31853042c7bdcfb1ab22b881ce76285e71ab77af68829f658abec974"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43708adf31853042c7bdcfb1ab22b881ce76285e71ab77af68829f658abec974"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43708adf31853042c7bdcfb1ab22b881ce76285e71ab77af68829f658abec974"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-423eaeda",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8ca07608c03a87b8ab5975a0e5e03fe2db7e9f7d9b46473f06183f377b64dc8f",
+      "diff_hash": "sha256:70c3146a00ec76282c7dfc2aee607657802f77e19b7d6b4ba62d27560b1dd052",
+      "actor_id": "parent-mediated-review",
+      "summary": "Tier low-medium: new pure kernel module acceptance_repeats.ts, a read-only CLI, and an additive acceptanceKey field in audit_reader.ts. Persisted shapes and runtime callers are untouched. AC1 to AC3 are met by the diff, the tests assert each clause, and Kernel QA outcomes all passed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c3363a81f4ccd25b99df7de11146b12c94bf67ff",
+        "review_commit": "6c22f5c2699928b9cff7545ee89680672665dc1b",
+        "review_tree": "e8abedd61834adc19e21ae68bdf2505f262e2937",
+        "manifest_digest": "sha256:d77908ead8deae3ee00d5da73b94ae9de25e53cd852201173d562dbbf10484c1"
+      },
+      "reviewer_verdict_sha256": "sha256:ffbe7ea81da384a448584495c9f8eae0fad7be80a784d459c4659e29868236f2"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:acceptance-repeat-series:2026-11-02T06:27:52.622Z",
+      "at": "2026-11-02T06:27:52.622Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/acceptance-repeat-series.intent.json"
+    },
+    {
+      "id": "record_approval:acceptance-repeat-series:2026-11-02T06:28:01.563Z",
+      "at": "2026-11-02T06:28:01.563Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2c704bcb\naction_v2_sha256:aad98e85729c4bd22ec90ffa2384ea870b95d95f255e2f61e785d9ec3948ed04",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T06:28:01.563Z"
+      }
+    },
+    {
+      "id": "record_approval:acceptance-repeat-series:2026-11-02T06:28:51.752Z",
+      "at": "2026-11-02T06:28:51.752Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-423eaeda\naction_v2_sha256:28f608b6a10a9d2450b958a1f57f499c461fa38bd741ba25d97af381e25d3c5f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-02T06:28:51.752Z"
+      }
+    },
+    {
+      "id": "complete:acceptance-repeat-series:2026-11-02T06:28:52.961Z",
+      "at": "2026-11-02T06:28:52.961Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4ba8a8faa7824d6c1e0c3174b4c4a0c3c8eac12347653715b12d8daf36b8b2c6"
+    }
+  ]
+}

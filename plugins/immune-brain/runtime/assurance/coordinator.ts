@@ -11,6 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
 import { reviewIncompleteHistory } from "../kernel/reducer";
 import { anchorForEvidence } from "../kernel/refutation";
+import { acceptanceRepeatSeries } from "../kernel/acceptance_repeats";
 import {
 	findingsDigest,
 	type VerificationDescriptor,
@@ -51,7 +52,7 @@ export interface TaskRecordRead {
 	revision?: string;
 	record?: {
 		contract?: string;
-		findings: Array<{ kind: string; status: string; id?: string; acceptance_id?: string | null }>;
+		findings: Array<{ kind: string; status: string; id?: string; acceptance_id?: string | null; source?: string; review_round?: number | null }>;
 		/** Kernel history; Review disclosure reads `revise_intent` reasons from it. */
 		history?: Array<{ type: string; reason: string }>;
 	} | null;
@@ -531,9 +532,20 @@ export function deliveryOf(diffHash: string, settleCommit?: string): AssuranceDe
 	};
 }
 
+/**
+ * decision-models S2 (BR-DEC-7): the same non-null acceptance drew a blocking Review finding in this and the
+ * previous round. The rework handoff carries the obligation; the Kernel parks nothing because of it.
+ */
+export interface ReworkConvergence {
+	acceptance_id: string;
+	/** Consecutive Review rounds, ending at the latest, with a blocking finding on the acceptance (>= 2). */
+	streak: number;
+	obligation: "generalize_or_refute";
+}
+
 export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
-	| { state: "rework"; operation: "review"; operation_id: string; summary: string }
+	| { state: "rework"; operation: "review"; operation_id: string; summary: string; convergence?: ReworkConvergence[] }
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -1603,11 +1615,13 @@ export class AssuranceCoordinator {
 			this.closeInvocation(invocation);
 		}
 		if (verdict.decision === "rework") {
+			const convergence = await this.reworkConvergence(ctx, taskId);
 			return {
 				state: "rework",
 				operation: "review",
 				operation_id: reservation.operationId,
 				summary: verdict.findings?.map((finding) => finding.summary).join("; ") ?? "independent Review requested rework",
+				...(convergence.length > 0 ? { convergence } : {}),
 			};
 		}
 		let settled: AssuranceProjectionResult;
@@ -1627,6 +1641,28 @@ export class AssuranceCoordinator {
 			}
 		}
 		return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
+	}
+
+	/**
+	 * Derived from the committed record, never from the verdict: a missing or unreadable record yields no
+	 * obligation, because the rework itself is already committed and this only annotates the handoff.
+	 */
+	private async reworkConvergence(ctx: HostContext, taskId: string): Promise<ReworkConvergence[]> {
+		try {
+			const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+			const blocking = (stored.record?.findings ?? []).flatMap((finding) =>
+				finding.source === "review" && finding.kind === "blocking" && typeof finding.review_round === "number"
+					? [{ acceptance_id: finding.acceptance_id ?? null, review_round: finding.review_round }]
+					: []);
+			if (blocking.length === 0) return [];
+			const latestRound = Math.max(...blocking.map((finding) => finding.review_round));
+			return acceptanceRepeatSeries(blocking, latestRound).flatMap((row) =>
+				row.acceptance_id !== null && row.current_streak >= 2
+					? [{ acceptance_id: row.acceptance_id, streak: row.current_streak, obligation: "generalize_or_refute" as const }]
+					: []);
+		} catch {
+			return [];
+		}
 	}
 
 	isReviewVerdictValid(taskId: string, verdictInput: unknown): boolean {

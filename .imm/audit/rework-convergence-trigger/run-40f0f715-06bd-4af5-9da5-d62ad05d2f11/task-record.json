@@ -1,0 +1,164 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rework-convergence-trigger",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rework-convergence-trigger",
+    "goal": "decision-models S2 (#204 S1 trigger; BR-DEC-7; obligation in the rework handoff only, no Kernel parking change, adopted 2026-11-02). When the same acceptance draws a blocking Review finding in two consecutive rounds, the rework handoff names a generalize-or-refute obligation for it, so the rule fires on a deterministic count. Delegated choices: the coordinator's review rework result gains an optional convergence array of {acceptance_id, streak, obligation} computed with acceptanceRepeatSeries (S1), present only when a non-null acceptance has current_streak >= 2. The Executor guidance in plugins/immune-brain/runtime/prompts/executor.md, its packaged mirror and the drive.md rework step pass the obligation on. Unchanged: rework round budget, replan_required, verdict bytes, Review independence. Claude bundle rebuilt if it inlines the coordinator; minor changeset.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/host-neutral-assurance-coordinator.test.ts tests named \"rework convergence\", through the coordinator's Review submission: a rework verdict whose blocking finding names acceptance X when the previous review round also recorded a blocking finding on X returns state rework with convergence [{acceptance_id: X, streak: 2, obligation: \"generalize_or_refute\"}]; a third consecutive round on X returns streak 3; a first-round rework, and a rework whose acceptance differs from the previous round's, return a result with no convergence key; a blocking finding with acceptance_id null never appears in convergence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"-t\",\n      \"rework convergence\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/acceptance-repeat-series.test.ts tests named \"long-tail replay\", replaying the committed review findings of .imm/audit/2026-09-01-002-claude-code-host, .imm/audit/2026-09-08-002-initiative-amendment and .imm/audit/2026-09-05-003-batch-run-state-machine round by round through acceptanceRepeatSeries, the convergence condition (a non-null acceptance with current_streak >= 2) first holds at round 2 for each of the three records.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\",\n      \"-t\",\n      \"long-tail replay\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The existing rework budget and authority checks still pass: tests/kernel-canary-rework-authority.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The packaged role prompt mirror and the Claude bundle are current: tests/skill-dist-consistency.test.ts passes and scripts/build-claude-plugin.ts --check reports the bundle current.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/skill-dist-consistency.test.ts && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "A changeset .changeset/rework-convergence-trigger.md declares \"immune-brain\": minor.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"\\\"immune-brain\\\": minor\",\n      \".changeset/rework-convergence-trigger.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rework-convergence-trigger.md",
+      "docs/plans/rework-convergence-trigger.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/kernel/acceptance_repeats.ts",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "tests/acceptance-repeat-series.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rework-convergence-trigger.intent.json",
+    "content_hash": "sha256:ebe1b6755465896d258e5af1bfc9a5f6f83a084e3e7c413d35067d2a4f070dc2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ebe1b6755465896d258e5af1bfc9a5f6f83a084e3e7c413d35067d2a4f070dc2",
+  "git_base_head": "7e79c3704cf8e4ae8da76d0ae1269844c916bf07",
+  "attestations": [
+    {
+      "id": "approval-qa-f13b5a46",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ebe1b6755465896d258e5af1bfc9a5f6f83a084e3e7c413d35067d2a4f070dc2",
+      "diff_hash": "sha256:2dddbc1daba70c75131d77ebcddeba303266675cbc206711609b661aee4801e8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:86fa0d87f8b05f83a17d0fb6637256b6c5604467887614d79cbe066b49a207b0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-43257d97",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ebe1b6755465896d258e5af1bfc9a5f6f83a084e3e7c413d35067d2a4f070dc2",
+      "diff_hash": "sha256:2dddbc1daba70c75131d77ebcddeba303266675cbc206711609b661aee4801e8",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius: tier medium, load-bearing path plugins/immune-brain/runtime/assurance/coordinator.ts (review rework result) with its inlined Claude bundle. The optional convergence annotation is derived from the committed record via acceptanceRepeatSeries after applyVerdict, fails open to no key, and leaves the round budget, replan_required and verdict bytes untouched. AC1-AC5 are covered by tests and prompt/bundle mirrors, with the Kernel QA outcomes all passed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7e79c3704cf8e4ae8da76d0ae1269844c916bf07",
+        "review_commit": "f0ab97a55c7ff4a9e267adf9d60e61054ec31829",
+        "review_tree": "864554447da30dfbfb42ef78305368383edec3ac",
+        "manifest_digest": "sha256:705a292c4cf608907a2c8656c84e1b10d1b33318805243a736f561cb742a69aa"
+      },
+      "reviewer_verdict_sha256": "sha256:060a17b6f9f4f300c84fbde519306c350c3bb2728e0b99401e0f1ec4fd0538a9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rework-convergence-trigger:2026-11-02T06:36:32.672Z",
+      "at": "2026-11-02T06:36:32.672Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rework-convergence-trigger.intent.json"
+    },
+    {
+      "id": "record_approval:rework-convergence-trigger:2026-11-02T06:37:24.206Z",
+      "at": "2026-11-02T06:37:24.206Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f13b5a46\naction_v2_sha256:cfa5ac28cde04d53b7f76c04bac40b181ba11aedddee5a21e6d9ce47233bed98",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T06:37:24.206Z"
+      }
+    },
+    {
+      "id": "record_approval:rework-convergence-trigger:2026-11-02T06:38:18.868Z",
+      "at": "2026-11-02T06:38:18.868Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-43257d97\naction_v2_sha256:2f98c06388016ff4178fbf1007fff3dc67b8a4db1cd878cf1ce4ff8a37efa171",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-02T06:38:18.868Z"
+      }
+    },
+    {
+      "id": "complete:rework-convergence-trigger:2026-11-02T06:38:21.084Z",
+      "at": "2026-11-02T06:38:21.084Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8132671990c0ea2a795d2d8d5e1022d56c448b0c7d90bf0a832a541aabee4428"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "a4-equivalence-eval",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "a4-equivalence-eval",
+    "goal": "decision-models S5 (application point A4; BR-DEC-4, BR-DEC-6). A maintainer can measure offline whether a decision model tells a new blocking Review finding apart as the same invariant class as an earlier one, a new defect, or out of contract, and how many rounds that would save. Delegated choices: point a4_finding_equivalence (input_category finding, sensitive; options same_invariant, new_defect, out_of_contract); scripts/decision-eval/a4/extract.ts emits one row per review finding at round >= 2 of committed runs with >= 5 review rework rounds, with earlier findings as context, keeping gold labels on re-extraction; run.ts uses the eval harness with baseline same_acceptance and reports per task first_correct_grouping_round beside repeat_trigger_round from acceptanceRepeatSeries. Finding text leaves the machine only when egress enables finding.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-eval-a4.test.ts, extract.ts on a temporary git repository committing one run with 6 review rework rounds and one run with 2 emits rows only for the 6-round run, only for findings at round >= 2, each carrying its earlier findings; re-extraction keeps a gold label set on an existing row; an invalid gold label exits 1 naming the row.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a4.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/decision-eval-a4.test.ts, run.ts with a provider whose egress does not list finding records every case unavailable with egress_denied and makes zero fetch calls; with egress listing finding and the fake provider it writes a report containing the same_acceptance baseline, per-option metrics, calibration and, per task, first_correct_grouping_round and repeat_trigger_round.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a4.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/a4-equivalence-eval.intent.json",
+      "scripts/decision-eval/a4/extract.ts",
+      "scripts/decision-eval/a4/run.ts",
+      "scripts/decision-model/thresholds.ts",
+      "tests/decision-eval-a4.test.ts",
+      "tests/fixtures/decision-eval/a4/README.md"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/a4-equivalence-eval.intent.json",
+    "content_hash": "sha256:2a2339f134938162ede525462ec2524da51065705de0251809520d5db9ba97ea"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2a2339f134938162ede525462ec2524da51065705de0251809520d5db9ba97ea",
+  "git_base_head": "e560834c39adb289065d45bac9d255a3d171a953",
+  "attestations": [
+    {
+      "id": "approval-qa-d5d00c64",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2a2339f134938162ede525462ec2524da51065705de0251809520d5db9ba97ea",
+      "diff_hash": "sha256:023362f4bd3f5d6b047df3f80baa556226ffe63995900ba753107ac2587db6f7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e0a01a890b4bbb524e62dbad5938c4d9af5e1f3abcb8a529caae94bbd7f98c4d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e0a01a890b4bbb524e62dbad5938c4d9af5e1f3abcb8a529caae94bbd7f98c4d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e0a01a890b4bbb524e62dbad5938c4d9af5e1f3abcb8a529caae94bbd7f98c4d"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:a4-equivalence-eval:2026-11-02T07:48:38.812Z",
+      "at": "2026-11-02T07:48:38.812Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/a4-equivalence-eval.intent.json"
+    },
+    {
+      "id": "record_approval:a4-equivalence-eval:2026-11-02T07:48:47.049Z",
+      "at": "2026-11-02T07:48:47.049Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d5d00c64\naction_v2_sha256:c91092b51515bd014b702ac3c9440ce28b470838f4c4b321790c0b232d6b77bd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T07:48:47.049Z"
+      }
+    },
+    {
+      "id": "complete:a4-equivalence-eval:2026-11-02T07:48:48.310Z",
+      "at": "2026-11-02T07:48:48.310Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ef8328d9b80f8715ab0dc721420d9db872474055db71d9e90480bb2bcd4c7612"
+    }
+  ]
+}

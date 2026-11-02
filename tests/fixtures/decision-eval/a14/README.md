@@ -47,3 +47,32 @@ Configure a profile in `.imm/decision-models.local.json` (gitignored), for examp
 
 Then run `bun scripts/decision-eval/a14/run.ts --corpus <corpus.jsonl> --out <dir>`.
 PR comments are a non-sensitive input category, so no `egress` entry is needed.
+
+### Jev (TypeSafe System One) profile
+
+```json
+{ "profiles": { "default": { "kind": "jev", "api_key_env": "TYPESAFE_API_KEY" } } }
+```
+
+Optional fields: `base_url` (default `https://api.typesafe.ai`), `timeout_ms` (1000-120000,
+default 30000) and `context_window` (positive integer; without it `truncation` reports
+`unknown`). The adapter POSTs the Clef choice request body to `<base_url>/v1/systemone`
+with `Authorization: Bearer <value of api_key_env>` and parses the Clef choice result
+shape (bare, or wrapped in `result`).
+
+**Unverified.** These facts come from third-party pages, not TypeSafe's reference, and
+were last checked on 2026-11-02:
+
+- LangChain docs, TypeSafe provider page
+  (`https://docs.langchain.com/oss/javascript/integrations/providers/typesafe.md`):
+  default base URL `https://api.typesafe.ai`, overridable.
+- typia.io Jev page (`https://typia.io/docs/utilization/jev/`): request is a `model`, a
+  `state` and a `questions` map; the key comes from `TYPESAFE_API_KEY`.
+- A launch article (`https://letsdatascience.com/news/typesafe-ai-launches-jev-decision-model-889a38c0`):
+  the choice primitive returns a `choice`, a `probabilities` map and a `confidence`.
+
+Not confirmed by any of them: the `/v1/systemone` route, the Bearer header, the result
+shape, and the request `model` value (the adapter sends `"clef"` so that the body equals
+the Clef body; the typia.io example uses a `jev-<version>` model id). A mismatch with the
+real API surfaces as `unavailable` (`provider_error` or `invalid_response`), never as a
+decision. Replace this section with the reference once it is checked.

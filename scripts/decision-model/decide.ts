@@ -24,9 +24,10 @@ import {
 } from "./contract.ts";
 import { clefAdapter } from "./providers/clef.ts";
 import { fakeAdapter } from "./providers/fake.ts";
+import { jevAdapter } from "./providers/jev.ts";
 import { POINT_REGISTRY } from "./thresholds.ts";
 
-const DEFAULT_ADAPTERS: Partial<Record<ProviderKind, ProviderAdapter>> = { clef: clefAdapter, fake: fakeAdapter };
+const DEFAULT_ADAPTERS: Partial<Record<ProviderKind, ProviderAdapter>> = { clef: clefAdapter, fake: fakeAdapter, jev: jevAdapter };
 
 /** Allowed distance of a probability sum from 1. */
 export const PROBABILITY_SUM_TOLERANCE = 1e-3;
@@ -90,7 +91,6 @@ export async function decide(request: DecideRequest, deps: DecideDeps): Promise<
 		if (!resolved.ok) return resolved.error;
 		const { point, profile, profile_name, egress } = resolved.value;
 
-		if (profile.kind === "jev") return unavailable("unsupported_provider_kind", "provider kind jev has no adapter yet");
 		const adapter = deps.adapters?.[profile.kind] ?? DEFAULT_ADAPTERS[profile.kind];
 		if (adapter === undefined) return unavailable("unsupported_provider_kind", `provider kind ${profile.kind} has no adapter`);
 

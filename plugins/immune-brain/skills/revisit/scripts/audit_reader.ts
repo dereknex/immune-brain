@@ -24,6 +24,8 @@ export type AuditSchema = "v2" | "v3" | "v4";
 export type ReviewFinding = {
 	id: string;
 	acceptanceId: string;
+	/** The record's `acceptance_id` exactly, null when the finding carries none (`acceptanceId` renders that as ""). */
+	acceptanceKey: string | null;
 	/** The `review_round` the record stamped on the finding; null when the schema carries none. */
 	round: number | null;
 	summary: string;
@@ -134,6 +136,7 @@ function toRun(path: string, taskId: string, pair: NonNullable<ReturnType<typeof
 		.map((f) => ({
 			id: String(f.id ?? ""),
 			acceptanceId: String(f.acceptance_id ?? ""),
+			acceptanceKey: typeof f.acceptance_id === "string" ? f.acceptance_id : null,
 			round: typeof f.review_round === "number" ? f.review_round : null,
 			summary: String(f.summary ?? ""),
 		}));

@@ -1,0 +1,8 @@
+[
+  { "number": 1, "title": "Add retry cap to the sync loop", "body": "Cap retries at 5 and log each attempt.", "labels": [{ "name": "ready-for-agent" }], "state": "OPEN", "stateReason": "" },
+  { "number": 2, "title": "Improve onboarding", "body": "Make it better.", "labels": [{ "name": "needs-spec" }, { "name": "enhancement" }], "state": "OPEN", "stateReason": "" },
+  { "number": 3, "title": "Retry cap, again", "body": "Same as #1.", "labels": [], "state": "CLOSED", "stateReason": "DUPLICATE" },
+  { "number": 4, "title": "Conflicting signals", "body": "Carries both triage labels.", "labels": [{ "name": "ready-for-agent" }, { "name": "needs-spec" }], "state": "OPEN", "stateReason": "" },
+  { "number": 5, "title": "No signal", "body": null, "labels": [{ "name": "question" }], "state": "OPEN", "stateReason": "" },
+  { "number": 6, "title": "Completed, not a duplicate", "body": "Fixed in a PR.", "labels": [], "state": "CLOSED", "stateReason": "COMPLETED" }
+]
