@@ -156,6 +156,18 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 		]);
 	});
 
+	test.each([
+		{ text: `\n${JSON.stringify(corpusRow(2, "maybe"))}\n`, line: 2 },
+		{ text: `${JSON.stringify(corpusRow(1, "blocking"))}\n\n${JSON.stringify(corpusRow(3, "maybe"))}\n`, line: 3 },
+	])("an invalid gold label reports physical line $line and writes no report", ({ text, line }) => {
+		const { root, corpus, out } = evalSetup(undefined, []);
+		writeFileSync(corpus, text);
+		const res = cli(RUN, ["--corpus", corpus, "--out", out, "--root", root]);
+		expect(res.code).toBe(1);
+		expect(res.stderr.trim()).toBe(`corpus_invalid: ${line}`);
+		expect(existsSync(out)).toBe(false);
+	});
+
 	test("a malformed corpus line exits 1 with corpus_invalid and its line number", () => {
 		const { root, corpus, out } = evalSetup(undefined, [corpusRow(1, "blocking")]);
 		writeFileSync(corpus, `${readFileSync(corpus, "utf8")}{ broken\n`);

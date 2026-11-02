@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "a14-corpus-line-number",
+  "owner": "user",
+  "goal": "scripts/decision-eval/a14/run.ts reports an invalid gold label as corpus_invalid: <N> where N is the 1-based physical line of that row in the corpus file, counting blank lines, instead of the parsed-row index, so a maintainer can find the bad row when the corpus has blank lines (#204 slice 2a; Review advisory review-1 on task decision-model-core, PR #341 merged at c831cc8). Delegated choice: extract.ts exposes the source line number alongside each parsed row and run.ts uses it; extract.ts keeps reporting invalid_gold_label by row id unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/decision-eval-a14.test.ts, run.ts on a corpus whose file line 1 is blank and line 2 is a row with gold \"maybe\" exits 1 with stderr containing corpus_invalid: 2 (not corpus_invalid: 1); on a corpus with a valid labelled row on line 1, a blank line 2 and gold \"maybe\" on line 3, it exits 1 with stderr containing corpus_invalid: 3; in both cases no a14-*.json or a14-*.md file is written to --out; the existing malformed-JSON case still exits 1 with corpus_invalid: 2; and extract.ts on a corpus holding gold \"maybe\" still exits 1 printing invalid_gold_label: <row id>.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/a14-corpus-line-number.intent.json",
+    "scripts/decision-eval/a14/extract.ts",
+    "scripts/decision-eval/a14/run.ts",
+    "tests/decision-eval-a14.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

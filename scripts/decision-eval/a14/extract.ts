@@ -49,8 +49,8 @@ export function isGoldLabel(value: unknown): value is GoldLabel {
 }
 
 /** Parse a JSONL corpus. Throws `corpus_invalid: <line>` on a malformed line. */
-export function parseCorpus(text: string): CorpusRow[] {
-	const rows: CorpusRow[] = [];
+export function parseCorpus(text: string): { row: CorpusRow; lineNumber: number }[] {
+	const rows: { row: CorpusRow; lineNumber: number }[] = [];
 	const lines = text.split("\n");
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] as string;
@@ -64,7 +64,7 @@ export function parseCorpus(text: string): CorpusRow[] {
 		if (!isObject(row) || typeof row.id !== "string" || typeof row.repository !== "string" || typeof row.pr !== "number") {
 			throw new CliError(`corpus_invalid: ${i + 1}`);
 		}
-		rows.push(row as unknown as CorpusRow);
+		rows.push({ row: row as unknown as CorpusRow, lineNumber: i + 1 });
 	}
 	return rows;
 }
@@ -160,7 +160,7 @@ function parseArgs(argv: string[]): { diags: string[]; corpus: string } {
 export function main(argv: string[]): number {
 	try {
 		const { diags, corpus } = parseArgs(argv);
-		const existing = existsSync(corpus) ? parseCorpus(readFileSync(corpus, "utf8")) : [];
+		const existing = existsSync(corpus) ? parseCorpus(readFileSync(corpus, "utf8")).map(({ row }) => row) : [];
 		const fresh: CorpusRow[] = [];
 		for (const file of diags) {
 			let diag: unknown;
