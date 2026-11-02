@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "amendment-malformed-marker-guard",
+  "owner": "user",
+  "goal": "Restore the fail-closed malformed Slice marker check that amendment-multiline-slice-entries (#320) removed from baselineHistoricalSlices in plugins/immune-brain/runtime/github_issue_tracker.ts. Before #320, a historical baseline line whose single Slice marker id does not satisfy the tracker id grammar (ownershipMarkerValue: [A-Za-z0-9][A-Za-z0-9._-]{0,127}), for example slice-id=:bogus or slice-id=a:b, made the amendment return ambiguous_remote_state with the message 'historical Slice <id> has a malformed Slice marker in the approved Parent baseline'; after #320 the same baseline is published with status updated and the malformed marker carried into the Parent. Delegated choices: (1) reinstate the check on the entry's marker line with the same message, for historical entries only (amended Slices stay exempt as before #320), placed before any entry is extracted so a malformed marker causes zero remote mutations; (2) all #320 behavior (multiline entries, duplicate/heading/missing-footer rejection) is unchanged; (3) no docs or changeset change: the #320 changeset already announces rejection of ambiguous entries before remote mutations, and docs/agents/issue-tracker.md never enumerated this pre-existing case.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "bun test tests/plugin-package-runtime.test.ts -t \"initiative amendment publication\" passes, including a new parameterized case built with withAmendmentBase that appends a historical Slice line carrying a malformed marker (slice-id=:bogus and slice-id=a:b) after the done entry: the amendment returns status ambiguous_remote_state, its message names the malformed Slice marker, and gh.mutations is unchanged. All existing cases in the describe block, including the #320 multiline preservation and boundary rejection cases, still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"-t\",\n      \"initiative amendment publication\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/amendment-malformed-marker-guard.intent.json",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -94,6 +94,7 @@ describe("GitHub isolated Slice prerequisites", () => {
  it.each([
   [false, `${sliceLine} (blocked by: T-a)`], [true, `${sliceLine} (blocked by: T-a)`],
   [true, `${sliceLine}\nwrapped\n\n- result list (blocked by: T-a)\n\n---\n\nfooter`],
+  [true, `${sliceLine}\nwrapped result\n  (blocked by: T-a)\n- [ ] <!-- immune-brain:slice-id=S7 --> **S7**: next`],
  ])("uses the published prerequisite with native edge=%p: %s", async (edge, line) => {
   const f = settledDeliveryFixture("critical", "T-a");
   try {
