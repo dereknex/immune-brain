@@ -1,0 +1,65 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-resolver",
+  "owner": "user",
+  "goal": "layered-config S2 (#360-C1, #360-C3, #360-P; Spec docs/specs/layered-config.spec.md D1-D6, D9-D11). One runtime resolver, resolveConfig(root), reads the user file $XDG_CONFIG_HOME/immune-brain/config.json (default ~/.config/immune-brain/config.json) and the tracked project file .imm/config.json, keys per-repository user overrides by the normalized origin URL (else the main checkout real path), applies the D4 precedence, reads the D9 legacy sources with deprecation warnings, and reports every value with its source and every diagnostic. imm-kernel config --json prints it; status on Claude Code and Pi carries it as config. The test preload isolates XDG_CONFIG_HOME. ADR 0034 records the design and supersedes ADR 0033 and ADR 0024 item 1. The repository gets its own tracked .imm/config.json with initiative_carrier github. No consumer reads the resolver yet.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/layered-config.test.ts, with a temporary repository and user file: each D4 row resolves in its stated order with source user, user:project, project, legacy:<path> or default; the effective egress is the project list intersected with the user list and a user category outside the ceiling is dropped with egress_beyond_project_ceiling; a project executor_model whose executor_host is overridden by a user Lane profile is dropped with not_applied; enabled_points absent resolves to every registered point.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/layered-config.test.ts, origin URLs https://github.com/O/R.git, ssh://git@github.com/O/R and git@github.com:O/R.git give project_key github.com/O/R; a git worktree of the repository resolves the same project_key and the same projects override as its main checkout; a repository without origin uses the real path of its main checkout root.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/layered-config.test.ts each refused case yields a diagnostic naming the file and key path and fails closed only its own section: malformed JSON, a wrong contract, an unknown nested key, a lanes.active naming no profile, executor_host \"codex\", and a token_env holding \"sk-live-123\" (the value is absent from the whole output); an untracked .imm/config.json is ignored.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "In tests/layered-config.test.ts each D9 legacy source alone (.imm/lanes.local.json, .imm/decision-models.local.json, .imm/decision-bindings.json, a tracked AGENTS.md `- Git integration: auto` line, a tracked AGENTS.md `- Initiative carrier default: local` line) resolves its section with source legacy:<path> and a deprecated_config_source warning naming the replacement key; when the new layer sets the same section the new value wins and legacy_source_ignored names the legacy file.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "In tests/layered-config.test.ts, imm-kernel config --json prints the effective config and exits 0 with only warnings and 1 with an error diagnostic; --check-env reports set or unset per named variable and never its value. In tests/dual-host-assurance-conformance.test.ts, tests named with \"layered config\" prove the Claude and Pi status outputs both carry the same config object and list an error diagnostic in warnings as config_invalid.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/layered-config.test.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'layered config'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "In tests/layered-config.test.ts the test process's XDG_CONFIG_HOME points inside the OS temp directory and holds no immune-brain/config.json unless the test wrote it; docs/adr/0034-layered-configuration.md exists and ADR 0033 and ADR 0024 each carry a status line naming 0034; the tracked .imm/config.json resolves initiative_carrier github with source project.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC7",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/config-resolver.md",
+    ".imm/config.json",
+    "CONTEXT.md",
+    "docs/adr/0024-git-integration-preference.md",
+    "docs/adr/0033-lane-preferences-local-preset.md",
+    "docs/adr/0034-layered-configuration.md",
+    "docs/plans/config-resolver.intent.json",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/commands/kernel.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/config/project_identity.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/test-timeout.ts",
+    "tests/layered-config.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

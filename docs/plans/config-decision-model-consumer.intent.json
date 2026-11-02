@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-decision-model-consumer",
+  "owner": "user",
+  "goal": "layered-config S3 (#360-P; Spec docs/specs/layered-config.spec.md D4, D7, D9). decide() resolves through resolveConfig: a point absent from the project's enabled_points is unavailable with the new reason point_disabled; the profile comes from the user file's binding or default_profile, per-repository override first; the egress gate uses the project ceiling intersected with the user list. The legacy .imm/decision-models.local.json and .imm/decision-bindings.json still resolve with a deprecation warning. This repository's .imm/decision-bindings.json is deleted, and the eval tests and fixture READMEs configure profiles through the user file.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/decision-model.test.ts, with a temporary repository and user file: a user profile bound by projects[<key>].decision_models.bindings answers over the user-global binding; a point missing from a present enabled_points returns unavailable/point_disabled with zero fetch calls; a sensitive category listed by the user but not by the project ceiling returns egress_denied with zero fetch calls; a legacy .imm/decision-models.local.json plus .imm/decision-bindings.json still answers and the resolver reports deprecated_config_source; no user file and no legacy file returns no_local_config whose detail names ~/.config/immune-brain/config.json.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The five decision-eval test files pass with profiles configured through a user file under the test's XDG_CONFIG_HOME, and .imm/decision-bindings.json is not tracked in the repository.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/decision-eval-a4.test.ts tests/decision-eval-a14.test.ts tests/decision-eval-a15.test.ts tests/decision-eval-a16.test.ts tests/decision-eval-harness.test.ts && ! git ls-files --error-unmatch .imm/decision-bindings.json 2>/dev/null\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/config-decision-model-consumer.md",
+    ".imm/decision-bindings.json",
+    "docs/plans/config-decision-model-consumer.intent.json",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/decision_model/config.ts",
+    "plugins/immune-brain/runtime/decision_model/contract.ts",
+    "plugins/immune-brain/runtime/decision_model/decide.ts",
+    "tests/decision-eval-a14.test.ts",
+    "tests/decision-eval-a15.test.ts",
+    "tests/decision-eval-a16.test.ts",
+    "tests/decision-eval-a4.test.ts",
+    "tests/decision-eval-harness.test.ts",
+    "tests/decision-model.test.ts",
+    "tests/fixtures/decision-eval/a14/README.md",
+    "tests/fixtures/decision-eval/a15/README.md",
+    "tests/fixtures/decision-eval/a16/README.md",
+    "tests/fixtures/decision-eval/a4/README.md"
+  ],
+  "risk": "material",
+  "revision": 1
+}

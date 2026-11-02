@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-docs",
+  "owner": "user",
+  "goal": "layered-config S6 (#360 Decisions superseded; Spec docs/specs/layered-config.spec.md D11). The preference reference docs/reference/immune-brain-config.md and its packaged mirror describe the layered model: the user file and its per-repository overrides, the tracked .imm/config.json, the D4 precedence table, imm-kernel config --json, and the legacy sources with their replacement keys, replacing the principle that Immune-Brain loads no agent-local file and the Lane-preset exception. README.md, README.zh-CN.md and IMMUNE.md name the two files instead of .imm/lanes.local.json and the instruction-file directives.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/pi-only-current-contracts.test.ts the reference doc names ~/.config/immune-brain/config.json, .imm/config.json, imm-kernel config --json, ../adr/0034-layered-configuration.md and each D9 legacy source with its replacement key, and no longer contains \"does not load an\\nagent-local TOML file\" or \"Lane preferences are the one exception\"; the packaged mirror is byte-identical.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "README.md and README.zh-CN.md each name ~/.config/immune-brain/config.json and .imm/config.json and mention .imm/lanes.local.json only as a deprecated legacy source; IMMUNE.md names the layered config.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"for f in README.md README.zh-CN.md; do grep -q 'config/immune-brain/config.json' $f && grep -q '.imm/config.json' $f || exit 1; done; grep -q '.imm/config.json' IMMUNE.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/config-docs.md",
+    "IMMUNE.md",
+    "README.md",
+    "README.zh-CN.md",
+    "docs/plans/config-docs.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "tests/pi-only-current-contracts.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

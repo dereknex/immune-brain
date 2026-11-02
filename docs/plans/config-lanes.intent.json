@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "config-lanes",
+  "owner": "user",
+  "goal": "layered-config S5 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Parent's Lane Preferences resolve through imm-kernel config --json instead of reading .imm/lanes.local.json itself: per field, the literal request, else the selected user Lane profile (the request-named profile, else projects[<key>].lanes.active, else lanes.active), else the project lanes defaults, else today's default, with model and effort applied only with an executor_host from the same layer and each value's source on the display line. Batch final verification resolves as the request, else the project batch.final_verification, else the repository's prose test and type-check commands, else none. A lanes section that fails validation is reported and no batch starts. The drive route line names the layered config.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/role-prompt-bridge.test.ts, drive-batch.md #### Lane Preferences states that the Parent reads lanes from `imm-kernel config --json`, the per-field order request, user Lane profile, project defaults, default, the same-layer rule for model and effort, the per-field sources user, user:project, project, legacy and default on the display line, that an invalid lanes section starts no batch, and the final verification order; it no longer says the Parent alone reads .imm/lanes.local.json.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "skills/drive/SKILL.md names the layered config instead of the .imm/lanes.local.json preset on its Lane Preferences route, the drive-batch.md#lane-preferences anchor survives, and skill and dist mirrors are consistent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'lanes.local.json' plugins/immune-brain/skills/drive/SKILL.md && bun test tests/ceremony-trim-contract.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/config-lanes.md",
+    "docs/plans/config-lanes.intent.json",
+    "docs/specs/layered-config.spec.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/skills/drive/SKILL.md",
+    "tests/ceremony-trim-contract.test.ts",
+    "tests/role-prompt-bridge.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
