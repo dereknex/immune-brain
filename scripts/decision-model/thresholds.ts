@@ -35,7 +35,40 @@ export const A15_ISSUE_TRIAGE: ApplicationPoint = {
 	threshold_set: { version: "a15/v0", values: null },
 };
 
+export const A16_REVISIT_CHAIN_CLASS: ApplicationPoint = {
+	id: "a16_revisit_chain_class",
+	question_type: "choice",
+	input_category: "session_event",
+	options: ["avoidable_friction", "necessary_decision", "error_recovery", "unknown"],
+	criteria: {
+		avoidable_friction: "The user stepped in only because the workflow stalled or asked something it could have resolved itself",
+		necessary_decision: "The user stepped in to make a decision only they could make",
+		error_recovery: "The user stepped in to recover from a failed or errored step",
+		unknown: "The located fields do not support any other class",
+	},
+	instructions:
+		"Given one revisit candidate chain (the task, how often the same task resumed, the last tool result before the stop and the length of the user's reply), which option best describes why the user resumed the task?",
+	threshold_set: { version: "a16/v0", values: null },
+};
+
+export const A4_FINDING_EQUIVALENCE: ApplicationPoint = {
+	id: "a4_finding_equivalence",
+	question_type: "choice",
+	input_category: "finding",
+	options: ["same_invariant", "new_defect", "out_of_contract"],
+	criteria: {
+		same_invariant: "Violates the same invariant class as an earlier finding of the same run",
+		new_defect: "A distinct defect that no earlier finding covers",
+		out_of_contract: "Outside the accepted contract of the task",
+	},
+	instructions:
+		"Given the target blocking review finding and the earlier findings of the same run, which option best describes the target finding: the same invariant class as an earlier finding, a new defect, or outside the task's accepted contract?",
+	threshold_set: { version: "a4/v0", values: null },
+};
+
 export const POINT_REGISTRY: PointRegistry = {
 	[A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
 	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
+	[A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
+	[A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
 };

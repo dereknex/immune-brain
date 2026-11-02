@@ -102,10 +102,15 @@ export interface ReportMeta {
 	provider_kind: string | null;
 }
 
-/** The comparison baseline predicts one constant option for every case. */
+/**
+ * The comparison baseline predicts one constant option for every case, unless
+ * `predict` maps a case id to its own option (a rule baseline such as A4's
+ * same_acceptance); `option` is then the fallback for ids `predict` does not know.
+ */
 export interface Baseline {
 	name: string;
 	option: string;
+	predict?: (caseId: string) => string | undefined;
 }
 
 export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cases: Case[], meta: ReportMeta) {
@@ -137,7 +142,8 @@ export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cas
 	});
 
 	const model = optionMetrics(options, cases.map((c) => ({ gold: c.gold, pred: "envelope" in c ? c.envelope.choice : null })));
-	const baseline = optionMetrics(options, cases.map((c) => ({ gold: c.gold, pred: baselineSpec.option })));
+	const baselinePred = (id: string) => baselineSpec.predict?.(id) ?? baselineSpec.option;
+	const baseline = optionMetrics(options, cases.map((c) => ({ gold: c.gold, pred: baselinePred(c.id) })));
 
 	return {
 		contract: REPORT_CONTRACT,
@@ -159,7 +165,7 @@ export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cas
 			coverage_at,
 		},
 		calibration: calib,
-		baseline: { name: baselineSpec.name, accuracy: n > 0 ? cases.filter((c) => c.gold === baselineSpec.option).length / n : null, macro_f1: baseline.macro_f1 },
+		baseline: { name: baselineSpec.name, accuracy: n > 0 ? cases.filter((c) => c.gold === baselinePred(c.id)).length / n : null, macro_f1: baseline.macro_f1 },
 		cases,
 	};
 }

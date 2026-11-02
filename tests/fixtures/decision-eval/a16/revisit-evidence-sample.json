@@ -1,0 +1,51 @@
+{
+  "contract": "immune_brain/revisit_evidence/v2",
+  "window": { "since": "2026-10-25T00:00:00Z", "until": "2026-11-01T00:00:00Z" },
+  "scope": { "root": "/synthetic/sessions", "project": "demo", "exclude": [] },
+  "skipped_lines": 0,
+  "sessions": [],
+  "events": [],
+  "candidates": [
+    {
+      "kind": "repeated_block",
+      "key": "/work/demo / task-a / blocked",
+      "occurrences": 1,
+      "chains": [{ "pointers": ["s1.jsonl#4", "s1.jsonl#9"] }]
+    },
+    {
+      "kind": "user_resume",
+      "key": "/work/demo / task-a",
+      "occurrences": 2,
+      "chains": [
+        {
+          "pointers": ["s1.jsonl#10", "s1.jsonl#14", "s1.jsonl#15", "s1.jsonl#16"],
+          "last_result": "s1.jsonl#13",
+          "last_result_is_error": false,
+          "last_result_state": "awaiting_user",
+          "reply_chars": 12
+        },
+        {
+          "pointers": ["s1.jsonl#30", "s1.jsonl#34", "s1.jsonl#35", "s1.jsonl#36"],
+          "last_result": null,
+          "last_result_is_error": null,
+          "last_result_state": null,
+          "reply_chars": 240
+        }
+      ]
+    },
+    {
+      "kind": "user_resume",
+      "key": "/work/demo / task-b",
+      "occurrences": 1,
+      "chains": [
+        {
+          "pointers": ["s2.jsonl#3", "s2.jsonl#7", "s2.jsonl#8", "s2.jsonl#9"],
+          "last_result": "s2.jsonl#6",
+          "last_result_is_error": true,
+          "last_result_state": "failed",
+          "reply_chars": 31
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "a16-revisit-chain-eval",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "a16-revisit-chain-eval",
+    "goal": "decision-models S6 (application point A16; BR-DEC-6). A maintainer can measure offline how well a decision model classifies revisit candidate chains as avoidable friction, necessary decision, error recovery or unknown. Delegated choices: registry point a16_revisit_chain_class with input_category session_event (non-sensitive); scripts/decision-eval/a16/extract.ts turns a saved revisit --json output (contract immune_brain/revisit_evidence/v2) into one unlabeled row per user_resume chain carrying its pointers and kind fields, preserving gold labels on re-extraction; scripts/decision-eval/a16/run.ts runs through the decision-eval harness with baseline majority_class necessary_decision. The #336 sample (docs/specs/revisit-candidate-triage.spec.md:30) committed only aggregate counts, so tests/fixtures/decision-eval/a16/README.md states the four class definitions from that sample and the corpus is labelled afresh.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-eval-a16.test.ts, extract.ts on a fixture revisit_evidence/v2 output with two user_resume groups (one with two chains) and one repeated_block group emits three rows, one per user_resume chain; an input whose contract is revisit_evidence/v1 exits 1 naming the contract; re-extraction keeps an existing gold label.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a16.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/decision-eval-a16.test.ts, run.ts with the fake provider writes a report with the majority_class baseline, per-option metrics and calibration; an unlabeled row is never in a metric denominator.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a16.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/a16-revisit-chain-eval.intent.json",
+      "scripts/decision-eval/a16/extract.ts",
+      "scripts/decision-eval/a16/run.ts",
+      "scripts/decision-model/thresholds.ts",
+      "tests/decision-eval-a16.test.ts",
+      "tests/fixtures/decision-eval/a16/README.md",
+      "tests/fixtures/decision-eval/a16/revisit-evidence-sample.json"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/a16-revisit-chain-eval.intent.json",
+    "content_hash": "sha256:44d2614de3000e5848e55896b5fb094dc17710e03c19e2b002a23d716d8efb06"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:44d2614de3000e5848e55896b5fb094dc17710e03c19e2b002a23d716d8efb06",
+  "git_base_head": "e560834c39adb289065d45bac9d255a3d171a953",
+  "attestations": [
+    {
+      "id": "approval-qa-1edbe7f7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:44d2614de3000e5848e55896b5fb094dc17710e03c19e2b002a23d716d8efb06",
+      "diff_hash": "sha256:b81246108e49c247d63ac3da6f865346f57b481f90591c87d32b7a1215fcee2b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:2d2d0ae9cc7d4711991daec58b46594f17629d773a5faa4105c536eeedacfddb",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:2d2d0ae9cc7d4711991daec58b46594f17629d773a5faa4105c536eeedacfddb"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:2d2d0ae9cc7d4711991daec58b46594f17629d773a5faa4105c536eeedacfddb"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:a16-revisit-chain-eval:2026-11-02T07:44:04.056Z",
+      "at": "2026-11-02T07:44:04.056Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/a16-revisit-chain-eval.intent.json"
+    },
+    {
+      "id": "record_approval:a16-revisit-chain-eval:2026-11-02T07:44:11.234Z",
+      "at": "2026-11-02T07:44:11.234Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1edbe7f7\naction_v2_sha256:f141b9e8cc7c459f96b97e3141994f62374166a937a33360b462c8bab194888f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T07:44:11.235Z"
+      }
+    },
+    {
+      "id": "complete:a16-revisit-chain-eval:2026-11-02T07:44:12.527Z",
+      "at": "2026-11-02T07:44:12.527Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9fc6ccd3c9ae335588acc37f1c77b861dbbf7a0a5e1696a30ea3e377ecda69f8"
+    }
+  ]
+}
