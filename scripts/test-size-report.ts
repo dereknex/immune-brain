@@ -1,6 +1,9 @@
 #!/usr/bin/env bun
 // Read-only test-suite size report. It observes tracked files and exits 0; it is
 // not a CI gate. Usage: bun scripts/test-size-report.ts [--json] [--top N] [--max-lines N]
+//                     bun scripts/test-size-report.ts --diff <range> [--json]
+// The --diff mode reports one change's added test lines against its changed source
+// lines, measured in the caller's checkout (cwd).
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
@@ -33,6 +36,30 @@ export interface TestSizeReport {
   overLimit: TestFileSize[]
 }
 
+export interface NumstatEntry {
+  path: string
+  // null for a binary entry, whose line counts Git reports as "-".
+  added: number | null
+  deleted: number | null
+}
+
+export interface DiffSizeReport {
+  testLinesAdded: number
+  testLinesDeleted: number
+  sourceLinesAdded: number
+  sourceLinesDeleted: number
+  // Added test lines per changed (added + deleted) source line; null when no source changed.
+  ratio: number | null
+}
+
+// Shared by both modes: generated output, non-code files and non-test files under
+// tests/ (helpers, fixtures) count as neither test nor source.
+function classify(path: string): "test" | "source" | null {
+  if (!CODE_RE.test(path) || EXCLUDED_RE.test(path)) return null
+  if (TEST_RE.test(path)) return "test"
+  return /(?:^|\/)tests\//.test(path) ? null : "source"
+}
+
 function lineCount(text: string): number {
   if (text.length === 0) return 0
   return text.split("\n").length - (text.endsWith("\n") ? 1 : 0)
@@ -45,12 +72,11 @@ export function summarizeTestSize(
   const tests: TestFileSize[] = []
   let sourceLines = 0
   for (const file of files) {
-    if (!CODE_RE.test(file.path) || EXCLUDED_RE.test(file.path)) continue
-    const lines = lineCount(file.text)
-    if (TEST_RE.test(file.path)) {
-      tests.push({ path: file.path, lines, cases: file.text.match(CASE_RE)?.length ?? 0 })
-    } else if (!/(?:^|\/)tests\//.test(file.path)) {
-      sourceLines += lines
+    const kind = classify(file.path)
+    if (kind === "test") {
+      tests.push({ path: file.path, lines: lineCount(file.text), cases: file.text.match(CASE_RE)?.length ?? 0 })
+    } else if (kind === "source") {
+      sourceLines += lineCount(file.text)
     }
   }
   const bySize = [...tests].sort((a, b) => b.lines - a.lines || a.path.localeCompare(b.path))
@@ -66,6 +92,76 @@ export function summarizeTestSize(
   }
 }
 
+// Parses `git diff --numstat -z --no-renames` output: one `added\tdeleted\tpath\0`
+// record per file, with the path kept verbatim.
+export function parseNumstat(output: string): NumstatEntry[] {
+  const entries: NumstatEntry[] = []
+  for (const record of output.split("\0")) {
+    if (record.length === 0) continue
+    const first = record.indexOf("\t")
+    const second = record.indexOf("\t", first + 1)
+    if (first < 0 || second < 0) throw new Error(`unexpected numstat record: ${JSON.stringify(record)}`)
+    const count = (field: string) => (field === "-" ? null : Number(field))
+    entries.push({
+      added: count(record.slice(0, first)),
+      deleted: count(record.slice(first + 1, second)),
+      path: record.slice(second + 1),
+    })
+  }
+  return entries
+}
+
+export function summarizeDiffSize(entries: NumstatEntry[]): DiffSizeReport {
+  const report = { testLinesAdded: 0, testLinesDeleted: 0, sourceLinesAdded: 0, sourceLinesDeleted: 0 }
+  for (const entry of entries) {
+    if (entry.added === null || entry.deleted === null) continue
+    const kind = classify(entry.path)
+    if (kind === "test") {
+      report.testLinesAdded += entry.added
+      report.testLinesDeleted += entry.deleted
+    } else if (kind === "source") {
+      report.sourceLinesAdded += entry.added
+      report.sourceLinesDeleted += entry.deleted
+    }
+  }
+  const changedSource = report.sourceLinesAdded + report.sourceLinesDeleted
+  return {
+    ...report,
+    ratio: changedSource === 0 ? null : Number((report.testLinesAdded / changedSource).toFixed(2)),
+  }
+}
+
+function diffMode(args: string[]): void {
+  const range = args[args.indexOf("--diff") + 1]
+  if (range === undefined || range.startsWith("-")) {
+    console.error("usage: bun scripts/test-size-report.ts --diff <range> [--json]")
+    process.exit(1)
+  }
+  let output: string
+  try {
+    output = execFileSync("git", ["diff", "--numstat", "-z", "--no-renames", range, "--"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+  } catch (error) {
+    const stderr = String((error as { stderr?: unknown }).stderr ?? "").trim().split("\n")[0]
+    console.error(`test-size-report: cannot diff ${range}${stderr ? `: ${stderr}` : ""}`)
+    process.exit(1)
+  }
+  const report = summarizeDiffSize(parseNumstat(output))
+  if (args.includes("--json")) {
+    console.log(JSON.stringify({ range, ...report }, null, 2))
+  } else {
+    console.log(`range: ${range}`)
+    console.log(`test lines added: ${report.testLinesAdded}`)
+    console.log(`test lines deleted: ${report.testLinesDeleted}`)
+    console.log(`source lines added: ${report.sourceLinesAdded}`)
+    console.log(`source lines deleted: ${report.sourceLinesDeleted}`)
+    console.log(`added test / changed source ratio: ${report.ratio ?? "n/a (no source change)"}`)
+  }
+}
+
 function numberFlag(args: string[], name: string, fallback: number): number {
   const index = args.indexOf(name)
   if (index < 0) return fallback
@@ -74,7 +170,9 @@ function numberFlag(args: string[], name: string, fallback: number): number {
   return value
 }
 
-if (import.meta.main) {
+if (import.meta.main && process.argv.includes("--diff")) {
+  diffMode(process.argv.slice(2))
+} else if (import.meta.main) {
   const args = process.argv.slice(2)
   const root = resolve(import.meta.dir, "..")
   const paths = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
