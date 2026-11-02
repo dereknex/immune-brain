@@ -1,0 +1,95 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "readme-batch-lane-model",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "readme-batch-lane-model",
+    "goal": "README.md and README.zh-CN.md describe unattended batches the way the current runtime runs them, so no reader expects a retired serial runner, a shared imm-batch/<slug> branch or a same-Host serial fallback (#347; the user confirmed widening from the zh §1 table to every retired serial-batch statement in both READMEs). Current facts to state, sourced from README.md:563-569 and code: every batch uses runtime-created Lanes and capacity 1 runs one Lane at a time; child worktrees live under the Git common directory at imm/worktrees/<slug>/<task_id> (plugins/immune-brain/runtime/unattended/batch_worktrees.ts:30) on branch imm-lane/<slug>/<task_id> (batch_worktrees.ts:41); Parent progress is kept on refs/heads/imm/<slug> (plugins/immune-brain/runtime/unattended/batch_ref.ts:30); without a supervised Executor the Parent reports a blocker, not a coordinator-execution fallback. Delegated choices: (1) edited zh passages: the lead paragraph and §1 of 无人值守批次运行 (README.zh-CN.md:564, :568-575; the serial-vs-parallel table becomes the five bullets of README.md §1), the §3 lead (:585, 'at every capacity'), and the serial claims at :17, :121, :547 and the FAQ answer at :706, which also gains README.md:692's sentence that a parked run waits indefinitely; (2) edited en passages: README.md:17, :121, :544 and the FAQ answer at :692 stop saying 'default serial', 'single-branch serial execution' or 'serially on one batch branch' and instead say capacity 1 runs one Lane at a time and the Parent ref is fast-forwarded; (3) wording that names retired serial artifacts as retired (README.md:569 'v1 serial records', 'the serial runner ... removed') stays; the mermaid label imm-lane/... and the lane-steward role stay; any other zh/en prose difference is out of scope; (4) a guard case in tests/pi-only-current-contracts.test.ts pins the retired phrases out.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "tests/pi-only-current-contracts.test.ts passes, including a new case asserting that: neither README.md nor README.zh-CN.md contains `imm-batch/`, 'single-branch serial', 'serially on one batch branch' or 'Runs serially by default'; README.zh-CN.md contains none of 串行批次, 单分支串行, 单工作区串行, 在一个 batch 分支上串行 or 在同一 Host 串行执行; and README.zh-CN.md contains both `imm/worktrees/<slug>/<task_id>` and `refs/heads/imm/<slug>`. The file's existing assertions, including the ADR 0031 retired-skill-name guard, still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/role-prompt-bridge.test.ts, which also reads README.zh-CN.md, still passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "README.md",
+      "README.zh-CN.md",
+      "docs/plans/readme-batch-lane-model.intent.json",
+      "tests/pi-only-current-contracts.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/readme-batch-lane-model.intent.json",
+    "content_hash": "sha256:41701c4b9714dae5f5278346b1402bf447a48d1620ffcf0fdd24ff34c941f696"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:41701c4b9714dae5f5278346b1402bf447a48d1620ffcf0fdd24ff34c941f696",
+  "git_base_head": "e3c8c757a61ad355577a9a67e38c1d23b8a9a445",
+  "attestations": [
+    {
+      "id": "approval-qa-ac2d3e5b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:41701c4b9714dae5f5278346b1402bf447a48d1620ffcf0fdd24ff34c941f696",
+      "diff_hash": "sha256:9badfd07f27be4876f3a3f31eaf6fbb324bd8e2f667c8666c82cc8f0a81695ea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:71a22a6d4e169dd5a6abb61411899b99394a09fffd34d9e67460dc7045bdb18e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:71a22a6d4e169dd5a6abb61411899b99394a09fffd34d9e67460dc7045bdb18e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:71a22a6d4e169dd5a6abb61411899b99394a09fffd34d9e67460dc7045bdb18e"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:readme-batch-lane-model:2026-11-02T03:48:58.582Z",
+      "at": "2026-11-02T03:48:58.582Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/readme-batch-lane-model.intent.json"
+    },
+    {
+      "id": "record_approval:readme-batch-lane-model:2026-11-02T03:49:12.257Z",
+      "at": "2026-11-02T03:49:12.257Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ac2d3e5b\naction_v2_sha256:d1c3549d315d155ed3247ce8bec652e3684398bdb97fd4c1846846c53dec49aa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e878faeda2da9bb7",
+        "issued_at": "2026-11-02T03:49:12.257Z"
+      }
+    },
+    {
+      "id": "complete:readme-batch-lane-model:2026-11-02T03:49:13.256Z",
+      "at": "2026-11-02T03:49:13.256Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c6f886c4232e164d5da053e3baf974984306cef79aba10f77ecfd83d3c6b7022"
+    }
+  ]
+}

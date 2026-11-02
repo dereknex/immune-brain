@@ -14,7 +14,7 @@ Immune-Brain brings a structured engineering workflow to AI coding assistants (*
 - **Explicit trigger when rigor matters** — When you want engineering discipline, invoke `clarify`, `draw-up`, or `drive`.
 - **Plans become trackable tasks** (`TaskIntent` + `TaskRecord`) — Progress lives on disk (Git + `.imm/`), surviving restarts and context wipes.
 - **Quality is enforced by code, not promises** — Automated QA and isolated review subagents must pass before a task can complete.
-- **Ready Initiatives can run as a batch (serial or parallel lanes)** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; supports default serial progression or opt-in parallel lanes (Git worktree physical isolation, scope-disjoint scheduling, and integration verification guards), while every child is still enrolled, QA'd, reviewed, and settled on its own.
+- **Ready Initiatives can run as a batch through Lanes** — One confirmed batch authorization lets the batch advance published children without manual handoffs per task; capacity 1 runs one Lane at a time, while larger capacities allow scope-disjoint children to run concurrently in isolated Git worktrees with integration verification guards. Every child is still enrolled, QA'd, reviewed, and settled on its own.
 
 Pi and Claude Code are the supported hosts. Undeclared adapters remain unsupported. Minimum Claude Code is `2.1.236`, the lowest version verified with interactive server-initiated MCP elicitation. Current real-Host evidence is recorded in [Claude native elicitation conformance](docs/verification/claude-native-elicitation-authority-conformance.md); historical reports remain under [docs/verification/archive/](docs/verification/archive/). Either host can use the model provider you configure — Immune-Brain works on top of Kernel authority, not a vendor chat.
 
@@ -118,7 +118,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Clear goal, want formal plan & specs | `/draw-up` "Plan the webhook feature" | → `draw-up` writes `TaskIntent` + Specs with testable acceptance checks |
 | Plan confirmed, ready to build & verify | `/drive` | → Executor builds within scope → deterministic QA verifies → isolated Review checks → task settles |
 | Session interrupted or resuming a task | `/drive` | → Resumes existing task seamlessly from on-disk state (`.imm/`) |
-| Ready Initiative to run unattended (serial or parallel lanes) | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a `.imm/lanes.local.json` profile) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Runs serially by default, or opt-in parallel Git worktree lanes with `max_parallel` |
+| Ready Initiative to run unattended through Lanes | "Run initiative `<slug>` unattended" (optionally with `--max-parallel 4` or a `.imm/lanes.local.json` profile) | → Host's `start_unattended_batch`: one native confirmation binds the plan digest. Capacity 1 runs one Lane at a time; larger `max_parallel` values allow scope-disjoint children to run concurrently in isolated Git worktrees |
 | Cross-host workflow (Claude plan + Pi code) | Run `/draw-up` in Claude Code, switch to Pi and run `/drive` | → Staged Spec & TaskIntent are shared on disk; Pi confirms via native TUI and executes loop |
 | PR has review comments or failing CI | `/fix-pr` on that PR | → Standalone repair: minimal scoped fix in place, no managed task created |
 | Project docs out of date | `/prune-docs` | → Read-only audit; deletes only user-approved stale docs from manifest |
@@ -541,7 +541,7 @@ flowchart TD
    - **Risk-Tiered Gates with Enforcement Floors**: `routine` tasks complete upon QA pass; `material` and `critical` tasks require an isolated Review subagent. Touching kernel or authority paths is forced to at least `material`.
    - **Live Refutation**: Subjective Review findings can be refuted by fresh, passing QA evidence; any new edits invalidate counterevidence and re-block the finding.
    - **Immutable Audit Trail**: Terminal task completion atomically writes signed `TaskRecord`s, Git blob `ReviewBundle`s, and QA Attestations to `.imm/audit/<task-id>/`, fully tracked in Git.
-   - **Unattended Batch & Parallel Lanes**: Progresses via GitHub Issues bound by `plan_digest`. Supports default single-branch serial execution or physical multi-Lane parallel execution; in lane mode, the Coordinator schedules scope-disjoint Git worktrees, and Integration Guard reruns deterministic descriptors on candidate commits before fast-forwarding the batch branch, preventing concurrency contamination.
+   - **Unattended Batch & Parallel Lanes**: Progresses via GitHub Issues bound by `plan_digest`. Every batch uses runtime-created Lanes: capacity 1 runs one Lane at a time, and larger capacities allow scope-disjoint children to run concurrently in isolated Git worktrees. Integration Guard reruns deterministic descriptors on candidate commits before fast-forwarding the Parent ref.
 
 Key invariants:
 
@@ -689,7 +689,7 @@ docs/specs/                           # Living specs (updated in place)
 
 **A review finding stopped blocking — why?** It was refuted: fresh deterministic QA evidence shows the acceptance it names passes. The refutation is bound to that exact evidence, so the finding blocks again the moment the evidence goes stale for the current revision, intent hash, or diff.
 
-**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children serially on one batch branch — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
+**Can it run a whole Initiative without me?** Only as far as you authorize. Confirm `start_unattended_batch` with the Initiative slug and the runner works through the published, non-`critical` children in runtime-created Lanes, one Lane at a time at capacity 1, fast-forwarding the Parent ref after verified integration — parking as soon as a child needs a human decision or the run hits a budget, authorization, or commit failure. A parked run waits for you indefinitely: neither the confirmation dialog nor the authorization it grants times out. It never pushes, opens PRs, or settles user decisions for you.
 
 **Can I switch between hosts (e.g. plan in Claude Code, code in Pi)?** Yes. Immune-Brain's contracts and state live entirely on disk in the repository, decoupled from conversation sessions. You can leverage Claude Code for deep architectural thinking and Spec planning, then switch to Pi to run `drive` for code execution and deterministic QA. Interrupted tasks can be resumed in either host at any time.
 
