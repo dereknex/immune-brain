@@ -10,6 +10,7 @@ import { join } from "node:path";
 import {
 	type ClefProfile,
 	type FakeProfile,
+	type JevProfile,
 	isNonSensitiveCategory,
 	isProviderKind,
 	isSensitiveCategory,
@@ -140,7 +141,7 @@ function parseProfile(name: string, raw: unknown): Parsed<Profile> {
 		case "fake":
 			return parseFakeProfile(where, raw);
 		case "jev":
-			return { ok: true, value: { ...raw, kind: "jev" } };
+			return parseJevProfile(where, raw);
 	}
 }
 
@@ -152,6 +153,37 @@ function parseClefProfile(where: string, raw: JsonObject): Parsed<ClefProfile> {
 	if (!nonEmptyString(raw.account_id_env)) return invalid(file, `${where}.account_id_env must name an environment variable`);
 	if (!nonEmptyString(raw.token_env)) return invalid(file, `${where}.token_env must name an environment variable`);
 	const profile: ClefProfile = { kind: "clef", model: raw.model, account_id_env: raw.account_id_env, token_env: raw.token_env };
+	if (raw.context_window !== undefined) {
+		if (!Number.isInteger(raw.context_window) || (raw.context_window as number) <= 0) return invalid(file, `${where}.context_window must be a positive integer`);
+		profile.context_window = raw.context_window as number;
+	}
+	if (raw.timeout_ms !== undefined) {
+		const t = raw.timeout_ms;
+		if (!Number.isInteger(t) || (t as number) < 1000 || (t as number) > 120000) return invalid(file, `${where}.timeout_ms must be an integer in 1000..120000`);
+		profile.timeout_ms = t as number;
+	}
+	return { ok: true, value: profile };
+}
+
+function parseJevProfile(where: string, raw: JsonObject): Parsed<JevProfile> {
+	const file = LOCAL_CONFIG_PATH;
+	const extra = unknownKey(raw, ["kind", "api_key_env", "base_url", "context_window", "timeout_ms"]);
+	if (extra !== null) return invalid(file, `${where}: unknown key "${extra}"`);
+	if (!nonEmptyString(raw.api_key_env)) return invalid(file, `${where}.api_key_env must name an environment variable`);
+	const profile: JevProfile = { kind: "jev", api_key_env: raw.api_key_env };
+	if (raw.base_url !== undefined) {
+		const baseUrl = raw.base_url;
+		let url: URL | null = null;
+		if (nonEmptyString(baseUrl)) {
+			try {
+				url = new URL(baseUrl);
+			} catch {}
+		}
+		if (!nonEmptyString(baseUrl) || url === null || (url.protocol !== "https:" && url.protocol !== "http:") || url.username !== "" || url.password !== "") {
+			return invalid(file, `${where}.base_url must be an http(s) URL without credentials`);
+		}
+		profile.base_url = baseUrl;
+	}
 	if (raw.context_window !== undefined) {
 		if (!Number.isInteger(raw.context_window) || (raw.context_window as number) <= 0) return invalid(file, `${where}.context_window must be a positive integer`);
 		profile.context_window = raw.context_window as number;

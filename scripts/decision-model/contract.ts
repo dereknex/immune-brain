@@ -23,7 +23,7 @@ export function isNonSensitiveCategory(value: string): value is NonSensitiveCate
 	return (NON_SENSITIVE_CATEGORIES as readonly string[]).includes(value);
 }
 
-/** Kinds the parser knows. `jev` parses but has no adapter yet. */
+/** Kinds the parser knows; each has an adapter. */
 export const PROVIDER_KINDS = ["clef", "fake", "jev"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
@@ -77,10 +77,13 @@ export interface FakeProfile {
 	default?: ProbabilityMap;
 }
 
-/** Field set is defined by the Jev adapter slice; until then a jev profile only parses. */
 export interface JevProfile {
 	kind: "jev";
-	[key: string]: unknown;
+	api_key_env: string;
+	/** Default https://api.typesafe.ai (unverified; see providers/jev.ts). */
+	base_url?: string;
+	context_window?: number;
+	timeout_ms?: number;
 }
 
 export type Profile = ClefProfile | FakeProfile | JevProfile;
