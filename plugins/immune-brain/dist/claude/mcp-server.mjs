@@ -7402,6 +7402,38 @@ var init_git_integration_preference = __esm(() => {
   DIRECTIVE = /^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i;
 });
 
+// plugins/immune-brain/runtime/kernel/acceptance_repeats.ts
+function acceptanceRepeatSeries(findings, latestRound) {
+  const byKey = new Map;
+  for (const finding of findings) {
+    let entry = byKey.get(finding.acceptance_id);
+    if (!entry) {
+      entry = { count: 0, unrounded: 0, rounds: new Set };
+      byKey.set(finding.acceptance_id, entry);
+    }
+    entry.count += 1;
+    if (finding.review_round === null)
+      entry.unrounded += 1;
+    else
+      entry.rounds.add(finding.review_round);
+  }
+  return [...byKey].map(([acceptance_id, entry]) => {
+    const last = entry.rounds.size > 0 ? Math.max(...entry.rounds) : null;
+    let streak = 0;
+    while (entry.rounds.has(latestRound - streak))
+      streak += 1;
+    return {
+      acceptance_id,
+      finding_count: entry.count,
+      unrounded: entry.unrounded,
+      rounds_with_findings: entry.rounds.size,
+      last_finding_round: last,
+      rounds_since_last_finding: last === null ? null : Math.max(0, latestRound - last),
+      current_streak: streak
+    };
+  });
+}
+
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash12, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync5, spawn as spawn2 } from "node:child_process";
@@ -10870,11 +10902,13 @@ class AssuranceCoordinator {
       this.closeInvocation(invocation);
     }
     if (verdict.decision === "rework") {
+      const convergence = await this.reworkConvergence(ctx, taskId);
       return {
         state: "rework",
         operation: "review",
         operation_id: reservation.operationId,
-        summary: verdict.findings?.map((finding) => finding.summary).join("; ") ?? "independent Review requested rework"
+        summary: verdict.findings?.map((finding) => finding.summary).join("; ") ?? "independent Review requested rework",
+        ...convergence.length > 0 ? { convergence } : {}
       };
     }
     let settled;
@@ -10894,6 +10928,18 @@ class AssuranceCoordinator {
       }
     }
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
+  }
+  async reworkConvergence(ctx, taskId) {
+    try {
+      const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
+      const blocking = (stored.record?.findings ?? []).flatMap((finding) => finding.source === "review" && finding.kind === "blocking" && typeof finding.review_round === "number" ? [{ acceptance_id: finding.acceptance_id ?? null, review_round: finding.review_round }] : []);
+      if (blocking.length === 0)
+        return [];
+      const latestRound = Math.max(...blocking.map((finding) => finding.review_round));
+      return acceptanceRepeatSeries(blocking, latestRound).flatMap((row) => row.acceptance_id !== null && row.current_streak >= 2 ? [{ acceptance_id: row.acceptance_id, streak: row.current_streak, obligation: "generalize_or_refute" }] : []);
+    } catch {
+      return [];
+    }
   }
   isReviewVerdictValid(taskId, verdictInput) {
     const reservation = this.reviewReservations.get(taskId);

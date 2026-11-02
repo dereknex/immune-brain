@@ -121,3 +121,27 @@ describe("acceptance-repeats CLI", () => {
 		expect(result.stdout).toBe("");
 	});
 });
+
+describe("long-tail replay", () => {
+	type RecordedFinding = { source: string; kind: string; acceptance_id: string | null; review_round: number | null };
+
+	/** The first round at which a non-null acceptance has `current_streak >= 2`, replaying the blocking Review findings round by round. */
+	function firstConvergenceRound(runDir: string): number | null {
+		const record = JSON.parse(readFileSync(join(REPO, ".imm/audit", runDir, "task-record.json"), "utf8")) as { findings: RecordedFinding[] };
+		const blocking = record.findings.filter((finding) => finding.source === "review" && finding.kind === "blocking" && finding.review_round !== null);
+		const lastRound = Math.max(...blocking.map((finding) => finding.review_round!));
+		for (let round = 1; round <= lastRound; round++) {
+			const seen = blocking.filter((finding) => finding.review_round! <= round);
+			if (acceptanceRepeatSeries(seen, round).some((row) => row.acceptance_id !== null && row.current_streak >= 2)) return round;
+		}
+		return null;
+	}
+
+	test.each([
+		"2026-09-01-002-claude-code-host",
+		"2026-09-08-002-initiative-amendment",
+		"2026-09-05-003-batch-run-state-machine",
+	])("the convergence condition first holds at round 2 for %s", (runDir) => {
+		expect(firstConvergenceRound(runDir)).toBe(2);
+	});
+});

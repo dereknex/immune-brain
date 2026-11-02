@@ -156,6 +156,12 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    accepted contract and answer with `refute_finding` bound to fresh QA evidence
    for that acceptance. Escalating a local heuristic a third time instead of
    choosing one of those two responses is the loop this step exists to break.
+   A `submit_review` rework result that carries `convergence` marks the
+   obligation deterministically: each `{acceptance_id, streak, obligation:
+   "generalize_or_refute"}` entry says Review drew a blocking finding on that
+   acceptance in `streak` consecutive rounds, so the fix response for it must
+   take one of those two responses now. The entry changes no round budget,
+   `replan_required` finding or verdict; pass it to the Executor with the findings.
    When two fixes that share one premise fail the same gate, write the premise
    in one sentence, name the actors that hold it, and remove the assignment
    embodying it. Do not start another fix until that is done.

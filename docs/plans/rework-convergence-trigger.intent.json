@@ -1,0 +1,47 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rework-convergence-trigger",
+  "owner": "user",
+  "goal": "decision-models S2 (#204 S1 trigger; BR-DEC-7; obligation in the rework handoff only, no Kernel parking change, adopted 2026-11-02). When the same acceptance draws a blocking Review finding in two consecutive rounds, the rework handoff names a generalize-or-refute obligation for it, so the rule fires on a deterministic count. Delegated choices: the coordinator's review rework result gains an optional convergence array of {acceptance_id, streak, obligation} computed with acceptanceRepeatSeries (S1), present only when a non-null acceptance has current_streak >= 2. The Executor guidance in plugins/immune-brain/runtime/prompts/executor.md, its packaged mirror and the drive.md rework step pass the obligation on. Unchanged: rework round budget, replan_required, verdict bytes, Review independence. Claude bundle rebuilt if it inlines the coordinator; minor changeset.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/host-neutral-assurance-coordinator.test.ts tests named \"rework convergence\", through the coordinator's Review submission: a rework verdict whose blocking finding names acceptance X when the previous review round also recorded a blocking finding on X returns state rework with convergence [{acceptance_id: X, streak: 2, obligation: \"generalize_or_refute\"}]; a third consecutive round on X returns streak 3; a first-round rework, and a rework whose acceptance differs from the previous round's, return a result with no convergence key; a blocking finding with acceptance_id null never appears in convergence.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"-t\",\n      \"rework convergence\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/acceptance-repeat-series.test.ts tests named \"long-tail replay\", replaying the committed review findings of .imm/audit/2026-09-01-002-claude-code-host, .imm/audit/2026-09-08-002-initiative-amendment and .imm/audit/2026-09-05-003-batch-run-state-machine round by round through acceptanceRepeatSeries, the convergence condition (a non-null acceptance with current_streak >= 2) first holds at round 2 for each of the three records.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\",\n      \"-t\",\n      \"long-tail replay\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The existing rework budget and authority checks still pass: tests/kernel-canary-rework-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-canary-rework-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The packaged role prompt mirror and the Claude bundle are current: tests/skill-dist-consistency.test.ts passes and scripts/build-claude-plugin.ts --check reports the bundle current.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/skill-dist-consistency.test.ts && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "A changeset .changeset/rework-convergence-trigger.md declares \"immune-brain\": minor.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"\\\"immune-brain\\\": minor\",\n      \".changeset/rework-convergence-trigger.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rework-convergence-trigger.md",
+    "docs/plans/rework-convergence-trigger.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/kernel/acceptance_repeats.ts",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "tests/acceptance-repeat-series.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
