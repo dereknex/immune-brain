@@ -1,0 +1,85 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "a14-corpus-line-number",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "a14-corpus-line-number",
+    "goal": "scripts/decision-eval/a14/run.ts reports an invalid gold label as corpus_invalid: <N> where N is the 1-based physical line of that row in the corpus file, counting blank lines, instead of the parsed-row index, so a maintainer can find the bad row when the corpus has blank lines (#204 slice 2a; Review advisory review-1 on task decision-model-core, PR #341 merged at c831cc8). Delegated choice: extract.ts exposes the source line number alongside each parsed row and run.ts uses it; extract.ts keeps reporting invalid_gold_label by row id unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-eval-a14.test.ts, run.ts on a corpus whose file line 1 is blank and line 2 is a row with gold \"maybe\" exits 1 with stderr containing corpus_invalid: 2 (not corpus_invalid: 1); on a corpus with a valid labelled row on line 1, a blank line 2 and gold \"maybe\" on line 3, it exits 1 with stderr containing corpus_invalid: 3; in both cases no a14-*.json or a14-*.md file is written to --out; the existing malformed-JSON case still exits 1 with corpus_invalid: 2; and extract.ts on a corpus holding gold \"maybe\" still exits 1 printing invalid_gold_label: <row id>.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/a14-corpus-line-number.intent.json",
+      "scripts/decision-eval/a14/extract.ts",
+      "scripts/decision-eval/a14/run.ts",
+      "tests/decision-eval-a14.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/a14-corpus-line-number.intent.json",
+    "content_hash": "sha256:2f32add420dd8e65985de5d1de3eedd57361eb1a559b71098306a9fdd122fe4a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2f32add420dd8e65985de5d1de3eedd57361eb1a559b71098306a9fdd122fe4a",
+  "git_base_head": "c831cc875e3b53186a2ca4915327301ffdeeae42",
+  "attestations": [
+    {
+      "id": "approval-qa-cb490ba1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2f32add420dd8e65985de5d1de3eedd57361eb1a559b71098306a9fdd122fe4a",
+      "diff_hash": "sha256:9cdc0289ab3bb236973b7fc6a0ffe637cc99dcc2b46157ca838ec5ce82e653f8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:a21e6cf2b1b2baba0db2ab3ef6c8565a89381570de909d9e87807ad4ada8e5de",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:a21e6cf2b1b2baba0db2ab3ef6c8565a89381570de909d9e87807ad4ada8e5de"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:a14-corpus-line-number:2026-11-02T02:12:19.620Z",
+      "at": "2026-11-02T02:12:19.620Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/a14-corpus-line-number.intent.json"
+    },
+    {
+      "id": "record_approval:a14-corpus-line-number:2026-11-02T02:12:32.048Z",
+      "at": "2026-11-02T02:12:32.048Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cb490ba1\naction_v2_sha256:87120ecdd196e966e879dc59bedca97939e5eb063251ec3621c0c74ea0c4cea8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-80446bd6fd4348d6",
+        "issued_at": "2026-11-02T02:12:32.048Z"
+      }
+    },
+    {
+      "id": "complete:a14-corpus-line-number:2026-11-02T02:12:33.100Z",
+      "at": "2026-11-02T02:12:33.100Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:11c50e8dd7f1641849c3ed6fe5f77ac34cc4438ad53018ea9cd127552ce2b732"
+    }
+  ]
+}

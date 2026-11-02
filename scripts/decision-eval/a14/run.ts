@@ -174,9 +174,9 @@ export async function main(argv: string[]): Promise<number> {
 	try {
 		const { corpus, out, root, date } = parseArgs(argv);
 		const bytes = readFileSync(corpus);
-		const rows = parseCorpus(bytes.toString("utf8"));
-		rows.forEach((r, i) => {
-			if (!isGoldLabel(r.gold)) throw new CliError(`corpus_invalid: ${i + 1}`);
+		const rows = parseCorpus(bytes.toString("utf8")).map(({ row, lineNumber }) => {
+			if (!isGoldLabel(row.gold)) throw new CliError(`corpus_invalid: ${lineNumber}`);
+			return row;
 		});
 		const labelled = rows.filter((r) => r.gold !== "unlabeled");
 		if (labelled.length === 0) throw new CliError("no_labelled_cases");
