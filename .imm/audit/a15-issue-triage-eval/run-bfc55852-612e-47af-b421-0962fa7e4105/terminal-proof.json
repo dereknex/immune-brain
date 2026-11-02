@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "a15-issue-triage-eval",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:a15-issue-triage-eval:2026-11-02T07:44:04.647Z",
+  "final_record_hash": "sha256:19990202931521fe392c6fedada03dce8b5f7c14cbebc24eaf1016eb63144e37",
+  "terminalized_at": "2026-11-02T07:44:04.647Z"
+}

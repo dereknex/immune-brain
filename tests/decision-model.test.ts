@@ -160,6 +160,14 @@ describe("egress gate (AC2)", () => {
 		expect(result).toMatchObject({ status: "unavailable", reason: "config_invalid" });
 		expect(rec.calls).toHaveLength(0);
 	});
+
+	test("listing issue_text in egress is config_invalid as a non-sensitive category", async () => {
+		const root = makeRoot({ bindings: bindingsFile({ egress: { clef: ["issue_text"] } }), local: { profiles: { default: clefProfile() } } });
+		const rec = recordingFetch();
+		const result = await decide({ point: "a15_issue_triage", state: "s" }, deps(root, rec.fetch));
+		expect(result).toMatchObject({ status: "unavailable", reason: "config_invalid" });
+		expect(rec.calls).toHaveLength(0);
+	});
 });
 
 describe("Clef adapter (AC3)", () => {

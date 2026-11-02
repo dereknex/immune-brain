@@ -6,8 +6,8 @@
 // it, and it imports nothing from there (ADR 0006: the runtime never invokes
 // a model).
 
-/** Categories any configured provider may receive. */
-export const NON_SENSITIVE_CATEGORIES = ["pr_comment", "command_text", "session_event"] as const;
+/** Categories any configured provider may receive. `issue_text` is public: the repository is public (A15, BR-DEC-6). */
+export const NON_SENSITIVE_CATEGORIES = ["pr_comment", "issue_text", "command_text", "session_event"] as const;
 /** Categories a provider receives only when `egress` lists them for its kind. */
 export const SENSITIVE_CATEGORIES = ["finding", "diff", "goal_scope", "spec_source"] as const;
 

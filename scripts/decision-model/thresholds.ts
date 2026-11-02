@@ -20,6 +20,22 @@ export const A14_PR_COMMENT_TRIAGE: ApplicationPoint = {
 	threshold_set: { version: "a14/v0", values: null },
 };
 
+export const A15_ISSUE_TRIAGE: ApplicationPoint = {
+	id: "a15_issue_triage",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["duplicate", "needs_spec", "ready_for_agent"],
+	criteria: {
+		duplicate: "Restates an issue that already exists",
+		needs_spec: "Too under-specified to implement; needs a spec first",
+		ready_for_agent: "Specified well enough for an agent to implement as written",
+	},
+	instructions:
+		"Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
+	threshold_set: { version: "a15/v0", values: null },
+};
+
 export const POINT_REGISTRY: PointRegistry = {
 	[A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
+	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
 };

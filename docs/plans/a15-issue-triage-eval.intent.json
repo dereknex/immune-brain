@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "a15-issue-triage-eval",
+  "owner": "user",
+  "goal": "decision-models S7 (application point A15; BR-DEC-6; recommendation (b) adopted 2026-11-02: issue_text is non-sensitive because the repository is public). A maintainer can measure offline how well a decision model triages issues as duplicate, needs_spec or ready_for_agent against the repository's own labels. Delegated choices: issue_text joins the non-sensitive input categories in scripts/decision-model/contract.ts; registry point a15_issue_triage; scripts/decision-eval/a15/extract.ts turns a saved gh issue list --state all --json number,title,body,labels,state,stateReason output into rows, pre-filling gold from labels (ready-for-agent to ready_for_agent, needs-spec to needs_spec, stateReason DUPLICATE to duplicate) with labeler repo-labels and leaving rows with none or conflicting signals unlabeled; scripts/decision-eval/a15/run.ts runs through the decision-eval harness with baseline majority_class.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/decision-eval-a15.test.ts, extract.ts on a fixture listing maps an issue labelled ready-for-agent to gold ready_for_agent, needs-spec to needs_spec, a closed issue with stateReason DUPLICATE to duplicate, and leaves an issue carrying both ready-for-agent and needs-spec, and one with no signal, unlabeled; re-extraction keeps a gold label a human changed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/decision-eval-a15.test.ts, run.ts with a bound provider whose egress lists nothing still sends issue_text (one fetch per labelled case through a recording fetch) and writes a report with the majority_class baseline and calibration; in tests/decision-model.test.ts a bindings egress entry listing issue_text is config_invalid as a non-sensitive category.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/a15-issue-triage-eval.intent.json",
+    "scripts/decision-eval/a15/extract.ts",
+    "scripts/decision-eval/a15/run.ts",
+    "scripts/decision-model/contract.ts",
+    "scripts/decision-model/thresholds.ts",
+    "tests/decision-eval-a15.test.ts",
+    "tests/decision-model.test.ts",
+    "tests/fixtures/decision-eval/a15/README.md",
+    "tests/fixtures/decision-eval/a15/issue-list-sample.json"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
