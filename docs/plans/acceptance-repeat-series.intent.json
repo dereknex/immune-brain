@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "acceptance-repeat-series",
+  "owner": "user",
+  "goal": "decision-models S1 (from #204; BR-DEC-7; delivers #284 S1 item 7, docs/specs/review-verifier-eval.spec.md:307-317). A maintainer can see, per run and acceptance ID, how review findings repeated across rounds, from committed records only. Delegated choices: a pure acceptanceRepeatSeries(findings, latestRound) in plugins/immune-brain/runtime/kernel/acceptance_repeats.ts returns per acceptance key (null kept as a key) finding_count, rounds_with_findings, last_finding_round, rounds_since_last_finding and current_streak; findings without review_round count only in finding_count and unrounded. No runtime caller yet. A read-only CLI scripts/review-eval/acceptance-repeats.ts reads committed audit at HEAD via the revisit audit reader and writes no file. The #284 Spec item 7 notes this delivery; #284 TaskIntents are not edited.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/acceptance-repeat-series.test.ts, acceptanceRepeatSeries returns: for key A with findings in rounds 1, 2 and 3 and latestRound 3, finding_count 3, rounds_with_findings 3, last_finding_round 3, rounds_since_last_finding 0, current_streak 3; for key B with one finding in round 1 and latestRound 3, rounds_since_last_finding 2 and current_streak 0; two findings of one key in the same round give finding_count 2 and rounds_with_findings 1; a finding with acceptance_id null is reported under the null key; a finding with review_round null raises finding_count and unrounded but no round metric; an empty findings list returns an empty series.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/acceptance-repeat-series.test.ts, scripts/review-eval/acceptance-repeats.ts run as a subprocess with --root on a temporary git repository whose HEAD commits one run-scoped audit pair with findings on two acceptance IDs prints, with --json, one row per (run, acceptance) whose counts equal acceptanceRepeatSeries over that run; an audit pair present only in the working tree and not committed is absent from the output; git status --porcelain of the temporary repository is unchanged after the run; a --root that is not a git repository exits 1 with the error on stderr and no stdout rows.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/acceptance-repeat-series.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "docs/specs/review-verifier-eval.spec.md item 7 (Per-acceptance repeat counts) states that the series is delivered by the decision-models S1 task acceptance-repeat-series and that #284 S1 reuses it.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"acceptance-repeat-series\",\n      \"docs/specs/review-verifier-eval.spec.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/acceptance-repeat-series.intent.json",
+    "docs/specs/review-verifier-eval.spec.md",
+    "plugins/immune-brain/runtime/kernel/acceptance_repeats.ts",
+    "plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
+    "scripts/review-eval/acceptance-repeats.ts",
+    "tests/acceptance-repeat-series.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

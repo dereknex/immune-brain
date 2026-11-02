@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "jev-adapter",
+  "owner": "user",
+  "goal": "decision-models S3 (BR-DEC-5; #204 slice 2b). A maintainer can point a profile at Jev (TypeSafe System One) and get the same decision envelope as from Clef. Delegated choices: a jev profile is {kind, api_key_env, base_url?, timeout_ms?, context_window?} with base_url defaulting to https://api.typesafe.ai; scripts/decision-model/providers/jev.ts POSTs the Clef choice request body to <base_url>/v1/systemone with Authorization: Bearer <api_key_env value> and parses the Clef choice result shape. These facts come from third-party pages and are unverified against TypeSafe's reference; the source used is recorded in the A14 fixture README, and a mismatch surfaces as unavailable, never as a decision. Choice questions only.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/decision-model.test.ts, decide() with a jev profile and a recording fetch sends exactly one POST to https://api.typesafe.ai/v1/systemone (or the profile's base_url) whose body equals the Clef adapter's body for the same point and state and whose Authorization header is Bearer plus the api_key_env value, and returns a decision envelope with per-option probabilities summing to 1 within 1e-6 and provider kind jev.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/decision-model.test.ts, a jev profile returns unavailable without a decision for each of: api_key_env unset (credential_missing, no fetch call); HTTP 401 (provider_error naming status 401); a body missing the choice result (invalid_response); probabilities naming an option outside the point's options (invalid_response); a fetch that exceeds timeout_ms (provider_error); and no error detail contains the credential value. A jev profile with an unknown key or a non-string api_key_env is config_invalid.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/decision-eval-a14.test.ts, scripts/decision-eval/a14/run.ts with a jev profile bound to a14_pr_comment_triage and a replaced fetch writes a report whose provider_kind is jev.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/jev-adapter.intent.json",
+    "scripts/decision-model/config.ts",
+    "scripts/decision-model/contract.ts",
+    "scripts/decision-model/decide.ts",
+    "scripts/decision-model/providers/jev.ts",
+    "tests/decision-eval-a14.test.ts",
+    "tests/decision-model.test.ts",
+    "tests/fixtures/decision-eval/a14/README.md"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
