@@ -9,6 +9,9 @@
 // sorted by id. An invalid existing label stops the run before anything is written.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { CliError, parseJsonl } from "../harness.ts";
+
+export { CliError };
 
 export const GOLD_LABELS = ["unlabeled", "blocking", "nit", "out_of_scope", "duplicate"] as const;
 export type GoldLabel = (typeof GOLD_LABELS)[number];
@@ -33,12 +36,6 @@ export interface CorpusRow {
 	labelled_at: string | null;
 }
 
-export class CliError extends Error {
-	constructor(message: string) {
-		super(message);
-	}
-}
-
 type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value);
 const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
@@ -48,25 +45,11 @@ export function isGoldLabel(value: unknown): value is GoldLabel {
 	return typeof value === "string" && (GOLD_LABELS as readonly string[]).includes(value);
 }
 
+export const isCorpusRow =(value: unknown): value is CorpusRow => isObject(value) && typeof value.id === "string" && typeof value.repository === "string" && typeof value.pr === "number";
+
 /** Parse a JSONL corpus. Throws `corpus_invalid: <line>` on a malformed line. */
 export function parseCorpus(text: string): { row: CorpusRow; lineNumber: number }[] {
-	const rows: { row: CorpusRow; lineNumber: number }[] = [];
-	const lines = text.split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i] as string;
-		if (line.trim() === "") continue;
-		let row: unknown;
-		try {
-			row = JSON.parse(line);
-		} catch {
-			throw new CliError(`corpus_invalid: ${i + 1}`);
-		}
-		if (!isObject(row) || typeof row.id !== "string" || typeof row.repository !== "string" || typeof row.pr !== "number") {
-			throw new CliError(`corpus_invalid: ${i + 1}`);
-		}
-		rows.push({ row: row as unknown as CorpusRow, lineNumber: i + 1 });
-	}
-	return rows;
+	return parseJsonl(text, isCorpusRow);
 }
 
 function row(repository: string, pr: number, kind: ItemKind, itemId: string, fields: Omit<CorpusRow, "id" | "repository" | "pr" | "kind" | "gold" | "labeler" | "labelled_at">): CorpusRow {

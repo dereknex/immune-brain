@@ -121,6 +121,7 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 		expect(typeof m.macro_f1).toBe("number");
 		expect(typeof m.brier).toBe("number");
 		expect(typeof m.ece).toBe("number");
+		expect(report.calibration).toEqual({ brier: m.brier, excluded: 1 });
 		expect(m.coverage_at.map((c: { confidence: number }) => c.confidence)).toEqual([0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]);
 		expect(m.coverage_at[0]).toEqual({ confidence: 0.5, coverage: 3 / 4, accuracy: 2 / 3 });
 		expect(report.baseline).toMatchObject({ name: "all_blocking", accuracy: 0.25 });

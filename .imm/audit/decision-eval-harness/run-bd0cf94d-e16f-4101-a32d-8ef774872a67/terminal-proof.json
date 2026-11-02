@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "decision-eval-harness",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:decision-eval-harness:2026-11-02T06:27:57.500Z",
+  "final_record_hash": "sha256:e074181a5ca456aeb479193f39e9b1641884a3ec2f68e4c1f33fe35023d911cd",
+  "terminalized_at": "2026-11-02T06:27:57.500Z"
+}

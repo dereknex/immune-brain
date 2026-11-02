@@ -1,0 +1,97 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "decision-eval-harness",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "decision-eval-harness",
+    "goal": "decision-models S4. Every offline decision eval shares one harness so corpus handling, metrics and calibration are computed the same way. Delegated choices: scripts/decision-eval/harness.ts owns JSONL corpus parsing with physical line numbers, gold label validation against a point's label set, accuracy (unavailable counted incorrect), per-option precision and recall, macro F1, a calibration section (multi-class Brier score averaged over cases with a decision, plus excluded count for unavailable cases), the baseline comparison and dated JSON and Markdown report writing. scripts/decision-eval/a14/run.ts becomes a thin caller of the harness; its report keeps every existing field and value and gains only the calibration section. No new application point.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-eval-harness.test.ts: two cases whose decision gives probability 1 to the gold option yield Brier 0; one two-option case with probabilities 0.5/0.5 yields Brier 0.5; an unavailable case is excluded from Brier, counted in calibration.excluded and counted incorrect in accuracy; a corpus with a blank line 1 and an invalid gold label on line 2 is rejected with line 2 before any report is written; per-option precision is null for an option never predicted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/decision-eval-a14.test.ts passes with its existing report assertions unchanged, and an added assertion shows the A14 report carries the calibration section.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a14.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/decision-eval-harness.intent.json",
+      "scripts/decision-eval/a14/extract.ts",
+      "scripts/decision-eval/a14/run.ts",
+      "scripts/decision-eval/harness.ts",
+      "tests/decision-eval-a14.test.ts",
+      "tests/decision-eval-harness.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/decision-eval-harness.intent.json",
+    "content_hash": "sha256:0c925c20e1e4712f626a41f752322307dadbdd4626e173eaff31bc628a93a69a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0c925c20e1e4712f626a41f752322307dadbdd4626e173eaff31bc628a93a69a",
+  "git_base_head": "c3363a81f4ccd25b99df7de11146b12c94bf67ff",
+  "attestations": [
+    {
+      "id": "approval-qa-e85fa43f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0c925c20e1e4712f626a41f752322307dadbdd4626e173eaff31bc628a93a69a",
+      "diff_hash": "sha256:76aac33f3b2f08331d2d68e0337ebbe2b6e4e16e2bc6b2042b3be728c0975859",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:b0ccc6bccda15caf0132866b7232a7a5c6d3a197a10590f2a58250fe9df804df",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b0ccc6bccda15caf0132866b7232a7a5c6d3a197a10590f2a58250fe9df804df"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:b0ccc6bccda15caf0132866b7232a7a5c6d3a197a10590f2a58250fe9df804df"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:decision-eval-harness:2026-11-02T06:27:48.696Z",
+      "at": "2026-11-02T06:27:48.696Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/decision-eval-harness.intent.json"
+    },
+    {
+      "id": "record_approval:decision-eval-harness:2026-11-02T06:27:56.247Z",
+      "at": "2026-11-02T06:27:56.247Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e85fa43f\naction_v2_sha256:e6188d572e2e0e491b231b1465bf54cfdcf14ec0cfd42f882daae156090a9fa1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T06:27:56.247Z"
+      }
+    },
+    {
+      "id": "complete:decision-eval-harness:2026-11-02T06:27:57.500Z",
+      "at": "2026-11-02T06:27:57.500Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:09a153c606bc1bd39e580c022e049f3616764e5d894c323c8316eadc2e84bedd"
+    }
+  ]
+}
