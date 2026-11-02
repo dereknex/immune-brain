@@ -14,7 +14,7 @@ Immune-Brain 为 AI 编程工具（**Pi** 与 **Claude Code**）提供结构化�
 - **需要严谨时显式启用** — 遇到复杂功能开发或高保证任务时，显式调用 `clarify`、`draw-up` 或 `drive`。
 - **计划变为可追踪的任务**（`TaskIntent` + `TaskRecord`） — 进度落盘持久化（Git + `.imm/`），会话重启或上下文清理后仍可无缝恢复。
 - **质量由代码强制保障** — 自动化 QA 验收与隔离式 Reviewer 审查必须通过，任务才会结算完成。
-- **已就绪的 Initiative 可以整批运行（串行或多 Lane 并行）** — 一次确认的 Batch Authorization 即可无人值守推进整批子任务；支持默认单工作区串行推进，或显式开启多 Lane 并行（按 Scope 互斥拓扑调度独立 Git worktree 并发执行，辅以集成守卫与强故障隔离），每个 child 依然保持独立的 Enrollment、QA、Review 与结算。
+- **已就绪的 Initiative 可以通过 Lane 整批运行** — 一次确认的 Batch Authorization 即可无人值守推进整批子任务；容量为 1 时一次运行一个 Lane，更大容量允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行，并通过集成守卫验证。每个 child 依然保持独立的 Enrollment、QA、Review 与结算。
 
 Pi 与 Claude Code 是支持的宿主。未声明的适配器仍不受支持。Claude Code 最低版本为 `2.1.236`，这是已通过交互式 server-initiated MCP elicitation 验证的最低版本。当前真实 Host 证据见 `docs/verification/claude-native-elicitation-authority-conformance.md`；历史报告归档于 `docs/verification/archive/`。
 
@@ -118,7 +118,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | 目标明确，需要正规计划与规格 | `/draw-up` "规划一下深色模式功能" | → `draw-up` 产出 `TaskIntent` + Spec，包含可执行验收条件 |
 | 计划已确认，准备执行与验证 | `/drive` | → Executor 在范围内实现 → 确定性 QA 验收 → 隔离 Review 审查 → 任务结算 |
 | 会话中断或需恢复未完成任务 | `/drive` | → 从磁盘状态（`.imm/`）无缝恢复，以 Kernel projection 为准 |
-| 已发布的 Initiative 批次推进（串行 / 多 Lane 并行） | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `.imm/lanes.local.json` profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。无配置时单工作区串行推进；配置并行度时开启多 Lane Git worktree 物理隔离并发执行 |
+| 已发布的 Initiative 通过 Lane 批次推进 | "无人值守跑完 initiative `<slug>`"（可指定 `--max-parallel 4` 或使用 `.imm/lanes.local.json` profile） | → Host 的 `start_unattended_batch`：一次原生确认绑定 plan digest。容量为 1 时一次运行一个 Lane；更大的 `max_parallel` 允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行 |
 | 跨 Host 协作（Claude 规划 + Pi 编码） | 在 Claude Code 中调 `/draw-up`，切到 Pi 输入 `/drive` | → Spec 与 TaskIntent 共享于 Git，Pi 原生弹窗准入并执行 QA/Review 闭环 |
 | PR 被评论 / CI 挂了 | 对该 PR 使用 `/fix-pr` | → 独立修复：在当前 PR 内针对性修复，不创建新 managed 任务 |
 | 文档过时需要清理 | `/prune-docs` | → 只读审计过时文档，仅删除经哈希审批的条目 |
@@ -544,7 +544,7 @@ flowchart TD
    - **按险定级与确定性兜底**：`routine` 仅需 QA；`material`/`critical` 必须追加独立只读 Reviewer 产出结构化裁决。触碰核心权威路径强制定级为 `material`。
    - **反证机制 (Live Refutation)**：主观 Review finding 可由真实通过的新鲜 QA 证据反证驳回；代码发生改动后反证自动失效并重新阻塞。
    - **不可变审计落盘**：任务结项时，完整的 `TaskRecord`、Git blob 打包的 `ReviewBundle`、QA Attestation 凭证原子沉淀至 `.imm/audit/<task-id>/` 并受 Git 追踪。
-   - **批处理与多 Lane 并行 (Unattended Batch & Parallel Lanes)**：基于 GitHub Issue / `plan_digest` 推进。支持默认单分支串行或多 Lane 物理并行模式；并行时协调者基于 `scope_hint` 互斥拓扑调度独立 Git worktree 并发执行，结算时通过集成守卫（Integration Guard）在候选提交上重跑确定性验收命令再 fast-forward 主分支，杜绝并发污染。
+   - **批处理与多 Lane 并行 (Unattended Batch & Parallel Lanes)**：基于 GitHub Issue / `plan_digest` 推进。所有批次都使用 runtime 创建的 Lane：容量为 1 时一次运行一个 Lane，更大容量允许 scope 互不重叠的 child 在独立 Git worktree 中并发执行。集成守卫（Integration Guard）在候选提交上重跑确定性验收命令，通过后再 fast-forward Parent ref。
 
 核心不变量：
 
@@ -561,18 +561,15 @@ flowchart TD
 
 输入 `drive <Parent Issue>`，会自动选择完整已批准计划，通过 Host 的 `start_unattended_batch` 和 native 授权执行。输入 `drive <Slice/Child Issue>` 则先检查前置交付，只执行该 Slice，不启动前置或兄弟任务。
 
-Parent 在确认前根据依赖、scope 冲突、Lane 容量及受监督 Host 能力，选择 **Managed 串行模式** 或 **多 Lane 并行模式**；缺少 Lane supervision 时在同一 Host 串行执行。状态询问保留运行绑定，显式取消解除续接。
+所有新批次都使用 **runtime 创建的 Lane**。省略 `max_parallel` 或显式设置 `max_parallel: 1` 都一次运行一个 Lane；更大的值允许 scope 互不重叠的 child 并发执行。Parent 在确认前根据依赖、scope 冲突及受监督 Host 能力选择容量。缺少受监督的 Executor 时，Parent 会报告阻塞。状态询问保留运行绑定，显式取消解除续接。
 
 ### 1. 批次运行模式概览
 
-| 维度 | 串行批次 (Serial Batch，默认) | 多 Lane 并行批次 (Parallel Batch Lanes) |
-|---|---|---|
-| **开启方式** | 调用 `start_unattended_batch(slug)` | 显式传入 `max_parallel` 或在 `.imm/lanes.local.json` profile 中设定 `max_parallel` |
-| **工作区拓扑** | 共享唯一的专属批次分支（`imm-batch/<slug>`） | Coordinator 维护主批次分支；各并发任务独占独立 Git worktree（`imm-lane/<task-id>` 分支） |
-| **调度策略** | 严格按依赖拓扑层级单任务逐个串行推进 | 互不依赖且物理修改范围（`scope_hint`）**完全不重叠（Scope-disjoint）**的任务并发执行 |
-| **Authority 边界** | 协调者按序推进单个任务的本地 Authority Store | 每个 Lane 拥有完全隔离的本地 Authority Store，各自独立加锁，零全局 CAS 竞争 |
-| **集成机制** | 任务验证完成直接在批次分支提交 1 个 commit | Lane 结算后通过 Git plumbing 校验变更等价性，并在候选提交上重跑集成守卫（Integration Guard）再 fast-forward |
-| **适用场景** | 任务数少、前后改动文件强耦合、单核/受限环境 | 大中型 Initiative、多模块解耦子任务、多核或多 Host 算力充裕场景 |
+- **开启方式：** 调用 `start_unattended_batch(slug)` 使用容量 1，或传入 `max_parallel` / 在 `.imm/lanes.local.json` profile 中设定 `max_parallel`。
+- **工作区拓扑：** runtime 在 Git common directory 下的 `imm/worktrees/<slug>/<task_id>` 为每个 child 创建 worktree，使用 `imm-lane/<slug>/<task_id>` 分支；Parent 进度保存在 `refs/heads/imm/<slug>`，不切换协调者的 checkout。
+- **Authority 边界：** 每个 Lane 都有自己的 Authority Store、Enrollment、QA、Review 与结算。
+- **集成机制：** runtime 提交 scope 内的交付，重跑 Integration Guard 验收命令，并在准入依赖任务前 fast-forward Parent ref。
+- **退役记录：** 以 Parent slug 作为 `task_id` 查询 status，可以读取 `batch.record` 中持久化的批次身份、状态及 child 进度，包括 v1 串行记录。这些只是只读证据；缺少 Parent TaskRecord 不会隐藏记录，也不会授予执行权限。`retire_stale_batch` 显式退役 active 记录。恢复旧记录会以 `batch_record_shape_retired` 拒绝；旧串行运行器与计划重新确认路径已移除。
 
 ### 2. 批次授权与运行红线
 
@@ -582,7 +579,7 @@ Parent 在确认前根据依赖、scope 冲突、Lane 容量及受监督 Host �
 
 ### 3. 多 Lane 并行流水线与架构（Parallel Batch Lanes）
 
-在多 Lane 并行模式下，系统通过 Coordinator（Parent Host）、`lane-steward`（工作区管家）与 Lane Executor Host（执行宿主）的严密协作，实现物理级并发隔离：
+在所有容量下，Coordinator（Parent Host）、runtime 与 Lane Executor Host（执行宿主）共同协调隔离执行：
 
 ```mermaid
 sequenceDiagram
@@ -703,7 +700,7 @@ docs/specs/                           # Living specs（原地更新）
 
 **Review finding 突然不再阻塞了？** 它被反证了：新鲜的确定性 QA 证据表明它声称的 acceptance 是通过的。反证绑定到那份具体证据，所以证据一旦对当前 revision、intent hash 或 diff 失效，该 finding 会重新阻塞。
 
-**能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会在一个 batch 分支上串行推进已发布且非 `critical` 的 child — 一旦某个 child 需要人决策，或遇到预算/截止时间/授权/提交失败就暂停。它不会替你 push、开 PR 或结算用户决策。
+**能不能整个 Initiative 不用我盯着？** 只能在你授权范围内。用 Initiative slug 确认 `start_unattended_batch` 后，runner 会通过 runtime 创建的 Lane 推进已发布且非 `critical` 的 child，容量为 1 时一次运行一个 Lane，并在集成验证通过后 fast-forward Parent ref — 一旦某个 child 需要人决策，或遇到预算、授权或提交失败就暂停。停放的运行会无限期等你：确认对话框及其授予的授权都不会超时。它不会替你 push、开 PR 或结算用户决策。
 
 **可以在不同 Host 之间切换吗（例如 Claude Code 规划、Pi 编码）？** 可以。Immune-Brain 的契约与状态完全落盘于代码仓库，解耦了会话上下文。你可以用 Claude Code 进行深度推理与制定 Spec，再切换到 Pi 跑 `drive` 编码并完成 QA 闭环；中途随时可以用 `/drive` 双向恢复。
 
