@@ -1,0 +1,157 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "config-lanes",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "config-lanes",
+    "goal": "layered-config S5 (#360-C3; Spec docs/specs/layered-config.spec.md D4, D6, D9). The Parent's Lane Preferences resolve through imm-kernel config --json instead of reading .imm/lanes.local.json itself: per field, the literal request, else the selected user Lane profile (the request-named profile, else projects[<key>].lanes.active, else lanes.active), else the project lanes defaults, else today's default, with model and effort applied only with an executor_host from the same layer and each value's source on the display line. Batch final verification resolves as the request, else the project batch.final_verification, else the repository's prose test and type-check commands, else none. A lanes section that fails validation is reported and no batch starts. The drive route line names the layered config.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/role-prompt-bridge.test.ts, drive-batch.md #### Lane Preferences states that the Parent reads lanes from `imm-kernel config --json`, the per-field order request, user Lane profile, project defaults, default, the same-layer rule for model and effort, the per-field sources user, user:project, project, legacy and default on the display line, that an invalid lanes section starts no batch, and the final verification order; it no longer says the Parent alone reads .imm/lanes.local.json.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "skills/drive/SKILL.md names the layered config instead of the .imm/lanes.local.json preset on its Lane Preferences route, the drive-batch.md#lane-preferences anchor survives, and skill and dist mirrors are consistent.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -q 'lanes.local.json' plugins/immune-brain/skills/drive/SKILL.md && bun test tests/ceremony-trim-contract.test.ts tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/config-lanes.md",
+      "docs/plans/config-lanes.intent.json",
+      "docs/specs/layered-config.spec.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/skills/drive/SKILL.md",
+      "tests/ceremony-trim-contract.test.ts",
+      "tests/role-prompt-bridge.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/config-lanes.intent.json",
+    "content_hash": "sha256:401b9953a3de80f46e2e7ab33877109f57e3d48e136bafe42190a221738d39eb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:401b9953a3de80f46e2e7ab33877109f57e3d48e136bafe42190a221738d39eb",
+  "git_base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+  "attestations": [
+    {
+      "id": "approval-qa-a01fc255",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:401b9953a3de80f46e2e7ab33877109f57e3d48e136bafe42190a221738d39eb",
+      "diff_hash": "sha256:969fe2686194fdcb7ad3ea48aa79193c7122bab5f67a3c33c73daa97219e1501",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:3c244ffbed6b4614215777a86fbc17017f3382eb1999e6d96c432a7eb5311ee1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3c244ffbed6b4614215777a86fbc17017f3382eb1999e6d96c432a7eb5311ee1"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3c244ffbed6b4614215777a86fbc17017f3382eb1999e6d96c432a7eb5311ee1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e9de4017",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:401b9953a3de80f46e2e7ab33877109f57e3d48e136bafe42190a221738d39eb",
+      "diff_hash": "sha256:969fe2686194fdcb7ad3ea48aa79193c7122bab5f67a3c33c73daa97219e1501",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；packet、manifest、commit 单一 parent、tree 和全部变更 blob 均已校验，六个文件的完整 diff 已审查，AC1/AC2 符合冻结断言。影响范围 tier medium：drive-batch.md、drive/SKILL.md 与 layered_config.ts 的配置输出；无持久化迁移。检查了 profile 切换后的项目默认值保留及 lanes 无效时清空输出的路径。采用 Kernel QA 已通过的验证证据，未重复运行测试；Parent 实际执行仍依赖其遵循文档契约。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+        "review_commit": "b0482612bece9b16964ba511d85fb79c41a038de",
+        "review_tree": "31c8a0f8e35bf6fedb5cdc44645d12d01b2975d9",
+        "manifest_digest": "sha256:07fd83483081c97ea0792b24af074f41fab86a01706d60589ddff06ca2bbcbfb"
+      },
+      "reviewer_verdict_sha256": "sha256:282b0cd1f9b702d8f48b6f463b4c69a371887b997862ba5c091aaede1184ddd9"
+    }
+  ],
+  "findings": [
+    {
+      "id": "config-lanes-shadowed-project-defaults",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "The config --json interface cannot resolve a request-selected Lane profile against project defaults that the active profile already shadows: plugins/immune-brain/runtime/config/layered_config.ts:146-160 returns profiles and only the already-selected effective field values, not the shadowed project values; plugins/immune-brain/runtime/v4_runtime.ts:192-195 accepts no profile argument. For example active profile max_parallel=4, requested profile omits it, and project default=2: the output exposes 4 but not 2, preventing the required request > requested profile > project > default order."
+    }
+  ],
+  "history": [
+    {
+      "id": "record_finding:config-lanes:2026-11-02T12:51:45.620Z",
+      "at": "2026-11-02T12:51:45.620Z",
+      "type": "record_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "config-lanes-shadowed-project-defaults\naction_v2_sha256:a86783eefe8b2f45724ddbaa3003042a1b5c3269bf15c377044df2c276a9cee1"
+    },
+    {
+      "id": "resolve_finding:config-lanes:2026-11-02T12:53:38.606Z",
+      "at": "2026-11-02T12:53:38.606Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "config-lanes-shadowed-project-defaults\naction_v2_sha256:fa2fcc365451c78d32311fe23f4af285234dbeef4c5a8fed68fd676900e3d0a7"
+    },
+    {
+      "id": "freeze_artifacts:config-lanes:2026-11-02T12:53:49.543Z",
+      "at": "2026-11-02T12:53:49.543Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-lanes.intent.json"
+    },
+    {
+      "id": "record_approval:config-lanes:2026-11-02T12:54:03.118Z",
+      "at": "2026-11-02T12:54:03.118Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a01fc255\naction_v2_sha256:900bcbc73b61299baa4633fded724ee9171b6b58fe0334a947bb222d83529f35",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-68561a52c196f57a",
+        "issued_at": "2026-11-02T12:54:03.119Z"
+      }
+    },
+    {
+      "id": "record_approval:config-lanes:2026-11-02T12:56:07.051Z",
+      "at": "2026-11-02T12:56:07.051Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e9de4017\naction_v2_sha256:d3cd58ef29c13f285521b2fb31d44c76420d6115b5c9428eeaa2f293df99d19d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-381a0523816cd61a",
+        "issued_at": "2026-11-02T12:56:07.051Z"
+      }
+    },
+    {
+      "id": "complete:config-lanes:2026-11-02T12:56:08.290Z",
+      "at": "2026-11-02T12:56:08.290Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:429d1c3c10d2803520520eedc5eb1763c470961ffaedf561d0b49a052569ad33"
+    }
+  ]
+}

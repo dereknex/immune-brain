@@ -189,16 +189,22 @@ test("invalid legacy credential names are redacted and fail the section closed",
 
 test("CLI exits based on diagnostics and checks env without disclosing values", () => {
 	const f = fixture(), configHome = join(temp, "xdg"); mkdirSync(join(configHome, "immune-brain"), { recursive: true });
+	f.project({ lanes: { max_parallel: 2, executor_host: "pi", executor_model: "project-model" } });
 	const userPath = join(configHome, "immune-brain/config.json");
-	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v1", decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "TEST_ACCOUNT", token_env: "TEST_TOKEN" } } } }));
+	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v1", lanes: { active: "active", profiles: { active: { max_parallel: 4, executor_host: "claude-code" }, requested: {} } }, decision_models: { profiles: { x: { kind: "clef", model: "clef", account_id_env: "TEST_ACCOUNT", token_env: "TEST_TOKEN" } } } }));
 	const cli = resolve("plugins/immune-brain/bin/imm-kernel");
 	const env = { ...process.env, XDG_CONFIG_HOME: configHome, TEST_ACCOUNT: "secret-value" }; delete env.TEST_TOKEN;
 	const run = () => spawnSync(cli, ["config", "--json", "--check-env"], { cwd: f.root, encoding: "utf8", env });
 	let result = run(); expect(result.status).toBe(0); expect(result.stdout).not.toContain("secret-value");
 	expect(JSON.parse(result.stdout).decision_models.environment.x).toEqual({ account_id_env: "set", token_env: "unset" });
+	const lanes = JSON.parse(result.stdout).lanes;
+	expect(lanes.max_parallel).toEqual({ value: 4, source: "user" });
+	expect(lanes.profiles.value.requested).toEqual({});
+	expect(lanes.project_defaults).toEqual({ value: { max_parallel: 2, executor_host: "pi", executor_model: "project-model" }, source: "project" });
 	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v1", lanes: { active: "constructor", profiles: {} } }));
 	result = run(); expect(result.status).toBe(1); expect(JSON.parse(result.stdout).diagnostics.some((d: { code: string }) => d.code === "unknown_profile")).toBe(true);
 	rmSync(userPath);
+	f.project({});
 	write(f.root, ".imm/lanes.local.json", { active: "local", profiles: { local: { max_parallel: 3, token_env: "sk-live-123" } } });
 	result = run(); expect(result.status).toBe(1); expect(result.stdout).not.toContain("sk-live-123");
 	writeFileSync(userPath, "{"); result = run(); expect(result.status).toBe(1);

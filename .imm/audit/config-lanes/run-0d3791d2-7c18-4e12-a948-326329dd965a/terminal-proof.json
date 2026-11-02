@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "config-lanes",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:config-lanes:2026-11-02T12:56:08.290Z",
+  "final_record_hash": "sha256:678eb8267e465c59e9cd6262f465813d1707ec144139b7dad4be45b683c19d97",
+  "terminalized_at": "2026-11-02T12:56:08.290Z"
+}

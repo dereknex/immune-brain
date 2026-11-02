@@ -149,7 +149,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (active.value && !laneProfile) { diag("unknown_profile", "error", active.source.startsWith("legacy:") ? ".imm/lanes.local.json" : userPath, "lanes.active", "unknown profile"); failed.add("lanes"); }
 	if (laneProfile && active.source.startsWith("legacy:") && !object(laneProfile)) { invalid(".imm/lanes.local.json", `lanes.profiles.${active.value}`, "expected object"); failed.add("lanes"); }
 	const resolvedLaneProfiles = choose([has(ul, "profiles") ? laneProfiles : undefined, "user"], [legacyLane.profiles, "legacy:.imm/lanes.local.json"], [{}, "default"]);
-	const lanes: Obj = { valid: !failed.has("lanes"), active, profiles: resolvedLaneProfiles };
+	const lanes: Obj = { valid: !failed.has("lanes"), active, profiles: resolvedLaneProfiles, project_defaults: leaf(pl, Object.keys(pl).length ? "project" : "default") };
 	for (const key of laneKeys) {
 		const userValue = laneProfile?.[key];
 		let projectValue = pl[key];
@@ -161,6 +161,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (failed.has("lanes")) {
 		lanes.active = leaf(null, "default");
 		lanes.profiles = leaf({}, "default");
+		lanes.project_defaults = leaf({}, "default");
 		for (const key of laneKeys) lanes[key] = leaf(key === "max_parallel" ? 1 : null, "default");
 	}
 	const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
