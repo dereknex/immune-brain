@@ -6,9 +6,9 @@
 // handling, metrics, calibration and report writing live in the shared harness
 // (../harness.ts); this module adds the per-task `first_correct_grouping_round`
 // beside `repeat_trigger_round`, the round at which the S2 repeat trigger
-// (acceptanceRepeatSeries current_streak >= 2) would fire. scripts/decision-eval may not import
-// plugins/immune-brain/runtime (tests/decision-model.test.ts isolation contract), so
-// `repeatTriggerRound` restates that streak rule locally; tests/decision-eval-a4.test.ts pins
+// (acceptanceRepeatSeries current_streak >= 2) would fire. To keep this offline
+// eval independent of the authority path, `repeatTriggerRound` restates that streak
+// rule locally; tests/decision-eval-a4.test.ts pins
 // it to acceptanceRepeatSeries.
 //
 // Finding is a sensitive input category: with no `egress` entry for the profile's
@@ -21,8 +21,8 @@
 // 2 no_cases_decided (checked after the report is written).
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { decide, resolveProfile } from "../../decision-model/decide.ts";
-import { A4_FINDING_EQUIVALENCE } from "../../decision-model/thresholds.ts";
+import { decide, resolveProfile } from "../../../plugins/immune-brain/runtime/decision_model/decide.ts";
+import { A4_FINDING_EQUIVALENCE } from "../../../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 import { CliError, renderMarkdown, runEval } from "../harness.ts";
 import { type CorpusRow, type EarlierFinding, isCorpusRow } from "./extract.ts";
 

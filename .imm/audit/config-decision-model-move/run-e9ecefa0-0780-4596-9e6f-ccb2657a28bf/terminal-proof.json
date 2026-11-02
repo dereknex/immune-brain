@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "config-decision-model-move",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:config-decision-model-move:2026-11-02T09:56:43.725Z",
+  "final_record_hash": "sha256:242f16a27fdae760591be0e5a55c285d33f8b418df411248ffc610070e26b4ad",
+  "terminalized_at": "2026-11-02T09:56:43.725Z"
+}

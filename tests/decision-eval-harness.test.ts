@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ApplicationPoint, Envelope } from "../scripts/decision-model/contract.ts";
+import type { ApplicationPoint, Envelope } from "../plugins/immune-brain/runtime/decision_model/contract.ts";
 import { type Case, CliError, type CorpusRowBase, type DecideOutcome, buildReport, calibration, goldLabelsFor, loadCorpus, runEval } from "../scripts/decision-eval/harness.ts";
 
 const POINT: ApplicationPoint = {

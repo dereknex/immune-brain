@@ -306,6 +306,7 @@ describe("claude host package", () => {
       "plugins/immune-brain/.claude-plugin/plugin.json",
       "plugins/immune-brain/.mcp.json",
       "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      ...["config.ts", "contract.ts", "decide.ts", "thresholds.ts", "providers/clef.ts", "providers/fake.ts", "providers/jev.ts"].map((file) => `plugins/immune-brain/runtime/decision_model/${file}`),
       "plugins/immune-brain/skills/drive/SKILL.md",
     ]) expect(files).toContain(required);
     expect(files.some((path: string) => path.startsWith("tests/"))).toBe(false);

@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import type { ApplicationPoint, DecideDeps, FetchLike, PointRegistry } from "../scripts/decision-model/contract.ts";
-import { decide } from "../scripts/decision-model/decide.ts";
-import { POINT_REGISTRY } from "../scripts/decision-model/thresholds.ts";
+import type { ApplicationPoint, DecideDeps, FetchLike, PointRegistry } from "../plugins/immune-brain/runtime/decision_model/contract.ts";
+import { decide } from "../plugins/immune-brain/runtime/decision_model/decide.ts";
+import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const A14 = "a14_pr_comment_triage";
@@ -419,13 +419,13 @@ describe("envelope and isolation (AC4)", () => {
 		expect(result).toMatchObject({ status: "unavailable", reason: "provider_error" });
 	});
 
-	test("decision-model code and the plugin do not import each other", () => {
+	test("decision-model imports respect the plugin and authority boundaries", () => {
 		const SPEC = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)["']([^"']+)["']/g;
 		const walk = (dir: string): string[] =>
 			readdirSync(dir).flatMap((name) => {
 				if (name === "node_modules") return [];
 				const path = join(dir, name);
-				return statSync(path).isDirectory() ? walk(path) : /\.(ts|mts|js|mjs)$/.test(name) ? [path] : [];
+				return statSync(path).isDirectory() ? walk(path) : /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(name) ? [path] : [];
 			});
 		const targets = (file: string) =>
 			[...readFileSync(file, "utf8").matchAll(SPEC)].map((m) => {
@@ -433,19 +433,20 @@ describe("envelope and isolation (AC4)", () => {
 				return spec.startsWith(".") ? relative(REPO, resolve(dirname(file), spec)) : spec;
 			});
 
-		const ours = [...walk(join(REPO, "scripts/decision-model")), ...walk(join(REPO, "scripts/decision-eval"))];
-		expect(ours.length).toBeGreaterThan(5);
-		for (const file of ours) {
-			for (const target of targets(file)) {
-				expect(target.includes("plugins/immune-brain/runtime") || target.includes("plugins/immune-brain/.pi-extension") || target.includes(".pi-extension")).toBe(false);
+		const component = "plugins/immune-brain/runtime/decision_model";
+		expect(existsSync(join(REPO, "scripts/decision-model"))).toBe(false);
+		const authorityPaths = ["runtime/kernel", "runtime/assurance", "runtime/unattended", "runtime/claude", ".pi-extension"];
+		for (const dir of authorityPaths) {
+			for (const file of walk(join(REPO, "plugins/immune-brain", dir))) {
+				for (const target of targets(file)) expect(target === component || target.startsWith(`${component}/`)).toBe(false);
 			}
 		}
-		const plugin = walk(join(REPO, "plugins/immune-brain"));
-		for (const file of plugin) {
-			for (const target of targets(file)) {
-				expect(target.includes("scripts/decision-model") || target.includes("scripts/decision-eval")).toBe(false);
-			}
+		for (const file of walk(join(REPO, "plugins/immune-brain"))) {
+			for (const target of targets(file)) expect(target === "scripts" || target.startsWith("scripts/")).toBe(false);
 		}
+		const evalImports = walk(join(REPO, "scripts/decision-eval")).flatMap(targets);
+		expect(evalImports.some((target) => target.startsWith(`${component}/`))).toBe(true);
+		for (const target of evalImports) expect(target.includes("scripts/decision-model")).toBe(false);
 	});
 });
 
@@ -463,6 +464,7 @@ describe("configuration files (AC7)", () => {
 	test("CONTEXT.md defines Decision model and names its directory", () => {
 		const context = readFileSync(join(REPO, "CONTEXT.md"), "utf8");
 		expect(context).toContain("**Decision model**:");
-		expect(context).toContain("scripts/decision-model/");
+		expect(context).toContain("plugins/immune-brain/runtime/decision_model/");
+		expect(context).not.toContain("scripts/decision-model/");
 	});
 });

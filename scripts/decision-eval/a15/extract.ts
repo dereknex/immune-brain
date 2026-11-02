@@ -13,7 +13,7 @@
 // recomputed. An invalid existing label stops the run before anything is written.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { A15_ISSUE_TRIAGE } from "../../decision-model/thresholds.ts";
+import { A15_ISSUE_TRIAGE } from "../../../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 import { CliError, goldLabelsFor, parseJsonl, UNLABELED } from "../harness.ts";
 
 export { CliError };
