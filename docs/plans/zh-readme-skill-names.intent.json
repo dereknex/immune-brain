@@ -1,0 +1,25 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "zh-readme-skill-names",
+  "owner": "user",
+  "goal": "README.zh-CN.md uses the same skill names as README.md, per the ADR 0031 rename table (imm-brainstorm→clarify, imm-planner→draw-up, imm-run→drive, imm-retro→revisit, imm-doc-slim→slim, imm-doc-prune→prune-docs, imm-test-prune→prune-tests, imm-pr-fix→fix-pr), so a Chinese-language reader types slash commands that exist (#343). Delegated choices: (1) where a renamed skill's described behavior also changed, the zh entry follows README.md's current meaning — concretely the revisit rows and section (README.zh-CN.md:127, :430, :487-489) describe workflow-friction diagnosis with no model ranking, matching README.md:127, :427, :484-486, instead of the retired imm-retro model-ranking text; (2) non-skill identifiers stay as written — imm-kernel, imm-pr-diag and the imm-lane/ and imm-batch/ branch prefixes are not skill names; any other prose drift between the two READMEs is out of scope; (3) a guard in tests/pi-only-current-contracts.test.ts keeps both READMEs free of the eight retired names.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "tests/pi-only-current-contracts.test.ts passes, including a new case asserting that neither README.md nor README.zh-CN.md matches any of the eight ADR 0031 retired skill names (imm-brainstorm, imm-planner, imm-run, imm-retro, imm-doc-slim, imm-doc-prune, imm-test-prune, imm-pr-fix) as a whole name not followed by [a-z0-9-], so imm-kernel, imm-lane/… and imm-batch/… are not matched; that README.zh-CN.md names each of the eight current skills (clarify, draw-up, drive, fix-pr, prune-docs, slim, prune-tests, revisit) in backticks; and that README.zh-CN.md does not contain the retired model-ranking phrase 按模型排名. The file existing assertions (for example README.zh-CN.md containing Pi 与 Claude Code 是支持的宿主) still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "tests/role-prompt-bridge.test.ts, which also reads README.zh-CN.md, still passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/role-prompt-bridge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "README.zh-CN.md",
+    "docs/plans/zh-readme-skill-names.intent.json",
+    "tests/pi-only-current-contracts.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}
