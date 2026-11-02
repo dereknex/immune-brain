@@ -22,6 +22,7 @@ import { worktreeDirectory } from "./batch_worktrees";
 export type BatchIntegrationReason =
 	| "no_touch_path_changed"
 	| "batch_integration_conflict"
+	| "batch_change_already_present"
 	| "batch_integration_check_failed"
 	| "batch_head_lineage_broken";
 
@@ -215,6 +216,7 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 export function laneCandidateMatches(input: { root: string; lane_base: string; lane_commit: string; batch_head: string; candidate: string; declaration_head?: string }): boolean {
 	const { root, lane_base, lane_commit, batch_head, candidate } = input;
 	try {
+		if (changeIdentity(root, batch_head, candidate).size === 0) return false;
 		const entries = readDerivedFilesAt(root, input.declaration_head ?? lane_base);
 		if (!changedDerivedEntries(root, lane_base, lane_commit, entries).length &&
 			identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate))) return true;
@@ -279,6 +281,11 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 		);
 
 	const candidate = buildCandidate(input);
+	if (changeIdentity(root, head, candidate).size === 0)
+		throw new BatchIntegrationError(
+			"batch_change_already_present",
+			`batch_change_already_present: lane commit ${laneCommit} leaves the batch head unchanged`,
+		);
 	if (!laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: head, candidate, declaration_head: input.declaration_head }))
 		throw new BatchIntegrationError(
 			"batch_integration_conflict",

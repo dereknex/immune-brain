@@ -1,0 +1,155 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-change-already-present",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-change-already-present",
+    "goal": "merge-queue-followups S2 (#359; Spec docs/specs/merge-queue-followups.spec.md D7, D8, D10). A Lane whose entire change is already on the batch head is refused with the new BatchIntegrationReason batch_change_already_present and parks with that reason rather than batch_lane_redo_retained, while a Lane that repeats one sibling edit but carries other paths integrates as today; restart adoption still never accepts an empty change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/unattended-batch-integration.test.ts and tests/unattended-batch-lanes.test.ts (D7): a lane commit whose entire change is already on the batch head refuses with reason batch_change_already_present and a message naming the lane commit, leaving the batch branch unmoved; laneCandidateMatches returns false for that case and findIntegratedCandidate adopts nothing. A lane that shares one identical file edit with an integrated sibling but changes another path integrates. The honest, extra-hunk and extra-path candidate cases keep their current results.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/batch-merge-queue.test.ts (SCN-2, D8): a Parent batch child whose whole change is already on the batch head parks needs_human with a reason starting batch_change_already_present, not batch_lane_redo_retained, with no redo grant spent and the Parent ref unmoved.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/scope-revision-contract.test.ts (D10): plugins/immune-brain/dist/drive-batch.md states at its merge-queue paragraph that a child whose whole change is already on the batch head parks with batch_change_already_present, while a child sharing one identical edit with a sibling still integrates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The Claude bundle is current and the repository typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-change-already-present.md",
+      "docs/plans/batch-change-already-present.intent.json",
+      "docs/specs/merge-queue-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/scope-revision-contract.test.ts",
+      "tests/unattended-batch-integration.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-change-already-present.intent.json",
+    "content_hash": "sha256:05f5f6cdde7bacd9622894e59cd4ce65a00a84a964fa25248b7a03a139afd130"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:05f5f6cdde7bacd9622894e59cd4ce65a00a84a964fa25248b7a03a139afd130",
+  "git_base_head": "76f000e1fe0e95a35fef5864aed3f9ac7bf3b6a2",
+  "attestations": [
+    {
+      "id": "approval-qa-7ab8a7b1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05f5f6cdde7bacd9622894e59cd4ce65a00a84a964fa25248b7a03a139afd130",
+      "diff_hash": "sha256:cb4456689e8f3c10d162baf80ed29c5879a3285edb3751e54f64c563fcd7b450",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:af2053e7b27d7abf25572802dd241c1828b996451f363b2249bc1aa68890b2c2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af2053e7b27d7abf25572802dd241c1828b996451f363b2249bc1aa68890b2c2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af2053e7b27d7abf25572802dd241c1828b996451f363b2249bc1aa68890b2c2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af2053e7b27d7abf25572802dd241c1828b996451f363b2249bc1aa68890b2c2"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af2053e7b27d7abf25572802dd241c1828b996451f363b2249bc1aa68890b2c2"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a9624a8d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:05f5f6cdde7bacd9622894e59cd4ce65a00a84a964fa25248b7a03a139afd130",
+      "diff_hash": "sha256:cb4456689e8f3c10d162baf80ed29c5879a3285edb3751e54f64c563fcd7b450",
+      "actor_id": "parent-mediated-review",
+      "summary": "Correct relabel of fully duplicated lane changes to batch_change_already_present across runtime, dist bundle, docs and tests (blast radius medium: load-bearing batch_integration.ts and its dist mirror); no previously integrating case is newly refused, AC1-AC4 conform with attested QA outcomes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "76f000e1fe0e95a35fef5864aed3f9ac7bf3b6a2",
+        "review_commit": "0da59566423d9b5f82a5db478f47c69d506f7f1b",
+        "review_tree": "f27c3e68fc5b2d9c363e4c36605b6608f15271fa",
+        "manifest_digest": "sha256:c5e026c3ce022296e6c2bfb27f3c9b623d3df24daa7d682e9546e0ac90e77a33"
+      },
+      "reviewer_verdict_sha256": "sha256:6cd8c8c894c43108c9ba1802ff97fca6ebabd2d27b35e767f5ce0839d9b769da"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-change-already-present:2026-11-02T16:17:54.359Z",
+      "at": "2026-11-02T16:17:54.359Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-change-already-present.intent.json"
+    },
+    {
+      "id": "record_approval:batch-change-already-present:2026-11-02T16:19:51.007Z",
+      "at": "2026-11-02T16:19:51.007Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7ab8a7b1\naction_v2_sha256:167b64ac190a2e864aa09187786444bc25f1b7c38e57e7385a3df8aabfccfe3d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fed4b2295418573c",
+        "issued_at": "2026-11-02T16:19:51.007Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-change-already-present:2026-11-02T16:22:07.675Z",
+      "at": "2026-11-02T16:22:07.675Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a9624a8d\naction_v2_sha256:9388efb09468f3575dcb4169eafc4c2fd99837a32a65922ecd2c9b49c78cce59",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b3bd1c6c96adabca",
+        "issued_at": "2026-11-02T16:22:07.675Z"
+      }
+    },
+    {
+      "id": "complete:batch-change-already-present:2026-11-02T16:22:09.004Z",
+      "at": "2026-11-02T16:22:09.004Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c9ed90ce43a19aeef531db179400312c72d35e9bb62fc88b5c6ff7be5071a0c1"
+    }
+  ]
+}

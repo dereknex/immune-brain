@@ -674,7 +674,7 @@ describe("lane integration", () => {
 		}
 	});
 
-	it("refuses a candidate whose change differs from the lane commit and leaves the batch branch unmoved", () => {
+	it("refuses a lane whose whole change is already on the batch head and leaves the branch unmoved", () => {
 		const fx = fixture();
 		try {
 			const { commit } = laneCommitOf(fx, "task-g", "g.txt", "same\n");
@@ -691,8 +691,8 @@ describe("lane integration", () => {
 				error = caught;
 			}
 			expect(error).toBeInstanceOf(BatchIntegrationError);
-			expect((error as BatchIntegrationError).reason).toBe("batch_integration_conflict");
-			expect((error as BatchIntegrationError).message).toContain("does not carry the lane commit");
+			expect((error as BatchIntegrationError).reason).toBe("batch_change_already_present");
+			expect((error as BatchIntegrationError).message).toContain(commit);
 			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(head);
 			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(head);
 		} finally {

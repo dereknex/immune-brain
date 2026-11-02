@@ -37,6 +37,8 @@ describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
 		expect(batch).toContain("regenerates derived outputs whenever a child changes a declared source or output");
 		expect(batch).toContain("failed regeneration parks that child");
+		expect(batch).toContain("child whose whole change is already on the batch head parks with `batch_change_already_present`");
+		expect(batch).toContain("child sharing one identical edit with a sibling still integrates when it carries another change");
 	});
 
 	it("ADR 0028 is accepted and the superseded ADRs retain their historical decisions", () => {

@@ -339,6 +339,45 @@ describe("integration guard reruns descriptors on the candidate", () => {
 		}
 	});
 
+	it("refuses a fully duplicated change and never adopts an empty candidate", async () => {
+		const fx = fixture({ "task-c": ALWAYS_PASS, "task-s": ALWAYS_PASS });
+		try {
+			const lane = fx.laneCommit("task-c", "shared.txt", "same\n");
+			const sibling = fx.siblingCommit("task-s", "shared.txt", "same\n");
+			const refs = fx.refs();
+			const empty = git(fx.repo, "commit-tree", `${sibling}^{tree}`, "-p", sibling, "-m", `imm(task-c): deliver\n\nImmune-Brain-Batch: ${BATCH_ID}`);
+			const input = { root: fx.repo, lane_base: fx.base, lane_commit: lane, batch_head: sibling, candidate: empty };
+			expect(laneCandidateMatches(input)).toBe(false);
+			try {
+				await integrate(fx, { task: "task-c", lane_commit: lane });
+				throw new Error("expected refusal");
+			} catch (error) {
+				expect(error).toBeInstanceOf(BatchIntegrationError);
+				expect((error as BatchIntegrationError).reason).toBe("batch_change_already_present");
+				expect((error as Error).message).toContain(lane);
+			}
+			expectUntouched(fx, sibling, refs);
+			git(fx.repo, "reset", "-q", "--hard", empty);
+			expect(findIntegratedCandidate({ root: fx.repo, task_id: "task-c", batch_id: BATCH_ID, from_head: fx.base, lane_base: fx.base, lane_commit: lane })).toBeNull();
+		} finally { fx.cleanup(); }
+	});
+
+	it("integrates a partially duplicated change with another path", async () => {
+		const fx = fixture({ "task-c": ALWAYS_PASS, "task-s": ALWAYS_PASS });
+		try {
+			fx.laneCommit("task-c", "shared.txt", "same\n");
+			const path = join(fx.dir, "lane-task-c");
+			writeFileSync(join(path, "other.txt"), "other\n");
+			git(path, "add", "other.txt");
+			git(path, "commit", "-q", "--amend", "--no-edit");
+			const lane = git(path, "rev-parse", "HEAD");
+			const sibling = fx.siblingCommit("task-s", "shared.txt", "same\n");
+			const { commit } = await integrate(fx, { task: "task-c", lane_commit: lane, siblings: [{ task: "task-s", commit: sibling }] });
+			expect(git(fx.repo, "rev-parse", `${commit}^`)).toBe(sibling);
+			expect(git(fx.repo, "show", `${commit}:other.txt`)).toBe("other");
+		} finally { fx.cleanup(); }
+	});
+
 	it("still integrates a disjoint child after another child's guard failed", async () => {
 		const fx = fixture({ "task-c": absent("shared.txt"), "task-d": ALWAYS_PASS, "task-s": ALWAYS_PASS });
 		try {

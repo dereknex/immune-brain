@@ -176,9 +176,11 @@ With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
 flight and reports one `executor` handoff per running child in `handoffs[]`
 (`provision` remains only for legacy records).
 Scope estimates may overlap: children run concurrently whatever their
-`scope_hint`, and the merge queue refuses only a real conflict, so a child that
-changes other hunks of a file an integrated sibling changed merges cleanly
-(ADR 0028). The merge queue regenerates derived outputs whenever a child changes a
+`scope_hint`, and a child that changes other hunks of a file an integrated sibling
+changed merges cleanly (ADR 0028). A child whose whole change is already on the
+batch head parks with `batch_change_already_present`; a child sharing one identical
+edit with a sibling still integrates when it carries another change. The merge
+queue regenerates derived outputs whenever a child changes a
 declared source or output; failed regeneration parks that child. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and

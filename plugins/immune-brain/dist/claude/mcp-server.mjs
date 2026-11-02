@@ -12470,6 +12470,8 @@ function buildCandidate(input) {
 function laneCandidateMatches(input) {
   const { root, lane_base, lane_commit, batch_head, candidate } = input;
   try {
+    if (changeIdentity(root, batch_head, candidate).size === 0)
+      return false;
     const entries = readDerivedFilesAt(root, input.declaration_head ?? lane_base);
     if (!changedDerivedEntries(root, lane_base, lane_commit, entries).length && identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate)))
       return true;
@@ -12502,6 +12504,8 @@ function prepareLaneCandidate(input) {
   if (!isAncestor(root, base, head))
     throw new BatchIntegrationError("batch_head_lineage_broken", `batch_head_lineage_broken: lane base ${base} is not an ancestor of batch head ${head}`);
   const candidate = buildCandidate(input);
+  if (changeIdentity(root, head, candidate).size === 0)
+    throw new BatchIntegrationError("batch_change_already_present", `batch_change_already_present: lane commit ${laneCommit} leaves the batch head unchanged`);
   if (!laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: head, candidate, declaration_head: input.declaration_head }))
     throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: candidate ${candidate} does not carry the lane commit ${laneCommit} change`);
   const forbidden = noTouchPaths([...changeIdentity(root, head, candidate).keys()], readNoTouchAt(root, input.declaration_head ?? base));
