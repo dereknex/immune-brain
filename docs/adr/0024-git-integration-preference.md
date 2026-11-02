@@ -4,6 +4,8 @@ status: accepted
 
 # Git Integration Preference
 
+**Status update:** item 1 is superseded by ADR 0034.
+
 Accepted on 2026-10-16 by the repository owner (user decision U2 and delegated
 technical choice T3 in `docs/specs/content-delivery-authority.spec.md`), for
 Issue #257. It supersedes [ADR 0023](0023-silent-precondition-commit.md): the

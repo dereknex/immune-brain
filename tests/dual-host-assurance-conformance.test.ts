@@ -239,6 +239,24 @@ function piCanaryCtx(root: string) {
 	};
 }
 
+test("layered config is identical on Claude and Pi status and errors appear as warnings", async () => {
+	const taskId = "layered-config-status", root = enrolledHostFixture(taskId);
+	try {
+		const path = join(root, ".imm/config.json");
+		writeFileSync(path, JSON.stringify({ contract: "immune_brain/project_config/v1", initiative_carrier: "github" }));
+		writeFileSync(join(root, ".imm/lanes.local.json"), JSON.stringify({ active: "local", profiles: { local: { max_parallel: 3, token_env: "sk-live-123" } } }));
+		execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
+		const claude = await new ClaudeRuntime({ cwd: root, env: HOST_ENV }).status(taskId);
+		const pi = await piCanaryTool({}).execute("config-status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, piCanaryCtx(root)) as { content: Array<{ text: string }> };
+		const piStatus = JSON.parse(pi.content[0]!.text);
+		expect(piStatus.config).toEqual(claude.config);
+		expect(claude.config?.initiative_carrier).toEqual({ value: "github", source: "project" });
+		expect(claude.warnings?.some(w => w.code === "config_invalid")).toBe(true);
+		expect(piStatus.warnings.some((w: { code: string }) => w.code === "config_invalid")).toBe(true);
+		expect(JSON.stringify([claude, piStatus])).not.toContain("sk-live-123");
+	} finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test.each([false, true])("status exposes v1 batch evidence on both Hosts (Parent TaskRecord: %s)", async hasParentRecord => {
 	const taskId = "legacy-status-child", root = enrolledHostFixture(taskId);
 	try {

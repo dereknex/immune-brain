@@ -27,6 +27,7 @@ import process from "node:process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runKernelCommand } from "./commands/kernel";
+import { resolveConfig } from "./config/layered_config.ts";
 import {
 	inspectRoutingPolicy,
 	type RoutingPolicyProjection,
@@ -188,6 +189,10 @@ async function runKernelCli(args: string[], root: string): Promise<{
 	// The explicit claimless storage-layout migration is reachable here: a
 	// worktree still on the retired file store has no other entry point, and
 	// every mutating subcommand stays fail-closed behind it.
+	if (sub === "config" && args.includes("--json") && args.slice(1).every((arg) => arg === "--json" || arg === "--check-env")) {
+		const config = resolveConfig(root, { checkEnv: args.includes("--check-env") });
+		return { stdout: `${JSON.stringify(config, null, 2)}\n`, stderr: "", returncode: config.diagnostics.some((d) => d.severity === "error") ? 1 : 0 };
+	}
 	if (sub === "migrate") return runKernelCommand(args, root);
 	if (sub === "intent") return runKernelCommand(args, root);
 	if (sub === "status" && args.includes("--json")) return runKernelCommand(args, root);

@@ -1136,9 +1136,10 @@ describe("status projection through the real Kernel", () => {
   const status = await projectTaskStatus(f.root, f.taskId);
   expect(status.error).toBeNull();
   expect(status.warnings).toBeUndefined();
-  // Beside the refusing projection, status reports only the resolved Git integration preference (ADR 0024).
-  const { git_integration, ...projection } = status;
+  // Status adds the resolved configuration and the existing Git integration preference.
+  const { git_integration, config, ...projection } = status;
   expect(git_integration).toEqual({ mode: "manual", source: null });
+  expect(config?.contract).toBe("immune_brain/effective_config/v1");
   expect(projection).toEqual(await refusing(f.root, f.taskId));
  });
 
