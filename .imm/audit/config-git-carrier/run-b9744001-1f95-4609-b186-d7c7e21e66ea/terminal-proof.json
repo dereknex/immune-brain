@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "config-git-carrier",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:config-git-carrier:2026-11-02T13:09:38.639Z",
+  "final_record_hash": "sha256:4eec575dcb4ad6571ad58ebdf48248ed65fd30cfd07ad4a84a06a8f82df3e473",
+  "terminalized_at": "2026-11-02T13:09:38.639Z"
+}

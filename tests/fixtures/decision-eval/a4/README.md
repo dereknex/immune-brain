@@ -32,8 +32,10 @@ When unsure, leave the row `unlabeled` rather than guessing.
 
 ## Running the eval
 
-Finding text is a sensitive category. Enable it per provider kind in
-`.imm/decision-bindings.json`, for example `"egress": { "clef": ["finding"] }`.
+Configure a profile in the user file as described in `tests/fixtures/decision-eval/a14/README.md`.
+Finding text is a sensitive category. Enable it per provider kind in the tracked
+`.imm/config.json` under `decision_models`, for example `"egress": { "clef": ["finding"] }`.
+Any user-level `decision_models.egress` list can narrow this project ceiling.
 Without that entry every case is `unavailable` with `egress_denied`, nothing is
 sent, and the run exits 2 (`no_cases_decided`) after writing the report.
 

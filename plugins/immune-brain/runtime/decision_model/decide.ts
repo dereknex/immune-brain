@@ -4,7 +4,8 @@
 // every `unavailable` means the caller keeps its baseline behaviour. There is
 // no retry and no second profile.
 
-import { BINDINGS_PATH, type Bindings, loadBindings, loadProfiles } from "./config.ts";
+import { resolveConfig } from "../config/layered_config.ts";
+import { type Bindings, parseProfiles } from "./config.ts";
 import {
 	type AdapterResult,
 	type ApplicationPoint,
@@ -47,18 +48,26 @@ export function resolveProfile(pointId: string, deps: Pick<DecideDeps, "root" | 
 	const point = Object.hasOwn(registry, pointId) ? registry[pointId] : undefined;
 	if (point === undefined) return { ok: false, error: unavailable("config_invalid", `unknown application point "${pointId}"`) };
 
-	const bindings = loadBindings(deps.root, registry);
-	if (bindings === "missing") return { ok: false, error: unavailable("no_binding", `${BINDINGS_PATH} is absent`) };
-	if (!bindings.ok) return bindings;
-	const bound = Object.hasOwn(bindings.value.bindings, pointId) ? bindings.value.bindings[pointId] : bindings.value.default_profile;
+	const config = resolveConfig(deps.root, { registry });
+	const models = config.decision_models;
+	const errors = config.diagnostics.filter((d) => d.severity === "error");
+	const bound = Object.hasOwn(models.bindings, pointId) ? models.bindings[pointId].value : models.default_profile.value;
+	if (!models.valid) {
+		if (errors.every((d) => d.code === "unknown_profile")) {
+			if (models.profiles.source === "default") return { ok: false, error: unavailable("no_local_config", "no profiles configured in ~/.config/immune-brain/config.json") };
+			if (bound && !Object.hasOwn(models.profiles.value, bound)) return { ok: false, error: unavailable("unknown_profile", `profile "${bound}" is not defined in ~/.config/immune-brain/config.json`) };
+		}
+		return { ok: false, error: unavailable("config_invalid", errors.map((d) => d.message).join("; ")) };
+	}
+	if (!models.enabled_points.value.includes(pointId)) return { ok: false, error: unavailable("point_disabled", `application point ${pointId} is disabled`) };
+	if (models.profiles.source === "default") return { ok: false, error: unavailable("no_local_config", "no profiles configured in ~/.config/immune-brain/config.json") };
 	if (bound === null || bound === undefined) return { ok: false, error: unavailable("no_binding", `no profile is bound to ${pointId}`) };
-
-	const profiles = loadProfiles(deps.root);
-	if (profiles === "missing") return { ok: false, error: unavailable("no_local_config", ".imm/decision-models.local.json is absent") };
+	const profiles = parseProfiles({ profiles: models.profiles.value });
 	if (!profiles.ok) return profiles;
 	const profile = Object.hasOwn(profiles.value, bound) ? profiles.value[bound] : undefined;
-	if (profile === undefined) return { ok: false, error: unavailable("unknown_profile", `profile "${bound}" is not defined in .imm/decision-models.local.json`) };
-	return { ok: true, value: { point, profile_name: bound, profile, egress: bindings.value.egress } };
+	if (profile === undefined) return { ok: false, error: unavailable("unknown_profile", `profile "${bound}" is not defined in ~/.config/immune-brain/config.json`) };
+	const egress = Object.fromEntries(Object.entries(models.egress).map(([kind, entry]) => [kind, (entry as { value: unknown }).value])) as Bindings["egress"];
+	return { ok: true, value: { point, profile_name: bound, profile, egress } };
 }
 
 export function truncationOf(inputTokens: number | null, contextWindow: number | null): Truncation {
@@ -98,7 +107,7 @@ export async function decide(request: DecideRequest, deps: DecideDeps): Promise<
 		if (isSensitiveCategory(point.input_category)) {
 			const allowed = egress[profile.kind] ?? [];
 			if (!allowed.includes(point.input_category)) {
-				return unavailable("egress_denied", `input category ${point.input_category} is not enabled for provider kind ${profile.kind} in ${BINDINGS_PATH} egress`);
+				return unavailable("egress_denied", `input category ${point.input_category} is not enabled for provider kind ${profile.kind} in the effective egress configuration`);
 			}
 		}
 

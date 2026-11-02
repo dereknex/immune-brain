@@ -425,6 +425,7 @@ describe("internal role-prompt bridge", () => {
 			for (const retired of ["Lane max parallel", "Lane Executor Host:", "Lane Executor model:", "Lane Executor effort:", "Batch final verification"])
 				expect({ file, retired, present: content.includes(retired) }).toEqual({ file, retired, present: false });
 		}
-		expect(read("AGENTS.md")).toContain("Initiative carrier default: github");
+		expect(read("AGENTS.md")).not.toContain("Initiative carrier default");
+		expect(JSON.parse(read(".imm/config.json")).initiative_carrier).toBe("github");
 	});
 });

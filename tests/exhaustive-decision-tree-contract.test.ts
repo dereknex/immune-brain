@@ -148,7 +148,7 @@ describe("Brainstorm-owned clarification contract", () => {
 		const agents = read("AGENTS.md");
 		expect(agents).toContain("规则优先级");
 		expect(agents).toContain("## Skill 使用");
-		expect(agents).toContain("Initiative carrier default: github");
+		expect(agents).not.toContain("Initiative carrier default");
 		expect(agents).not.toContain("普通输入保持 host-native");
 		expect(agents).not.toContain("Managed owner");
 		expect(agents).not.toContain("TaskIntent");

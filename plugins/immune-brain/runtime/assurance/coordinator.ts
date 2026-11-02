@@ -385,7 +385,7 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "implementation_pending" | "config_invalid" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "deprecated_git_integration" | "implementation_pending" | "config_invalid" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
@@ -438,7 +438,7 @@ export async function projectTaskStatus(root: string, taskId: string, loadedFrom
 	const skew = pluginSourceSkewWarning(root, loadedFrom);
 	if (skew) warnings.push(skew);
 	const preference = readGitIntegrationPreference(root);
-	if (preference.diagnostic) warnings.push({ code: "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
+	if (preference.diagnostic) warnings.push({ code: preference.diagnostic.includes("deprecated;") ? "deprecated_git_integration" : "invalid_git_integration", paths: preference.source ? [preference.source] : [], message: preference.diagnostic });
 	const git_integration = { mode: preference.mode, source: preference.source };
 	let batch = findExistingActiveBatch(root, taskId);
 	if (batch === null) {

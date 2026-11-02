@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { parseBindings, parseProfiles } from "../decision_model/config.ts";
-import { PROVIDER_KINDS, SENSITIVE_CATEGORIES } from "../decision_model/contract.ts";
+import { PROVIDER_KINDS, SENSITIVE_CATEGORIES, type PointRegistry } from "../decision_model/contract.ts";
 import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { projectIdentity } from "./project_identity.ts";
 
@@ -14,7 +14,8 @@ const leaf = (value: unknown, source: string) => ({ value, source });
 const has = (o: Obj | undefined, k: string) => !!o && Object.hasOwn(o, k);
 const envName = /^[A-Z_][A-Z0-9_]*$/;
 
-export function resolveConfig(root: string, options: { userConfigPath?: string; checkEnv?: boolean } = {}) {
+export function resolveConfig(root: string, options: { userConfigPath?: string; checkEnv?: boolean; registry?: PointRegistry } = {}) {
+	const registry = options.registry ?? POINT_REGISTRY;
 	const diagnostics: Diagnostic[] = [];
 	const diag = (code: string, severity: "error" | "warning", file: string, key_path: string, message: string) => {
 		diagnostics.push({ code, severity, file, key_path, message: `${file}: ${key_path}: ${message}` });
@@ -90,12 +91,12 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const validateDecision = (o: Obj, file: string, path: string) => {
 		if (has(o, "default_profile") && (typeof o.default_profile !== "string" || !o.default_profile)) { invalid(file, `${path}.default_profile`, "expected profile name"); failed.add("decision_models"); }
 		const bindings = section(o.bindings, file, `${path}.bindings`, "decision_models");
-		for (const [point, value] of Object.entries(bindings)) if (!Object.hasOwn(POINT_REGISTRY, point) || typeof value !== "string" || !value) { invalid(file, `${path}.bindings.${point}`, "invalid binding"); failed.add("decision_models"); }
+		for (const [point, value] of Object.entries(bindings)) if (!Object.hasOwn(registry, point) || typeof value !== "string" || !value) { invalid(file, `${path}.bindings.${point}`, "invalid binding"); failed.add("decision_models"); }
 		const egress = section(o.egress, file, `${path}.egress`, "decision_models");
 		for (const [kind, value] of Object.entries(egress)) if (!(PROVIDER_KINDS as readonly string[]).includes(kind) || !Array.isArray(value) || value.some((v) => !(SENSITIVE_CATEGORIES as readonly unknown[]).includes(v)) || new Set(value).size !== value.length) { invalid(file, `${path}.egress.${kind}`, "invalid egress list"); failed.add("decision_models"); }
 	};
 	validateDecision(ud, userPath, "decision_models"); validateDecision(od, userPath, `projects.${projectKey}.decision_models`); validateDecision(pd, projectPath, "decision_models");
-	if (has(pd, "enabled_points") && (!Array.isArray(pd.enabled_points) || pd.enabled_points.some((p: unknown) => typeof p !== "string" || !Object.hasOwn(POINT_REGISTRY, p)) || new Set(pd.enabled_points).size !== pd.enabled_points.length)) { invalid(projectPath, "decision_models.enabled_points", "invalid point list"); failed.add("decision_models"); }
+	if (has(pd, "enabled_points") && (!Array.isArray(pd.enabled_points) || pd.enabled_points.some((p: unknown) => typeof p !== "string" || !Object.hasOwn(registry, p)) || new Set(pd.enabled_points).size !== pd.enabled_points.length)) { invalid(projectPath, "decision_models.enabled_points", "invalid point list"); failed.add("decision_models"); }
 	for (const [o, file, path] of [[user, userPath, "initiative_carrier"], [override, userPath, `projects.${projectKey}.initiative_carrier`], [project, projectPath, "initiative_carrier"]] as const) if (o && has(o, "initiative_carrier") && o.initiative_carrier !== "github" && o.initiative_carrier !== "local") { invalid(file, path, "expected github or local"); failed.add("initiative_carrier"); }
 	if (project && has(project, "git_integration") && project.git_integration !== "manual" && project.git_integration !== "auto") { invalid(projectPath, "git_integration", "expected manual or auto"); failed.add("git_integration"); }
 	if (has(batch, "final_verification") && (!Array.isArray(batch.final_verification) || batch.final_verification.length > 8 || batch.final_verification.some((v: unknown) => typeof v !== "string" || !v))) { invalid(projectPath, "batch.final_verification", "expected at most eight command strings"); failed.add("batch"); }
@@ -136,7 +137,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (legacy(".imm/decision-bindings.json", "decision_models", useLegacyBindings) && useLegacyBindings) legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
 	if (object(legacyProfiles.profiles)) for (const [name, profile] of Object.entries(legacyProfiles.profiles)) if (object(profile)) for (const [key, value] of Object.entries(profile)) if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) { invalid(".imm/decision-models.local.json", `profiles.${name}.${key}`, "expected environment variable name"); failed.add("decision_models"); legacyProfiles = {}; }
 	if (Object.keys(legacyProfiles).length && !parseProfiles(legacyProfiles).ok) { invalid(".imm/decision-models.local.json", "profiles", "invalid profiles"); failed.add("decision_models"); legacyProfiles = {}; }
-	if (Object.keys(legacyBindings).length && !parseBindings(legacyBindings, POINT_REGISTRY).ok) { invalid(".imm/decision-bindings.json", "decision_models", "invalid bindings"); failed.add("decision_models"); legacyBindings = {}; }
+	if (Object.keys(legacyBindings).length && !parseBindings(legacyBindings, registry).ok) { invalid(".imm/decision-bindings.json", "decision_models", "invalid bindings"); failed.add("decision_models"); legacyBindings = {}; }
 	if (legacyLane.active !== undefined && (typeof legacyLane.active !== "string" || !legacyLane.active)) { invalid(".imm/lanes.local.json", "lanes.active", "expected profile name"); failed.add("lanes"); legacyLane = {}; }
 	if (legacyLane.profiles !== undefined && !object(legacyLane.profiles)) { invalid(".imm/lanes.local.json", "lanes.profiles", "expected object"); failed.add("lanes"); legacyLane = {}; }
 	validKeys(legacyLane, ["active", "profiles"], ".imm/lanes.local.json", "lanes", "lanes");
@@ -184,7 +185,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (carrierLegacy) legacy(carrierLegacy.file, "initiative_carrier", !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
 	if (gitLegacy && !has(project ?? undefined, "git_integration") && !["manual", "auto"].includes(gitLegacy.value)) { invalid(gitLegacy.file, "git_integration", "invalid legacy directive"); failed.add("git_integration"); }
 	if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) { invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive"); failed.add("initiative_carrier"); }
-	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(POINT_REGISTRY), "default"]) };
+	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
 	if (options.checkEnv) decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v as string] !== undefined ? "set" : "unset"])) : {}]));
 	return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, diagnostics };
 }

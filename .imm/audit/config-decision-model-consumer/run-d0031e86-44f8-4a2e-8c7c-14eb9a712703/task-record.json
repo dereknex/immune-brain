@@ -1,0 +1,257 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "config-decision-model-consumer",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "config-decision-model-consumer",
+    "goal": "layered-config S3 (#360-P; Spec docs/specs/layered-config.spec.md D4, D7, D9). decide() resolves through resolveConfig: a point absent from the project's enabled_points is unavailable with the new reason point_disabled; the profile comes from the user file's binding or default_profile, per-repository override first; the egress gate uses the project ceiling intersected with the user list. The legacy .imm/decision-models.local.json and .imm/decision-bindings.json still resolve with a deprecation warning. This repository's .imm/decision-bindings.json is deleted, and the eval tests and fixture READMEs configure profiles through the user file.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-model.test.ts, with a temporary repository and user file: a user profile bound by projects[<key>].decision_models.bindings answers over the user-global binding; a point missing from a present enabled_points returns unavailable/point_disabled with zero fetch calls; a sensitive category listed by the user but not by the project ceiling returns egress_denied with zero fetch calls; a legacy .imm/decision-models.local.json plus .imm/decision-bindings.json still answers and the resolver reports deprecated_config_source; no user file and no legacy file returns no_local_config whose detail names ~/.config/immune-brain/config.json.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The five decision-eval test files pass with profiles configured through a user file under the test's XDG_CONFIG_HOME, and .imm/decision-bindings.json is not tracked in the repository.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/decision-eval-a4.test.ts tests/decision-eval-a14.test.ts tests/decision-eval-a15.test.ts tests/decision-eval-a16.test.ts tests/decision-eval-harness.test.ts && ! git ls-files --error-unmatch .imm/decision-bindings.json 2>/dev/null\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The Claude bundle is current and the repository typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/config-decision-model-consumer.md",
+      ".imm/decision-bindings.json",
+      "docs/plans/config-decision-model-consumer.intent.json",
+      "docs/specs/layered-config.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/decision_model/config.ts",
+      "plugins/immune-brain/runtime/decision_model/contract.ts",
+      "plugins/immune-brain/runtime/decision_model/decide.ts",
+      "tests/decision-eval-a14.test.ts",
+      "tests/decision-eval-a15.test.ts",
+      "tests/decision-eval-a16.test.ts",
+      "tests/decision-eval-a4.test.ts",
+      "tests/decision-eval-harness.test.ts",
+      "tests/decision-model.test.ts",
+      "tests/fixtures/decision-eval/a14/README.md",
+      "tests/fixtures/decision-eval/a15/README.md",
+      "tests/fixtures/decision-eval/a16/README.md",
+      "tests/fixtures/decision-eval/a4/README.md"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/config-decision-model-consumer.intent.json",
+    "content_hash": "sha256:d0c4c96b224947e4ea76e89b71e603166546623a7f73223088c2d4435afe8eb5"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d0c4c96b224947e4ea76e89b71e603166546623a7f73223088c2d4435afe8eb5",
+  "git_base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+  "attestations": [
+    {
+      "id": "approval-qa-96f575fc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d0c4c96b224947e4ea76e89b71e603166546623a7f73223088c2d4435afe8eb5",
+      "diff_hash": "sha256:d390b2b210478a5d43e67d160ff2671bd8f80112f9d179be971a5a39e0e14d16",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d701be5641f6de447efb43f73b6c7d22d902f284d73669aba1740e740d1bea68",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d701be5641f6de447efb43f73b6c7d22d902f284d73669aba1740e740d1bea68"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d701be5641f6de447efb43f73b6c7d22d902f284d73669aba1740e740d1bea68"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d701be5641f6de447efb43f73b6c7d22d902f284d73669aba1740e740d1bea68"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1ce31160",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d0c4c96b224947e4ea76e89b71e603166546623a7f73223088c2d4435afe8eb5",
+      "diff_hash": "sha256:0a10af1c49f2f7816912e3029d922550b1b62e9607b2d20bda74c2a7e8987673",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:0fb428adc73dde3015191f1b98dd293f6fa4449d77318bf0e008a9b2aea36657",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0fb428adc73dde3015191f1b98dd293f6fa4449d77318bf0e008a9b2aea36657"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0fb428adc73dde3015191f1b98dd293f6fa4449d77318bf0e008a9b2aea36657"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:0fb428adc73dde3015191f1b98dd293f6fa4449d77318bf0e008a9b2aea36657"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-8eb86c32",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d0c4c96b224947e4ea76e89b71e603166546623a7f73223088c2d4435afe8eb5",
+      "diff_hash": "sha256:0a10af1c49f2f7816912e3029d922550b1b62e9607b2d20bda74c2a7e8987673",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；已核对 packet、manifest、revision parent/tree 及全部 16 个文件的完整 diff。影响范围 tier medium，核心路径为 layered_config.ts、decision_model/decide.ts 与旧 bindings 文件删除，无 Kernel 持久化结构变更。AC1–AC3 使用 manifest 中 Kernel QA 的通过记录，本次未重新执行测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+        "review_commit": "00893ea97776884d39da7b2ec83875617e850f08",
+        "review_tree": "7d087558b534fbfc1fc35aacb4d46cbe0707f8e5",
+        "manifest_digest": "sha256:e1f896e2e8aa118e8b9243e179818b319cdbde2cfc29a274f594699cf99130ab"
+      },
+      "reviewer_verdict_sha256": "sha256:91c0b530f1de87f45e743ab1208d4f752f3cdb8f0128f2d1f623b715dd1016dd"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-141714ea55d4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "保留缺失 profile 的 unknown_profile 返回码。decide.ts:54–56 将 resolver 的 unknown_profile 一律转换为 config_invalid，导致第 65 行的 unknown_profile 分支不可达；tests/decision-model.test.ts:147 还将原有断言改为接受该回归。AC1 引用的 Spec D7 明确要求保留现有 reason codes，使 eval 报告可比较。最小修复是在没有结构性配置错误、且所选 binding 指向未定义 profile 时返回 unknown_profile，并恢复旧配置测试、补充 user 配置测试。",
+      "anchor": "sha256:23679394f693f16a8ab320bc77c71c3fa906e79f395bff28c44fe42fbb26428b",
+      "evidence": {
+        "trigger": "有效 user 配置定义 profiles.other，并将 default_profile 设为不存在的 default，随后对已启用的 a14_pr_comment_triage 调用 decide() → resolver 产生 unknown_profile 并设置 models.valid=false，resolveProfile 却返回 unavailable/config_invalid，而非 Spec D7 要求的 unavailable/unknown_profile；现有 legacy 测试也明确展示相同回归。",
+        "caller_chain": [
+          "tests/decision-model.test.ts:147",
+          "plugins/immune-brain/runtime/decision_model/decide.ts:decide",
+          "plugins/immune-brain/runtime/decision_model/decide.ts:resolveProfile",
+          "plugins/immune-brain/runtime/config/layered_config.ts:170",
+          "plugins/immune-brain/runtime/decision_model/decide.ts:54-56"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:config-decision-model-consumer:2026-11-02T12:52:05.029Z",
+      "at": "2026-11-02T12:52:05.029Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-decision-model-consumer.intent.json"
+    },
+    {
+      "id": "record_approval:config-decision-model-consumer:2026-11-02T12:52:28.270Z",
+      "at": "2026-11-02T12:52:28.270Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-96f575fc\naction_v2_sha256:bde6e9595128de2410126fbe6fa35d61226c2a1bb067899a8936738780c9cbbc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3ba9968927975aeb",
+        "issued_at": "2026-11-02T12:52:28.270Z"
+      }
+    },
+    {
+      "id": "request_rework:config-decision-model-consumer:2026-11-02T12:55:12.411Z",
+      "at": "2026-11-02T12:55:12.411Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:513132eef1ddb2753d0b3d77b969fd58372dfc587d41ed158e6f981f416e30e7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ba103734b191efdc",
+        "issued_at": "2026-11-02T12:55:12.411Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b74711cd8ff3a6291023807b54d74537a2c1a447",
+        "review_commit": "0807f1b8313f10bf033093be74bbd2b991a899bb",
+        "review_tree": "7f35055ca82e40f0ad4dc95c0a3ab829683ff7f7",
+        "manifest_digest": "sha256:72a38bd6e47c2e03c207c3b1c3721d93b781dcfedd28363cde1125d678493769"
+      }
+    },
+    {
+      "id": "resolve_finding:config-decision-model-consumer:2026-11-02T12:56:20.640Z",
+      "at": "2026-11-02T12:56:20.640Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-141714ea55d4-1-review-1\naction_v2_sha256:14ade1be279f77e6e1bec5824febf5c76b9160d20a0fe45b2588b1f243b65e26"
+    },
+    {
+      "id": "freeze_artifacts:config-decision-model-consumer:2026-11-02T12:56:43.658Z",
+      "at": "2026-11-02T12:56:43.658Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/config-decision-model-consumer.intent.json"
+    },
+    {
+      "id": "record_approval:config-decision-model-consumer:2026-11-02T12:57:05.887Z",
+      "at": "2026-11-02T12:57:05.887Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1ce31160\naction_v2_sha256:979cae9c6bcf8cc0db8235af5abb390f096fad1b37c3f65a98800402b8b5d366",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-18f399122c5f00d8",
+        "issued_at": "2026-11-02T12:57:05.887Z"
+      }
+    },
+    {
+      "id": "record_approval:config-decision-model-consumer:2026-11-02T13:00:03.747Z",
+      "at": "2026-11-02T13:00:03.747Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-8eb86c32\naction_v2_sha256:c955d86584c4e149b4d71854574171640d5af26f6f68aa0969dd6199af74e015",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-03bce7147f0b6468",
+        "issued_at": "2026-11-02T13:00:03.747Z"
+      }
+    },
+    {
+      "id": "complete:config-decision-model-consumer:2026-11-02T13:00:05.615Z",
+      "at": "2026-11-02T13:00:05.615Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:093d15a23ee4ba394b37f6adb893fc426aaeaab46be497034d52c5c8d38837e5"
+    }
+  ]
+}

@@ -33,6 +33,7 @@ export function isProviderKind(value: unknown): value is ProviderKind {
 
 export const UNAVAILABLE_REASONS = [
 	"no_binding",
+	"point_disabled",
 	"no_local_config",
 	"unknown_profile",
 	"config_invalid",
@@ -148,7 +149,7 @@ export interface Envelope {
 export type DecideResult = { status: "decided"; envelope: Envelope } | Unavailable;
 
 export interface DecideDeps extends AdapterDeps {
-	/** Directory holding `.imm/decision-bindings.json` and `.imm/decision-models.local.json`. */
+	/** Repository root for project and legacy configuration. */
 	root: string;
 	now?: () => Date;
 	/** Test seam: replaces the code-owned registry (and the point ids the bindings parser accepts). */

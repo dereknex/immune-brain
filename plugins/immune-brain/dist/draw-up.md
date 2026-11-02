@@ -226,15 +226,17 @@ Resolve the carrier in this order, reading each source directly rather than
 assuming the current Host injected it into context:
 
 1. a literal user instruction for the current request;
-2. `Initiative carrier default: local` or `Initiative carrier default: github`
-   in the repository root agent instruction file, whichever this repository
-   tracks: `AGENTS.md` or `CLAUDE.md`;
-3. the same directive in the Host's user-level agent instruction file; or
+2. `imm-kernel config --json`: use `initiative_carrier.value` and report its
+   `source` when resolved by the project or user configuration; ignore a
+   `legacy:AGENTS.md` or `legacy:CLAUDE.md` repository directive;
+3. the deprecated `Initiative carrier default: local` or `Initiative carrier
+   default: github` directive in the Host's user-level agent instruction file;
 4. ask the user.
 
-A repository directive overrides the user-level directive. There is no silent
-carrier default: when no valid directive is found, ask and report which sources
-were checked. Report an invalid value and ask instead of guessing. Never resolve
+Report an invalid `initiative_carrier` configuration value and ask instead of
+falling through or guessing. If the command fails, inspect its diagnostics and
+ask when the carrier cannot be resolved. There is no silent carrier default:
+when no valid value is found, ask and report which sources were checked. Never resolve
 to `local` or `github` because a source was absent or unreadable. After resolving
 it, display one non-blocking line with the selected carrier and its source. A configured `github` default is
 standing opt-in for GitHub projection, but the literal user must still confirm
