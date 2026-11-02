@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "derived-regenerate-on-change",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:derived-regenerate-on-change:2026-11-02T16:05:42.970Z",
+  "final_record_hash": "sha256:c4272cf9143148630ed3258a7d33d30ed1542b91b0e2c5922437da916d9dbb82",
+  "terminalized_at": "2026-11-02T16:05:42.970Z"
+}

@@ -132,7 +132,7 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		};
 		await fx.tick();
 		for (const [id, second] of [["a", 1], ["b", 2]] as const) {
-			writeFileSync(join(fx.laneOf(id), "bundle.txt"), `${id}\n`);
+			if (id === "b") writeFileSync(join(fx.laneOf(id), "bundle.txt"), `${id}\n`);
 			fx.settle(id, `${id}\n`, second);
 		}
 		const report = await fx.tick();

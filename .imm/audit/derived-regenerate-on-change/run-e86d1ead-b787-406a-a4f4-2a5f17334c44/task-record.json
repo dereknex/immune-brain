@@ -1,0 +1,154 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "derived-regenerate-on-change",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "derived-regenerate-on-change",
+    "goal": "merge-queue-followups S1 (#371; Spec docs/specs/merge-queue-followups.spec.md D1-D6, D9). When a Lane's change touches a declared derived-file source or output, the merge queue regenerates and checks that output in the merged tree on a clean merge, on a declared-output conflict and when the batch head is still the lane base, so a later sibling no longer parks because an earlier Lane left the output stale; a failed regeneration parks the triggering Lane as batch_integration_check_failed naming the derived entry.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/derived-files.test.ts (D1-D6): a Lane that changes a declared source without its output, merged cleanly onto a moved batch head, integrates with the output regenerated from the merged tree and passing check; a Lane that regenerated its own output on top of an integrated sibling's unregenerated source change integrates with an output reflecting both sources; when the batch head equals the lane base and the lane commit's output is stale, the candidate carries the regenerated output. Negative: a generate that fails on a clean merge refuses with batch_integration_check_failed whose message names the entry id, leaving the batch head and working tree unmoved; a generate that writes an undeclared path refuses. Bound: a Lane touching no declared source or output runs no generate, shown by a failing generator that does not fire; a Lane whose output is already current keeps today's candidate, the lane commit itself when the batch head equals the lane base. findIntegratedCandidate adopts a regenerated candidate and laneCandidateMatches refuses one whose regenerated output was altered after integration.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/batch-merge-queue.test.ts (SCN-1): a two-child Parent batch in which child a changes a declared source without regenerating the output and child b regenerates the output from its own tree completes with both children integrated, no redo grant spent, and the output at the Parent tip passing the declared check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/scope-revision-contract.test.ts (D9): plugins/immune-brain/dist/drive-batch.md states at its merge-queue paragraph that derived outputs are regenerated whenever a child changes a declared source or output, and that a failed regeneration parks that child.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "The Claude bundle is current and the repository typechecks.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/derived-regenerate-on-change.md",
+      "docs/plans/derived-regenerate-on-change.intent.json",
+      "docs/specs/merge-queue-followups.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/runtime/derived_files.ts",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/derived-files.test.ts",
+      "tests/scope-revision-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/derived-regenerate-on-change.intent.json",
+    "content_hash": "sha256:800dd6e9fcb51d7908bee4f33f0cdfc142b402aacab4432c837198a092d39552"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:800dd6e9fcb51d7908bee4f33f0cdfc142b402aacab4432c837198a092d39552",
+  "git_base_head": "996abe5183f87fa262aef2bc5c42dea1daa69361",
+  "attestations": [
+    {
+      "id": "approval-qa-907c141d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:800dd6e9fcb51d7908bee4f33f0cdfc142b402aacab4432c837198a092d39552",
+      "diff_hash": "sha256:2beb2814a92a1ccae163764b9a575918066b52677a58f031e7d1dd29ac146eff",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:8da75d151988c2af7f6ccb50752c795b2cd0d10aab3afee973ec5a5e7352553c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8da75d151988c2af7f6ccb50752c795b2cd0d10aab3afee973ec5a5e7352553c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8da75d151988c2af7f6ccb50752c795b2cd0d10aab3afee973ec5a5e7352553c"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8da75d151988c2af7f6ccb50752c795b2cd0d10aab3afee973ec5a5e7352553c"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:8da75d151988c2af7f6ccb50752c795b2cd0d10aab3afee973ec5a5e7352553c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d7494f62",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:800dd6e9fcb51d7908bee4f33f0cdfc142b402aacab4432c837198a092d39552",
+      "diff_hash": "sha256:2beb2814a92a1ccae163764b9a575918066b52677a58f031e7d1dd29ac146eff",
+      "actor_id": "parent-mediated-review",
+      "summary": "已验证清单：基线 996abe5 → 评审 e395d3e（单一父级，树 67a451b）；S1 的变更在 buildCandidate 中正确实现了 D1–D6（声明头部的源/输出匹配选择，在干净合并、冲突和相同基数路径上进行重新生成，包含带有步骤和 entry id 的 entry-id+step 失败原因，无操作时的基数候选保持为 lane 提交，laneCandidateMatches 仅针对未触及的 lane 重新允许字节相同且带有重建树校验的候选），并在 runtime 和 dist bundle 中进行了镜像，测试覆盖了每个 AC 情况（包括 base-head 重新生成、失败/未声明的生成拒绝且 Parent 保持不变、glob 直接/递归/同级目录边界、SCN-1 双子项重生成且无需重做授权、D9 驱动批次文本）；影响范围极小，承载路径为 plugins/immune-brain/runtime/unattended/batch_integration.ts 和镜像的 dist bundle。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "996abe5183f87fa262aef2bc5c42dea1daa69361",
+        "review_commit": "e395d3e28d64182ddf90d854f3c6f085dc09bad4",
+        "review_tree": "67a451b9c28ad896072b16d01ede25e06f3e76f4",
+        "manifest_digest": "sha256:c648783b960724f71419e6257c2bf5a44b054392423185cfee7409c10d1404f1"
+      },
+      "reviewer_verdict_sha256": "sha256:c229a3b665949402c60669b8c32da73af2a05de2f65850db329e6a9ed4a24198"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:derived-regenerate-on-change:2026-11-02T15:57:27.168Z",
+      "at": "2026-11-02T15:57:27.168Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/derived-regenerate-on-change.intent.json"
+    },
+    {
+      "id": "record_approval:derived-regenerate-on-change:2026-11-02T15:58:16.153Z",
+      "at": "2026-11-02T15:58:16.153Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-907c141d\naction_v2_sha256:ff209f6ee6f18cd863893a78c5a07a8887a34eef32ee5dea11372b6ac3b8e565",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-f244db11c050e779",
+        "issued_at": "2026-11-02T15:58:16.153Z"
+      }
+    },
+    {
+      "id": "record_approval:derived-regenerate-on-change:2026-11-02T16:05:41.790Z",
+      "at": "2026-11-02T16:05:41.790Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d7494f62\naction_v2_sha256:9c93e0989ccb52d6f063cb65f4f62a9eaac67a2cd92c39bae30f89f3e11116f2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-20453eff9ba64a2b",
+        "issued_at": "2026-11-02T16:05:41.790Z"
+      }
+    },
+    {
+      "id": "complete:derived-regenerate-on-change:2026-11-02T16:05:42.970Z",
+      "at": "2026-11-02T16:05:42.970Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8a13ad3e24c7ba6b8f3bd96e01188b518affa49beb9c5e76d44010de5254d98b"
+    }
+  ]
+}

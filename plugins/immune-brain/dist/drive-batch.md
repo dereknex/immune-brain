@@ -178,7 +178,8 @@ flight and reports one `executor` handoff per running child in `handoffs[]`
 Scope estimates may overlap: children run concurrently whatever their
 `scope_hint`, and the merge queue refuses only a real conflict, so a child that
 changes other hunks of a file an integrated sibling changed merges cleanly
-(ADR 0028). Settled children
+(ADR 0028). The merge queue regenerates derived outputs whenever a child changes a
+declared source or output; failed regeneration parks that child. Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 `qa_failure_limit` counts each child separately. A completed settlement inside a

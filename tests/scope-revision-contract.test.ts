@@ -33,6 +33,12 @@ describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 		expect(batch).not.toContain("confirmation offers one opt-in choice");
 	});
 
+	it("the merge queue regenerates derived outputs on child changes and parks failures", () => {
+		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
+		expect(batch).toContain("regenerates derived outputs whenever a child changes a declared source or output");
+		expect(batch).toContain("failed regeneration parks that child");
+	});
+
 	it("ADR 0028 is accepted and the superseded ADRs retain their historical decisions", () => {
 		const adr = read("docs/adr/0028-scope-as-estimate.md");
 		expect(adr).toContain("status: accepted");
