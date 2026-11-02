@@ -109,7 +109,15 @@ Semantics:
   constraint violations such as missing or duplicate historical Slice markers.
 - Historical Children are never regenerated, detached, or edited: their exact
 title, body, state, and dependency relations are preserved byte-for-byte, and
-  the Parent keeps every historical Slice entry exactly once. Historical
+  the Parent keeps every historical Slice entry exactly once, including all
+  continuation lines. An entry starts at its Slice-marker line and ends before
+  the next Slice-marker line; the last entry ends before the blank line preceding
+  the full Parent footer, with trailing empty lines trimmed. CRLF and LF are
+  normalized to LF; all other entry bytes are preserved. Amended entries are
+  replaced whole. Repeated Slice markers anywhere in the baseline, multiple
+  markers on one line, a Markdown heading (`^#{1,6} `) in a historical entry's
+  continuation, or no full Parent footer after the last marker returns
+  `ambiguous_remote_state` with zero mutations. Historical
   prerequisites must be closed; a stopped (not completed) prerequisite is
   rejected instead of silently treated as satisfied.
 - Omitted existing pending work, duplicate identities, foreign or ambiguous

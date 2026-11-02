@@ -1308,13 +1308,13 @@ interface AmendmentExecutionContext {
 	pendingContent: Map<string, { title: string; body: string }>;
 	/** Approved final Parent title/body. */
 	parent: { title: string; body: string };
-	/** Historical Slice lines derived from the approved Parent baseline (exact bytes). */
+	/** Historical Slice entries derived from the approved Parent baseline. */
 	historicalSlices: string[];
 }
 
 /**
  * Derive the approved-final content for every amendment write from the current
- * TaskIntents and the approved baseline. Historical Slice lines are extracted
+ * TaskIntents and the approved baseline. Historical Slice entries are extracted
  * from the Parent binding's baseline body so the final expectation is fixed
  * before any mutation, never derived from post-write remote state.
  */
@@ -1407,15 +1407,18 @@ function approvedAmendmentContent(
 }
 
 /**
- * Extract historical Slice lines from the approved Parent baseline body.
- * Accepts any exactly-once Slice marker representation and returns the exact
- * baseline line bytes; fails closed on malformed Slice entries. Only Slices of
- * bound pending Tasks must already exist in the baseline; unbound new Tasks
- * contribute fresh Slice lines to the approved final Parent body.
+ * Extract complete historical Slice entries from the approved Parent baseline.
+ * Preserve continuation lines, normalizing CRLF to LF. Bound pending Tasks must
+ * already exist; unbound new Tasks contribute fresh entries.
  */
 function baselineHistoricalSlices(parentBaselineBody: string, amendedSliceIds: Set<string>, boundSliceIds: Set<string>): string[] | string {
-	const lines: string[] = [];
-	for (const match of parentBaselineBody.matchAll(/^.*?<!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->.*$/gm)) {
+	const baseline = parentBaselineBody.split(/\r?\n/).join("\n");
+	const matches = [...baseline.matchAll(/^.*?<!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->.*$/gm)];
+	const last = matches.at(-1);
+	const footer = last ? baseline.indexOf(`\n\n${ISSUE_FOOTER}`, last.index + last[0].length) : -1;
+	if (last && footer === -1) return "approved Parent baseline has no Parent footer after its last Slice marker";
+	const entries: string[] = [];
+	for (const [index, match] of matches.entries()) {
 		const sliceId = match[1];
 		const line = match[0];
 		// A baseline line must carry exactly one Slice marker: a line mixing a
@@ -1425,23 +1428,22 @@ function baselineHistoricalSlices(parentBaselineBody: string, amendedSliceIds: S
 		const markersOnLine = [...line.matchAll(/<!-- immune-brain:slice-id=([A-Za-z0-9._:-]+) -->/g)];
 		if (markersOnLine.length !== 1)
 			return `historical Slice ${sliceId} shares a baseline line with another Slice marker; each Slice marker must sit on its own line`;
-		if (amendedSliceIds.has(sliceId)) {
-			// The pending batch replaces this Slice line: the line belongs to the
-			// amendment's own pending or historical Children (membership and slice
-			// uniqueness are validated elsewhere), so it must not be carried over.
-			continue;
-		}
-		if (countLiteral(line, marker("slice-id", sliceId)) !== 1)
+		if (countLiteral(baseline, marker("slice-id", sliceId)) !== 1)
 			return `historical Slice ${sliceId} has missing or duplicate Slice markers in the approved Parent baseline`;
-		if (!ownershipMarkerValue(line, "slice-id"))
-			return `historical Slice ${sliceId} has a malformed Slice marker in the approved Parent baseline`;
-		lines.push(line);
+		if (amendedSliceIds.has(sliceId)) continue;
+		const next = matches[index + 1];
+		const entry = next
+			? baseline.slice(match.index, next.index - 1)
+			: baseline.slice(match.index, footer).replace(/\n+$/, "");
+		if (/^#{1,6} /m.test(entry.slice(line.length + 1)))
+			return `historical Slice ${sliceId} has a Markdown heading in its continuation`;
+		entries.push(entry);
 	}
 	for (const sliceId of boundSliceIds) {
 		if (countLiteral(parentBaselineBody, marker("slice-id", sliceId)) !== 1)
 			return `approved Parent baseline does not carry exactly one Slice marker for bound pending Slice ${sliceId}`;
 	}
-	return lines;
+	return entries;
 }
 
 

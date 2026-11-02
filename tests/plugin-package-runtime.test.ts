@@ -1710,6 +1710,33 @@ describe("initiative amendment publication", () => {
 	}
 
 
+	it.each([false, true])("preserves the complete historical Slice entry (multiline=%p)", async (multiline) => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const original = parentIssue.body.split("\n").find((line: string) => line.includes("slice-id=done"))!;
+			const entry = multiline ? `${original}\n  continued result\n  (blocked by: amend-done)` : original;
+			parentIssue.body = parentIssue.body.replace(original, entry);
+			const outcome = await runGithubInitiativePublication(root, amendmentInput(paths, parentIssue, pending, historical), gh);
+			expect(outcome.status).toBe("updated");
+			const body = gh.issues.find((issue) => issue.number === parentIssue.number)!.body;
+			expect(body.split(entry)).toHaveLength(2);
+			expect(body.split("## Slices\n\n")[1]!.split("\n\n---")[0]).toBe(
+				`${entry}\n- [ ] <!-- immune-brain:slice-id=live --> **live**: Deliver the amended pending work (blocked by: amend-done)`,
+			);
+		});
+	});
+
+	it.each(["duplicate", "heading", "missing footer"])("rejects ambiguous multiline Slice boundaries: %s", async (kind) => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const original = parentIssue.body.split("\n").find((line: string) => line.includes("slice-id=done"))!;
+			if (kind === "missing footer") parentIssue.body = parentIssue.body.slice(0, parentIssue.body.lastIndexOf("\n\n---\n\n"));
+			else parentIssue.body = parentIssue.body.replace(original, `${original}\n${kind === "heading" ? "## Unexpected section" : "  <!-- immune-brain:slice-id=live --> repeated"}`);
+			const before = gh.mutations;
+			const outcome = await runGithubInitiativePublication(root, amendmentInput(paths, parentIssue, pending, historical), gh);
+			expect(outcome.status).toBe("ambiguous_remote_state");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
 	it("performs the direct amendment write flow with one start listing and no post-write read", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
 			const listings: number[] = [];

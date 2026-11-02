@@ -1,0 +1,161 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "amendment-multiline-slice-entries",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "amendment-multiline-slice-entries",
+    "goal": "An Initiative amendment carries every historical Slice entry of the approved Parent baseline byte-for-byte, including continuation lines of a multi-line Slice result, so a (blocked by: …) annotation on a continuation line survives and isolated GitHub Enrollment (assertIsolatedTaskPrerequisites, #285) keeps reading that Slice's prerequisites (#320). Delegated choices: (1) a Slice entry is the baseline text from its Slice-marker line up to the line before the next Slice-marker line; the last entry ends before the blank line that precedes the Parent footer (the full ISSUE_FOOTER text), with trailing empty lines trimmed, so canonical single-line entries produce exactly today's Parent body; lines are split on CRLF or LF and rejoined with LF as today; (2) baselineHistoricalSlices returns one string per entry and createInitiativeBody keeps joining entries with LF, so every caller of the historicalSlices list (approved-final Parent derivation and retry convergence) is unchanged; entries of amended Slices are skipped whole; (3) fail-closed cases, each a structured ambiguous_remote_state result with zero remote mutations: any Slice marker that appears more than once in the baseline body (for example a historical continuation line repeating another Slice's marker), a historical entry whose continuation contains a Markdown heading line (^#{1,6} ), and a baseline with no Parent footer after its last Slice marker; the existing one-marker-per-line rule stays; (4) publication-time newline normalization of slices[].result and goal, the prerequisite parser itself, and the edge-derived batch plan projection are out of scope; (5) docs/agents/issue-tracker.md amendment semantics state the entry boundary and the new fail-closed cases, and a patch changeset is added; the Claude MCP bundle plugins/immune-brain/dist/claude/mcp-server.mjs is regenerated.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "bun test tests/plugin-package-runtime.test.ts -t \"initiative amendment publication\" passes, including new cases built with withAmendmentBase that edit the baseline Parent body before amending: (a) the historical Slice done entry rewritten to span three lines with (blocked by: amend-done) on its last continuation line yields status updated, and the amended Parent body contains that three-line entry byte-identical to the baseline exactly once; (b) with the canonical single-line baseline, the amended Parent Slices section is exactly the baseline historical marker line followed by the pending Slice lines (today's output); (c) each of: a historical continuation line repeating the live Slice marker, a historical continuation line that is a Markdown heading, and a baseline whose Parent footer is removed returns status ambiguous_remote_state with gh.mutations unchanged. The existing cases in that describe block (including the one-marker-per-line rejection) still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"-t\",\n      \"initiative amendment publication\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "bun test tests/goal-driven-batch-run.test.ts -t \"GitHub isolated Slice prerequisites\" passes, including a new case where the published Slices section is a wrapped S6 entry whose (blocked by: T-a) annotation sits on a continuation line, followed by another Slice entry - [ ] <!-- immune-brain:slice-id=S7 --> **S7**: next (the shape an amended Parent produces when a pending Slice follows a historical one): assertIsolatedTaskPrerequisites for s6 rejects with Isolated Slice prerequisites are not integrated: T-a, then resolves after T-a is settled and committed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"-t\",\n      \"GitHub isolated Slice prerequisites\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "bun scripts/build-claude-plugin.ts --check reports the Claude plugin bundle is current, so plugins/immune-brain/dist/claude/mcp-server.mjs was regenerated from the changed runtime.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"scripts/build-claude-plugin.ts\",\n      \"--check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "tests/carrier-enrollment-gate-contract.test.ts, which reads docs/agents/issue-tracker.md, still passes after the amendment-semantics edit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The changeset .changeset/amendment-multiline-slice-entries.md exists and declares an immune-brain patch release.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"grep\",\n    \"argv\": [\n      \"-q\",\n      \"\\\"immune-brain\\\": patch\",\n      \".changeset/amendment-multiline-slice-entries.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 4096\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/amendment-multiline-slice-entries.md",
+      "docs/agents/issue-tracker.md",
+      "docs/plans/amendment-multiline-slice-entries.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/amendment-multiline-slice-entries.intent.json",
+    "content_hash": "sha256:69e1ce51fa8416b8aee410b54fbef48af907eebc7454abaf0d4d45d43a059bd9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:69e1ce51fa8416b8aee410b54fbef48af907eebc7454abaf0d4d45d43a059bd9",
+  "git_base_head": "f9a1f802f48801db7304d2bcbd7765eeb48052bd",
+  "attestations": [
+    {
+      "id": "approval-qa-ea52dc5e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:69e1ce51fa8416b8aee410b54fbef48af907eebc7454abaf0d4d45d43a059bd9",
+      "diff_hash": "sha256:68ae12fe364201325fc561a6023f9f8023d383b322bedac99d67c5216af42cc3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:53251090ce0899d37ad0200fb2f513ae068639119eadcad706eba5bec30ff88c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b77144e9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:69e1ce51fa8416b8aee410b54fbef48af907eebc7454abaf0d4d45d43a059bd9",
+      "diff_hash": "sha256:68ae12fe364201325fc561a6023f9f8023d383b322bedac99d67c5216af42cc3",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现阻断问题；packet、manifest、commit parent/tree 及变更 blob 均已核实，完整 diff 满足 AC1–AC5，包含多行历史条目保留、重复 marker/heading/缺失 footer 的写入前拒绝及 prerequisite 回归覆盖。Blast radius: tier medium，核心路径为 plugins/immune-brain/runtime/github_issue_tracker.ts 的 amendment Parent 内容派生；无持久化结构变更。未重跑测试，采用 Kernel 提供的全部 acceptance 通过证据。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "f9a1f802f48801db7304d2bcbd7765eeb48052bd",
+        "review_commit": "0a21c75e4473cc4f95016715762648bc95656b61",
+        "review_tree": "afc03d3d845e78112e1b00ed2bb98bb3610b84e8",
+        "manifest_digest": "sha256:51ba853101270b445421ef78f7a2c413fbbc7897b10a1c7325e675026c44d639"
+      },
+      "reviewer_verdict_sha256": "sha256:b363f5b61efc0b614680c8115163e02912f5cc8fda907414b60189f3aa1cd51e"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:amendment-multiline-slice-entries:2026-11-02T02:51:03.734Z",
+      "at": "2026-11-02T02:51:03.734Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/amendment-multiline-slice-entries.intent.json"
+    },
+    {
+      "id": "record_approval:amendment-multiline-slice-entries:2026-11-02T02:51:25.387Z",
+      "at": "2026-11-02T02:51:25.387Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ea52dc5e\naction_v2_sha256:99004150da8d0c1b7716ffdf0b5ea265005f72fd7b59897de1da9ef16c8868cd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-bc332b174b82d987",
+        "issued_at": "2026-11-02T02:51:25.387Z"
+      }
+    },
+    {
+      "id": "record_approval:amendment-multiline-slice-entries:2026-11-02T02:53:55.899Z",
+      "at": "2026-11-02T02:53:55.899Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b77144e9\naction_v2_sha256:122a261e42776194a233ae38ade04c7552deccb988413f91725a26d766f84c63",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-a0083ddebf401de4",
+        "issued_at": "2026-11-02T02:53:55.900Z"
+      }
+    },
+    {
+      "id": "complete:amendment-multiline-slice-entries:2026-11-02T02:53:56.885Z",
+      "at": "2026-11-02T02:53:56.885Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:7d0ef87590bbffa6051f92af095e9d994d86efb14301e36194a70f417162bc71"
+    }
+  ]
+}
