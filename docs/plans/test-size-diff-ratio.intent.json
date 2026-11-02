@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "test-size-diff-ratio",
+  "owner": "user",
+  "goal": "Close the last open gap of #205: the read-only test size report (scripts/test-size-report.ts) gains a per-change mode that reports how many test lines one PR or revision range adds against how many source lines it changes. `bun scripts/test-size-report.ts --diff <range> [--json]` runs `git diff --numstat -z --no-renames <range>` in the current working directory and reports test lines added/deleted, source lines added/deleted, and the ratio of added test lines to changed (added+deleted) source lines. File classification reuses the existing full-tree rules (CODE_RE, TEST_RE, EXCLUDED_RE; non-test files under tests/ count as neither test nor source), binary entries are skipped, and the ratio is null when no source line changed. The mode stays report-only (exit 0 on success, no CI gate, per #205 Out of scope); the existing full-tree mode and its output stay unchanged. Delegated technical choices: the denominator is changed source lines rather than all changed lines so a test-only change does not read as a 1.0 ratio; the diff mode measures the caller's checkout (cwd) so it works on any branch or clone.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/test-size-report.test.ts, summarizeDiffSize exported from scripts/test-size-report.ts, given numstat entries tests/x.test.ts 10 added/2 deleted, src/a.ts 3/1, tests/helpers/h.ts 5/0, plugins/x/dist/b.mjs 50/50, README.md 4/0 and a binary src/logo.ts entry with unknown counts, returns testLinesAdded 10, testLinesDeleted 2, sourceLinesAdded 3, sourceLinesDeleted 1 and ratio 2.5 (positive); the support file, the dist output, the non-code file and the binary entry contribute nothing (negative); and an entry set whose only change is a test file returns ratio null rather than 0 or Infinity (bound).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/test-size-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/test-size-report.test.ts, parseNumstat exported from scripts/test-size-report.ts parses `git diff --numstat -z --no-renames` output into entries: a text record `3\\t1\\tsrc/a.ts\\0` yields added 3, deleted 1; a path containing spaces keeps its exact bytes; a binary record `-\\t-\\timg.png\\0` yields an entry with null counts that summarizeDiffSize skips; empty output yields no entries.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/test-size-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/test-size-report.test.ts, running `bun <repo>/scripts/test-size-report.ts --diff HEAD~1..HEAD --json` as a subprocess with cwd set to a temporary Git repository whose last commit adds 4 lines to a tests/*.test.ts file and changes 2 lines of a source file prints JSON with testLinesAdded 4 and the matching source counts and ratio, and exits 0 (positive); `--diff nosuch..HEAD` exits 1, names the range on stderr and prints nothing on stdout (negative); `--diff` with no range value exits 1 with a usage message (negative). The temporary repository is created and removed inside the test, so the check does not depend on this repository's history depth.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/test-size-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/test-size-diff-ratio.intent.json",
+    "docs/proposals/imm-test-prune.md",
+    "scripts/test-size-report.ts",
+    "tests/test-size-report.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

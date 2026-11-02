@@ -15,6 +15,7 @@ vibe coding 中，生成测试几乎零成本，删除测试却没有明确的�
 1. **分层落位**：
    - 本 Skill 只负责低频、需审批的存量审计与清理。
    - 测试规模度量属于只读脚本，不进入 Skill：`bun scripts/test-size-report.ts [--json] [--top N] [--max-lines N]`，只报告，不作为 CI 门禁。
+   - 单次改动的测试增量用 `bun scripts/test-size-report.ts --diff <range> [--json]`：报告该范围新增/删除的测试行与源码行，以及“新增测试行 ÷ 改动源码行”比例（无源码改动时为 null），同样只报告。
    - 生成阶段约束已写入 AGENTS.md、Executor role prompt；Code Review 对测试膨胀只给 advisory，不阻断。
 2. **与 `imm-doc-prune` 的边界**：
    - 纯文档存在或措辞测试仍归 doc-prune，本 Skill 将其标为 `DEFER_DOC_PRUNE`。
