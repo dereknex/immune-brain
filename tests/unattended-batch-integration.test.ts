@@ -7,6 +7,7 @@ import {
 	BatchIntegrationError,
 	findIntegratedCandidate,
 	integrateGuardedLaneCommit,
+	laneCandidateMatches,
 	prepareLaneCandidate,
 	type IntegrationCheckChild,
 } from "../plugins/immune-brain/runtime/unattended/batch_integration";
@@ -111,6 +112,38 @@ function integrate(fx: Fixture, input: { task: string; lane_commit: string; lane
 		child: checkOf(input.task),
 		siblings: (input.siblings ?? []).map((sibling) => ({ ...checkOf(sibling.task), commit: sibling.commit })),
 	});
+}
+
+const SHARED = "one\ntwo\nthree\nfour\nfive\n";
+const MERGED_SHARED = "ONE\ntwo\nthree\nfour\nFIVE\n";
+
+/**
+ * A shared multi-line file committed on the batch branch, then a Lane cut from
+ * that commit changing its last line while an integrated sibling changes its
+ * first: different hunks of one path, which merge cleanly.
+ */
+function sharedFileOverlap(fx: Fixture): { start: string; lane: string; sibling: string } {
+	writeFileSync(join(fx.repo, "shared.txt"), SHARED);
+	git(fx.repo, "add", "-A");
+	git(fx.repo, "commit", "-q", "-m", "shared file");
+	const start = git(fx.repo, "rev-parse", "HEAD");
+	const lane = fx.laneCommit("task-c", "shared.txt", SHARED.replace("five", "FIVE"), start);
+	const sibling = fx.siblingCommit("task-s", "shared.txt", SHARED.replace("one", "ONE"));
+	return { start, lane, sibling };
+}
+
+let tamperCount = 0;
+
+/** A commit on `parent` carrying the child's subject and batch trailer, with `files` written over it. */
+function commitOn(fx: Fixture, parent: string, files: Record<string, string>): string {
+	const path = join(fx.dir, `tamper-${(tamperCount += 1)}`);
+	git(fx.repo, "worktree", "add", "-q", "--detach", path, parent);
+	for (const [file, body] of Object.entries(files)) writeFileSync(join(path, file), body);
+	git(path, "add", "-A");
+	git(path, "commit", "-q", "-m", `imm(task-c): deliver\n\nImmune-Brain-Batch: ${BATCH_ID}\n`);
+	const commit = git(path, "rev-parse", "HEAD");
+	git(fx.repo, "worktree", "remove", "--force", path);
+	return commit;
 }
 
 async function reasonOf(run: () => Promise<unknown>): Promise<string> {
@@ -263,6 +296,44 @@ describe("integration guard reruns descriptors on the candidate", () => {
 			const reason = await reasonOf(() => integrate(fx, { task: "task-c", lane_commit: lane, siblings: [{ task: "task-s", commit: sibling }] }));
 			expect(reason).toBe("batch_integration_conflict");
 			expectUntouched(fx, sibling, refs);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("integrates a clean merge of a file an integrated sibling also changed (#357)", async () => {
+		const fx = fixture({ "task-c": ALWAYS_PASS, "task-s": ALWAYS_PASS });
+		try {
+			const { start, lane, sibling } = sharedFileOverlap(fx);
+			const { commit } = await integrate(fx, { task: "task-c", lane_base: start, lane_commit: lane, siblings: [{ task: "task-s", commit: sibling }] });
+			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(commit);
+			expect(git(fx.repo, "rev-list", "--count", `${sibling}..${commit}`)).toBe("1");
+			expect(git(fx.repo, "rev-parse", `${commit}^`)).toBe(sibling);
+			expect(git(fx.repo, "show", `${commit}:shared.txt`)).toBe(MERGED_SHARED.trim());
+			// A restart adopts the integrated commit instead of parking or replaying it.
+			expect(findIntegratedCandidate({ root: fx.repo, task_id: "task-c", batch_id: BATCH_ID, from_head: start, lane_base: start, lane_commit: lane })).toBe(commit);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	it("refuses a candidate whose tree differs from the clean merge of a shared file", () => {
+		const fx = fixture({ "task-c": ALWAYS_PASS, "task-s": ALWAYS_PASS });
+		try {
+			const { start, lane, sibling } = sharedFileOverlap(fx);
+			const input = { root: fx.repo, lane_base: start, lane_commit: lane, batch_head: sibling };
+			const honest = prepareLaneCandidate({ ...input, branch: BATCH_BRANCH });
+			expect(laneCandidateMatches({ ...input, candidate: honest })).toBe(true);
+			const extraHunk = commitOn(fx, sibling, { "shared.txt": MERGED_SHARED.replace("three", "THREE") });
+			const extraPath = commitOn(fx, sibling, { "shared.txt": MERGED_SHARED, "extra.txt": "x\n" });
+			expect(laneCandidateMatches({ ...input, candidate: extraHunk })).toBe(false);
+			expect(laneCandidateMatches({ ...input, candidate: extraPath })).toBe(false);
+			// The guarded build still yields the honest merge, never a tampered tree.
+			const rebuilt = prepareLaneCandidate({ ...input, branch: BATCH_BRANCH });
+			expect(git(fx.repo, "rev-parse", `${rebuilt}^{tree}`)).toBe(git(fx.repo, "rev-parse", `${honest}^{tree}`));
+			// A tampered commit carrying the child's subject on the branch is not adopted on restart.
+			git(fx.repo, "reset", "-q", "--hard", extraPath);
+			expect(findIntegratedCandidate({ root: fx.repo, task_id: "task-c", batch_id: BATCH_ID, from_head: start, lane_base: start, lane_commit: lane })).toBeNull();
 		} finally {
 			fx.cleanup();
 		}

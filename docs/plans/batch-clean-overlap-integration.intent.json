@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-clean-overlap-integration",
+  "owner": "user",
+  "goal": "Batch integration accepts a Lane commit that merges cleanly onto the batch head even when an integrated sibling changed other hunks of the same file, so a parallel child is not parked as batch_integration_conflict without a real conflict (#357; seen on #349 S4). Cause: laneCandidateMatches (plugins/immune-brain/runtime/unattended/batch_integration.ts:177-187) needs per-path blob identity, which a sibling edit to the same path breaks, and its fallback returns false unless git merge-tree exits 1, so a clean merge (exit 0) is refused. ADR 0028 item 2 (docs/adr/0028-scope-as-estimate.md:28, commit 60d1541) runs overlapping estimates concurrently; this check was not relaxed to match. Delegated choices: (1) keep the identity fast path; for merge-tree exit 0 or 1 rebuild the expected candidate with buildCandidate and accept only when its tree equals the candidate tree; any other status, a buildCandidate throw or a tree mismatch returns false; (2) findIntegratedCandidate (batch_integration.ts:480) and batch_git.ts:736 and :922 call laneCandidateMatches and need no separate edit; (3) replace the stale sentence at plugins/immune-brain/dist/drive-batch.md:178-179 with the ADR 0028 item 2 rule; ADR 0013 stays historical; (4) regenerate plugins/immune-brain/dist/claude/mcp-server.mjs and add a patch changeset. Seams: tests/unattended-batch-integration.test.ts (real Git fixture) and tests/derived-files.test.ts (tamper check at :91). Posture: test-first, since the clean-overlap case has no test.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "tests/unattended-batch-integration.test.ts passes, including a new case: a sibling commit changes the first line of a multi-line shared file on the batch branch and a Lane cut from the base changes its last line; integrateGuardedLaneCommit integrates the Lane as exactly one new commit on the batch branch whose tree contains both changes in that file, the batch branch points at that commit, and findIntegratedCandidate for that task returns the same commit (a restart does not re-park it). The file's existing cases still pass, including 'reports a plumbing conflict as batch_integration_conflict and leaves the branch unmoved' (a real content conflict on the same lines is still refused and leaves branch, refs and worktree untouched).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "tests/unattended-batch-integration.test.ts and tests/derived-files.test.ts pass, including a new case in tests/unattended-batch-integration.test.ts: for the same clean shared-file overlap, laneCandidateMatches returns true for the candidate prepareLaneCandidate built and false for a commit on the same parent whose tree differs from the rebuilt merge tree (one extra changed blob in the shared file, and separately one extra unrelated path), and prepareLaneCandidate is not fooled into accepting it. The existing tamper assertion in tests/derived-files.test.ts ('regenerates the merged sources, integrates and recovers the exact candidate') still returns false for its tampered candidate.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "plugins/immune-brain/dist/drive-batch.md no longer contains 'Only children whose scopes are provably disjoint run together' or 'a child whose scope overlaps an in-flight Lane waits until that Lane is integrated', and states that overlapping scope estimates run concurrently and the merge queue refuses only a real conflict; tests/ceremony-trim-contract.test.ts, which checks drive-batch.md headings and loader anchors, still passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -Fq 'Only children whose scopes are provably disjoint run together' plugins/immune-brain/dist/drive-batch.md && ! grep -Fq 'overlaps an in-flight Lane waits' plugins/immune-brain/dist/drive-batch.md && grep -Fq 'merge queue' plugins/immune-brain/dist/drive-batch.md && bun test tests/ceremony-trim-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-clean-overlap-integration.md",
+    "docs/plans/batch-clean-overlap-integration.intent.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "tests/derived-files.test.ts",
+    "tests/unattended-batch-integration.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

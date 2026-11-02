@@ -11735,10 +11735,11 @@ function laneCandidateMatches(input) {
     return true;
   try {
     const merged = git5(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
-    if (merged.status !== 1)
+    if (merged.status !== 0 && merged.status !== 1)
       return false;
     const expected = buildCandidate({ root, lane_base, lane_commit, batch_head, declaration_head: input.declaration_head });
-    return gitOut(root, ["rev-parse", `${expected}^{tree}`], "read rebuilt tree") === gitOut(root, ["rev-parse", `${candidate}^{tree}`], "read candidate tree");
+    const tree = gitOut(root, ["rev-parse", `${expected}^{tree}`], "read rebuilt tree");
+    return tree !== gitOut(root, ["rev-parse", `${batch_head}^{tree}`], "read batch head tree") && tree === gitOut(root, ["rev-parse", `${candidate}^{tree}`], "read candidate tree");
   } catch {
     return false;
   }

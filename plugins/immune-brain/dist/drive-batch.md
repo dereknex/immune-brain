@@ -175,8 +175,10 @@ failure is reported without moving the Parent ref.
 With `max_parallel` above 1 the reconcile tick keeps up to that many Lanes in
 flight and reports one `executor` handoff per running child in `handoffs[]`
 (`provision` remains only for legacy records).
-Only children whose scopes are provably disjoint run together; a child whose scope
-overlaps an in-flight Lane waits until that Lane is integrated. Settled children
+Scope estimates may overlap: children run concurrently whatever their
+`scope_hint`, and the merge queue refuses only a real conflict, so a child that
+changes other hunks of a file an integrated sibling changed merges cleanly
+(ADR 0028). Settled children
 integrate serially, and a parked child ends only itself and its dependents while a
 disjoint sibling keeps moving. A lost Lane parks as `batch_lane_lost`, and
 `qa_failure_limit` counts each child separately. A completed settlement inside a

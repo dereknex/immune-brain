@@ -1,0 +1,160 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "batch-clean-overlap-integration",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "batch-clean-overlap-integration",
+    "goal": "Batch integration accepts a Lane commit that merges cleanly onto the batch head even when an integrated sibling changed other hunks of the same file, so a parallel child is not parked as batch_integration_conflict without a real conflict (#357; seen on #349 S4). Cause: laneCandidateMatches (plugins/immune-brain/runtime/unattended/batch_integration.ts:177-187) needs per-path blob identity, which a sibling edit to the same path breaks, and its fallback returns false unless git merge-tree exits 1, so a clean merge (exit 0) is refused. ADR 0028 item 2 (docs/adr/0028-scope-as-estimate.md:28, commit 60d1541) runs overlapping estimates concurrently; this check was not relaxed to match. Delegated choices: (1) keep the identity fast path; for merge-tree exit 0 or 1 rebuild the expected candidate with buildCandidate and accept only when its tree equals the candidate tree; any other status, a buildCandidate throw or a tree mismatch returns false; (2) findIntegratedCandidate (batch_integration.ts:480) and batch_git.ts:736 and :922 call laneCandidateMatches and need no separate edit; (3) replace the stale sentence at plugins/immune-brain/dist/drive-batch.md:178-179 with the ADR 0028 item 2 rule; ADR 0013 stays historical; (4) regenerate plugins/immune-brain/dist/claude/mcp-server.mjs and add a patch changeset. Seams: tests/unattended-batch-integration.test.ts (real Git fixture) and tests/derived-files.test.ts (tamper check at :91). Posture: test-first, since the clean-overlap case has no test.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "tests/unattended-batch-integration.test.ts passes, including a new case: a sibling commit changes the first line of a multi-line shared file on the batch branch and a Lane cut from the base changes its last line; integrateGuardedLaneCommit integrates the Lane as exactly one new commit on the batch branch whose tree contains both changes in that file, the batch branch points at that commit, and findIntegratedCandidate for that task returns the same commit (a restart does not re-park it). The file's existing cases still pass, including 'reports a plumbing conflict as batch_integration_conflict and leaves the branch unmoved' (a real content conflict on the same lines is still refused and leaves branch, refs and worktree untouched).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/unattended-batch-integration.test.ts and tests/derived-files.test.ts pass, including a new case in tests/unattended-batch-integration.test.ts: for the same clean shared-file overlap, laneCandidateMatches returns true for the candidate prepareLaneCandidate built and false for a commit on the same parent whose tree differs from the rebuilt merge tree (one extra changed blob in the shared file, and separately one extra unrelated path), and prepareLaneCandidate is not fooled into accepting it. The existing tamper assertion in tests/derived-files.test.ts ('regenerates the merged sources, integrates and recovers the exact candidate') still returns false for its tampered candidate.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "plugins/immune-brain/dist/drive-batch.md no longer contains 'Only children whose scopes are provably disjoint run together' or 'a child whose scope overlaps an in-flight Lane waits until that Lane is integrated', and states that overlapping scope estimates run concurrently and the merge queue refuses only a real conflict; tests/ceremony-trim-contract.test.ts, which checks drive-batch.md headings and loader anchors, still passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -Fq 'Only children whose scopes are provably disjoint run together' plugins/immune-brain/dist/drive-batch.md && ! grep -Fq 'overlaps an in-flight Lane waits' plugins/immune-brain/dist/drive-batch.md && grep -Fq 'merge queue' plugins/immune-brain/dist/drive-batch.md && bun test tests/ceremony-trim-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/batch-clean-overlap-integration.md",
+      "docs/plans/batch-clean-overlap-integration.intent.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+      "tests/derived-files.test.ts",
+      "tests/unattended-batch-integration.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/batch-clean-overlap-integration.intent.json",
+    "content_hash": "sha256:7f481c410c52a08cb751b75f85ff73f052c142b694f4b1279a46c49623fdf517"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7f481c410c52a08cb751b75f85ff73f052c142b694f4b1279a46c49623fdf517",
+  "git_base_head": "203523aa34d5061f2f72fa53494bc4099842971c",
+  "attestations": [
+    {
+      "id": "approval-qa-9f31ec8c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7f481c410c52a08cb751b75f85ff73f052c142b694f4b1279a46c49623fdf517",
+      "diff_hash": "sha256:d07d927bdbbe3904fcdca7401a24f84bea631d05f8784374aa2faac6534d0c97",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:cc483bdc918c4fd250d09998b0c04e434c285aab4ff3b669d5a2406002a39ff9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cc483bdc918c4fd250d09998b0c04e434c285aab4ff3b669d5a2406002a39ff9"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cc483bdc918c4fd250d09998b0c04e434c285aab4ff3b669d5a2406002a39ff9"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cc483bdc918c4fd250d09998b0c04e434c285aab4ff3b669d5a2406002a39ff9"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fe35725f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7f481c410c52a08cb751b75f85ff73f052c142b694f4b1279a46c49623fdf517",
+      "diff_hash": "sha256:d07d927bdbbe3904fcdca7401a24f84bea631d05f8784374aa2faac6534d0c97",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance checked (single parent 203523a, tree a90affb). laneCandidateMatches now also accepts a merge-tree exit 0 when the rebuilt merge tree equals the candidate tree, so a clean shared-file overlap integrates, while extra-hunk and extra-path tampering is still refused. The mcp-server.mjs bundle matches the source, and the batch_git.ts:736/:922 and findIntegratedCandidate callers inherit the change. The AC1/AC2 real-Git tests pin integration, restart adoption and tamper refusal, and drive-batch.md drops the disjoint-only sentences. Blast radius medium: batch_integration.ts laneCandidateMatches is shared by integration, restart recovery and evidence retention, plus the generated bundle; no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "203523aa34d5061f2f72fa53494bc4099842971c",
+        "review_commit": "d7998621037b28147f06d5f7ec6c89e84dc65048",
+        "review_tree": "a90affbe7e87d769921769d4a7b960c009b64398",
+        "manifest_digest": "sha256:c0479bd2aadc5c33ee886a09c0b6a19d3f86922d22f2e22cbe66abe3e89dea64"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-183e2df41b43-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "The new rule that the rebuilt tree must differ from the batch-head tree was not among the delegated choices and no test covers it. A Lane whose change a sibling already delivered identically is still parked as batch_integration_conflict, the same as before, even though drive-batch.md now says only a real conflict is refused.",
+          "anchor": "sha256:313830fa0f01479fc2d7b1b243785853ea7229f84c8243df07752b1a9ac3151d",
+          "evidence": {
+            "trigger": "Sibling and Lane make the same edit to shared.txt, so merge-tree exits 0 and the rebuilt tree equals the batch_head tree. laneCandidateMatches returns false, prepareLaneCandidate throws batch_integration_conflict, and no test pins this case.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts:prepareLaneCandidate",
+              "plugins/immune-brain/runtime/unattended/batch_integration.ts:laneCandidateMatches"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:a2b953998cf09c85f6096db9b4a3d20ff0452f7c8ffc587167a47a2e79e20871"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:batch-clean-overlap-integration:2026-11-02T07:24:33.364Z",
+      "at": "2026-11-02T07:24:33.364Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/batch-clean-overlap-integration.intent.json"
+    },
+    {
+      "id": "record_approval:batch-clean-overlap-integration:2026-11-02T07:25:31.006Z",
+      "at": "2026-11-02T07:25:31.006Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9f31ec8c\naction_v2_sha256:037e55e9cb00a1117ccfa26362f07123e275f4a359fa16a53bfd6aa5d39c07b8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T07:25:31.007Z"
+      }
+    },
+    {
+      "id": "record_approval:batch-clean-overlap-integration:2026-11-02T07:27:45.822Z",
+      "at": "2026-11-02T07:27:45.822Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fe35725f\naction_v2_sha256:41bacf7447445dd36622af9176eab2164b42b23c8bad0112221dec04624f9856",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-02T07:27:45.822Z"
+      }
+    },
+    {
+      "id": "complete:batch-clean-overlap-integration:2026-11-02T07:27:46.928Z",
+      "at": "2026-11-02T07:27:46.928Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3c2dcb0410a07c3a2a1798bb081145916636a71c8ce0aedf887ed7218698e110"
+    }
+  ]
+}

@@ -175,16 +175,24 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 	return candidate;
 }
 
-/** Rebuilt derived outputs may differ; require the exact reproducible merged tree. */
+/**
+ * A candidate matches when it carries the lane's change byte for byte or, when
+ * an integrated sibling changed a path the lane also changed, when its tree is
+ * exactly the reproducible merge: a clean merge (merge-tree exit 0) or one whose
+ * conflicts only rebuilt derived outputs resolve (exit 1). A merge that leaves
+ * the batch head's tree unchanged carries none of the lane's change and refuses,
+ * as does anything else.
+ */
 export function laneCandidateMatches(input: { root: string; lane_base: string; lane_commit: string; batch_head: string; candidate: string; declaration_head?: string }): boolean {
 	const { root, lane_base, lane_commit, batch_head, candidate } = input;
 	if (identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate))) return true;
 	try {
 		const merged = git(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
-		if (merged.status !== 1) return false;
+		if (merged.status !== 0 && merged.status !== 1) return false;
 		const expected = buildCandidate({ root, lane_base, lane_commit, batch_head, declaration_head: input.declaration_head });
-		return gitOut(root, ["rev-parse", `${expected}^{tree}`], "read rebuilt tree") ===
-			gitOut(root, ["rev-parse", `${candidate}^{tree}`], "read candidate tree");
+		const tree = gitOut(root, ["rev-parse", `${expected}^{tree}`], "read rebuilt tree");
+		return tree !== gitOut(root, ["rev-parse", `${batch_head}^{tree}`], "read batch head tree") &&
+			tree === gitOut(root, ["rev-parse", `${candidate}^{tree}`], "read candidate tree");
 	} catch { return false; }
 }
 
