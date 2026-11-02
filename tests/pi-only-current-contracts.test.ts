@@ -84,6 +84,19 @@ describe("current Pi-only contracts", () => {
       expect(preferencesDoc).not.toContain(token);
   });
 
+  it("keeps both READMEs on current skill names and workflow-health semantics", () => {
+    const retiredSkill = /\bimm-(?:brainstorm|planner|run|retro|doc-slim|doc-prune|test-prune|pr-fix)(?![a-z0-9-])/;
+    for (const path of ["README.md", "README.zh-CN.md"]) {
+      const content = readFileSync(resolve(ROOT, path), "utf8");
+      expect({ path, retired: content.match(retiredSkill)?.[0] }).toEqual({ path, retired: undefined });
+    }
+    const chinese = readFileSync(resolve(ROOT, "README.zh-CN.md"), "utf8");
+    for (const skill of ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "slim", "prune-tests", "revisit"]) {
+      expect(chinese).toContain(`\`${skill}\``);
+    }
+    expect(chinese).not.toContain("按模型排名");
+  });
+
   it("documents valid Pi native research subagent invocations", () => {
     for (const path of [
       "plugins/immune-brain/dist/clarify.md",
