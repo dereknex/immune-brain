@@ -1431,6 +1431,8 @@ function baselineHistoricalSlices(parentBaselineBody: string, amendedSliceIds: S
 		if (countLiteral(baseline, marker("slice-id", sliceId)) !== 1)
 			return `historical Slice ${sliceId} has missing or duplicate Slice markers in the approved Parent baseline`;
 		if (amendedSliceIds.has(sliceId)) continue;
+		if (!ownershipMarkerValue(line, "slice-id"))
+			return `historical Slice ${sliceId} has a malformed Slice marker in the approved Parent baseline`;
 		const next = matches[index + 1];
 		const entry = next
 			? baseline.slice(match.index, next.index - 1)

@@ -1737,6 +1737,18 @@ describe("initiative amendment publication", () => {
 		});
 	});
 
+	it.each([":bogus", "a:b"])("rejects a historical Slice marker with malformed id %p before writes", async (badId) => {
+		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
+			const original = parentIssue.body.split("\n").find((line: string) => line.includes("slice-id=done"))!;
+			parentIssue.body = parentIssue.body.replace(original, `${original}\n- [x] <!-- immune-brain:slice-id=${badId} --> **bad**: hand-edited entry`);
+			const before = gh.mutations;
+			const outcome = await runGithubInitiativePublication(root, amendmentInput(paths, parentIssue, pending, historical), gh);
+			expect(outcome.status).toBe("ambiguous_remote_state");
+			expect(outcome.message).toContain("malformed Slice marker");
+			expect(gh.mutations).toBe(before);
+		});
+	});
+
 	it("performs the direct amendment write flow with one start listing and no post-write read", async () => {
 		await withAmendmentBase(async (root, gh, { parentIssue, pending, historical, paths }) => {
 			const listings: number[] = [];

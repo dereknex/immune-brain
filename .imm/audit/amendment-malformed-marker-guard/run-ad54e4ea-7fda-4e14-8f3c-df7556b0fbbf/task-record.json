@@ -1,0 +1,117 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "amendment-malformed-marker-guard",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "amendment-malformed-marker-guard",
+    "goal": "Restore the fail-closed malformed Slice marker check that amendment-multiline-slice-entries (#320) removed from baselineHistoricalSlices in plugins/immune-brain/runtime/github_issue_tracker.ts. Before #320, a historical baseline line whose single Slice marker id does not satisfy the tracker id grammar (ownershipMarkerValue: [A-Za-z0-9][A-Za-z0-9._-]{0,127}), for example slice-id=:bogus or slice-id=a:b, made the amendment return ambiguous_remote_state with the message 'historical Slice <id> has a malformed Slice marker in the approved Parent baseline'; after #320 the same baseline is published with status updated and the malformed marker carried into the Parent. Delegated choices: (1) reinstate the check on the entry's marker line with the same message, for historical entries only (amended Slices stay exempt as before #320), placed before any entry is extracted so a malformed marker causes zero remote mutations; (2) all #320 behavior (multiline entries, duplicate/heading/missing-footer rejection) is unchanged; (3) no docs or changeset change: the #320 changeset already announces rejection of ambiguous entries before remote mutations, and docs/agents/issue-tracker.md never enumerated this pre-existing case.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "bun test tests/plugin-package-runtime.test.ts -t \"initiative amendment publication\" passes, including a new parameterized case built with withAmendmentBase that appends a historical Slice line carrying a malformed marker (slice-id=:bogus and slice-id=a:b) after the done entry: the amendment returns status ambiguous_remote_state, its message names the malformed Slice marker, and gh.mutations is unchanged. All existing cases in the describe block, including the #320 multiline preservation and boundary rejection cases, still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\",\n      \"-t\",\n      \"initiative amendment publication\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/amendment-malformed-marker-guard.intent.json",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/amendment-malformed-marker-guard.intent.json",
+    "content_hash": "sha256:c2cfe276f38e4f21e048b451480a1d4b537e2d26d2f5d0798cc6680ee64b5d2f"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c2cfe276f38e4f21e048b451480a1d4b537e2d26d2f5d0798cc6680ee64b5d2f",
+  "git_base_head": "82853d63d598c35ebf291de3929e241f72c83f43",
+  "attestations": [
+    {
+      "id": "approval-qa-e53cbd56",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c2cfe276f38e4f21e048b451480a1d4b537e2d26d2f5d0798cc6680ee64b5d2f",
+      "diff_hash": "sha256:f8903c845d168281f71f23ea50aa2cb3729a038e1ee11a986e8c814af8be1711",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:a4c15f8fc17d92c981fee07b39f4fc7ca6fb04c7b55969192abb804322cfc61f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:a4c15f8fc17d92c981fee07b39f4fc7ca6fb04c7b55969192abb804322cfc61f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c093270f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c2cfe276f38e4f21e048b451480a1d4b537e2d26d2f5d0798cc6680ee64b5d2f",
+      "diff_hash": "sha256:f8903c845d168281f71f23ea50aa2cb3729a038e1ee11a986e8c814af8be1711",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified: review commit 0100395 has 82853d6 as its only parent and tree 723aff8, and the blob OIDs match changed_paths. The change puts back the pre-#320 check in baselineHistoricalSlices: ownershipMarkerValue(line, \"slice-id\") must succeed for each historical entry, and the error message is word-for-word the pre-#320 one. Amended Slices still skip the check. It runs before any entry is pushed and before any remote write, so the #320 multiline, duplicate, heading and missing-footer behavior is unchanged. The new it.each test covers :bogus and a:b and asserts ambiguous_remote_state, the malformed Slice marker message (which only this check produces) and an unchanged gh.mutations, as AC1 requires. Blast radius is low: one function in plugins/immune-brain/runtime/github_issue_tracker.ts, with no change to persisted shape or migrations.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "82853d63d598c35ebf291de3929e241f72c83f43",
+        "review_commit": "0100395bc590ac5a567f6244a18dd792f8ee57d7",
+        "review_tree": "723aff875a2a0c43b0a9d614d8e6519929bb839e",
+        "manifest_digest": "sha256:1982c7b432f721552db493f34ac0867967beab2299829d6e9b5e28b3da3828ec"
+      },
+      "reviewer_verdict_sha256": "sha256:ef17a122473b5262cc33b1586c22b0833d2c577a06d2d49593f570d631ce3472"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:amendment-malformed-marker-guard:2026-11-02T03:09:49.567Z",
+      "at": "2026-11-02T03:09:49.567Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/amendment-malformed-marker-guard.intent.json"
+    },
+    {
+      "id": "record_approval:amendment-malformed-marker-guard:2026-11-02T03:10:02.028Z",
+      "at": "2026-11-02T03:10:02.028Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e53cbd56\naction_v2_sha256:309be4bead787952b8ab757c6ccc1191107b79df754e3c1563873aa839c022e1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-02T03:10:02.028Z"
+      }
+    },
+    {
+      "id": "record_approval:amendment-malformed-marker-guard:2026-11-02T03:11:28.248Z",
+      "at": "2026-11-02T03:11:28.248Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c093270f\naction_v2_sha256:2642844b337954bf2b3969c6756da993fa5e6dac10090c377c7e82bb5d466f9f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-02T03:11:28.248Z"
+      }
+    },
+    {
+      "id": "complete:amendment-malformed-marker-guard:2026-11-02T03:11:29.170Z",
+      "at": "2026-11-02T03:11:29.170Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a01e1ae37953bd50c4a39ff07281bee101f3fe5644de7f010ccd569c1940a34e"
+    }
+  ]
+}
