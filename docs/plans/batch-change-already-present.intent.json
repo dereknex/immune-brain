@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "batch-change-already-present",
+  "owner": "user",
+  "goal": "merge-queue-followups S2 (#359; Spec docs/specs/merge-queue-followups.spec.md D7, D8, D10). A Lane whose entire change is already on the batch head is refused with the new BatchIntegrationReason batch_change_already_present and parks with that reason rather than batch_lane_redo_retained, while a Lane that repeats one sibling edit but carries other paths integrates as today; restart adoption still never accepts an empty change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/unattended-batch-integration.test.ts and tests/unattended-batch-lanes.test.ts (D7): a lane commit whose entire change is already on the batch head refuses with reason batch_change_already_present and a message naming the lane commit, leaving the batch branch unmoved; laneCandidateMatches returns false for that case and findIntegratedCandidate adopts nothing. A lane that shares one identical file edit with an integrated sibling but changes another path integrates. The honest, extra-hunk and extra-path candidate cases keep their current results.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-integration.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/batch-merge-queue.test.ts (SCN-2, D8): a Parent batch child whose whole change is already on the batch head parks needs_human with a reason starting batch_change_already_present, not batch_lane_redo_retained, with no redo grant spent and the Parent ref unmoved.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/scope-revision-contract.test.ts (D10): plugins/immune-brain/dist/drive-batch.md states at its merge-queue paragraph that a child whose whole change is already on the batch head parks with batch_change_already_present, while a child sharing one identical edit with a sibling still integrates.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/batch-change-already-present.md",
+    "docs/plans/batch-change-already-present.intent.json",
+    "docs/specs/merge-queue-followups.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/scope-revision-contract.test.ts",
+    "tests/unattended-batch-integration.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

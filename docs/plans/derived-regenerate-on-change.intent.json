@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "derived-regenerate-on-change",
+  "owner": "user",
+  "goal": "merge-queue-followups S1 (#371; Spec docs/specs/merge-queue-followups.spec.md D1-D6, D9). When a Lane's change touches a declared derived-file source or output, the merge queue regenerates and checks that output in the merged tree on a clean merge, on a declared-output conflict and when the batch head is still the lane base, so a later sibling no longer parks because an earlier Lane left the output stale; a failed regeneration parks the triggering Lane as batch_integration_check_failed naming the derived entry.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/derived-files.test.ts (D1-D6): a Lane that changes a declared source without its output, merged cleanly onto a moved batch head, integrates with the output regenerated from the merged tree and passing check; a Lane that regenerated its own output on top of an integrated sibling's unregenerated source change integrates with an output reflecting both sources; when the batch head equals the lane base and the lane commit's output is stale, the candidate carries the regenerated output. Negative: a generate that fails on a clean merge refuses with batch_integration_check_failed whose message names the entry id, leaving the batch head and working tree unmoved; a generate that writes an undeclared path refuses. Bound: a Lane touching no declared source or output runs no generate, shown by a failing generator that does not fire; a Lane whose output is already current keeps today's candidate, the lane commit itself when the batch head equals the lane base. findIntegratedCandidate adopts a regenerated candidate and laneCandidateMatches refuses one whose regenerated output was altered after integration.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/batch-merge-queue.test.ts (SCN-1): a two-child Parent batch in which child a changes a declared source without regenerating the output and child b regenerates the output from its own tree completes with both children integrated, no redo grant spent, and the output at the Parent tip passing the declared check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/scope-revision-contract.test.ts (D9): plugins/immune-brain/dist/drive-batch.md states at its merge-queue paragraph that derived outputs are regenerated whenever a child changes a declared source or output, and that a failed regeneration parks that child.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/scope-revision-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "The Claude bundle is current and the repository typechecks.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/derived-regenerate-on-change.md",
+    "docs/plans/derived-regenerate-on-change.intent.json",
+    "docs/specs/merge-queue-followups.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/runtime/derived_files.ts",
+    "plugins/immune-brain/runtime/unattended/batch_integration.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/derived-files.test.ts",
+    "tests/scope-revision-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
