@@ -186,7 +186,23 @@ never rewrite" invariant is preserved — see Architecture invariants).
    finding `source = review`, non-null `evidence` and `anchor`,
    `review_round` present, the round's review revision identity recoverable
    (from the review attestation/approval or history), and both git objects
-   (`base_head`, `review_commit`) reachable in the repository.
+   (`base_head`, `review_commit`) present as commits in this repository's
+   local object store at extraction time (`git cat-file -e <sha>^{commit}`).
+   Reachability from HEAD or any ref is not required: audit commits are
+   Lane and review snapshots that no branch keeps (2026-11-03: all 187
+   distinct `base_head` and 234 distinct `review_commit` values exist
+   locally, none is reachable from HEAD, 10 `review_commit` values are
+   reachable from any ref). A missing object excludes the case with reason
+   `git_object_missing`.
+   **Pinning (S0 rev 4).** So that `git gc` cannot prune them, the
+   extractor pins every commit that an emitted case references, under the
+   local ref namespace `refs/imm/review-eval/<sha>` (one ref per distinct
+   commit, pointing at that commit). Pinning is idempotent; an existing
+   ref under that name that points at a different object is an error that
+   stops the run without writing a corpus. Pinning never changes corpus
+   bytes, and the extractor never pushes these refs: corpus regeneration
+   is local to a clone whose object store holds the audit commits. The
+   committed corpus stays the eval input for every other clone (item 6).
 2. **Disposition is a silver label.** Each case records its final disposition
    (`resolved` / `refuted` / `accepted_risk`) and the history events behind
    it. The corpus README states in its first paragraph: `resolved` means the
@@ -531,7 +547,8 @@ All checks are post-implementation obligations; Planner ran none of them.
 | Acceptance | Focused seams | Required regression evidence |
 | --- | --- | --- |
 | S0 / `RVE-S0-A2` | `tests/review-eval-corpus.test.ts` (new) | Registry entry `a1_review_finding_prescreen` matches item 7 (category, options, `a1/v0`, `values: null`); repository `.imm/config.json` declares only `clef`/`finding` egress; with a temporary user config requesting `clef`/`finding` the effective egress is `clef: ["finding"]` and every other kind empty; a user request of `clef`/`diff` is dropped with `egress_beyond_project_ceiling`. |
-| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, unreachable git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. Pre-screen: the selection log records probabilities and a reason for every candidate, selected cases are uncertainty- and disagreement-first, classifier output appears nowhere in the corpus as a label, and disabling the pre-screen reproduces the item 3 weight-rule selection exactly. Fake-adapter cases: `egress_denied`, `credential_missing`, `provider_error`, and pre-screen off each yield the weight-rule selection with `weight_rule` logged per candidate; a decided run logs model, threshold-set version, and probabilities; no log line contains a credential or env value. |
+| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, missing git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. Pre-screen: the selection log records probabilities and a reason for every candidate, selected cases are uncertainty- and disagreement-first, classifier output appears nowhere in the corpus as a label, and disabling the pre-screen reproduces the item 3 weight-rule selection exactly. Fake-adapter cases: `egress_denied`, `credential_missing`, `provider_error`, and pre-screen off each yield the weight-rule selection with `weight_rule` logged per candidate; a decided run logs model, threshold-set version, and probabilities; no log line contains a credential or env value. |
+| S0 / `RVE-S0-A3` | `tests/review-eval-corpus.test.ts` (new) | In a temporary git repository: a case whose `base_head`/`review_commit` are unreachable from HEAD and every ref but present as commits is eligible; a missing object is excluded as `git_object_missing`; each referenced commit gets `refs/imm/review-eval/<sha>`; a rerun is idempotent and the corpus is byte-identical with or without existing pins; a pre-existing pin at that name pointing elsewhere stops the run with no corpus written; no remote is contacted. |
 | S1 / `RVE-S1-A1` | `tests/review-eval-runner.test.ts` (new, model dispatch faked), `tests/review-retro-analyzer.test.ts` | Scoring: a faked verdict reproducing a gold bug by anchor and one by location both count as recall hits; a blocking finding on a clean case counts FP; unknown anchors count as new-anchor, never silently as FP or TP. Record report: rounds/dispositions/`security_boundary` shares computed from committed fixture records match hand-checked values. Retro: new metrics appear only for events present in fixtures; a fixture without `violated.kind` in verdict findings yields the pre-change report unchanged. Baseline report committed and referenced from the corpus README. Mislabel rate: classifier-kind versus declared-kind mismatch over fixture records matches hand-checked values and is labelled experimental until scored against gold. |
 | S2 / `RVE-S2-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/skill-dist-consistency.test.ts` | Verifier packet contains finding + acceptance + revision and demonstrably excludes reviewer prose/Parent text (packet snapshot assertions); output contract rejects missing results, unknown anchors, refuted-without-counter-path, and extra findings as malformed-kept-all; source prompt and all dist mirrors agree; the role has no review gate and cannot be dispatched as `imm-code-review`. |
 | S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. Escalation check: a refuted finding whose recorded classifier probability meets the threshold parks for the literal user instead of archiving, a below-threshold score archives, and classifier failure archives with the failure recorded in the verification event. |
@@ -558,8 +575,9 @@ All checks are post-implementation obligations; Planner ran none of them.
   projection; an uncertain submission is never replayed blindly; a stale
   or released reservation is abandoned and re-issued, with all findings
   kept in the interim.
-- S0/S1 rollback is deletion of fixtures, scripts, and reports; no
-  workflow state exists to unwind.
+- S0/S1 rollback is deletion of fixtures, scripts, and reports, plus
+  `git for-each-ref --format='%(refname)' refs/imm/review-eval/ | xargs -n1 git update-ref -d`
+  for the local pins; no workflow state exists to unwind.
 - S2/S3 rollback is the config switch: `review_verifier: off` restores
   today's projection path. Parser support for `verifier_refutations` and
   verification history events must outlive the switch (records written
@@ -600,6 +618,21 @@ All checks are post-implementation obligations; Planner ran none of them.
   one must re-plan, not amend quietly.
 
 ## Brainstorm Trace and planning handoff
+
+### 2026-11-03 round 2: S0 git-object eligibility (rev 4)
+
+The first S0 Lane stopped on `RVE-S0-A1`: no audit commit is reachable
+from HEAD, so a strict reachability rule leaves no gold pool. Derek chose
+option 1 on 2026-11-03: redefine eligibility as presence in the local
+object store and pin used commits under `refs/imm/review-eval/*`, local
+only, no push. Each item maps exactly once:
+
+| Item | Disposition |
+| --- | --- |
+| BR-DEC-6 (object presence, not reachability) | S0 item 1; `RVE-S0-A3` (and the eligibility rule `RVE-S0-A1` references) |
+| BR-DEC-7 (pin under `refs/imm/review-eval/<sha>`) | S0 item 1 pinning; `RVE-S0-A3` |
+| BR-OUT-5 (no push of pins) | S0 item 1; `RVE-S0-A3` (no remote contacted) |
+| Gap | Another clone cannot regenerate the corpus or check out an audit commit; S1 runs that need `review_commit` trees run on this clone until a later decision publishes the commits |
 
 ### 2026-11-03 round: S0 with a decide()-based pre-screen
 
