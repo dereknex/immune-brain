@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { A15_ISSUE_TRIAGE } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
+import { checkRecordedReport } from "../scripts/decision-eval/harness.ts";
+import { parseCorpus, prefillGold } from "../scripts/decision-eval/a15/extract.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const EXTRACT = join(REPO, "scripts/decision-eval/a15/extract.ts");
@@ -32,6 +35,40 @@ const readRows = (path: string) =>
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => JSON.parse(line));
+
+describe("committed A15 corpus and reports", () => {
+	const corpusPath = join(REPO, "tests/fixtures/decision-eval/a15/corpus.jsonl");
+	test("corpus preserves the repository labels", () => {
+		const rows = parseCorpus(readFileSync(corpusPath, "utf8")).map(({ row }) => row);
+		expect(rows.some((row) => row.gold !== "unlabeled")).toBe(true);
+		for (const row of rows) {
+			expect(row.repository).toBe("dereknex/immune-brain");
+			expect(row.gold).toBe(prefillGold(row));
+			if (row.gold !== "unlabeled") expect(row.labeler).toBe("repo-labels");
+		}
+	});
+
+	// Only the newest report is bound to the committed corpus; older dated reports
+	// are historical records of the corpus they ran on.
+	test("the latest recorded real-provider report matches the corpus", () => {
+		const corpus = readFileSync(corpusPath);
+		const dir = join(REPO, "docs/reports/decision-eval");
+		const reports = existsSync(dir) ? readdirSync(dir).filter((name) => /^a15-\d{4}-\d{2}-\d{2}\.json$/.test(name)).sort() : [];
+		expect(reports.length).toBeGreaterThan(0);
+		for (const name of reports.slice(-1)) {
+			const report = JSON.parse(readFileSync(join(dir, name), "utf8"));
+			expect(checkRecordedReport(report, corpus, A15_ISSUE_TRIAGE)).toEqual([]);
+			expect(report.threshold_set_version).toBe("a15/v0");
+			for (const item of report.cases) if (item.envelope) {
+				expect(Object.keys(item.envelope.probabilities).sort()).toEqual([...OPTIONS].sort());
+				expect(typeof item.envelope.model).toBe("string");
+				expect(item.envelope).toHaveProperty("model_version");
+				expect(item.envelope.threshold_set_version).toBe("a15/v0");
+			}
+			expect(readFileSync(join(dir, name.replace(/\.json$/, ".md")), "utf8")).toContain("| Baseline (majority_class) |");
+		}
+	});
+});
 
 describe("A15 corpus extraction (AC1)", () => {
 	test("pre-fills gold from the repository's labels and stateReason and leaves other issues unlabeled", () => {

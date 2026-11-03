@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "a15-real-eval",
+  "owner": "user",
+  "goal": "A15 first real-provider offline eval (#204; Spec docs/specs/a15-real-eval.spec.md D1-D5). The repository commits an A15 corpus extracted unedited from dereknex/immune-brain issues and a dated A15 report produced by a real Clef run over it; decision-eval reports carry counts.gold and a class_imbalance caveat, and checkRecordedReport() lets anyone verify offline that a committed report came from a real provider over the committed corpus. The real Clef call sends only issue title and body and is confirmed once inside drive; thresholds stay a15/v0 with values null.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/decision-eval-a15.test.ts, the committed tests/fixtures/decision-eval/a15/corpus.jsonl parses through parseCorpus, every row has repository dereknex/immune-brain, at least one row is labelled, and every row gold equals prefillGold(row) with labelled rows carrying labeler repo-labels; a missing corpus file or a row whose gold disagrees with its labels fails.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/decision-eval-harness.test.ts, checkRecordedReport(report, corpusBytes, point) returns [] for a buildReport() report with provider_kind clef, a non-fake model and the matching corpus, and returns its own code for each of: provider_kind fake (not_real_provider), model fake (not_real_provider), altered corpus bytes (corpus_mismatch), zero decided cases (nothing_decided), a credential_missing unavailable entry (credential_missing), an extra top-level key (unknown_field), and a labelled count or gold distribution that disagrees with the corpus (labelled_mismatch).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/decision-eval-a15.test.ts, at least one docs/reports/decision-eval/a15-*.json exists (zero matched files fails), and each passes checkRecordedReport() against the committed corpus with threshold_set_version a15/v0, every decided case carries probabilities over duplicate, needs_spec and ready_for_agent plus model, model_version and threshold_set_version, and its sibling .md exists and contains the line prefix | Baseline (majority_class) |.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "In tests/decision-eval-harness.test.ts, buildReport() reports counts.gold with every option in option order (an option with no labelled case shows 0); a corpus whose majority gold option holds 9 of 10 labelled cases yields caveats [class_imbalance] and renderMarkdown() emits a Gold distribution line and a line starting Class imbalance:, while an 8 of 10 majority yields caveats [] and no Class imbalance line.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/a15-real-eval.intent.json",
+    "docs/reports/decision-eval",
+    "docs/specs/a15-real-eval.spec.md",
+    "scripts/decision-eval/harness.ts",
+    "tests/decision-eval-a15.test.ts",
+    "tests/decision-eval-harness.test.ts",
+    "tests/fixtures/decision-eval/a15/README.md",
+    "tests/fixtures/decision-eval/a15/corpus.jsonl"
+  ],
+  "risk": "material",
+  "revision": 1
+}
