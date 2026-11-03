@@ -9,6 +9,7 @@ const RUNTIME_DIR = dirname(fileURLToPath(import.meta.url));
 export type InternalRole =
 	| "qa"
 	| "code-review"
+	| "review-verifier"
 	| "ui-review"
 	| "executor"
 	| "test-fixer"
@@ -45,6 +46,11 @@ export const INTERNAL_ROLE_PROMPTS: Record<InternalRole, RolePromptSpec> = {
 	"code-review": {
 		file: "code-review.md",
 		review_gate: "imm-code-review",
+		authority: "advisory",
+		tool_policy: "read-only tools",
+	},
+	"review-verifier": {
+		file: "review-verifier.md",
 		authority: "advisory",
 		tool_policy: "read-only tools",
 	},

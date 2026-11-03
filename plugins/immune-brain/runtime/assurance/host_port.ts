@@ -40,8 +40,22 @@ export interface HostReviewReservation {
 	dispatch: unknown;
 }
 
+export interface VerificationRequest {
+	taskId: string;
+	operationId: string;
+	prompt: string;
+	model: string;
+	writePacket: ReviewEvidence["writePacket"];
+}
+
+export type VerificationReceipt =
+	| { ok: true; receipt: { actorId: string; result: string; model: string } }
+	| { ok: false; reason: string; release: boolean };
+
 export interface AssuranceHostPort {
 	readonly host: "pi" | "claude-code" | "fake";
 	prepareReview(request: ReviewRequest): HostReviewReservation;
+	prepareVerification?(request: VerificationRequest): HostReviewReservation;
+	inspectVerification?(reservation: HostReviewReservation): VerificationReceipt;
 	releaseReview(reservation: HostReviewReservation): void;
 }

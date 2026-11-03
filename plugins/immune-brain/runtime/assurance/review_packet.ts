@@ -26,6 +26,15 @@ export function reviewPacketHandle(input: { taskId: string; operationId: string;
 	].join("\n");
 }
 
+export function verificationPacketHandle(input: { taskId: string; operationId: string; packet: ReviewPacket }): string {
+	return reviewPacketHandle(input).replace("<!-- immune-brain:operation_id=", "<!-- immune-brain-verifier:operation_id=");
+}
+
+export function verificationPacketError(prompt: string): string | undefined {
+	if (!prompt.startsWith("<!-- immune-brain-verifier:operation_id=")) return "Invalid verification packet marker.";
+	return reviewPacketError(prompt.replace("<!-- immune-brain-verifier:operation_id=", "<!-- immune-brain:operation_id="));
+}
+
 export function reviewPacketError(prompt: string): string | undefined {
 	const handle = parseReviewPacketHandle(prompt);
 	if (!handle) return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";

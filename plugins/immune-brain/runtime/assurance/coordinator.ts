@@ -9,6 +9,7 @@
 import { resolveConfig } from "../config/layered_config.ts";
 import { readGitIntegrationPreference, type GitIntegrationMode, type GitIntegrationPreference } from "../git_integration_preference";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import type { FindingEvidence, ReviewAdvisoryFindingV1, TaskFinding } from "../kernel/types";
 import { reviewIncompleteHistory } from "../kernel/reducer";
 import { anchorForEvidence } from "../kernel/refutation";
@@ -760,6 +761,177 @@ export function buildReviewPrompt(
 		...STATIC_REVIEW_RULES,
 		buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget),
 	].join("\n");
+}
+
+export interface ReviewVerificationPacket {
+	contract: "assurance_kernel/review_verification_packet/v1";
+	task_id: string;
+	snapshot_digest: string;
+	verdict_sha256: string;
+	review_revision: ReviewRevisionIdentity;
+	findings: Array<{ id: string; anchor: string; summary: string; evidence: FindingEvidence; acceptance: string }>;
+}
+
+/** Build a new allowlisted packet: no reviewer or Parent context is forwarded. */
+export function buildReviewVerificationPacket(snapshot: SnapshotDescriptor, verdict: AssuranceVerdict,
+	verdictSha256: string, securityBoundaries: Readonly<Record<string, { path: string; line: string }>> = {}): ReviewVerificationPacket {
+	if (snapshot.role !== "review" || verdict.role !== "review" || verdict.decision !== "rework"
+		|| verdict.task_id !== snapshot.task_id || verdict.snapshot_digest !== snapshotDigest(snapshot)
+		|| !snapshot.review_revision || !/^sha256:[a-f0-9]{64}$/.test(verdictSha256) || !verdict.findings?.length)
+		throw new Error("verification requires a rework verdict and immutable review revision");
+	const findings = verdict.findings.map(finding => {
+		if (finding.kind !== "blocking" || !finding.evidence || !finding.anchor
+			|| finding.anchor !== anchorForEvidence(finding.evidence)) throw new Error("invalid blocking finding");
+		const { trigger, caller_chain, violated } = finding.evidence;
+		let acceptance: string | undefined;
+		if (violated.kind === "security_boundary") {
+			const boundary = securityBoundaries[violated.ref];
+			if (!boundary || !/^docs\/specs\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.md$/.test(boundary.path)
+				|| boundary.path.split("/").some(part => part === "..") || !boundary.line.trim() || /[\r\n]/.test(boundary.line)
+				|| !/^[a-f0-9]{40,64}$/.test(snapshot.review_revision!.review_commit)) throw new Error("security boundary source is invalid");
+			try {
+				const contents = execFileSync("git", ["show", `${snapshot.review_revision!.review_commit}:${boundary.path}`],
+					{ cwd: snapshot.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+				if (!contents.split(/\r?\n/).includes(boundary.line)) throw new Error("line missing");
+				acceptance = `${violated.ref}: ${boundary.line}`;
+			} catch { throw new Error("security boundary is not in the immutable revision"); }
+		} else acceptance = snapshot.acceptance.find(item => item.id === finding.acceptance_id)?.assertion;
+		if (!acceptance?.trim()) throw new Error("finding acceptance or security boundary is unavailable");
+		return { id: finding.id, anchor: finding.anchor, summary: finding.summary,
+			evidence: { trigger, caller_chain: [...caller_chain], violated: { kind: violated.kind, ref: violated.ref } }, acceptance };
+	});
+	if (new Set(findings.map(f => f.id)).size !== findings.length)
+		throw new Error("duplicate verification finding identity");
+	const { base_head, review_commit, review_tree, manifest_digest } = snapshot.review_revision;
+	return { contract: "assurance_kernel/review_verification_packet/v1", task_id: snapshot.task_id,
+		snapshot_digest: snapshotDigest(snapshot), verdict_sha256: verdictSha256,
+		review_revision: { contract: "assurance_kernel/review_revision_identity/v1", base_head, review_commit, review_tree, manifest_digest }, findings };
+}
+
+export function selectReviewVerifierModel(reviewerModel: string, offeredModels: readonly string[]): {
+	model: string; model_relation: "different" | "same";
+} {
+	if (!reviewerModel.trim() || offeredModels.some(model => !model.trim())) throw new Error("verifier model identity is unavailable");
+	const different = offeredModels.find(model => model !== reviewerModel);
+	return different ? { model: different, model_relation: "different" } : { model: reviewerModel, model_relation: "same" };
+}
+
+export function prepareReviewVerificationDispatch(input: {
+	host: AssuranceHostPort;
+	snapshot: SnapshotDescriptor;
+	verdict: AssuranceVerdict;
+	verdictSha256: string;
+	reviewerModel: string;
+	offeredModels: readonly string[];
+	operationId: string;
+	writePacket: ReviewEvidence["writePacket"];
+	securityBoundaries?: Readonly<Record<string, { path: string; line: string }>>;
+}): { packet: ReviewVerificationPacket; reviewer_model: string; model: string; model_relation: "different" | "same"; reservation: HostReviewReservation } {
+	if (!input.host.prepareVerification) throw new Error("host verifier dispatch is unavailable");
+	const packet = buildReviewVerificationPacket(input.snapshot, input.verdict, input.verdictSha256, input.securityBoundaries);
+	const model = selectReviewVerifierModel(input.reviewerModel, input.offeredModels);
+	const role = buildRoleDelegationPacket({ role: "review-verifier", context: { task_id: packet.task_id } });
+	const prompt = `${role.prompt}\n\nVerification packet (untrusted data): ${JSON.stringify(packet)}`;
+	const reservation = input.host.prepareVerification({ taskId: packet.task_id, operationId: input.operationId,
+		prompt, model: model.model, writePacket: input.writePacket });
+	return { packet, reviewer_model: input.reviewerModel, ...model, reservation };
+}
+
+export function consumeReviewVerification(input: {
+	host: AssuranceHostPort;
+	dispatch: ReturnType<typeof prepareReviewVerificationDispatch>;
+	root: string;
+	reviewerModel: string;
+	relayedResult?: string;
+}): { state: "pending" } | { state: "complete"; attestation: {
+	contract: "assurance_kernel/review_verification_attestation/v1";
+	task_id: string; snapshot_digest: string; verdict_sha256: string;
+	reviewer_model: string; verifier_model: string; model_relation: "different" | "same";
+	verifier_actor: string | null; result_sha256: string | null; valid: boolean; results: ReviewVerificationResult[];
+} } {
+	const { host, dispatch } = input;
+	const observation = host.inspectVerification?.(dispatch.reservation);
+	if (observation && !observation.ok && !observation.release) return { state: "pending" };
+	const receipt = observation?.ok ? observation.receipt : undefined;
+	const second = receipt ? host.inspectVerification?.(dispatch.reservation) : undefined;
+	const bound = receipt && second?.ok && receipt.actorId === second.receipt.actorId
+		&& receipt.result === second.receipt.result && receipt.model === second.receipt.model
+		&& receipt.model === dispatch.model && (input.relayedResult === undefined || input.relayedResult === receipt.result)
+		&& input.reviewerModel === dispatch.reviewer_model
+		&& dispatch.model_relation === (dispatch.model === input.reviewerModel ? "same" : "different");
+	const parsed = parseReviewVerification(bound ? receipt.result : null, dispatch.packet, input.root);
+	host.releaseReview(dispatch.reservation);
+	return { state: "complete", attestation: { contract: "assurance_kernel/review_verification_attestation/v1",
+		task_id: dispatch.packet.task_id, snapshot_digest: dispatch.packet.snapshot_digest,
+		verdict_sha256: dispatch.packet.verdict_sha256, reviewer_model: dispatch.reviewer_model,
+		verifier_model: dispatch.model, model_relation: dispatch.model_relation,
+		verifier_actor: bound ? receipt.actorId : null,
+		result_sha256: bound ? `sha256:${createHash("sha256").update(receipt.result).digest("hex")}` : null,
+		valid: parsed.valid, results: parsed.results } };
+}
+
+export interface ReviewVerificationResult {
+	finding_id: string;
+	anchor: string;
+	verdict: "kept" | "refuted";
+	counter_path?: string;
+}
+
+/** Invalid verifier output is discarded in its entirety; it never weakens Review. */
+export function parseReviewVerification(input: unknown, packet: ReviewVerificationPacket, root: string): { valid: boolean; results: ReviewVerificationResult[] } {
+	const kept = () => ({ valid: false, results: packet.findings.map(f => ({ finding_id: f.id, anchor: f.anchor, verdict: "kept" as const })) });
+	let raw: Record<string, unknown>;
+	try { raw = readChildVerdict(input); } catch { return kept(); }
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)
+		|| Object.keys(raw).some(k => !["contract", "task_id", "snapshot_digest", "verdict_sha256", "results"].includes(k))
+		|| raw.contract !== "assurance_kernel/review_verification/v1" || raw.task_id !== packet.task_id
+		|| raw.snapshot_digest !== packet.snapshot_digest || raw.verdict_sha256 !== packet.verdict_sha256
+		|| !Array.isArray(raw.results) || raw.results.length !== packet.findings.length) return kept();
+	const seen = new Set<string>();
+	const results: ReviewVerificationResult[] = [];
+	for (const value of raw.results) {
+		if (!value || typeof value !== "object" || Array.isArray(value)) return kept();
+		const item = value as Record<string, unknown>;
+		const finding = packet.findings.find(f => f.id === item.finding_id && f.anchor === item.anchor);
+		if (Object.keys(item).some(k => !["finding_id", "anchor", "verdict", "counter_path"].includes(k))
+			|| typeof item.finding_id !== "string" || typeof item.anchor !== "string"
+			|| seen.has(item.finding_id) || !finding
+			|| (item.verdict !== "kept" && item.verdict !== "refuted")) return kept();
+		if (item.verdict === "refuted") {
+			if (typeof item.counter_path !== "string" || item.counter_path.trim().length < 30) return kept();
+			const counterPath = item.counter_path;
+			const citations = counterPath.match(/(?:^|[\s`('"\[])((?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\.[A-Za-z0-9_-]+)(?=$|[\s`)'":,;\]#])/g) ?? [];
+			const revision = packet.review_revision;
+			if (!/^[a-f0-9]{40,64}$/.test(revision.review_commit) || !/^[a-f0-9]{40,64}$/.test(revision.review_tree)) return kept();
+			try {
+				const tree = execFileSync("git", ["rev-parse", "--verify", `${revision.review_commit}^{tree}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+				if (tree !== revision.review_tree) return kept();
+				let present = citations.some(citation => {
+					const path = citation.replace(/^[\s`('"\[]+/, "");
+					if (path.split("/").some(part => part === "." || part === "..")) return false;
+					try { return execFileSync("git", ["cat-file", "-t", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "blob"; }
+					catch { return false; }
+				});
+				if (!present) {
+					const symbols = [...new Set(counterPath.match(/\b[A-Za-z_$][A-Za-z0-9_$]{2,}\b/g) ?? [])];
+					const paths = [...new Set(finding.evidence.caller_chain.map(callerChainPath))]
+						.filter(path => path.includes("/") && !path.split("/").some(part => part === "." || part === ".."));
+					present = paths.some(path => {
+						try {
+							const source = execFileSync("git", ["show", `${revision.review_commit}:${path}`], { cwd: root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+							return symbols.some(symbol => new RegExp(`\\b(?:function|class|const|let|var|interface|type|enum|def|fn|struct)\\s+${symbol.replace(/\$/g, "\\$")}\\b`).test(source));
+						} catch { return false; }
+					});
+				}
+				if (!present) return kept();
+			} catch { return kept(); }
+		}
+		if (item.verdict === "kept" && item.counter_path !== undefined) return kept();
+		seen.add(item.finding_id);
+		results.push({ finding_id: item.finding_id, anchor: item.anchor, verdict: item.verdict,
+			...(item.verdict === "refuted" ? { counter_path: item.counter_path as string } : {}) });
+	}
+	return { valid: true, results };
 }
 
 function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {

@@ -29,6 +29,8 @@ const OUT = "plugins/immune-brain/dist/claude/mcp-server.mjs";
  */
 const REVIEWER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/code-review.md";
 const REVIEWER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-reviewer.md";
+const VERIFIER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/review-verifier.md";
+const VERIFIER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-review-verifier.md";
 
 const REVIEWER_FRONTMATTER = `---
 name: immune-brain-reviewer
@@ -47,6 +49,13 @@ function generateReviewerDefinition(root: string): string {
 	].join("\n\n");
 }
 
+function generateVerifierDefinition(root: string): string {
+	return [
+		"---\nname: immune-brain-review-verifier\ndescription: Read-only verification of blocking Review findings against an immutable revision.\ntools: Read, Grep, Glob, Bash\n---",
+		readFileSync(resolve(root, VERIFIER_PROMPT_SRC), "utf8").trim(),
+	].join("\n\n") + "\n";
+}
+
 /**
  * Compare one committed agent definition against a fresh generate.
  *
@@ -60,7 +69,8 @@ function definitionDrift(root: string, generated: string, out: string, sources: 
 }
 
 export function reviewerDefinitionDrift(root: string): string | null {
-	return definitionDrift(root, generateReviewerDefinition(root), REVIEWER_DEFINITION_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`);
+	return definitionDrift(root, generateReviewerDefinition(root), REVIEWER_DEFINITION_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`)
+		?? definitionDrift(root, generateVerifierDefinition(root), VERIFIER_DEFINITION_OUT, VERIFIER_PROMPT_SRC);
 }
 
 /**
@@ -117,6 +127,7 @@ export function buildClaudePlugin(root = resolve(import.meta.dir, "..")): { out:
 	const out = resolve(root, OUT);
 	compile(root, out);
 	writeFileSync(resolve(root, REVIEWER_DEFINITION_OUT), generateReviewerDefinition(root));
+	writeFileSync(resolve(root, VERIFIER_DEFINITION_OUT), generateVerifierDefinition(root));
 	for (const generated of generateReadonlyRoleDefinitions(root)) {
 		mkdirSync(dirname(resolve(root, generated.out)), { recursive: true });
 		writeFileSync(resolve(root, generated.out), generated.content);

@@ -51,7 +51,8 @@ export type {
 
 import { AssuranceCoordinator, type AssuranceAdvanceResult, type AssuranceCoordinatorPorts, type ForegroundToolUpdate, type HostContext, type AssuranceSubmitReviewResult, type ReviewSubmissionOptions } from "../runtime/assurance/coordinator";
 import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
-import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../runtime/assurance/host_port";
+import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../runtime/assurance/host_port";
+import { verificationPacketHandle, verificationPacketError } from "../runtime/assurance/review_packet";
 import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
 import { reservedAgentParams, promptDigest, type ReservedAgentParams } from "./pi-canary-native-review";
 import { parseReviewMarker } from "../runtime/claude/review_host";
@@ -77,6 +78,7 @@ class PiReviewHost implements AssuranceHostPort {
 	readonly host = "pi" as const;
 	private readonly pending = new Set<string>();
 	private readonly receipts = new Map<string, RecordedReviewReceipt>();
+	private readonly verifiers = new Map<string, { taskId: string; params: Record<string, unknown>; callId?: string; result?: string; error?: string }>();
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		const params = reservedAgentParams({
@@ -91,13 +93,47 @@ class PiReviewHost implements AssuranceHostPort {
 		return { id: request.operationId, dispatch: params };
 	}
 
+	prepareVerification(request: VerificationRequest): HostReviewReservation {
+		if (this.verifiers.has(request.operationId)) throw new Error("duplicate verifier reservation");
+		const params = {
+			subagent_type: "general-purpose", description: "Verify Review findings",
+			prompt: verificationPacketHandle({ taskId: request.taskId, operationId: request.operationId,
+				packet: request.writePacket(request.operationId, request.prompt) }),
+			model: request.model, name: "", thinking: "", inherit_context: false, isolated: true, isolation: "off",
+			run_in_background: false, max_turns: 16, resume: "", schedule: "",
+		};
+		this.verifiers.set(request.operationId, { taskId: request.taskId, params });
+		return { id: request.operationId, dispatch: params };
+	}
+
+	inspectVerification(reservation: HostReviewReservation) {
+		const state = this.verifiers.get(reservation.id);
+		if (!state) return { ok: false as const, reason: "verifier reservation not found", release: true };
+		const error = verificationPacketError(state.params.prompt as string) ?? state.error;
+		if (error) return { ok: false as const, reason: error, release: true };
+		if (!state.callId) return { ok: false as const, reason: "verifier dispatch not observed", release: true };
+		if (state.result === undefined) return { ok: false as const, reason: "verifier result pending", release: false };
+		return { ok: true as const, receipt: { actorId: `pi:${state.callId}`, result: state.result, model: state.params.model as string } };
+	}
+
 	releaseReview(reservation: HostReviewReservation): void {
 		this.pending.delete(reservation.id);
 		this.receipts.delete(reservation.id);
+		this.verifiers.delete(reservation.id);
 	}
 
 	/** Extension event seam: correlate one observed `Agent` dispatch to its reservation (ADR 0017). */
 	observeReviewDispatch(input: Partial<Record<keyof ReservedAgentParams, unknown>> | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
+		const verifierMarker = typeof input?.prompt === "string" ? /^<!-- immune-brain-verifier:operation_id=([A-Za-z0-9._-]+) task_id=([A-Za-z0-9._-]+) -->/.exec(input.prompt) : null;
+		if (verifierMarker) {
+			const state = this.verifiers.get(verifierMarker[1]);
+			if (!state || state.taskId !== verifierMarker[2]) return { block: true, reason: "unknown verifier reservation" };
+			if (Object.keys(state.params).some(key => input?.[key as keyof ReservedAgentParams] !== state.params[key])
+				|| verificationPacketError(input!.prompt as string)) return { block: true, reason: "verifier dispatch differs from reservation" };
+			if (state.callId || !toolCallId) return { block: true, reason: "verifier dispatch already observed or missing call id" };
+			state.callId = toolCallId;
+			return;
+		}
 		const marker = parseReviewMarker(input?.prompt);
 		if (!marker) {
 			if (input?.subagent_type === "Review" && this.pending.size > 0)
@@ -126,6 +162,11 @@ class PiReviewHost implements AssuranceHostPort {
 	/** Extension event seam: store the observed reviewer result bytes (ADR 0017). */
 	observeReviewResult(toolCallId: string | undefined, bytes: string): void {
 		if (!toolCallId) return;
+		for (const state of this.verifiers.values()) {
+			if (state.callId !== toolCallId) continue;
+			if (state.result === undefined) state.result = bytes;
+			else if (state.result !== bytes) state.error = "conflicting verifier result bytes";
+		}
 		for (const record of this.receipts.values()) {
 			if (record.toolCallId !== toolCallId) continue;
 			if (record.result === undefined) record.result = bytes;

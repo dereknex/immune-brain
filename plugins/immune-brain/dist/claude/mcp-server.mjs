@@ -8576,6 +8576,11 @@ var init_role_prompt_bridge = __esm(() => {
       authority: "advisory",
       tool_policy: "read-only tools"
     },
+    "review-verifier": {
+      file: "review-verifier.md",
+      authority: "advisory",
+      tool_policy: "read-only tools"
+    },
     "ui-review": {
       file: "ui-review.md",
       review_gate: "imm-ui-review",
@@ -9571,6 +9576,14 @@ function reviewPacketHandle(input) {
     REVIEW_PACKET_INSTRUCTION
   ].join(`
 `);
+}
+function verificationPacketHandle(input) {
+  return reviewPacketHandle(input).replace("<!-- immune-brain:operation_id=", "<!-- immune-brain-verifier:operation_id=");
+}
+function verificationPacketError(prompt) {
+  if (!prompt.startsWith("<!-- immune-brain-verifier:operation_id="))
+    return "Invalid verification packet marker.";
+  return reviewPacketError(prompt.replace("<!-- immune-brain-verifier:operation_id=", "<!-- immune-brain:operation_id="));
 }
 function reviewPacketError(prompt) {
   const handle = parseReviewPacketHandle(prompt);
@@ -16834,6 +16847,40 @@ class ClaudeReviewHost {
   constructor(log = new MemoryHookEventLog) {
     this.log = log;
   }
+  prepareVerification(request) {
+    const reviewRequest = {
+      taskId: request.taskId,
+      operationId: request.operationId,
+      prompt: request.prompt,
+      snapshotPrompt: request.prompt,
+      evidencePath: "",
+      writePacket: request.writePacket,
+      maxTurns: 16
+    };
+    this.drain();
+    const cursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
+    const dispatchPrompt = verificationPacketHandle({
+      taskId: request.taskId,
+      operationId: request.operationId,
+      packet: request.writePacket(request.operationId, request.prompt)
+    });
+    this.pending.set(request.operationId, {
+      request: reviewRequest,
+      verifierModel: request.model,
+      dispatchPrompt,
+      initialCursors: new Map(cursors),
+      sessionCursors: new Map(cursors),
+      consumed: false
+    });
+    return { id: request.operationId, dispatch: { subagent_type: "immune-brain:immune-brain-review-verifier", model: request.model, prompt: dispatchPrompt } };
+  }
+  inspectVerification(reservation) {
+    const state = this.pending.get(reservation.id);
+    if (!state?.verifierModel)
+      return { ok: false, reason: "verifier reservation not found", release: true };
+    const result = this.inspectReview(reservation);
+    return result.ok ? { ok: true, receipt: { ...result.receipt, model: state.verifierModel } } : result;
+  }
   prepareReview(request) {
     this.drain();
     const initialCursors = new Map;
@@ -16927,7 +16974,8 @@ class ClaudeReviewHost {
     if (state.error)
       return;
     if (event.type === "SubagentStart") {
-      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
+      const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
+      if (!expectedAgents.includes(event.agent))
         return;
       if (event.operationId || event.prompt !== undefined) {
         if (!bindsStart(event, state))
@@ -16962,6 +17010,10 @@ class ClaudeReviewHost {
         return;
       if (!bindsPrompt(event.prompt, state))
         return;
+      if (state.verifierModel && event.model !== state.verifierModel) {
+        state.error = "verifier model differs from reservation";
+        return;
+      }
       if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
         return;
       if (state.startEvent && event.agentId !== state.startEvent.agentId)
@@ -16980,7 +17032,8 @@ class ClaudeReviewHost {
       return;
     }
     if (event.type === "SubagentStop") {
-      if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT)
+      const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
+      if (!expectedAgents.includes(event.agent))
         return;
       if (!event.agentId)
         return;
@@ -17009,7 +17062,7 @@ class ClaudeReviewHost {
     const state = this.pending.get(reservation.id);
     if (!state)
       return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = reviewPacketError(state.dispatchPrompt);
+    const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
     if (packetError)
       return { ok: false, reason: packetError, release: true };
     if (state.consumed)
@@ -17113,7 +17166,7 @@ function parseHookStdin(raw) {
     }
   }
   if (prompt) {
-    const marker = parseReviewMarker(prompt);
+    const marker = parseReviewMarker(prompt.replace("<!-- immune-brain-verifier:operation_id=", "<!-- immune-brain:operation_id="));
     if (marker) {
       if (extractedOpId && extractedOpId !== marker.operationId)
         return null;
@@ -17159,6 +17212,7 @@ function parseHookStdin(raw) {
       agentId: extractedAgentId,
       toolName,
       result,
+      model: typeof payload.tool_input?.model === "string" ? payload.tool_input.model : undefined,
       taskId: extractedTaskId,
       operationId: extractedOpId,
       prompt

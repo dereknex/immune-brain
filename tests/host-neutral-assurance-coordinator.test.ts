@@ -19,6 +19,11 @@ import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
 	buildReviewSnapshotPrompt,
+	buildReviewVerificationPacket,
+	prepareReviewVerificationDispatch,
+	consumeReviewVerification,
+	parseReviewVerification,
+	selectReviewVerifierModel,
 	parseAssuranceVerdict,
 	projectTaskStatus,
 	reviewAdvisoryRecords,
@@ -29,6 +34,8 @@ import {
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { STATIC_REVIEW_RULES } from "../plugins/immune-brain/runtime/role_prompt_bridge";
+import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -202,6 +209,119 @@ function makeCoordinator(overrides: {
 	const coordinator = new AssuranceCoordinator(ports, ports);
 	return { coordinator, authority: coordinator.authority, ports, host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
 }
+
+describe("review verification packet", () => {
+	const root = mkdtempSync(join(tmpdir(), "review-verification-"));
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+	git("init", "-q");
+	mkdirSync(join(root, "src"));
+	mkdirSync(join(root, "docs/specs"), { recursive: true });
+	writeFileSync(join(root, "src/change.ts"), "export const guard = true;\n");
+	writeFileSync(join(root, "docs/specs/test.spec.md"), "Only the owner may mutate state.\n");
+	git("add", "src/change.ts", "docs/specs/test.spec.md");
+	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture");
+	const commit = git("rev-parse", "HEAD");
+	const tree = git("rev-parse", "HEAD^{tree}");
+	// Deliberately remove the worktree file: citation checks must use Git objects.
+	rmSync(join(root, "src/change.ts"));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+	const s: SnapshotDescriptor = { ...snapshot("review"), root, review_revision: {
+		contract: "assurance_kernel/review_revision_identity/v1", base_head: commit, review_commit: commit,
+		review_tree: tree, manifest_digest: `sha256:${"d".repeat(64)}`,
+	} };
+	const verdict = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+		snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "f1", kind: "blocking", acceptance_id: "A1",
+			summary: "claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] }, s);
+	const packet = buildReviewVerificationPacket(s, verdict, `sha256:${"e".repeat(64)}`);
+	const finding = packet.findings[0]!;
+	const valid = { contract: "assurance_kernel/review_verification/v1", task_id: TASK, snapshot_digest: packet.snapshot_digest,
+		verdict_sha256: packet.verdict_sha256, results: [{ finding_id: finding.id, anchor: finding.anchor,
+			verdict: "refuted", counter_path: "For input X, src/change.ts rejects it before the wrong result." }] };
+
+	test("contains only explicitly selected snapshot and finding fields", () => {
+		expect(packet).toEqual({ contract: "assurance_kernel/review_verification_packet/v1", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), verdict_sha256: `sha256:${"e".repeat(64)}`, review_revision: s.review_revision,
+			findings: [{ id: finding.id, anchor: finding.anchor, summary: "claim", evidence: {
+				trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" },
+			}, acceptance: "the contract holds" }] });
+	});
+	test("accepts a complete result and keeps all findings for malformed results", () => {
+		expect(parseReviewVerification(valid, packet, root).valid).toBe(true);
+		expect(parseReviewVerification(`Agent finished successfully\n${JSON.stringify(valid)}`, packet, root).valid).toBe(true);
+		expect(parseReviewVerification({ ...valid, results: [{ ...valid.results[0], counter_path: "For this input guard prevents the observable wrong result because it is true." }] }, packet, root).valid).toBe(true);
+		for (const results of [[], [...valid.results, valid.results[0]], [{ ...valid.results[0], anchor: "unknown" }],
+			[{ ...valid.results[0], counter_path: "" }], [{ ...valid.results[0], counter_path: "This claim is not correct because the condition cannot happen." }],
+			[{ ...valid.results[0], counter_path: "For input X, src/missing.ts rejects it before the wrong result." }],
+			[{ ...valid.results[0], finding_id: "extra" }]]) {
+			expect(parseReviewVerification({ ...valid, results }, packet, root)).toEqual({ valid: false,
+				results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
+		}
+	});
+	test("prepares a verifier dispatch on both native hosts with the selected model", () => {
+		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		for (const [host, role] of [[pi, "general-purpose"], [new ClaudeReviewHost(), "immune-brain:immune-brain-review-verifier"]] as const) {
+			const dispatched = prepareReviewVerificationDispatch({ host, snapshot: s, verdict,
+				verdictSha256: `sha256:${"e".repeat(64)}`, reviewerModel: "reviewer", offeredModels: ["reviewer", "other"],
+				operationId: "test-verifier", writePacket: writeTestReviewPacket });
+			expect(dispatched.reservation.dispatch).toMatchObject({ subagent_type: role, model: "other" });
+			expect((dispatched.reservation.dispatch as { prompt: string }).prompt).toContain("immune-brain-verifier:operation_id=test-verifier");
+		}
+	});
+	test("binds the Pi verifier output to the exact dispatch and observed receipt", () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+			reviewerModel: "reviewer", offeredModels: ["other"], operationId: "verifier-receipt", writePacket: writeTestReviewPacket });
+		const params = dispatch.reservation.dispatch as Record<string, unknown>;
+		expect(host.observeReviewDispatch({ ...params, model: "forged" } as never, "wrong")).toMatchObject({ block: true });
+		expect(host.observeReviewDispatch(params as never, "call-1")).toBeUndefined();
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toEqual({ state: "pending" });
+		host.observeReviewResult("wrong", JSON.stringify(valid));
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toEqual({ state: "pending" });
+		host.observeReviewResult("call-1", `Agent finished successfully\n${JSON.stringify(valid)}`);
+		const result = consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" });
+		expect(result).toMatchObject({ state: "complete", attestation: { valid: true, reviewer_model: "reviewer", verifier_model: "other",
+			model_relation: "different", verifier_actor: "pi:call-1", result_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) } });
+		expect(host.inspectVerification(dispatch.reservation)).toMatchObject({ ok: false, release: true });
+	});
+	test("binds Claude verifier receipt and model to the same host-observed agent", () => {
+		const host = new ClaudeReviewHost();
+		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+			reviewerModel: "reviewer", offeredModels: ["other"], operationId: "claude-verifier", writePacket: writeTestReviewPacket });
+		const params = dispatch.reservation.dispatch as { prompt: string };
+		const event = { sessionId: "session", agentId: "agent", taskId: TASK, operationId: "claude-verifier" };
+		host.observe({ ...event, type: "SubagentStart", agent: "immune-brain-review-verifier", prompt: params.prompt });
+		host.observe({ ...event, type: "PostToolUse", toolName: "Agent", model: "other", prompt: params.prompt, result: JSON.stringify(valid) });
+		host.observe({ ...event, type: "SubagentStop", agent: "immune-brain-review-verifier" });
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toMatchObject({ state: "complete",
+			attestation: { valid: true, reviewer_model: "reviewer", verifier_model: "other", model_relation: "different", verifier_actor: "claude:agent" } });
+	});
+	test("records same-model fallback and rejects a substituted verifier result", () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+			reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: "same-model", writePacket: writeTestReviewPacket });
+		host.observeReviewDispatch(dispatch.reservation.dispatch as never, "call-same");
+		host.observeReviewResult("call-same", JSON.stringify(valid));
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer", relayedResult: "" })).toMatchObject({ state: "complete",
+			attestation: { valid: false, reviewer_model: "reviewer", verifier_model: "reviewer", model_relation: "same", verifier_actor: null,
+				results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] } });
+	});
+	test("prefers an offered different model and records same-model fallback", () => {
+		expect(selectReviewVerifierModel("reviewer", ["reviewer", "other"])).toEqual({ model: "other", model_relation: "different" });
+		expect(selectReviewVerifierModel("reviewer", ["reviewer"])).toEqual({ model: "reviewer", model_relation: "same" });
+		expect(selectReviewVerifierModel("reviewer", [])).toEqual({ model: "reviewer", model_relation: "same" });
+		expect(() => selectReviewVerifierModel("", ["other"])).toThrow();
+	});
+	test("requires the security boundary's threat-model text", () => {
+		const security = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "security", kind: "blocking", acceptance_id: null,
+				summary: "boundary claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"],
+					violated: { kind: "security_boundary", ref: "authority" } } }] }, s);
+		expect(() => buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`)).toThrow();
+		expect(buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`, { authority: { path: "docs/specs/test.spec.md", line: "Only the owner may mutate state." } }).findings[0]?.acceptance)
+			.toBe("authority: Only the owner may mutate state.");
+		expect(() => buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`, { authority: { path: "docs/specs/test.spec.md", line: "invented" } })).toThrow();
+	});
+});
 
 describe("host-neutral assurance coordinator", () => {
 	for (const release of ["stop", "unbound submit", "snapshot change"] as const) {

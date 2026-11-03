@@ -9,6 +9,8 @@ import {
 	renderDistDoc,
 } from "../scripts/dist-sync-manifest.ts";
 import { publicSkillNames } from "./helpers/public-skills.ts";
+import { buildRoleDelegationPacket } from "../plugins/immune-brain/runtime/role_prompt_bridge.ts";
+import { reviewerDefinitionDrift } from "../scripts/build-claude-plugin.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SKILLS_DIR = join(ROOT, "plugins/immune-brain/skills");
@@ -106,6 +108,15 @@ function retiredSkillNames(text: string): string[] {
 }
 
 describe("skill dist consistency", () => {
+	test("review verifier prompt and generated Claude definition agree and carry no review gate", () => {
+		const source = read(join(ROOT, "plugins/immune-brain/runtime/prompts/review-verifier.md"));
+		expect(read(join(DIST_DIR, "role-prompts/review-verifier.md"))).toBe(source);
+		expect(reviewerDefinitionDrift(ROOT)).toBeNull();
+		const packet = buildRoleDelegationPacket({ role: "review-verifier", context: { task_id: "test" } });
+		expect(packet.tool_policy).toBe("read-only tools");
+		expect(packet.review_gate).toBeUndefined();
+		expect(() => buildRoleDelegationPacket({ role: "review-verifier", context: { task_id: "test", review_gate: "imm-code-review" } })).toThrow();
+	});
 	test("the current surface names no retired Skill (ADR 0031)", () => {
 		expect(retiredSkillNames("enter `imm-run` or dist/imm-run-batch.md")).toEqual(["imm-run", "imm-run"]);
 		expect(retiredSkillNames("bin/imm-plan, bin/imm-kernel, imm-canary-work.ts, imm-runtime, my-imm-run-helper")).toEqual([]);
