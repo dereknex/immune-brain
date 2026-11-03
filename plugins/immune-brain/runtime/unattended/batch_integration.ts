@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { noTouchPaths, readNoTouchAt } from "../no_touch";
 import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
-import { readDerivedFilesAt, runDerivedCommand } from "../derived_files";
+import { readDerivedFilesAt, runDerivedCommand, type DerivedFile } from "../derived_files";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
 import { runDeterministicQa } from "../assurance/qa";
 import { VerificationAbortedError, type VerificationDescriptor } from "../assurance/verification";
@@ -22,6 +22,7 @@ import { worktreeDirectory } from "./batch_worktrees";
 export type BatchIntegrationReason =
 	| "no_touch_path_changed"
 	| "batch_integration_conflict"
+	| "batch_change_already_present"
 	| "batch_integration_check_failed"
 	| "batch_head_lineage_broken";
 
@@ -111,6 +112,22 @@ function isAncestor(root: string, ancestor: string, descendant: string): boolean
 	return git(root, ["merge-base", "--is-ancestor", ancestor, descendant]).status === 0;
 }
 
+function sourceMatches(path: string, pattern: string): boolean {
+	const expression = pattern.split(/(\*\*\/|\*\*|\*|\?)/).map(part => {
+		if (part === "**/") return "(?:.*/)?";
+		if (part === "**") return ".*";
+		if (part === "*") return "[^/]*";
+		if (part === "?") return "[^/]";
+		return part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	}).join("");
+	return new RegExp(`^${expression}$`).test(path);
+}
+
+function changedDerivedEntries(root: string, base: string, laneCommit: string, entries: DerivedFile[]): DerivedFile[] {
+	const paths = [...changeIdentity(root, base, laneCommit).keys()];
+	return entries.filter(entry => paths.some(path => entry.outputs.includes(path) || entry.sources.some(pattern => sourceMatches(path, pattern))));
+}
+
 /**
  * The batch-branch candidate for a lane commit. When the batch head is still
  * the lane base the lane commit itself is the candidate. Otherwise the lane's
@@ -119,25 +136,36 @@ function isAncestor(root: string, ancestor: string, descendant: string): boolean
  */
 export function buildCandidate(input: { root: string; batch_head: string; lane_base: string; lane_commit: string; declaration_head?: string }): string {
 	const { root, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
-	if (head === base) return laneCommit;
-	const merged = git(root, ["merge-tree", "--write-tree", "--name-only", "-z", `--merge-base=${base}`, head, laneCommit]);
-	if (merged.status !== 0 && merged.status !== 1)
+	const entries = readDerivedFilesAt(root, input.declaration_head ?? base);
+	const touched = changedDerivedEntries(root, base, laneCommit, entries);
+	const merged = head === base ? null : git(root, ["merge-tree", "--write-tree", "--name-only", "-z", `--merge-base=${base}`, head, laneCommit]);
+	if (merged && merged.status !== 0 && merged.status !== 1)
 		throw new Error(`failed to build integration candidate: ${merged.stderr.trim() || "git merge-tree failed"}`);
-	let tree = merged.stdout.split("\0")[0]?.trim();
+	let tree = merged ? merged.stdout.split("\0")[0]?.trim() : gitOut(root, ["rev-parse", `${laneCommit}^{tree}`], "read lane tree").trim();
 	if (!tree) throw new Error("failed to build integration candidate: no tree produced");
-	if (merged.status === 1) {
-		const conflicts = merged.stdout.split("\0").slice(1);
-		const paths = conflicts.slice(0, conflicts.indexOf(""));
+	const originalTree = tree;
+	const conflicts = merged?.status === 1 ? merged.stdout.split("\0").slice(1) : [];
+	const paths = conflicts.slice(0, conflicts.indexOf(""));
+	const conflictEntries = entries.filter(entry => entry.outputs.some(path => paths.includes(path)));
+	const conflictOutputs = new Set(conflictEntries.flatMap(entry => entry.outputs));
+	if (merged?.status === 1 && (!paths.length || paths.some(path => !conflictOutputs.has(path))))
+		throw new BatchIntegrationError("batch_integration_conflict", "batch_integration_conflict: conflicts include undeclared outputs");
+	const selected = entries.filter(entry => touched.includes(entry) || conflictEntries.includes(entry));
+	if (selected.length) {
 		const delivery = materializeDeliveryWorkspace(root, tree);
+		let step = "containment";
+		let entryId = selected.map(entry => entry.id).join(", ");
 		try {
-			const entries = readDerivedFilesAt(root, input.declaration_head ?? base);
-			const selected = entries.filter(entry => entry.outputs.some(path => paths.includes(path)));
 			const outputs = new Set(selected.flatMap(entry => entry.outputs));
-			if (!paths.length || paths.some(path => !outputs.has(path))) throw new Error("conflicts include undeclared outputs");
 			for (const entry of selected) {
+				entryId = entry.id;
+				step = "generate";
 				runDerivedCommand(delivery.root, entry.generate, root);
+				step = "check";
 				runDerivedCommand(delivery.root, entry.check, root);
 			}
+			step = "containment";
+			entryId = selected.map(entry => entry.id).join(", ");
 			const changed = gitOut(delivery.root, ["diff", "--name-only", "-z", "HEAD"], "inspect generated delta").split("\0").filter(Boolean);
 			const untracked = gitOut(delivery.root, ["ls-files", "--others", "--exclude-standard", "-z"], "inspect generated files").split("\0").filter(Boolean);
 			if ([...changed, ...untracked].some(path => !outputs.has(path))) throw new Error("generate changed an undeclared output");
@@ -152,11 +180,13 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 			if (commit.status !== 0) throw new Error("write regenerated commit failed");
 			gitOut(root, ["fetch", "--no-write-fetch-head", "--no-tags", delivery.root, commit.stdout.trim()], "import regenerated tree");
 		} catch (error) {
-			throw new BatchIntegrationError("batch_integration_conflict", `batch_integration_conflict: ${error instanceof Error ? error.message : String(error)}`);
+			const reason = merged?.status === 1 ? "batch_integration_conflict" : "batch_integration_check_failed";
+			throw new BatchIntegrationError(reason, `${reason}: ${entryId} ${step}: ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
 			delivery.cleanup();
 		}
 	}
+	if (head === base && tree === originalTree) return laneCommit;
 	const message = gitOut(root, ["log", "-n", "1", "--format=%B", laneCommit], "failed to read lane commit message");
 	const author = gitOut(root, ["log", "-n", "1", "--format=%an%x00%ae%x00%aI", laneCommit], "failed to read lane commit author")
 		.trim()
@@ -185,8 +215,11 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
  */
 export function laneCandidateMatches(input: { root: string; lane_base: string; lane_commit: string; batch_head: string; candidate: string; declaration_head?: string }): boolean {
 	const { root, lane_base, lane_commit, batch_head, candidate } = input;
-	if (identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate))) return true;
 	try {
+		if (changeIdentity(root, batch_head, candidate).size === 0) return false;
+		const entries = readDerivedFilesAt(root, input.declaration_head ?? lane_base);
+		if (!changedDerivedEntries(root, lane_base, lane_commit, entries).length &&
+			identitiesEqual(changeIdentity(root, lane_base, lane_commit), changeIdentity(root, batch_head, candidate))) return true;
 		const merged = git(root, ["merge-tree", "--write-tree", `--merge-base=${lane_base}`, batch_head, lane_commit]);
 		if (merged.status !== 0 && merged.status !== 1) return false;
 		const expected = buildCandidate({ root, lane_base, lane_commit, batch_head, declaration_head: input.declaration_head });
@@ -248,6 +281,11 @@ export function prepareLaneCandidate(input: IntegrateLaneInput): string {
 		);
 
 	const candidate = buildCandidate(input);
+	if (changeIdentity(root, head, candidate).size === 0)
+		throw new BatchIntegrationError(
+			"batch_change_already_present",
+			`batch_change_already_present: lane commit ${laneCommit} leaves the batch head unchanged`,
+		);
 	if (!laneCandidateMatches({ root, lane_base: base, lane_commit: laneCommit, batch_head: head, candidate, declaration_head: input.declaration_head }))
 		throw new BatchIntegrationError(
 			"batch_integration_conflict",

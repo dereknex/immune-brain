@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
@@ -132,7 +132,7 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		};
 		await fx.tick();
 		for (const [id, second] of [["a", 1], ["b", 2]] as const) {
-			writeFileSync(join(fx.laneOf(id), "bundle.txt"), `${id}\n`);
+			if (id === "b") writeFileSync(join(fx.laneOf(id), "bundle.txt"), `${id}\n`);
 			fx.settle(id, `${id}\n`, second);
 		}
 		const report = await fx.tick();
@@ -202,6 +202,25 @@ if(process.argv.includes('--check')) process.exit(fs.readFileSync('bundle.txt','
 		expect(fx.input.registry.redoGrants(fx.input.capability, "b")).toBe(0);
 		const summary = JSON.parse(readFileSync(join(fx.root, ".imm/state/batches/queue.report.json"), "utf8"));
 		expect(summary.children[1]).toMatchObject({ task_id: "b", state: "needs_human", reason: expect.stringContaining("batch_lane_redo_retained: ") });
+	}, 30000);
+
+	test("a fully duplicated child parks with its own reason and spends no redo", async () => {
+		const fx = fixture({ a: pass, b: pass });
+		await fx.tick();
+		fx.settle("a", "a\n", 1); fx.settle("b", "b\n", 2);
+		const laneA = fx.laneOf("a");
+		const laneB = fx.laneOf("b");
+		writeFileSync(join(laneA, "b.txt"), readFileSync(join(laneB, "b.txt")));
+		cpSync(join(laneB, ".imm/audit/b"), join(laneA, ".imm/audit/b"), { recursive: true });
+		const parked = await fx.tick();
+		expect(parked.batch_state).toBe("needs_human");
+		expect(parked.children.map(c => c.state)).toEqual(["integrated", "needs_human"]);
+		expect(parked.children[1]!.reason).toStartWith("batch_change_already_present:");
+		expect(parked.children[1]!.reason).toContain(parked.children[1]!.lane!.lane_commit!);
+		expect(parked.children[1]!.redo_grants ?? 0).toBe(0);
+		expect(fx.input.registry.redoGrants(fx.input.capability, "b")).toBe(0);
+		expect(parked.commits).toHaveLength(1);
+		expect(git(fx.root, "rev-parse", "refs/heads/imm/queue")).toBe(parked.commits[0]!);
 	}, 30000);
 
 	test("AC2: a textual conflict parks the child and keeps its Lane content", async () => {

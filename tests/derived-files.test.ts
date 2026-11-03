@@ -87,7 +87,7 @@ describe("derived files", () => {
 		expect(git(fx.root, "show", `${result.commit}:bundle.txt`)).toBe("a1b1");
 		execFileSync("bun", ["generate.ts", "--check"], { cwd: fx.root });
 		expect(findIntegratedCandidate({ root: fx.root, task_id: "child", batch_id: "batch", from_head: fx.head, lane_base: fx.base, lane_commit: fx.lane })).toBe(result.commit);
-		writeFileSync(join(fx.root, "a.txt"), "tampered"); git(fx.root, "add", "-A"); git(fx.root, "commit", "-qm", "tampered");
+		writeFileSync(join(fx.root, "bundle.txt"), "tampered"); git(fx.root, "add", "bundle.txt"); git(fx.root, "commit", "-qm", "tampered");
 		expect(laneCandidateMatches({ ...fx.input, candidate: git(fx.root, "rev-parse", "HEAD") })).toBe(false);
 	});
 	for (const [name, options] of [["mixed source conflicts", { mixed: true }], ["failing check", { fail: true }], ["undeclared generated edits", { undeclaredWrite: true }],
@@ -113,6 +113,65 @@ describe("derived files", () => {
 		const lane = git(fx.root, "rev-parse", "HEAD"); git(fx.root, "checkout", "-q", "main");
 		expect(() => buildCandidate({ root: fx.root, lane_base: advancedBase, batch_head: head, lane_commit: lane, declaration_head: fx.base })).toThrow("undeclared outputs");
 	});
+	test("regenerates clean and base-head candidates and preserves current lane identity", () => {
+		const fx = fixture();
+		writeFileSync(join(fx.root, "a.txt"), "a1");
+		git(fx.root, "add", "a.txt"); git(fx.root, "commit", "-qm", "source only");
+		const lane = git(fx.root, "rev-parse", "HEAD");
+		const input = { root: fx.root, lane_base: fx.base, lane_commit: lane, batch_head: fx.base };
+		const candidate = buildCandidate(input);
+		expect(candidate).not.toBe(lane);
+		expect(git(fx.root, "show", `${candidate}:bundle.txt`)).toBe("a1b0");
+		expect(laneCandidateMatches({ ...input, candidate })).toBe(true);
+		expect(laneCandidateMatches({ ...input, candidate: lane })).toBe(false);
+		git(fx.root, "checkout", "-qb", "parent", fx.base);
+		writeFileSync(join(fx.root, "other.txt"), "parent"); git(fx.root, "add", "other.txt"); git(fx.root, "commit", "-qm", "parent");
+		const head = git(fx.root, "rev-parse", "HEAD");
+		const clean = buildCandidate({ ...input, batch_head: head });
+		expect(git(fx.root, "show", `${clean}:bundle.txt`)).toBe("a1b0");
+		git(fx.root, "checkout", "-q", "main");
+		writeFileSync(join(fx.root, "bundle.txt"), "a1b0"); git(fx.root, "add", "bundle.txt"); git(fx.root, "commit", "-qm", "current");
+		const current = git(fx.root, "rev-parse", "HEAD");
+		expect(buildCandidate({ ...input, lane_base: lane, lane_commit: current, batch_head: lane })).toBe(current);
+	});
+
+	for (const failure of ["generate", "undeclared"] as const) test(`clean regeneration refuses ${failure} and leaves the Parent untouched`, () => {
+		const fx = fixture();
+		writeFileSync(join(fx.root, "generate.ts"), failure === "generate" ? "process.exit(1)" : "require('node:fs').writeFileSync('other.txt','bad')");
+		git(fx.root, "add", "generate.ts"); git(fx.root, "commit", "-qm", "generator");
+		const base = git(fx.root, "rev-parse", "HEAD");
+		writeFileSync(join(fx.root, "unrelated.txt"), "parent"); git(fx.root, "add", "unrelated.txt"); git(fx.root, "commit", "-qm", "parent");
+		const head = git(fx.root, "rev-parse", "HEAD");
+		git(fx.root, "checkout", "-qb", "lane", base);
+		writeFileSync(join(fx.root, "a.txt"), "a1"); git(fx.root, "add", "a.txt"); git(fx.root, "commit", "-qm", "source");
+		const lane = git(fx.root, "rev-parse", "HEAD"); git(fx.root, "checkout", "-q", "main");
+		expect(() => buildCandidate({ root: fx.root, lane_base: base, lane_commit: lane, batch_head: head })).toThrow(/batch_integration_check_failed: bundle/);
+		expect(git(fx.root, "rev-parse", "HEAD")).toBe(head);
+		expect(git(fx.root, "status", "--porcelain")).toBe("");
+		git(fx.root, "checkout", "-qb", "unrelated", base);
+		writeFileSync(join(fx.root, "unrelated.txt"), "lane"); git(fx.root, "add", "unrelated.txt"); git(fx.root, "commit", "-qm", "unrelated");
+		const unrelated = git(fx.root, "rev-parse", "HEAD");
+		expect(buildCandidate({ root: fx.root, lane_base: base, lane_commit: unrelated, batch_head: base })).toBe(unrelated);
+	});
+
+	test("source globs match files directly and recursively without matching sibling directories", () => {
+		const fx = fixture();
+		const value = declaration(); value.entries[0]!.sources = ["src/**/*.ts"];
+		writeFileSync(join(fx.root, "docs/agents/derived-files.json"), JSON.stringify(value));
+		writeFileSync(join(fx.root, "generate.ts"), "process.exit(1)");
+		git(fx.root, "add", "docs/agents/derived-files.json", "generate.ts"); git(fx.root, "commit", "-qm", "glob");
+		const base = git(fx.root, "rev-parse", "HEAD");
+		for (const path of ["src/direct.ts", "src/nested/deep.ts", "src/nested/deep.js", "src-other/direct.ts"]) {
+			git(fx.root, "checkout", "-q", "-B", "glob-lane", base);
+			mkdirSync(join(fx.root, path, ".."), { recursive: true }); writeFileSync(join(fx.root, path), "source");
+			git(fx.root, "add", path); git(fx.root, "commit", "-qm", "source");
+			const lane = git(fx.root, "rev-parse", "HEAD");
+			const build = () => buildCandidate({ root: fx.root, lane_base: base, lane_commit: lane, batch_head: base });
+			if (path.endsWith(".ts") && path.startsWith("src/")) expect(build).toThrow("batch_integration_check_failed: bundle generate");
+			else expect(build()).toBe(lane);
+		}
+	});
+
 	test("final verification runs every structured check and retains failed checks for repair", async () => {
 		const fx = fixture();
 		const value = declaration();
