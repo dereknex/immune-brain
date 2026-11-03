@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApplicationPoint, Envelope } from "../plugins/immune-brain/runtime/decision_model/contract.ts";
-import { type Case, CliError, type CorpusRowBase, type DecideOutcome, buildReport, calibration, goldLabelsFor, loadCorpus, runEval } from "../scripts/decision-eval/harness.ts";
+import { type Case, CliError, type CorpusRowBase, type DecideOutcome, buildReport, calibration, checkRecordedReport, goldLabelsFor, loadCorpus, renderMarkdown, runEval } from "../scripts/decision-eval/harness.ts";
 
 const POINT: ApplicationPoint = {
 	id: "test_point",
@@ -119,6 +120,41 @@ describe("corpus loading", () => {
 		const ok = ["unlabeled", "yes", "no"].map((gold, i) => JSON.stringify({ id: `r${i}`, gold })).join("\n\n");
 		expect(loadCorpus(ok, labels, isRow)).toHaveLength(3);
 		expect(() => loadCorpus(`${JSON.stringify({ id: "r", gold: "yes" })}\n{ broken\n`, labels, isRow)).toThrow("corpus_invalid: 2");
+	});
+});
+
+describe("recorded reports and class distribution", () => {
+	test("checks provider, corpus, decisions, fields, and labelled distribution", () => {
+		const corpus = Buffer.from('{"id":"a","gold":"yes"}\n{"id":"b","gold":"no"}\n');
+		const hash = `sha256:${createHash("sha256").update(corpus).digest("hex")}`;
+		const report = buildReport(POINT, BASELINE, [decided("a", "yes", { yes: 1, no: 0 }, "yes"), unavailable("b", "no")], { ...meta, total: 2, labelled: 2, corpus_sha256: hash, provider_kind: "clef" });
+		report.model = "clef";
+		expect(checkRecordedReport(report, corpus, POINT)).toEqual([]);
+		for (const [changed, expected] of [
+			[{ ...report, provider_kind: "fake" }, "not_real_provider"],
+			[{ ...report, model: "fake" }, "not_real_provider"],
+			[{ ...report, counts: { ...report.counts, decided: 0 } }, "nothing_decided"],
+			[{ ...report, counts: { ...report.counts, unavailable: { credential_missing: 1 } } }, "credential_missing"],
+			[{ ...report, extra: true }, "unknown_field"],
+			[{ ...report, counts: { ...report.counts, labelled: 1 } }, "labelled_mismatch"],
+			[{ ...report, counts: { ...report.counts, gold: { yes: 2, no: 0 } } }, "labelled_mismatch"],
+			[{ ...report, cases: [report.cases[0], { ...report.cases[1], id: "z" }] }, "labelled_mismatch"],
+			[{ ...report, cases: [report.cases[0], { ...report.cases[1], gold: "yes" }] }, "labelled_mismatch"],
+			[{ ...report, cases: [report.cases[0], report.cases[0]] }, "labelled_mismatch"],
+		] as const) expect(checkRecordedReport(changed, corpus, POINT)).toContain(expected);
+		expect(checkRecordedReport(report, Buffer.concat([corpus, Buffer.from("\n")]), POINT)).toContain("corpus_mismatch");
+	});
+
+	test("shows all gold counts and flags a 90% majority but not 80%", () => {
+		for (const majority of [8, 9, 10]) {
+			const cases = Array.from({ length: 10 }, (_, i) => unavailable(String(i), i < majority ? "yes" : "no"));
+			const report = buildReport(POINT, BASELINE, cases, { ...meta, total: 10, labelled: 10 });
+			expect(report.counts.gold).toEqual({ yes: majority, no: 10 - majority });
+			expect(report.caveats).toEqual(majority >= 9 ? ["class_imbalance"] : []);
+			const md = renderMarkdown(report, "Test");
+			expect(md).toContain("Gold distribution:");
+			expect(md.includes("Class imbalance:")).toBe(majority >= 9);
+		}
 	});
 });
 

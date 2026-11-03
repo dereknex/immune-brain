@@ -12,6 +12,8 @@ Labelling protocol for the corpus that `scripts/decision-eval/a15/run.ts` reads
 3. Review the pre-filled `gold`; edit `gold`, `labeler` and `labelled_at` (ISO 8601) in place where a human knows better.
 4. Commit the labelled corpus. The committed copy, not fresh extractor output, is the eval input.
 
+`corpus.jsonl` is the unedited extraction of issues from `dereknex/immune-brain`.
+
 `issue-list-sample.json` in this directory is a synthetic test fixture, not corpus data.
 
 ## Labels

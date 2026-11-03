@@ -120,6 +120,8 @@ export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cas
 	for (const c of cases) if ("unavailable" in c) unavailable[c.unavailable] = (unavailable[c.unavailable] ?? 0) + 1;
 	const correct = decided.filter((c) => c.envelope.choice === c.gold).length;
 	const n = cases.length;
+	const gold = Object.fromEntries(options.map((option) => [option, cases.filter((c) => c.gold === option).length]));
+	const caveats = n > 0 && Math.max(...Object.values(gold)) / n >= 0.9 ? ["class_imbalance"] : [];
 
 	const calib = calibration(cases, options);
 
@@ -154,7 +156,8 @@ export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cas
 		provider_kind: meta.provider_kind,
 		model: decided[0]?.envelope.model ?? null,
 		threshold_set_version: point.threshold_set.version,
-		counts: { total: meta.total, labelled: meta.labelled, unlabeled: meta.total - meta.labelled, decided: decided.length, unavailable },
+		counts: { total: meta.total, labelled: meta.labelled, unlabeled: meta.total - meta.labelled, decided: decided.length, unavailable, gold },
+		caveats,
 		metrics: {
 			accuracy: n > 0 ? correct / n : null,
 			decided_accuracy: decided.length > 0 ? correct / decided.length : null,
@@ -172,6 +175,28 @@ export function buildReport(point: ApplicationPoint, baselineSpec: Baseline, cas
 
 export type Report = ReturnType<typeof buildReport>;
 
+/** Check the recorded report's metadata and corpus consistency without network access. */
+export function checkRecordedReport(report: unknown, corpusBytes: Buffer, point: ApplicationPoint): string[] {
+	const problems: string[] = [];
+	const value = typeof report === "object" && report !== null && !Array.isArray(report) ? report as Record<string, unknown> : {};
+	const counts = typeof value.counts === "object" && value.counts !== null && !Array.isArray(value.counts) ? value.counts as Record<string, unknown> : {};
+	const allowed = new Set(["contract", "application_point", "date", "corpus_sha256", "profile", "provider_kind", "model", "threshold_set_version", "counts", "caveats", "metrics", "calibration", "baseline", "cases"]);
+	if (value.contract !== REPORT_CONTRACT || value.application_point !== point.id) problems.push("contract_mismatch");
+	if (Object.keys(value).some((key) => !allowed.has(key))) problems.push("unknown_field");
+	if (value.corpus_sha256 !== `sha256:${createHash("sha256").update(corpusBytes).digest("hex")}`) problems.push("corpus_mismatch");
+	if ((value.provider_kind !== "clef" && value.provider_kind !== "jev") || typeof value.model !== "string" || value.model === "" || value.model === "fake") problems.push("not_real_provider");
+	if (typeof counts.decided !== "number" || counts.decided <= 0) problems.push("nothing_decided");
+	if (typeof counts.unavailable === "object" && counts.unavailable !== null && "credential_missing" in counts.unavailable) problems.push("credential_missing");
+	const rows = loadCorpus(corpusBytes.toString("utf8"), goldLabelsFor(point), (v): v is CorpusRowBase => typeof v === "object" && v !== null && typeof (v as CorpusRowBase).id === "string");
+	const labelled = rows.filter((row) => row.gold !== UNLABELED);
+	const gold = counts.gold;
+	const expected = new Map(labelled.map((row) => [row.id, row.gold]));
+	const casesMatch = Array.isArray(value.cases) && value.cases.length === labelled.length && new Set(value.cases.map((c) => (c as { id?: unknown })?.id)).size === labelled.length
+		&& value.cases.every((c) => typeof c === "object" && c !== null && expected.get((c as { id?: unknown }).id as string) === (c as { gold?: unknown }).gold);
+	if (counts.labelled !== labelled.length || !casesMatch || typeof gold !== "object" || gold === null || Array.isArray(gold) || Object.keys(gold).length !== point.options.length || point.options.some((option) => (gold as Record<string, unknown>)[option] !== labelled.filter((row) => row.gold === option).length)) problems.push("labelled_mismatch");
+	return problems;
+}
+
 const fmt = (value: number | null) => (value === null ? "n/a" : value.toFixed(3));
 
 export function renderMarkdown(report: Report, title: string): string {
@@ -182,6 +207,8 @@ export function renderMarkdown(report: Report, title: string): string {
 		`- Threshold set: ${report.threshold_set_version}`,
 		`- Corpus: ${report.corpus_sha256}`,
 		`- Cases: ${report.counts.labelled} labelled of ${report.counts.total}; ${report.counts.decided} decided; unavailable ${JSON.stringify(report.counts.unavailable)}`,
+		`- Gold distribution: ${Object.entries(report.counts.gold).map(([option, count]) => `${option}=${count}`).join(", ")}`,
+		...(report.caveats.includes("class_imbalance") ? [`- Class imbalance: ${Object.entries(report.counts.gold).reduce((a, b) => b[1] > a[1] ? b : a)[0]} holds ${(100 * Math.max(...Object.values(report.counts.gold)) / report.cases.length).toFixed(1)}% of labelled cases; the baseline comparison is not conclusive.`] : []),
 		"",
 		"| | Accuracy | Macro F1 |",
 		"|---|---|---|",

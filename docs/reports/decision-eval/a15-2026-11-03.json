@@ -1,0 +1,5208 @@
+{
+  "contract": "immune_brain/decision_eval_report/v1",
+  "application_point": "a15_issue_triage",
+  "date": "2026-11-03",
+  "corpus_sha256": "sha256:d1d28195e525885a75285f5ffed138037cf249358cfb393687f6a7b1822643ef",
+  "profile": "clef",
+  "provider_kind": "clef",
+  "model": "clef",
+  "threshold_set_version": "a15/v0",
+  "counts": {
+    "total": 280,
+    "labelled": 182,
+    "unlabeled": 98,
+    "decided": 182,
+    "unavailable": {},
+    "gold": {
+      "duplicate": 0,
+      "needs_spec": 2,
+      "ready_for_agent": 180
+    }
+  },
+  "caveats": [
+    "class_imbalance"
+  ],
+  "metrics": {
+    "accuracy": 1,
+    "decided_accuracy": 1,
+    "macro_f1": 1,
+    "per_class": {
+      "duplicate": {
+        "precision": null,
+        "recall": null,
+        "support": 0
+      },
+      "needs_spec": {
+        "precision": 1,
+        "recall": 1,
+        "support": 2
+      },
+      "ready_for_agent": {
+        "precision": 1,
+        "recall": 1,
+        "support": 180
+      }
+    },
+    "brier": 0.010690562857142857,
+    "ece": 0.19173681318681318,
+    "coverage_at": [
+      {
+        "confidence": 0.5,
+        "coverage": 0.9725274725274725,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.55,
+        "coverage": 0.967032967032967,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.6,
+        "coverage": 0.9560439560439561,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.65,
+        "coverage": 0.9395604395604396,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.7,
+        "coverage": 0.8956043956043956,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.75,
+        "coverage": 0.8131868131868132,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.8,
+        "coverage": 0.6868131868131868,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.85,
+        "coverage": 0.45604395604395603,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.9,
+        "coverage": 0.03296703296703297,
+        "accuracy": 1
+      },
+      {
+        "confidence": 0.95,
+        "coverage": 0,
+        "accuracy": null
+      }
+    ]
+  },
+  "calibration": {
+    "brier": 0.010690562857142857,
+    "excluded": 0
+  },
+  "baseline": {
+    "name": "majority_class",
+    "accuracy": 0.989010989010989,
+    "macro_f1": 0.4972375690607735
+  },
+  "cases": [
+    {
+      "id": "dereknex/immune-brain#1",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0183,
+          "needs_spec": 0.032,
+          "ready_for_agent": 0.9497
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.855,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 4379,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#10",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0194,
+          "needs_spec": 0.0333,
+          "ready_for_agent": 0.9473
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8482,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 399,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#100",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0374,
+          "needs_spec": 0.1024,
+          "ready_for_agent": 0.8602
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6277,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 849,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#101",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0432,
+          "needs_spec": 0.0463,
+          "ready_for_agent": 0.9105
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7496,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 837,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#102",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0321,
+          "needs_spec": 0.047,
+          "ready_for_agent": 0.9209
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7768,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 935,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#104",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0183,
+          "needs_spec": 0.0205,
+          "ready_for_agent": 0.9612
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8871,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 825,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#105",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0158,
+          "needs_spec": 0.0214,
+          "ready_for_agent": 0.9628
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8915,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 794,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#106",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0245,
+          "needs_spec": 0.0238,
+          "ready_for_agent": 0.9517
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8602,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 821,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#107",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0166,
+          "needs_spec": 0.0286,
+          "ready_for_agent": 0.9548
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8691,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 816,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#108",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0354,
+          "needs_spec": 0.0896,
+          "ready_for_agent": 0.875
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6623,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 876,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#118",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0594,
+          "needs_spec": 0.0429,
+          "ready_for_agent": 0.8977
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7168,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 809,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#119",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0471,
+          "needs_spec": 0.0672,
+          "ready_for_agent": 0.8857
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6868,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 827,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#120",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0551,
+          "needs_spec": 0.0437,
+          "ready_for_agent": 0.9012
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7257,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 826,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#123",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0281,
+          "needs_spec": 0.0331,
+          "ready_for_agent": 0.9388
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8249,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 913,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#124",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0564,
+          "needs_spec": 0.0406,
+          "ready_for_agent": 0.903
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7305,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1007,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#127",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0476,
+          "needs_spec": 0.0418,
+          "ready_for_agent": 0.9106
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7499,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 822,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#128",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0597,
+          "needs_spec": 0.0465,
+          "ready_for_agent": 0.8938
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7069,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 826,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#129",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0494,
+          "needs_spec": 0.0567,
+          "ready_for_agent": 0.8939
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7072,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 828,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#130",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.041,
+          "needs_spec": 0.0425,
+          "ready_for_agent": 0.9165
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7652,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 824,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#131",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0495,
+          "needs_spec": 0.0524,
+          "ready_for_agent": 0.8981
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7177,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 829,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#132",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0438,
+          "needs_spec": 0.0529,
+          "ready_for_agent": 0.9033
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.731,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 835,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#133",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0519,
+          "needs_spec": 0.033,
+          "ready_for_agent": 0.9151
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7619,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 898,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#137",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0259,
+          "needs_spec": 0.0266,
+          "ready_for_agent": 0.9475
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8487,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 992,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#138",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0218,
+          "needs_spec": 0.0485,
+          "ready_for_agent": 0.9297
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8007,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 931,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#143",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0278,
+          "needs_spec": 0.0222,
+          "ready_for_agent": 0.95
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8556,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 928,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#144",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0498,
+          "needs_spec": 0.0306,
+          "ready_for_agent": 0.9196
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7735,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 823,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#145",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0436,
+          "needs_spec": 0.0328,
+          "ready_for_agent": 0.9236
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.784,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 896,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#147",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0146,
+          "needs_spec": 0.0222,
+          "ready_for_agent": 0.9632
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8928,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 957,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#148",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0238,
+          "needs_spec": 0.0202,
+          "ready_for_agent": 0.956
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8723,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 846,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#149",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0244,
+          "needs_spec": 0.0329,
+          "ready_for_agent": 0.9427
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8357,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 903,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#151",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0252,
+          "needs_spec": 0.0245,
+          "ready_for_agent": 0.9503
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8564,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 973,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#152",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0167,
+          "needs_spec": 0.0176,
+          "ready_for_agent": 0.9657
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8998,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 877,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#153",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0221,
+          "needs_spec": 0.0287,
+          "ready_for_agent": 0.9492
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8533,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1033,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#154",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0234,
+          "needs_spec": 0.0256,
+          "ready_for_agent": 0.951
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8584,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1003,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#157",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0127,
+          "needs_spec": 0.0193,
+          "ready_for_agent": 0.968
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.9062,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 915,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#158",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0229,
+          "needs_spec": 0.026,
+          "ready_for_agent": 0.9511
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8586,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 922,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#159",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0199,
+          "needs_spec": 0.0264,
+          "ready_for_agent": 0.9537
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8659,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 880,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#16",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0134,
+          "needs_spec": 0.0247,
+          "ready_for_agent": 0.9619
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8891,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 2910,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#160",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0193,
+          "needs_spec": 0.0246,
+          "ready_for_agent": 0.9561
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8728,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 923,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#161",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.018,
+          "needs_spec": 0.0246,
+          "ready_for_agent": 0.9574
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8762,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 914,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#162",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0247,
+          "needs_spec": 0.0295,
+          "ready_for_agent": 0.9458
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8441,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 968,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#166",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0164,
+          "needs_spec": 0.0236,
+          "ready_for_agent": 0.96
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8836,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 891,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#167",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0186,
+          "needs_spec": 0.0308,
+          "ready_for_agent": 0.9506
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8573,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1174,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#168",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0225,
+          "needs_spec": 0.0279,
+          "ready_for_agent": 0.9496
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8546,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 904,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#169",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.015,
+          "needs_spec": 0.0228,
+          "ready_for_agent": 0.9622
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8899,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 933,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#17",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0101,
+          "needs_spec": 0.0246,
+          "ready_for_agent": 0.9653
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8987,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 636,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#170",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0163,
+          "needs_spec": 0.0338,
+          "ready_for_agent": 0.9499
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8556,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 971,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#172",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0249,
+          "needs_spec": 0.0223,
+          "ready_for_agent": 0.9528
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8635,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 840,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#173",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0163,
+          "needs_spec": 0.0253,
+          "ready_for_agent": 0.9584
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.879,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 872,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#174",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0247,
+          "needs_spec": 0.0249,
+          "ready_for_agent": 0.9504
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8567,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 883,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#18",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0111,
+          "needs_spec": 0.0224,
+          "ready_for_agent": 0.9665
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.902,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 576,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#188",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0236,
+          "needs_spec": 0.0301,
+          "ready_for_agent": 0.9463
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8454,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1201,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#189",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0188,
+          "needs_spec": 0.0273,
+          "ready_for_agent": 0.9539
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8664,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1210,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#19",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0102,
+          "needs_spec": 0.0166,
+          "ready_for_agent": 0.9732
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.9213,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 629,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#190",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0153,
+          "needs_spec": 0.0258,
+          "ready_for_agent": 0.9589
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8807,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 965,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#2",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0166,
+          "needs_spec": 0.0781,
+          "ready_for_agent": 0.9053
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7391,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 442,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#20",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0105,
+          "needs_spec": 0.0238,
+          "ready_for_agent": 0.9657
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.9,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 703,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#204",
+      "gold": "needs_spec",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.2201,
+          "needs_spec": 0.6676,
+          "ready_for_agent": 0.1123
+        },
+        "choice": "needs_spec",
+        "confidence": 0.2601,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 7858,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#205",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0586,
+          "needs_spec": 0.2711,
+          "ready_for_agent": 0.6703
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.2893,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 2220,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#207",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0305,
+          "needs_spec": 0.0275,
+          "ready_for_agent": 0.942
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8334,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1551,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#208",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0319,
+          "needs_spec": 0.0288,
+          "ready_for_agent": 0.9393
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8264,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1670,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#209",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0267,
+          "needs_spec": 0.0351,
+          "ready_for_agent": 0.9382
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8232,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1265,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#216",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0245,
+          "needs_spec": 0.0218,
+          "ready_for_agent": 0.9537
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8659,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1437,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#217",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0273,
+          "needs_spec": 0.0289,
+          "ready_for_agent": 0.9438
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8385,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1807,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#218",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.03,
+          "needs_spec": 0.024,
+          "ready_for_agent": 0.946
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8446,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1379,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#219",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0152,
+          "needs_spec": 0.018,
+          "ready_for_agent": 0.9668
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.9028,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1038,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#222",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0221,
+          "needs_spec": 0.0425,
+          "ready_for_agent": 0.9354
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.816,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1939,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#223",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.038,
+          "needs_spec": 0.0297,
+          "ready_for_agent": 0.9323
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8074,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1607,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#224",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0853,
+          "needs_spec": 0.0417,
+          "ready_for_agent": 0.873
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6568,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 2047,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#225",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0369,
+          "needs_spec": 0.0252,
+          "ready_for_agent": 0.9379
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8224,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1994,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#226",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0403,
+          "needs_spec": 0.0267,
+          "ready_for_agent": 0.933
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8093,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1523,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#228",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0519,
+          "needs_spec": 0.0292,
+          "ready_for_agent": 0.9189
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7718,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 2014,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#230",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0179,
+          "needs_spec": 0.0199,
+          "ready_for_agent": 0.9622
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8899,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1821,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#231",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0158,
+          "needs_spec": 0.0225,
+          "ready_for_agent": 0.9617
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8886,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1416,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#232",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0195,
+          "needs_spec": 0.0223,
+          "ready_for_agent": 0.9582
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8787,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1602,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#233",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0179,
+          "needs_spec": 0.0229,
+          "ready_for_agent": 0.9592
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8814,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 923,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#237",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0577,
+          "needs_spec": 0.0546,
+          "ready_for_agent": 0.8877
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6915,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 912,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#238",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0702,
+          "needs_spec": 0.0414,
+          "ready_for_agent": 0.8884
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6939,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 857,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#239",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0462,
+          "needs_spec": 0.0332,
+          "ready_for_agent": 0.9206
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7762,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 838,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#240",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0751,
+          "needs_spec": 0.0456,
+          "ready_for_agent": 0.8793
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6715,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 906,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#241",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0501,
+          "needs_spec": 0.0303,
+          "ready_for_agent": 0.9196
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7737,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 904,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#244",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0197,
+          "needs_spec": 0.0592,
+          "ready_for_agent": 0.9211
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7785,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 950,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#247",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0283,
+          "needs_spec": 0.0256,
+          "ready_for_agent": 0.9461
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8449,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1434,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#248",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0258,
+          "needs_spec": 0.0253,
+          "ready_for_agent": 0.9489
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8527,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1618,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#249",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0255,
+          "needs_spec": 0.0427,
+          "ready_for_agent": 0.9318
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8059,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1530,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#250",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0286,
+          "needs_spec": 0.0361,
+          "ready_for_agent": 0.9353
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8153,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 2520,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#255",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0466,
+          "needs_spec": 0.0383,
+          "ready_for_agent": 0.9151
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7616,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1646,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#256",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0138,
+          "needs_spec": 0.0269,
+          "ready_for_agent": 0.9593
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8817,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1065,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#257",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0346,
+          "needs_spec": 0.0301,
+          "ready_for_agent": 0.9353
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8154,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1257,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#258",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0505,
+          "needs_spec": 0.0355,
+          "ready_for_agent": 0.914
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.759,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1305,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#260",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0172,
+          "needs_spec": 0.0493,
+          "ready_for_agent": 0.9335
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8113,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1109,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#265",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0148,
+          "needs_spec": 0.0258,
+          "ready_for_agent": 0.9594
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.882,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1468,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#266",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0137,
+          "needs_spec": 0.0293,
+          "ready_for_agent": 0.957
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8753,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1128,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#267",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0438,
+          "needs_spec": 0.0344,
+          "ready_for_agent": 0.9218
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7794,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1134,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#268",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0394,
+          "needs_spec": 0.0333,
+          "ready_for_agent": 0.9273
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7937,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1496,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#270",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.019,
+          "needs_spec": 0.0225,
+          "ready_for_agent": 0.9585
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8793,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1225,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#271",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0263,
+          "needs_spec": 0.0248,
+          "ready_for_agent": 0.9489
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8526,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1245,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#272",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0361,
+          "needs_spec": 0.0499,
+          "ready_for_agent": 0.914
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7588,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1606,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#274",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0364,
+          "needs_spec": 0.0591,
+          "ready_for_agent": 0.9045
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7344,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1295,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#275",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.136,
+          "needs_spec": 0.0846,
+          "ready_for_agent": 0.7794
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.4496,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1245,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#276",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0595,
+          "needs_spec": 0.0774,
+          "ready_for_agent": 0.8631
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6317,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1197,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#277",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0792,
+          "needs_spec": 0.043,
+          "ready_for_agent": 0.8778
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6681,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1198,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#278",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0377,
+          "needs_spec": 0.0284,
+          "ready_for_agent": 0.9339
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8116,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1153,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#279",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0595,
+          "needs_spec": 0.0401,
+          "ready_for_agent": 0.9004
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7237,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1200,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#280",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0541,
+          "needs_spec": 0.0306,
+          "ready_for_agent": 0.9153
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7625,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1264,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#281",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0466,
+          "needs_spec": 0.028,
+          "ready_for_agent": 0.9254
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7889,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1167,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#282",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0226,
+          "needs_spec": 0.047,
+          "ready_for_agent": 0.9304
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8025,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1134,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#283",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0422,
+          "needs_spec": 0.0295,
+          "ready_for_agent": 0.9283
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7967,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 903,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#285",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0327,
+          "needs_spec": 0.0845,
+          "ready_for_agent": 0.8828
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.6812,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1042,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#291",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0208,
+          "needs_spec": 0.0227,
+          "ready_for_agent": 0.9565
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8738,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1202,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#292",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0198,
+          "needs_spec": 0.0197,
+          "ready_for_agent": 0.9605
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8851,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1231,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#293",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0238,
+          "needs_spec": 0.0251,
+          "ready_for_agent": 0.9511
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8587,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1317,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#294",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0252,
+          "needs_spec": 0.0226,
+          "ready_for_agent": 0.9522
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8616,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1182,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#295",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0269,
+          "needs_spec": 0.0247,
+          "ready_for_agent": 0.9484
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8513,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1287,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#296",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0194,
+          "needs_spec": 0.0244,
+          "ready_for_agent": 0.9562
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8729,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1289,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#297",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0314,
+          "needs_spec": 0.0279,
+          "ready_for_agent": 0.9407
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.83,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1311,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#298",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0223,
+          "needs_spec": 0.0274,
+          "ready_for_agent": 0.9503
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8564,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1316,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#299",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0181,
+          "needs_spec": 0.0256,
+          "ready_for_agent": 0.9563
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8733,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1297,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#3",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0308,
+          "needs_spec": 0.1397,
+          "ready_for_agent": 0.8295
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.5629,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 414,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#304",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0309,
+          "needs_spec": 0.0251,
+          "ready_for_agent": 0.944
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8391,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1763,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#305",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0183,
+          "needs_spec": 0.0263,
+          "ready_for_agent": 0.9554
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8706,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1275,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#306",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0254,
+          "needs_spec": 0.0276,
+          "ready_for_agent": 0.947
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8473,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1293,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#310",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0289,
+          "needs_spec": 0.0452,
+          "ready_for_agent": 0.9259
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7902,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1839,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#311",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0188,
+          "needs_spec": 0.0309,
+          "ready_for_agent": 0.9503
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8566,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1996,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#324",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0221,
+          "needs_spec": 0.0222,
+          "ready_for_agent": 0.9557
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8714,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1355,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#325",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0199,
+          "needs_spec": 0.0224,
+          "ready_for_agent": 0.9577
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8772,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1447,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#326",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0255,
+          "needs_spec": 0.0243,
+          "ready_for_agent": 0.9502
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8562,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1813,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#333",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0157,
+          "needs_spec": 0.0193,
+          "ready_for_agent": 0.965
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8976,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1996,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#334",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0173,
+          "needs_spec": 0.0275,
+          "ready_for_agent": 0.9552
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8702,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1844,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#350",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0284,
+          "needs_spec": 0.0258,
+          "ready_for_agent": 0.9458
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.844,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1210,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#351",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0246,
+          "needs_spec": 0.0316,
+          "ready_for_agent": 0.9438
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8387,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1135,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#352",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.05,
+          "needs_spec": 0.0412,
+          "ready_for_agent": 0.9088
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7451,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1092,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#353",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.03,
+          "needs_spec": 0.0284,
+          "ready_for_agent": 0.9416
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8323,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1494,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#354",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0137,
+          "needs_spec": 0.0455,
+          "ready_for_agent": 0.9408
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8311,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1091,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#355",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0125,
+          "needs_spec": 0.043,
+          "ready_for_agent": 0.9445
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.841,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1020,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#356",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0264,
+          "needs_spec": 0.0396,
+          "ready_for_agent": 0.934
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8119,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1120,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#360",
+      "gold": "needs_spec",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0249,
+          "needs_spec": 0.7926,
+          "ready_for_agent": 0.1825
+        },
+        "choice": "needs_spec",
+        "confidence": 0.4932,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1442,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#362",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0155,
+          "needs_spec": 0.018,
+          "ready_for_agent": 0.9665
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.9021,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 869,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#363",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.026,
+          "needs_spec": 0.029,
+          "ready_for_agent": 0.945
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8418,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1778,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#364",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0117,
+          "needs_spec": 0.0291,
+          "ready_for_agent": 0.9592
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8817,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1530,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#365",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0132,
+          "needs_spec": 0.0308,
+          "ready_for_agent": 0.956
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8725,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1098,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#366",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0286,
+          "needs_spec": 0.0492,
+          "ready_for_agent": 0.9222
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7806,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1283,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#367",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0304,
+          "needs_spec": 0.0317,
+          "ready_for_agent": 0.9379
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8223,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 834,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#373",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0537,
+          "needs_spec": 0.0434,
+          "ready_for_agent": 0.9029
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7299,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1383,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#374",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0616,
+          "needs_spec": 0.0328,
+          "ready_for_agent": 0.9056
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7375,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 1254,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#379",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0132,
+          "needs_spec": 0.0255,
+          "ready_for_agent": 0.9613
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8873,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 709,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#4",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0302,
+          "needs_spec": 0.1124,
+          "ready_for_agent": 0.8574
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.623,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 439,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#5",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0174,
+          "needs_spec": 0.055,
+          "ready_for_agent": 0.9276
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7957,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 420,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#6",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0257,
+          "needs_spec": 0.1393,
+          "ready_for_agent": 0.835
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.5759,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 437,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#67",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.027,
+          "needs_spec": 0.0198,
+          "ready_for_agent": 0.9532
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8645,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 900,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#68",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0158,
+          "needs_spec": 0.0233,
+          "ready_for_agent": 0.9609
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8861,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 848,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#69",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0242,
+          "needs_spec": 0.0232,
+          "ready_for_agent": 0.9526
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8628,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 879,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#7",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.034,
+          "needs_spec": 0.154,
+          "ready_for_agent": 0.812
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.5263,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 430,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#70",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0155,
+          "needs_spec": 0.0249,
+          "ready_for_agent": 0.9596
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8825,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 879,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#71",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.029,
+          "needs_spec": 0.0276,
+          "ready_for_agent": 0.9434
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8373,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 911,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#72",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0224,
+          "needs_spec": 0.0209,
+          "ready_for_agent": 0.9567
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8744,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 861,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#73",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0174,
+          "needs_spec": 0.0456,
+          "ready_for_agent": 0.937
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8204,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 912,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#74",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0134,
+          "needs_spec": 0.0225,
+          "ready_for_agent": 0.9641
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8953,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 948,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#75",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0215,
+          "needs_spec": 0.0229,
+          "ready_for_agent": 0.9556
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8711,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 901,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#76",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0226,
+          "needs_spec": 0.0201,
+          "ready_for_agent": 0.9573
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8761,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 880,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#77",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0227,
+          "needs_spec": 0.021,
+          "ready_for_agent": 0.9563
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8731,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 978,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#78",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0253,
+          "needs_spec": 0.0218,
+          "ready_for_agent": 0.9529
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8638,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 887,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#79",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0163,
+          "needs_spec": 0.0256,
+          "ready_for_agent": 0.9581
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8783,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 922,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#8",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0316,
+          "needs_spec": 0.2103,
+          "ready_for_agent": 0.7581
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.4299,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 470,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#80",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0322,
+          "needs_spec": 0.0233,
+          "ready_for_agent": 0.9445
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8405,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 872,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#82",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0229,
+          "needs_spec": 0.0231,
+          "ready_for_agent": 0.954
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8667,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 860,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#83",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0307,
+          "needs_spec": 0.0383,
+          "ready_for_agent": 0.931
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8038,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 795,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#84",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0203,
+          "needs_spec": 0.025,
+          "ready_for_agent": 0.9547
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8688,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 824,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#85",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0299,
+          "needs_spec": 0.0485,
+          "ready_for_agent": 0.9216
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.779,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 819,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#86",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0203,
+          "needs_spec": 0.029,
+          "ready_for_agent": 0.9507
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8576,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 842,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#87",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0171,
+          "needs_spec": 0.0221,
+          "ready_for_agent": 0.9608
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8858,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 839,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#88",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0165,
+          "needs_spec": 0.0206,
+          "ready_for_agent": 0.9629
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8919,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 817,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#89",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0242,
+          "needs_spec": 0.0268,
+          "ready_for_agent": 0.949
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8529,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 857,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#9",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0166,
+          "needs_spec": 0.0545,
+          "ready_for_agent": 0.9289
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7993,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 441,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#90",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0317,
+          "needs_spec": 0.0206,
+          "ready_for_agent": 0.9477
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8492,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 787,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#91",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0289,
+          "needs_spec": 0.0314,
+          "ready_for_agent": 0.9397
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8273,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 767,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#92",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0191,
+          "needs_spec": 0.0307,
+          "ready_for_agent": 0.9502
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8563,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 840,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#93",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0244,
+          "needs_spec": 0.031,
+          "ready_for_agent": 0.9446
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8406,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 871,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#94",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0224,
+          "needs_spec": 0.0235,
+          "ready_for_agent": 0.9541
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8669,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 801,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#95",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.02,
+          "needs_spec": 0.0214,
+          "ready_for_agent": 0.9586
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8796,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 784,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#98",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0305,
+          "needs_spec": 0.0417,
+          "ready_for_agent": 0.9278
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.7951,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 886,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    },
+    {
+      "id": "dereknex/immune-brain#99",
+      "gold": "ready_for_agent",
+      "envelope": {
+        "application_point": "a15_issue_triage",
+        "question_type": "choice",
+        "option_set": [
+          "duplicate",
+          "needs_spec",
+          "ready_for_agent"
+        ],
+        "probabilities": {
+          "duplicate": 0.0354,
+          "needs_spec": 0.0316,
+          "ready_for_agent": 0.933
+        },
+        "choice": "ready_for_agent",
+        "confidence": 0.8092,
+        "provider_kind": "clef",
+        "profile": "clef",
+        "model": "clef",
+        "model_version": null,
+        "threshold_set_version": "a15/v0",
+        "input_tokens": 844,
+        "context_window": 65536,
+        "truncation": "none"
+      }
+    }
+  ]
+}
