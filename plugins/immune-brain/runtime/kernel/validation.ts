@@ -279,6 +279,18 @@ export function parseFinding(
 	};
 }
 
+function parseReviewObservation(value: unknown, path: string, violations: string[]) {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
+	const review_started_at = stringAt(item.review_started_at, `${path}.review_started_at`, violations);
+	const review_submitted_at = stringAt(item.review_submitted_at, `${path}.review_submitted_at`, violations);
+	const start = Date.parse(review_started_at), end = Date.parse(review_submitted_at);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) violations.push(`${path} requires ordered review timestamps`);
+	const reviewer_model = item.reviewer_model === undefined ? undefined : stringAt(item.reviewer_model, `${path}.reviewer_model`, violations);
+	if (reviewer_model !== undefined && !reviewer_model.trim()) violations.push(`${path}.reviewer_model must be non-empty`);
+	return { review_started_at, review_submitted_at, ...(reviewer_model === undefined ? {} : { reviewer_model }) };
+}
+
 function parseHistoryV3(
 	value: unknown,
 	index: number,
@@ -286,7 +298,7 @@ function parseHistoryV3(
 ): TaskHistoryEntryV3 {
 	const path = `record.history[${index}]`;
 	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision"], path, violations);
+	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision", "review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
 	let authority: AuthorityAuditDescriptor | undefined;
 	if (item.authority !== undefined) {
 		const auth = objectAt(item.authority, `${path}.authority`, violations);
@@ -306,6 +318,8 @@ function parseHistoryV3(
 		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
 	if (reviewRevision && authority?.authority_kind !== "review")
 		violations.push(`${path}.review_revision is only valid on review-authored history`);
+	const observation = item.review_started_at === undefined && item.review_submitted_at === undefined && item.reviewer_model === undefined ? undefined : parseReviewObservation({ review_started_at: item.review_started_at, review_submitted_at: item.review_submitted_at, ...(item.reviewer_model === undefined ? {} : { reviewer_model: item.reviewer_model }) }, path, violations);
+	if (observation && authority?.authority_kind !== "review" && item.type !== "record_review_incomplete") violations.push(`${path} review observation requires review authority`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		at: stringAt(item.at, `${path}.at`, violations),
@@ -315,6 +329,7 @@ function parseHistoryV3(
 		reason: stringAt(item.reason, `${path}.reason`, violations),
 		...(authority ? { authority } : {}),
 		...(reviewRevision ? { review_revision: reviewRevision } : {}),
+		...(observation ?? {}),
 	};
 }
 
@@ -816,13 +831,13 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			break;
 		}
 		case "record_review_incomplete": {
-			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason"], "action", violations);
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason", "review_observation"], "action", violations);
 			if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash)) violations.push("invalid incomplete intent hash");
 			if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96) violations.push("invalid incomplete turn budget");
 			if (!Array.isArray(value.inspected_paths) || value.inspected_paths.some(p => typeof p !== "string" || !p.trim()) || new Set(value.inspected_paths).size !== value.inspected_paths.length) violations.push("invalid incomplete inspected_paths");
 			if (typeof value.reason !== "string" || !value.reason.trim() || /[\r\n\u2028\u2029]/.test(value.reason)) violations.push("incomplete reason must be a non-empty single line");
 			if (value.review_contract_hash !== undefined && (typeof value.review_contract_hash !== "string" || !SHA256_HEX.test(value.review_contract_hash))) violations.push("invalid incomplete review contract hash");
-			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string, ...(value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash as string } : {}) };
+			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string, ...(value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash as string } : {}), ...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }) };
 			break;
 		}
 		case "record_finding": {
@@ -883,7 +898,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 		case "record_approval": {
 			rejectUnknown(
 				value,
-				[...ACTION_BASE_FIELDS, "approval"],
+				[...ACTION_BASE_FIELDS, "approval", "review_observation"],
 				"action",
 				violations,
 			);
@@ -894,6 +909,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				...base,
 				type: base.type,
 				approval,
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
 			};
 			break;
 		}
@@ -973,7 +989,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 		case "request_rework": {
 			rejectUnknown(
 				value,
-				[...ACTION_BASE_FIELDS, "findings", "review_revision"],
+				[...ACTION_BASE_FIELDS, "findings", "review_revision", "review_observation"],
 				"action",
 				violations,
 			);
@@ -992,6 +1008,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				type: "request_rework",
 				findings,
 				...(reviewRevision ? { review_revision: reviewRevision } : {}),
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
 			};
 			break;
 		}

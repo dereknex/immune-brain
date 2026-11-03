@@ -169,6 +169,10 @@ function appendHistory(
 	};
 	if (audit) entry.authority = { ...audit };
 	if (reviewRevision) entry.review_revision = { ...reviewRevision };
+	if ((action.type === "record_approval" || action.type === "request_rework" || action.type === "record_review_incomplete") && action.review_observation) {
+		if (action.type !== "record_review_incomplete" && audit?.authority_kind !== "review") throw new KernelInvariantError(["review observation requires review authority"]);
+		Object.assign(entry, action.review_observation);
+	}
 	record.history.push(entry as (typeof record.history)[number]);
 }
 

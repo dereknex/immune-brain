@@ -324,6 +324,18 @@ describe("review verification packet", () => {
 });
 
 describe("host-neutral assurance coordinator", () => {
+	test("records reservation timing and model from the observed review receipt", async () => {
+		const h = makeCoordinator();
+		const applied = h.authority.applyVerdict;
+		let observed: Parameters<typeof applied>[1]["review_observation"];
+		h.authority.applyVerdict = async (context, input) => { if (input.snapshot.role === "review") observed = input.review_observation; return applied(context, input); };
+		const ready = await h.coordinator.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const verdict = JSON.stringify(passVerdict(snapshot("review")));
+		await submitMediatedReview(h.coordinator, ctx, TASK, undefined, () => ({ ok: true, receipt: { actorId: "reviewer", result: verdict, model: "provider/model" } }));
+		expect(observed?.reviewer_model).toBe("provider/model");
+		expect(Date.parse(observed!.review_submitted_at)).toBeGreaterThanOrEqual(Date.parse(observed!.review_started_at));
+	});
 	for (const release of ["stop", "unbound submit", "snapshot change"] as const) {
 		test(`packet lifecycle follows evidence on ${release}`, async () => {
 			const h = makeCoordinator();
@@ -1145,10 +1157,12 @@ describe("shared verdict authority through host-configured coordinators", () => 
    const invocation = h.coordinator.openInvocation(f.taskId);
    const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId,
     snapshot_digest: snapshotDigest(round2), decision: "rework", findings: [{ id: "round2", kind: "blocking", status: "open", acceptance_id: "A1", source: "review", review_round: null, summary: "repair the work" }] } as const;
-   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: round2, verdict, invocation, actorId: "reviewer" });
+   const observed = { review_started_at: "2026-08-12T09:00:00.000Z", review_submitted_at: "2026-08-12T09:00:03.000Z", reviewer_model: "provider/model" };
+   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: round2, verdict, invocation, actorId: "reviewer", review_observation: observed });
    h.coordinator.closeInvocation(invocation);
    const entry = readTaskRecordRaw(f.root, f.taskId).record!.history.find(e => e.type === "request_rework" && e.reason.split("\n")[0] === "review_round_2");
    expect(entry?.review_revision).toEqual(round2.review_revision);
+   expect(entry).toMatchObject(observed);
    writeFileSync(join(f.root, "src/work.ts"), "export const value = 3;\n"); f.git("add", "src/work.ts");
    const app = createCanaryApplication(createMutationAuthorityRegistry());
    const execute = (operation: Parameters<typeof app.execute>[0]["operation"]) => {
@@ -1167,6 +1181,19 @@ describe("shared verdict authority through host-configured coordinators", () => 
    expect(projection.projection.next_obligation).toBe("run_review");
    const round3 = (await buildAssuranceSnapshot(f.root, f.taskId, "review", projection)).snapshot;
    expect(round3.review_delta).toEqual({ round: 3, prior_review_commit: round2.review_revision!.review_commit, delta_paths: ["src/work.ts"] });
+  });
+  test(`${host}: review pass persists timing and host model`, async () => {
+   const f = authorityFixture(); const h = configured(f);
+   const qa = (await buildAssuranceSnapshot(f.root, f.taskId, "qa", await projectAssurance(f.root, f.taskId))).snapshot;
+   const qaInvocation = h.coordinator.openInvocation(f.taskId);
+   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: qa, invocation: qaInvocation, actorId: "qa", verdict: { contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId, snapshot_digest: snapshotDigest(qa), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } } });
+   h.coordinator.closeInvocation(qaInvocation);
+   const review = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
+   const invocation = h.coordinator.openInvocation(f.taskId);
+   const observed = { review_started_at: "2026-08-12T09:00:00.000Z", review_submitted_at: "2026-08-12T09:00:03.000Z", reviewer_model: "provider/model" };
+   await h.coordinator.authority.applyVerdict({ cwd: f.root }, { taskId: f.taskId, snapshot: review, invocation, actorId: "reviewer", review_observation: observed, verdict: { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId, snapshot_digest: snapshotDigest(review), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: review.dirty_files } } });
+   expect(readTaskRecordRaw(f.root, f.taskId).record!.history.find(e => e.type === "record_approval" && e.authority?.authority_kind === "review")).toMatchObject(observed);
+   h.coordinator.closeInvocation(invocation);
   });
   test(`${host}: capture validates all three identities and the v4 base`, async () => {
    const f = authorityFixture(); const h = configured(f); const p = await projectAssurance(f.root,f.taskId);

@@ -1,0 +1,15 @@
+{
+  "contract": "immune_brain/review_kind_classification/v1",
+  "source": "committed .imm/audit records at HEAD; blocking review findings with trigger, caller chain and declared kind",
+  "head": "265dd80455a2337b54048d20f6f132307758d95c",
+  "application_point": "a17_review_finding_kind",
+  "provider": "clef",
+  "model": "clef",
+  "experimental": true,
+  "gold_calibrated": false,
+  "eligible": 289,
+  "classified": 289,
+  "mismatches": 56,
+  "mislabel_rate": 0.19377162629757785,
+  "note": "Offline classifications compare independent predictions with the declared kind; they do not change findings, records or admission decisions. No human-gold kind calibration is available."
+}

@@ -519,7 +519,7 @@ export default function (
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			progression.piReviewHost.observeReviewResult(result.toolCallId, text);
+			progression.piReviewHost.observeReviewResult(result.toolCallId, text, typeof result.details?.model === "string" ? result.details.model : undefined);
 		}
 		if (result.toolName === "imm_canary_enrollment" && ctx) {
 			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;

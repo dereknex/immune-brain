@@ -563,6 +563,8 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 export interface ReviewSubmissionOptions {
 	/** sha256 over the reviewer's own result bytes, bound into the review attestation. */
 	reviewer_verdict_sha256?: string;
+	/** Identity observed by the host, when its receipt carries one. */
+	reviewer_model?: string;
 	/** Synchronous host check immediately before the reservation is consumed. */
 	validateReceipt?: () => { reason: string; release: boolean; recovery_action: string } | null;
 }
@@ -1196,6 +1198,7 @@ interface ReviewReservation {
 	correlation: AssuranceCorrelation;
 	snapshot: SnapshotDescriptor;
 	hostReservation: HostReviewReservation;
+	reviewStartedAt: string;
 	turnBudget: number;
 	reviewContractHash: string;
 	verdictCorrectionRequired: boolean;
@@ -1648,6 +1651,7 @@ export class AssuranceCoordinator {
 			}
 			const reservation: ReviewReservation = {
 				taskId,
+				reviewStartedAt: new Date().toISOString(),
 				operationId,
 				correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
 				snapshot: review.snapshot,
@@ -1753,11 +1757,14 @@ export class AssuranceCoordinator {
 			this.releaseReviewReservation(taskId, reservation);
 			return { state: "blocked", reason: "Review contract changed during dispatch", recovery_action: "advance_assurance" };
 		}
+		const reviewSubmittedAt = new Date().toISOString();
+		const reviewObservation = reviewSubmittedAt >= reservation.reviewStartedAt ? { review_started_at: reservation.reviewStartedAt, review_submitted_at: reviewSubmittedAt, ...(options?.reviewer_model?.trim() ? { reviewer_model: options.reviewer_model } : {}) } : undefined;
 		if (verdict.decision === "incomplete") {
 			try {
 				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
 					op: "record_review_incomplete", actor_id: "parent-mediated-review", snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
 					turn_budget: reservation.turnBudget, review_contract_hash: reservation.reviewContractHash, inspected_paths: verdict.inspected_paths, reason: verdict.reason,
+					...(reviewObservation ? { review_observation: reviewObservation } : {}),
 				} });
 				const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
 				const rounds = reviewIncompleteHistory(stored.record?.history, reservation.snapshot);
@@ -1781,6 +1788,7 @@ export class AssuranceCoordinator {
 				invocation,
 				actorId: "parent-mediated-review",
 				...(options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {}),
+				...(reviewObservation ? { review_observation: reviewObservation } : {}),
 			});
 		} catch (error) {
 			const reason = boundedAssuranceError(error);

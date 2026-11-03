@@ -71,6 +71,7 @@ interface RecordedReviewReceipt {
 	promptDigest: string;
 	toolCallId?: string;
 	result?: string;
+	model?: string;
 	error?: string;
 }
 
@@ -160,7 +161,7 @@ class PiReviewHost implements AssuranceHostPort {
 	}
 
 	/** Extension event seam: store the observed reviewer result bytes (ADR 0017). */
-	observeReviewResult(toolCallId: string | undefined, bytes: string): void {
+	observeReviewResult(toolCallId: string | undefined, bytes: string, model?: string): void {
 		if (!toolCallId) return;
 		for (const state of this.verifiers.values()) {
 			if (state.callId !== toolCallId) continue;
@@ -169,7 +170,7 @@ class PiReviewHost implements AssuranceHostPort {
 		}
 		for (const record of this.receipts.values()) {
 			if (record.toolCallId !== toolCallId) continue;
-			if (record.result === undefined) record.result = bytes;
+			if (record.result === undefined) { record.result = bytes; if (model?.trim()) record.model = model; }
 			else if (record.result !== bytes) record.error = "the reserved reviewer returned conflicting result bytes";
 			return;
 		}
@@ -185,7 +186,7 @@ class PiReviewHost implements AssuranceHostPort {
 				return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
 			if (record.result === undefined)
 				return { ok: false, release: false, reason: "the reserved foreground reviewer has not returned its result yet; wait for it, then call submit_review again" };
-			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result } };
+			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result, ...(record.model ? { model: record.model } : {}) } };
 		}
 		return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
 	}

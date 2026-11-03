@@ -1820,10 +1820,23 @@ function parseFinding(value, index, violations) {
     ...item.replan_cause !== undefined ? { replan_cause: enumAt(item.replan_cause, REPLAN_CAUSES, `${path}.replan_cause`, violations) } : {}
   };
 }
+function parseReviewObservation(value, path, violations) {
+  const item = objectAt2(value, path, violations);
+  rejectUnknown2(item, ["review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
+  const review_started_at = stringAt(item.review_started_at, `${path}.review_started_at`, violations);
+  const review_submitted_at = stringAt(item.review_submitted_at, `${path}.review_submitted_at`, violations);
+  const start = Date.parse(review_started_at), end = Date.parse(review_submitted_at);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start)
+    violations.push(`${path} requires ordered review timestamps`);
+  const reviewer_model = item.reviewer_model === undefined ? undefined : stringAt(item.reviewer_model, `${path}.reviewer_model`, violations);
+  if (reviewer_model !== undefined && !reviewer_model.trim())
+    violations.push(`${path}.reviewer_model must be non-empty`);
+  return { review_started_at, review_submitted_at, ...reviewer_model === undefined ? {} : { reviewer_model } };
+}
 function parseHistoryV3(value, index, violations) {
   const path = `record.history[${index}]`;
   const item = objectAt2(value, path, violations);
-  rejectUnknown2(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision"], path, violations);
+  rejectUnknown2(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision", "review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
   let authority;
   if (item.authority !== undefined) {
     const auth = objectAt2(item.authority, `${path}.authority`, violations);
@@ -1839,6 +1852,9 @@ function parseHistoryV3(value, index, violations) {
   const reviewRevision = item.review_revision === undefined ? undefined : parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
   if (reviewRevision && authority?.authority_kind !== "review")
     violations.push(`${path}.review_revision is only valid on review-authored history`);
+  const observation = item.review_started_at === undefined && item.review_submitted_at === undefined && item.reviewer_model === undefined ? undefined : parseReviewObservation({ review_started_at: item.review_started_at, review_submitted_at: item.review_submitted_at, ...item.reviewer_model === undefined ? {} : { reviewer_model: item.reviewer_model } }, path, violations);
+  if (observation && authority?.authority_kind !== "review" && item.type !== "record_review_incomplete")
+    violations.push(`${path} review observation requires review authority`);
   return {
     id: stringAt(item.id, `${path}.id`, violations),
     at: stringAt(item.at, `${path}.at`, violations),
@@ -1847,7 +1863,8 @@ function parseHistoryV3(value, index, violations) {
     to_state: stringAt(item.to_state, `${path}.to_state`, violations),
     reason: stringAt(item.reason, `${path}.reason`, violations),
     ...authority ? { authority } : {},
-    ...reviewRevision ? { review_revision: reviewRevision } : {}
+    ...reviewRevision ? { review_revision: reviewRevision } : {},
+    ...observation ?? {}
   };
 }
 function parseApprovalV2(value, index, violations, allowReviewRevision = false) {
@@ -2220,7 +2237,7 @@ function parseTaskAction(raw) {
       break;
     }
     case "record_review_incomplete": {
-      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason"], "action", violations);
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason", "review_observation"], "action", violations);
       if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash))
         violations.push("invalid incomplete intent hash");
       if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96)
@@ -2231,7 +2248,7 @@ function parseTaskAction(raw) {
         violations.push("incomplete reason must be a non-empty single line");
       if (value.review_contract_hash !== undefined && (typeof value.review_contract_hash !== "string" || !SHA256_HEX.test(value.review_contract_hash)))
         violations.push("invalid incomplete review contract hash");
-      action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash, turn_budget: value.turn_budget, inspected_paths: value.inspected_paths, reason: value.reason, ...value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash } : {} };
+      action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash, turn_budget: value.turn_budget, inspected_paths: value.inspected_paths, reason: value.reason, ...value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash } : {}, ...value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) } };
       break;
     }
     case "record_finding": {
@@ -2263,14 +2280,15 @@ function parseTaskAction(raw) {
       break;
     }
     case "record_approval": {
-      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "approval"], "action", violations);
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "approval", "review_observation"], "action", violations);
       const approval = parseApprovalV2(value.approval, 0, violations, true);
       if (approval.review_revision && approval.kind !== "review")
         violations.push("action.approval.review_revision is only valid on review approvals");
       action = {
         ...base,
         type: base.type,
-        approval
+        approval,
+        ...value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }
       };
       break;
     }
@@ -2325,7 +2343,7 @@ function parseTaskAction(raw) {
       break;
     }
     case "request_rework": {
-      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "findings", "review_revision"], "action", violations);
+      rejectUnknown2(value, [...ACTION_BASE_FIELDS, "findings", "review_revision", "review_observation"], "action", violations);
       const findings = arrayAt(value.findings, "action.findings", violations).map((item, index) => parseFinding(item, index, violations));
       if (findings.length === 0)
         violations.push("action.findings must contain at least one finding");
@@ -2334,7 +2352,8 @@ function parseTaskAction(raw) {
         ...base,
         type: "request_rework",
         findings,
-        ...reviewRevision ? { review_revision: reviewRevision } : {}
+        ...reviewRevision ? { review_revision: reviewRevision } : {},
+        ...value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }
       };
       break;
     }
@@ -2796,6 +2815,11 @@ function appendHistory(record, action, from, detail, audit, reviewRevision) {
     entry.authority = { ...audit };
   if (reviewRevision)
     entry.review_revision = { ...reviewRevision };
+  if ((action.type === "record_approval" || action.type === "request_rework" || action.type === "record_review_incomplete") && action.review_observation) {
+    if (action.type !== "record_review_incomplete" && audit?.authority_kind !== "review")
+      throw new KernelInvariantError(["review observation requires review authority"]);
+    Object.assign(entry, action.review_observation);
+  }
   record.history.push(entry);
 }
 function intentRefMatches(intent, ref) {
@@ -7575,7 +7599,7 @@ var init_config = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/decision_model/thresholds.ts
-var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, POINT_REGISTRY;
+var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, POINT_REGISTRY;
 var init_thresholds = __esm(() => {
   A1_REVIEW_FINDING_PRESCREEN = {
     id: "a1_review_finding_prescreen",
@@ -7644,7 +7668,17 @@ var init_thresholds = __esm(() => {
     instructions: "Given the target blocking review finding and the earlier findings of the same run, which option best describes the target finding: the same invariant class as an earlier finding, a new defect, or outside the task's accepted contract?",
     threshold_set: { version: "a4/v0", values: null }
   };
+  A17_REVIEW_FINDING_KIND = {
+    id: "a17_review_finding_kind",
+    question_type: "choice",
+    input_category: "finding",
+    options: ["acceptance", "security_boundary"],
+    criteria: { acceptance: "Violates an acceptance assertion", security_boundary: "Violates a security boundary" },
+    instructions: "Classify the violated invariant using only the finding trigger and caller chain; do not infer the reviewer's declared kind.",
+    threshold_set: { version: "a17/v0", values: null }
+  };
   POINT_REGISTRY = {
+    [A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
     [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
     [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
     [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
@@ -9109,12 +9143,13 @@ function capabilityActionFor(input) {
     case "authorize_review_retry":
       return { ...base, type: "authorize_review_retry", intent_content_hash: input.intent_content_hash, review_contract_hash: input.review_contract_hash };
     case "record_approval":
-      return { ...base, approval: input.approval };
+      return { ...base, approval: input.approval, ...input.review_observation ? { review_observation: input.review_observation } : {} };
     case "request_rework":
       return {
         ...base,
         findings: input.findings,
-        ...input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}
+        ...input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {},
+        ...input.review_observation ? { review_observation: input.review_observation } : {}
       };
     case "authorize_rework":
       return {
@@ -9286,7 +9321,7 @@ function createCanaryApplication(registry) {
         const expected = operation.snapshot;
         if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
           throw new KernelInvariantError(["Review incomplete snapshot changed"]);
-        action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash };
+        action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash, ...operation.review_observation ? { review_observation: operation.review_observation } : {} };
         break;
       }
       case "record_finding":
@@ -9318,12 +9353,13 @@ function createCanaryApplication(registry) {
           ...base,
           type: "request_rework",
           findings: operation.findings,
-          ...operation.review_revision ? { review_revision: canonicalReviewRevision(operation.review_revision) } : {}
+          ...operation.review_revision ? { review_revision: canonicalReviewRevision(operation.review_revision) } : {},
+          ...operation.review_observation ? { review_observation: operation.review_observation } : {}
         };
         break;
       case "record_approval":
         capability = operation.capability;
-        action = { ...base, type: "record_approval", approval: operation.approval };
+        action = { ...base, type: "record_approval", approval: operation.approval, ...operation.review_observation ? { review_observation: operation.review_observation } : {} };
         break;
       case "revise_intent":
         action = {
@@ -10229,7 +10265,8 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
       const op = verdict.decision === "rework" ? "request_rework" : "record_approval";
       const payload = approval ? { approval } : { findings };
       const reworkRevision = verdict.decision === "rework" && snapshot.role === "review" && snapshot.review_revision ? { review_revision: snapshot.review_revision } : {};
-      const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision });
+      const reviewObservation = snapshot.role === "review" && input.review_observation ? { review_observation: input.review_observation } : {};
+      const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision, ...reviewObservation });
       const capability = registry.issue({
         authority_kind: snapshot.role,
         task_id: snapshot.task_id,
@@ -10248,7 +10285,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
       const settlement = (async () => app.execute({
         root: ctx.cwd,
         task_id: snapshot.task_id,
-        operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId } : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision },
+        operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId, ...reviewObservation } : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision, ...reviewObservation },
         prior_intent_token: priorIntentToken,
         now
       }))();
@@ -11433,6 +11470,7 @@ class AssuranceCoordinator {
       }
       const reservation = {
         taskId,
+        reviewStartedAt: new Date().toISOString(),
         operationId,
         correlation: { record_revision: review.snapshot.record_revision, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash },
         snapshot: review.snapshot,
@@ -11550,6 +11588,8 @@ class AssuranceCoordinator {
       this.releaseReviewReservation(taskId, reservation);
       return { state: "blocked", reason: "Review contract changed during dispatch", recovery_action: "advance_assurance" };
     }
+    const reviewSubmittedAt = new Date().toISOString();
+    const reviewObservation = reviewSubmittedAt >= reservation.reviewStartedAt ? { review_started_at: reservation.reviewStartedAt, review_submitted_at: reviewSubmittedAt, ...options?.reviewer_model?.trim() ? { reviewer_model: options.reviewer_model } : {} } : undefined;
     if (verdict.decision === "incomplete") {
       try {
         await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
@@ -11559,7 +11599,8 @@ class AssuranceCoordinator {
           turn_budget: reservation.turnBudget,
           review_contract_hash: reservation.reviewContractHash,
           inspected_paths: verdict.inspected_paths,
-          reason: verdict.reason
+          reason: verdict.reason,
+          ...reviewObservation ? { review_observation: reviewObservation } : {}
         } });
         const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
         const rounds = reviewIncompleteHistory(stored.record?.history, reservation.snapshot);
@@ -11582,7 +11623,8 @@ class AssuranceCoordinator {
         verdict,
         invocation,
         actorId: "parent-mediated-review",
-        ...options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {}
+        ...options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {},
+        ...reviewObservation ? { review_observation: reviewObservation } : {}
       });
     } catch (error) {
       const reason = boundedAssuranceError(error);
@@ -17889,6 +17931,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
   const receiptBytes = observed.receipt.result;
   const options = {
     reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
     validateReceipt: () => {
       const current = inspect();
       if (!current.ok)
@@ -17897,7 +17940,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
           release: current.release,
           recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
         };
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
     }
   };
   if (verdictInput === undefined) {

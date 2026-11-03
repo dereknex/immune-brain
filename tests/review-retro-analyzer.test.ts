@@ -6,6 +6,7 @@ import { readSession, run } from "../plugins/immune-brain/skills/revisit/scripts
 
 const ROOT = resolve(import.meta.dir, "fixtures/review-retro");
 const CONTRACT_ROOT = resolve(import.meta.dir, "fixtures/review-retro-contract");
+const QUALITY_ROOT = resolve(import.meta.dir, "fixtures/review-retro-quality");
 const WIDE_WINDOW = { cutMs: 0, project: "", exclude: [] };
 
 function turn(timestamp: unknown, call: { name: string; id: string; arguments?: unknown }, model = "m1"): string {
@@ -68,6 +69,18 @@ describe("review-retro analyzer", () => {
 		expect(out).toContain("blocking: 1 | advisory: 1 | bookkeeping marker (unverified): 0");
 		expect(out).toContain("findings: 3 raw calls deduped to 2 distinct");
 		expect(out).not.toContain("acme/coder");
+		// A fixture whose findings carry no violated.kind and no disposition events leaves the report unchanged.
+		expect(out).not.toContain("review quality");
+		const json = JSON.parse(await run(["--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--root", CONTRACT_ROOT, "--json"]));
+		expect(json.events.filter((event: { type: string }) => event.type === "finding").every((event: object) => !("violatedKind" in event))).toBe(true);
+	});
+
+	test("splits blocking findings by violated.kind and counts dispositions only where the session proves visibility", async () => {
+		const out = await run(["--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--root", QUALITY_ROOT]);
+		expect(out).toContain("p/m1 blocked acceptance=1 security_boundary=1");
+		expect(out).toContain("p/m1 dispositions resolve=1 refute=1 accept_residual_risk=1");
+		expect(out).toContain("p/m2 dispositions resolve=0 refute=1 accept_residual_risk=0");
+		expect(out).not.toContain("blocking by violated.kind: (no finding carries violated.kind)");
 	});
 
 	test("--project keeps sessions whose cwd contains the substring", async () => {

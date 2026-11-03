@@ -221,6 +221,12 @@ export interface TaskAttestationV3 extends TaskApprovalV2 {
 	}>;
 }
 
+export interface ReviewObservationFacts {
+	review_started_at: string;
+	review_submitted_at: string;
+	reviewer_model?: string;
+}
+
 export interface TaskHistoryEntryV3 {
 	id: string;
 	at: string;
@@ -234,6 +240,9 @@ export interface TaskHistoryEntryV3 {
 	 * and QA or user rework stay valid; later rounds derive their delta from it.
 	 */
 	review_revision?: ReviewRevisionIdentityV1;
+	review_started_at?: string;
+	review_submitted_at?: string;
+	reviewer_model?: string;
 }
 
 export interface TaskRecordV3 {
@@ -335,7 +344,7 @@ export interface ReviewIncompleteFacts {
 
 export type TaskAction =
 	| (TaskActionBase & { type: "authorize_review_retry"; intent_content_hash: string; review_contract_hash: string })
-	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete" })
+	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete"; review_observation?: ReviewObservationFacts })
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
 	| (TaskActionBase & {
@@ -343,7 +352,7 @@ export type TaskAction =
 			finding_id: string;
 			attestation_id: string;
 	  })
-	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2 })
+	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2; review_observation?: ReviewObservationFacts })
 	| (TaskActionBase & {
 			type: "revise_intent";
 			next_intent: TaskIntentV1;
@@ -359,6 +368,7 @@ export type TaskAction =
 			findings: TaskFinding[];
 			/** Review-authored rework only: the immutable revision that Review analyzed. */
 			review_revision?: ReviewRevisionIdentityV1;
+			review_observation?: ReviewObservationFacts;
 	  })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })
