@@ -1,5 +1,45 @@
 # Changelog
 
+## 7.1.0
+
+### Minor Changes
+
+- [#368](https://github.com/dereknex/immune-brain/pull/368) [`bfc2338`](https://github.com/dereknex/immune-brain/commit/bfc23384fb7d7e6fd954d71d9c521d9978b88eab) Thanks [@dereknex](https://github.com/dereknex)! - Resolve decision model profiles and egress through layered configuration, with legacy source warnings.
+
+- [#368](https://github.com/dereknex/immune-brain/pull/368) [`bfc2338`](https://github.com/dereknex/immune-brain/commit/bfc23384fb7d7e6fd954d71d9c521d9978b88eab) Thanks [@dereknex](https://github.com/dereknex)! - Resolve Git integration and Initiative carrier preferences from layered configuration, with deprecated instruction-file fallbacks.
+
+- [#368](https://github.com/dereknex/immune-brain/pull/368) [`5829cff`](https://github.com/dereknex/immune-brain/commit/5829cff7f5b666748b4f5cbb033b16a1376740c2) Thanks [@dereknex](https://github.com/dereknex)! - Resolve Lane preferences and batch verification through layered configuration.
+
+- [#368](https://github.com/dereknex/immune-brain/pull/368) [`b74711c`](https://github.com/dereknex/immune-brain/commit/b74711cd8ff3a6291023807b54d74537a2c1a447) Thanks [@dereknex](https://github.com/dereknex)! - Add layered user and project configuration with a read-only resolver and status diagnostics.
+
+- [#337](https://github.com/dereknex/immune-brain/pull/337) [`de7e939`](https://github.com/dereknex/immune-brain/commit/de7e9390225a2be39927381b60123f915b0eaceb) Thanks [@dereknex](https://github.com/dereknex)! - Group revisit candidate chains by kind and key in the `revisit_evidence/v2` document, cap the text report at five groups per kind, split `error_resume` from `user_resume` with locating fields, and list only sessions with activity.
+
+- [#335](https://github.com/dereknex/immune-brain/pull/335) [`abbe38a`](https://github.com/dereknex/immune-brain/commit/abbe38a899c6be0e6ea3826844c795260597fccb) Thanks [@dereknex](https://github.com/dereknex)! - Emit pointed revisit session evidence and reproducible windows, with candidate chains and unverified markers.
+
+- [#335](https://github.com/dereknex/immune-brain/pull/335) [`431ad3e`](https://github.com/dereknex/immune-brain/commit/431ad3e37b10fca27b036e7b416049992ea193a5) Thanks [@dereknex](https://github.com/dereknex)! - Make `revisit` diagnose workflow friction through evidence-chain verification and a focused recommendation.
+
+- [#358](https://github.com/dereknex/immune-brain/pull/358) [`f5ca495`](https://github.com/dereknex/immune-brain/commit/f5ca4950b9ebc6614341f54415f9ec843fde1ad4) Thanks [@dereknex](https://github.com/dereknex)! - A Review rework result now names a generalize-or-refute obligation when the same acceptance draws a blocking finding in two consecutive rounds. The result gains an optional `convergence` array of `{acceptance_id, streak, obligation: "generalize_or_refute"}`, computed from the committed record with `acceptanceRepeatSeries`; a null acceptance never appears, and the key is absent otherwise. The Executor guidance and the drive rework step pass it on. The rework round budget, `replan_required` parking, verdict bytes and Review independence are unchanged.
+
+### Patch Changes
+
+- [#346](https://github.com/dereknex/immune-brain/pull/346) [`82853d6`](https://github.com/dereknex/immune-brain/commit/82853d63d598c35ebf291de3929e241f72c83f43) Thanks [@dereknex](https://github.com/dereknex)! - Preserve complete historical Slice entries during Initiative amendments, including multiline prerequisite annotations. Reject ambiguous entry boundaries before remote mutations.
+
+- [#375](https://github.com/dereknex/immune-brain/pull/375) [`7b5e982`](https://github.com/dereknex/immune-brain/commit/7b5e9825dcd7b5b556b781723eeccf23c3eb14c1) Thanks [@dereknex](https://github.com/dereknex)! - Park fully duplicated Lane changes with a distinct reason while continuing to integrate partial overlaps.
+
+- [`d1d9278`](https://github.com/dereknex/immune-brain/commit/d1d9278ede0d87a4d19d3a51cfc0c87e9a449ed0) Thanks [@dereknex](https://github.com/dereknex)! - Integrate a Lane commit that merges cleanly onto the batch head when an integrated sibling changed other hunks of the same file, instead of parking it as `batch_integration_conflict`. A candidate whose tree differs from the reproducible merge is still refused.
+
+- [#368](https://github.com/dereknex/immune-brain/pull/368) [`fcffb25`](https://github.com/dereknex/immune-brain/commit/fcffb250c6ca00cb3038a789d1be1549713e3a68) Thanks [@dereknex](https://github.com/dereknex)! - Document the layered configuration: the user file, the tracked `.imm/config.json`, precedence, `imm-kernel config --json` and the deprecated legacy sources.
+
+- [#375](https://github.com/dereknex/immune-brain/pull/375) [`76f000e`](https://github.com/dereknex/immune-brain/commit/76f000e1fe0e95a35fef5864aed3f9ac7bf3b6a2) Thanks [@dereknex](https://github.com/dereknex)! - Regenerate declared derived outputs when integrating Lane changes that touch their sources or outputs.
+
+- [#378](https://github.com/dereknex/immune-brain/pull/378) [`226aa9a`](https://github.com/dereknex/immune-brain/commit/226aa9a5b1a4cda5397d1f1d892f062ba69aff06) Thanks [@dereknex](https://github.com/dereknex)! - Show the selected Initiative carrier and its source before planning questions, including the replacement details for legacy configuration.
+
+- [#376](https://github.com/dereknex/immune-brain/pull/376) [`76f0ddc`](https://github.com/dereknex/immune-brain/commit/76f0ddc9b52cba8e67a648f09c700d9a6cb7aef4) Thanks [@dereknex](https://github.com/dereknex)! - Deprecated and ignored legacy config warnings now name each replacement key with its layer and file, including both targets for `.imm/decision-bindings.json`, and draw-up uses a `legacy:AGENTS.md` or `legacy:CLAUDE.md` Initiative carrier with its deprecation warning instead of skipping it.
+
+- [#338](https://github.com/dereknex/immune-brain/pull/338) [`e2f467a`](https://github.com/dereknex/immune-brain/commit/e2f467a1d2c5e5f64438fb1dcec5a3cb6dae6e44) Thanks [@dereknex](https://github.com/dereknex)! - Document the `revisit_evidence/v2` `events[]` fields, route intervention and gate questions through `events[]` and pointed lines instead of raw session scans, and require every rerun to reuse the recorded window and scope.
+
+- [#329](https://github.com/dereknex/immune-brain/pull/329) [`efef21c`](https://github.com/dereknex/immune-brain/commit/efef21c8927168e22138ef0aad7af4711a638a32) Thanks [@dereknex](https://github.com/dereknex)! - `revisit` session finding totals now count a `submit_review` that omits its verdict: the analyzer applies the observed Review receipt (the verdict JSON in the latest Review `Agent` toolResult), as the Kernel does, and each submit consumes that receipt so findings are not counted twice. Previously these findings, the common case, were missing from blocking and advisory totals.
+
 ## 7.0.0
 
 ### Major Changes
