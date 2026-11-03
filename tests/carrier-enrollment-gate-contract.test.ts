@@ -38,6 +38,15 @@ describe("Initiative carrier Enrollment gate", () => {
 		expect(section.slice(config, user)).toContain("`legacy:<path>`");
 		expect(section.slice(config, user)).toContain("`deprecated_config_source` warning");
 		expect(section.replace(/\s+/g, " ")).not.toContain("ignore a `legacy:AGENTS.md`");
+		const invalid = section.indexOf("Report an invalid `initiative_carrier` configuration value");
+		const sourceLine = section.indexOf("display one non-blocking line");
+		expect(sourceLine).toBeGreaterThan(ask);
+		expect(invalid).toBeGreaterThan(sourceLine);
+		const rule = section.slice(ask, invalid).replace(/\s+/g, " ");
+		expect(rule).toContain("Once steps 1–3 select a carrier, display one non-blocking line with the selected carrier and its source as visible reply text before any question about decomposition, the Initiative, or the carrier destination");
+		expect(rule).toContain("For a `legacy:<path>` source, the same output must show the `deprecated_config_source` warning naming the replacement layer, key, and file");
+		expect(rule).toContain("A carrier named only in reasoning or inside a question does not satisfy this rule");
+		expect(section.match(/non-blocking line/g)).toHaveLength(1);
 	});
 	it("the Planner still declares the gate", () => {
 		expect(PLANNER).toContain("tracker_associated");

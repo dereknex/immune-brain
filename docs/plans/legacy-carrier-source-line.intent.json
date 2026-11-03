@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "legacy-carrier-source-line",
+  "owner": "user",
+  "goal": "Legacy carrier source line (#377). In the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md, the carrier source line becomes a required output placed directly after the four-step resolution list instead of a trailing clause: once steps 1-3 select a carrier, the Planner shows one non-blocking line naming the selected carrier and its source as visible reply text before any question about decomposition, the Initiative or the carrier destination, and for a legacy:<path> source the same output shows the deprecated_config_source warning that names the replacement layer, key and file. Resolution order, the invalid-value rule, the no-silent-default rule and the GitHub confirmation rules are unchanged. User-visible: draw-up prints the source line and deprecation warning before its first Initiative question. The manual SCN-2 re-run that #377 asks for (at least twice) is model behaviour no deterministic descriptor can prove; it stays a post-merge manual check outside this acceptance.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/carrier-enrollment-gate-contract.test.ts (#377 Expected and Suggested direction): within the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md, a source-line rule sits after '4. ask the user' and before 'Report an invalid `initiative_carrier` configuration value'; it requires one non-blocking line with the selected carrier and its source, shown as visible output before any question about decomposition, the Initiative or the carrier destination; it requires that for a `legacy:<path>` source the same output shows the `deprecated_config_source` warning naming the replacement layer, key and file; and it states that a carrier named only in reasoning or inside a question does not satisfy the rule. Negative controls: the section contains 'non-blocking line' exactly once, so the old trailing clause 'After resolving it, display one non-blocking line' is gone, and the existing request/config/user-directive/ask order and step-2 `legacy:<path>` assertions still pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/plugin-package-runtime.test.ts (repository evidence tests/plugin-package-runtime.test.ts:573-622): the packed Initiative Carrier Preference section still contains '`imm-kernel config --json`: use `initiative_carrier.value` and report its `source`', 'a `legacy:<path>` source also report its `deprecated_config_source` warning', 'There is no silent carrier default', 'standing opt-in for GitHub projection' and 'display one non-blocking line', and additionally contains the AC1 ordering clause that the line appears before any question about decomposition.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/legacy-carrier-source-line.md",
+    "docs/plans/legacy-carrier-source-line.intent.json",
+    "plugins/immune-brain/dist/draw-up.md",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

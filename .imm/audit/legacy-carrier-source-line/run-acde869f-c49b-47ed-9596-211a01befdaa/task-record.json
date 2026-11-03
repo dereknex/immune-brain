@@ -1,0 +1,129 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "legacy-carrier-source-line",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "legacy-carrier-source-line",
+    "goal": "Legacy carrier source line (#377). In the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md, the carrier source line becomes a required output placed directly after the four-step resolution list instead of a trailing clause: once steps 1-3 select a carrier, the Planner shows one non-blocking line naming the selected carrier and its source as visible reply text before any question about decomposition, the Initiative or the carrier destination, and for a legacy:<path> source the same output shows the deprecated_config_source warning that names the replacement layer, key and file. Resolution order, the invalid-value rule, the no-silent-default rule and the GitHub confirmation rules are unchanged. User-visible: draw-up prints the source line and deprecation warning before its first Initiative question. The manual SCN-2 re-run that #377 asks for (at least twice) is model behaviour no deterministic descriptor can prove; it stays a post-merge manual check outside this acceptance.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/carrier-enrollment-gate-contract.test.ts (#377 Expected and Suggested direction): within the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md, a source-line rule sits after '4. ask the user' and before 'Report an invalid `initiative_carrier` configuration value'; it requires one non-blocking line with the selected carrier and its source, shown as visible output before any question about decomposition, the Initiative or the carrier destination; it requires that for a `legacy:<path>` source the same output shows the `deprecated_config_source` warning naming the replacement layer, key and file; and it states that a carrier named only in reasoning or inside a question does not satisfy the rule. Negative controls: the section contains 'non-blocking line' exactly once, so the old trailing clause 'After resolving it, display one non-blocking line' is gone, and the existing request/config/user-directive/ask order and step-2 `legacy:<path>` assertions still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/plugin-package-runtime.test.ts (repository evidence tests/plugin-package-runtime.test.ts:573-622): the packed Initiative Carrier Preference section still contains '`imm-kernel config --json`: use `initiative_carrier.value` and report its `source`', 'a `legacy:<path>` source also report its `deprecated_config_source` warning', 'There is no silent carrier default', 'standing opt-in for GitHub projection' and 'display one non-blocking line', and additionally contains the AC1 ordering clause that the line appears before any question about decomposition.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/legacy-carrier-source-line.md",
+      "docs/plans/legacy-carrier-source-line.intent.json",
+      "plugins/immune-brain/dist/draw-up.md",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/legacy-carrier-source-line.intent.json",
+    "content_hash": "sha256:f02052cf792a09a32f965ba229274f4fc4b8a8c139df728a6f4a98b7aeb8eafd"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f02052cf792a09a32f965ba229274f4fc4b8a8c139df728a6f4a98b7aeb8eafd",
+  "git_base_head": "d82be1a0840d9aa7b74a123cf6509ab02c3ecaf9",
+  "attestations": [
+    {
+      "id": "approval-qa-7284363c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f02052cf792a09a32f965ba229274f4fc4b8a8c139df728a6f4a98b7aeb8eafd",
+      "diff_hash": "sha256:88aa63db9dd62deb6111942007f92e6f8f737c82e5d99c12467b125e8cde6b34",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:543c16eadcc743f5112a764c15e58714858f33974223388b6fb1726188a41807",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:543c16eadcc743f5112a764c15e58714858f33974223388b6fb1726188a41807"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:543c16eadcc743f5112a764c15e58714858f33974223388b6fb1726188a41807"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ae6056ac",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f02052cf792a09a32f965ba229274f4fc4b8a8c139df728a6f4a98b7aeb8eafd",
+      "diff_hash": "sha256:88aa63db9dd62deb6111942007f92e6f8f737c82e5d99c12467b125e8cde6b34",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius low: docs contract text in plugins/immune-brain/dist/draw-up.md plus pinning tests; AC1/AC2 conformed on the frozen revision with both descriptors host-attested as passed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d82be1a0840d9aa7b74a123cf6509ab02c3ecaf9",
+        "review_commit": "973d3bbbe5e042568b63e2244fe823c69ce792c3",
+        "review_tree": "687b6486e1cc897aec9098634d8ab80ed3b3aa4e",
+        "manifest_digest": "sha256:92475c685bf185a96c421e45cc04069aa43541c3b9d0266b2bc8fffc957c7164"
+      },
+      "reviewer_verdict_sha256": "sha256:0af2a0f7ba3d7740eb898986bc1e6eb682743b22129ce46982b1a130c23bf5a5"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:legacy-carrier-source-line:2026-11-03T01:57:59.097Z",
+      "at": "2026-11-03T01:57:59.097Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/legacy-carrier-source-line.intent.json"
+    },
+    {
+      "id": "record_approval:legacy-carrier-source-line:2026-11-03T01:58:18.797Z",
+      "at": "2026-11-03T01:58:18.797Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7284363c\naction_v2_sha256:3c1c02ee49fe6870a479a9c100f320b83971d900839789b39a47195d4dd3f1bc",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0664f7b08474b698",
+        "issued_at": "2026-11-03T01:58:18.797Z"
+      }
+    },
+    {
+      "id": "record_approval:legacy-carrier-source-line:2026-11-03T01:59:29.147Z",
+      "at": "2026-11-03T01:59:29.147Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ae6056ac\naction_v2_sha256:2f2520d87048610915d556b6ea19b429fb2d340514d910d19a71449089222df0",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6de0b7fa3e5eba0b",
+        "issued_at": "2026-11-03T01:59:29.147Z"
+      }
+    },
+    {
+      "id": "complete:legacy-carrier-source-line:2026-11-03T01:59:30.136Z",
+      "at": "2026-11-03T01:59:30.136Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fbe51101e30cbd1479f933b339dce5842ac9c8942c0ecb5f30e9d4a75da072d8"
+    }
+  ]
+}

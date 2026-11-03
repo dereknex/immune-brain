@@ -620,6 +620,7 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).toContain("Canonical assertion prose is authority evidence and must never be copied");
 			expect(contract).toContain("ordinary TaskIntents remain tracked by Kernel TaskRecords");
 			expect(contract).toContain("display one non-blocking line");
+			expect(contract).toContain("as visible reply text before any question about decomposition, the Initiative, or the carrier destination");
 			expect(contract).toContain("publish-initiative --stdin --json");
 			expect(contract).toContain("complete Parent/Child decomposition");
 			expect(contract).toContain("granularity");

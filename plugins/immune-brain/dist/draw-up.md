@@ -234,12 +234,18 @@ assuming the current Host injected it into context:
    default: github` directive in the Host's user-level agent instruction file;
 4. ask the user.
 
+Once steps 1–3 select a carrier, display one non-blocking line with the selected
+carrier and its source as visible reply text before any question about decomposition,
+the Initiative, or the carrier destination. For a `legacy:<path>` source, the
+same output must show the `deprecated_config_source` warning naming the replacement
+layer, key, and file. A carrier named only in reasoning or inside a question does
+not satisfy this rule.
+
 Report an invalid `initiative_carrier` configuration value and ask instead of
 falling through or guessing. If the command fails, inspect its diagnostics and
 ask when the carrier cannot be resolved. There is no silent carrier default:
 when no valid value is found, ask and report which sources were checked. Never resolve
-to `local` or `github` because a source was absent or unreadable. After resolving
-it, display one non-blocking line with the selected carrier and its source. A configured `github` default is
+to `local` or `github` because a source was absent or unreadable. A configured `github` default is
 standing opt-in for GitHub projection, but the literal user must still confirm
 the named Initiative, its immutable slug, and the complete Parent/Child
 decomposition before the first remote mutation. A prior bulk approval cannot
