@@ -237,6 +237,28 @@ never rewrite" invariant is preserved — see Architecture invariants).
    disposable offline tool (`scripts/review-eval/prescreen.ts`); if it is
    unavailable, or a spot-check against the first labelled cases is poor,
    selection falls back to the item 3 weight rule with no other change.
+   **Revised 2026-11-03 (S0 rev 3; BR-REQ-2, BR-DEC-1..5, E1):** the
+   pre-screen calls the shared `decide()`
+   (`plugins/immune-brain/runtime/decision_model/decide.ts`) at a new
+   code-owned application point `a1_review_finding_prescreen`
+   (`input_category: finding`; options `likely_true`, `likely_false`,
+   `uncertain`; threshold set `a1/v0`, `values: null`) instead of a
+   standalone classifier. The selection log records, per candidate: case
+   id, probabilities, model, threshold-set version, the path used
+   (`model` or `weight_rule`), selected or not, and the reason; it never
+   records a credential or environment-variable value. Disabling the
+   pre-screen, and every unavailable `decide()` result (`egress_denied`,
+   `credential_missing`, `provider_error`), reproduces the weight-rule
+   selection exactly, with the log naming `weight_rule`. Because effective
+   egress is the project ceiling intersected with the user request
+   (`plugins/immune-brain/runtime/config/layered_config.ts:176-179`),
+   S0 commits the project ceiling
+   `.imm/config.json` → `decision_models.egress.clef = ["finding"]` and
+   nothing else; the maintainer's user config must also request
+   `clef`/`finding` and bind the A1 point before a model pre-screen runs.
+   The findings sent are those already committed under `.imm/audit/` in
+   this public repository, sent only to Clef. This reopens #349's deferred
+   A1 migration for S0's offline pre-screen only; A2 and A3 stay deferred.
 
 ### S1: eval runner and quality metrics
 
@@ -508,7 +530,8 @@ All checks are post-implementation obligations; Planner ran none of them.
 
 | Acceptance | Focused seams | Required regression evidence |
 | --- | --- | --- |
-| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, unreachable git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. Pre-screen: the selection log records probabilities and a reason for every candidate, selected cases are uncertainty- and disagreement-first, classifier output appears nowhere in the corpus as a label, and disabling the pre-screen reproduces the item 3 weight-rule selection exactly. |
+| S0 / `RVE-S0-A2` | `tests/review-eval-corpus.test.ts` (new) | Registry entry `a1_review_finding_prescreen` matches item 7 (category, options, `a1/v0`, `values: null`); repository `.imm/config.json` declares only `clef`/`finding` egress; with a temporary user config requesting `clef`/`finding` the effective egress is `clef: ["finding"]` and every other kind empty; a user request of `clef`/`diff` is dropped with `egress_beyond_project_ceiling`. |
+| S0 / `RVE-S0-A1` | `tests/review-eval-corpus.test.ts` (new) | Extractor run at a pinned commit yields a deterministic corpus (same input commit → byte-identical jsonl); ineligible records (null evidence, unrecoverable revision, unreachable git objects) are excluded with counts by reason; corpus validates against its schema; README states the silver-label rule; gold/validation split is by recency and stable across regeneration. Pre-screen: the selection log records probabilities and a reason for every candidate, selected cases are uncertainty- and disagreement-first, classifier output appears nowhere in the corpus as a label, and disabling the pre-screen reproduces the item 3 weight-rule selection exactly. Fake-adapter cases: `egress_denied`, `credential_missing`, `provider_error`, and pre-screen off each yield the weight-rule selection with `weight_rule` logged per candidate; a decided run logs model, threshold-set version, and probabilities; no log line contains a credential or env value. |
 | S1 / `RVE-S1-A1` | `tests/review-eval-runner.test.ts` (new, model dispatch faked), `tests/review-retro-analyzer.test.ts` | Scoring: a faked verdict reproducing a gold bug by anchor and one by location both count as recall hits; a blocking finding on a clean case counts FP; unknown anchors count as new-anchor, never silently as FP or TP. Record report: rounds/dispositions/`security_boundary` shares computed from committed fixture records match hand-checked values. Retro: new metrics appear only for events present in fixtures; a fixture without `violated.kind` in verdict findings yields the pre-change report unchanged. Baseline report committed and referenced from the corpus README. Mislabel rate: classifier-kind versus declared-kind mismatch over fixture records matches hand-checked values and is labelled experimental until scored against gold. |
 | S2 / `RVE-S2-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/skill-dist-consistency.test.ts` | Verifier packet contains finding + acceptance + revision and demonstrably excludes reviewer prose/Parent text (packet snapshot assertions); output contract rejects missing results, unknown anchors, refuted-without-counter-path, and extra findings as malformed-kept-all; source prompt and all dist mirrors agree; the role has no review gate and cannot be dispatched as `imm-code-review`. |
 | S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. Escalation check: a refuted finding whose recorded classifier probability meets the threshold parks for the literal user instead of archiving, a below-threshold score archives, and classifier failure archives with the failure recorded in the verification event. |
@@ -577,6 +600,47 @@ All checks are post-implementation obligations; Planner ran none of them.
   one must re-plan, not amend quietly.
 
 ## Brainstorm Trace and planning handoff
+
+### 2026-11-03 round: S0 with a decide()-based pre-screen
+
+Derek adopted the recommended framing on 2026-11-03 (Q1 scope S0 plus his
+labelling, Q2 pre-screen on `decide()`, Q3 deferred measurement items, Q4
+issue header rewrite) and then E1 (commit the project egress ceiling). Each
+item maps exactly once:
+
+| Item | Disposition |
+| --- | --- |
+| BR-REQ-1 | S0 TaskIntent rev 3, `RVE-S0-A1` |
+| BR-REQ-2 | S0 item 7 revision; `RVE-S0-A1` (pre-screen) and `RVE-S0-A2` (registry) |
+| BR-REQ-3 | Post-merge user step: Derek labels 30 gold cases (≥10 `confirmed_false` or clean) in a separate commit; not a QA acceptance — the README protocol it follows is `RVE-S0-A1` |
+| BR-REQ-4 | #284 triage header rewritten during draw-up (planning publication, not an acceptance) |
+| BR-DEC-1 | S0 item 7 revision note (A1 reopened for the offline pre-screen only) |
+| BR-DEC-2 | `RVE-S0-A1` (classifier output never a label) |
+| BR-DEC-3 | `RVE-S0-A1` (fallback reproduces weight rule; path logged) |
+| BR-DEC-4 + E1 | `RVE-S0-A2` (committed project ceiling `clef`/`finding` only); the user-config request stays Derek's |
+| BR-DEC-5 | `RVE-S0-A1` (no credential in log or README) |
+| BR-OUT-1 | Out of scope: S2/S3 TaskIntents unchanged and not enrolled this round |
+| BR-OUT-2 | Out of scope: Architecture invariants above; no live path |
+| BR-OUT-3 | `RVE-S0-A2` pins `values: null` |
+| BR-OUT-4 | `RVE-S0-A2` (no other kind or category in the ceiling) |
+| BR-DEFER-1 | S1 deferred, blocked by BR-REQ-3 (gold labels) |
+| BR-DEFER-2 | S2/S3 deferred, blocked by BR-DEFER-1 (baseline gate) |
+| BR-DEFER-3 | #177/#164 measurement items deferred |
+| BR-DEFER-4 | A2/A3 migration and other #204 points keep their #349/#204 dispositions |
+| BR-Q-1 | Resolved by E1 for the project layer; the user layer is a pre-`drive` user step |
+| BR-SCN-1 | `RVE-S0-A1` (decided run: log shows probability, model, threshold-set version, path) |
+| BR-SCN-2 | `RVE-S0-A1` (unavailable provider: weight-rule selection, path logged) |
+| BR-SCN-3 | `RVE-S0-A1` (README protocol, ≥10 `confirmed_false`/clean, selection log) |
+| BR-SCN-4 | manual: the result is the remote #284 body, which QA cannot read |
+
+Threat model for the pre-screen's external input (provider responses and
+committed audit records): a malformed or out-of-option provider answer is
+an unavailable `decide()` result and falls back to the weight rule; a
+missing credential or a denied egress category never sends a request.
+Supported environment: macOS/Linux with `bun`, `git`, and `gh` as for the
+rest of S0; acceptance descriptors use a fake adapter and no network.
+
+### Original 2026-10-20 trace
 
 No upstream Brainstorm manifest and no `BR-*` items. Upstream decisions this
 draft rests on: the deferred verifier design in

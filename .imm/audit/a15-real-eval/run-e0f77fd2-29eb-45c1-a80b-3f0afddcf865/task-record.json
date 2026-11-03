@@ -1,0 +1,152 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "a15-real-eval",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "a15-real-eval",
+    "goal": "A15 first real-provider offline eval (#204; Spec docs/specs/a15-real-eval.spec.md D1-D5). The repository commits an A15 corpus extracted unedited from dereknex/immune-brain issues and a dated A15 report produced by a real Clef run over it; decision-eval reports carry counts.gold and a class_imbalance caveat, and checkRecordedReport() lets anyone verify offline that a committed report came from a real provider over the committed corpus. The real Clef call sends only issue title and body and is confirmed once inside drive; thresholds stay a15/v0 with values null.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/decision-eval-a15.test.ts, the committed tests/fixtures/decision-eval/a15/corpus.jsonl parses through parseCorpus, every row has repository dereknex/immune-brain, at least one row is labelled, and every row gold equals prefillGold(row) with labelled rows carrying labeler repo-labels; a missing corpus file or a row whose gold disagrees with its labels fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/decision-eval-harness.test.ts, checkRecordedReport(report, corpusBytes, point) returns [] for a buildReport() report with provider_kind clef, a non-fake model and the matching corpus, and returns its own code for each of: provider_kind fake (not_real_provider), model fake (not_real_provider), altered corpus bytes (corpus_mismatch), zero decided cases (nothing_decided), a credential_missing unavailable entry (credential_missing), an extra top-level key (unknown_field), and a labelled count or gold distribution that disagrees with the corpus (labelled_mismatch).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/decision-eval-a15.test.ts, at least one docs/reports/decision-eval/a15-*.json exists (zero matched files fails), and each passes checkRecordedReport() against the committed corpus with threshold_set_version a15/v0, every decided case carries probabilities over duplicate, needs_spec and ready_for_agent plus model, model_version and threshold_set_version, and its sibling .md exists and contains the line prefix | Baseline (majority_class) |.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-a15.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/decision-eval-harness.test.ts, buildReport() reports counts.gold with every option in option order (an option with no labelled case shows 0); a corpus whose majority gold option holds 9 of 10 labelled cases yields caveats [class_imbalance] and renderMarkdown() emits a Gold distribution line and a line starting Class imbalance:, while an 8 of 10 majority yields caveats [] and no Class imbalance line.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/decision-eval-harness.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 90000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/a15-real-eval.intent.json",
+      "docs/reports/decision-eval",
+      "docs/specs/a15-real-eval.spec.md",
+      "scripts/decision-eval/harness.ts",
+      "tests/decision-eval-a15.test.ts",
+      "tests/decision-eval-harness.test.ts",
+      "tests/fixtures/decision-eval/a15/README.md",
+      "tests/fixtures/decision-eval/a15/corpus.jsonl"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/a15-real-eval.intent.json",
+    "content_hash": "sha256:6a7193d712eacc776c7d2c2ff6523533f9f4b4d6da5b96ed2ae89bdd83e25b7b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6a7193d712eacc776c7d2c2ff6523533f9f4b4d6da5b96ed2ae89bdd83e25b7b",
+  "git_base_head": "c5a93aa1365b9bd4ce42a63e11d9756e2c14e46a",
+  "attestations": [
+    {
+      "id": "approval-qa-b9a12c99",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6a7193d712eacc776c7d2c2ff6523533f9f4b4d6da5b96ed2ae89bdd83e25b7b",
+      "diff_hash": "sha256:c8ded1dc7a5882903248b1268eaa5ce1606a6d865ed4377609f732ed6c74b1e8",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:ecb153ea85062fc25ed2b0f8c2ef7ffb4294bcc1de14f41db11368a6fb6779a9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ecb153ea85062fc25ed2b0f8c2ef7ffb4294bcc1de14f41db11368a6fb6779a9"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ecb153ea85062fc25ed2b0f8c2ef7ffb4294bcc1de14f41db11368a6fb6779a9"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ecb153ea85062fc25ed2b0f8c2ef7ffb4294bcc1de14f41db11368a6fb6779a9"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ecb153ea85062fc25ed2b0f8c2ef7ffb4294bcc1de14f41db11368a6fb6779a9"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1a727f3b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6a7193d712eacc776c7d2c2ff6523533f9f4b4d6da5b96ed2ae89bdd83e25b7b",
+      "diff_hash": "sha256:c8ded1dc7a5882903248b1268eaa5ce1606a6d865ed4377609f732ed6c74b1e8",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified additively: the committed A15 corpus (280 rows, 182 labelled, every row's repository and gold==prefillGold and labeler repo-labels on labelled rows) and the recorded real-provider report (corpus sha256 d1d28195 matches, provider_kind clef, model clef, threshold_set_version a15/v0, every decided case carrying full three-option probabilities plus model/model_version/threshold_set_version, sibling md containing | Baseline (majority_class) |, gold duplicate=0 needs_spec=2 ready_for_agent=180 and caveats [class_imbalance]) satisfy AC1-AC4 on the frozen snapshot; checkRecordedReport codes, buildReport counts.gold and caveats (0.9 threshold, per-option zero counts in option order), and renderMarkdown's Gold distribution and Class imbalance lines match the Spec D3 word for word; blast radius tier low, load-bearing paths scripts/decision-eval/harness.ts and docs/reports/decision-eval/a15-2026-11-03.{json,md}, plus the shared report shape consumed by the A4/A14/A16 tests which use toMatchObject and are unaffected by additive fields. Re-computed independently against Git objects (sha256 of the corpus blob, labelled/gold counts, all 182 case envelopes, md content).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c5a93aa1365b9bd4ce42a63e11d9756e2c14e46a",
+        "review_commit": "77ac7547dd4403b777982c76b06f97894096a761",
+        "review_tree": "beabe98f0fa90f58055bbcf9b9c6733e2781eeb5",
+        "manifest_digest": "sha256:f00989b9e88478bc63d93db446adcb894099542f18ee4a144701891ad73c112f"
+      },
+      "reviewer_verdict_sha256": "sha256:60e79414a17104caf3849dd8128480e2a4421cb7cb586b7021f0bc047a71f255"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:a15-real-eval:2026-11-03T03:51:41.006Z",
+      "at": "2026-11-03T03:51:41.006Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/a15-real-eval.intent.json"
+    },
+    {
+      "id": "record_approval:a15-real-eval:2026-11-03T03:51:57.612Z",
+      "at": "2026-11-03T03:51:57.612Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b9a12c99\naction_v2_sha256:b4448296c670c60410c30b577d6178f2ed17eb040c62eee767da70321cb0e3ea",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ff56304d3acbd22e",
+        "issued_at": "2026-11-03T03:51:57.612Z"
+      }
+    },
+    {
+      "id": "record_approval:a15-real-eval:2026-11-03T03:54:56.975Z",
+      "at": "2026-11-03T03:54:56.975Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1a727f3b\naction_v2_sha256:3a283a6bdb72e9ac6e1e3c68b218967df6cb6f7818faf40a39a056832dd3a839",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-9f4af85d4989d8a4",
+        "issued_at": "2026-11-03T03:54:56.975Z"
+      }
+    },
+    {
+      "id": "complete:a15-real-eval:2026-11-03T03:54:58.317Z",
+      "at": "2026-11-03T03:54:58.317Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3d256fad91f67951674f177929df1b86a07ff15c4c3699b7ee1a786bc78213d8"
+    }
+  ]
+}
