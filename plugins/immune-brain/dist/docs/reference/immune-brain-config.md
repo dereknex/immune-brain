@@ -125,9 +125,10 @@ An error fails closed only in its own section:
 
 These sources are read for one major version, each only when no new layer sets
 the same section. A value read from one has source `legacy:<path>` and adds a
-`deprecated_config_source` warning naming its replacement key. When a new layer
-sets the section, the legacy source is not used and `legacy_source_ignored`
-names it.
+`deprecated_config_source` warning naming its replacement key with that key's
+layer and file: your user file path for a user key, `.imm/config.json` for a
+project key. When a new layer sets the section, the legacy source is not used
+and `legacy_source_ignored` names it and the same replacement.
 
 | Legacy source | Section it fills | Replacement key |
 |---|---|---|
@@ -139,8 +140,9 @@ names it.
 
 The Planner also reads, as its last step before asking, the deprecated
 `Initiative carrier default: local` or `Initiative carrier default: github`
-directive in the Host's user-level agent instruction file. It does not take the
-carrier from a `legacy:AGENTS.md` or `legacy:CLAUDE.md` value.
+directive in the Host's user-level agent instruction file. A `legacy:AGENTS.md`
+or `legacy:CLAUDE.md` carrier is used like any other resolved value; the Planner
+reports that source and its deprecation warning.
 
 ## Initiative Carrier
 

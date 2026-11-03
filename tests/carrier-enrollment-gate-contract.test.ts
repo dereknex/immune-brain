@@ -34,6 +34,10 @@ describe("Initiative carrier Enrollment gate", () => {
 		expect(section).toContain("Host's user-level agent instruction file");
 		expect(section).toContain("Report an invalid `initiative_carrier` configuration value and ask");
 		expect(section).not.toContain("in the repository root agent instruction file");
+		// Issue #370: a legacy repository directive is used with its deprecation warning, not skipped.
+		expect(section.slice(config, user)).toContain("`legacy:<path>`");
+		expect(section.slice(config, user)).toContain("`deprecated_config_source` warning");
+		expect(section.replace(/\s+/g, " ")).not.toContain("ignore a `legacy:AGENTS.md`");
 	});
 	it("the Planner still declares the gate", () => {
 		expect(PLANNER).toContain("tracker_associated");

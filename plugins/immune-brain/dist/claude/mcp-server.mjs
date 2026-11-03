@@ -7882,10 +7882,11 @@ function resolveConfig(root, options = {}) {
     for (const o of [ul, ol, pl, laneProfiles])
       for (const key of Object.keys(o))
         delete o[key];
-  const legacy = (path, replacement, used) => {
+  const legacy = (path, targets, used) => {
     if (!existsSync7(join13(root, path)) || path === ".imm/decision-bindings.json" && !tracked(path))
       return false;
-    diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, replacement, used ? "deprecated; use this replacement key" : "ignored in favor of this replacement key");
+    const where = targets.map((t) => `${t.layer} \`${t.key}\` in ${t.layer === "user" ? userPath : projectPath}`).join(" and ");
+    diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, targets[0].key, used ? `deprecated; move to ${where}` : `ignored because a newer layer sets this section; its replacement is ${where}`);
     return true;
   };
   let legacyLane = {}, legacyProfiles = {}, legacyBindings = {};
@@ -7900,11 +7901,11 @@ function resolveConfig(root, options = {}) {
     }
     return value;
   };
-  if (legacy(".imm/lanes.local.json", "lanes", useLegacyLane) && useLegacyLane)
+  if (legacy(".imm/lanes.local.json", [{ layer: "user", key: "lanes" }], useLegacyLane) && useLegacyLane)
     legacyLane = readLegacy(".imm/lanes.local.json", "lanes");
-  if (legacy(".imm/decision-models.local.json", "decision_models.profiles", useLegacyProfiles) && useLegacyProfiles)
+  if (legacy(".imm/decision-models.local.json", [{ layer: "user", key: "decision_models.profiles" }], useLegacyProfiles) && useLegacyProfiles)
     legacyProfiles = readLegacy(".imm/decision-models.local.json", "decision_models");
-  if (legacy(".imm/decision-bindings.json", "decision_models", useLegacyBindings) && useLegacyBindings)
+  if (legacy(".imm/decision-bindings.json", [{ layer: "user", key: "decision_models" }, { layer: "project", key: "decision_models.egress" }], useLegacyBindings) && useLegacyBindings)
     legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
   if (object3(legacyProfiles.profiles)) {
     for (const [name, profile] of Object.entries(legacyProfiles.profiles))
@@ -8018,9 +8019,9 @@ function resolveConfig(root, options = {}) {
   const gitLegacy = directive(/^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i);
   const carrierLegacy = directive(/^\s*[-*]\s+Initiative carrier default:\s*(.*?)\s*$/i);
   if (gitLegacy)
-    legacy(gitLegacy.file, "git_integration", !has(project ?? undefined, "git_integration"));
+    legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !has(project ?? undefined, "git_integration"));
   if (carrierLegacy)
-    legacy(carrierLegacy.file, "initiative_carrier", !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
+    legacy(carrierLegacy.file, [{ layer: "project", key: "initiative_carrier" }], !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
   if (gitLegacy && !has(project ?? undefined, "git_integration") && !["manual", "auto"].includes(gitLegacy.value)) {
     invalid(gitLegacy.file, "git_integration", "invalid legacy directive");
     failed.add("git_integration");

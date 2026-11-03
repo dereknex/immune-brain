@@ -1,0 +1,166 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "legacy-config-hints",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "legacy-config-hints",
+    "goal": "Legacy config hints (#369, #370; Spec docs/specs/legacy-config-hints.spec.md D1-D7). Every deprecated_config_source and legacy_source_ignored warning from resolveConfig names its replacement key with its layer and that layer's file, the .imm/decision-bindings.json warning names both user decision_models and project decision_models.egress, and code, severity, file and key_path keep today's values. The Planner's carrier resolution in dist/draw-up.md uses a legacy:AGENTS.md or legacy:CLAUDE.md initiative_carrier value like any other source, reporting the source and its deprecation warning, and the user guide says the same.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/layered-config.test.ts (SCN-1, D1-D4): when each legacy source is used, its deprecated_config_source message names its D3 targets as '<layer> `<key>` in <file>', with the user file shown as the resolved user path (a fixture options.userConfigPath or XDG_CONFIG_HOME path appears in the message). The .imm/lanes.local.json and .imm/decision-models.local.json messages name the user file and not .imm/config.json; the AGENTS.md Git integration and carrier messages name .imm/config.json and not the user file; the .imm/decision-bindings.json message names both user `decision_models` in the user file and project `decision_models.egress` in .imm/config.json. code, severity, file and key_path keep today's values, including key_path decision_models for decision bindings.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "In tests/layered-config.test.ts (D1-D4): when a newer layer replaces each legacy source, its legacy_source_ignored message names the same D3 targets and files as AC1, and no ignored or deprecated message still contains the old sentence 'use this replacement key' or 'ignored in favor of this replacement key'.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "In tests/carrier-enrollment-gate-contract.test.ts and tests/plugin-package-runtime.test.ts (D5): the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md keeps the request, imm-kernel config --json, user-level directive, ask order and the invalid-value rule; its step 2 names a `legacy:<path>` source as used and reported together with its deprecated_config_source warning, and the section no longer contains 'ignore a `legacy:AGENTS.md`'.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "In tests/pi-only-current-contracts.test.ts (D6): docs/reference/immune-brain-config.md 'Legacy Sources' keeps each D3 replacement in its table row, states that a warning names the replacement key with its layer and file, states that the Planner uses a legacy:AGENTS.md or legacy:CLAUDE.md carrier with its deprecation warning, no longer contains 'It does not take the carrier from a', and plugins/immune-brain/dist/docs/reference/immune-brain-config.md is byte-identical to it.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "The Claude bundle is current and the repository typechecks (D7).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/legacy-config-hints.md",
+      "docs/plans/legacy-config-hints.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/legacy-config-hints.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/draw-up.md",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/layered-config.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/plugin-package-runtime.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/legacy-config-hints.intent.json",
+    "content_hash": "sha256:66b508aea3379a0f53d861505d52a5fd63b8441193477df7cdb692d7eb6d7be6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:66b508aea3379a0f53d861505d52a5fd63b8441193477df7cdb692d7eb6d7be6",
+  "git_base_head": "2faefe0e3d0e66e8cb348f6f7a590a908e090343",
+  "attestations": [
+    {
+      "id": "approval-qa-ab0ac47d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66b508aea3379a0f53d861505d52a5fd63b8441193477df7cdb692d7eb6d7be6",
+      "diff_hash": "sha256:e4a35a4750ee911aea7f7fc243d7ee49d91a466fb63a125bb840d3f5e57dd184",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3bece09a2a4cf0e2add909dfaea177f69fea39e89417801cfb0710314f4b147f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-db0a2ed6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66b508aea3379a0f53d861505d52a5fd63b8441193477df7cdb692d7eb6d7be6",
+      "diff_hash": "sha256:e4a35a4750ee911aea7f7fc243d7ee49d91a466fb63a125bb840d3f5e57dd184",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (f5904b9 has the single parent 2faefe0 and tree e11f234); I read the full diff of all 12 paths. AC1/AC2: the legacy() helper in layered_config.ts now takes {layer,key} targets and renders '<layer> `<key>` in <userPath|.imm/config.json>'. key_path stays targets[0].key, so decision bindings keep key_path decision_models, and code, severity and file are unchanged. layered-config.test.ts checks every legacy kind for both the deprecated and ignored warnings: the fixture userConfigPath appears in user-target messages, the other layer's file is absent, decision bindings name both targets, and the old sentences are gone. AC3: draw-up.md step 2 now accepts a legacy:<path> source and reports its deprecated_config_source warning; both contract tests pin this and also check the ignore clause is removed. AC4: the guide's prose and its mirror are byte-identical, and the test pins the new wording and the removed sentence. AC5: the mcp-server.mjs bundle hunk matches the source change. Blast radius: tier low; only warning message text and Planner/guide prose change, with no resolution order, persisted shape or machine-field change; load-bearing paths are plugins/immune-brain/runtime/config/layered_config.ts and plugins/immune-brain/dist/draw-up.md.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2faefe0e3d0e66e8cb348f6f7a590a908e090343",
+        "review_commit": "f5904b99f7ed1bfeb5f4c07bc6d3c00ed7b32cca",
+        "review_tree": "e11f234236a9d03997d17b56bd455a0a073c7a5c",
+        "manifest_digest": "sha256:23b3d8859e937fbef66fa91fcd8867fb216a817e4bf94e9299d98b23f6b2ffb8"
+      },
+      "reviewer_verdict_sha256": "sha256:7b458d9ad1ba1e25672deb1209a19571dc38e6cb39ad4ff35beafb21a4eeded0"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:legacy-config-hints:2026-11-03T01:13:02.733Z",
+      "at": "2026-11-03T01:13:02.733Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/legacy-config-hints.intent.json"
+    },
+    {
+      "id": "record_approval:legacy-config-hints:2026-11-03T01:13:23.723Z",
+      "at": "2026-11-03T01:13:23.723Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ab0ac47d\naction_v2_sha256:236d2732c3cb272397d79b709733d52efa6a6eaea23319531452a15e99d54f65",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-03T01:13:23.723Z"
+      }
+    },
+    {
+      "id": "record_approval:legacy-config-hints:2026-11-03T01:14:57.169Z",
+      "at": "2026-11-03T01:14:57.169Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-db0a2ed6\naction_v2_sha256:8fea67bb3cb690af85fd434ba6fcf795eebd50c54a9123679b519a9439f44a7b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-03T01:14:57.170Z"
+      }
+    },
+    {
+      "id": "complete:legacy-config-hints:2026-11-03T01:14:58.459Z",
+      "at": "2026-11-03T01:14:58.459Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:79680511dbd31684d225fb675afb9b54db038d725fbf8440a3788431866711d0"
+    }
+  ]
+}
