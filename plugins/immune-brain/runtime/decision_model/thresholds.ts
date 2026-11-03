@@ -4,6 +4,20 @@
 
 import type { ApplicationPoint, PointRegistry } from "./contract.ts";
 
+export const A1_REVIEW_FINDING_PRESCREEN: ApplicationPoint = {
+	id: "a1_review_finding_prescreen",
+	question_type: "choice",
+	input_category: "finding",
+	options: ["likely_true", "likely_false", "uncertain"],
+	criteria: {
+		likely_true: "The finding describes a reachable defect",
+		likely_false: "The finding does not describe a reachable defect",
+		uncertain: "The evidence does not support either conclusion",
+	},
+	instructions: "Given a review finding's trigger, caller chain, and violated invariant, which option best describes it?",
+	threshold_set: { version: "a1/v0", values: null },
+};
+
 export const A14_PR_COMMENT_TRIAGE: ApplicationPoint = {
 	id: "a14_pr_comment_triage",
 	question_type: "choice",
@@ -67,6 +81,7 @@ export const A4_FINDING_EQUIVALENCE: ApplicationPoint = {
 };
 
 export const POINT_REGISTRY: PointRegistry = {
+	[A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
 	[A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
 	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
 	[A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,

@@ -7575,8 +7575,21 @@ var init_config = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/decision_model/thresholds.ts
-var A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, POINT_REGISTRY;
+var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, POINT_REGISTRY;
 var init_thresholds = __esm(() => {
+  A1_REVIEW_FINDING_PRESCREEN = {
+    id: "a1_review_finding_prescreen",
+    question_type: "choice",
+    input_category: "finding",
+    options: ["likely_true", "likely_false", "uncertain"],
+    criteria: {
+      likely_true: "The finding describes a reachable defect",
+      likely_false: "The finding does not describe a reachable defect",
+      uncertain: "The evidence does not support either conclusion"
+    },
+    instructions: "Given a review finding's trigger, caller chain, and violated invariant, which option best describes it?",
+    threshold_set: { version: "a1/v0", values: null }
+  };
   A14_PR_COMMENT_TRIAGE = {
     id: "a14_pr_comment_triage",
     question_type: "choice",
@@ -7632,6 +7645,7 @@ var init_thresholds = __esm(() => {
     threshold_set: { version: "a4/v0", values: null }
   };
   POINT_REGISTRY = {
+    [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
     [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
     [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
     [A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,

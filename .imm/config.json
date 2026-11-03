@@ -1,4 +1,7 @@
 {
   "contract": "immune_brain/project_config/v1",
-  "initiative_carrier": "github"
+  "initiative_carrier": "github",
+  "decision_models": {
+    "egress": { "clef": ["finding"] }
+  }
 }
