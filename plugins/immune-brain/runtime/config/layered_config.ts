@@ -118,9 +118,11 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (failed.has("decision_models")) for (const o of [ud, od, pd]) for (const key of Object.keys(o)) delete o[key];
 	if (failed.has("lanes")) for (const o of [ul, ol, pl, laneProfiles]) for (const key of Object.keys(o)) delete o[key];
 
-	const legacy = (path: string, replacement: string, used: boolean) => {
+	type Target = { layer: "user" | "project"; key: string };
+	const legacy = (path: string, targets: Target[], used: boolean) => {
 		if (!existsSync(join(root, path)) || (path === ".imm/decision-bindings.json" && !tracked(path))) return false;
-		diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, replacement, used ? "deprecated; use this replacement key" : "ignored in favor of this replacement key");
+		const where = targets.map((t) => `${t.layer} \`${t.key}\` in ${t.layer === "user" ? userPath : projectPath}`).join(" and ");
+		diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, targets[0].key, used ? `deprecated; move to ${where}` : `ignored because a newer layer sets this section; its replacement is ${where}`);
 		return true;
 	};
 	let legacyLane: Obj = {}, legacyProfiles: Obj = {}, legacyBindings: Obj = {};
@@ -132,9 +134,9 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		if (value === null) { failed.add(name); return {}; }
 		return value;
 	};
-	if (legacy(".imm/lanes.local.json", "lanes", useLegacyLane) && useLegacyLane) legacyLane = readLegacy(".imm/lanes.local.json", "lanes");
-	if (legacy(".imm/decision-models.local.json", "decision_models.profiles", useLegacyProfiles) && useLegacyProfiles) legacyProfiles = readLegacy(".imm/decision-models.local.json", "decision_models");
-	if (legacy(".imm/decision-bindings.json", "decision_models", useLegacyBindings) && useLegacyBindings) legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
+	if (legacy(".imm/lanes.local.json", [{ layer: "user", key: "lanes" }], useLegacyLane) && useLegacyLane) legacyLane = readLegacy(".imm/lanes.local.json", "lanes");
+	if (legacy(".imm/decision-models.local.json", [{ layer: "user", key: "decision_models.profiles" }], useLegacyProfiles) && useLegacyProfiles) legacyProfiles = readLegacy(".imm/decision-models.local.json", "decision_models");
+	if (legacy(".imm/decision-bindings.json", [{ layer: "user", key: "decision_models" }, { layer: "project", key: "decision_models.egress" }], useLegacyBindings) && useLegacyBindings) legacyBindings = readLegacy(".imm/decision-bindings.json", "decision_models");
 	if (object(legacyProfiles.profiles)) for (const [name, profile] of Object.entries(legacyProfiles.profiles)) if (object(profile)) for (const [key, value] of Object.entries(profile)) if (key.endsWith("_env") && (typeof value !== "string" || !envName.test(value))) { invalid(".imm/decision-models.local.json", `profiles.${name}.${key}`, "expected environment variable name"); failed.add("decision_models"); legacyProfiles = {}; }
 	if (Object.keys(legacyProfiles).length && !parseProfiles(legacyProfiles).ok) { invalid(".imm/decision-models.local.json", "profiles", "invalid profiles"); failed.add("decision_models"); legacyProfiles = {}; }
 	if (Object.keys(legacyBindings).length && !parseBindings(legacyBindings, registry).ok) { invalid(".imm/decision-bindings.json", "decision_models", "invalid bindings"); failed.add("decision_models"); legacyBindings = {}; }
@@ -181,8 +183,8 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	};
 	const gitLegacy = directive(/^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i);
 	const carrierLegacy = directive(/^\s*[-*]\s+Initiative carrier default:\s*(.*?)\s*$/i);
-	if (gitLegacy) legacy(gitLegacy.file, "git_integration", !has(project ?? undefined, "git_integration"));
-	if (carrierLegacy) legacy(carrierLegacy.file, "initiative_carrier", !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
+	if (gitLegacy) legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !has(project ?? undefined, "git_integration"));
+	if (carrierLegacy) legacy(carrierLegacy.file, [{ layer: "project", key: "initiative_carrier" }], !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
 	if (gitLegacy && !has(project ?? undefined, "git_integration") && !["manual", "auto"].includes(gitLegacy.value)) { invalid(gitLegacy.file, "git_integration", "invalid legacy directive"); failed.add("git_integration"); }
 	if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) { invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive"); failed.add("initiative_carrier"); }
 	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };

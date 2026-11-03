@@ -1,0 +1,49 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "legacy-config-hints",
+  "owner": "user",
+  "goal": "Legacy config hints (#369, #370; Spec docs/specs/legacy-config-hints.spec.md D1-D7). Every deprecated_config_source and legacy_source_ignored warning from resolveConfig names its replacement key with its layer and that layer's file, the .imm/decision-bindings.json warning names both user decision_models and project decision_models.egress, and code, severity, file and key_path keep today's values. The Planner's carrier resolution in dist/draw-up.md uses a legacy:AGENTS.md or legacy:CLAUDE.md initiative_carrier value like any other source, reporting the source and its deprecation warning, and the user guide says the same.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "In tests/layered-config.test.ts (SCN-1, D1-D4): when each legacy source is used, its deprecated_config_source message names its D3 targets as '<layer> `<key>` in <file>', with the user file shown as the resolved user path (a fixture options.userConfigPath or XDG_CONFIG_HOME path appears in the message). The .imm/lanes.local.json and .imm/decision-models.local.json messages name the user file and not .imm/config.json; the AGENTS.md Git integration and carrier messages name .imm/config.json and not the user file; the .imm/decision-bindings.json message names both user `decision_models` in the user file and project `decision_models.egress` in .imm/config.json. code, severity, file and key_path keep today's values, including key_path decision_models for decision bindings.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "In tests/layered-config.test.ts (D1-D4): when a newer layer replaces each legacy source, its legacy_source_ignored message names the same D3 targets and files as AC1, and no ignored or deprecated message still contains the old sentence 'use this replacement key' or 'ignored in favor of this replacement key'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "In tests/carrier-enrollment-gate-contract.test.ts and tests/plugin-package-runtime.test.ts (D5): the Initiative Carrier Preference section of plugins/immune-brain/dist/draw-up.md keeps the request, imm-kernel config --json, user-level directive, ask order and the invalid-value rule; its step 2 names a `legacy:<path>` source as used and reported together with its deprecated_config_source warning, and the section no longer contains 'ignore a `legacy:AGENTS.md`'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/plugin-package-runtime.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "In tests/pi-only-current-contracts.test.ts (D6): docs/reference/immune-brain-config.md 'Legacy Sources' keeps each D3 replacement in its table row, states that a warning names the replacement key with its layer and file, states that the Planner uses a legacy:AGENTS.md or legacy:CLAUDE.md carrier with its deprecation warning, no longer contains 'It does not take the carrier from a', and plugins/immune-brain/dist/docs/reference/immune-brain-config.md is byte-identical to it.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "The Claude bundle is current and the repository typechecks (D7).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/legacy-config-hints.md",
+    "docs/plans/legacy-config-hints.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/legacy-config-hints.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/draw-up.md",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/layered-config.test.ts",
+    "tests/pi-only-current-contracts.test.ts",
+    "tests/plugin-package-runtime.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

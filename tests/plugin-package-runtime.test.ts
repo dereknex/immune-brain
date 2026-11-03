@@ -591,6 +591,8 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).toContain("Initiative carrier default: github");
 			expect(contract).toContain("`imm-kernel config --json`: use `initiative_carrier.value` and report its `source`");
 			expect(contract).not.toContain("A repository directive overrides the user-level directive");
+			expect(contract).toContain("a `legacy:<path>` source also report its `deprecated_config_source` warning");
+			expect(contract).not.toContain("ignore a `legacy:AGENTS.md`");
 			expect(contract).toContain("There is no silent carrier default");
 			expect(contract).toContain(
 				"Never resolve to `local` or `github` because a source was absent or unreadable",

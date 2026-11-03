@@ -152,16 +152,30 @@ test.each(["lane", "profiles", "bindings", "git", "carrier"])("resolves and repl
 	else if (kind === "bindings") { path = ".imm/decision-bindings.json"; replacement = "decision_models"; write(f.root, path, { contract: "immune_brain/decision_bindings/v1", default_profile: null, bindings: {}, egress: { clef: ["finding"] } }); execFileSync("git", ["add", path], { cwd: f.root }); }
 	else { path = "AGENTS.md"; replacement = kind === "git" ? "git_integration" : "initiative_carrier"; writeFileSync(join(f.root, path), kind === "git" ? "- Git integration: auto\n" : "- Initiative carrier default: local\n"); execFileSync("git", ["add", path], { cwd: f.root }); }
 	const source = (c: ReturnType<typeof resolveConfig>) => kind === "lane" ? c.lanes.max_parallel.source : kind === "profiles" ? c.decision_models.profiles.source : kind === "bindings" ? c.decision_models.egress.clef.source : kind === "git" ? c.git_integration.source : c.initiative_carrier.source;
+	const userTarget = kind === "lane" || kind === "profiles" || kind === "bindings", projectTarget = !userTarget || kind === "bindings";
+	const expectTargets = (message: string) => {
+		const userKey = kind === "bindings" ? "decision_models" : replacement;
+		if (userTarget) expect(message).toContain(`user \`${userKey}\` in ${f.userPath}`); else expect(message).not.toContain(f.userPath);
+		if (projectTarget) expect(message).toContain(`project \`${kind === "bindings" ? "decision_models.egress" : replacement}\` in .imm/config.json`); else expect(message).not.toContain(".imm/config.json");
+		expect(message).not.toContain("use this replacement key");
+		expect(message).not.toContain("ignored in favor of this replacement key");
+	};
 	let c = f.read();
 	expect(source(c)).toBe(`legacy:${path}`);
-	expect(c.diagnostics.some(d => d.code === "deprecated_config_source" && d.file === path && d.key_path === replacement)).toBe(true);
+	const deprecated = c.diagnostics.filter(d => d.code === "deprecated_config_source" && d.file === path);
+	expect(deprecated).toHaveLength(1);
+	expect(deprecated[0]).toMatchObject({ severity: "warning", key_path: replacement });
+	expectTargets(deprecated[0].message);
 	if (kind === "lane") f.project({ lanes: { max_parallel: 1 } });
 	else if (kind === "profiles") f.user({ decision_models: { profiles: {} } });
 	else if (kind === "bindings") f.project({ decision_models: { egress: { clef: [] } } });
 	else f.project(kind === "git" ? { git_integration: "manual" } : { initiative_carrier: "github" });
 	c = f.read();
 	expect(source(c)).not.toBe(`legacy:${path}`);
-	expect(c.diagnostics.some(d => d.code === "legacy_source_ignored" && d.file === path)).toBe(true);
+	const ignored = c.diagnostics.filter(d => d.code === "legacy_source_ignored" && d.file === path);
+	expect(ignored).toHaveLength(1);
+	expect(ignored[0]).toMatchObject({ severity: "warning", key_path: replacement });
+	expectTargets(ignored[0].message);
 });
 
 test.each(["user", "project", "legacy"])("invalid %s Lane values never reach output and other sections remain valid", source => {

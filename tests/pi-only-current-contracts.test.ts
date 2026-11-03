@@ -83,6 +83,12 @@ describe("current Pi-only contracts", () => {
       ["`- Initiative carrier default:`", "project `initiative_carrier`"],
     ])
       expect(preferencesDoc.split("\n").find((line) => line.startsWith(`| ${legacy}`))).toContain(replacement);
+    // Issues #369, #370: warnings name the replacement's layer and file; the Planner uses a legacy carrier.
+    const legacyProse = preferencesDoc.slice(preferencesDoc.indexOf("## Legacy Sources"), preferencesDoc.indexOf("## Initiative Carrier")).replace(/\s+/g, " ");
+    expect(legacyProse).toContain("replacement key with that key's layer and file");
+    expect(legacyProse).toContain("A `legacy:AGENTS.md` or `legacy:CLAUDE.md` carrier is used like any other resolved value");
+    expect(legacyProse).toContain("its deprecation warning");
+    expect(legacyProse).not.toContain("It does not take the carrier from a");
     expect(preferencesDoc).not.toContain("does not load an\nagent-local TOML file");
     expect(preferencesDoc).not.toContain("Lane preferences are the one exception");
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/dist/docs/reference/immune-brain-config.md"), "utf8")).toBe(preferencesDoc);

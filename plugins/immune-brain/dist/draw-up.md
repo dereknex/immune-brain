@@ -227,8 +227,9 @@ assuming the current Host injected it into context:
 
 1. a literal user instruction for the current request;
 2. `imm-kernel config --json`: use `initiative_carrier.value` and report its
-   `source` when resolved by the project or user configuration; ignore a
-   `legacy:AGENTS.md` or `legacy:CLAUDE.md` repository directive;
+   `source`, whether that is the project or user configuration or a
+   `legacy:<path>` repository directive; for a `legacy:<path>` source also
+   report its `deprecated_config_source` warning, which names the replacement;
 3. the deprecated `Initiative carrier default: local` or `Initiative carrier
    default: github` directive in the Host's user-level agent instruction file;
 4. ask the user.
