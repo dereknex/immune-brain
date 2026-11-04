@@ -171,11 +171,13 @@ never rewrite" invariant is preserved — see Architecture invariants).
   residual risk, grant rounds, or approve a successor; budget-exhaustion
   exits stay exactly as S2 of review-convergence defined them.
 - **Additive records only.** New fields are optional; records without them
-  parse and behave exactly as today. A downgraded runtime reading a record
-  with verifier fields ignores them and projects from the verdict alone
-  (the pre-verifier behaviour) — acceptable because projection-from-verdict
-  is the current shipped semantics, unlike an unknown finding *status*,
-  which must keep failing closed.
+  parse and behave exactly as today. A runtime that predates the verifier
+  fields fails closed on a record that carries them: its TaskRecord parser
+  rejects unknown fields, and shipped runtimes cannot be changed to ignore
+  them (BR-DEC-9). Records written before the verifier existed stay
+  readable by every runtime, and a current runtime with
+  `review_verifier: off` writes no verifier fields and reproduces today's
+  projection exactly.
 
 ### S0: eval corpus
 
@@ -494,7 +496,7 @@ stateDiagram-v2
    shadow mode cannot be built without a second projection path, it is
    dropped and rollout is off → on with the eval gate as the only guard.
    (No silent third semantics.)
-7. **Refutation escalation check (Jev supplement, 2026-10-20).** Before a
+7. **Refutation escalation check (Jev supplement, 2026-10-20) — deferred out of S3 (2026-11-03, BR-DEC-8).** Not implemented in S3: no S1 baseline with human gold labels exists to set the threshold, so S3 ships items 1–6 only, which is exactly the classifier-absent behaviour this item already defines. The design below is retained for a follow-up task. Before a
    refuted finding is archived under item 2, a Host-side Jev-style
    classifier — invoked by the Host, never by the runtime (ADR 0006) —
    scores the probability that the finding is a true positive, from its
@@ -551,7 +553,7 @@ All checks are post-implementation obligations; Planner ran none of them.
 | S0 / `RVE-S0-A3` | `tests/review-eval-corpus.test.ts` (new) | In a temporary git repository: a case whose `base_head`/`review_commit` are unreachable from HEAD and every ref but present as commits is eligible; a missing object is excluded as `git_object_missing`; each referenced commit gets `refs/imm/review-eval/<sha>`; a rerun is idempotent and the corpus is byte-identical with or without existing pins; a pre-existing pin at that name pointing elsewhere stops the run with no corpus written; no remote is contacted. |
 | S1 / `RVE-S1-A1` | `tests/review-eval-runner.test.ts` (new, model dispatch faked), `tests/review-retro-analyzer.test.ts` | Scoring: a faked verdict reproducing a gold bug by anchor and one by location both count as recall hits; a blocking finding on a clean case counts FP; unknown anchors count as new-anchor, never silently as FP or TP. Record report: rounds/dispositions/`security_boundary` shares computed from committed fixture records match hand-checked values. Retro: new metrics appear only for events present in fixtures; a fixture without `violated.kind` in verdict findings yields the pre-change report unchanged. Baseline report committed and referenced from the corpus README. Mislabel rate: classifier-kind versus declared-kind mismatch over fixture records matches hand-checked values and is labelled experimental until scored against gold. |
 | S2 / `RVE-S2-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/skill-dist-consistency.test.ts` | Verifier packet contains finding + acceptance + revision and demonstrably excludes reviewer prose/Parent text (packet snapshot assertions); output contract rejects missing results, unknown anchors, refuted-without-counter-path, and extra findings as malformed-kept-all; source prompt and all dist mirrors agree; the role has no review gate and cannot be dispatched as `imm-code-review`. |
-| S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. Escalation check: a refuted finding whose recorded classifier probability meets the threshold parks for the literal user instead of archiving, a below-threshold score archives, and classifier failure archives with the failure recorded in the verification event. |
+| S3 / `RVE-S3-A1` | `tests/host-neutral-assurance-coordinator.test.ts`, `tests/kernel-canary-rework-authority.test.ts`, host conformance (`tests/claude-host-authority.test.ts`, `tests/pi-canary-user-authority.test.ts` as applicable) | From real submitted verdicts through the coordinator (not prompt-text assertions): partial refutation projects kept findings only and records `verifier_refutations` with counter-paths; all-refuted issues exactly one redispatch whose prompt carries the counter-evidence; a repeated refuted anchor parks for the user with zero Executor work projected; verifier timeout/malformed/receipt-mismatch projects all findings and records the failure; `pass` verdicts never dispatch a verifier (default config); config `off` reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts. Item 7 escalation check is deferred (BR-DEC-8): S3 adds no classifier, and every refuted finding archives per item 2. |
 
 ### Descriptor execution provenance
 
@@ -582,7 +584,10 @@ All checks are post-implementation obligations; Planner ran none of them.
   today's projection path. Parser support for `verifier_refutations` and
   verification history events must outlive the switch (records written
   while it was on remain readable), mirroring the review-convergence S2
-  rollback rule for `accepted_risk`.
+  rollback rule for `accepted_risk`. A runtime downgrade below the
+  verifier release fails closed on tasks whose records already carry
+  verifier fields; settle or stop those tasks before downgrading
+  (BR-DEC-9).
 - No slice hand-writes a TaskRecord or rewrites audit history.
 
 ## Devil's Advocate Audit
@@ -618,6 +623,35 @@ All checks are post-implementation obligations; Planner ran none of them.
   one must re-plan, not amend quietly.
 
 ## Brainstorm Trace and planning handoff
+
+### 2026-11-04 round 4: S3 downgrade fails closed (S3 rev 4)
+
+The S3 Lane stopped on `RVE-S3-A1`: the Additive-records invariant
+required a downgraded runtime to ignore verifier fields, but the shipped
+TaskRecord parser (`runtime/kernel/validation.ts`, `rejectUnknown` in
+`parseAttestationV3`) rejects unknown fields, and released runtimes
+cannot be changed. Derek chose on 2026-11-04 to make downgrade fail
+closed. Each item maps exactly once:
+
+| Item | Disposition |
+| --- | --- |
+| BR-DEC-9 (old runtime fails closed on verifier-bearing records) | Architecture invariant "Additive records only"; rollback section; `RVE-S3-A1` |
+| BR-OUT-7 (no sidecar record to hide fields from old runtimes) | Not adopted; verifier fields stay on the TaskRecord |
+| Gap | Downgrading below the verifier release requires settling or stopping tasks that carry verifier fields |
+
+### 2026-11-03 round 3: S3 classifier deferral (S3 rev 3)
+
+The S3 Lane stopped on `RVE-S3-A1`: item 7 requires the classifier
+threshold to come from S1 baseline data under the S1 eval gate, but S3
+does not depend on S1 and the corpus has no human gold labels, so no
+calibrated threshold exists. Derek chose on 2026-11-03 to defer item 7
+out of S3. Each item maps exactly once:
+
+| Item | Disposition |
+| --- | --- |
+| BR-DEC-8 (defer S3 item 7 classifier) | S3 item 7 marked deferred; classifier clause removed from `RVE-S3-A1` |
+| BR-OUT-6 (no provisional threshold) | S3 item 7; refuted findings archive per item 2 |
+| Gap | The Jev escalation check needs a follow-up task once S1 gold labels and a baseline exist |
 
 ### 2026-11-03 round 2: S0 git-object eligibility (rev 4)
 

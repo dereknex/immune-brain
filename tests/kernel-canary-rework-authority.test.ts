@@ -275,6 +275,88 @@ function requestReviewRework(
 	);
 }
 
+describe("review verification authority", () => {
+	test.each(["accept", "dismiss"] as const)("requires a matching single-use Review capability and supports %s dispute", (choice) => {
+		toReview();
+		const at = "2026-08-12T10:00:03.000Z";
+		const verification = { snapshot_digest: DIFF, intent_content_hash: currentIntentHash(), diff_hash: DIFF, verdict_sha256: DIFF,
+			dispatched_at: "2026-08-12T10:00:02.000Z", submitted_at: "2026-08-12T10:00:03.000Z",
+			result_sha256: DIFF, verifier_actor: "verifier-1", reviewer_model: "reviewer-1", verifier_model: "model-1", model_relation: "different" as const, checked: 1,
+			verifier_refutations: [{ anchor: ANCHOR, finding_id: "rw-1", counter_path: "runtime/kernel/reducer.ts rejects this case", verifier_actor: "verifier-1" }] };
+		const action = capabilityActionFor({ op: "record_verification", task_id: TASK, at, actor_id: "reviewer-1", verification });
+		const record = readTaskRecordRaw(root, TASK);
+		const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "review", task_id: TASK,
+			action_digest: digestOfAction(action), expected_record_hash: record.revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "verifier-receipt", findings_digest: null });
+		const operation = { op: "record_verification" as const, actor_id: "reviewer-1", capability, verification };
+		expect(() => execute({ ...operation, verification: { ...verification, verdict_sha256: `sha256:${"d".repeat(64)}` } }, at)).toThrow("action digest mismatch");
+		expect(readTaskRecordRaw(root, TASK).revision).toBe(record.revision);
+		const result = execute(operation, at);
+		expect(result.record.artifact_state).toBe("frozen");
+		expect(result.record.findings).toEqual([]);
+		expect(result.record.history.at(-1)).toMatchObject({ type: "verification", verification });
+		expect(() => execute(operation, at)).toThrow();
+		const later = "2026-08-12T10:00:04.000Z";
+		const laterAction = capabilityActionFor({ op: "record_verification", task_id: TASK, at: later, actor_id: "reviewer-1", verification });
+		const second = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "review", task_id: TASK,
+			action_digest: digestOfAction(laterAction), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "second-receipt", findings_digest: null });
+		expect(() => execute({ ...operation, capability: second }, later)).toThrow("already obtained its redispatch");
+		const findings = [reviewFinding({ id: "repeated", anchor: ANCHOR, evidence: REVIEW_EVIDENCE })];
+		const failedVerification = { ...verification, result_sha256: null, verifier_actor: null, verifier_model: null, model_relation: null,
+			verifier_refutations: [], failure: "dispatch failed" };
+		const reworkAction = capabilityActionFor({ op: "request_rework", task_id: TASK, at: later, actor_id: "reviewer-1", findings, verification: failedVerification });
+		const reworkCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "review", task_id: TASK,
+			action_digest: digestOfAction(reworkAction), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "repeated-receipt", findings_digest: findingsDigestV2(findings as never[]) });
+		expect(() => execute({ op: "request_rework", actor_id: "reviewer-1", capability: reworkCapability, findings: findings as never[], verification: failedVerification }, later)).toThrow("repeated refuted anchor");
+		expect(readTaskRecordRaw(root, TASK).record?.findings).toEqual([]);
+		const dispute = { decision_id: "user-decision-verifier-test", finding: { id: "repeated", acceptance_id: "A1", summary: "review finding",
+			anchor: ANCHOR, evidence: REVIEW_EVIDENCE as never }, counter_path: verification.verifier_refutations[0].counter_path,
+			verdict_sha256: DIFF, intent_content_hash: currentIntentHash(), diff_hash: DIFF };
+		const disputeAction = capabilityActionFor({ op: "record_review_verifier_dispute", task_id: TASK, at: later, actor_id: "reviewer-1", dispute });
+		const qaDisputeCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "qa", task_id: TASK,
+			action_digest: digestOfAction(disputeAction), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "wrong-authority", findings_digest: null });
+		expect(() => execute({ op: "record_review_verifier_dispute", actor_id: "reviewer-1", capability: qaDisputeCapability, dispute }, later)).toThrow("Review authority");
+		const disputeCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "review", task_id: TASK,
+			action_digest: digestOfAction(disputeAction), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "repeated-receipt", findings_digest: null });
+		const parked = execute({ op: "record_review_verifier_dispute", actor_id: "reviewer-1", capability: disputeCapability, dispute }, later);
+		expect(parked.record.artifact_state).toBe("frozen");
+		expect(parked.record.findings).toMatchObject([{ id: dispute.decision_id, kind: "unresolved_user_decision" }]);
+		const resolveAt = "2026-08-12T10:00:05.000Z";
+		const resolution = choice === "accept" ? "accept_verifier_dispute" : "dismiss_verifier_dispute";
+		const resolutionAction = capabilityActionFor({ op: "resolve_user_decision", task_id: TASK, at: resolveAt, actor_id: "literal-user", finding_id: dispute.decision_id, resolution });
+		const userCapability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "user", task_id: TASK,
+			action_digest: digestOfAction(resolutionAction), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "literal-user", confirmation_ref: "user-choice", findings_digest: null });
+		const accepted = execute({ op: "resolve_user_decision", actor_id: "literal-user", capability: userCapability, finding_id: dispute.decision_id, resolution }, resolveAt);
+		expect(accepted.record.artifact_state).toBe(choice === "accept" ? "active" : "frozen");
+		expect(accepted.record.findings).toMatchObject(choice === "accept"
+			? [{ id: dispute.decision_id, status: "resolved" }, { id: "repeated", kind: "blocking", status: "open" }]
+			: [{ id: dispute.decision_id, status: "resolved" }]);
+	});
+
+	test("atomically archives a refutation and projects only the kept Review finding", () => {
+		toReview();
+		const at = "2026-08-12T10:00:04.000Z";
+		const verification = { snapshot_digest: DIFF, intent_content_hash: currentIntentHash(), diff_hash: DIFF, verdict_sha256: DIFF,
+			dispatched_at: "2026-08-12T10:00:02.000Z", submitted_at: "2026-08-12T10:00:04.000Z",
+			result_sha256: DIFF, verifier_actor: "verifier-1", reviewer_model: "reviewer-1", verifier_model: "model-1", model_relation: "different" as const, checked: 2,
+			verifier_refutations: [{ anchor: ANCHOR, finding_id: "refuted", counter_path: "runtime/kernel/reducer.ts rejects this case", verifier_actor: "verifier-1" }] };
+		const findings = [reviewFinding({ id: "kept", anchor: OTHER_ANCHOR, evidence: OTHER_EVIDENCE })];
+		const action = capabilityActionFor({ op: "request_rework", task_id: TASK, at, actor_id: "reviewer-1", findings, verification });
+		const capability = createMutationAuthorityCapabilityForTest(mutationRegistry, { authority_kind: "review", task_id: TASK,
+			action_digest: digestOfAction(action), expected_record_hash: readTaskRecordRaw(root, TASK).revision, intent_revision: 1,
+			intent_content_hash: currentIntentHash(), diff_hash: DIFF, actor_id: "reviewer-1", confirmation_ref: "verifier-receipt", findings_digest: findingsDigestV2(findings as never[]) });
+		const result = execute({ op: "request_rework", actor_id: "reviewer-1", capability, findings: findings as never[], verification }, at);
+		expect(result.record.artifact_state).toBe("active");
+		expect(result.record.findings.map(finding => finding.id)).toEqual(["kept"]);
+		expect(result.record.history.slice(-2)).toMatchObject([{ type: "verification", verification }, { type: "request_rework" }]);
+	});
+});
+
 describe("request_rework authority", () => {
 	test("direct request_rework without capability is rejected with zero writes", () => {
 		toReview();

@@ -43,7 +43,7 @@ export function digestOfReviewerBytes(bytes: string): string {
 
 /** The host-observation shape both adapters supply; mirrors ClaudeReviewHost's. */
 export type ReviewObservation =
-	| { ok: true; receipt: { actorId: string; result: string } }
+	| { ok: true; receipt: { actorId: string; result: string; model?: string; offered_models?: readonly string[] } }
 	| { ok: false; release: boolean; reason: string };
 
 const RELEASED_REVIEW_RECOVERY =
@@ -80,11 +80,15 @@ export async function submitMediatedReview(
 	const receiptBytes = observed.receipt.result;
 	const options = {
 		reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+		...(observed.receipt.model ? { reviewer_model: observed.receipt.model } : {}),
+		...(observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {}),
 		validateReceipt: () => {
 			const current = inspect();
 			if (!current.ok) return { reason: current.reason, release: current.release,
 				recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY };
 			return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes
+				&& current.receipt.model === observed.receipt.model
+				&& JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? [])
 				? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
 		},
 	};

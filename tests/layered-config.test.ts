@@ -43,6 +43,19 @@ test("resolves D4 precedence, egress ceiling, host pairing, and defaults", () =>
 	expect(c.batch.final_verification.value).toEqual(["bun test"]);
 });
 
+test("resolves the project Review verifier switch and rejects invalid values", () => {
+	const f = fixture();
+	expect(f.read().review_verifier).toEqual({ value: "off", source: "default" });
+	f.project({ review_verifier: "on" });
+	expect(f.read().review_verifier).toEqual({ value: "on", source: "project" });
+	f.project({ review_verifier: "off" });
+	expect(f.read().review_verifier).toEqual({ value: "off", source: "project" });
+	f.project({ review_verifier: true });
+	const invalid = f.read();
+	expect(invalid.review_verifier.value).toBeNull();
+	expect(invalid.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", key_path: "review_verifier" }));
+});
+
 test("applies each personal and repository precedence in D4", () => {
 	const f = fixture(), point = Object.keys(POINT_REGISTRY)[0]!;
 	const key = realpathSync(f.root);

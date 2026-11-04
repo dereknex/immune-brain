@@ -42,6 +42,8 @@ import {
 import { KernelInvariantError } from "./validation";
 import type {
 	ReviewRevisionIdentityV1,
+	ReviewVerificationHistoryV1,
+	ReviewVerifierDisputeV1,
 	StoredTaskMutationV3,
 	TaskAction,
 	TaskApprovalV2,
@@ -53,6 +55,8 @@ import type {
 export type CanaryOperation =
 	| { op: "authorize_review_retry"; capability: object; actor_id: string; intent_content_hash: string; review_contract_hash: string }
 	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string; review_contract_hash?: string }
+	| { op: "record_verification"; capability: object; verification: ReviewVerificationHistoryV1; actor_id: string }
+	| { op: "record_review_verifier_dispute"; capability: object; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1; actor_id: string }
 	| { op: "freeze_artifacts"; actor_id: string }
 	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
 	| { op: "resolve_finding"; finding_id: string; actor_id: string }
@@ -64,6 +68,7 @@ export type CanaryOperation =
 			actor_id: string;
 			/** Review-authored rework: the immutable revision Review analyzed. */
 			review_revision?: ReviewRevisionIdentityV1;
+			verification?: ReviewVerificationHistoryV1;
 	  }
 	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
 	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
@@ -140,6 +145,24 @@ function canonicalReviewRevision(revision: ReviewRevisionIdentityV1): ReviewRevi
 	};
 }
 
+function canonicalReviewVerification(value: ReviewVerificationHistoryV1): ReviewVerificationHistoryV1 {
+	return {
+		snapshot_digest: value.snapshot_digest, intent_content_hash: value.intent_content_hash, diff_hash: value.diff_hash,
+		verdict_sha256: value.verdict_sha256, dispatched_at: value.dispatched_at, submitted_at: value.submitted_at,
+		result_sha256: value.result_sha256, verifier_actor: value.verifier_actor,
+		reviewer_model: value.reviewer_model, verifier_model: value.verifier_model, model_relation: value.model_relation, checked: value.checked,
+		verifier_refutations: value.verifier_refutations.map(({ anchor, finding_id, counter_path, verifier_actor }) => ({ anchor, finding_id, counter_path, verifier_actor })),
+		...(value.failure !== undefined ? { failure: value.failure } : {}),
+	};
+}
+
+function canonicalVerifierDispute(value: ReviewVerifierDisputeV1): ReviewVerifierDisputeV1 {
+	const { id, acceptance_id, summary, anchor, evidence } = value.finding;
+	return { decision_id: value.decision_id, finding: { id, acceptance_id, summary, anchor,
+		evidence: { trigger: evidence.trigger, caller_chain: [...evidence.caller_chain], violated: { kind: evidence.violated.kind, ref: evidence.violated.ref } } },
+		counter_path: value.counter_path, verdict_sha256: value.verdict_sha256, intent_content_hash: value.intent_content_hash, diff_hash: value.diff_hash };
+}
+
 export function capabilityActionFor(input: {
 	op: string;
 	task_id: string;
@@ -153,6 +176,8 @@ export function capabilityActionFor(input: {
 	finding_id?: string;
 	resolution?: unknown;
 	review_revision?: ReviewRevisionIdentityV1;
+	verification?: ReviewVerificationHistoryV1;
+	dispute?: ReviewVerifierDisputeV1;
 	intent_content_hash?: string;
 	review_contract_hash?: string;
 	/** authorize_rework only: further Review rounds granted, 1-5. */
@@ -178,11 +203,17 @@ export function capabilityActionFor(input: {
 			return { ...base, type: "authorize_review_retry", intent_content_hash: input.intent_content_hash, review_contract_hash: input.review_contract_hash } as TaskAction;
 		case "record_approval":
 			return { ...base, approval: input.approval } as TaskAction;
+		case "record_verification":
+			return { ...base, verification: input.verification && canonicalReviewVerification(input.verification) } as TaskAction;
+		case "record_review_verifier_dispute":
+			return { ...base, dispute: input.dispute && canonicalVerifierDispute(input.dispute),
+				...(input.verification ? { verification: canonicalReviewVerification(input.verification) } : {}) } as TaskAction;
 		case "request_rework":
 			return {
 				...base,
 				findings: input.findings,
 				...(input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}),
+				...(input.verification ? { verification: canonicalReviewVerification(input.verification) } : {}),
 			} as TaskAction;
 		case "authorize_rework":
 			// `rounds` joins the digest only when present, so a legacy caller
@@ -379,6 +410,7 @@ export function createCanaryApplication(
 			snapshot.record.artifact_state === "frozen" &&
 			(
 				operation.op === "request_rework" ||
+				(operation.op === "resolve_user_decision" && operation.resolution === "accept_verifier_dispute") ||
 				operation.op === "authorize_rework" ||
 				operation.op === "approve_breaking_intent_revision"
 			)
@@ -432,6 +464,15 @@ export function createCanaryApplication(
 					attestation_id: operation.attestation_id,
 				};
 				break;
+			case "record_verification":
+				capability = operation.capability;
+				action = { ...base, type: "record_verification", verification: canonicalReviewVerification(operation.verification) };
+				break;
+			case "record_review_verifier_dispute":
+				capability = operation.capability;
+				action = { ...base, type: "record_review_verifier_dispute", dispute: canonicalVerifierDispute(operation.dispute),
+					...(operation.verification ? { verification: canonicalReviewVerification(operation.verification) } : {}) };
+				break;
 			case "request_rework":
 				capability = operation.capability;
 				action = {
@@ -441,6 +482,7 @@ export function createCanaryApplication(
 					...(operation.review_revision
 						? { review_revision: canonicalReviewRevision(operation.review_revision) }
 						: {}),
+					...(operation.verification ? { verification: canonicalReviewVerification(operation.verification) } : {}),
 				};
 				break;
 			case "record_approval":

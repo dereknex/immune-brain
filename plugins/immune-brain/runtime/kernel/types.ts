@@ -221,6 +221,40 @@ export interface TaskAttestationV3 extends TaskApprovalV2 {
 	}>;
 }
 
+export interface ReviewVerifierRefutationV1 {
+	anchor: string;
+	finding_id: string;
+	counter_path: string;
+	verifier_actor: string;
+}
+
+/** An observation, not a Review approval. */
+export interface ReviewVerificationHistoryV1 {
+	snapshot_digest: string;
+	intent_content_hash: string;
+	diff_hash: string;
+	verdict_sha256: string;
+	dispatched_at: string;
+	submitted_at: string;
+	result_sha256: string | null;
+	verifier_actor: string | null;
+	reviewer_model: string | null;
+	verifier_model: string | null;
+	model_relation: "same" | "different" | null;
+	checked: number;
+	verifier_refutations: ReviewVerifierRefutationV1[];
+	failure?: string;
+}
+
+export interface ReviewVerifierDisputeV1 {
+	decision_id: string;
+	finding: { id: string; acceptance_id: string | null; summary: string; anchor: string; evidence: FindingEvidence };
+	counter_path: string;
+	verdict_sha256: string;
+	intent_content_hash: string;
+	diff_hash: string;
+}
+
 export interface TaskHistoryEntryV3 {
 	id: string;
 	at: string;
@@ -234,6 +268,10 @@ export interface TaskHistoryEntryV3 {
 	 * and QA or user rework stay valid; later rounds derive their delta from it.
 	 */
 	review_revision?: ReviewRevisionIdentityV1;
+	/** A verification event never grants a Review approval. */
+	verification?: ReviewVerificationHistoryV1;
+	/** Claim and counter-path presented to the literal user. */
+	review_verifier_dispute?: ReviewVerifierDisputeV1;
 }
 
 export interface TaskRecordV3 {
@@ -336,6 +374,8 @@ export interface ReviewIncompleteFacts {
 export type TaskAction =
 	| (TaskActionBase & { type: "authorize_review_retry"; intent_content_hash: string; review_contract_hash: string })
 	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete" })
+	| (TaskActionBase & { type: "record_verification"; verification: ReviewVerificationHistoryV1 })
+	| (TaskActionBase & { type: "record_review_verifier_dispute"; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1 })
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
 	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
 	| (TaskActionBase & {
@@ -359,6 +399,8 @@ export type TaskAction =
 			findings: TaskFinding[];
 			/** Review-authored rework only: the immutable revision that Review analyzed. */
 			review_revision?: ReviewRevisionIdentityV1;
+			/** Verification facts committed atomically with the kept findings. */
+			verification?: ReviewVerificationHistoryV1;
 	  })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })

@@ -25,6 +25,8 @@ import {
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readTaskRecordRaw, readAuditTaskPair } from "../plugins/immune-brain/runtime/kernel/storage";
+import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
+import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
 
 // Delivery QA has no node_modules; use host seams only when a real Host
 // package is absent. The dialog classes mirror pi-canary-work-extension's seam
@@ -173,6 +175,22 @@ function seedOpenUserDecision(root: string): string {
 		});
 	});
 	return id;
+}
+
+function seedVerifierDispute(root: string): string {
+	const record = readTaskRecordRaw(root, TASK).record!;
+	const diffHash = taskDeliveryIdentity(root, record).diff_hash;
+	const evidence = { trigger: "input reaches the guarded operation", caller_chain: ["plugins/immune-brain/.pi-extension/owned.ts"], violated: { kind: "acceptance" as const, ref: "A1" } };
+	const dispute = { decision_id: "user-decision-verifier-fixture", finding: { id: "review-disputed", acceptance_id: "A1", summary: "claim", anchor: anchorForEvidence(evidence), evidence },
+		counter_path: "plugins/immune-brain/.pi-extension/owned.ts rejects the input", verdict_sha256: `sha256:${"a".repeat(64)}`,
+		intent_content_hash: record.intent_ref.content_hash, diff_hash: diffHash };
+	mutateStoredRecord(root, (next) => {
+		next.artifact_state = "frozen";
+		(next.findings as unknown[]).push({ id: dispute.decision_id, kind: "unresolved_user_decision", status: "open", acceptance_id: "A1", source: "kernel", review_round: null, summary: "claim and counter-path" });
+		(next.history as unknown[]).push({ id: "dispute-fixture", at: "2026-11-04T00:00:00Z", type: "record_review_verifier_dispute", from_state: "active:frozen", to_state: "active:frozen", reason: "dispute",
+			authority: { authority_kind: "review", actor_id: "reviewer", confirmation_ref: "review-receipt", issued_at: "2026-11-04T00:00:00Z" }, review_verifier_dispute: dispute });
+	});
+	return dispute.decision_id;
 }
 
 function seedOpenReplanRequired(root: string): void {
@@ -518,6 +536,17 @@ describe("pi canary user authority", () => {
 		} finally { await surface.shutdown(); f.cleanup(); }
 	}, 60_000);
 
+	test("submit_verification without a reservation makes no authority write", async () => {
+		const root = makeEnrolledRoot();
+		const surface = loadSurface();
+		try {
+			const before = authorityBytes(root);
+			const failure = await captureToolFailure(surface.tool.execute("no-verifier", { task_id: TASK, action: { op: "submit_verification" } }, undefined, undefined, ctxFor(root, makeUI(), true)));
+			expect(failure).toMatchObject({ state: "blocked", message: "no active verification operation" });
+			expect(authorityBytes(root)).toEqual(before);
+		} finally { await surface.shutdown(); rmSync(root, { recursive: true, force: true }); }
+	});
+
 	test("request_authorization derives resolve-user-decision and applies through the shared confirm path", async () => {
 		const root = makeEnrolledRoot();
 		try {
@@ -543,6 +572,23 @@ describe("pi canary user authority", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	test.each(["accept", "dismiss"] as const)("request_authorization presents a verifier dispute and applies %s", async (choice) => {
+		const root = makeEnrolledRoot();
+		const surface = loadSurface();
+		try {
+			const decisionId = seedVerifierDispute(root);
+			const ui = makeUI();
+			const result = await surface.tool.execute("verifier-choice", { task_id: TASK, action: { op: "request_authorization" } }, undefined, undefined,
+				ctxFor(root, ui, choice === "accept" ? true : { downs: 1 }));
+			expect(parseToolState(result)).toMatchObject({ state: "applied", operation: "resolve-user-decision" });
+			expect(ui.confirmCalls[0].body).toContain("Counter-path:");
+			const record = readTaskRecordRaw(root, TASK).record!;
+			expect(record.findings.find(f => f.id === decisionId)?.status).toBe("resolved");
+			expect(record.artifact_state).toBe(choice === "accept" ? "active" : "frozen");
+			expect(record.findings.some(f => f.id === "review-disputed" && f.status === "open")).toBe(choice === "accept");
+		} finally { await surface.shutdown(); rmSync(root, { recursive: true, force: true }); }
 	});
 
 	test("request_authorization cancel, abort, timeout, non-TUI, and missing unique operation write nothing", async () => {

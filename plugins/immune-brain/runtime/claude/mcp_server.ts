@@ -34,6 +34,7 @@ export const TOOLS = [
 	{ name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
 	{ name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
+	{ name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
 	{ name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
@@ -87,6 +88,7 @@ export function listMcpTools() {
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
+						...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
 						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 					}),
@@ -308,6 +310,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
 				return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), options.cwd);
+			}
+			if (name === "submit_verification") {
+				if (args.result !== undefined && typeof args.result !== "string") throw new Error("result must be a string");
+				return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result as string | undefined, toolMeta), options.cwd);
 			}
 			if (name === "revise_intent") {
 				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");
@@ -567,6 +573,11 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			requestedSchema: { type: "object", properties: {} },
 		};
 	}
+	if (input.verifierDispute) {
+		const dispute = input.verifierDispute;
+		return { mode: "form", message: `Resolve this Review verifier dispute for ${input.taskId}.\n\nClaim: ${dispute.claim}\nTrigger: ${dispute.trigger}\nCaller chain: ${dispute.caller_chain.join(" → ")}\nCounter-path: ${dispute.counter_path}`,
+			requestedSchema: { type: "object", properties: { choice: { type: "string", title: "Decision", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] } }, required: ["choice"] } };
+	}
 	if (input.reworkExits) {
 		const exits = input.reworkExits;
 		const exitValues = [
@@ -679,7 +690,14 @@ export async function serveStdio(options: {
 				throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
 			}
 			let reworkChoice: ReworkChoice | undefined;
-			if (action === "accept" && input.reworkExits) {
+			let verifierChoice: "accept_verifier_dispute" | "dismiss_verifier_dispute" | undefined;
+			if (action === "accept" && input.verifierDispute) {
+				const content = (result as { content?: unknown }).content;
+				if (!content || typeof content !== "object" || Array.isArray(content)
+					|| Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String((content as { choice?: unknown }).choice)))
+					throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
+				verifierChoice = (content as { choice: "accept_verifier_dispute" | "dismiss_verifier_dispute" }).choice;
+			} else if (action === "accept" && input.reworkExits) {
 				const parsed = parseReworkChoice(input.reworkExits, (result as { content?: unknown }).content);
 				if (!parsed) {
 					throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
@@ -697,6 +715,7 @@ export async function serveStdio(options: {
 				decision: action,
 				requestId,
 				...(reworkChoice ? { reworkChoice } : {}),
+				...(verifierChoice ? { verifierChoice } : {}),
 			};
 		} finally {
 			pending.delete(requestId);

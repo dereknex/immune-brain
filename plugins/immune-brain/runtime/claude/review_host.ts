@@ -10,7 +10,7 @@ import type {
 	VerificationRequest,
 } from "../assurance/host_port";
 
-export type ObservedReviewReceipt = { actorId: string; result: string };
+export type ObservedReviewReceipt = { actorId: string; result: string; model?: string };
 export type ConsumeReviewResult =
 	| { ok: true; receipt: ObservedReviewReceipt }
 	| { ok: false; reason: string; release: boolean };
@@ -147,7 +147,7 @@ export function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): 
  */
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
 
-export type AsyncAgentLaunch = { agentId: string; outputFile: string };
+export type AsyncAgentLaunch = { agentId: string; outputFile: string; resolvedModel?: string };
 
 /**
  * Recognise the launch receipt this Claude Code build returns for `Agent`.
@@ -169,7 +169,8 @@ export function parseAsyncAgentLaunch(result: string): AsyncAgentLaunch | null {
 	const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
 	const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
 	if (!agentId || !outputFile) return null;
-	return { agentId, outputFile };
+	const resolvedModel = typeof obj.resolvedModel === "string" && obj.resolvedModel.trim() ? obj.resolvedModel : undefined;
+	return { agentId, outputFile, ...(resolvedModel ? { resolvedModel } : {}) };
 }
 
 const HANDBACK_TOOL = "SubagentHandback";
@@ -555,7 +556,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
 		const launch = parseAsyncAgentLaunch(state.postEvent.result);
 		if (!launch) {
-			return { ok: true, receipt: { actorId, result: state.postEvent.result } };
+			return { ok: true, receipt: { actorId, result: state.postEvent.result, ...(state.postEvent.model ? { model: state.postEvent.model } : {}) } };
 		}
 		// Invariant guard. Correlation already binds the PostToolUse through the
 		// same `agentId` this envelope carries, so a foreign id normally never
@@ -574,7 +575,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		if (!verdict?.trim()) {
 			return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
 		}
-		return { ok: true, receipt: { actorId, result: verdict } };
+		const model = launch.resolvedModel ?? state.postEvent.model;
+		return { ok: true, receipt: { actorId, result: verdict, ...(model ? { model } : {}) } };
 	}
 
 	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {

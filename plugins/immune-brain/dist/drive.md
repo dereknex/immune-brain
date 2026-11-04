@@ -139,7 +139,10 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
 3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
    Agent call, then pass its structured verdict to `submit_review`. Do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent
-   cannot issue its own QA or Review pass.
+   cannot issue its own QA or Review pass. On `verification_ready`, invoke its
+   exact `agent_params` as one foreground verifier, then call
+   `submit_verification` without a result to use the Host-observed receipt.
+   Follow a returned `review_ready` or `awaiting_user` through the same loop.
 4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
    material and critical work additionally require fresh independent Review.
    Normal completion does not require a second user confirmation.

@@ -159,6 +159,8 @@ export function applyTaskAction(
 
 		const privileged =
 			action.type === "record_approval" ||
+			action.type === "record_verification" ||
+			action.type === "record_review_verifier_dispute" ||
 			action.type === "approve_breaking_intent_revision" ||
 			action.type === "request_rework" ||
 			action.type === "authorize_rework" ||

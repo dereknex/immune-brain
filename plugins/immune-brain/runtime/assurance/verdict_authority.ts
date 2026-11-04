@@ -9,12 +9,12 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import { createMutationAuthorityRegistry, digestOfAction } from "../kernel/authority_port";
 import { findingsDigestV2 } from "../kernel/reducer";
-import type { TaskRecord, TaskApprovalV2 } from "../kernel/types";
+import type { TaskRecord, TaskApprovalV2, ReviewVerificationHistoryV1, ReviewVerifierDisputeV1, TaskFinding } from "../kernel/types";
 import { captureGitTaskSnapshot } from "../workspace_scope";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import type { VerificationDescriptor } from "./verification";
 import { captureReviewBundle, captureReviewManifest, REVIEW_DELTA_FROM_ROUND, type ReviewBundle, type ReviewDeltaInput, type ReviewManifestV5, type ReviewRevision } from "./review_evidence";
-import { reviewReworkFindings, reviewAdvisoryRecords, type SnapshotDescriptor, type AssuranceRole, type AssuranceVerdict, type HostContext } from "./coordinator";
+import { reviewReworkFindings, reviewAdvisoryRecords, snapshotDigest, type SnapshotDescriptor, type AssuranceRole, type AssuranceVerdict, type HostContext } from "./coordinator";
 import type { InvocationToken } from "./invocations";
 import type { ConfirmationReferenceSource } from "./host_port";
 
@@ -312,12 +312,46 @@ export interface VerdictApplicationInput {
  actorId: string;
  /** ADR 0017: sha256 over the reviewer's own result bytes, bound only on review attestations. */
  reviewer_verdict_sha256?: string;
+ /** Kept IDs are a projection; the submitted reviewer verdict remains unchanged. */
+ verification?: { facts: ReviewVerificationHistoryV1; kept_finding_ids: string[] };
  hooks?: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> };
 }
 export interface VerdictAuthority {
  buildAssurance: typeof buildAssuranceSnapshot;
  ensureReviewRevision: typeof ensureReviewRevision;
  applyVerdict(ctx: HostContext, input: VerdictApplicationInput): Promise<void>;
+ recordVerification(ctx: HostContext, input: VerdictApplicationInput & { verification: NonNullable<VerdictApplicationInput["verification"]> }): Promise<void>;
+ recordReviewDispute(ctx: HostContext, input: VerdictApplicationInput & { dispute: ReviewVerifierDisputeV1 }): Promise<void>;
+}
+
+function verifiedReviewFindings(input: VerdictApplicationInput): TaskFinding[] {
+ const findings = reviewReworkFindings(input.verdict);
+ const verification = input.verification;
+ if (!verification) return findings;
+ const { facts, kept_finding_ids: keptIds } = verification;
+ if (input.snapshot.role !== "review" || facts.snapshot_digest !== snapshotDigest(input.snapshot)
+  || facts.intent_content_hash !== input.snapshot.intent_content_hash || facts.diff_hash !== input.snapshot.diff_hash
+  || facts.verdict_sha256 !== input.reviewer_verdict_sha256 || facts.checked !== findings.length)
+  throw new Error("verification does not bind the submitted Review snapshot and verdict");
+ const kept = new Set(keptIds);
+ if (kept.size !== keptIds.length) throw new Error("verification has duplicate kept findings");
+ const refuted = new Map(facts.verifier_refutations.map(item => [item.finding_id, item]));
+ if (refuted.size !== facts.verifier_refutations.length || kept.size + refuted.size !== findings.length)
+  throw new Error("verification must account for every Review finding exactly once");
+ for (const finding of findings) {
+  const counter = refuted.get(finding.id);
+  if (kept.has(finding.id) === Boolean(counter) || (counter && counter.anchor !== finding.anchor))
+   throw new Error("verification finding identity does not match the submitted Review verdict");
+ }
+ return findings.filter(finding => kept.has(finding.id));
+}
+
+async function requireFreshVerdictSnapshot(ctx: HostContext, snapshot: SnapshotDescriptor): Promise<void> {
+ const fresh = await projectAssurance(ctx.cwd, snapshot.task_id);
+ const fields = ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash", "lifecycle", "artifact_state"] as const;
+ const mismatches = fields.filter(field => fresh.projection[field] !== snapshot[field]);
+ if (fresh.error || fresh.claim?.task_id !== snapshot.task_id || mismatches.length)
+  throw new Error(`assurance snapshot changed before authority application: ${[fresh.error, fresh.claim?.task_id !== snapshot.task_id ? "claim" : null, ...mismatches].filter(Boolean).join(", ")}`);
 }
 
 export function createVerdictAuthority(options: {
@@ -331,17 +365,14 @@ export function createVerdictAuthority(options: {
   ensureReviewRevision,
   async applyVerdict(ctx, input) {
    const { snapshot, verdict, actorId, hooks = {} } = input;
-   const fresh = await projectAssurance(ctx.cwd, snapshot.task_id);
-   const fields = ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash", "lifecycle", "artifact_state"] as const;
-   const mismatches = fields.filter(field => fresh.projection[field] !== snapshot[field]);
-   if (fresh.error || fresh.claim?.task_id !== snapshot.task_id || mismatches.length)
-    throw new Error(`assurance snapshot changed before authority application: ${[fresh.error, fresh.claim?.task_id !== snapshot.task_id ? "claim" : null, ...mismatches].filter(Boolean).join(", ")}`);
+   await requireFreshVerdictSnapshot(ctx, snapshot);
    recoverKernelStoreFollowUps(ctx.cwd, snapshot.task_id);
    const record = readTaskRecordRaw(ctx.cwd, snapshot.task_id).record;
    if (!record) throw new Error("TaskRecord disappeared before authority application");
    const priorIntentToken = readTaskIntent(ctx.cwd, snapshot.task_id, record.intent_ref.path, record.intent_snapshot).token;
    const now = new Date().toISOString();
-   const findings = verdict.decision === "rework" ? reviewReworkFindings(verdict) : [];
+   const findings = verdict.decision === "rework" ? verifiedReviewFindings(input) : [];
+   if (verdict.decision === "rework" && findings.length === 0) throw new Error("all-refuted Review requires recordVerification");
    const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];
    const approval: TaskApprovalV2 | undefined = verdict.decision === "pass" ? {
     id: `approval-${snapshot.role}-${randomUUID().slice(0, 8)}`,
@@ -358,7 +389,8 @@ export function createVerdictAuthority(options: {
    // round derives its delta from it. QA rework never carries one.
    const reworkRevision = verdict.decision === "rework" && snapshot.role === "review" && snapshot.review_revision
     ? { review_revision: snapshot.review_revision } : {};
-   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision });
+   const verification = input.verification ? { verification: input.verification.facts } : {};
+   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision, ...verification });
    const capability = registry.issue({
     authority_kind: snapshot.role, task_id: snapshot.task_id,
     ...(snapshot.run_id ? { run_id: snapshot.run_id } : {}),
@@ -374,7 +406,7 @@ export function createVerdictAuthority(options: {
    // then afterCommit. A thrown hook never undoes the committed transition.
    const settlement = (async () => app.execute({ root: ctx.cwd, task_id: snapshot.task_id,
     operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId }
-     : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision }, prior_intent_token: priorIntentToken, now }))();
+     : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision, ...verification }, prior_intent_token: priorIntentToken, now }))();
    let hookFailed = false;
    let hookError: unknown;
    try { hooks.onCommit?.(); } catch (error) { hookFailed = true; hookError = error; }
@@ -387,6 +419,52 @@ export function createVerdictAuthority(options: {
    if (verdict.decision === "rework") stagePlanningArtifactTransition(ctx.cwd, result.record);
    if (verdict.decision === "rework" && result.record.findings.some(f => f.kind === "replan_required" && f.status === "open"))
     options.onReworkApplied?.(ctx, snapshot.task_id, findings.length);
+  },
+  async recordReviewDispute(ctx, input) {
+   const { snapshot, actorId, dispute } = input;
+   if (snapshot.role !== "review" || input.verdict.decision !== "rework" || dispute.verdict_sha256 !== input.reviewer_verdict_sha256
+    || dispute.diff_hash !== snapshot.diff_hash || dispute.intent_content_hash !== snapshot.intent_content_hash)
+    throw new Error("dispute does not bind the submitted Review verdict and snapshot");
+   const finding = input.verdict.findings?.find(item => item.id === dispute.finding.id);
+   if (!finding || finding.anchor !== dispute.finding.anchor || JSON.stringify(finding.evidence) !== JSON.stringify(dispute.finding.evidence)
+    || finding.summary !== dispute.finding.summary || finding.acceptance_id !== dispute.finding.acceptance_id)
+    throw new Error("disputed claim does not match the submitted Review verdict");
+   if (input.verification && verifiedReviewFindings(input).length !== 0)
+    throw new Error("exhausted redispatch dispute requires all findings refuted");
+   await requireFreshVerdictSnapshot(ctx, snapshot);
+   recoverKernelStoreFollowUps(ctx.cwd, snapshot.task_id);
+   const record = readTaskRecordRaw(ctx.cwd, snapshot.task_id).record;
+   if (!record) throw new Error("TaskRecord disappeared before dispute application");
+   const priorIntentToken = readTaskIntent(ctx.cwd, snapshot.task_id, record.intent_ref.path, record.intent_snapshot).token;
+   const now = new Date().toISOString();
+   const verification = input.verification ? { verification: input.verification.facts } : {};
+   const action = capabilityActionFor({ op: "record_review_verifier_dispute", task_id: snapshot.task_id, at: now, actor_id: actorId, dispute, ...verification });
+   const capability = registry.issue({ authority_kind: "review", task_id: snapshot.task_id,
+    ...(snapshot.run_id ? { run_id: snapshot.run_id } : {}), action_digest: digestOfAction(action),
+    expected_record_hash: snapshot.record_revision, intent_revision: snapshot.intent_revision,
+    intent_content_hash: snapshot.intent_content_hash, diff_hash: snapshot.diff_hash, actor_id: actorId,
+    confirmation_ref: options.confirmationReference({ snapshot, actorId, now }), findings_digest: null });
+   options.commitInvocation(input.invocation);
+   app.execute({ root: ctx.cwd, task_id: snapshot.task_id, operation: { op: "record_review_verifier_dispute", capability, dispute, actor_id: actorId, ...verification }, prior_intent_token: priorIntentToken, now });
+  },
+  async recordVerification(ctx, input) {
+   const { snapshot, actorId, verification } = input;
+   if (verifiedReviewFindings(input).length !== 0) throw new Error("standalone verification requires all findings refuted");
+   await requireFreshVerdictSnapshot(ctx, snapshot);
+   recoverKernelStoreFollowUps(ctx.cwd, snapshot.task_id);
+   const record = readTaskRecordRaw(ctx.cwd, snapshot.task_id).record;
+   if (!record) throw new Error("TaskRecord disappeared before verification application");
+   const priorIntentToken = readTaskIntent(ctx.cwd, snapshot.task_id, record.intent_ref.path, record.intent_snapshot).token;
+   const now = new Date().toISOString();
+   const action = capabilityActionFor({ op: "record_verification", task_id: snapshot.task_id, at: now, actor_id: actorId, verification: verification.facts });
+   const capability = registry.issue({ authority_kind: "review", task_id: snapshot.task_id,
+    ...(snapshot.run_id ? { run_id: snapshot.run_id } : {}), action_digest: digestOfAction(action),
+    expected_record_hash: snapshot.record_revision, intent_revision: snapshot.intent_revision,
+    intent_content_hash: snapshot.intent_content_hash, diff_hash: snapshot.diff_hash, actor_id: actorId,
+    confirmation_ref: options.confirmationReference({ snapshot, actorId, now }), findings_digest: null });
+   options.commitInvocation(input.invocation);
+   app.execute({ root: ctx.cwd, task_id: snapshot.task_id, operation: { op: "record_verification", capability,
+    verification: verification.facts, actor_id: actorId }, prior_intent_token: priorIntentToken, now });
   },
  };
 }

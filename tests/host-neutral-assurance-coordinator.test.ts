@@ -14,7 +14,7 @@ import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSyn
 import { dirname, join, resolve } from "node:path";
 import { writeNativeReviewEvidence } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
-import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
+import { submitMediatedReview, digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import {
 	AssuranceCoordinator,
 	buildReviewPrompt,
@@ -145,14 +145,20 @@ class FakeReviewHost implements AssuranceHostPort {
 
 function makeCoordinator(overrides: {
 	risk?: "routine" | "material" | "critical";
-	host?: FakeReviewHost;
+	host?: AssuranceHostPort;
+	mode?: "on" | "off";
+	ensureRevision?: VerdictAuthority["ensureReviewRevision"];
+	recordVerification?: VerdictAuthority["recordVerification"];
+	recordDispute?: VerdictAuthority["recordReviewDispute"];
 	project?: AssuranceCoordinatorPorts["projectTask"];
 	assurance?: VerdictAuthority["buildAssurance"];
 	qa?: AssuranceCoordinatorPorts["runQa"];
 	record?: AssuranceCoordinatorPorts["readTaskRecord"];
 	qaJobTimeoutMs?: number;
+	reviewVerificationTimeoutMs?: number;
 } = {}) {
 	let applyCount = 0;
+	let lastApplied: Parameters<VerdictAuthority["applyVerdict"]>[1] | undefined;
 	let qaRuns = 0;
 	const risk = overrides.risk ?? "material";
 	let currentLifecycle: "active" | "done" | "stopped" = "active";
@@ -162,6 +168,10 @@ function makeCoordinator(overrides: {
 	const host = overrides.host ?? new FakeReviewHost();
 	const ports: AssuranceCoordinatorPorts & Partial<VerdictAuthority> = {
 		host,
+		...(overrides.mode ? { reviewVerifierMode: () => overrides.mode! } : {}),
+		...(overrides.ensureRevision ? { ensureReviewRevision: overrides.ensureRevision } : {}),
+		...(overrides.recordVerification ? { recordVerification: overrides.recordVerification } : {}),
+		...(overrides.recordDispute ? { recordReviewDispute: overrides.recordDispute } : {}),
 		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
 		projectTask: overrides.project ?? (async () => {
 			const fresh = projection(currentLifecycle, nextObligation, risk, artifactState);
@@ -183,13 +193,15 @@ function makeCoordinator(overrides: {
 			return overrides.qa ? overrides.qa(s, descriptors, options) : passVerdict(s);
 		},
 		...(overrides.qaJobTimeoutMs !== undefined ? { qaJobTimeoutMs: overrides.qaJobTimeoutMs } : {}),
+		...(overrides.reviewVerificationTimeoutMs !== undefined ? { reviewVerificationTimeoutMs: overrides.reviewVerificationTimeoutMs } : {}),
 		writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: `${ROOT}/review.json`, remove: () => undefined }),
 		applyVerdict: async (_ctx, input) => {
 			applyCount += 1;
+			lastApplied = input;
 			await input.hooks?.beforeCommit?.();
 			input.hooks?.onCommit?.();
 			if (input.verdict.decision === "rework") {
-				findings = (input.verdict.findings ?? []).map(f => ({ ...f, status: "open" }));
+				findings = (input.verdict.findings ?? []).filter(f => !input.verification || input.verification.kept_finding_ids.includes(f.id)).map(f => ({ ...f, status: "open" }));
 				artifactState = "active";
 				nextObligation = "resolve_findings";
 			} else if (input.snapshot.role === "qa") {
@@ -207,7 +219,7 @@ function makeCoordinator(overrides: {
 		},
 	};
 	const coordinator = new AssuranceCoordinator(ports, ports);
-	return { coordinator, authority: coordinator.authority, ports, host, counts: () => ({ applyCount }), qaRuns: () => qaRuns };
+	return { coordinator, authority: coordinator.authority, ports, host, counts: () => ({ applyCount }), lastApplied: () => lastApplied, qaRuns: () => qaRuns };
 }
 
 describe("review verification packet", () => {
@@ -217,7 +229,7 @@ describe("review verification packet", () => {
 	mkdirSync(join(root, "src"));
 	mkdirSync(join(root, "docs/specs"), { recursive: true });
 	writeFileSync(join(root, "src/change.ts"), "export const guard = true;\n");
-	writeFileSync(join(root, "docs/specs/test.spec.md"), "Only the owner may mutate state.\n");
+	writeFileSync(join(root, "docs/specs/test.spec.md"), "# Threat Model\nOnly the owner may mutate state.\n");
 	git("add", "src/change.ts", "docs/specs/test.spec.md");
 	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture");
 	const commit = git("rev-parse", "HEAD");
@@ -282,6 +294,7 @@ describe("review verification packet", () => {
 		expect(result).toMatchObject({ state: "complete", attestation: { valid: true, reviewer_model: "reviewer", verifier_model: "other",
 			model_relation: "different", verifier_actor: "pi:call-1", result_sha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) } });
 		expect(host.inspectVerification(dispatch.reservation)).toMatchObject({ ok: false, release: true });
+		expect(() => consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toThrow("verifier reservation already consumed");
 	});
 	test("binds Claude verifier receipt and model to the same host-observed agent", () => {
 		const host = new ClaudeReviewHost();
@@ -302,15 +315,208 @@ describe("review verification packet", () => {
 		host.observeReviewDispatch(dispatch.reservation.dispatch as never, "call-same");
 		host.observeReviewResult("call-same", JSON.stringify(valid));
 		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer", relayedResult: "" })).toMatchObject({ state: "complete",
-			attestation: { valid: false, reviewer_model: "reviewer", verifier_model: "reviewer", model_relation: "same", verifier_actor: null,
+			attestation: { valid: false, failure: "receipt_mismatch", reviewer_model: "reviewer", verifier_model: "reviewer", model_relation: "same", verifier_actor: null,
 				results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] } });
 	});
+	test("records malformed verifier output while keeping every finding", () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+			reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: "bad-result", writePacket: writeTestReviewPacket });
+		host.observeReviewDispatch(dispatch.reservation.dispatch as never, "call-bad");
+		host.observeReviewResult("call-bad", "not a verdict");
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toMatchObject({ state: "complete",
+			attestation: { valid: false, failure: "malformed_output", results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] } });
+	});
+	test("keeps every finding when the host cannot inspect or release a verifier receipt", () => {
+		for (const stage of ["inspect", "release"] as const) {
+			const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+			const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+				reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: `host-${stage}`, writePacket: writeTestReviewPacket });
+			host.observeReviewDispatch(dispatch.reservation.dispatch as never, `call-${stage}`);
+			host.observeReviewResult(`call-${stage}`, JSON.stringify(valid));
+			const failingHost: AssuranceHostPort = {
+				host: "fake",
+				prepareReview: () => { throw new Error("unexpected review"); },
+				inspectVerification: reservation => { if (stage === "inspect") throw new Error("host failed"); return host.inspectVerification(reservation); },
+				releaseReview: reservation => { if (stage === "release") throw new Error("host failed"); host.releaseReview(reservation); },
+			};
+			expect(consumeReviewVerification({ host: failingHost, dispatch, root, reviewerModel: "reviewer" })).toMatchObject({ state: "complete",
+				attestation: { valid: false, failure: "dispatch_failed", results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] } });
+			expect(() => consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toThrow("verifier reservation already consumed");
+		}
+	});
+	test("projects a submitted rework verdict only after consuming the verifier receipt", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			ensureRevision: async () => s.review_revision! });
+		const ready = await h.coordinator.advance(TASK, { cwd: root });
+		expect(ready.state).toBe("review_ready");
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [
+				{ id: "kept", kind: "blocking", acceptance_id: "A1", summary: "kept claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } },
+				{ id: "refuted", kind: "blocking", acceptance_id: "A1", summary: "refuted claim", evidence: { trigger: "another input fails", caller_chain: ["docs/specs/test.spec.md"], violated: { kind: "acceptance", ref: "A1" } } },
+			] };
+		const parsed = parseAssuranceVerdict(submitted, s);
+		const reviewerBytes = JSON.stringify(submitted);
+		const pending = await submitMediatedReview(h.coordinator, { cwd: root }, TASK, undefined,
+			() => ({ ok: true, receipt: { actorId: "reviewer-call", result: reviewerBytes, model: "reviewer", offered_models: ["verifier"] } }));
+		if (pending.state !== "verification_ready") throw new Error(`expected verification_ready, got ${pending.state}`);
+		expect(h.counts().applyCount).toBe(0);
+		host.observeReviewDispatch(pending.agent_params as never, "verification-call");
+		host.observeReviewResult("verification-call", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), verdict_sha256: digestOfReviewerBytes(reviewerBytes), results: [
+				{ finding_id: parsed.findings![0].id, anchor: parsed.findings![0].anchor, verdict: "kept" },
+				{ finding_id: parsed.findings![1].id, anchor: parsed.findings![1].anchor, verdict: "refuted", counter_path: "For input X, src/change.ts rejects it before the wrong result." },
+			] }));
+		const result = await h.coordinator.submitVerification(TASK, { cwd: root });
+		expect(h.lastApplied()?.verification).toMatchObject({ kept_finding_ids: [parsed.findings![0].id] });
+		expect(result).toMatchObject({ state: "rework", summary: "kept claim" });
+		expect(h.lastApplied()?.verdict.findings).toHaveLength(2);
+		expect(h.lastApplied()?.verification).toMatchObject({ kept_finding_ids: [parsed.findings![0].id], facts: { checked: 2,
+			verifier_refutations: [{ finding_id: parsed.findings![1].id, counter_path: "For input X, src/change.ts rejects it before the wrong result." }] } });
+		expect((await h.coordinator.submitVerification(TASK, { cwd: root })).state).toBe("blocked");
+	});
+
+	test("an all-refuted verdict redispatches once and a repeated anchor parks for the user", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		let revision = "record-1";
+		let history: NonNullable<NonNullable<Awaited<ReturnType<AssuranceCoordinatorPorts["readTaskRecord"]>>["record"]>["history"]> = [];
+		let disputed: Parameters<VerdictAuthority["recordReviewDispute"]>[1] | undefined;
+		const currentSnapshot = () => ({ ...s, record_revision: revision });
+		const h = makeCoordinator({ host, mode: "on", project: async () => {
+			const value = projection("active", "run_review"); value.projection.record_revision = revision; return value;
+		}, record: async () => ({ revision, record: { findings: [], history } }),
+			assurance: async () => ({ snapshot: currentSnapshot(), descriptors: new Map(), reviewBundle: reviewBundle() }),
+			ensureRevision: async () => s.review_revision!,
+			recordVerification: async (_ctx, input) => { history = [{ type: "verification", reason: "checked", verification: input.verification.facts }]; revision = "record-2"; },
+			recordDispute: async (_ctx, input) => { disputed = input; } });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const claim = { id: "claim", kind: "blocking", acceptance_id: "A1", summary: "repeated claim",
+			evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } };
+		const makeVerdict = () => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(currentSnapshot()), decision: "rework", findings: [claim] });
+		const first = makeVerdict();
+		const parsed = parseAssuranceVerdict(first, currentSnapshot());
+		const options = { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`, reviewer_model: "reviewer", offered_models: ["verifier"], validateReceipt: () => null };
+		const verification = await h.coordinator.submitReview(TASK, { cwd: root }, first, options);
+		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${verification.state}`);
+		host.observeReviewDispatch(verification.agent_params as never, "all-refuted-call");
+		host.observeReviewResult("all-refuted-call", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: snapshotDigest(currentSnapshot()), verdict_sha256: options.reviewer_verdict_sha256,
+			results: [{ finding_id: parsed.findings![0].id, anchor: parsed.findings![0].anchor, verdict: "refuted",
+				counter_path: "For input X, src/change.ts rejects it before the wrong result." }] }));
+		const redispatch = await h.coordinator.submitVerification(TASK, { cwd: root });
+		if (redispatch.state !== "review_ready") throw new Error(`expected review_ready, got ${redispatch.state}`);
+		const handle = parseReviewPacketHandle((redispatch.agent_params as { prompt: string }).prompt)!;
+		expect(readFileSync(handle.packet.path, "utf8")).toContain("For input X, src/change.ts rejects it before the wrong result.");
+		expect(h.counts().applyCount).toBe(0);
+		const result = await h.coordinator.submitReview(TASK, { cwd: root }, makeVerdict(), options);
+		expect(result.state).toBe("awaiting_user");
+		expect(disputed?.dispute).toMatchObject({ finding: { summary: "repeated claim", anchor: parsed.findings![0].anchor },
+			counter_path: "For input X, src/change.ts rejects it before the wrong result." });
+		expect(h.counts().applyCount).toBe(0);
+	});
+
+	test.each(["receipt_mismatch", "malformed_output", "timeout"] as const)("%s keeps every submitted finding without retry", async failure => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			ensureRevision: async () => s.review_revision!, ...(failure === "timeout" ? { reviewVerificationTimeoutMs: 0 } : {}) });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
+				evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		const parsed = parseAssuranceVerdict(submitted, s);
+		const pending = await h.coordinator.submitReview(TASK, { cwd: root }, submitted, { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`,
+			reviewer_model: "reviewer", offered_models: ["verifier"], validateReceipt: () => null });
+		if (pending.state !== "verification_ready") throw new Error(`expected verification_ready, got ${pending.state}`);
+		host.observeReviewDispatch(pending.agent_params as never, `call-${failure}`);
+		const verifierOutput = JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), verdict_sha256: `sha256:${"e".repeat(64)}`,
+			results: [{ finding_id: parsed.findings![0].id, anchor: parsed.findings![0].anchor, verdict: "refuted",
+				counter_path: "For input X, src/change.ts rejects it before the wrong result." }] });
+		host.observeReviewResult(`call-${failure}`, failure === "malformed_output" ? "invalid" : verifierOutput);
+		const result = await h.coordinator.submitVerification(TASK, { cwd: root }, failure === "receipt_mismatch" ? "substituted" : undefined);
+		expect(result).toMatchObject({ state: "rework", summary: "claim" });
+		expect(h.lastApplied()?.verification).toMatchObject({ kept_finding_ids: [parsed.findings![0].id], facts: { failure, verifier_refutations: [] } });
+		expect(h.counts().applyCount).toBe(1);
+		expect((await h.coordinator.submitVerification(TASK, { cwd: root })).state).toBe("blocked");
+	});
+
+	test("a failing second reviewer receipt check cannot project any findings", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
+				evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		let calls = 0;
+		const result = await h.coordinator.submitReview(TASK, { cwd: root }, submitted, { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`,
+			reviewer_model: "reviewer", validateReceipt: () => { if (++calls === 2) throw new Error("receipt unavailable"); return null; } });
+		expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining("receipt unavailable") });
+		expect(h.counts().applyCount).toBe(0);
+	});
+
+	test("unavailable verifier dispatch keeps every finding and records failure", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
+				evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		const result = await h.coordinator.submitReview(TASK, { cwd: root }, submitted, { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`, validateReceipt: () => null });
+		expect(result).toMatchObject({ state: "rework", summary: "claim" });
+		expect(h.lastApplied()?.verification?.facts).toMatchObject({ failure: "dispatch_failed", verifier_refutations: [] });
+		expect(h.counts().applyCount).toBe(1);
+	});
+
+	test("a pass skips verification even when the project switch is on", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", ensureRevision: async () => s.review_revision!,
+			assurance: async (_root, _task, role) => ({ snapshot: role === "review" ? s : snapshot("qa"), descriptors: new Map(), reviewBundle: role === "review" ? reviewBundle() : null }) });
+		expect((await h.coordinator.advance(TASK, { cwd: root })).state).toBe("review_ready");
+		const result = await h.coordinator.submitReview(TASK, { cwd: root }, passVerdict(s));
+		expect(result.state).toBe("completed");
+		expect(h.lastApplied()?.verification).toBeUndefined();
+	});
+
+	test("turning verification off projects the submitted rework unchanged", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "off", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim",
+				evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		expect(await h.coordinator.submitReview(TASK, { cwd: root }, submitted)).toMatchObject({ state: "rework", summary: "claim" });
+		expect(h.lastApplied()?.verification).toBeUndefined();
+	});
+
 	test("prefers an offered different model and records same-model fallback", () => {
 		expect(selectReviewVerifierModel("reviewer", ["reviewer", "other"])).toEqual({ model: "other", model_relation: "different" });
 		expect(selectReviewVerifierModel("reviewer", ["reviewer"])).toEqual({ model: "reviewer", model_relation: "same" });
 		expect(selectReviewVerifierModel("reviewer", [])).toEqual({ model: "reviewer", model_relation: "same" });
 		expect(() => selectReviewVerifierModel("", ["other"])).toThrow();
 	});
+	test("coordinator dispatches a security claim with the immutable Spec threat-model line", async () => {
+		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
+			record: async () => ({ revision: "record-1", record: { findings: [], intent_snapshot: { scope_hint: ["docs/specs/test.spec.md"] } as never } }),
+			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
+		await h.coordinator.advance(TASK, { cwd: root });
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "security", kind: "blocking", acceptance_id: null, summary: "security claim",
+				evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "security_boundary", ref: "authority" } } }] };
+		const pending = await h.coordinator.submitReview(TASK, { cwd: root }, submitted, { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`,
+			reviewer_model: "reviewer", offered_models: ["verifier"], validateReceipt: () => null });
+		if (pending.state !== "verification_ready") throw new Error(`expected verification_ready, got ${pending.state}`);
+		const packetPath = (pending.agent_params as { prompt: string }).prompt.split("\n")[1].slice("Review packet: ".length);
+		expect(readFileSync(packetPath, "utf8")).toContain("authority: Only the owner may mutate state.");
+	});
+
 	test("requires the security boundary's threat-model text", () => {
 		const security = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "security", kind: "blocking", acceptance_id: null,
@@ -980,6 +1186,16 @@ describe("host-neutral assurance coordinator", () => {
 		for (const rule of STATIC_REVIEW_RULES) expect(complete).toContain(rule);
 	});
 
+	test("redispatch prompts carry only the supplied counter-evidence in both host forms", () => {
+		const s = snapshot("review");
+		const counterEvidence = [{ anchor: `sha256:${"a".repeat(64)}`, counter_path: "src/change.ts rejects this input before it reaches the caller." }];
+		const facts = buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16, counterEvidence);
+		expect(facts).toContain(JSON.stringify(counterEvidence));
+		expect(facts).toContain("return pass with full coverage or rework");
+		expect(buildReviewPrompt(s, "/tmp/evidence.json", 16, counterEvidence).endsWith(facts)).toBe(true);
+		expect(buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16, [])).toBe(buildReviewSnapshotPrompt(s, "/tmp/evidence.json", 16));
+	});
+
 	test("the snapshot facts prompt is built for a review revision as well as a legacy bundle", () => {
 		const s = {
 			...snapshot("review"),
@@ -1122,6 +1338,94 @@ function authorityFixture(environment: object = { prepare: null, writable_paths:
  } });
  return { root, taskId, git };
 }
+
+test("submitted Review and verifier receipts persist kept-only rework through the real Kernel", async () => {
+ const f = authorityFixture();
+ const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+ const coordinator = new AssuranceCoordinator({ host, reviewVerifierMode: () => "on", confirmationReference: () => "host-observed-review",
+  projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),
+  readTaskIntent: async () => ({}), runQa: async snapshot => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId,
+   snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
+  writeReviewEvidence: ({ evidence }) => writeNativeReviewEvidence(evidence), applyOrdinaryOperation: async () => {} });
+ const ready = await coordinator.advance(f.taskId, { cwd: f.root });
+ if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
+ const snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
+ const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId,
+  snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings: [
+   { id: "kept", kind: "blocking", acceptance_id: "A1", summary: "kept claim", evidence: { trigger: "input fails", caller_chain: ["src/work.ts"], violated: { kind: "acceptance", ref: "A1" } } },
+   { id: "refuted", kind: "blocking", acceptance_id: "A1", summary: "refuted claim", evidence: { trigger: "other input fails", caller_chain: [`docs/plans/archive/${f.taskId}.intent.json`], violated: { kind: "acceptance", ref: "A1" } } },
+  ] };
+ const parsed = parseAssuranceVerdict(submitted, snapshot);
+ const reviewerBytes = JSON.stringify(submitted);
+ const pending = await submitMediatedReview(coordinator, { cwd: f.root }, f.taskId, undefined,
+  () => ({ ok: true, receipt: { actorId: "reviewer-call", result: reviewerBytes, model: "reviewer", offered_models: ["verifier"] } }));
+ if (pending.state !== "verification_ready") throw new Error(`expected verification_ready, got ${pending.state}`);
+ host.observeReviewDispatch(pending.agent_params as never, "real-verifier");
+ host.observeReviewResult("real-verifier", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: f.taskId,
+  snapshot_digest: snapshotDigest(snapshot), verdict_sha256: digestOfReviewerBytes(reviewerBytes), results: [
+   { finding_id: parsed.findings![0].id, anchor: parsed.findings![0].anchor, verdict: "kept" },
+   { finding_id: parsed.findings![1].id, anchor: parsed.findings![1].anchor, verdict: "refuted", counter_path: "For input X, src/work.ts rejects it before the wrong result." },
+  ] }));
+ expect(await coordinator.submitVerification(f.taskId, { cwd: f.root })).toMatchObject({ state: "rework", summary: "kept claim" });
+ const record = readTaskRecordRaw(f.root, f.taskId).record!;
+ expect(record.artifact_state).toBe("active");
+ expect(record.findings.map(finding => finding.summary)).toEqual(["kept claim"]);
+ expect(record.history.find(entry => entry.type === "verification")?.verification).toMatchObject({ checked: 2,
+  verifier_refutations: [{ finding_id: parsed.findings![1].id, counter_path: "For input X, src/work.ts rejects it before the wrong result." }] });
+});
+
+test.each(["repeated", "new"] as const)("all-refuted Review redispatches and %s claims park through the real Kernel", async kind => {
+ const f = authorityFixture();
+ const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+ const coordinator = new AssuranceCoordinator({ host, reviewVerifierMode: () => "on", confirmationReference: () => "host-observed-review",
+  projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),
+  readTaskIntent: async () => ({}), runQa: async snapshot => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: f.taskId,
+   snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
+  writeReviewEvidence: ({ evidence }) => writeNativeReviewEvidence(evidence), applyOrdinaryOperation: async () => {} });
+ const ready = await coordinator.advance(f.taskId, { cwd: f.root });
+ if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
+ let snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
+ let claim = { id: "claim", kind: "blocking", acceptance_id: "A1", summary: "claim", evidence: { trigger: "input fails", caller_chain: ["src/work.ts"], violated: { kind: "acceptance", ref: "A1" } } };
+ const makeVerdict = () => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: f.taskId,
+  snapshot_digest: snapshotDigest(snapshot), decision: "rework", findings: [claim] });
+ const submitted = makeVerdict();
+ const parsed = parseAssuranceVerdict(submitted, snapshot);
+ const reviewerBytes = JSON.stringify(submitted);
+ const pending = await submitMediatedReview(coordinator, { cwd: f.root }, f.taskId, undefined,
+  () => ({ ok: true, receipt: { actorId: "reviewer-call", result: reviewerBytes, model: "reviewer", offered_models: ["verifier"] } }));
+ if (pending.state !== "verification_ready") throw new Error(`expected verification_ready, got ${pending.state}`);
+ host.observeReviewDispatch(pending.agent_params as never, "all-refuted-real");
+ host.observeReviewResult("all-refuted-real", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: f.taskId,
+  snapshot_digest: snapshotDigest(snapshot), verdict_sha256: digestOfReviewerBytes(reviewerBytes), results: [
+   { finding_id: parsed.findings![0].id, anchor: parsed.findings![0].anchor, verdict: "refuted", counter_path: "For input X, src/work.ts rejects it before the wrong result." },
+  ] }));
+ const redispatch = await coordinator.submitVerification(f.taskId, { cwd: f.root });
+ if (redispatch.state !== "review_ready") throw new Error(`expected review_ready, got ${redispatch.state}: ${"reason" in redispatch ? redispatch.reason : ""}`);
+ const prompt = parseReviewPacketHandle((redispatch.agent_params as { prompt: string }).prompt)!;
+ expect(readFileSync(prompt.packet.path, "utf8")).toContain("For input X, src/work.ts rejects it before the wrong result.");
+ expect(readTaskRecordRaw(f.root, f.taskId).record?.findings).toEqual([]);
+ snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
+ if (kind === "new") claim = { ...claim, evidence: { ...claim.evidence, caller_chain: [`docs/plans/archive/${f.taskId}.intent.json`] } };
+ const repeatedBytes = JSON.stringify(makeVerdict());
+ let disputed = await submitMediatedReview(coordinator, { cwd: f.root }, f.taskId, undefined,
+  () => ({ ok: true, receipt: { actorId: "reviewer-call-2", result: repeatedBytes, model: "reviewer" } }));
+ if (kind === "new") {
+  if (disputed.state !== "verification_ready") throw new Error(`expected verification_ready, got ${disputed.state}`);
+  const parsedSecond = parseAssuranceVerdict(makeVerdict(), snapshot);
+  host.observeReviewDispatch(disputed.agent_params as never, "all-refuted-second");
+  host.observeReviewResult("all-refuted-second", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: f.taskId,
+   snapshot_digest: snapshotDigest(snapshot), verdict_sha256: digestOfReviewerBytes(repeatedBytes), results: [
+    { finding_id: parsedSecond.findings![0].id, anchor: parsedSecond.findings![0].anchor, verdict: "refuted", counter_path: "For input X, src/work.ts rejects it before the wrong result." },
+   ] }));
+  disputed = await coordinator.submitVerification(f.taskId, { cwd: f.root });
+ }
+ expect(disputed.state).toBe("awaiting_user");
+ const record = readTaskRecordRaw(f.root, f.taskId).record!;
+ expect(record.artifact_state).toBe("frozen");
+ expect(record.findings).toMatchObject([{ kind: "unresolved_user_decision", status: "open" }]);
+ expect(record.history.find(entry => entry.type === "record_review_verifier_dispute")?.review_verifier_dispute?.counter_path).toContain("src/work.ts");
+ expect(record.history.filter(entry => entry.type === "verification")).toHaveLength(kind === "new" ? 2 : 1);
+});
 
 describe("shared verdict authority through host-configured coordinators", () => {
  for (const host of ["claude-code", "pi"] as const) {
