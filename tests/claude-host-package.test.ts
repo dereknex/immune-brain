@@ -246,6 +246,7 @@ describe("claude host package", () => {
       "enroll",
       "advance_assurance",
       "submit_review",
+      "submit_verification",
       "request_authorization",
       "revise_intent",
       "approve_breaking_intent_revision",

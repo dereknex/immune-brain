@@ -25,6 +25,7 @@ describe("Loop execution and repair routing", () => {
 		expect([...ROLE_PROMPT_FILES]).toEqual([
 			"qa.md",
 			"code-review.md",
+			"review-verifier.md",
 			"ui-review.md",
 			"executor.md",
 			"test-fixer.md",

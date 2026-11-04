@@ -131,7 +131,7 @@ import {
 	type AssuranceProjectionResult,
 	type ReworkChoice,
 } from "../runtime/kernel/assurance_projection";
-import type { TaskRecord } from "../runtime/kernel/types";
+import type { ReviewVerifierDisputeV1, TaskRecord } from "../runtime/kernel/types";
 import { currentReviewContractHash } from "../runtime/role_prompt_bridge";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
@@ -972,7 +972,7 @@ export default function (
 			}
 		}
 		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
-		let verifierDispute: import("../runtime/kernel/types").ReviewVerifierDisputeV1 | undefined;
+		let verifierDispute: ReviewVerifierDisputeV1 | undefined;
 		if (operation === "resolve-user-decision") {
 			try {
 				const current = await readTaskRecordRaw(ctx.cwd, taskId);

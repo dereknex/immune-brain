@@ -20,6 +20,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROLES: InternalRole[] = [
 	"qa",
 	"code-review",
+	"review-verifier",
 	"ui-review",
 	"executor",
 	"test-fixer",
