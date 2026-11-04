@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -8,7 +8,7 @@ import { copyGitTemplate } from "./helpers/git-template";
 import { createMcpRuntime, elicitationParams, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { PRIVILEGED_OPERATIONS } from "../plugins/immune-brain/runtime/claude/interaction";
-import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { CLAUDE_LANE_WAIT_MS, ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
@@ -191,6 +191,11 @@ describe("record and topology validation before Host batch effects", () => {
 });
 
 describe("acc-claude-batch-gate", () => {
+	it("keeps the Lane wait below Claude's minimum configured MCP limit", () => {
+		// Claude Code MCP docs ignore per-server timeout values below 1000 ms; MCP_TOOL_TIMEOUT is clamped at runtime.
+		expect(CLAUDE_LANE_WAIT_MS).toBe(500);
+		expect(CLAUDE_LANE_WAIT_MS).toBeLessThan(1000);
+	});
 	it.each([{ final_verification: undefined }, { final_verification: [] }])("requires final verification on a new Claude tool start (%p)", async ({ final_verification }) => {
 		const f = fixture("final-required"); const before = snapshot(f.root); let gates = 0;
 		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "final" }; } });
@@ -202,7 +207,7 @@ describe("acc-claude-batch-gate", () => {
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
 	});
 	it("starts a standalone task in its own Lane after one native confirmation", async () => {
 		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;
@@ -211,20 +216,41 @@ describe("acc-claude-batch-gate", () => {
 		intent.scope_hint = ["delivery.txt"];
 		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
 		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		const gates: any[] = [];
 		const runtime = client(f, { requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
-		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId });
+		try {
+		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
 		expect(gates).toHaveLength(1);
 		expect(elicitationParams(gates[0]).message).toContain("Preparation digest: sha256:");
 		expect(result.state).toBe("started");
+		expect(result.report.lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
 		const record = readAnyBatchRunState(f.root, result.batch_id)!;
 		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
 		const lane = (record.children[0] as any).lane;
+		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
+		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path));
+		expect(argv).toContain("--plugin-dir"); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
+		expect(result.report.handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
+		const freshRuntime = client(f, { requestConfirmation: async () => ({ decision: "accept", requestId: "fresh" }) });
+		const lost = await freshRuntime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
+		expect(lost.report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
+		const stopped = await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
+		expect(stopped.report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
 		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
 		const status = await runtime.callTool("status", { task_id: taskId });
-		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
+		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "needs_human", children: [{ task_id: taskId, state: "needs_human", lane: { path: lane.path } }] });
 		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
-	});
+		} finally {
+			await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
 	it("refuses ambiguous task and Initiative selectors without opening confirmation", async () => {
 		const f = fixture("ambiguous-claude"); let gates = 0;
 		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "unexpected" }; } });

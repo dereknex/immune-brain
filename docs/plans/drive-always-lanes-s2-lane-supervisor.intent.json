@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s2-lane-supervisor",
+  "owner": "user",
+  "goal": "Meet S2 of docs/specs/drive-always-lanes.spec.md: for a single-task Lane the runtime itself spawns one non-interactive Executor (claude --print or pi --print) chosen by Lane Preferences, waits for it inside the Host tool call, re-attaches across wait windows, can stop it, and records a generation-bound exit observation taken only from its own child-process exit event (Spec D3, D4, D8, settlement enumeration).",
+  "acceptance": [
+    {
+      "id": "DAL-S2-A1",
+      "assertion": "For a single-task Lane the runtime spawns exactly one Executor process with the Lane as cwd and the Executor Host's drive entry for task_id as its only prompt: claude-code as claude --print with --plugin-dir of the loaded plugin directory and, when resolved, --model and --effort; pi as pi --print with, when resolved, --model and --thinking. Host, model and effort resolve per field from the literal request, the selected user Lane profile, project lanes defaults, then the Parent's own Host; a model or effort from a layer other than its executor_host's is dropped and reported not_applied (BR-REQ-6). HERDR_ENV=1 does not change the spawn and no Herdr tab is created (BR-DEC-4). Refusals that spawn nothing: lanes.valid false, and an Executor binary that is not on PATH (lane_executor_unavailable, with no substitute Host, detached job or in-process subagent). Seam: tests/lane-supervisor.test.ts with fake claude and pi executables that record their argv and cwd, plus the adapter tests on both Hosts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S2-A2",
+      "assertion": "The single-task call blocks until the spawned generation exits or a per-Host wait window elapses. On exit it records {repository, lane path, generation, pid, exit code or signal} from the runtime's own child exit event and then reads the Lane Kernel projection; exit code 0 with a Lane record that is not done is not settlement, and a non-zero exit with a done record still settles. On window elapse it returns lane_supervision.state running for the same generation, and the next call re-attaches without a second spawn, so a Lane never has two live generations. After the Host process lost its handle (a fresh adapter instance with a recorded live generation) the call returns lane_executor_unobservable, records the exit as unknown and spawns nothing while that pid is alive. A generation that ends without Kernel progress is relaunched once as generation N+1; a second end without progress parks needs_human with lane_executor_no_progress. Each Host's window is a named constant that a test pins below that Host's tool-call limit, verified during implementation (Spec D4). Live, exited and unknown processes are tested for both the claude-code and pi providers. Seam: tests/lane-supervisor.test.ts with real child processes from fake executables.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S2-A3",
+      "assertion": "A single-task call with stop: true terminates the current generation with SIGTERM and, after a bounded grace period, SIGKILL, and records stopped_by_parent; cancelling the waiting call through its AbortSignal does the same and records interrupted. Neither observation, nor a timeout, counts as a normal exit, and a stop with no live generation changes nothing and reports so. Batch (Initiative) supervision and its handoffs are unchanged. Seam: tests/lane-supervisor.test.ts and the adapter tests on both Hosts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s2-lane-supervisor.md",
+    "docs/plans/drive-always-lanes-s2-lane-supervisor.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/fixtures/lane-executor",
+    "tests/lane-supervisor.test.ts",
+    "tests/pi-batch-authority.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

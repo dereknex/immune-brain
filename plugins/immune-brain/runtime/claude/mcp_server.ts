@@ -60,6 +60,10 @@ export function listMcpTools() {
 						...(tool.name === "start_unattended_batch"
 							? {
 									task_id: { type: "string" },
+									stop: { type: "boolean" },
+									executor_host: { type: "string", enum: ["pi", "claude-code"] },
+									executor_model: { type: "string", minLength: 1 },
+									executor_effort: { type: "string", minLength: 1 },
 									max_parallel: { type: "integer", minimum: 1 },
 									lane_offers: {
 										type: "array",
@@ -224,6 +228,9 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
 				const task = typeof args.task_id === "string" ? args.task_id : "";
+				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
+				if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code") throw new Error("invalid executor_host");
+				for (const key of ["executor_model", "executor_effort"]) if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key])) throw new Error(`invalid ${key}`);
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
@@ -250,6 +257,12 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(task ? { plan_source: "single_task" as const } : {}),
+					...(args.stop === true ? { stop: true } : {}),
+					executor: {
+						...(args.executor_host === "pi" || args.executor_host === "claude-code" ? { executor_host: args.executor_host } : {}),
+						...(typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {}),
+						...(typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}),
+					},
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),

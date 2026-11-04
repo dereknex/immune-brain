@@ -1,6 +1,13 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveConfig } from "../runtime/config/layered_config";
+import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
+
+export const PI_LANE_WAIT_MS = 5_000;
+const defaultSupervisor = new LaneSupervisor();
 // The Pi batch adapter imports the host-neutral runtime modules statically,
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
@@ -12,7 +19,7 @@ import {
 } from "../runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import {
-	startBatch, completedParentReport,
+	startBatch, completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
@@ -105,6 +112,9 @@ export interface PiBatchExecutionOptions {
 	root: string;
 	initiativeSlug?: string;
 	taskId?: string;
+	stop?: boolean;
+	executor?: ExecutorPreferences;
+	supervisor?: LaneSupervisor;
 	interactive?: boolean;
 	/**
 	 * Gate-free continuation after a foreground child: never opens the
@@ -169,6 +179,11 @@ export async function executePiUnattendedBatch(
 ): Promise<PiBatchExecutionResult> {
 	if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 	if (!!options.initiativeSlug === !!options.taskId) return batchReason("batch_entry_ambiguous");
+	if (options.stop) {
+		if (!options.taskId) return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+		return stopSingleTaskSupervisor(options.supervisor ?? defaultSupervisor, options.root, options.taskId, options.signal);
+	}
+	if (options.taskId && !resolveConfig(options.root).lanes.valid) return batchReason("lane_config_invalid");
 	return executePreparedPiBatch({ ...options, initiativeSlug: options.taskId ?? options.initiativeSlug!,
 		...(options.taskId ? { plan_source: "single_task" as const, max_parallel: 1, readInitiative: observeSingleTask } : {}) });
 }
@@ -388,6 +403,8 @@ async function executePreparedPiBatch(
 
 	let report = await startBatch({
 		plan_source: options.plan_source,
+		...(options.plan_source ? { supervision: { supervisor: options.supervisor ?? defaultSupervisor, parentHost: "pi" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS,
+			signal, stop: options.stop, request: options.executor } } : {}),
 		topology_digest: preflight.projection.topology_digest,
 		root,
 		batch_id: batchId,
@@ -515,6 +532,7 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
+	const supervisor = new LaneSupervisor();
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
@@ -527,6 +545,10 @@ export default function (
 		parameters: Type.Object({
 			initiative_slug: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
 			task_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
+			stop: Type.Optional(Type.Boolean()),
+			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code")])),
+			executor_model: Type.Optional(Type.String({ minLength: 1 })),
+			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
 			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
 			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
@@ -542,7 +564,7 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -584,6 +606,9 @@ export default function (
 				root: ctx.cwd,
 				...(params.initiative_slug ? { initiativeSlug: params.initiative_slug } : {}),
 				...(params.task_id ? { taskId: params.task_id } : {}),
+				...(params.stop ? { stop: true } : {}),
+				executor: { executor_host: params.executor_host, executor_model: params.executor_model, executor_effort: params.executor_effort },
+				supervisor,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),

@@ -2,7 +2,17 @@ import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assur
 export { ensureReviewRevision as ensureClaudeReviewRevision } from "../assurance/verdict_authority";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveConfig } from "../config/layered_config";
+import { LaneSupervisor, type ExecutorPreferences } from "../unattended/lane_supervisor";
+
+export const CLAUDE_LANE_WAIT_MS = 500;
+
+function claudeLaneWaitMs(env: NodeJS.ProcessEnv): number {
+	const limit = Number(env.MCP_TOOL_TIMEOUT);
+	return Number.isFinite(limit) && limit > 0 ? Math.min(CLAUDE_LANE_WAIT_MS, Math.floor(limit / 2)) : CLAUDE_LANE_WAIT_MS;
+}
 import {
 	AssuranceCoordinator,
 	type AssuranceCoordinatorPorts,
@@ -70,7 +80,7 @@ import {
 	findSettledBatchRecord,
 } from "../unattended/batch_preflight";
 import {
-	startBatch, completedParentReport,
+	startBatch, completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
@@ -298,6 +308,7 @@ type ClaudeBatchStartResult =
  * Called fresh pre/post confirmation and from ownsTaskClaim.
  */
 export class ClaudeRuntime {
+	private readonly laneSupervisor = new LaneSupervisor();
 	readonly host: ClaudeReviewHost;
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
@@ -898,7 +909,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { plan_source?: "single_task"; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -906,7 +917,7 @@ export class ClaudeRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -914,6 +925,12 @@ export class ClaudeRuntime {
 		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		if (options.stop) {
+			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+			return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+		}
+		if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+			return batchReason("lane_config_invalid");
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
 		const interactive = meta.interactive ?? this.interactive;
 		if (!reuseOnly && !interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
@@ -1184,6 +1201,8 @@ export class ClaudeRuntime {
 		});
 		let report = await startBatch({
 			plan_source: options.plan_source,
+			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: "claude-code" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+				waitMs: claudeLaneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
 			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
 			batch_id: batchId,

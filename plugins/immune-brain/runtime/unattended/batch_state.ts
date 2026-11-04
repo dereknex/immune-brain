@@ -10,6 +10,7 @@ import { bindsAuthoritySubject } from "../kernel/batch_authority";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
+import type { LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
 	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
@@ -975,6 +976,58 @@ export function readBatchLaneRunState(root: string, batchId: string): BatchLaneR
 	return parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
 }
 
+export function parkLaneForExecutor(root: string, batchId: string, taskId: string, reason: "lane_executor_no_progress" | "lane_executor_stopped" | "lane_executor_interrupted"): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const child = record.children.find(value => value.task_id === taskId);
+		if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason) return record;
+		if (record.plan_source !== "single_task" || !child || child.state !== "enrolled") throw new Error("lane_executor_generation_changed");
+		const stored: BatchLaneRunStateRecord = { ...record, batch_state: "needs_human", updated_at: new Date().toISOString(),
+			children: record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value) };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+export function laneGenerationStore(root: string, batchId: string): LaneGenerationStore {
+	validateBatchId(batchId);
+	const directory = join(".imm", "state", "lane-supervisors");
+	const path = join(directory, `${batchId}.json`);
+	const read = (): LaneGeneration | null => {
+		if (!existsSync(join(root, path))) return null;
+		const value: unknown = JSON.parse(readSecureProjectFile(root, path));
+		if (!isObject(value) || typeof value.repository !== "string" || !value.repository ||
+			typeof value.lane_path !== "string" || !value.lane_path ||
+			!Number.isSafeInteger(value.generation) || (value.generation as number) < 1 ||
+			(value.pid !== null && (!Number.isSafeInteger(value.pid) || (value.pid as number) < 1)) ||
+			!Number.isSafeInteger(value.owner_pid) || (value.owner_pid as number) < 1 ||
+			!["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) ||
+			typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || (value.no_progress as number) < 0 ||
+			(value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || (value.handled_generation as number) < 1 || (value.handled_generation as number) > (value.generation as number))) ||
+			((value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null)) ||
+			(value.state === "running" && (value.pid === null || value.exit !== null)) ||
+			(value.state === "unobservable" && value.exit !== null) ||
+			(["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null)) ||
+			(value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path ||
+				value.exit.generation !== value.generation || value.exit.pid !== value.pid ||
+				(value.exit.code !== null && !Number.isInteger(value.exit.code)) ||
+				(value.exit.signal !== null && typeof value.exit.signal !== "string") ||
+				((value.exit.code === null) === (value.exit.signal === null)))))
+			throw new Error(`invalid lane supervisor state for ${batchId}`);
+		return value as unknown as LaneGeneration;
+	};
+	return { read, update(fn) {
+		return withKernelStoreLock(root, () => {
+			const next = fn(read());
+			ensureSecureDirectory(root, directory);
+			writeFileAtomically(root, path, JSON.stringify(next));
+			return next;
+		});
+	} };
+}
+
 export function writeBatchLaneRunState(root: string, record: BatchLaneRunStateRecord): BatchLaneRunStateRecord {
 	const path = statePath(record.batch_id);
 	validateLaneRecordShape(record, record.batch_id);
@@ -1039,6 +1092,7 @@ export interface BatchLaneRunReport {
 	reason: string | null;
 	final_report?: import("./batch_final_report").BatchFinalReport;
 	handoffs: BatchLaneHandoff[];
+	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string; not_applied: string[] };
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
 	/**

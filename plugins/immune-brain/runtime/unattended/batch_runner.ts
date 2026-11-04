@@ -6,9 +6,11 @@ import type { AssuranceRecovery, TaskRecordRead } from "../assurance/coordinator
 import type { QaCheckDiagnostic } from "../assurance/qa";
 import type { BatchPlanChild, InitiativeObservationReader } from "./types";
 import type { BatchRunnerGitPort } from "./batch_git";
-import { expectedBatchHead, findSettledBatchRecord } from "./batch_preflight";
+import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBatch, createBatchTrackerPort, type LaneOffer } from "./batch_lanes";
-import { isLaneBatchRecord, readAnyBatchRunState, writeBatchRunReport, type BatchRunReport } from "./batch_state";
+import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
+import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
+import { resolveConfig } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
 import { observeParentCompletion, withBatchEvidence } from "./batch_git";
@@ -104,6 +106,7 @@ export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; envir
 
 export interface StartBatchInput {
 	plan_source?: "single_task";
+	supervision?: { supervisor: LaneSupervisor; parentHost: ExecutorHost; pluginDir: string; waitMs: number; signal?: AbortSignal; stop?: boolean; request?: ExecutorPreferences };
 	topology_digest?: string;
 	root: string;
 	batch_id: string;
@@ -159,8 +162,72 @@ export interface BatchTrackerPort {
 
 export type { BatchRunReport } from "./batch_state";
 
+export async function stopSingleTaskSupervisor(supervisor: LaneSupervisor, root: string, taskId: string, signal?: AbortSignal) {
+	const existing = findExistingActiveBatch(root, taskId);
+	if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
+		return { state: "blocked" as const, reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+	const record = existing.record;
+	const lane = record.children.find(child => child.task_id === taskId)?.lane;
+	if (!lane) return { state: "blocked" as const, reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+	const observation = await supervisor.run({ key: `${root}\0${record.batch_id}`, repository: root, lanePath: lane.path, taskId,
+		choice: { host: "pi", not_applied: [] }, pluginDir: "", store: laneGenerationStore(root, record.batch_id),
+		baseline: "", waitMs: 5_000, graceMs: 1000, signal, stop: true });
+	const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+	const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running"
+		? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
+	return { state: "started" as const, batch_id: record.batch_id, report: { ...reportFromLane(parked),
+		lane_supervision: { ...observation, not_applied: [] } } as unknown as BatchRunReport };
+}
+
+function reportFromLane(record: import("./batch_state").BatchLaneRunStateRecord): BatchLaneRunReport {
+	return { contract: "assurance_kernel/batch_run_report/v1", batch_id: record.batch_id, initiative_slug: record.initiative_slug,
+		batch_state: record.batch_state, max_parallel: record.max_parallel, children: record.children, commits: record.commits,
+		reason: null, handoffs: [], next_action: "Continue supervising the Lane.", created_at: record.updated_at };
+}
+
+async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {
+	const options = input.supervision!;
+	const child = report.children.find(c => c.task_id === input.initiative_slug && c.lane);
+	if (!child?.lane) return report;
+	const config = resolveConfig(input.root);
+	if (!config.lanes.valid) return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
+	const active = config.lanes.active.value;
+	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+	const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
+	const store = laneGenerationStore(input.root, input.batch_id);
+	const observation = await superviseLane(options.supervisor, {
+		key: `${input.root}\0${input.batch_id}`, repository: input.root, lanePath: child.lane.path, taskId: child.task_id,
+		choice, pluginDir: options.pluginDir, store, baseline: "", waitMs: options.waitMs, graceMs: 1000,
+		signal: options.signal, stop: options.stop,
+		project: async () => { const result = await input.kernel.projectTask(child.lane!.path, child.task_id);
+			if (result.error !== null) throw new Error(`batch_lane_unreadable: ${result.error}`);
+			return result.projection;
+		},
+	});
+	if (observation.reason === "lane_executor_no_progress") {
+		const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
+		report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
+	} else if (observation.state === "stopped" && observation.exit) {
+		const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+		const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
+		report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
+	} else if (observation.state === "unavailable" || observation.state === "unobservable") {
+		report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
+	}
+	return { ...report, handoffs: report.handoffs.filter(handoff => handoff.role !== "executor"),
+		next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
+			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
+			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
+		lane_supervision: { ...observation, not_applied: choice.not_applied } };
+}
+
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
 	const recorded = readAnyBatchRunState(input.root, input.batch_id);
+	if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
+		const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
+		if (!report) throw new Error("lane_config_invalid");
+		return { ...report, batch_state: "rejected", reason: "lane_config_invalid" } as unknown as BatchRunReport;
+	}
 	if (recorded && !isLaneBatchRecord(recorded)) {
 		const reason = batchReason("batch_record_shape_retired");
 		return {
@@ -171,7 +238,38 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		};
 	}
 	try {
-		return await runLaneBatch(input, recorded) as unknown as BatchRunReport;
+		if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
+			const generation = laneGenerationStore(input.root, input.batch_id).read();
+			if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
+				const observed = await superviseSingle(input, reportFromLane(recorded));
+				if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
+					return observed as unknown as BatchRunReport;
+				const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
+					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
+			}
+		}
+		const report = await runLaneBatch(input, recorded);
+		if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
+			const store = laneGenerationStore(input.root, input.batch_id);
+			const generation = store.read();
+			if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state)) store.update(value => {
+				if (!value || value.generation !== generation.generation || value.state !== generation.state) throw new Error("lane_executor_generation_changed");
+				return { ...value, no_progress: 0, handled_generation: value.generation };
+			});
+		}
+		if (input.plan_source === "single_task" && input.supervision && report.handoffs.some(h => h.role === "executor")) {
+			const observed = await superviseSingle(input, report);
+			if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
+				const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
+					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
+			}
+			return observed as unknown as BatchRunReport;
+		}
+		return report as unknown as BatchRunReport;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message)) throw error;

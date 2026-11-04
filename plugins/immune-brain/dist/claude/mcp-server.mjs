@@ -6412,6 +6412,10 @@ function batchReason(key, detail = "") {
 var BATCH_REASONS;
 var init_batch_reasons = __esm(() => {
   BATCH_REASONS = Object.freeze({
+    lane_config_invalid: { state: "rejected", reason: "lane_config_invalid", recovery_action: "Correct the Lane configuration and retry in the current Host." },
+    lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
+    lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
+    lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
     batch_entry_ambiguous: {
       state: "rejected",
       reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
@@ -7000,6 +7004,47 @@ function readAnyBatchRunState(root, batchId) {
   if (!existsSync6(join10(root, path)))
     return null;
   return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join10(root, path));
+}
+function parkLaneForExecutor(root, batchId, taskId, reason) {
+  const path = statePath(batchId);
+  return withKernelStoreLock(root, () => {
+    const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+    const child = record.children.find((value) => value.task_id === taskId);
+    if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason)
+      return record;
+    if (record.plan_source !== "single_task" || !child || child.state !== "enrolled")
+      throw new Error("lane_executor_generation_changed");
+    const stored = {
+      ...record,
+      batch_state: "needs_human",
+      updated_at: new Date().toISOString(),
+      children: record.children.map((value) => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value)
+    };
+    validateLaneRecordShape(stored, batchId);
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
+function laneGenerationStore(root, batchId) {
+  validateBatchId(batchId);
+  const directory = join10(".imm", "state", "lane-supervisors");
+  const path = join10(directory, `${batchId}.json`);
+  const read = () => {
+    if (!existsSync6(join10(root, path)))
+      return null;
+    const value = JSON.parse(readSecureProjectFile(root, path));
+    if (!isObject(value) || typeof value.repository !== "string" || !value.repository || typeof value.lane_path !== "string" || !value.lane_path || !Number.isSafeInteger(value.generation) || value.generation < 1 || value.pid !== null && (!Number.isSafeInteger(value.pid) || value.pid < 1) || !Number.isSafeInteger(value.owner_pid) || value.owner_pid < 1 || !["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) || typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || value.no_progress < 0 || value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || value.handled_generation < 1 || value.handled_generation > value.generation) || (value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null) || value.state === "running" && (value.pid === null || value.exit !== null) || value.state === "unobservable" && value.exit !== null || ["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null) || value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path || value.exit.generation !== value.generation || value.exit.pid !== value.pid || value.exit.code !== null && !Number.isInteger(value.exit.code) || value.exit.signal !== null && typeof value.exit.signal !== "string" || value.exit.code === null === (value.exit.signal === null)))
+      throw new Error(`invalid lane supervisor state for ${batchId}`);
+    return value;
+  };
+  return { read, update(fn) {
+    return withKernelStoreLock(root, () => {
+      const next = fn(read());
+      ensureSecureDirectory2(root, directory);
+      writeFileAtomically(root, path, JSON.stringify(next));
+      return next;
+    });
+  } };
 }
 function writeBatchLaneRunState(root, record) {
   const path = statePath(record.batch_id);
@@ -17369,8 +17414,8 @@ init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
-import { join as join32 } from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { join as join33 } from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -19368,6 +19413,227 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_verdict_authority();
 init_verdict_authority();
+init_layered_config();
+import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
+import { execFileSync as execFileSync15 } from "node:child_process";
+import { dirname as dirname16, join as join32, resolve as resolve16 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+
+// plugins/immune-brain/runtime/unattended/lane_supervisor.ts
+import { spawn as spawn4 } from "node:child_process";
+import { accessSync as accessSync3, constants as constants9 } from "node:fs";
+import { delimiter as delimiter4, join as join28 } from "node:path";
+function chooseExecutor(layers, fallback) {
+  const hostLayer = layers.findIndex((layer) => layer.executor_host !== undefined);
+  const host = hostLayer < 0 ? fallback : layers[hostLayer].executor_host;
+  const selected = hostLayer < 0 ? {} : layers[hostLayer];
+  const not_applied = [];
+  for (const key of ["executor_model", "executor_effort"]) {
+    if (layers.some((layer, i) => i !== hostLayer && layer[key] !== undefined))
+      not_applied.push(key);
+  }
+  return {
+    host,
+    ...selected.executor_model ? { model: selected.executor_model } : {},
+    ...selected.executor_effort ? { effort: selected.executor_effort } : {},
+    not_applied
+  };
+}
+function executorArguments(choice, pluginDir, taskId) {
+  return [
+    "--print",
+    ...choice.host === "claude-code" ? ["--plugin-dir", pluginDir] : [],
+    ...choice.model ? ["--model", choice.model] : [],
+    ...choice.effort ? [choice.host === "claude-code" ? "--effort" : "--thinking", choice.effort] : [],
+    `${choice.host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} ${taskId}`
+  ];
+}
+
+class LaneSupervisor {
+  handles = new Map;
+  async run(input) {
+    let current = input.store.read();
+    let handle = this.handles.get(input.key);
+    if (current && (current.repository !== input.repository || current.lane_path !== input.lanePath))
+      throw new Error("lane_executor_identity_mismatch");
+    if (!handle && current && (current.state === "starting" || current.state === "running" || current.state === "unobservable")) {
+      if (current.state !== "starting")
+        current = input.store.update((value) => {
+          if (!value || value.generation !== current.generation)
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, state: "unobservable", exit: null };
+        });
+      return { state: "unobservable", generation: current.generation, exit: null };
+    }
+    if (input.stop && !handle)
+      return { state: "stopped", generation: current?.generation ?? null, exit: null };
+    if (!handle && current && ["stopped_by_parent", "interrupted"].includes(current.state) && !input.restart)
+      return { state: "stopped", generation: current.generation, exit: current.exit };
+    if (!handle && (input.signal?.aborted || current?.state === "exited" && !input.restart))
+      return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
+    if (!handle && !input.stop) {
+      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join28(dir || ".", input.choice.host === "claude-code" ? "claude" : "pi")).find((path) => {
+        try {
+          accessSync3(path, constants9.X_OK);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!executable)
+        return { state: "unavailable", generation: current?.generation ?? null, exit: null };
+      const previous = current;
+      current = input.store.update((value) => {
+        if ((value?.generation ?? 0) !== (previous?.generation ?? 0) || value && value.state !== "unavailable" && (!input.restart || !["exited", "stopped_by_parent", "interrupted"].includes(value.state)))
+          throw new Error("lane_executor_generation_changed");
+        return {
+          repository: input.repository,
+          lane_path: input.lanePath,
+          generation: value?.state === "unavailable" ? value.generation : (value?.generation ?? 0) + 1,
+          pid: null,
+          owner_pid: process.pid,
+          state: "starting",
+          exit: null,
+          baseline: input.baseline,
+          no_progress: value?.no_progress ?? 0,
+          ...value?.handled_generation ? { handled_generation: value.handled_generation } : {}
+        };
+      });
+      const generation = current.generation;
+      const child = spawn4(executable, executorArguments(input.choice, input.pluginDir, input.taskId), { cwd: input.lanePath, stdio: "ignore" });
+      const started = new Promise((resolve) => {
+        child.once("spawn", () => resolve(true));
+        child.once("error", () => resolve(false));
+      });
+      if (!child.pid) {
+        await started;
+        input.store.update((value) => {
+          if (!value || value.generation !== generation)
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, state: "unavailable" };
+        });
+        return { state: "unavailable", generation, exit: null };
+      }
+      const pid = child.pid;
+      const newHandle = { child, termination: null, done: null };
+      newHandle.done = new Promise((resolve, reject) => child.once("exit", (code, signal) => {
+        try {
+          const stored = input.store.update((value) => {
+            if (!value || value.generation !== generation || value.pid !== pid)
+              throw new Error("lane_executor_generation_changed");
+            const exit = { repository: input.repository, lane_path: input.lanePath, generation, pid, code, signal };
+            return { ...value, state: newHandle.termination ?? "exited", exit };
+          });
+          resolve(stored);
+        } catch (error) {
+          reject(error);
+        } finally {
+          this.handles.delete(input.key);
+        }
+      }));
+      newHandle.done.catch(() => {});
+      try {
+        current = input.store.update((value) => {
+          if (!value || value.generation !== generation || value.state !== "starting")
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, pid, state: "running" };
+        });
+      } catch (error) {
+        child.kill("SIGTERM");
+        const killTimer = setTimeout(() => child.kill("SIGKILL"), input.graceMs);
+        newHandle.done.finally(() => clearTimeout(killTimer)).catch(() => {});
+        throw error;
+      }
+      this.handles.set(input.key, newHandle);
+      handle = newHandle;
+      if (!await started) {
+        this.handles.delete(input.key);
+        input.store.update((value) => {
+          if (!value || value.generation !== generation)
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, pid: null, state: "unavailable", exit: null };
+        });
+        return { state: "unavailable", generation, exit: null };
+      }
+    }
+    if (!handle)
+      return { state: "exited", generation: current?.generation ?? null, exit: current?.exit ?? null };
+    const active = handle;
+    let timer;
+    let abort;
+    let interrupted;
+    const interruption = new Promise((resolve) => {
+      interrupted = () => resolve("interrupted");
+    });
+    const terminate = (reason) => {
+      if (active.termination)
+        return;
+      active.termination = reason;
+      active.child.kill("SIGTERM");
+      const killTimer = setTimeout(() => active.child.kill("SIGKILL"), input.graceMs);
+      active.done.finally(() => clearTimeout(killTimer));
+      interrupted?.();
+    };
+    if (input.stop)
+      terminate("stopped_by_parent");
+    if (input.signal?.aborted)
+      terminate("interrupted");
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), input.waitMs);
+    });
+    if (input.signal && !input.signal.aborted) {
+      abort = () => terminate("interrupted");
+      input.signal.addEventListener("abort", abort, { once: true });
+    }
+    try {
+      let result = await Promise.race([active.done, timeout, interruption]);
+      if (result === "interrupted")
+        result = await active.done;
+      if (!result)
+        return { state: "running", generation: current.generation, exit: null };
+      return { state: result.state === "exited" ? "exited" : "stopped", generation: result.generation, exit: result.exit };
+    } finally {
+      if (timer)
+        clearTimeout(timer);
+      if (abort)
+        input.signal?.removeEventListener("abort", abort);
+    }
+  }
+}
+async function superviseLane(supervisor, input) {
+  let projection = await input.project();
+  const deadline = Date.now() + input.waitMs;
+  for (;; ) {
+    const before = input.store.read();
+    if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
+      return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
+    const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
+    if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0))
+      return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
+    const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
+    const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
+    if (observation.state !== "exited" || observation.generation === null)
+      return observation;
+    const generation = input.store.read();
+    if (!generation || generation.generation !== observation.generation || generation.state !== "exited")
+      throw new Error("lane_executor_generation_changed");
+    projection = await input.project();
+    const advanced = projection.record_revision !== generation.baseline;
+    const observed = input.store.update((value) => {
+      if (!value || value.generation !== generation.generation || value.state !== "exited")
+        throw new Error("lane_executor_generation_changed");
+      if (value.handled_generation === value.generation)
+        return value;
+      return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
+    });
+    if (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0 || advanced)
+      return observation;
+    if (observed.no_progress >= 2)
+      return { ...observation, reason: "lane_executor_no_progress" };
+  }
+}
+
+// plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_coordinator();
 init_verification();
 init_review_evidence();
@@ -19377,9 +19643,6 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
-import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
-import { execFileSync as execFileSync15 } from "node:child_process";
-import { join as join31 } from "node:path";
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -19905,11 +20168,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync14 } from "node:child_process";
 import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join28 } from "node:path";
+import { join as join29 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync21(join28(root, relativePath)),
+    bytes: readFileSync21(join29(root, relativePath)),
     index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -19917,7 +20180,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join28(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join29(root, snapshot.path), snapshot.bytes);
   execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -19929,7 +20192,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync21(join28(root, snapshot.path));
+  const restoredBytes = readFileSync21(join29(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -19962,7 +20225,7 @@ init_batch_final_report();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute10, join as join29 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join30 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
@@ -20111,7 +20374,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join29(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join30(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -20542,7 +20805,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join29(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join30(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -20714,7 +20977,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join29(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync16(join30(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -21147,6 +21410,7 @@ async function runLaneBatch(input, persisted) {
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_batch_state();
+init_layered_config();
 init_backend_claim();
 init_batch_plan();
 init_batch_git();
@@ -21201,8 +21465,107 @@ async function completedParentReport(root, initiativeSlug, readInitiative, track
   writeBatchRunReport(root, report);
   return report;
 }
+async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
+  const existing = findExistingActiveBatch(root, taskId);
+  if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
+    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+  const record = existing.record;
+  const lane = record.children.find((child) => child.task_id === taskId)?.lane;
+  if (!lane)
+    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+  const observation = await supervisor.run({
+    key: `${root}\x00${record.batch_id}`,
+    repository: root,
+    lanePath: lane.path,
+    taskId,
+    choice: { host: "pi", not_applied: [] },
+    pluginDir: "",
+    store: laneGenerationStore(root, record.batch_id),
+    baseline: "",
+    waitMs: 5000,
+    graceMs: 1000,
+    signal,
+    stop: true
+  });
+  const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+  const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
+  return { state: "started", batch_id: record.batch_id, report: {
+    ...reportFromLane(parked),
+    lane_supervision: { ...observation, not_applied: [] }
+  } };
+}
+function reportFromLane(record) {
+  return {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: record.batch_id,
+    initiative_slug: record.initiative_slug,
+    batch_state: record.batch_state,
+    max_parallel: record.max_parallel,
+    children: record.children,
+    commits: record.commits,
+    reason: null,
+    handoffs: [],
+    next_action: "Continue supervising the Lane.",
+    created_at: record.updated_at
+  };
+}
+async function superviseSingle(input, report) {
+  const options = input.supervision;
+  const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
+  if (!child?.lane)
+    return report;
+  const config = resolveConfig(input.root);
+  if (!config.lanes.valid)
+    return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
+  const active = config.lanes.active.value;
+  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+  const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
+  const store = laneGenerationStore(input.root, input.batch_id);
+  const observation = await superviseLane(options.supervisor, {
+    key: `${input.root}\x00${input.batch_id}`,
+    repository: input.root,
+    lanePath: child.lane.path,
+    taskId: child.task_id,
+    choice,
+    pluginDir: options.pluginDir,
+    store,
+    baseline: "",
+    waitMs: options.waitMs,
+    graceMs: 1000,
+    signal: options.signal,
+    stop: options.stop,
+    project: async () => {
+      const result = await input.kernel.projectTask(child.lane.path, child.task_id);
+      if (result.error !== null)
+        throw new Error(`batch_lane_unreadable: ${result.error}`);
+      return result.projection;
+    }
+  });
+  if (observation.reason === "lane_executor_no_progress") {
+    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
+    report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
+  } else if (observation.state === "stopped" && observation.exit) {
+    const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
+    report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
+  } else if (observation.state === "unavailable" || observation.state === "unobservable") {
+    report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
+  }
+  return {
+    ...report,
+    handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
+    next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
+    lane_supervision: { ...observation, not_applied: choice.not_applied }
+  };
+}
 async function startBatch(input) {
   const recorded = readAnyBatchRunState(input.root, input.batch_id);
+  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
+    const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
+    if (!report)
+      throw new Error("lane_config_invalid");
+    return { ...report, batch_state: "rejected", reason: "lane_config_invalid" };
+  }
   if (recorded && !isLaneBatchRecord(recorded)) {
     const reason = batchReason("batch_record_shape_retired");
     return {
@@ -21218,7 +21581,46 @@ async function startBatch(input) {
     };
   }
   try {
-    return await runLaneBatch(input, recorded);
+    if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
+      const generation = laneGenerationStore(input.root, input.batch_id).read();
+      if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
+        const observed = await superviseSingle(input, reportFromLane(recorded));
+        if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
+          return observed;
+        const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+        return {
+          ...advanced,
+          handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
+          next_action: advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+          lane_supervision: observed.lane_supervision
+        };
+      }
+    }
+    const report = await runLaneBatch(input, recorded);
+    if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
+      const store = laneGenerationStore(input.root, input.batch_id);
+      const generation = store.read();
+      if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state))
+        store.update((value) => {
+          if (!value || value.generation !== generation.generation || value.state !== generation.state)
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, no_progress: 0, handled_generation: value.generation };
+        });
+    }
+    if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
+      const observed = await superviseSingle(input, report);
+      if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
+        const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+        return {
+          ...advanced,
+          handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
+          next_action: advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+          lane_supervision: observed.lane_supervision
+        };
+      }
+      return observed;
+    }
+    return report;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
@@ -21309,7 +21711,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join30 } from "node:path";
+import { join as join31 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -21329,7 +21731,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join30(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join31(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -21500,6 +21902,11 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
+var CLAUDE_LANE_WAIT_MS = 500;
+function claudeLaneWaitMs(env) {
+  const limit = Number(env.MCP_TOOL_TIMEOUT);
+  return Number.isFinite(limit) && limit > 0 ? Math.min(CLAUDE_LANE_WAIT_MS, Math.floor(limit / 2)) : CLAUDE_LANE_WAIT_MS;
+}
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
 }
@@ -21568,6 +21975,7 @@ function throwIfCancelled(signal) {
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
 class ClaudeRuntime {
+  laneSupervisor = new LaneSupervisor;
   host;
   coordinator;
   cwd;
@@ -21761,7 +22169,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync18(join31(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync18(join32(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -21878,7 +22286,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join31(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join32(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22019,7 +22427,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join31(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join32(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -22066,6 +22474,13 @@ class ClaudeRuntime {
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);
+    if (options.stop) {
+      if (options.plan_source !== "single_task")
+        return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+      return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+    }
+    if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+      return batchReason("lane_config_invalid");
     const interactive = meta.interactive ?? this.interactive;
     if (!reuseOnly && !interactive)
       throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
@@ -22325,6 +22740,15 @@ class ClaudeRuntime {
     });
     let report = await startBatch({
       plan_source: options.plan_source,
+      ...options.plan_source ? { supervision: {
+        supervisor: this.laneSupervisor,
+        parentHost: "claude-code",
+        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        waitMs: claudeLaneWaitMs(this.env),
+        signal: meta.signal,
+        stop: options.stop,
+        request: options.executor
+      } } : {},
       topology_digest: preflight.projection.topology_digest,
       root: this.cwd,
       batch_id: batchId,
@@ -22478,6 +22902,10 @@ function listMcpTools() {
           initiative_slug: { type: "string" },
           ...tool.name === "start_unattended_batch" ? {
             task_id: { type: "string" },
+            stop: { type: "boolean" },
+            executor_host: { type: "string", enum: ["pi", "claude-code"] },
+            executor_model: { type: "string", minLength: 1 },
+            executor_effort: { type: "string", minLength: 1 },
             max_parallel: { type: "integer", minimum: 1 },
             lane_offers: {
               type: "array",
@@ -22548,7 +22976,7 @@ function createMcpRuntime(options = {}) {
   let negotiatedVersion;
   let negotiatedInteractive = false;
   const connectionId = randomUUID12();
-  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath3(import.meta.url));
+  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
   const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
   let hookSessionId = null;
@@ -22602,6 +23030,13 @@ function createMcpRuntime(options = {}) {
           throw new Error("unknown parameter: lane_revision");
         const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
         const task = typeof args.task_id === "string" ? args.task_id : "";
+        if (args.stop !== undefined && typeof args.stop !== "boolean")
+          throw new Error("stop must be a boolean");
+        if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code")
+          throw new Error("invalid executor_host");
+        for (const key of ["executor_model", "executor_effort"])
+          if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key]))
+            throw new Error(`invalid ${key}`);
         if (!!initiative === !!task)
           return batchReason("batch_entry_ambiguous");
         const initiativeSlug = task || initiative;
@@ -22630,6 +23065,12 @@ function createMcpRuntime(options = {}) {
         const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...task ? { plan_source: "single_task" } : {},
+          ...args.stop === true ? { stop: true } : {},
+          executor: {
+            ...args.executor_host === "pi" || args.executor_host === "claude-code" ? { executor_host: args.executor_host } : {},
+            ...typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {},
+            ...typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}
+          },
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
@@ -23306,7 +23747,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join32(cwd, ".imm", "state", "batches");
+    const batchesDir = join33(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
