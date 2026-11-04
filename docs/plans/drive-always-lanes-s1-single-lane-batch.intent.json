@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s1-single-lane-batch",
+  "owner": "user",
+  "goal": "Meet S1 of docs/specs/drive-always-lanes.spec.md: on both Hosts, start_unattended_batch accepts a task_id and turns one standalone validated TaskIntent into a one-child Lane batch (plan_source single_task, slug = task_id, max_parallel 1) authorized by exactly one native gate, with the Lane child enrolled through deriveChildEnrollment, its state visible through status, and its settled delivery integrated onto imm/<task_id> by the existing merge queue (Spec D1, D2).",
+  "acceptance": [
+    {
+      "id": "DAL-S1-A1",
+      "assertion": "On Claude Code and Pi, a literal drive entry calling start_unattended_batch with task_id for a validated, enrollment-ready TaskIntent opens exactly one native gate bound to the TaskIntent revision, content hash and preparation digest, records a v2 Lane batch with plan_source single_task, slug equal to task_id and max_parallel 1, creates the Lane at imm/worktrees/<task_id>/<task_id> on imm-lane/<task_id>/<task_id> at the current HEAD, copies an uncommitted TaskIntent into it, and enrolls the child in the Lane store through deriveChildEnrollment without opening a second gate (BR-REQ-2, BR-DEC-5). Each of these refuses before any gate opens and creates no Lane: both initiative_slug and task_id (batch_entry_ambiguous), neither, a task_id whose TaskIntent is invalid or not enrollment_ready, a task_id that is a child of an active Initiative batch, and a task_id entry that meets an existing Initiative record or an Initiative entry that meets a single_task record (batch_entry_kind_mismatch). Initiative batches keep their current behavior. Seam: the Host entry with a counting native-gate stub in the named test files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S1-A2",
+      "assertion": "On both Hosts, status queried with the task_id of a single-task Lane batch returns that record in batch.record with its plan_source, batch_state and the child's Lane state and path, the same fields a batch child shows (BR-REQ-5); status for a task_id with no batch and no TaskRecord returns no batch record. Seam: the status read in the named test files.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S1-A3",
+      "assertion": "When the single-task Lane child settles done, the runner commits the settled delivery and its .imm/audit pair on the Lane branch and fast-forwards imm/<task_id> to a candidate whose changed paths and per-path content equal that commit; a candidate that does not match moves no ref and parks the child needs_human with the existing integration reason, never integrating part of the delivery (BR-REQ-4). Seam: tests/single-task-lane-batch.test.ts with a settled Lane fixture.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s1-single-lane-batch.md",
+    "docs/plans/drive-always-lanes-s1-single-lane-batch.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/types.ts",
+    "tests/claude-batch-authority.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/single-task-lane-batch.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

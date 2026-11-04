@@ -767,6 +767,8 @@ describe("shared batch preflight projection", () => {
 		// existed. A key that disappears, or a text that is silently reworded, fails
 		// here rather than reaching an operator as changed prose.
 		const expected: Record<string, [string, string]> = {
+			batch_entry_ambiguous: ["batch_entry_ambiguous: specify exactly one of initiative_slug or task_id", "specify exactly one batch entry and retry in the current Host"],
+			batch_entry_kind_mismatch: ["batch_entry_kind_mismatch: the existing batch has a different plan source", "use the entry matching the existing batch in the current Host"],
 			batch_runtime_too_old: ["batch_runtime_too_old: <detail>", "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host"],
 			invalid_slug: ["invalid initiative slug: <detail>", "specify a valid initiative slug and retry in the current Host"],
 			batch_state_unreadable: ["batch run state is unreadable or invalid: <detail>", "resolve or remove the invalid batch state file, then retry in the current Host"],

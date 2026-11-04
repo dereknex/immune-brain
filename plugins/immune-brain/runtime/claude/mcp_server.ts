@@ -3,6 +3,7 @@ import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { batchReason } from "../unattended/batch_reasons";
 import { BatchRuntimeTooOldError, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -39,7 +40,7 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user drive entry.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
 	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
@@ -58,6 +59,7 @@ export function listMcpTools() {
 						initiative_slug: { type: "string" },
 						...(tool.name === "start_unattended_batch"
 							? {
+									task_id: { type: "string" },
 									max_parallel: { type: "integer", minimum: 1 },
 									lane_offers: {
 										type: "array",
@@ -93,7 +95,7 @@ export function listMcpTools() {
 						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 					}),
 			},
-			required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
+			required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
 				: tool.name === "resolve_finding"
 					? ["task_id", "finding_id"]
@@ -220,8 +222,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
 				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-				const initiativeSlug = String(args.initiative_slug ?? "");
-				if (!initiativeSlug) throw new Error("initiative_slug is required");
+				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
+				const task = typeof args.task_id === "string" ? args.task_id : "";
+				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
+				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
 				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
 				if (!negotiatedInteractive) {
@@ -242,9 +246,10 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
-				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+				const maxParallel = task ? 1 : resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
+					...(task ? { plan_source: "single_task" as const } : {}),
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
@@ -559,6 +564,9 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			`Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
 			b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
 			input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+			input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
+			input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
+			input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
 			b?.children ? `Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}` : null,
 			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
 			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,

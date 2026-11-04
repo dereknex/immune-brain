@@ -103,6 +103,7 @@ export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; envir
 	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string });
 
 export interface StartBatchInput {
+	plan_source?: "single_task";
 	topology_digest?: string;
 	root: string;
 	batch_id: string;

@@ -10,6 +10,8 @@
 // adapter that owns the transport.
 
 export type BatchReasonKey =
+	| "batch_entry_ambiguous"
+	| "batch_entry_kind_mismatch"
 	| "invalid_slug"
 	| "batch_state_unreadable"
 	| "batch_runtime_too_old"
@@ -52,6 +54,16 @@ export interface BatchReasonSpec {
 }
 
 export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = Object.freeze({
+	batch_entry_ambiguous: {
+		state: "rejected",
+		reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
+		recovery_action: "specify exactly one batch entry and retry in the current Host",
+	},
+	batch_entry_kind_mismatch: {
+		state: "rejected",
+		reason: "batch_entry_kind_mismatch: the existing batch has a different plan source",
+		recovery_action: "use the entry matching the existing batch in the current Host",
+	},
 	batch_record_shape_retired: {
 		state: "rejected",
 		reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",

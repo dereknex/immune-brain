@@ -6412,6 +6412,16 @@ function batchReason(key, detail = "") {
 var BATCH_REASONS;
 var init_batch_reasons = __esm(() => {
   BATCH_REASONS = Object.freeze({
+    batch_entry_ambiguous: {
+      state: "rejected",
+      reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
+      recovery_action: "specify exactly one batch entry and retry in the current Host"
+    },
+    batch_entry_kind_mismatch: {
+      state: "rejected",
+      reason: "batch_entry_kind_mismatch: the existing batch has a different plan source",
+      recovery_action: "use the entry matching the existing batch in the current Host"
+    },
     batch_record_shape_retired: {
       state: "rejected",
       reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
@@ -6800,6 +6810,10 @@ function validateLaneRecordShape(value, batchId) {
   const record = value;
   if (record.contract !== "assurance_kernel/batch_run_state/v2")
     throw new Error(`batch run state ${batchId} has an unknown contract`);
+  if (record.plan_source !== undefined && record.plan_source !== "single_task")
+    throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+  if (record.plan_source === "single_task" && (record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 || record.children[0]?.task_id !== record.initiative_slug))
+    throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
   if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
     throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
   if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
@@ -6932,6 +6946,7 @@ function prepareBatchLaneRunState(input) {
   validateBatchId(input.batch_id);
   return {
     contract: "assurance_kernel/batch_run_state/v2",
+    ...input.plan_source ? { plan_source: input.plan_source } : {},
     topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
     batch_id: input.batch_id,
     initiative_slug: input.initiative_slug,
@@ -15182,6 +15197,7 @@ var init_batch_schedule = __esm(() => {
 var exports_batch_plan = {};
 __export(exports_batch_plan, {
   observeInitiative: () => observeInitiative,
+  observeSingleTask: () => observeSingleTask,
   projectBatchPlan: () => projectBatchPlan
 });
 import { createHash as createHash20 } from "node:crypto";
@@ -15382,7 +15398,12 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
     })))
   };
 }
-var ID_PATTERN3, DEFAULT_QA_FAILURE_LIMIT = 2, ISO_TIMESTAMP_PATTERN2, observeInitiative = async (root, initiativeSlug) => hasLocalInitiative(root, initiativeSlug) ? observeLocalInitiative(root, initiativeSlug) : observeGithubInitiative(root, initiativeSlug);
+var ID_PATTERN3, DEFAULT_QA_FAILURE_LIMIT = 2, ISO_TIMESTAMP_PATTERN2, observeInitiative = async (root, initiativeSlug) => hasLocalInitiative(root, initiativeSlug) ? observeLocalInitiative(root, initiativeSlug) : observeGithubInitiative(root, initiativeSlug), observeSingleTask = async (_root, taskId) => ({
+  contract: "immune_brain/local_initiative_observation/v1",
+  initiative_id: taskId,
+  path: `docs/plans/${taskId}.intent.json`,
+  tasks: [{ task_id: taskId, slice_id: taskId, blocked_by: [] }]
+});
 var init_batch_plan = __esm(() => {
   init_github_issue_tracker();
   init_local_initiative();
@@ -16418,6 +16439,18 @@ var init_batch_git = __esm(() => {
   };
 });
 
+// plugins/immune-brain/runtime/kernel/intent_readiness.ts
+function scopeEstimateFailure(root, intent) {
+  if (intent.scope_size_reason !== undefined)
+    return null;
+  const outputs = new Set(readDerivedFiles(root).flatMap((entry) => entry.outputs));
+  const counted = intent.scope_hint.filter((path) => !path.startsWith(".changeset/") && path !== `docs/plans/${intent.task_id}.intent.json` && !/^docs\/specs\/[^/]+\.spec\.md$/.test(path) && !outputs.has(path)).length;
+  return counted > 15 ? `${counted} counted scope_hint paths exceed the 15-path cap; split the Slice or provide scope_size_reason` : null;
+}
+var init_intent_readiness = __esm(() => {
+  init_derived_files();
+});
+
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
 import { spawnSync as spawnSync16 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
@@ -16794,7 +16827,7 @@ function porcelainEntries(root) {
   return entries;
 }
 async function readConfirmedBatchTopology(root, batch, readInitiative = observeInitiative) {
-  const observation = await readInitiative(root, batch.initiative_slug);
+  const observation = await (isLaneBatchRecord(batch) && batch.plan_source === "single_task" ? observeSingleTask : readInitiative)(root, batch.initiative_slug);
   if (observation.initiative_id !== batch.initiative_slug)
     throw new Error("Initiative identity changed");
   const tasks = [...observation.tasks].sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
@@ -16941,7 +16974,8 @@ async function prepareBatchPreflight(options) {
   return projectPreflight(options, !options.reuseOnly);
 }
 async function projectPreflight(options, preparing) {
-  const { root, initiative_slug: initiativeSlug, readInitiative } = options;
+  const { root, initiative_slug: initiativeSlug } = options;
+  const readInitiative = options.plan_source === "single_task" ? observeSingleTask : options.readInitiative;
   if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
     return reject("invalid_slug", initiativeSlug);
   const found = findExistingActiveBatch(root, initiativeSlug);
@@ -16951,6 +16985,23 @@ async function projectPreflight(options, preparing) {
   if (activeRecord && !isLaneBatchRecord(activeRecord))
     return reject("batch_record_shape_retired");
   const existingBatch = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
+  if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)
+    return reject("batch_entry_kind_mismatch");
+  if (options.plan_source === "single_task") {
+    const batchesDir = join23(root, ".imm", "state", "batches");
+    if (existsSync14(batchesDir))
+      for (const file of readdirSync8(batchesDir)) {
+        if (!file.endsWith(".json") || file.endsWith(".report.json"))
+          continue;
+        try {
+          const record = readAnyBatchRunState(root, file.slice(0, -5));
+          if (record && !isTerminalBatchState(record.batch_state) && (!isLaneBatchRecord(record) || record.plan_source !== "single_task") && record.children.some((child) => child.task_id === initiativeSlug))
+            return reject("batch_entry_kind_mismatch");
+        } catch {
+          return reject("batch_state_unreadable", file);
+        }
+      }
+  }
   const isResuming = activeRecord !== null;
   const batchBranch = activeRecord?.branch ?? parentBranchRef(initiativeSlug);
   const activeTaskId = readActiveClaimTaskId(root);
@@ -17054,6 +17105,24 @@ async function projectPreflight(options, preparing) {
   });
   if (!planSurface.ok)
     return reject(planSurface.key, planSurface.detail);
+  let preparation;
+  if (options.plan_source === "single_task" && !isResuming) {
+    try {
+      const read = observeEnrollmentTaskIntent(root, initiativeSlug);
+      for (const acceptance of read.intent.acceptance)
+        parseVerificationDescriptor(acceptance.verification);
+      const scopeFailure = scopeEstimateFailure(root, read.intent);
+      if (scopeFailure)
+        throw new Error(scopeFailure);
+      if (spawnSync17("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
+        throw new Error("TaskIntent must be tracked");
+      preparation = preparePiCanary(root, { task_id: initiativeSlug, now });
+      if (!preparation.intent || preparation.intent.content_hash !== read.content_hash || !preparation.git_base_head || preparation.task_record_v3?.present || preparation.task_tombstone.present || preparation.backend_claim.present || preparation.workspace.current_working)
+        throw new Error("TaskIntent is not enrollment_ready");
+    } catch (error) {
+      return reject("plan_projection_failed", error instanceof Error ? error.message : String(error));
+    }
+  }
   if (!isResuming && isParentBranch(batchBranch)) {
     try {
       for (const child of planSurface.surface.recovery_children)
@@ -17080,6 +17149,8 @@ async function projectPreflight(options, preparing) {
       return reject("working_tree_dirty", blocking.map(({ path }) => path).join(", "));
   }
   const projection = {
+    ...options.plan_source ? { plan_source: options.plan_source } : {},
+    ...preparation ? { preparation } : {},
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
     is_resuming: isResuming,
@@ -17097,7 +17168,8 @@ async function projectPreflight(options, preparing) {
   return { ok: true, projection };
 }
 async function projectBatchDrift(options) {
-  const { root, initiative_slug: initiativeSlug, readInitiative } = options;
+  const { root, initiative_slug: initiativeSlug } = options;
+  const readInitiative = options.plan_source === "single_task" ? observeSingleTask : options.readInitiative;
   const found = findExistingActiveBatch(root, initiativeSlug);
   const activeRecord = found && !found.corrupt ? found.record : null;
   const existingBatch = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
@@ -17162,6 +17234,7 @@ async function authorizeBatch(options) {
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
   const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID8()}`;
   const facts = {
+    ...projection.preparation ? { preparation: projection.preparation } : {},
     initiative_slug: initiativeSlug,
     batch_branch: batchBranch,
     plan_digest: planDigest,
@@ -17184,9 +17257,23 @@ async function authorizeBatch(options) {
       return { outcome: "host_rejection", value: decision.value };
     requestId = decision.request_id;
   }
+  if (projection.plan_source === "single_task") {
+    const fresh = await prepareBatchPreflight({
+      root,
+      initiative_slug: initiativeSlug,
+      plan_source: "single_task",
+      now,
+      readInitiative: options.readInitiative
+    });
+    if (!fresh.ok)
+      return { outcome: "rejected", rejection: fresh };
+    if (fresh.projection.is_resuming !== isResuming || JSON.stringify(fresh.projection.existing_batch) !== JSON.stringify(existingBatch))
+      return { outcome: "rejected", rejection: batchRejection("plan_changed") };
+  }
   const drift = await projectBatchDrift({
     root,
     initiative_slug: initiativeSlug,
+    plan_source: projection.plan_source,
     now,
     readInitiative: options.readInitiative
   });
@@ -17200,6 +17287,14 @@ async function authorizeBatch(options) {
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   if (drift.base_head !== baseHead)
     return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
+  if (projection.preparation) {
+    let digest = null;
+    try {
+      digest = preparePiCanary(root, { task_id: initiativeSlug, now }).digest;
+    } catch {}
+    if (digest !== projection.preparation.digest)
+      return { outcome: "rejected", rejection: batchRejection("plan_changed", "single-task preparation changed") };
+  }
   const finalClaimTaskId = readActiveClaimTaskId(root);
   const finalOwnClaim = isResuming && finalClaimTaskId !== null && isOwnBatchClaim(root, existingBatch, finalClaimTaskId, batchBranch);
   if (finalClaimTaskId && !finalOwnClaim)
@@ -17256,6 +17351,8 @@ var init_batch_preflight = __esm(() => {
   init_storage();
   init_workspace_scope();
   init_batch_plan();
+  init_verification_descriptor();
+  init_intent_readiness();
   init_batch_reasons();
   init_batch_state();
   init_batch_worktrees();
@@ -17265,6 +17362,7 @@ var init_batch_preflight = __esm(() => {
 
 // plugins/immune-brain/runtime/claude/mcp_server.ts
 init_batch_preflight();
+init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
@@ -20378,6 +20476,8 @@ function isLineageBreak(message) {
 async function runLaneBatch(input, persisted) {
   if (persisted && !isLaneBatchRecord(persisted))
     return { ...refuse2(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
+  if (persisted && persisted.plan_source !== input.plan_source)
+    return refuse2(input, persisted, "batch_entry_kind_mismatch", "the recorded batch has a different plan source");
   if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
     return refuse2(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
   if (input.lane_offers !== undefined && (!persisted || isParentBranch(persisted.branch)))
@@ -20496,6 +20596,7 @@ async function runLaneBatch(input, persisted) {
     if (!preflight.ok)
       return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
     record = prepareBatchLaneRunState({
+      plan_source: input.plan_source,
       topology_digest: input.topology_digest,
       batch_id: input.batch_id,
       initiative_slug: input.initiative_slug,
@@ -20898,7 +20999,7 @@ async function runLaneBatch(input, persisted) {
   }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
     const final = record.final_verification?.length || readDerivedFilesAt(input.root, record.base_head).length ? await runFinalVerification(input.root, record.final_verification ?? [], { declaration_head: record.base_head, ...isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } : isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {} }) : undefined;
-    if (isParentBranch(record.branch)) {
+    if (isParentBranch(record.branch) && record.plan_source !== "single_task") {
       record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
       persist();
       record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
@@ -21896,6 +21997,9 @@ class ClaudeRuntime {
   async startPreparedBatch(initiativeSlug, meta, options) {
     throwIfCancelled(meta.signal);
     const reuseOnly = options.reuseOnly === true;
+    const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
+    if (options.plan_source === "single_task")
+      options = { ...options, max_parallel: 1 };
     const probe = probeHost(this.env, process.platform, this.hostVersion);
     if (!probe.ok)
       throw new NativeAuthorityError("unsupported_host", probe.reason);
@@ -21909,9 +22013,11 @@ class ClaudeRuntime {
     if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record))
       return batchReason("batch_record_shape_retired");
     const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
+    if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
+      return batchReason("batch_entry_kind_mismatch");
     let replayCompleted = true;
     let replayReader = this.readInitiative;
-    if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+    if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
       let confirmed;
       try {
         confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
@@ -21927,10 +22033,10 @@ class ClaudeRuntime {
           await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
       }
     }
-    const completed = replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+    const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
     if (completed)
       return { state: "started", batch_id: completed.batch_id, report: completed };
-    const native = await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug), async (effects) => {
+    const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug), async (effects) => {
       if (reuseOnly)
         return batchReason("confirmation_port_unavailable");
       try {
@@ -21976,8 +22082,9 @@ class ClaudeRuntime {
     const preflight = await prepareBatchPreflight({
       root: this.cwd,
       initiative_slug: initiativeSlug,
+      plan_source: options.plan_source,
       now,
-      readInitiative: this.readInitiative ?? observeInitiative,
+      readInitiative,
       max_parallel: options.max_parallel,
       signal: meta.signal,
       reuseOnly
@@ -21990,7 +22097,7 @@ class ClaudeRuntime {
       };
     }
     const isResuming = preflight.projection.is_resuming;
-    if (!isResuming && !options.final_verification?.length)
+    if (!isResuming && !options.plan_source && !options.final_verification?.length)
       return {
         state: "rejected",
         reason: "final_verification_required",
@@ -22011,7 +22118,7 @@ class ClaudeRuntime {
       initiative_slug: initiativeSlug,
       now,
       projection: preflight.projection,
-      readInitiative: this.readInitiative ?? observeInitiative,
+      readInitiative,
       nonce: enrollmentNonce(),
       gate: async (facts) => {
         if (reuseOnly)
@@ -22031,6 +22138,11 @@ class ClaudeRuntime {
             initiativeSlug,
             toolCallId: meta.toolCallId,
             planDigest,
+            ...facts.preparation?.intent ? {
+              intentRevision: facts.preparation.intent.revision,
+              intentContentHash: facts.preparation.intent.content_hash,
+              bindingDigest: facts.preparation.digest
+            } : {},
             batchDetails: {
               initiative_slug: facts.initiative_slug,
               batch_branch: facts.batch_branch,
@@ -22104,7 +22216,8 @@ class ClaudeRuntime {
         requestId: request_id ?? `resumed-${batch_id}`,
         operation: "start_unattended_batch",
         initiativeSlug,
-        planDigest
+        planDigest,
+        bindingDigest: preflight.projection.preparation?.digest
       })
     });
     if (authorization.outcome === "host_rejection")
@@ -22133,7 +22246,7 @@ class ClaudeRuntime {
         return { state: "blocked", reason: result.reason, ...facts };
       return { state: "failed", reason: result.reason ?? "advance failed", ...facts };
     };
-    const parent = await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug);
+    const parent = await readInitiative(this.cwd, initiativeSlug);
     if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
       return batchReason("plan_changed");
     const kernelPort = createBatchKernelPort({
@@ -22148,6 +22261,7 @@ class ClaudeRuntime {
       overrides: this.batchKernel
     });
     let report = await startBatch({
+      plan_source: options.plan_source,
       topology_digest: preflight.projection.topology_digest,
       root: this.cwd,
       batch_id: batchId,
@@ -22165,14 +22279,14 @@ class ClaudeRuntime {
       ...options.final_verification ? { final_verification: options.final_verification } : {},
       ...options.max_parallel !== undefined ? {
         max_parallel: options.max_parallel,
-        tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+        ...options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) },
         ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}
       } : {},
       ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
     if (report.batch_state === "rejected")
       return batchReason("batch_run_rejected", report.reason ?? "");
-    if (report.batch_state === "completed" && report.final_verification?.passed)
+    if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
       report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
     return {
       state: "started",
@@ -22284,7 +22398,7 @@ var TOOLS = [
   { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
   { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
   { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user drive entry.", privileged: true },
+  { name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
   { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
@@ -22300,6 +22414,7 @@ function listMcpTools() {
         ...tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? {
           initiative_slug: { type: "string" },
           ...tool.name === "start_unattended_batch" ? {
+            task_id: { type: "string" },
             max_parallel: { type: "integer", minimum: 1 },
             lane_offers: {
               type: "array",
@@ -22333,7 +22448,7 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
     annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
   }));
@@ -22422,9 +22537,11 @@ function createMcpRuntime(options = {}) {
       if (name === "start_unattended_batch") {
         if (Object.hasOwn(args, "lane_revision"))
           throw new Error("unknown parameter: lane_revision");
-        const initiativeSlug = String(args.initiative_slug ?? "");
-        if (!initiativeSlug)
-          throw new Error("initiative_slug is required");
+        const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
+        const task = typeof args.task_id === "string" ? args.task_id : "";
+        if (!!initiative === !!task)
+          return batchReason("batch_entry_ambiguous");
+        const initiativeSlug = task || initiative;
         refuseSuppliedAuthority(args);
         if (!negotiatedVersion)
           throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
@@ -22446,9 +22563,10 @@ function createMcpRuntime(options = {}) {
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
-        const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+        const maxParallel = task ? 1 : resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
+          ...task ? { plan_source: "single_task" } : {},
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
@@ -22755,6 +22873,9 @@ ${lines.join(`
       `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
       b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
       input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+      input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
+      input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
+      input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
       b?.children ? `Ordered children (${b.children.length}):
 ${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join(`
 `)}` : null,

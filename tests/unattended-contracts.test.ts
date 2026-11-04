@@ -454,6 +454,8 @@ describe("unattended batch contract text", () => {
 			),
 		).toEqual([
 			"contract",
+			// Spec drive-always-lanes D1: a single-task batch records its plan source.
+			"plan_source",
 			"topology_digest",
 			"progress_mode",
 			"final_report",

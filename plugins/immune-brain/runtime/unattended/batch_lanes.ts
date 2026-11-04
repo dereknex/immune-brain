@@ -779,6 +779,8 @@ export async function runLaneBatch(
 ): Promise<BatchLaneRunReport> {
 	if (persisted && !isLaneBatchRecord(persisted))
 		return { ...refuse(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
+	if (persisted && persisted.plan_source !== input.plan_source)
+		return refuse(input, persisted, "batch_entry_kind_mismatch", "the recorded batch has a different plan source");
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
 	if (input.lane_offers !== undefined && (!persisted || isParentBranch(persisted.branch)))
@@ -889,6 +891,7 @@ export async function runLaneBatch(
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
+			plan_source: input.plan_source,
 			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
 			initiative_slug: input.initiative_slug,
@@ -1339,7 +1342,7 @@ export async function runLaneBatch(
 				{ declaration_head: record.base_head, ...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
 				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}) })
 			: undefined;
-		if (isParentBranch(record.branch)) {
+		if (isParentBranch(record.branch) && record.plan_source !== "single_task") {
 			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
 			persist(); // Keep the report even if the return step is interrupted.
 			record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);

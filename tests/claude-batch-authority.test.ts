@@ -202,7 +202,35 @@ describe("acc-claude-batch-gate", () => {
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual(["initiative_slug"]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+	});
+	it("starts a standalone task in its own Lane after one native confirmation", async () => {
+		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const gates: any[] = [];
+		const runtime = client(f, { requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
+		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId });
+		expect(gates).toHaveLength(1);
+		expect(elicitationParams(gates[0]).message).toContain("Preparation digest: sha256:");
+		expect(result.state).toBe("started");
+		const record = readAnyBatchRunState(f.root, result.batch_id)!;
+		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
+		const lane = (record.children[0] as any).lane;
+		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
+		const status = await runtime.callTool("status", { task_id: taskId });
+		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
+		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
+	});
+	it("refuses ambiguous task and Initiative selectors without opening confirmation", async () => {
+		const f = fixture("ambiguous-claude"); let gates = 0;
+		const runtime = client(f, { requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "unexpected" }; } });
+		for (const args of [{}, { initiative_slug: f.slug, task_id: `${f.slug}-c1` }])
+			expect(await runtime.callTool("start_unattended_batch", args)).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch_entry_ambiguous") });
+		expect(gates).toBe(0); noBatchWrites(f.root);
 	});
 	it.each([undefined, null, {}])("rejects unknown lane_revision at MCP and direct runtime boundaries (%p)", async lane_revision => {
 		const f = fixture("retired-revision"); const before = snapshot(f.root); let gates = 0;

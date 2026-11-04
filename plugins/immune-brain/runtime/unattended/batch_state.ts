@@ -209,6 +209,8 @@ export interface LaneIntervention {
  */
 export interface BatchLaneRunStateRecord {
 	contract: "assurance_kernel/batch_run_state/v2";
+	/** Absent on existing Initiative batches. */
+	plan_source?: "single_task";
 	/** Complete confirmed Parent topology, including excluded prerequisites. */
 	topology_digest?: string;
 	progress_mode?: "parent_branch";
@@ -661,6 +663,12 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v2")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	if (record.plan_source !== undefined && record.plan_source !== "single_task")
+		throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+	if (record.plan_source === "single_task" &&
+		(record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 ||
+		 (record.children[0] as { task_id?: unknown } | undefined)?.task_id !== record.initiative_slug))
+		throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
 	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
 		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
@@ -883,6 +891,7 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 }
 
 export function prepareBatchLaneRunState(input: {
+	plan_source?: "single_task";
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -900,6 +909,7 @@ export function prepareBatchLaneRunState(input: {
 	validateBatchId(input.batch_id);
 	return {
 		contract: "assurance_kernel/batch_run_state/v2",
+		...(input.plan_source ? { plan_source: input.plan_source } : {}),
 		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,

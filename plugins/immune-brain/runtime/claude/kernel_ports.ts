@@ -90,7 +90,7 @@ import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
 import { integrateSettledCriticalSlices, advanceNativeParent } from "../unattended/batch_git";
-import { observeInitiative } from "../unattended/batch_plan";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -898,7 +898,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
+		options: { plan_source?: "single_task"; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -906,10 +906,12 @@ export class ClaudeRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
+		options: { plan_source?: "single_task"; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
+		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
+		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
@@ -924,9 +926,11 @@ export class ClaudeRuntime {
 		const existing = findExistingActiveBatch(this.cwd, initiativeSlug);
 		if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
 		const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
+		if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
+			return batchReason("batch_entry_kind_mismatch");
 		let replayCompleted = true;
 		let replayReader = this.readInitiative;
-		if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+		if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
 			let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
 			try {
 				confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
@@ -942,9 +946,9 @@ export class ClaudeRuntime {
 					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
 			}
 		}
-		const completed = replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+		const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
 		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
-		const native = await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+		const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 			async (effects) => {
 				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 				if (reuseOnly) return batchReason("confirmation_port_unavailable");
@@ -988,8 +992,9 @@ export class ClaudeRuntime {
 		const preflight = await prepareBatchPreflight({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
+			plan_source: options.plan_source,
 			now,
-			readInitiative: this.readInitiative ?? observeInitiative,
+			readInitiative,
 			max_parallel: options.max_parallel,
 			signal: meta.signal, reuseOnly,
 		});
@@ -1001,7 +1006,7 @@ export class ClaudeRuntime {
 			};
 		}
 		const isResuming = preflight.projection.is_resuming;
-		if (!isResuming && !options.final_verification?.length) return {
+		if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
 			state: "rejected",
 			reason: "final_verification_required",
 			recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
@@ -1025,7 +1030,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now,
 			projection: preflight.projection,
-			readInitiative: this.readInitiative ?? observeInitiative,
+			readInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
 				// A continuation after a foreground child never opens a gate: when the
@@ -1049,6 +1054,11 @@ export class ClaudeRuntime {
 						initiativeSlug,
 						toolCallId: meta.toolCallId,
 						planDigest,
+						...(facts.preparation?.intent ? {
+							intentRevision: facts.preparation.intent.revision,
+							intentContentHash: facts.preparation.intent.content_hash,
+							bindingDigest: facts.preparation.digest,
+						} : {}),
 						batchDetails: {
 							initiative_slug: facts.initiative_slug,
 							batch_branch: facts.batch_branch,
@@ -1131,6 +1141,7 @@ export class ClaudeRuntime {
 					operation: "start_unattended_batch",
 					initiativeSlug,
 					planDigest,
+					bindingDigest: preflight.projection.preparation?.digest,
 				}),
 		});
 		if (authorization.outcome === "host_rejection") return authorization.value;
@@ -1157,7 +1168,7 @@ export class ClaudeRuntime {
 			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
 			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 		};
-		const parent = await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug);
+		const parent = await readInitiative(this.cwd, initiativeSlug);
 		if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
 			return batchReason("plan_changed");
 		const kernelPort = createBatchKernelPort({
@@ -1172,6 +1183,7 @@ export class ClaudeRuntime {
 			overrides: this.batchKernel,
 		});
 		let report = await startBatch({
+			plan_source: options.plan_source,
 			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
 			batch_id: batchId,
@@ -1190,7 +1202,7 @@ export class ClaudeRuntime {
 			...(options.max_parallel !== undefined
 				? {
 						max_parallel: options.max_parallel,
-						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 					}
 				: {}),
@@ -1200,7 +1212,7 @@ export class ClaudeRuntime {
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
 		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
 
-		if (report.batch_state === "completed" && report.final_verification?.passed)
+		if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
 			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
 		return {
 			state: "started",
