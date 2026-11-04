@@ -814,7 +814,11 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
 		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
-		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
+		const report = record.final_report;
+		const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
+		const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null &&
+			delivery?.status === "blocked" && delivery.reason === child.reason;
+		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
 		const skew = child.runtime_skew_acknowledged;
 		if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) ||
@@ -847,7 +851,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
 		if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} but holds a lane`);
-		const integrated = child.state === "integrated" || child.state === "released";
+		const integrated = child.state === "integrated" || child.state === "released" || deliveryParked;
 		if (integrated && child.commit === null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a commit`);
 		if (!integrated && child.commit !== null)

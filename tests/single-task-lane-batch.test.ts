@@ -240,6 +240,26 @@ describe("single-task Lane delivery", () => {
 		for (const path of changed)
 			expect(git(f.repo, "show", `${candidate}:${path}`)).toBe(git(lane, "show", `${laneCommit}:${path}`));
 		expect(readFileSync(join(f.repo, "base.txt"), "utf8")).toBe("base\n");
+		expect(second.final_report?.return_to_coordinator).toEqual({ mode: "manual", status: "staged", reason: null });
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
+		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
+	});
+
+	it("parks a settled child when the checkout has an overlapping user file", async () => {
+		const f = owned();
+		const first = laneReport(await startBatch(f.args()));
+		const lane = first.children[0]!.lane!.path;
+		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
+		settleLane(lane);
+		auditPair(lane, TASK);
+		git(lane, "add", "--", "delivery.txt");
+		writeFileSync(join(f.repo, "delivery.txt"), "user content\n");
+		const second = laneReport(await startBatch(f.args()));
+		expect(second.batch_state).toBe("needs_human");
+		expect(second.children[0]).toMatchObject({ state: "needs_human", reason: "checkout_delivery_overlap: delivery.txt" });
+		expect(second.final_report?.return_to_coordinator).toMatchObject({ status: "blocked", reason: "checkout_delivery_overlap: delivery.txt" });
+		expect(readFileSync(join(f.repo, "delivery.txt"), "utf8")).toBe("user content\n");
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
 	});
 
 	it("parks the child and moves no ref when the candidate does not match the delivery", async () => {

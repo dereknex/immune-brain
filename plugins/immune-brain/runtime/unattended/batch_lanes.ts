@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import { readDerivedFilesAt } from "../derived_files";
 import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
+import { deliverSingleTask } from "./checkout_delivery";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -832,6 +833,10 @@ export async function runLaneBatch(
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
 				if (!child.lane?.run_id) { resumed.push(child); continue; }
+				if (record.plan_source === "single_task" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" &&
+					record.final_report.return_to_coordinator.reason === child.reason) {
+					resumed.push({ ...child, state: "integrated", reason: null }); continue;
+				}
 				// A durable grant already passed the fresh-confirmation boundary.
 				if (child.redo_head) { resumed.push(child); continue; }
 				const facts = lanes.inspectLane(input.root, child.lane.path);
@@ -1342,10 +1347,21 @@ export async function runLaneBatch(
 				{ declaration_head: record.base_head, ...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
 				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}) })
 			: undefined;
-		if (isParentBranch(record.branch) && record.plan_source !== "single_task") {
+		if (isParentBranch(record.branch)) {
 			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
 			persist(); // Keep the report even if the return step is interrupted.
-			record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
+			if (record.plan_source === "single_task") {
+				const child = record.children[0]!;
+				const delivery = deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
+				record.final_report.return_to_coordinator = delivery;
+				if (delivery.status === "blocked") {
+					record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
+					record.batch_state = "needs_human";
+					if (final) record.final_verification_result = final;
+					persist();
+					return finalizeLane(input.root, record, delivery.reason!, "", { refusals, tracker, instruction, ...(final ? { final } : {}) });
+				}
+			} else record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
 		}
 		record.batch_state = "completed";
 		if (final) record.final_verification_result = final;

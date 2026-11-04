@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s3-checkout-delivery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s3-checkout-delivery",
+    "goal": "Meet S3 of docs/specs/drive-always-lanes.spec.md: after a single-task child integrates onto imm/<task_id>, deliver it into the user's checkout according to the Git integration preference (manual: staged, uncommitted; auto: fast-forward of the current branch), park needs_human without touching the checkout when user dirt overlaps the delivery or the delivery cannot apply, keep unrelated user edits intact, and amend ADR 0024 and ADR 0027 for single tasks (Spec D5, D6).",
+    "acceptance": [
+      {
+        "id": "DAL-S3-A1",
+        "assertion": "Under Git integration manual, a single-task return applies the delivered delta (Lane base to the integrated commit, including the .imm/audit pair) to the user's index and worktree as staged changes, makes no commit, leaves HEAD and every branch ref unmoved, and reports return_to_coordinator.status staged. Initiative batch returns keep today's behavior, which tests/batch-parent-branch.test.ts still pins. Seam: tests/single-task-checkout-delivery.test.ts in a temporary repository.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S3-A2",
+        "assertion": "Under Git integration auto, a single-task return fast-forwards the user's current branch to the integrated commit when HEAD is an ancestor, also when unrelated paths are dirty, and reports fast_forwarded. A diverged HEAD (coordinator_head_diverged) and a detached HEAD (coordinator_branch_unavailable) each park the child needs_human, move no ref and write no file. Seam: tests/single-task-checkout-delivery.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S3-A3",
+        "assertion": "In either mode, a dirty user path that is also a delivered path parks the child needs_human with checkout_delivery_overlap naming that path, and the checkout is byte-identical before and after; this is pinned separately for a staged change, an unstaged modification, an untracked file, a deletion and a rename source or target. Dirty paths that are not delivered do not block delivery and stay byte-identical after it (BR-SCN-4). Under manual, a delta that no longer applies to the current HEAD parks with checkout_delivery_conflict and writes nothing, because the apply is checked before the index or worktree changes. The drive report names the reason and the paths (BR-SCN-3). Seam: tests/single-task-checkout-delivery.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S3-A4",
+        "assertion": "docs/adr/0024-git-integration-preference.md and docs/adr/0027-parent-branch-merge-queue.md each carry an amendment headed 'Amendment: single-task Lane delivery (drive-always-lanes S3)' that states the manual staged delivery, the auto fast-forward over unrelated dirt, and the overlap park, and that Initiative batches are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q '^## Amendment: single-task Lane delivery (drive-always-lanes S3)' docs/adr/0024-git-integration-preference.md && grep -q '^## Amendment: single-task Lane delivery (drive-always-lanes S3)' docs/adr/0027-parent-branch-merge-queue.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 16384\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s3-checkout-delivery.md",
+      "docs/adr/0024-git-integration-preference.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/drive-always-lanes-s3-checkout-delivery.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/git_integration_preference.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+      "tests/batch-parent-branch.test.ts",
+      "tests/single-task-checkout-delivery.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s3-checkout-delivery.intent.json",
+    "content_hash": "sha256:8cf243b9bac6d397f472715d74a59bdf06eca73633764e08c4135c1c9f70a41d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8cf243b9bac6d397f472715d74a59bdf06eca73633764e08c4135c1c9f70a41d",
+  "git_base_head": "7295299ea7ef05db585d8e77822dfdb70074ee66",
+  "attestations": [
+    {
+      "id": "approval-qa-de775f5f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8cf243b9bac6d397f472715d74a59bdf06eca73633764e08c4135c1c9f70a41d",
+      "diff_hash": "sha256:d45163eac8c74e035086720efcea34ebc6083cdc87fa30e3185b037d5fa31e98",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:87f78c22df400166b5fffd685bc7524dfa7d62f528296c9a491ce66caf73df85",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:87f78c22df400166b5fffd685bc7524dfa7d62f528296c9a491ce66caf73df85"
+        },
+        {
+          "acceptance_id": "DAL-S3-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:87f78c22df400166b5fffd685bc7524dfa7d62f528296c9a491ce66caf73df85"
+        },
+        {
+          "acceptance_id": "DAL-S3-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:87f78c22df400166b5fffd685bc7524dfa7d62f528296c9a491ce66caf73df85"
+        },
+        {
+          "acceptance_id": "DAL-S3-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:87f78c22df400166b5fffd685bc7524dfa7d62f528296c9a491ce66caf73df85"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3b04db77",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8cf243b9bac6d397f472715d74a59bdf06eca73633764e08c4135c1c9f70a41d",
+      "diff_hash": "sha256:d45163eac8c74e035086720efcea34ebc6083cdc87fa30e3185b037d5fa31e98",
+      "actor_id": "parent-mediated-review",
+      "summary": "All four acceptances verified on the immutable revision: manual staged delta (Lane base to integrated head via git apply --index after --check), auto ff-only over unrelated dirt with diverged/detached parks, overlap park for staged/unstaged/untracked/deleted/rename-sides with byte-identical snapshots (porcelainEntries and delivered diff both --no-renames so both rename sides are covered), and exact-headed ADR amendments in both 0024 and 0027, with Initiative batch behavior unchanged (returnBatchToCoordinator untouched, batch-parent-branch.test.ts unchanged and green); blast radius high: delivery writes into the user's checkout through checkout_delivery.ts and batch_lanes.ts, with the load-bearing dist bundle plugins/immune-brain/dist/claude/mcp-server.mjs mirroring the runtime verbatim and batch_state.ts extending the parked-child validation shape.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7295299ea7ef05db585d8e77822dfdb70074ee66",
+        "review_commit": "1d758266d6e0ef1266eb09af21975a6990a71cfc",
+        "review_tree": "b6954a295156d5bf287c7f898b35b6c25f0c652b",
+        "manifest_digest": "sha256:178b7367dd7cef69ef5b77341cc343329bb931396715e5942c937c863d63fb3b"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-48e0871eeff0-1-review-1",
+          "acceptance_id": "DAL-S3-A1",
+          "summary": "deliverSingleTask 的 git 助手读取 diff --name-only -z 时未设 maxBuffer（默认 1MB），超大交付路径列表会以 coordinator_status_unreadable 误停而非交付；结果是安全的 needs_human 停车而非数据损坏。",
+          "anchor": "sha256:46ebf2178716e32969da4af86548643d23f215917ab53129bc4d5bb7c4b9248e",
+          "evidence": {
+            "trigger": "单个任务的交付 delta 改动路径 NUL 列表超过 spawnSync 默认 1MB maxBuffer（例如上万条长路径的重构任务）→ spawnSync 返回 status null，deliverSingleTask 误报 coordinator_status_unreadable 并将子任务停在 needs_human，而用户检出本可干净交付；同函数对完整二进制 patch 已显式设置 128MB maxBuffer，仅路径列表遗漏。",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/checkout_delivery.ts:deliverSingleTask",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts:runLaneBatch",
+              "plugins/immune-brain/dist/claude/mcp-server.mjs:deliverSingleTask"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S3-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:e0e01dcf68a29ba0f039dbafd956fb909c5bd4f02c10e11d732d30cd551fd7c7"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s3-checkout-delivery:2026-11-04T15:50:49.176Z",
+      "at": "2026-11-04T15:50:49.176Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s3-checkout-delivery.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s3-checkout-delivery:2026-11-04T15:51:26.085Z",
+      "at": "2026-11-04T15:51:26.085Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-de775f5f\naction_v2_sha256:d1d3c1abcea4de2b618ec8ec825e44599db566d4b5219b472c301d8fb4988277",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e6a0f1dba49d14e7",
+        "issued_at": "2026-11-04T15:51:26.085Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s3-checkout-delivery:2026-11-04T15:56:22.009Z",
+      "at": "2026-11-04T15:56:22.009Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3b04db77\naction_v2_sha256:baf2e6f863af4c1bbbc1d5ea8a4009013a751c6fb1eefb4b2c64804f4369fca6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-3268d0fade4b483f",
+        "issued_at": "2026-11-04T15:56:22.009Z"
+      },
+      "review_started_at": "2026-11-04T15:51:27.997Z",
+      "review_submitted_at": "2026-11-04T15:56:21.514Z"
+    },
+    {
+      "id": "complete:drive-always-lanes-s3-checkout-delivery:2026-11-04T15:56:23.576Z",
+      "at": "2026-11-04T15:56:23.576Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a4c14449267665eda869af8e6951766b0aec5428a75a1e0daaec8995c675956f"
+    }
+  ]
+}

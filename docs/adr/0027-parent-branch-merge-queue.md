@@ -62,6 +62,15 @@ result, and nothing returns the work to main.
 - An integration conflict parks only that child (see amendment) instead of
   stopping the batch.
 
+## Amendment: single-task Lane delivery (drive-always-lanes S3)
+
+A single-task Lane returns its integrated delta, including audit evidence, to
+the user's checkout. `manual` stages it without moving a ref or creating a
+commit; `auto` fast-forwards the current branch over unrelated dirty paths when
+HEAD is an ancestor. A dirty path overlapping the delta parks the child without
+changing the checkout; an inapplicable delta also parks it. Initiative batches
+keep their existing return behavior.
+
 ## Amendment: retained Lanes (batch-resource-safety S2)
 
 Neither supported Host reports a trusted Executor exit, and Git cleanliness,

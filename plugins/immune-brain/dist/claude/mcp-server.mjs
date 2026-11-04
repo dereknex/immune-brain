@@ -6890,7 +6890,10 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
     if (child.tracker_closed !== undefined && child.tracker_closed !== true)
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
-    if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
+    const report = record.final_report;
+    const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
+    const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null && delivery?.status === "blocked" && delivery.reason === child.reason;
+    if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
       throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
     const skew = child.runtime_skew_acknowledged;
     if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) || skew.loaded_bundle !== null && !isHash(skew.loaded_bundle)))
@@ -6909,7 +6912,7 @@ function validateLaneRecordShape(value, batchId) {
       throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
     if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
       throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} but holds a lane`);
-    const integrated = child.state === "integrated" || child.state === "released";
+    const integrated = child.state === "integrated" || child.state === "released" || deliveryParked;
     if (integrated && child.commit === null)
       throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a commit`);
     if (!integrated && child.commit !== null)
@@ -19956,6 +19959,54 @@ init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
 init_batch_final_report();
+import { spawnSync as spawnSync20 } from "node:child_process";
+import { createHash as createHash26 } from "node:crypto";
+import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
+import { isAbsolute as isAbsolute10, join as join29 } from "node:path";
+import { readFileSync as readFileSync22 } from "node:fs";
+
+// plugins/immune-brain/runtime/unattended/checkout_delivery.ts
+init_git_integration_preference();
+init_batch_preflight();
+import { spawnSync as spawnSync19 } from "node:child_process";
+function deliverSingleTask(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  const blocked = (reason) => ({ mode, status: "blocked", reason });
+  const git = (...args) => spawnSync19("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+  const changed = git("diff", "--name-only", "--no-renames", "-z", base, head, "--");
+  const dirty = porcelainEntries(root);
+  if (changed.status !== 0 || !dirty)
+    return blocked("coordinator_status_unreadable");
+  const delivered = changed.stdout.split("\x00").filter(Boolean);
+  const overlaps = dirty.map((entry) => entry.path).filter((path) => delivered.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
+  if (overlaps.length)
+    return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+  if (mode === "auto") {
+    if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
+      return blocked("coordinator_branch_unavailable");
+    if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
+      return blocked("coordinator_head_diverged");
+    const merge = git("merge", "--ff-only", "--no-edit", head);
+    if (merge.status !== 0)
+      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+    return { mode, status: "fast_forwarded", reason: null };
+  }
+  const patch = spawnSync19("git", ["--no-optional-locks", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--"], { maxBuffer: 128 * 1024 * 1024 });
+  if (patch.status !== 0)
+    return blocked("checkout_delivery_conflict: cannot read delivery delta");
+  if (!patch.stdout.length)
+    return { mode, status: "staged", reason: null };
+  const apply = (check) => spawnSync19("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
+  const checked = apply(true);
+  if (checked.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+  const applied = apply(false);
+  if (applied.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+  return { mode, status: "staged", reason: null };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_github_issue_tracker();
 init_local_initiative();
 init_batch_integration();
@@ -19969,11 +20020,6 @@ init_batch_state();
 init_batch_git();
 init_role_prompt_bridge();
 init_plugin_source_skew();
-import { spawnSync as spawnSync19 } from "node:child_process";
-import { createHash as createHash26 } from "node:crypto";
-import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute10, join as join29 } from "node:path";
-import { readFileSync as readFileSync22 } from "node:fs";
 var PARALLEL_MISMATCH = "batch_parallel_mismatch";
 var TASK_ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 var MAX_LANE_OFFERS = 64;
@@ -20106,7 +20152,7 @@ function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
 }
 function gitRead(root, args) {
-  const result = spawnSync19("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync20("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { status: result.status, stdout: (result.stdout ?? "").trim() };
 }
 function commonDir(root) {
@@ -20527,6 +20573,10 @@ async function runLaneBatch(input, persisted) {
         }
         if (!child.lane?.run_id) {
           resumed.push(child);
+          continue;
+        }
+        if (record.plan_source === "single_task" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" && record.final_report.return_to_coordinator.reason === child.reason) {
+          resumed.push({ ...child, state: "integrated", reason: null });
           continue;
         }
         if (child.redo_head) {
@@ -20999,10 +21049,23 @@ async function runLaneBatch(input, persisted) {
   }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
     const final = record.final_verification?.length || readDerivedFilesAt(input.root, record.base_head).length ? await runFinalVerification(input.root, record.final_verification ?? [], { declaration_head: record.base_head, ...isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } : isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {} }) : undefined;
-    if (isParentBranch(record.branch) && record.plan_source !== "single_task") {
+    if (isParentBranch(record.branch)) {
       record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
       persist();
-      record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
+      if (record.plan_source === "single_task") {
+        const child = record.children[0];
+        const delivery = deliverSingleTask(input.root, child.lane.base_head, record.final_report.head);
+        record.final_report.return_to_coordinator = delivery;
+        if (delivery.status === "blocked") {
+          record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
+          record.batch_state = "needs_human";
+          if (final)
+            record.final_verification_result = final;
+          persist();
+          return finalizeLane(input.root, record, delivery.reason, "", { refusals, tracker, instruction, ...final ? { final } : {} });
+        }
+      } else
+        record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
     }
     record.batch_state = "completed";
     if (final)
