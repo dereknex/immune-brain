@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { caseSchema, extract, pinCommits } from "../scripts/review-eval/extract.ts";
+import { caseSchema, extract, pinCommits, carryHumanLabels } from "../scripts/review-eval/extract.ts";
 import { prescreen, type Candidate } from "../scripts/review-eval/prescreen.ts";
 import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
@@ -118,12 +118,26 @@ test("A1 registry and effective egress respect the project ceiling", () => {
 	}
 });
 
-test("committed corpus has clean revisions, stable task splits and separate unlabeled gold", () => {
+test("committed corpus has clean revisions, stable task splits and label-bound gold", () => {
 	const cases = readFileSync("tests/fixtures/review-eval/corpus.jsonl", "utf8").trim().split("\n").map((line) => JSON.parse(line));
 	expect(cases.every((c) => caseSchema.safeParse(c).success)).toBe(true);
 	expect(cases.filter((c) => c.clean).length).toBeGreaterThanOrEqual(10);
-	expect(cases.every((c) => c.gold === "unlabeled" && ["tuning", "validation"].includes(c.split))).toBe(true);
+	expect(cases.every((c) => ["tuning", "validation"].includes(c.split))).toBe(true);
+	// A gold label is only ever human: it carries its labeler, its time and its evidence.
+	expect(cases.every((c) => c.gold === "unlabeled" ? c.labeler === null : Boolean(c.labeler && c.labelled_at))).toBe(true);
 	const splits = new Map<string, string>();
 	for (const c of cases) { if (splits.has(c.task_id)) expect(c.split).toBe(splits.get(c.task_id)); splits.set(c.task_id, c.split); }
 	expect(readFileSync("tests/fixtures/review-eval/README.md", "utf8").split("\n\n")[1]).toContain("silver label only");
+});
+
+test("re-extraction carries a human label and refuses to drop a labelled case", () => {
+	const blank = { gold: "unlabeled", gold_location: null, gold_counter_path: null, labeler: null, labelled_at: null };
+	const prior = [{ id: "a", ...blank, gold: "confirmed_true", gold_location: { path: "p", symbol: "AC1" }, labeler: "dereknex", labelled_at: "t" }, { id: "b", ...blank }];
+	const fresh = [{ id: "a", ...blank }, { id: "b", ...blank }, { id: "c", ...blank }];
+	const carried = carryHumanLabels(prior, fresh) as Record<string, unknown>[];
+	expect(carried.find((row) => row.id === "a")?.gold).toBe("confirmed_true");
+	expect(carried.find((row) => row.id === "a")?.labeler).toBe("dereknex");
+	expect(carried.find((row) => row.id === "b")?.gold).toBe("unlabeled");
+	expect(Object.keys(carried[0]!)).toEqual(Object.keys(fresh[0]!));
+	expect(() => carryHumanLabels(prior, fresh.slice(1))).toThrow(/would leave the corpus/);
 });

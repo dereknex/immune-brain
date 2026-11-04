@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
@@ -121,14 +121,39 @@ export function pinCommits(root: string, cases: Case[]) {
 	if (operations.length) git(root, ["update-ref", "--stdin"], `start\n${operations.join("\n")}\nprepare\ncommit\n`);
 }
 
+const LABEL_KEYS = ["gold", "gold_location", "gold_counter_path", "labeler", "labelled_at"] as const;
+
+/**
+ * A human label outlives re-extraction: it is copied onto the new row in place,
+ * and a labelled case that would leave the corpus refuses the whole write.
+ */
+export function carryHumanLabels(previous: readonly unknown[], cases: readonly unknown[]): unknown[] {
+	const labelled = new Map<string, ObjectValue>();
+	for (const row of previous as ObjectValue[]) if (row.gold !== "unlabeled") labelled.set(String(row.id), row);
+	const present = new Set((cases as ObjectValue[]).map((row) => String(row.id)));
+	const lost = [...labelled.keys()].filter((id) => !present.has(id));
+	if (lost.length)
+		throw new Error(`refusing to overwrite: ${lost.length} labelled case(s) would leave the corpus (${lost.slice(0, 3).join(", ")})`);
+	for (const row of cases as ObjectValue[]) {
+		const prior = labelled.get(String(row.id));
+		if (prior) for (const key of LABEL_KEYS) row[key] = prior[key];
+	}
+	return cases as unknown[];
+}
+
 async function main() {
 	const args = process.argv.slice(2);
 	if (args.length < 1 || args.length > 2 || (args[1] && args[1] !== "--prescreen")) throw new Error("usage: bun scripts/review-eval/extract.ts <commit> [--prescreen]");
 	const root = resolve(".");
 	const output = await extract(root, args[0]!, args[1] === "--prescreen");
 	pinCommits(root, output.cases);
+	const corpusPath = "tests/fixtures/review-eval/corpus.jsonl";
+	const previous = existsSync(corpusPath)
+		? readFileSync(corpusPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line))
+		: [];
+	const cases = carryHumanLabels(previous, output.cases);
 	const jsonl = (values: unknown[]) => values.map((v) => JSON.stringify(v)).join("\n") + "\n";
-	writeFileSync("tests/fixtures/review-eval/corpus.jsonl", jsonl(output.cases));
+	writeFileSync(corpusPath, jsonl(cases));
 	writeFileSync("tests/fixtures/review-eval/selection-log.jsonl", jsonl(output.selection));
 	console.error(JSON.stringify({ commit: output.pinned, cases: output.cases.length, excluded: output.excluded }));
 }
