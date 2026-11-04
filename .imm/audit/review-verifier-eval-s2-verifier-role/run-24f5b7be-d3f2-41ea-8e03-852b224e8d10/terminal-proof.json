@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-verifier-eval-s2-verifier-role",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-verifier-eval-s2-verifier-role:2026-11-03T14:21:47.817Z",
+  "final_record_hash": "sha256:0eef44e9b5481489d7183127ea4aa6a1f9b735c747e19adae82285ba3118aa2c",
+  "terminalized_at": "2026-11-03T14:21:47.817Z"
+}

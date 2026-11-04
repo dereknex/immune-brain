@@ -49,9 +49,9 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		return value;
 	};
 	if (user === null) for (const s of ["decision_models", "lanes", "initiative_carrier"]) failed.add(s);
-	if (project === null) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch"]) failed.add(s);
+	if (project === null) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "review_verifier"]) failed.add(s);
 	if (user) validKeys(user, ["contract", "decision_models", "lanes", "initiative_carrier", "projects"], userPath, "", "user_file");
-	if (project) validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch"], projectPath, "", "project_file");
+	if (project) validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "review_verifier"], projectPath, "", "project_file");
 	const projects = section(user?.projects, userPath, "projects", "user_file");
 	for (const [key, value] of Object.entries(projects)) if (!object(value)) { invalid(userPath, `projects.${key}`, "expected object"); failed.add("user_file"); }
 	const override = section(projects[projectKey], userPath, `projects.${projectKey}`, "user_file");
@@ -99,6 +99,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (has(pd, "enabled_points") && (!Array.isArray(pd.enabled_points) || pd.enabled_points.some((p: unknown) => typeof p !== "string" || !Object.hasOwn(registry, p)) || new Set(pd.enabled_points).size !== pd.enabled_points.length)) { invalid(projectPath, "decision_models.enabled_points", "invalid point list"); failed.add("decision_models"); }
 	for (const [o, file, path] of [[user, userPath, "initiative_carrier"], [override, userPath, `projects.${projectKey}.initiative_carrier`], [project, projectPath, "initiative_carrier"]] as const) if (o && has(o, "initiative_carrier") && o.initiative_carrier !== "github" && o.initiative_carrier !== "local") { invalid(file, path, "expected github or local"); failed.add("initiative_carrier"); }
 	if (project && has(project, "git_integration") && project.git_integration !== "manual" && project.git_integration !== "auto") { invalid(projectPath, "git_integration", "expected manual or auto"); failed.add("git_integration"); }
+	if (project && has(project, "review_verifier") && project.review_verifier !== "off" && project.review_verifier !== "on") { invalid(projectPath, "review_verifier", "expected off or on"); failed.add("review_verifier"); }
 	if (has(batch, "final_verification") && (!Array.isArray(batch.final_verification) || batch.final_verification.length > 8 || batch.final_verification.some((v: unknown) => typeof v !== "string" || !v))) { invalid(projectPath, "batch.final_verification", "expected at most eight command strings"); failed.add("batch"); }
 
 	for (const [key, entry] of Object.entries(projects)) {
@@ -114,7 +115,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		if (has(entry, "initiative_carrier") && entry.initiative_carrier !== "github" && entry.initiative_carrier !== "local") { invalid(userPath, `${base}.initiative_carrier`, "expected github or local"); failed.add("initiative_carrier"); }
 	}
 	if (failed.has("user_file")) for (const s of ["decision_models", "lanes", "initiative_carrier"]) failed.add(s);
-	if (failed.has("project_file")) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch"]) failed.add(s);
+	if (failed.has("project_file")) for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "review_verifier"]) failed.add(s);
 	if (failed.has("decision_models")) for (const o of [ud, od, pd]) for (const key of Object.keys(o)) delete o[key];
 	if (failed.has("lanes")) for (const o of [ul, ol, pl, laneProfiles]) for (const key of Object.keys(o)) delete o[key];
 
@@ -189,5 +190,5 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) { invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive"); failed.add("initiative_carrier"); }
 	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
 	if (options.checkEnv) decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v as string] !== undefined ? "set" : "unset"])) : {}]));
-	return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, diagnostics };
+	return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }

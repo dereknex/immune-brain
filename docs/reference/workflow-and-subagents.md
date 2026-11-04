@@ -228,6 +228,7 @@ No agent-local activation mode or override table exists.
 |---|---|---|---|
 | `qa` | — | qa | no tools |
 | `code-review` | `imm-code-review` | advisory | read-only tools |
+| `review-verifier` | — | advisory | read-only tools |
 | `ui-review` | `imm-ui-review` | advisory | no tools |
 | `executor` | — | executor | workspace tools |
 | `test-fixer` | — | test-repair | delegated test files |

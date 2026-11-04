@@ -16,6 +16,8 @@ import {
 	type ResidualRiskAcceptanceV1,
 	type TaskAction,
 	type ReviewAdvisoryFindingV1,
+	type ReviewVerificationHistoryV1,
+	type ReviewVerifierDisputeV1,
 	type TaskApprovalV2,
 	type TaskAttestationV3,
 	type AuthorityAuditDescriptor,
@@ -279,14 +281,98 @@ export function parseFinding(
 	};
 }
 
+function parseReviewVerificationHistory(value: unknown, path: string, violations: string[]): ReviewVerificationHistoryV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["snapshot_digest", "intent_content_hash", "diff_hash", "verdict_sha256", "dispatched_at", "submitted_at", "result_sha256", "verifier_actor", "reviewer_model", "verifier_model", "model_relation", "checked", "verifier_refutations", "failure"], path, violations);
+	const digest = (value: unknown, field: string) => {
+		const result = stringAt(value, `${path}.${field}`, violations);
+		if (!SHA256_HEX.test(result)) violations.push(`${path}.${field} must be sha256:<64 hex>`);
+		return result;
+	};
+	const snapshotDigest = digest(item.snapshot_digest, "snapshot_digest");
+	const intentHash = digest(item.intent_content_hash, "intent_content_hash");
+	const diffHash = digest(item.diff_hash, "diff_hash");
+	const verdictHash = digest(item.verdict_sha256, "verdict_sha256");
+	const dispatchedAt = stringAt(item.dispatched_at, `${path}.dispatched_at`, violations);
+	const submittedAt = stringAt(item.submitted_at, `${path}.submitted_at`, violations);
+	if (!Number.isFinite(Date.parse(dispatchedAt)) || !Number.isFinite(Date.parse(submittedAt)) || Date.parse(submittedAt) < Date.parse(dispatchedAt))
+		violations.push(`${path} must have ordered verification timestamps`);
+	const resultHash = item.result_sha256 === null ? null : digest(item.result_sha256, "result_sha256");
+	const actor = nullableString(item.verifier_actor, `${path}.verifier_actor`, violations);
+	const reviewerModel = nullableString(item.reviewer_model, `${path}.reviewer_model`, violations);
+	const model = nullableString(item.verifier_model, `${path}.verifier_model`, violations);
+	const relation = item.model_relation === null ? null : enumAt(item.model_relation, ["same", "different"] as const, `${path}.model_relation`, violations);
+	if (reviewerModel && model && relation !== (reviewerModel === model ? "same" : "different")) violations.push(`${path}.model_relation must match the observed models`);
+	const checked = positiveInteger(item.checked, `${path}.checked`, violations);
+	const refutations = arrayAt(item.verifier_refutations, `${path}.verifier_refutations`, violations).map((raw, index) => {
+		const location = `${path}.verifier_refutations[${index}]`;
+		const refutation = objectAt(raw, location, violations);
+		rejectUnknown(refutation, ["anchor", "finding_id", "counter_path", "verifier_actor"], location, violations);
+		const anchor = stringAt(refutation.anchor, `${location}.anchor`, violations);
+		if (!SHA256_HEX.test(anchor)) violations.push(`${location}.anchor must be sha256:<64 hex>`);
+		const findingId = stringAt(refutation.finding_id, `${location}.finding_id`, violations);
+		const counterPath = stringAt(refutation.counter_path, `${location}.counter_path`, violations);
+		const verifierActor = stringAt(refutation.verifier_actor, `${location}.verifier_actor`, violations);
+		if (!findingId.trim() || !counterPath.trim() || !verifierActor.trim()) violations.push(`${location} fields must be non-empty`);
+		if (verifierActor !== actor) violations.push(`${location}.verifier_actor must match verification actor`);
+		return { anchor, finding_id: findingId, counter_path: counterPath, verifier_actor: verifierActor };
+	});
+	if (new Set(refutations.map(refutation => refutation.finding_id)).size !== refutations.length) violations.push(`${path}.verifier_refutations must have unique finding ids`);
+	if (refutations.length > checked) violations.push(`${path}.verifier_refutations exceeds checked count`);
+	const failure = item.failure === undefined ? undefined : stringAt(item.failure, `${path}.failure`, violations);
+	if (failure !== undefined && (!failure.trim() || refutations.length > 0)) violations.push(`${path}.failure requires a reason and no refutations`);
+	if (failure === undefined && (!actor?.trim() || !reviewerModel?.trim() || !model?.trim() || relation === null || resultHash === null)) violations.push(`${path} requires a bound verifier receipt`);
+	return { snapshot_digest: snapshotDigest, intent_content_hash: intentHash, diff_hash: diffHash, verdict_sha256: verdictHash,
+		dispatched_at: dispatchedAt, submitted_at: submittedAt, result_sha256: resultHash, verifier_actor: actor, reviewer_model: reviewerModel, verifier_model: model, model_relation: relation, checked, verifier_refutations: refutations,
+		...(failure !== undefined ? { failure } : {}) };
+}
+
+function parseReviewVerifierDispute(value: unknown, path: string, violations: string[]): ReviewVerifierDisputeV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["decision_id", "finding", "counter_path", "verdict_sha256", "intent_content_hash", "diff_hash"], path, violations);
+	const decisionId = stringAt(item.decision_id, `${path}.decision_id`, violations);
+	if (!/^user-decision-[A-Za-z0-9._-]+$/.test(decisionId)) violations.push(`${path}.decision_id is not a valid user decision id`);
+	const finding = objectAt(item.finding, `${path}.finding`, violations);
+	rejectUnknown(finding, ["id", "acceptance_id", "summary", "anchor", "evidence"], `${path}.finding`, violations);
+	const id = stringAt(finding.id, `${path}.finding.id`, violations);
+	const acceptanceId = nullableString(finding.acceptance_id, `${path}.finding.acceptance_id`, violations);
+	const summary = stringAt(finding.summary, `${path}.finding.summary`, violations);
+	const anchor = stringAt(finding.anchor, `${path}.finding.anchor`, violations);
+	const evidence = parseFindingEvidence(finding.evidence, `${path}.finding.evidence`, violations);
+	if (!evidence || !SHA256_HEX.test(anchor) || anchorForEvidence(evidence) !== anchor) violations.push(`${path}.finding must bind evidence to its anchor`);
+	const counterPath = stringAt(item.counter_path, `${path}.counter_path`, violations);
+	if (!id.trim() || !summary.trim() || !counterPath.trim()) violations.push(`${path} claim and counter-path must be non-empty`);
+	const digest = (value: unknown, field: string) => {
+		const result = stringAt(value, `${path}.${field}`, violations);
+		if (!SHA256_HEX.test(result)) violations.push(`${path}.${field} must be sha256:<64 hex>`);
+		return result;
+	};
+	return { decision_id: decisionId, finding: { id, acceptance_id: acceptanceId, summary, anchor, evidence: evidence! },
+		counter_path: counterPath, verdict_sha256: digest(item.verdict_sha256, "verdict_sha256"),
+		intent_content_hash: digest(item.intent_content_hash, "intent_content_hash"), diff_hash: digest(item.diff_hash, "diff_hash") };
+}
+
+function parseReviewObservation(value: unknown, path: string, violations: string[]) {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
+	const review_started_at = stringAt(item.review_started_at, `${path}.review_started_at`, violations);
+	const review_submitted_at = stringAt(item.review_submitted_at, `${path}.review_submitted_at`, violations);
+	const start = Date.parse(review_started_at), end = Date.parse(review_submitted_at);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) violations.push(`${path} requires ordered review timestamps`);
+	const reviewer_model = item.reviewer_model === undefined ? undefined : stringAt(item.reviewer_model, `${path}.reviewer_model`, violations);
+	if (reviewer_model !== undefined && !reviewer_model.trim()) violations.push(`${path}.reviewer_model must be non-empty`);
+	return { review_started_at, review_submitted_at, ...(reviewer_model === undefined ? {} : { reviewer_model }) };
+}
+
 function parseHistoryV3(
 	value: unknown,
 	index: number,
 	violations: string[],
+	allowVerification = false,
 ): TaskHistoryEntryV3 {
 	const path = `record.history[${index}]`;
 	const item = objectAt(value, path, violations);
-	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision"], path, violations);
+	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision", "review_started_at", "review_submitted_at", "reviewer_model", ...(allowVerification ? ["verification", "review_verifier_dispute"] : [])], path, violations);
 	let authority: AuthorityAuditDescriptor | undefined;
 	if (item.authority !== undefined) {
 		const auth = objectAt(item.authority, `${path}.authority`, violations);
@@ -306,6 +392,14 @@ function parseHistoryV3(
 		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
 	if (reviewRevision && authority?.authority_kind !== "review")
 		violations.push(`${path}.review_revision is only valid on review-authored history`);
+	const verification = item.verification === undefined || !allowVerification ? undefined : parseReviewVerificationHistory(item.verification, `${path}.verification`, violations);
+	if (verification && (item.type !== "verification" || authority?.authority_kind !== "review"))
+		violations.push(`${path}.verification requires a review-authorized verification event`);
+	const dispute = item.review_verifier_dispute === undefined || !allowVerification ? undefined : parseReviewVerifierDispute(item.review_verifier_dispute, `${path}.review_verifier_dispute`, violations);
+	if (dispute && (item.type !== "record_review_verifier_dispute" || authority?.authority_kind !== "review"))
+		violations.push(`${path}.review_verifier_dispute requires Review authority`);
+	const observation = item.review_started_at === undefined && item.review_submitted_at === undefined && item.reviewer_model === undefined ? undefined : parseReviewObservation({ review_started_at: item.review_started_at, review_submitted_at: item.review_submitted_at, ...(item.reviewer_model === undefined ? {} : { reviewer_model: item.reviewer_model }) }, path, violations);
+	if (observation && authority?.authority_kind !== "review" && item.type !== "record_review_incomplete") violations.push(`${path} review observation requires review authority`);
 	return {
 		id: stringAt(item.id, `${path}.id`, violations),
 		at: stringAt(item.at, `${path}.at`, violations),
@@ -315,6 +409,9 @@ function parseHistoryV3(
 		reason: stringAt(item.reason, `${path}.reason`, violations),
 		...(authority ? { authority } : {}),
 		...(reviewRevision ? { review_revision: reviewRevision } : {}),
+		...(verification ? { verification } : {}),
+		...(dispute ? { review_verifier_dispute: dispute } : {}),
+		...(observation ?? {}),
 	};
 }
 
@@ -598,7 +695,7 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 		}
 	}
 	const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
-	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations));
+	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations, version === 4));
 	if (version === 4) {
 		for (const [index, entry] of history.entries()) {
 			if (entry.review_revision && entry.review_revision.base_head !== gitBaseHead)
@@ -734,6 +831,8 @@ export function assertKernelInvariantsV3(intentRaw: TaskIntentV1, recordRaw: Tas
 const ACTION_V2_TYPES = [
 	"authorize_review_retry",
 	"record_review_incomplete",
+	"record_verification",
+	"record_review_verifier_dispute",
 	"record_finding",
 	"resolve_finding",
 	"refute_finding",
@@ -816,13 +915,24 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			break;
 		}
 		case "record_review_incomplete": {
-			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason"], "action", violations);
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason", "review_observation"], "action", violations);
 			if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash)) violations.push("invalid incomplete intent hash");
 			if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96) violations.push("invalid incomplete turn budget");
 			if (!Array.isArray(value.inspected_paths) || value.inspected_paths.some(p => typeof p !== "string" || !p.trim()) || new Set(value.inspected_paths).size !== value.inspected_paths.length) violations.push("invalid incomplete inspected_paths");
 			if (typeof value.reason !== "string" || !value.reason.trim() || /[\r\n\u2028\u2029]/.test(value.reason)) violations.push("incomplete reason must be a non-empty single line");
 			if (value.review_contract_hash !== undefined && (typeof value.review_contract_hash !== "string" || !SHA256_HEX.test(value.review_contract_hash))) violations.push("invalid incomplete review contract hash");
-			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string, ...(value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash as string } : {}) };
+			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string, ...(value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash as string } : {}), ...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }) };
+			break;
+		}
+		case "record_verification": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "verification"], "action", violations);
+			action = { ...base, type: "record_verification", verification: parseReviewVerificationHistory(value.verification, "action.verification", violations) };
+			break;
+		}
+		case "record_review_verifier_dispute": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "dispute", "verification"], "action", violations);
+			const verification = value.verification === undefined ? undefined : parseReviewVerificationHistory(value.verification, "action.verification", violations);
+			action = { ...base, type: "record_review_verifier_dispute", dispute: parseReviewVerifierDispute(value.dispute, "action.dispute", violations), ...(verification ? { verification } : {}) };
 			break;
 		}
 		case "record_finding": {
@@ -883,7 +993,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 		case "record_approval": {
 			rejectUnknown(
 				value,
-				[...ACTION_BASE_FIELDS, "approval"],
+				[...ACTION_BASE_FIELDS, "approval", "review_observation"],
 				"action",
 				violations,
 			);
@@ -894,6 +1004,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 				...base,
 				type: base.type,
 				approval,
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
 			};
 			break;
 		}
@@ -973,7 +1084,7 @@ export function parseTaskAction(raw: unknown): TaskAction {
 		case "request_rework": {
 			rejectUnknown(
 				value,
-				[...ACTION_BASE_FIELDS, "findings", "review_revision"],
+				[...ACTION_BASE_FIELDS, "findings", "review_revision", "verification", "review_observation"],
 				"action",
 				violations,
 			);
@@ -987,11 +1098,14 @@ export function parseTaskAction(raw: unknown): TaskAction {
 			const reviewRevision = value.review_revision === undefined
 				? undefined
 				: parseReviewRevisionIdentity(value.review_revision, "action.review_revision", violations);
+			const verification = value.verification === undefined ? undefined : parseReviewVerificationHistory(value.verification, "action.verification", violations);
 			action = {
 				...base,
 				type: "request_rework",
 				findings,
 				...(reviewRevision ? { review_revision: reviewRevision } : {}),
+				...(verification ? { verification } : {}),
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
 			};
 			break;
 		}
@@ -1078,6 +1192,7 @@ export function assertTaskRecordUpdateV3(
 		if (
 			next.intent_ref.path !== previous.intent_ref.path &&
 			action.type !== "request_rework" &&
+			!(action.type === "resolve_user_decision" && action.resolution === "accept_verifier_dispute") &&
 			action.type !== "authorize_rework" &&
 			action.type !== "stop"
 		)
@@ -1118,8 +1233,9 @@ export function assertTaskRecordUpdateV3(
 	// Attestations and history are append-only.
 	if (next.attestations.length < previous.attestations.length)
 		violations.push("attestations are append-only");
-	if (next.history.length !== previous.history.length + 1)
-		violations.push("exactly one history entry must be appended");
+	const expectedHistoryEntries = (action.type === "request_rework" || action.type === "record_review_verifier_dispute") && action.verification ? 2 : 1;
+	if (next.history.length !== previous.history.length + expectedHistoryEntries)
+		violations.push(`exactly ${expectedHistoryEntries} history entr${expectedHistoryEntries === 1 ? "y" : "ies"} must be appended`);
 
 	for (const prior of previous.attestations) {
 		const current = next.attestations.find((item) => item.id === prior.id);

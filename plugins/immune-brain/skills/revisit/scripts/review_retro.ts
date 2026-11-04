@@ -395,6 +395,37 @@ async function sessionReport(args: Args): Promise<string> {
 	const rawSum = [...findRaw.values()].reduce((a, b) => a + b, 0), uniqSum = [...findUniq.values()].reduce((n, set) => n + set.size, 0);
 	if (rawSum && rawSum !== uniqSum) emit(`(findings: ${rawSum} raw calls deduped to ${uniqSum} distinct — re-submits of the same finding are counted once)`);
 	emit("caveats: marker matches are excluded from blocking/advisory totals.");
+	// Per-author split appears only where the session actually carries the fields; a log without
+	// `violated.kind` or disposition events leaves this report byte-identical to before.
+	const kindsPresent = events.some(e => e.type === "finding" && e.registration_line !== null && (e.violatedKind === "acceptance" || e.violatedKind === "security_boundary"));
+	const dispositions = events.filter(e => e.type === "disposition");
+	if (kindsPresent || dispositions.length) {
+		emit(""); emit("=== review quality (per author model; no ranking) ===");
+		const byAuthor = new Map<string, { acceptance: number; security_boundary: number }>();
+		// Same per-session dedupe as the blocking/advisory totals: a finding re-submitted across rounds counts once.
+		const counted = new Set<string>();
+		for (const e of events) {
+			if (e.type !== "finding" || e.registration_line === null || e.kind !== "blocking" || e.markers.includes("bookkeeping") || (e.violatedKind !== "acceptance" && e.violatedKind !== "security_boundary")) continue;
+			const key = `${e.session}\0${e.summary.slice(0, 160)}`;
+			if (counted.has(key)) continue;
+			counted.add(key);
+			const row = byAuthor.get(e.author) ?? { acceptance: 0, security_boundary: 0 };
+			if (e.violatedKind === "acceptance" || e.violatedKind === "security_boundary") row[e.violatedKind]++;
+			byAuthor.set(e.author, row);
+		}
+		if (byAuthor.size === 0) emit("blocking by violated.kind: (no finding carries violated.kind)");
+		for (const [author, row] of [...byAuthor].sort(([a], [b]) => a.localeCompare(b))) emit(`${author} blocked acceptance=${row.acceptance} security_boundary=${row.security_boundary}`);
+		if (dispositions.length) {
+			const counts = new Map<string, { resolve: number; refute: number; accept_residual_risk: number }>();
+			for (const e of dispositions) {
+				const row = counts.get(e.author) ?? { resolve: 0, refute: 0, accept_residual_risk: 0 };
+				row[e.kind]++;
+				counts.set(e.author, row);
+			}
+			for (const [author, row] of [...counts].sort(([a], [b]) => a.localeCompare(b)))
+				emit(`${author} dispositions resolve=${row.resolve} refute=${row.refute} accept_residual_risk=${row.accept_residual_risk}`);
+		}
+	}
 	emit(""); emit("=== appendix: locating context (never a cause) ===");
 	emit("=== usage (sessions / turns / edits / tools) ===");
 	emit(`sessions: ${files} | turns: ${turns} | edits: ${edits}`);

@@ -86,6 +86,7 @@ export interface NativeConfirmationInput {
 	planDigest?: string;
 	/** Present only for a replan boundary: the exits the user chooses between. */
 	reworkExits?: ReworkExitsReadiness;
+	verifierDispute?: { claim: string; trigger: string; caller_chain: string[]; counter_path: string };
 	reviewRetryNotice?: string;
 	batchDetails?: {
 		initiative_slug: string;
@@ -121,6 +122,7 @@ export interface NativeConfirmationResult {
 	requestId: string;
 	/** Present only when the request offered `reworkExits` and the user accepted. */
 	reworkChoice?: ReworkChoice;
+	verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
 }
 
 export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;

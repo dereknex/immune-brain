@@ -1,0 +1,21 @@
+# Reviewer evaluation corpus
+
+`resolved` is a silver label only: it means the Executor changed code, not that a finding was true. Human confirmation, not disposition or a pre-screen prediction, supplies gold labels.
+
+## Merge gate
+
+Compare the same corpus version and scoring rules against the recorded baseline. A reviewer prompt, model, verifier, or admission change is merge-ready only when recall is not lower, clean-case false-positive rate is not higher, and the committed-record rounds-to-pass p95 is not higher. When recall and false positives trade off, recall wins; identify the trade explicitly in the report. Missing gold labels or unmatched corpus versions cannot establish a comparison.
+
+## Recorded baseline
+
+[The recorded baseline](../../../benchmark-results/review-eval/2026-11-03-current-gpt-6.1-sol.md) uses the current Review role prompt and static rules with model `nextty/codex/gpt-6.1-sol`. It ran on the first 2 of 103 clean cases in corpus order: 0 blocking findings and a clean-case FP rate of 0. Recall and the validation split remain unmeasured because there are no human gold labels and the sample contains no validation cases; this small run cannot establish the merge gate. The JSON artifact records corpus and review-contract hashes. Regenerate this restricted no-gold run with `bun scripts/review-eval/baseline.ts <date> <provider/model> <sample>`; use `run.ts` for a labelled corpus.
+
+The [experimental kind classification](../../../benchmark-results/review-eval/2026-11-03-kind-classification.json) classified 289 eligible committed blocking findings with `clef`; 56 predictions differed from the declared kind (19.38%). It is not calibrated against human gold and changes no finding or admission decision.
+
+The corpus was extracted from commit `9781462642f22a8005f45bc772f5ff3560593949` using `bun scripts/review-eval/extract.ts 9781462642f22a8005f45bc772f5ff3560593949`. Extraction reads committed audit records at that commit, requires the recorded base and review commits to exist locally, and pins the referenced commits under local `refs/imm/review-eval/`. These refs are never pushed. Other clones can consume the committed corpus without possessing the historical Git objects; regenerating requires those objects locally.
+
+Each JSONL row is either an eligible blocking review finding or a clean reviewed revision. `disposition` and `disposition_history` record historical outcomes; `gold` is initially `unlabeled`. Clean revisions are done tasks without rework and without a later task whose intent references them. The newest 20% of tasks are held out as `validation`; the rest are `tuning`. Do not inspect validation cases individually while tuning.
+
+The initial gold set targets 30 cases, labelled by Derek (or a reviewer he names), with at least 10 `confirmed_false` or clean cases. For each selected finding, inspect the recorded revision and evidence: mark `confirmed_true` only when the defect is reachable and record its path and symbol in `gold_location`; mark `confirmed_false` only when the counter-path establishes it is unreachable and record that in `gold_counter_path`. Record `labeler` and `labelled_at`. Leave cases without human confirmation `unlabeled`. Clean revisions count toward the false-positive control set without inventing a finding label.
+
+`selection-log.jsonl` ranks findings for that labelling work. The default run uses the deterministic weight rule, favoring accepted risk, multi-round work and budget exhaustion. Optional `--prescreen` calls the shared A1 decision point with the finding's trigger, caller chain and violated invariant; uncertain or silver-disagreeing predictions rank first, with the weight rule breaking ties. Every unavailable model result falls back to the weight rule. Model probabilities and selection are triage information only, never gold. The project ceiling permits only `finding` data to Clef; the maintainer must separately configure the binding and user-side egress before invoking the optional model.

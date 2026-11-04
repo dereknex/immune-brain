@@ -131,7 +131,7 @@ import {
 	type AssuranceProjectionResult,
 	type ReworkChoice,
 } from "../runtime/kernel/assurance_projection";
-import type { TaskRecord } from "../runtime/kernel/types";
+import type { ReviewVerifierDisputeV1, TaskRecord } from "../runtime/kernel/types";
 import { currentReviewContractHash } from "../runtime/role_prompt_bridge";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
@@ -519,7 +519,10 @@ export default function (
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			progression.piReviewHost.observeReviewResult(result.toolCallId, text);
+			const model = typeof result.details?.model === "string" ? result.details.model : undefined;
+			const offeredModels = Array.isArray(result.details?.offered_models) && result.details.offered_models.every(item => typeof item === "string")
+				? result.details.offered_models as string[] : undefined;
+			progression.piReviewHost.observeReviewResult(result.toolCallId, text, model, offeredModels);
 		}
 		if (result.toolName === "imm_canary_enrollment" && ctx) {
 			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
@@ -544,6 +547,7 @@ export default function (
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After implementation and focused verification, freeze the artifacts, call advance_assurance, and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the foreground Agent from agent_params once, then call submit_review: omit the verdict to apply the observed reviewer result, or relay its structured verdict exactly.",
+			"When submit_review returns verification_ready, invoke its exact foreground Agent once, then call submit_verification; omit the result to apply the Host-observed receipt.",
 			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
 			"For a proven stale authority claim, call repair_authority_state directly; the Kernel revalidates and removes only the redundant claim without user interaction.",
 			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
@@ -554,6 +558,7 @@ export default function (
 				Type.Object({ op: Type.Literal("status") }),
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Optional(Type.Unknown()) }),
+				Type.Object({ op: Type.Literal("submit_verification"), result: Type.Optional(Type.String()) }),
 				Type.Object({ op: Type.Literal("request_authorization") }),
 				Type.Object({ op: Type.Literal("request_stop") }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
@@ -585,7 +590,7 @@ export default function (
 			]),
 		}),
 		prepareArguments: prepareActionArgs,
-		execute: async (toolCallId: string, params: { task_id: string; action: { op: string; verdict?: unknown } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
+		execute: async (toolCallId: string, params: { task_id: string; action: { op: string; verdict?: unknown; result?: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
 			railContext = ctx;
 			presentTaskRailResult(ctx, taskId, {
@@ -677,7 +682,7 @@ export default function (
 					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_repair_failed", message, blocked.next_action);
 				}
 			}
-			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "approve_breaking_intent_revision") {
+			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "submit_verification" || action.op === "approve_breaking_intent_revision") {
 				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
 				const result = action.op === "advance_assurance"
@@ -687,6 +692,8 @@ export default function (
 					})
 					: action.op === "submit_review"
 						? await progression.submitMediated(taskId, ctx, action.verdict)
+						: action.op === "submit_verification"
+							? await progression.submitVerification(taskId, ctx, action.result)
 						: action.op === "approve_breaking_intent_revision"
 							? await authorizeExactOperation(
 								taskId,
@@ -965,6 +972,7 @@ export default function (
 			}
 		}
 		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
+		let verifierDispute: ReviewVerifierDisputeV1 | undefined;
 		if (operation === "resolve-user-decision") {
 			try {
 				const current = await readTaskRecordRaw(ctx.cwd, taskId);
@@ -972,6 +980,7 @@ export default function (
 				if (current.revision !== projection.projection.record_revision)
 					throw new Error("task record changed while preparing user decision");
 				userDecisionOperation = buildUserDecisionOperation(current.record);
+				verifierDispute = current.record.history.find(entry => entry.review_verifier_dispute?.decision_id === userDecisionOperation!.finding_id)?.review_verifier_dispute;
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
 				notifyOnce(ctx, `authorization-decision:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
@@ -1010,6 +1019,12 @@ export default function (
 						`Resolution: ${userDecisionOperation.resolution}`,
 					]
 				: []),
+			...(verifierDispute ? [
+				`Claim: ${verifierDispute.finding.summary}`,
+				`Trigger: ${verifierDispute.finding.evidence.trigger}`,
+				`Caller chain: ${verifierDispute.finding.evidence.caller_chain.join(" → ")}`,
+				`Counter-path: ${verifierDispute.counter_path}`,
+			] : []),
 			...(operation === "authorize-rework"
 				? [
 						`Replan boundaries: ${projection.projection.replan_required_ids.join(", ")}`,
@@ -1062,7 +1077,11 @@ export default function (
 							{ value: "replan", label: uxText(UX_LANG, "Replan", "重新规划"), description: uxText(UX_LANG, "Revise the Intent instead", "改为修订 Intent") },
 							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 						]
-					: [
+					: verifierDispute ? [
+						{ value: "accept_verifier_dispute", label: uxText(UX_LANG, "Accept finding as rework", "接受发现并返工"), description: uxText(UX_LANG, "Project the finding to the Executor", "将该发现交给执行者") },
+						{ value: "dismiss_verifier_dispute", label: uxText(UX_LANG, "Dismiss and review again", "驳回并重新审查"), description: uxText(UX_LANG, "Request a fresh Review", "请求新的 Review") },
+						{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+					] : [
 							{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${operation} after re-checking state`, `重新校验状态后应用 ${operation}`) },
 							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 						],
@@ -1090,6 +1109,9 @@ export default function (
 						notifyOnce(ctx, `authorization-exit:${taskId}`, `authorize ${operation}: the chosen exit was not valid; nothing applied`, "warning");
 					}
 				}
+			} else if (verifierDispute && userDecisionOperation) {
+				confirmed = selected === "accept_verifier_dispute" || selected === "dismiss_verifier_dispute";
+				if (confirmed) userDecisionOperation.resolution = selected as string;
 			} else {
 				confirmed = selected === "authorize";
 			}
@@ -1228,6 +1250,7 @@ export default function (
 						exactOperation.op === "stop" ||
 						exactOperation.op === "authorize_rework" ||
 						exactOperation.op === "accept_residual_risk" ||
+						(exactOperation.op === "resolve_user_decision" && exactOperation.resolution === "accept_verifier_dispute") ||
 						exactOperation.op === "approve_breaking_intent_revision"
 					) stagePlanningArtifactTransition(ctx.cwd, result.record);
 					return { state: "applied", operation, lifecycle: result.record.lifecycle };
@@ -1790,6 +1813,7 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
 		case "review_ready": return "invoke the foreground reviewer and submit its verdict";
+		case "verification_ready": return "invoke the reserved foreground verifier and submit_verification";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;
 		case "completed":

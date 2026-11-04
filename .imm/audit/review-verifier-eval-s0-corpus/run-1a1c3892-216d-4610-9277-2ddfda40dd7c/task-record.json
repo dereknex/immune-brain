@@ -1,0 +1,357 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-verifier-eval-s0-corpus",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-verifier-eval-s0-corpus",
+    "goal": "Build a versioned reviewer eval corpus from committed audit records: eligible historical review cases with revision identity, finding anchor and evidence, acceptance text, and disposition, where resolved counts only as a silver label, gold labels are human-confirmed, clean cases are included, and the newest cases form a holdout validation split. Gold-case selection uses a pre-screen built on the shared decision-model decide() at a newly registered A1 application point, with a committed project egress ceiling that admits only finding to clef.",
+    "acceptance": [
+      {
+        "id": "RVE-S0-A1",
+        "assertion": "Meet S0 in docs/specs/review-verifier-eval.spec.md: an offline extractor run at a pinned commit yields a deterministic corpus (same input commit produces byte-identical corpus.jsonl); a case enters the gold pool only under the eligibility rule of Spec S0 item 1, and ineligible records are excluded with counts by reason; the corpus validates against its schema and separates disposition (silver label) from gold (confirmed_true / confirmed_false / unlabeled) as distinct fields; the README states in its first paragraph that resolved is a silver label only and documents the gold labelling protocol (first set: 30 cases labelled by Derek, at least 10 confirmed_false or clean); at least 10 clean revisions from done tasks with no request_rework are included; the split is by task recency with the newest 20 percent held out as the validation split and is stable across regeneration. Selection of the 30 gold cases is uncertainty-first under an offline pre-screen (scripts/review-eval/prescreen.ts) that calls the shared decide() at application point a1_review_finding_prescreen with each extracted finding's trigger, caller_chain, and violated fields: least-confident cases and cases whose lean disagrees with the silver disposition are labelled first, and the item 3 weight rule breaks remaining ties. The classifier output is recorded only in a selection log carrying the per-candidate fields of Spec S0 item 7, including the path used (model or weight_rule), and never becomes a label or corpus gold. Disabling the pre-screen, and every unavailable decide() result named in Spec S0 item 7, each reproduce the weight-rule selection exactly with the log naming weight_rule for every affected candidate. The selection log and README contain no credential or environment-variable value.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-corpus.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RVE-S0-A2",
+        "assertion": "The code-owned registry (plugins/immune-brain/runtime/decision_model/thresholds.ts) registers a1_review_finding_prescreen with input_category finding, options likely_true, likely_false, uncertain, and threshold set a1/v0 with values null; the committed project config .imm/config.json declares decision_models.egress.clef = [\"finding\"] and no other egress kind or category, so resolving the repository's effective configuration with a user egress request of clef/finding yields effective egress clef = [\"finding\"] and every other provider kind empty, while a user request of clef/diff is dropped with egress_beyond_project_ceiling.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-corpus.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RVE-S0-A3",
+        "assertion": "The S0 extractor (Spec S0 item 1) treats a git object as eligible when it exists as a commit in the local object store at extraction time, so a case whose base_head and review_commit are unreachable from HEAD and from every ref still enters the gold pool, while a case with a missing object is excluded with reason git_object_missing. The extractor pins every commit an emitted case references at refs/imm/review-eval/<sha>; rerunning it is idempotent and leaves corpus.jsonl byte-identical whether or not the pins already exist, an existing pin under that name pointing at another object stops the run without writing a corpus, and the extractor never pushes a ref.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-corpus.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".imm/config.json",
+      "docs/plans/review-verifier-eval-s0-corpus.intent.json",
+      "docs/specs/review-verifier-eval.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+      "scripts/review-eval/extract.ts",
+      "scripts/review-eval/prescreen.ts",
+      "tests/fixtures/review-eval/README.md",
+      "tests/fixtures/review-eval/corpus.jsonl",
+      "tests/fixtures/review-eval/selection-log.jsonl",
+      "tests/review-eval-corpus.test.ts"
+    ],
+    "risk": "material",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-verifier-eval-s0-corpus.intent.json",
+    "content_hash": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7",
+  "git_base_head": "9781462642f22a8005f45bc772f5ff3560593949",
+  "attestations": [
+    {
+      "id": "approval-qa-346b2c44",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7",
+      "diff_hash": "sha256:39c00033f4949b5e8e7d3824631bad303f475e94443ff547e0f34cca234e6ddb",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:7910015b62b997fe89f2123fd1b63de3052bd74cace1526f610c8b6cd9da8429",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S0-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7910015b62b997fe89f2123fd1b63de3052bd74cace1526f610c8b6cd9da8429"
+        },
+        {
+          "acceptance_id": "RVE-S0-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7910015b62b997fe89f2123fd1b63de3052bd74cace1526f610c8b6cd9da8429"
+        },
+        {
+          "acceptance_id": "RVE-S0-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7910015b62b997fe89f2123fd1b63de3052bd74cace1526f610c8b6cd9da8429"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-817af503",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7",
+      "diff_hash": "sha256:b9389d266d9620951ffb7da72969c5755a39d3c4a8b30a448502fdfa2f9ecab2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6c00a818b1f5aa0af8dea8a16b67b54826cb2b70e77054266ec9f9843a594310",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S0-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c00a818b1f5aa0af8dea8a16b67b54826cb2b70e77054266ec9f9843a594310"
+        },
+        {
+          "acceptance_id": "RVE-S0-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c00a818b1f5aa0af8dea8a16b67b54826cb2b70e77054266ec9f9843a594310"
+        },
+        {
+          "acceptance_id": "RVE-S0-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c00a818b1f5aa0af8dea8a16b67b54826cb2b70e77054266ec9f9843a594310"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b11d1d1b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7",
+      "diff_hash": "sha256:531d8563c08667a7f6663ba4e0e358dece516858c163ea9bbc5ee597d8fd094f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:13731e7bde53c29a5b102b6b77db8e0ff4f7e6c91bff7f5f721bbd6ba515a4b4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S0-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:13731e7bde53c29a5b102b6b77db8e0ff4f7e6c91bff7f5f721bbd6ba515a4b4"
+        },
+        {
+          "acceptance_id": "RVE-S0-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:13731e7bde53c29a5b102b6b77db8e0ff4f7e6c91bff7f5f721bbd6ba515a4b4"
+        },
+        {
+          "acceptance_id": "RVE-S0-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:13731e7bde53c29a5b102b6b77db8e0ff4f7e6c91bff7f5f721bbd6ba515a4b4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-362fccac",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7",
+      "diff_hash": "sha256:531d8563c08667a7f6663ba4e0e358dece516858c163ea9bbc5ee597d8fd094f",
+      "actor_id": "parent-mediated-review",
+      "summary": "未发现本轮阻断问题；packet、manifest 摘要和 Git revision 身份均已验证。extract.ts:92-98 按每个 task 的最新时间确定 holdout，新增测试覆盖 audit 路径顺序与时间顺序相反的情况。影响范围 tier low，本轮承重路径为 scripts/review-eval/extract.ts 和 tests/review-eval-corpus.test.ts；其他变更沿用前轮覆盖，测试执行采用 manifest 中 Kernel QA 的通过证据，未重跑测试。",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9781462642f22a8005f45bc772f5ff3560593949",
+        "review_commit": "a96d913abceef4faf44839cf87fbcf21d7015892",
+        "review_tree": "9ed23939e6ee574d843bc11ced58168a24e2b26c",
+        "manifest_digest": "sha256:54b603a97ff1de294b20a3d628612a8e24f60813829aa73242323945ff9e037f"
+      },
+      "reviewer_verdict_sha256": "sha256:02f70bd10c5af98d4c3826ee8ee5352c3a8ccfaa1326f804777ca8df00b665dd"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-aadf3711d892-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S0-A3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "scripts/review-eval/extract.ts:108–114 未区分缺失 ref 与 dangling symbolic ref；update-ref 默认解引用，可使 pin 创建写入 refs/imm/review-eval/ 之外的用户 ref。应拒绝 symbolic pin，并让事务禁止解引用；补充回归测试，断言目标 ref 和 corpus 均不改变。",
+      "anchor": "sha256:2af1b329a23cb566419682196a1e60e2ddee8c92a50b8106f1099d115d2e8ec2",
+      "evidence": {
+        "trigger": "本地 refs/imm/review-eval/<sha> 已是指向尚不存在的 refs/heads/user-new 的 symbolic ref，且 <sha> 被 emitted case 引用 → rev-parse --verify --quiet 返回 1，pinCommits 将它当作缺失 pin，随后 update-ref 的 create 默认解引用并创建 refs/heads/user-new；提取器继续写出 corpus，同时产生 pin 命名空间之外的未授权分支写入。",
+        "caller_chain": [
+          "scripts/review-eval/extract.ts:main",
+          "scripts/review-eval/extract.ts:pinCommits",
+          "scripts/review-eval/extract.ts:git"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "extractor pin writes confined to refs/imm/review-eval/"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-dd8d935a926f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S0-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "scripts/review-eval/extract.ts:92–95 按遍历顺序覆盖同一 task_id 的时间，而非取该任务最新时间；多个历史 run 会使 holdout 选错任务。应按 task_id 聚合最大 task_time，并在 tests/review-eval-corpus.test.ts 增加同一任务多个 run、路径顺序与时间顺序相反的用例，断言最新任务进入 validation。现有 :106–112 只检查同任务 split 一致，无法保护 recency 要求。",
+      "anchor": "sha256:9b358f6063aef69bd338765601d5a62dd7acfb18dd869554748a332eee9a185a",
+      "evidence": {
+        "trigger": "命名输入 commit 包含任务 T 的两个 eligible audit run：路径排序靠前的 run 时间为 2026-03-01，靠后的 run 时间为 2026-01-01；另有任务 U 时间为 2026-02-01，且两个任务均引用存在的 commit → Map 最后写入将 T 的时间降为一月，两个任务中唯一的 validation 名额分给 U，最新任务 T 的所有案例反而进入 tuning，违反 newest 20 percent holdout。",
+        "caller_chain": [
+          "scripts/review-eval/extract.ts:extract committed audit record enumeration",
+          "scripts/review-eval/extract.ts:92 taskTimes",
+          "scripts/review-eval/extract.ts:93–95 validation assignment",
+          "tests/review-eval-corpus.test.ts:106–112"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S0-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s0-corpus:2026-11-03T09:29:14.728Z",
+      "at": "2026-11-03T09:29:14.728Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s0-corpus.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s0-corpus:2026-11-03T09:29:28.582Z",
+      "at": "2026-11-03T09:29:28.582Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-346b2c44\naction_v2_sha256:f8c5a4f8c0af9d032e95e646d0cf1f4019f9928023c59bb4d2f3ff69507b56f4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-411b789e49c913d2",
+        "issued_at": "2026-11-03T09:29:28.583Z"
+      }
+    },
+    {
+      "id": "request_rework:review-verifier-eval-s0-corpus:2026-11-03T10:19:29.297Z",
+      "at": "2026-11-03T10:19:29.297Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:1254c2ce699bf9cb9e95badc7cf19c83c6df8f618de69c948c6558f47c12bde1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-660ec3265e70ab01",
+        "issued_at": "2026-11-03T10:19:29.297Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9781462642f22a8005f45bc772f5ff3560593949",
+        "review_commit": "68689729846475553ad5af69c6a00732c73d70fd",
+        "review_tree": "9d43d45d61b7b1f8c831cab7e0010507893f4ee9",
+        "manifest_digest": "sha256:a50ce4b43b383780791ee17ba012cfad61a2119b941097788fe6131edb899e00"
+      }
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s0-corpus:2026-11-03T10:21:10.803Z",
+      "at": "2026-11-03T10:21:10.803Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-aadf3711d892-1-review-1\naction_v2_sha256:f40bb0046710ed041e8ea67ac2ead50dc648b93045cb086cec66bd1d3ca7d74f"
+    },
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s0-corpus:2026-11-03T10:21:20.934Z",
+      "at": "2026-11-03T10:21:20.934Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s0-corpus.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s0-corpus:2026-11-03T10:21:35.824Z",
+      "at": "2026-11-03T10:21:35.824Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-817af503\naction_v2_sha256:b9bb054cd47bbb7e08878c9d5d1756c395495056278bafe94b3d44f00a4f7b57",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-ad466c948b95ecdc",
+        "issued_at": "2026-11-03T10:21:35.824Z"
+      }
+    },
+    {
+      "id": "record_review_incomplete:review-verifier-eval-s0-corpus:2026-11-03T10:23:31.530Z",
+      "at": "2026-11-03T10:23:31.530Z",
+      "type": "record_review_incomplete",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "{\"intent_content_hash\":\"sha256:c194959a7543ff65c6fd014b389a4ad19b0af455b85c42e17f681aa7cc8833f7\",\"diff_hash\":\"sha256:b9389d266d9620951ffb7da72969c5755a39d3c4a8b30a448502fdfa2f9ecab2\",\"turn_budget\":16,\"inspected_paths\":[\".imm/config.json\",\"plugins/immune-brain/dist/claude/mcp-server.mjs\",\"plugins/immune-brain/runtime/decision_model/thresholds.ts\",\"scripts/review-eval/extract.ts\",\"scripts/review-eval/prescreen.ts\",\"tests/fixtures/review-eval/README.md\",\"tests/review-eval-corpus.test.ts\"],\"reason\":\"Packet digest、manifest digest、review commit 的唯一 parent 和 tree 均已核实；本轮预算内未完成 corpus.jsonl 全部新增行及 selection-log.jsonl 的逐行审查，无法给出完整覆盖的批准。\",\"review_contract_hash\":\"sha256:2e4d13dd57148f7aad0ce5b4c936ccabe708a3dd4669a64096824b7bb8c59330\"}\naction_v2_sha256:54e7c1db149e9e5eaf9ab67e6d6d2e8769fb6b1e02dc483a5f526d3cdcc9ab4b"
+    },
+    {
+      "id": "request_rework:review-verifier-eval-s0-corpus:2026-11-03T10:27:23.242Z",
+      "at": "2026-11-03T10:27:23.242Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:2808b19ca91a2c3c2b34aa20c3cfde7ac843aa4f80f55cdb23fa4fdf3e588d2f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-ad3cc9047a7ac66d",
+        "issued_at": "2026-11-03T10:27:23.242Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9781462642f22a8005f45bc772f5ff3560593949",
+        "review_commit": "19cd928f0558de846cd5fe89fd384556d61433e1",
+        "review_tree": "02fbb45f51f1831106a35adecaf36a5eff568fb6",
+        "manifest_digest": "sha256:fa2588cbbe63461a6ab287901874cbcc2d63cc1fb5540a7b8470a5b88983554c"
+      }
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s0-corpus:2026-11-03T10:28:58.484Z",
+      "at": "2026-11-03T10:28:58.484Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-dd8d935a926f-1-review-1\naction_v2_sha256:703e04696fb03224c3ab63d2cb77dfacd988fee43c7f6afa9c8fccbc6f4fe565"
+    },
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s0-corpus:2026-11-03T10:29:07.573Z",
+      "at": "2026-11-03T10:29:07.573Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s0-corpus.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s0-corpus:2026-11-03T10:29:27.102Z",
+      "at": "2026-11-03T10:29:27.102Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b11d1d1b\naction_v2_sha256:cd649762e59e205c2177c8017d6be5f8b8333870f52b6623ddc3a271c4749af8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-37bc6f765c4f603e",
+        "issued_at": "2026-11-03T10:29:27.102Z"
+      }
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s0-corpus:2026-11-03T10:31:04.179Z",
+      "at": "2026-11-03T10:31:04.179Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-362fccac\naction_v2_sha256:b4a6a6327c565054cc808b53ac04669776fe7db92c8c54539e95215fcfd1193f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-e39c9f82df954191",
+        "issued_at": "2026-11-03T10:31:04.179Z"
+      }
+    },
+    {
+      "id": "complete:review-verifier-eval-s0-corpus:2026-11-03T10:31:05.472Z",
+      "at": "2026-11-03T10:31:05.472Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e9f016af749630a9c0a35a71f3f7af3a50ea2a2fe08ec690f290606a42bef957"
+    }
+  ]
+}

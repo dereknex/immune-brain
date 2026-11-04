@@ -77,10 +77,13 @@ aloud in the report so the 口径 stays visible.
   `recorded cleanly`, `receipt recorded`, `round recorded`, or `no finding(s)`
   receive a bookkeeping marker (unverified), excluded from `blocking` /
   `advisory` totals without changing their structured kind.
-- The analyzer still records the last editor model (`edit`, `write`,
-  `multiedit`, `apply_patch`) as an `author` field on each review and finding
-  event for downstream readers. The report prints no per-author or per-model
-  table; do not rank models from it.
+- The analyzer records the last editor model (`edit`, `write`, `multiedit`,
+  `apply_patch`) as an `author` field on each review and finding event. When a
+  session carries `violated.kind` on blocking findings, the report adds one
+  `review quality` section listing, per author model, the `acceptance` / and
+  `security_boundary` counts, plus `resolve` / `refute` /
+  `accept_residual_risk` counts when those tool events appear. It ranks
+  nothing, and a log without those fields leaves the report unchanged.
 
 Committed audit (`--audit`):
 

@@ -1,0 +1,158 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-verifier-eval-s3-projection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-verifier-eval-s3-projection",
+    "goal": "Make the coordinator consume the verifier attestation before projecting a rework verdict: kept findings alone become Executor work, refuted claims are archived on the record, an all-refuted verdict buys exactly one reviewer redispatch, a repeated refuted anchor stops for the user, and verifier failure keeps every finding.",
+    "acceptance": [
+      {
+        "id": "RVE-S3-A1",
+        "assertion": "Meet S3 in docs/specs/review-verifier-eval.spec.md, driving real submitted verdicts through the coordinator rather than asserting prompt text: after a rework verdict validates and before any request_rework projection, the coordinator returns a verification_ready state carrying one exact foreground verifier dispatch (prompt verbatim, receipt-bound submit_verification, single-use reservation, artifacts still frozen, pass verdicts never verified); a valid verification projects kept findings only and records each refuted claim in verifier_refutations with its counter-path plus a verification history event with checked and refuted counts; an all-refuted verdict synthesizes no pass and issues exactly one new Review reservation whose coordinator-built prompt carries the counter-evidence, and the redispatched verdict is verified again; a repeated anchor refuted for the same snapshot blocks submission and parks the task for a literal-user dispute decision with zero Executor work projected; verifier timeout, dispatch failure, malformed output, or receipt mismatch records the failure and projects all findings without automatic retry; the review_verifier config switch defaults off until the S1 baseline exists and off reproduces today's projection exactly; records without verifier fields parse and settle unchanged on both hosts; a runtime predating verifier fields fails closed on records carrying them (BR-DEC-9), so no new parser leniency is added. S3 item 7 (Jev escalation classifier) is deferred per BR-DEC-8: S3 adds no classifier, and every refuted finding archives per item 2.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/kernel-canary-rework-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/review-verifier-eval-s3-projection.intent.json",
+      "docs/specs/review-verifier-eval.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/imm-run.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/kernel/reducer.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/kernel/validation.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/kernel-canary-rework-authority.test.ts",
+      "tests/pi-canary-user-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 4,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-verifier-eval-s3-projection.intent.json",
+    "content_hash": "sha256:ae8429c2c58036548e9f14513399d899005cf37fc34acd9540f789e0e9b9a344"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:af2e917fa06741f0b08f0f5912f73d6c921a4c22cf60c632aef92876604fd087",
+  "git_base_head": "f7b0a5b7dc6639c9d0049e34487d0c075b58d022",
+  "attestations": [
+    {
+      "id": "approval-qa-a186cead",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:ae8429c2c58036548e9f14513399d899005cf37fc34acd9540f789e0e9b9a344",
+      "diff_hash": "sha256:b4a72053c3dfb8c4f15a28ef890e45308730c8631ef8f6a9139c299c6c6a516a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:91b59ef79a2656a7d78ab55f31024e63afd638d0d2c91d1907c758650b49566a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S3-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:91b59ef79a2656a7d78ab55f31024e63afd638d0d2c91d1907c758650b49566a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5016970d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 4,
+      "intent_content_hash": "sha256:ae8429c2c58036548e9f14513399d899005cf37fc34acd9540f789e0e9b9a344",
+      "diff_hash": "sha256:b4a72053c3dfb8c4f15a28ef890e45308730c8631ef8f6a9139c299c6c6a516a",
+      "actor_id": "parent-mediated-review",
+      "summary": "S3 verifier projection lands with review-authorized single-use verification reservations, kept-only rework projection, one all-refuted redispatch with counter-evidence, literal-user dispute parking, fail-closed failure modes, and a default-off config switch (tier: medium blast radius; load-bearing: runtime/assurance/coordinator.ts, runtime/kernel/reducer.ts, runtime/kernel/validation.ts, dist/claude/mcp-server.mjs)",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "f7b0a5b7dc6639c9d0049e34487d0c075b58d022",
+        "review_commit": "aba770310c3dbc10c39b68b8004e777b428caf8f",
+        "review_tree": "95a041ba95859f93077c6c1093b4206d8a4e6012",
+        "manifest_digest": "sha256:1a8f58c72761a6277e16af8c6dacf2d6c09a70f3d28655ae674fee0cf91e71f0"
+      },
+      "reviewer_verdict_sha256": "sha256:3dfbabc4db850749037cebd671f7cbadd1ff2d23ca6a6f3df901110aece11814"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "approve_breaking_intent_revision:review-verifier-eval-s3-projection:2026-11-03T15:55:38.188Z",
+      "at": "2026-11-03T15:55:38.188Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_3\naction_v2_sha256:d95f8b6d06b1482ca04ab6f574a640ec63c7af8c992ef4aebfb04e64e6619676",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-9542f7c21286bfe9",
+        "issued_at": "2026-11-03T15:55:38.488Z"
+      }
+    },
+    {
+      "id": "approve_breaking_intent_revision:review-verifier-eval-s3-projection:2026-11-03T16:14:34.840Z",
+      "at": "2026-11-03T16:14:34.840Z",
+      "type": "approve_breaking_intent_revision",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_4\naction_v2_sha256:6f305f90a95c29fb491da7be5576972dafd1295824f3ebeb4496de934a7a8fcc",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "pi-confirm-2d33e73bf2500853",
+        "issued_at": "2026-11-03T16:14:35.274Z"
+      }
+    },
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s3-projection:2026-11-04T01:39:15.433Z",
+      "at": "2026-11-04T01:39:15.433Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s3-projection.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s3-projection:2026-11-04T01:41:23.932Z",
+      "at": "2026-11-04T01:41:23.932Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a186cead\naction_v2_sha256:3d9c585a1fb61249eec5b9950fc590def4cbe06fdef499f10ca0a672ce7d6aea",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-c098b16b5cc35353",
+        "issued_at": "2026-11-04T01:41:23.932Z"
+      }
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s3-projection:2026-11-04T02:05:00.426Z",
+      "at": "2026-11-04T02:05:00.426Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5016970d\naction_v2_sha256:f04c166bf962f3284c47298d73e8e0bff2c958138a29575f92e152418a25cc45",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-fbf0f91d63f5e29e",
+        "issued_at": "2026-11-04T02:05:00.426Z"
+      }
+    },
+    {
+      "id": "complete:review-verifier-eval-s3-projection:2026-11-04T02:05:02.855Z",
+      "at": "2026-11-04T02:05:02.855Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:2ab8d442dbd791121bfcd0083d1dc9649fea99b1addd6bb5afc818e5bcdb62f1"
+    }
+  ]
+}

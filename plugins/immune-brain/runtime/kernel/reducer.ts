@@ -12,6 +12,7 @@ import {
 	type AuthorityAuditDescriptor,
 	type ReducedTaskMutation,
 	type ReviewRevisionIdentityV1,
+	type ReviewVerificationHistoryV1,
 	type TaskAction,
 	type TaskFinding,
 	type TaskIntentRefV3,
@@ -169,7 +170,26 @@ function appendHistory(
 	};
 	if (audit) entry.authority = { ...audit };
 	if (reviewRevision) entry.review_revision = { ...reviewRevision };
+	if ((action.type === "record_approval" || action.type === "request_rework" || action.type === "record_review_incomplete") && action.review_observation) {
+		if (action.type !== "record_review_incomplete" && audit?.authority_kind !== "review") throw new KernelInvariantError(["review observation requires review authority"]);
+		Object.assign(entry, action.review_observation);
+	}
 	record.history.push(entry as (typeof record.history)[number]);
+}
+
+function appendVerificationHistory(record: TaskRecord, action: TaskAction, from: string, audit: AuthorityAuditDescriptor, verification: ReviewVerificationHistoryV1): void {
+	const id = action.type === "record_verification" ? action.event_id : `${action.event_id}:verification`;
+	if (record.history.some(entry => entry.id === id)) throw new KernelInvariantError([`history contains duplicate id ${id}`]);
+	record.history.push({ id, at: action.at, type: "verification", from_state: from, to_state: from,
+		reason: historyReason(action, record.intent_snapshot.revision, record.intent_ref.content_hash, audit, `checked ${verification.checked}, refuted ${verification.verifier_refutations.length}`),
+		authority: { ...audit }, verification });
+}
+
+function validateVerification(record: TaskRecord, action: TaskAction, audit: AuthorityAuditDescriptor | null, verification: ReviewVerificationHistoryV1): void {
+	if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || audit?.authority_kind !== "review")
+		throw new KernelInvariantError(["verification requires a frozen active task and Review authority"]);
+	if (verification.diff_hash !== action.diff_hash || verification.intent_content_hash !== record.intent_ref.content_hash)
+		throw new KernelInvariantError(["verification does not bind the current intent and diff"]);
 }
 
 function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
@@ -184,6 +204,8 @@ function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
 function hasPrivilegedKind(action: TaskAction): boolean {
 	return (
 		action.type === "record_approval" ||
+		action.type === "record_verification" ||
+		action.type === "record_review_verifier_dispute" ||
 		action.type === "approve_breaking_intent_revision" ||
 		action.type === "request_rework" ||
 		action.type === "authorize_rework" ||
@@ -601,6 +623,49 @@ export function reduceTask(
 			);
 			break;
 		}
+		case "record_verification": {
+			validateVerification(record, action, authorityAudit, action.verification);
+			if (action.verification.failure || action.verification.verifier_refutations.length !== action.verification.checked)
+				throw new KernelInvariantError(["standalone verification requires every finding to be refuted"]);
+			if (record.history.some(entry => entry.verification?.intent_content_hash === action.verification.intent_content_hash
+				&& entry.verification.diff_hash === action.verification.diff_hash
+				&& !entry.verification.failure
+				&& entry.verification.verifier_refutations.length === entry.verification.checked))
+				throw new KernelInvariantError(["all-refuted Review already obtained its redispatch for this snapshot"]);
+			if (projectTask(record.intent_snapshot, record, action.diff_hash, record.intent_ref.content_hash, changedPaths ?? [], floor).next_obligation !== "run_review")
+				throw new KernelInvariantError(["verification requires fresh QA and pending Review"]);
+			appendVerificationHistory(record, action, from, authorityAudit!, action.verification);
+			break;
+		}
+		case "record_review_verifier_dispute": {
+			const dispute = action.dispute;
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || authorityAudit?.authority_kind !== "review")
+				throw new KernelInvariantError(["review verifier dispute requires frozen artifacts and Review authority"]);
+			if (dispute.intent_content_hash !== record.intent_ref.content_hash || dispute.diff_hash !== action.diff_hash)
+				throw new KernelInvariantError(["review verifier dispute must bind the current intent and diff"]);
+			const previous = record.history.filter(entry => entry.verification?.intent_content_hash === dispute.intent_content_hash
+				&& entry.verification.diff_hash === dispute.diff_hash).map(entry => entry.verification!);
+			if (action.verification) {
+				validateVerification(record, action, authorityAudit, action.verification);
+				if (!previous.some(event => !event.failure && event.checked === event.verifier_refutations.length)
+					|| action.verification.failure || action.verification.checked !== action.verification.verifier_refutations.length
+					|| action.verification.verdict_sha256 !== dispute.verdict_sha256
+					|| !action.verification.verifier_refutations.some(refutation => refutation.finding_id === dispute.finding.id
+						&& refutation.anchor === dispute.finding.anchor && refutation.counter_path === dispute.counter_path))
+					throw new KernelInvariantError(["exhausted redispatch dispute requires the current all-refuted receipt"]);
+				appendVerificationHistory(record, action, from, authorityAudit, action.verification);
+			} else if (!previous.flatMap(event => event.verifier_refutations)
+				.some(refutation => refutation.anchor === dispute.finding.anchor && refutation.counter_path === dispute.counter_path)) {
+				throw new KernelInvariantError(["review verifier dispute must repeat a refuted anchor and its recorded counter-path"]);
+			}
+			if (record.findings.some(finding => finding.id === dispute.decision_id || finding.id === dispute.finding.id))
+				throw new KernelInvariantError(["review verifier dispute finding identity is already in use"]);
+			record.findings.push({ id: dispute.decision_id, kind: "unresolved_user_decision", status: "open", acceptance_id: dispute.finding.acceptance_id,
+				source: "kernel", review_round: null, summary: `Claim: ${dispute.finding.summary}\nTrigger: ${dispute.finding.evidence.trigger}\nCounter-path: ${dispute.counter_path}` });
+			appendHistory(record, action, from, dispute.decision_id, authorityAudit);
+			record.history[record.history.length - 1].review_verifier_dispute = dispute;
+			break;
+		}
 		case "request_rework": {
 			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
 				throw new KernelInvariantError([
@@ -774,6 +839,21 @@ export function reduceTask(
 					]);
 				record.findings.push(boundary);
 			}
+			if (action.verification) {
+				validateVerification(previous, action, authorityAudit, action.verification);
+				if (action.verification.checked !== action.findings.length + action.verification.verifier_refutations.length)
+					throw new KernelInvariantError(["verification counts must cover the kept and refuted findings"]);
+				const refutedIds = new Set(action.verification.verifier_refutations.map(finding => finding.finding_id));
+				if (action.findings.some(finding => refutedIds.has(finding.id)))
+					throw new KernelInvariantError(["a refuted finding cannot be projected as rework"]);
+				const priorRefuted = new Set(previous.history.flatMap(entry =>
+					entry.verification?.intent_content_hash === action.verification!.intent_content_hash && entry.verification.diff_hash === action.diff_hash
+						? entry.verification.verifier_refutations.map(finding => finding.anchor) : []));
+				if (action.findings.some(finding => finding.anchor && priorRefuted.has(finding.anchor))
+					|| action.verification.verifier_refutations.some(finding => priorRefuted.has(finding.anchor)))
+					throw new KernelInvariantError(["a repeated refuted anchor requires a literal-user dispute"]);
+				appendVerificationHistory(record, action, from, authorityAudit!, action.verification);
+			}
 			appendHistory(
 				record,
 				action,
@@ -924,6 +1004,21 @@ export function reduceTask(
 				throw new KernelInvariantError([
 					`finding ${action.finding_id} is already resolved`,
 				]);
+			const verifierDispute = record.history.find(entry => entry.review_verifier_dispute?.decision_id === finding.id)?.review_verifier_dispute;
+			if (verifierDispute) {
+				if (authorityAudit?.authority_kind !== "user" || !isLiteralUserActor(authorityAudit.actor_id))
+					throw new KernelInvariantError(["review verifier dispute requires literal-user authority"]);
+				if (verifierDispute.diff_hash !== action.diff_hash || verifierDispute.intent_content_hash !== record.intent_ref.content_hash)
+					throw new KernelInvariantError(["review verifier dispute no longer matches the current snapshot"]);
+				if (action.resolution !== "accept_verifier_dispute" && action.resolution !== "dismiss_verifier_dispute")
+					throw new KernelInvariantError(["review verifier dispute requires accept or dismiss"]);
+				if (action.resolution === "accept_verifier_dispute") {
+					if (record.findings.some(item => item.id === verifierDispute.finding.id)) throw new KernelInvariantError(["disputed finding identity is already in use"]);
+					record.findings.push({ ...verifierDispute.finding, kind: "blocking", status: "open", source: "review", review_round: reviewRound(record), counterevidence: null });
+					record.artifact_state = "active";
+					record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+				}
+			}
 			finding.status = "resolved";
 			appendHistory(
 				record,

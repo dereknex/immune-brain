@@ -18,7 +18,7 @@ import {
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
 import { ClaudeReviewHost, FileHookEventLog, MemoryHookEventLog, hookEventPath, parseHookStdin, reviewDispatchHookOutput, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
+import { createMcpRuntime as createMcpRuntimeUngated, elicitationParams, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, submitClaudeReview, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createCanaryApplication, capabilityActionFor } from "../plugins/immune-brain/runtime/kernel/canary_application";
@@ -441,6 +441,26 @@ describe("claude host authority", () => {
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
 		expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
 		expect(submitReview?.inputSchema.properties).toHaveProperty("verdict");
+	});
+
+	test("submit_verification without a reservation preserves Claude authority", async () => {
+		const taskId = "verification-not-reserved";
+		const fixture = authorityFixtureRoot(taskId);
+		const runtime = new ClaudeRuntime({ cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
+			requestConfirmation: async () => ({ decision: "accept", requestId: "enroll" }) });
+		const meta: ToolMeta = { taskId, sessionId: "s", toolCallId: "enroll", requiresUserInteraction: true, interactive: true, permissionMode: "manual" };
+		await runtime.enroll(taskId, meta);
+		const before = readTaskRecordRaw(fixture.root, taskId).revision;
+		expect(await runtime.submitVerification(taskId, undefined)).toMatchObject({ state: "blocked", reason: "no active verification operation" });
+		expect(readTaskRecordRaw(fixture.root, taskId).revision).toBe(before);
+	});
+
+	test("Claude elicitation presents claim, counter-path and exactly two dispute choices", () => {
+		const params = elicitationParams({ operation: "request_authorization", taskId: "task", toolCallId: "call",
+			verifierDispute: { claim: "claim", trigger: "input", caller_chain: ["src/a.ts"], counter_path: "src/a.ts rejects the input" } });
+		expect(params.message).toContain("Claim: claim");
+		expect(params.message).toContain("Counter-path: src/a.ts rejects the input");
+		expect(params.requestedSchema).toMatchObject({ required: ["choice"], properties: { choice: { enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] } } });
 	});
 
 	test("production runtime exposes no direct-decision authority seam", () => {
@@ -972,6 +992,31 @@ describe("claude host authority", () => {
 		const result = await runtime.authorize(taskId, "request_authorization", meta("authorize"));
 		const finding = (result.record as { findings: Array<{ id: string; status: string }> }).findings.find((item) => item.id === "user-decision-1");
 		expect(finding?.status).toBe("resolved");
+	});
+
+	test.each(["accept_verifier_dispute", "dismiss_verifier_dispute"] as const)("request_authorization presents a verifier dispute and applies %s", async choice => {
+		const taskId = `verifier-${choice}`;
+		const fixture = authorityFixtureRoot(taskId);
+		const requests: Array<import("../plugins/immune-brain/runtime/claude/interaction").NativeConfirmationInput> = [];
+		const runtime = new ClaudeRuntime({ cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
+			requestConfirmation: async input => { requests.push(input); return { decision: "accept", requestId: "native-dispute", ...(input.verifierDispute ? { verifierChoice: choice } : {}) }; } });
+		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
+		await runtime.enroll(taskId, meta("enroll"));
+		const run = withKernelRead(fixture.root, db => readRunRowByTask(db, taskId))!;
+		const record = JSON.parse(run.record_json);
+		const evidence = { trigger: "input reaches the guard", caller_chain: ["src/task.ts"], violated: { kind: "acceptance" as const, ref: "A1" } };
+		const dispute = { decision_id: "user-decision-verifier-fixture", finding: { id: "review-disputed", acceptance_id: "A1", summary: "claim", anchor: anchorForEvidence(evidence), evidence },
+			counter_path: "src/task.ts rejects this input", verdict_sha256: `sha256:${"a".repeat(64)}`, intent_content_hash: record.intent_ref.content_hash,
+			diff_hash: diffHashOf(fixture.root, record) };
+		record.artifact_state = "frozen";
+		record.findings.push({ id: dispute.decision_id, kind: "unresolved_user_decision", status: "open", acceptance_id: "A1", source: "kernel", review_round: null, summary: "claim and counter-path" });
+		record.history.push({ id: "dispute-fixture", at: "2026-11-04T00:00:00Z", type: "record_review_verifier_dispute", from_state: "active:frozen", to_state: "active:frozen", reason: "dispute",
+			authority: { authority_kind: "review", actor_id: "reviewer", confirmation_ref: "review-receipt", issued_at: "2026-11-04T00:00:00Z" }, review_verifier_dispute: dispute });
+		withKernelTransaction(fixture.root, db => updateRunRecord(db, run.run_id, run.revision, `${JSON.stringify(record, null, 2)}\n`, new Date().toISOString()));
+		const result = await runtime.authorize(taskId, "request_authorization", meta("authorize"));
+		expect(requests.at(-1)?.verifierDispute).toMatchObject({ claim: "claim", counter_path: "src/task.ts rejects this input" });
+		expect(result.record.artifact_state).toBe(choice === "accept_verifier_dispute" ? "active" : "frozen");
+		expect(result.record.findings.some((finding: { id: string; status: string }) => finding.id === "review-disputed" && finding.status === "open")).toBe(choice === "accept_verifier_dispute");
 	});
 
 	test("request_authorization lets the user continue past a replan boundary", async () => {
@@ -1549,7 +1594,7 @@ describe("claude host authority", () => {
 		// Both coordinators now use the same authority module, whose mapping
 		// preserves Review provenance and whose capability binds the Kernel digest.
 		const source = readFileSync(resolve("plugins/immune-brain/runtime/assurance/verdict_authority.ts"), "utf8");
-		expect(source).toMatch(/reviewReworkFindings\(verdict\)/);
+		expect(source).toMatch(/reviewReworkFindings\(input\.verdict\)/);
 		expect(source).toContain("findingsDigestV2(findings)");
 	});
 });
@@ -1991,6 +2036,7 @@ describe("claude host resolve_finding", () => {
 				"enroll",
 				"advance_assurance",
 				"submit_review",
+				"submit_verification",
 				"request_authorization",
 				"revise_intent",
 				"approve_breaking_intent_revision",
@@ -2011,6 +2057,9 @@ describe("claude host resolve_finding", () => {
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
 			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);
+			const submitVerification = listMcpTools().find((tool) => tool.name === "submit_verification");
+			expect(submitVerification?.inputSchema.required).toEqual(["task_id"]);
+			expect(submitVerification?.inputSchema.properties).toHaveProperty("result");
 			for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
 				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 			}

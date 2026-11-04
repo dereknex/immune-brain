@@ -237,7 +237,7 @@ describe("claude review host: dispatch envelope shape", () => {
 				sessionId: RECORDED_SESSION, agentId: freshAgent,
 				envelope: { ...RECORDED_LAUNCH_ENVELOPE, agentId: freshAgent, outputFile: freshFile, prompt }, prompt,
 			});
-			expect(host.consumeReview(fresh)).toEqual({ ok: true, receipt: { actorId: `claude:${freshAgent}`, result: VERDICT } });
+			expect(host.consumeReview(fresh)).toEqual({ ok: true, receipt: { actorId: `claude:${freshAgent}`, result: VERDICT, model: "claude-opus-5" } });
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
@@ -262,7 +262,7 @@ describe("claude review host: dispatch envelope shape", () => {
 			});
 			expect(host.consumeReview(reservation)).toEqual({
 				ok: true,
-				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT, model: "claude-opus-5" },
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -302,7 +302,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			expect(reserved).toBe(reservedPrompt());
 			expect(host.consumeReview(reservation)).toEqual({
 				ok: true,
-				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT, model: "claude-opus-5" },
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -400,7 +400,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 describe("claude review host: recorded async Agent envelope", () => {
 	test("the recorded launch receipt is recognised as a pointer, not a verdict", () => {
 		const launch = parseAsyncAgentLaunch(JSON.stringify(RECORDED_LAUNCH_ENVELOPE));
-		expect(launch).toEqual({ agentId: RECORDED_AGENT_ID, outputFile: RECORDED_LAUNCH_ENVELOPE.outputFile });
+		expect(launch).toEqual({ agentId: RECORDED_AGENT_ID, outputFile: RECORDED_LAUNCH_ENVELOPE.outputFile, resolvedModel: "claude-opus-5" });
 		// A tool result that really is the verdict must keep the direct path.
 		expect(parseAsyncAgentLaunch(VERDICT)).toBeNull();
 		expect(parseAsyncAgentLaunch("not json")).toBeNull();
@@ -464,7 +464,7 @@ describe("claude review host: recorded async Agent envelope", () => {
 
 			expect(host.consumeReview(reservation)).toEqual({
 				ok: true,
-				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT, model: "claude-opus-5" },
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -493,7 +493,7 @@ describe("claude review host: recorded async Agent envelope", () => {
 			const consumed = host.consumeReview(reservation);
 			expect(consumed).toEqual({
 				ok: true,
-				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT },
+				receipt: { actorId: `claude:${RECORDED_AGENT_ID}`, result: VERDICT, model: "claude-opus-5" },
 			});
 		} finally {
 			rmSync(root, { recursive: true, force: true });

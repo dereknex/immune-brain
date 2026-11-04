@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { reviewPacketHandle, reviewPacketError } from "../assurance/review_packet";
+import { reviewPacketHandle, reviewPacketError, verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
 import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -7,9 +7,10 @@ import type {
 	AssuranceHostPort,
 	HostReviewReservation,
 	ReviewRequest,
+	VerificationRequest,
 } from "../assurance/host_port";
 
-export type ObservedReviewReceipt = { actorId: string; result: string };
+export type ObservedReviewReceipt = { actorId: string; result: string; model?: string };
 export type ConsumeReviewResult =
 	| { ok: true; receipt: ObservedReviewReceipt }
 	| { ok: false; reason: string; release: boolean };
@@ -34,6 +35,7 @@ export type ClaudeHookEvent =
 		agentId: string;
 		toolName: string;
 		result: string;
+		model?: string;
 		taskId?: string;
 		operationId?: string;
 		prompt?: string;
@@ -145,7 +147,7 @@ export function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): 
  */
 const MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
 
-export type AsyncAgentLaunch = { agentId: string; outputFile: string };
+export type AsyncAgentLaunch = { agentId: string; outputFile: string; resolvedModel?: string };
 
 /**
  * Recognise the launch receipt this Claude Code build returns for `Agent`.
@@ -167,7 +169,8 @@ export function parseAsyncAgentLaunch(result: string): AsyncAgentLaunch | null {
 	const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
 	const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
 	if (!agentId || !outputFile) return null;
-	return { agentId, outputFile };
+	const resolvedModel = typeof obj.resolvedModel === "string" && obj.resolvedModel.trim() ? obj.resolvedModel : undefined;
+	return { agentId, outputFile, ...(resolvedModel ? { resolvedModel } : {}) };
 }
 
 const HANDBACK_TOOL = "SubagentHandback";
@@ -278,6 +281,7 @@ export class FileHookEventLog implements HookEventLog {
 
 interface PendingReview {
 	request: ReviewRequest;
+	verifierModel?: string;
 	/**
 	 * The prompt the Host asked the Parent to dispatch, marker line included.
 	 * Hook evidence carries Parent-authored text, so this is the only string a
@@ -339,6 +343,25 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	private readonly pending = new Map<string, PendingReview>();
 	private readonly appliedBySession = new Map<string, number>();
 	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
+
+	prepareVerification(request: VerificationRequest): HostReviewReservation {
+		const reviewRequest: ReviewRequest = { taskId: request.taskId, operationId: request.operationId,
+			prompt: request.prompt, snapshotPrompt: request.prompt, evidencePath: "", writePacket: request.writePacket, maxTurns: 16 };
+		this.drain();
+		const cursors = new Map(this.log.sessions().map(sessionId => [sessionId, this.log.list(sessionId).length]));
+		const dispatchPrompt = verificationPacketHandle({ taskId: request.taskId, operationId: request.operationId,
+			packet: request.writePacket(request.operationId, request.prompt) });
+		this.pending.set(request.operationId, { request: reviewRequest, verifierModel: request.model, dispatchPrompt,
+			initialCursors: new Map(cursors), sessionCursors: new Map(cursors), consumed: false });
+		return { id: request.operationId, dispatch: { subagent_type: "immune-brain:immune-brain-review-verifier", model: request.model, prompt: dispatchPrompt } };
+	}
+
+	inspectVerification(reservation: HostReviewReservation) {
+		const state = this.pending.get(reservation.id);
+		if (!state?.verifierModel) return { ok: false as const, reason: "verifier reservation not found", release: true };
+		const result = this.inspectReview(reservation);
+		return result.ok ? { ok: true as const, receipt: { ...result.receipt, model: state.verifierModel } } : result;
+	}
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		// Retire whatever the log already holds before the cursors are taken. A
@@ -443,7 +466,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	private applyReviewEvent(event: ClaudeHookEvent, state: PendingReview): void {
 		if (state.error) return;
 		if (event.type === "SubagentStart") {
-			if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT) return;
+			const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
+			if (!expectedAgents.includes(event.agent)) return;
 			// If operationId or prompt is explicit on Start, it must bind to this reservation
 			if (event.operationId || event.prompt !== undefined) {
 				if (!bindsStart(event, state)) return;
@@ -475,6 +499,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			// The `Agent` tool input is where this Host actually reports the
 			// dispatched prompt, so it is bound by the same exactness rule.
 			if (!bindsPrompt(event.prompt, state)) return;
+			if (state.verifierModel && event.model !== state.verifierModel) { state.error = "verifier model differs from reservation"; return; }
 			if (state.startEvent && event.sessionId !== state.startEvent.sessionId) return;
 			if (state.startEvent && event.agentId !== state.startEvent.agentId) return;
 			if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId) return;
@@ -488,7 +513,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			return;
 		}
 		if (event.type === "SubagentStop") {
-			if (event.agent !== REVIEWER_AGENT && event.agent !== CLAUDE_REVIEWER_AGENT) return;
+			const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
+			if (!expectedAgents.includes(event.agent)) return;
 			if (!event.agentId) return;
 			if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId) return;
 			if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId) return;
@@ -510,7 +536,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		this.drain();
 		const state = this.pending.get(reservation.id);
 		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		const packetError = reviewPacketError(state.dispatchPrompt);
+		const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
 		if (packetError) return { ok: false, reason: packetError, release: true };
 		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
 		if (state.error) return { ok: false, reason: state.error, release: true };
@@ -530,7 +556,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
 		const launch = parseAsyncAgentLaunch(state.postEvent.result);
 		if (!launch) {
-			return { ok: true, receipt: { actorId, result: state.postEvent.result } };
+			return { ok: true, receipt: { actorId, result: state.postEvent.result, ...(state.postEvent.model ? { model: state.postEvent.model } : {}) } };
 		}
 		// Invariant guard. Correlation already binds the PostToolUse through the
 		// same `agentId` this envelope carries, so a foreign id normally never
@@ -549,7 +575,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		if (!verdict?.trim()) {
 			return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
 		}
-		return { ok: true, receipt: { actorId, result: verdict } };
+		const model = launch.resolvedModel ?? state.postEvent.model;
+		return { ok: true, receipt: { actorId, result: verdict, ...(model ? { model } : {}) } };
 	}
 
 	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
@@ -620,7 +647,7 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 		}
 	}
 	if (prompt) {
-		const marker = parseReviewMarker(prompt);
+		const marker = parseReviewMarker(prompt.replace("<!-- immune-brain-verifier:operation_id=", "<!-- immune-brain:operation_id="));
 		if (marker) {
 			if (extractedOpId && extractedOpId !== marker.operationId) return null;
 			if (extractedTaskId && extractedTaskId !== marker.taskId) return null;
@@ -663,6 +690,7 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 			agentId: extractedAgentId,
 			toolName,
 			result,
+			model: typeof (payload.tool_input as Record<string, unknown> | undefined)?.model === "string" ? (payload.tool_input as Record<string, string>).model : undefined,
 			taskId: extractedTaskId,
 			operationId: extractedOpId,
 			prompt,

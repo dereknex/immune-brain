@@ -356,6 +356,18 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(2);
 	});
 
+	test("review model metadata is tied to the observed Pi receipt", async () => {
+		const h = makeHarness();
+		const ready = await h.progression.advance(TASK, ctx);
+		if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
+		h.progression.piReviewHost.observeReviewDispatch(ready.agent_params as never, "model-call");
+		const bytes = JSON.stringify(passVerdict(snapshot("review")));
+		h.progression.piReviewHost.observeReviewResult("model-call", bytes, "provider/reviewer", ["provider/verifier"]);
+		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: true, receipt: { model: "provider/reviewer", offered_models: ["provider/verifier"] } });
+		h.progression.piReviewHost.observeReviewResult("model-call", bytes, "provider/substituted", ["provider/verifier"]);
+		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: false, release: true });
+	});
+
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);

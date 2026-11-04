@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-verifier-eval-s3-projection",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-verifier-eval-s3-projection:2026-11-04T02:05:02.855Z",
+  "final_record_hash": "sha256:2d3052f1a2ce7651d4854edb7568d296643ed80bfc18e4e3d407e4835b775425",
+  "terminalized_at": "2026-11-04T02:05:02.855Z"
+}

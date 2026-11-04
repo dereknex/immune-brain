@@ -17,6 +17,7 @@ import {
 	parseTaskRecordV4,
 } from "../plugins/immune-brain/runtime/kernel/validation";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation";
+import { projectTask } from "../plugins/immune-brain/runtime/kernel/completion";
 
 const GIT_BASE_HEAD = "a".repeat(40);
 
@@ -60,6 +61,25 @@ function rawRecordFixture(overrides: Record<string, unknown> = {}): Record<strin
 function recordFixture(overrides: Partial<TaskRecordV4> = {}): TaskRecordV4 {
 	return parseTaskRecordV4(rawRecordFixture(overrides as Record<string, unknown>));
 }
+
+test("verification history is strictly parsed and never counts as a Review approval", () => {
+	const verifierActor = "verifier-1";
+	const verification = {
+		snapshot_digest: DIFF, intent_content_hash: INTENT_HASH, diff_hash: DIFF,
+		verdict_sha256: DIFF, dispatched_at: "2026-11-04T00:00:00Z", submitted_at: "2026-11-04T00:01:00Z", result_sha256: DIFF, verifier_actor: verifierActor,
+		reviewer_model: "reviewer-1", verifier_model: "model-1", model_relation: "different", checked: 1,
+		verifier_refutations: [{ anchor: DIFF, finding_id: "review-1", counter_path: "src/task.ts rejects the input", verifier_actor: verifierActor }],
+	};
+	const event = { id: "verification-1", at: "2026-11-04T00:00:00Z", type: "verification", from_state: "active:frozen", to_state: "active:frozen", reason: "checked 1, refuted 1",
+		authority: { authority_kind: "review", actor_id: "reviewer-1", confirmation_ref: "receipt", issued_at: "2026-11-04T00:00:00Z" }, verification };
+	const record = parseTaskRecordV4(rawRecordFixture({ artifact_state: "frozen", history: [event] }));
+	expect(record.history[0].verification).toEqual(verification);
+	expect(projectTask(INTENT, record, DIFF, INTENT_HASH).missing_approval_kinds).toContain("review");
+	expect(() => parseTaskRecordV4(rawRecordFixture({ history: [{ ...event, verification: { ...verification, unexpected: true } }] }))).toThrow("unknown field");
+	expect(() => parseTaskRecordV4(rawRecordFixture({ history: [{ ...event, authority: { ...event.authority, authority_kind: "user" } }] }))).toThrow("review-authorized");
+	expect(() => parseTaskRecordV4(rawRecordFixture({ history: [{ ...event, verification: { ...verification, verifier_actor: "other" } }] }))).toThrow("must match verification actor");
+	expect(() => parseTaskRecordV4(rawRecordFixture({ history: [{ ...event, verification: { ...verification, model_relation: "same" } }] }))).toThrow("model_relation must match");
+});
 
 function qaAttestation(overrides: Record<string, unknown> = {}) {
 	return {

@@ -65,6 +65,7 @@ export const ROLE_PROMPT_DIST_DIR = "plugins/immune-brain/dist/role-prompts";
 export const ROLE_PROMPT_FILES = [
 	"qa.md",
 	"code-review.md",
+	"review-verifier.md",
 	"ui-review.md",
 	"executor.md",
 	"test-fixer.md",

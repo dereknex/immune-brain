@@ -46,7 +46,8 @@ export type SessionEvent = Pointer & ({ type: "user_input"; skill: string | null
 	| { type: "turn_end"; stop_reason: string }
 	| { type: "review"; author: string; key: string }
 	| { type: "registration"; author: string; taskId: string; without_verdict: boolean }
-	| { type: "finding"; author: string; kind: string; summary: string; markers: string[]; acceptance_id: string; registration_line: number | null; registration_index: number | null });
+	| { type: "finding"; author: string; kind: string; summary: string; markers: string[]; acceptance_id: string; violatedKind?: string; registration_line: number | null; registration_index: number | null }
+	| { type: "disposition"; author: string; kind: "resolve" | "refute" | "accept_residual_risk" });
 export type SessionFilter = { cutMs: number; untilMs?: number; project: string; exclude: string[] };
 export type SessionRead = { cwd: string; session_id: string; used: boolean; skipped: number; turns: number; edits: number; tools: Map<string, number>; events: SessionEvent[] };
 
@@ -103,8 +104,11 @@ export async function readSession(path: string, filter: SessionFilter): Promise<
 					const findings = op === "record_finding" ? [action.finding] : Array.isArray(verdict?.findings) ? verdict.findings : [];
 					for (const rawFinding of findings) {
 						const f = norm(rawFinding), summary = String(f.summary ?? "");
-						out.events.push({ ...pointer, type: "finding", author, kind: String(f.kind ?? ""), summary, markers: BOOKKEEPING.test(summary) ? ["bookkeeping"] : [], acceptance_id: String(f.acceptance_id ?? "unknown"), registration_line: op === "submit_review" ? lineNo : null, registration_index: op === "submit_review" ? registrationIndex : null });
+						const violatedKind = typeof norm(f.evidence).violated?.kind === "string" ? String(norm(f.evidence).violated.kind) : undefined;
+						out.events.push({ ...pointer, type: "finding", author, kind: String(f.kind ?? ""), summary, markers: BOOKKEEPING.test(summary) ? ["bookkeeping"] : [], acceptance_id: String(f.acceptance_id ?? "unknown"), ...(violatedKind === undefined ? {} : { violatedKind }), registration_line: op === "submit_review" ? lineNo : null, registration_index: op === "submit_review" ? registrationIndex : null });
 					}
+				} else if (name === "imm_kernel_canary" && (op === "resolve_finding" || op === "refute_finding" || op === "accept_residual_risk")) {
+					out.events.push({ ...pointer, type: "disposition", author, kind: op === "resolve_finding" ? "resolve" : op === "refute_finding" ? "refute" : "accept_residual_risk" });
 				}
 			}
 			if (typeof m.stopReason === "string" && m.stopReason !== "toolUse") out.events.push({ ...base, type: "turn_end", stop_reason: m.stopReason });

@@ -398,8 +398,9 @@ export class ClaudeRuntime {
 		bindingDigest?: string;
 		gitBaseNotice?: string;
 		reworkExits?: ReworkExitsReadiness;
+		verifierDispute?: NativeConfirmationInput["verifierDispute"];
 		reviewRetryNotice?: string;
-	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice }> {
+	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
 		throwIfCancelled(meta.signal);
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
@@ -412,7 +413,7 @@ export class ClaudeRuntime {
 		throwIfCancelled(meta.signal);
 		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
 		if (!gate.ok) throw gate.error;
-		const { reworkExits: _exits, ...refBinding } = binding;
+		const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
 		return {
 			confirmation_ref: confirmationRef({
 				connectionId: meta.sessionId,
@@ -423,6 +424,7 @@ export class ClaudeRuntime {
 				...refBinding,
 			}),
 			...(result.reworkChoice ? { reworkChoice: result.reworkChoice } : {}),
+			...(result.verifierChoice ? { verifierChoice: result.verifierChoice } : {}),
 		};
 	}
 
@@ -518,6 +520,12 @@ export class ClaudeRuntime {
 			), meta?.signal),
 			meta,
 		);
+	}
+
+	async submitVerification(taskId: string, result: string | undefined, meta?: ToolMeta) {
+		return this.closeOutBatchChild(taskId,
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId,
+				await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
 	}
 
 	/**
@@ -651,6 +659,7 @@ export class ClaudeRuntime {
 		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
 		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" | "authorize_review_retry" | "accept_residual_risk" = operation;
 		let decisionOp: { finding_id: string; resolution: string } | undefined;
+		let verifierDispute: NativeConfirmationInput["verifierDispute"];
 		// Set only at a replan boundary: the exits the literal user chooses between.
 		let reworkExits: ReworkExitsReadiness | undefined;
 		let reworkChoice: ReworkChoice | undefined;
@@ -676,6 +685,9 @@ export class ClaudeRuntime {
 				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
 				op = "resolve_user_decision";
 				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+				const dispute = record.record?.history.find(entry => entry.review_verifier_dispute?.decision_id === open[0].id)?.review_verifier_dispute;
+				if (dispute) verifierDispute = { claim: dispute.finding.summary, trigger: dispute.finding.evidence.trigger,
+					caller_chain: dispute.finding.evidence.caller_chain, counter_path: dispute.counter_path };
 			} else if (derived.operation === "authorize-review-retry") {
 				op = "authorize_review_retry";
 				reviewRetry = projection.projection.authorization.review_retry;
@@ -702,7 +714,7 @@ export class ClaudeRuntime {
 			restoreStagedIntentShared(this.cwd, stagedSnapshot);
 		};
 		let preparedDiffHash = projection.projection.diff_hash;
-		let gate: { confirmation_ref: string; reworkChoice?: ReworkChoice };
+		let gate: { confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] };
 		try {
 			if (sidecar && nextIntent) {
 				// A gate the Kernel would refuse afterwards is never opened.
@@ -731,6 +743,7 @@ export class ClaudeRuntime {
 				intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
 				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
 				...(reworkExits ? { reworkExits } : {}),
+				...(verifierDispute ? { verifierDispute } : {}),
 				...(reviewRetry ? { reviewRetryNotice: reviewRetryNotice(reviewRetry) } : {}),
 			});
 			reworkChoice = gate.reworkChoice;
@@ -742,6 +755,11 @@ export class ClaudeRuntime {
 				}
 			}
 			throw error;
+		}
+		if (verifierDispute) {
+			if (!decisionOp || (gate.verifierChoice !== "accept_verifier_dispute" && gate.verifierChoice !== "dismiss_verifier_dispute"))
+				throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no verifier dispute choice");
+			decisionOp.resolution = gate.verifierChoice;
 		}
 		if (reworkExits) {
 			if (!reworkChoice) throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no exit");
@@ -814,6 +832,7 @@ export class ClaudeRuntime {
 				op === "stop" ||
 				op === "authorize_rework" ||
 				op === "accept_residual_risk" ||
+				(op === "resolve_user_decision" && decisionOp?.resolution === "accept_verifier_dispute") ||
 				op === "approve_breaking_intent_revision"
 			) stagePlanningArtifactTransition(this.cwd, result.record);
 		} catch (error) {
