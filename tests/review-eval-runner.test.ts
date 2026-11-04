@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { anchorForEvidence } from "../plugins/immune-brain/runtime/kernel/refutation.ts";
 import type { FindingEvidence } from "../plugins/immune-brain/runtime/kernel/types.ts";
-import { evaluateCases, scoreCases, writeRunArtifact, type ScoredCase } from "../scripts/review-eval/run.ts";
+import { evaluateCases, mergeScores, scoreCases, writeRunArtifact, type ScoredCase } from "../scripts/review-eval/run.ts";
 import { byModel, classifyFindingKinds, committedEvalRuns, committedReport, summarizeRecords } from "../scripts/review-eval/report.ts";
 
 const evidence = (path: string, ref: string): FindingEvidence => ({ trigger: "reachable", caller_chain: [path], violated: { kind: "acceptance", ref } });
@@ -139,4 +139,78 @@ test("record report reads HEAD and ignores a modified worktree record", () => {
 		expect(committedEvalRuns(root, "benchmark-results/review-eval")[0]!.config!.model).toBe("committed");
 		expect(() => committedEvalRuns(root, "../outside")).toThrow();
 	} finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a checkpoint resumes a replay without re-dispatching a finished case", () => {
+	const root = mkdtempSync(join(tmpdir(), "review-resume-"));
+	const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+	try {
+		git("init", "-q"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+		writeFileSync(join(root, "code.txt"), "before\n"); git("add", "code.txt"); git("commit", "-qm", "base"); const base = git("rev-parse", "HEAD");
+		writeFileSync(join(root, "code.txt"), "after\n"); git("add", "code.txt"); git("commit", "-qm", "change"); const review = git("rev-parse", "HEAD"), tree = git("rev-parse", "HEAD^{tree}");
+		const dir = join(root, ".imm/audit/task"); mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "task-record.json"), JSON.stringify({ task_id: "task", intent_snapshot: { revision: 1, risk: "routine", scope_hint: ["code.txt"], acceptance: [{ id: "A", assertion: "works", verification: "check" }] } }));
+		git("add", ".imm/audit/task/task-record.json"); git("commit", "-qm", "audit");
+		const common = { task_id: "task", task_time: "2026-01-01", round: 1, base_head: base, review_commit: review, review_tree: tree, anchor: null, evidence: null, acceptance_id: null, acceptance_text: null, disposition: null, disposition_history: [], gold: "unlabeled" as const, gold_location: null, gold_counter_path: null, labeler: null, labelled_at: null, split: "tuning" as const, clean: true };
+		const clean = { ...common, id: ".imm/audit/task/task-record.json/clean/1" };
+		const labelled = { ...common, id: ".imm/audit/task/task-record.json/1/f", clean: false, anchor: "sha256:a", evidence: evidence("code.txt", "A"), disposition: "resolved", gold: "confirmed_true" as const, gold_location: { path: "code.txt", symbol: "A" }, labeler: "tester", labelled_at: "2026-01-01T00:00:00Z" };
+		const checkpoint = join(root, "resume.jsonl");
+		writeFileSync(checkpoint, `${JSON.stringify({ id: clean.id, split: "tuning", clean: true, gold: "unlabeled", anchor: null, gold_location: null, findings: [] })}\n`);
+		let calls = 0;
+		const result = evaluateCases(root, [clean, labelled], { model: "test/model", rolePrompt: "review" }, ({ prompt }) => {
+			calls++;
+			const snapshot = /Snapshot digest: (sha256:[a-f0-9]+)/.exec(prompt)?.[1];
+			return `\`\`\`json\n${JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: "task", snapshot_digest: snapshot, decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "ok", inspected_paths: ["code.txt"] } })}\n\`\`\``;
+		}, checkpoint);
+		expect(calls).toBe(1);
+		expect(result.resumed).toBe(1);
+		expect(result.cases.map((row) => row.id).sort()).toEqual([clean.id, labelled.id].sort());
+		expect(result.scores.tuning.true_cases).toBe(1);
+		expect(readFileSync(checkpoint, "utf8").trim().split("\n").length).toBe(2);
+	} finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a terminated reviewer retries once, a slow one does not, and the replay keeps going", () => {
+	const root = mkdtempSync(join(tmpdir(), "review-fault-"));
+	const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+	try {
+		git("init", "-q"); git("config", "user.name", "Test"); git("config", "user.email", "test@example.invalid");
+		writeFileSync(join(root, "code.txt"), "before\n"); git("add", "code.txt"); git("commit", "-qm", "base"); const base = git("rev-parse", "HEAD");
+		writeFileSync(join(root, "code.txt"), "after\n"); git("add", "code.txt"); git("commit", "-qm", "change"); const review = git("rev-parse", "HEAD"), tree = git("rev-parse", "HEAD^{tree}");
+		const dir = join(root, ".imm/audit/task"); mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "task-record.json"), JSON.stringify({ task_id: "task", intent_snapshot: { revision: 1, risk: "routine", scope_hint: ["code.txt"], acceptance: [{ id: "A", assertion: "works", verification: "check" }] } }));
+		git("add", ".imm/audit/task/task-record.json"); git("commit", "-qm", "audit");
+		const common = { task_id: "task", task_time: "2026-01-01", round: 1, base_head: base, review_commit: review, review_tree: tree, anchor: null, evidence: null, acceptance_id: null, acceptance_text: null, disposition: null, disposition_history: [], gold: "unlabeled" as const, gold_location: null, gold_counter_path: null, labeler: null, labelled_at: null, split: "tuning" as const, clean: true };
+		const stalled = { ...common, id: ".imm/audit/task/task-record.json/clean/1" };
+		const healthy = { ...common, id: ".imm/audit/task/task-record.json/clean/2" };
+		let calls = 0;
+		const result = evaluateCases(root, [stalled, healthy], { model: "test/model", rolePrompt: "review" }, ({ prompt }) => {
+			calls++;
+			// One terminated transport, then a timeout: the timeout is not retried.
+			if (calls === 1) throw new Error("reviewer terminated");
+			if (calls === 2) throw new Error("spawnSync pi ETIMEDOUT");
+			const snapshot = /Snapshot digest: (sha256:[a-f0-9]+)/.exec(prompt)?.[1];
+			return `\`\`\`json\n${JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: "task", snapshot_digest: snapshot, decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "ok", inspected_paths: ["code.txt"] } })}\n\`\`\``;
+		});
+		expect(calls).toBe(3);
+		expect(result.failed.map((f) => f.id)).toEqual([stalled.id]);
+		expect(result.cases.map((row) => row.id)).toEqual([healthy.id]);
+		expect(result.retries).toEqual([stalled.id]);
+		expect(result.failed[0]?.error).toContain("ETIMEDOUT");
+	} finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a sharded run merges to the same ratios a single run reports", () => {
+	const cases: ScoredCase[] = [
+		{ ...base, id: "a1", findings: [finding("old.ts", "A")] },
+		{ ...base, id: "a2", findings: [] },
+		{ ...base, id: "c1", clean: true, gold: "unlabeled", anchor: null, findings: [finding("new.ts", "run")] },
+		{ ...base, id: "c2", clean: true, gold: "unlabeled", anchor: null, findings: [] },
+	];
+	const merged = mergeScores([
+		scoreCases(cases.filter((_, index) => index % 2 === 0)),
+		scoreCases(cases.filter((_, index) => index % 2 === 1)),
+	]);
+	expect(merged).toEqual(scoreCases(cases));
+	expect(mergeScores([scoreCases([{ ...base, id: "only", findings: [] }])]).validation.recall).toBeNull();
 });
