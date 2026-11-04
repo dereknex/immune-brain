@@ -80,7 +80,7 @@ export async function submitMediatedReview(
 	const receiptBytes = observed.receipt.result;
 	const options = {
 		reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
-		...(observed.receipt.model ? { reviewer_model: observed.receipt.model } : {}),
+		...(observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {}),
 		...(observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {}),
 		validateReceipt: () => {
 			const current = inspect();

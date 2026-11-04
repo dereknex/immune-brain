@@ -80,7 +80,18 @@ export const A4_FINDING_EQUIVALENCE: ApplicationPoint = {
 	threshold_set: { version: "a4/v0", values: null },
 };
 
+export const A17_REVIEW_FINDING_KIND: ApplicationPoint = {
+	id: "a17_review_finding_kind",
+	question_type: "choice",
+	input_category: "finding",
+	options: ["acceptance", "security_boundary"],
+	criteria: { acceptance: "Violates an acceptance assertion", security_boundary: "Violates a security boundary" },
+	instructions: "Classify the violated invariant using only the finding trigger and caller chain; do not infer the reviewer's declared kind.",
+	threshold_set: { version: "a17/v0", values: null },
+};
+
 export const POINT_REGISTRY: PointRegistry = {
+	[A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
 	[A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
 	[A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
 	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,

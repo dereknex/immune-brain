@@ -44,6 +44,7 @@ import type {
 	ReviewRevisionIdentityV1,
 	ReviewVerificationHistoryV1,
 	ReviewVerifierDisputeV1,
+	ReviewObservationFacts,
 	StoredTaskMutationV3,
 	TaskAction,
 	TaskApprovalV2,
@@ -54,7 +55,7 @@ import type {
 
 export type CanaryOperation =
 	| { op: "authorize_review_retry"; capability: object; actor_id: string; intent_content_hash: string; review_contract_hash: string }
-	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string; review_contract_hash?: string }
+	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string; review_contract_hash?: string; review_observation?: ReviewObservationFacts }
 	| { op: "record_verification"; capability: object; verification: ReviewVerificationHistoryV1; actor_id: string }
 	| { op: "record_review_verifier_dispute"; capability: object; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1; actor_id: string }
 	| { op: "freeze_artifacts"; actor_id: string }
@@ -69,8 +70,9 @@ export type CanaryOperation =
 			/** Review-authored rework: the immutable revision Review analyzed. */
 			review_revision?: ReviewRevisionIdentityV1;
 			verification?: ReviewVerificationHistoryV1;
+			review_observation?: ReviewObservationFacts;
 	  }
-	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string }
+	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string; review_observation?: ReviewObservationFacts }
 	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
 	| { op: "complete"; actor_id: string }
@@ -178,6 +180,7 @@ export function capabilityActionFor(input: {
 	review_revision?: ReviewRevisionIdentityV1;
 	verification?: ReviewVerificationHistoryV1;
 	dispute?: ReviewVerifierDisputeV1;
+	review_observation?: ReviewObservationFacts;
 	intent_content_hash?: string;
 	review_contract_hash?: string;
 	/** authorize_rework only: further Review rounds granted, 1-5. */
@@ -202,7 +205,7 @@ export function capabilityActionFor(input: {
 		case "authorize_review_retry":
 			return { ...base, type: "authorize_review_retry", intent_content_hash: input.intent_content_hash, review_contract_hash: input.review_contract_hash } as TaskAction;
 		case "record_approval":
-			return { ...base, approval: input.approval } as TaskAction;
+			return { ...base, approval: input.approval, ...(input.review_observation ? { review_observation: input.review_observation } : {}) } as TaskAction;
 		case "record_verification":
 			return { ...base, verification: input.verification && canonicalReviewVerification(input.verification) } as TaskAction;
 		case "record_review_verifier_dispute":
@@ -214,6 +217,7 @@ export function capabilityActionFor(input: {
 				findings: input.findings,
 				...(input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}),
 				...(input.verification ? { verification: canonicalReviewVerification(input.verification) } : {}),
+				...(input.review_observation ? { review_observation: input.review_observation } : {}),
 			} as TaskAction;
 		case "authorize_rework":
 			// `rounds` joins the digest only when present, so a legacy caller
@@ -438,7 +442,7 @@ export function createCanaryApplication(
 				const expected = operation.snapshot;
 				if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
 					throw new KernelInvariantError(["Review incomplete snapshot changed"]);
-				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash };
+				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash, ...(operation.review_observation ? { review_observation: operation.review_observation } : {}) };
 				break;
 			}
 			case "record_finding":
@@ -483,11 +487,12 @@ export function createCanaryApplication(
 						? { review_revision: canonicalReviewRevision(operation.review_revision) }
 						: {}),
 					...(operation.verification ? { verification: canonicalReviewVerification(operation.verification) } : {}),
+					...(operation.review_observation ? { review_observation: operation.review_observation } : {}),
 				};
 				break;
 			case "record_approval":
 				capability = operation.capability;
-				action = { ...base, type: "record_approval", approval: operation.approval };
+				action = { ...base, type: "record_approval", approval: operation.approval, ...(operation.review_observation ? { review_observation: operation.review_observation } : {}) };
 				break;
 			case "revise_intent":
 				action = {

@@ -9,7 +9,7 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
 import { createMutationAuthorityRegistry, digestOfAction } from "../kernel/authority_port";
 import { findingsDigestV2 } from "../kernel/reducer";
-import type { TaskRecord, TaskApprovalV2, ReviewVerificationHistoryV1, ReviewVerifierDisputeV1, TaskFinding } from "../kernel/types";
+import type { TaskRecord, TaskApprovalV2, ReviewObservationFacts, ReviewVerificationHistoryV1, ReviewVerifierDisputeV1, TaskFinding } from "../kernel/types";
 import { captureGitTaskSnapshot } from "../workspace_scope";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import type { VerificationDescriptor } from "./verification";
@@ -314,6 +314,7 @@ export interface VerdictApplicationInput {
  reviewer_verdict_sha256?: string;
  /** Kept IDs are a projection; the submitted reviewer verdict remains unchanged. */
  verification?: { facts: ReviewVerificationHistoryV1; kept_finding_ids: string[] };
+ review_observation?: ReviewObservationFacts;
  hooks?: { beforeCommit?: () => Promise<void>; onCommit?: () => void; afterCommit?: () => Promise<void> };
 }
 export interface VerdictAuthority {
@@ -390,7 +391,8 @@ export function createVerdictAuthority(options: {
    const reworkRevision = verdict.decision === "rework" && snapshot.role === "review" && snapshot.review_revision
     ? { review_revision: snapshot.review_revision } : {};
    const verification = input.verification ? { verification: input.verification.facts } : {};
-   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision, ...verification });
+   const reviewObservation = snapshot.role === "review" && input.review_observation ? { review_observation: input.review_observation } : {};
+   const action = capabilityActionFor({ op, task_id: snapshot.task_id, at: now, actor_id: actorId, ...payload, ...reworkRevision, ...verification, ...reviewObservation });
    const capability = registry.issue({
     authority_kind: snapshot.role, task_id: snapshot.task_id,
     ...(snapshot.run_id ? { run_id: snapshot.run_id } : {}),
@@ -405,8 +407,8 @@ export function createVerdictAuthority(options: {
    // Preserve the Pi ordering: start settlement, run onCommit, await settlement,
    // then afterCommit. A thrown hook never undoes the committed transition.
    const settlement = (async () => app.execute({ root: ctx.cwd, task_id: snapshot.task_id,
-    operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId }
-     : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision, ...verification }, prior_intent_token: priorIntentToken, now }))();
+    operation: approval ? { op: "record_approval", capability, approval, actor_id: actorId, ...reviewObservation }
+     : { op: "request_rework", capability, findings, actor_id: actorId, ...reworkRevision, ...verification, ...reviewObservation }, prior_intent_token: priorIntentToken, now }))();
    let hookFailed = false;
    let hookError: unknown;
    try { hooks.onCommit?.(); } catch (error) { hookFailed = true; hookError = error; }

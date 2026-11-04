@@ -255,6 +255,12 @@ export interface ReviewVerifierDisputeV1 {
 	diff_hash: string;
 }
 
+export interface ReviewObservationFacts {
+	review_started_at: string;
+	review_submitted_at: string;
+	reviewer_model?: string;
+}
+
 export interface TaskHistoryEntryV3 {
 	id: string;
 	at: string;
@@ -272,6 +278,9 @@ export interface TaskHistoryEntryV3 {
 	verification?: ReviewVerificationHistoryV1;
 	/** Claim and counter-path presented to the literal user. */
 	review_verifier_dispute?: ReviewVerifierDisputeV1;
+	review_started_at?: string;
+	review_submitted_at?: string;
+	reviewer_model?: string;
 }
 
 export interface TaskRecordV3 {
@@ -373,7 +382,7 @@ export interface ReviewIncompleteFacts {
 
 export type TaskAction =
 	| (TaskActionBase & { type: "authorize_review_retry"; intent_content_hash: string; review_contract_hash: string })
-	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete" })
+	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete"; review_observation?: ReviewObservationFacts })
 	| (TaskActionBase & { type: "record_verification"; verification: ReviewVerificationHistoryV1 })
 	| (TaskActionBase & { type: "record_review_verifier_dispute"; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1 })
 	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
@@ -383,7 +392,7 @@ export type TaskAction =
 			finding_id: string;
 			attestation_id: string;
 	  })
-	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2 })
+	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2; review_observation?: ReviewObservationFacts })
 	| (TaskActionBase & {
 			type: "revise_intent";
 			next_intent: TaskIntentV1;
@@ -401,6 +410,7 @@ export type TaskAction =
 			review_revision?: ReviewRevisionIdentityV1;
 			/** Verification facts committed atomically with the kept findings. */
 			verification?: ReviewVerificationHistoryV1;
+			review_observation?: ReviewObservationFacts;
 	  })
 	| (TaskActionBase & { type: "complete" })
 	| (TaskActionBase & { type: "stop"; reason: string })

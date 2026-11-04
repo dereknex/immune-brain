@@ -123,10 +123,12 @@ test("canary requires trusted host hash and capability; commits history only", (
 		expect({ ...committed.record, history: record.history }).toEqual(record);
 		expect(readWorkspaceStateRaw(root)).toEqual(workspace);
 		expect(readFileSync(intentPath, "utf8")).toBe(intentBytes);
-		const incomplete: CanaryOperation = { op: "record_review_incomplete", actor_id: "reviewer", snapshot: { record_revision: committed.revision, workspace_revision: workspace.revision, ...identity }, turn_budget: 64, inspected_paths: [], reason: "unfinished", review_contract_hash: CURRENT };
+		const observation = { review_started_at: "2026-01-01T00:00:00Z", review_submitted_at: "2026-01-01T00:00:10Z", reviewer_model: "provider/model" };
+		const incomplete: CanaryOperation = { op: "record_review_incomplete", actor_id: "reviewer", snapshot: { record_revision: committed.revision, workspace_revision: workspace.revision, ...identity }, turn_budget: 64, inspected_paths: [], reason: "unfinished", review_contract_hash: CURRENT, review_observation: observation };
 		for (const supplied of [undefined, OLD]) expect(() => execute(incomplete, supplied, "third")).toThrow(/trusted current/);
 		expect(() => execute({ ...incomplete, review_contract_hash: undefined }, CURRENT, "third")).toThrow(/trusted current/);
 		const exhausted = execute(incomplete, CURRENT, "third");
+		expect(exhausted.record.history.at(-1)).toMatchObject(observation);
 		expect(reviewIncompleteHistory(exhausted.record.history, identity)).toMatchObject({ count: 3, round_limit: 3, last_contract_hash: CURRENT });
 	} finally { rmSync(root, { recursive: true, force: true }); }
 });

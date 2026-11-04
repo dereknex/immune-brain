@@ -1,0 +1,461 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-verifier-eval-s1-metrics",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-verifier-eval-s1-metrics",
+    "goal": "Score reviewer configurations against the eval corpus with an offline runner, record the baseline of the current single-reviewer pipeline, publish a record-based review-quality report, record per-round review timestamps so review duration is measurable, record reviewer model identity at submission so quality metrics break down by model, and add session-visible quality metrics to the imm-retro analyzer within its existing counting rules and boundary.",
+    "acceptance": [
+      {
+        "id": "RVE-S1-A1",
+        "assertion": "Meet S1 in docs/specs/review-verifier-eval.spec.md: the runner scores a reviewer configuration per gold case (recall over confirmed_true by anchor or location; FPs on clean cases or confirmed_false matches; unknown anchors as new-anchor rate; unlabeled cases never in a denominator); a baseline run is committed under benchmark-results/review-eval with its numbers in the corpus README; the record report computes, from committed audit records only, rounds-to-pass median and p95, the resolved/refuted/accepted_risk mix, the security_boundary share of blocking findings, and advisory count per pass; the imm-retro analyzer additionally reports per author model the blocking split by violated.kind and refute/resolve/accept-residual-risk counts only where a committed fixture proves visibility; a fixture without violated.kind leaves the report unchanged; the merge gate is written down: recall not lower, clean-case FP rate not higher, rounds-to-pass p95 not higher, recall wins ties. It also carries the Jev supplement (spec item 6): a security_boundary mislabel rate from offline classification of violated.kind, experimental until scored on S0 gold, never changing a finding, record, or admission. It also carries the per-acceptance repeat-count series (spec item 7): per acceptance ID, rework findings across rounds and rounds since last finding, from committed records only; it decides nothing. It also carries the review timing instrumentation (spec item 8): per round the coordinator records reservation-creation and verdict-submission timestamps, and the report publishes dispatch-to-verdict median and p95 from rounds carrying both; pre-change records unmeasured, never zero; nothing gates on them. It also carries the per-model breakdown (spec item 9): the coordinator records the reviewer model the host reports at submission on the review history, and the report breaks recall, FP rate, and rounds-to-pass by model; model-less records are excluded from the per-model series.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-eval-runner.test.ts\",\n      \"tests/review-retro-analyzer.test.ts\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "benchmark-results/review-eval",
+      "docs/plans/review-verifier-eval-s1-metrics.intent.json",
+      "docs/specs/review-verifier-eval.spec.md",
+      "plugins/immune-brain/dist/imm-retro.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/skills/imm-retro/SKILL.md",
+      "plugins/immune-brain/skills/imm-retro/scripts/review_retro.ts",
+      "scripts/review-eval/report.ts",
+      "scripts/review-eval/run.ts",
+      "tests/fixtures/review-eval/README.md",
+      "tests/fixtures/review-retro",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/review-eval-runner.test.ts",
+      "tests/review-retro-analyzer.test.ts"
+    ],
+    "risk": "material",
+    "revision": 5,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-verifier-eval-s1-metrics.intent.json",
+    "content_hash": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387",
+  "git_base_head": "265dd80455a2337b54048d20f6f132307758d95c",
+  "attestations": [
+    {
+      "id": "approval-qa-e39caa13",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387",
+      "diff_hash": "sha256:d5cc8cac419a7718044c7520e183f05ff4386f8306a5072a543aa87a9d0f47b5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9b6bb21cc5b50e6af3a97694413380826e4d6f0fde2cbfe2b3a5d2485e5dc1a5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9b6bb21cc5b50e6af3a97694413380826e4d6f0fde2cbfe2b3a5d2485e5dc1a5"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3f556231",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387",
+      "diff_hash": "sha256:e3745b470b8f85564c9d26caf94ee821ea216fb2c531a0a9046d0919612a6566",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:59060d5e4536289a7e556952ee268864f2540b5d57e53bcd4a214e060cfc40f0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:59060d5e4536289a7e556952ee268864f2540b5d57e53bcd4a214e060cfc40f0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0ae6bf69",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387",
+      "diff_hash": "sha256:8e54caf18e6edbd146f062c72dfb639ee482ed79a66c0061f0ffcbed1d58ec9d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:ade069d50f5a894b4a46eb12aa9fec90c8b86d7aa3ded270c67a81e5531ec13d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RVE-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:ade069d50f5a894b4a46eb12aa9fec90c8b86d7aa3ded270c67a81e5531ec13d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c087d323",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 5,
+      "intent_content_hash": "sha256:e75972a7c12befeda93154d079ba37d83950d0f70bca6ef283a38d97ab759387",
+      "diff_hash": "sha256:8e54caf18e6edbd146f062c72dfb639ee482ed79a66c0061f0ffcbed1d58ec9d",
+      "actor_id": "parent-mediated-review",
+      "summary": "Pass: the round-3 delta corrects the security share, committed-run reporting, artifact writing, and retro deduplication while recording the current restricted baseline; medium blast radius centered on scripts/review-eval/{run,report,baseline}.ts and revisit session analysis, with prior runtime changes carried forward.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "265dd80455a2337b54048d20f6f132307758d95c",
+        "review_commit": "250469d3ba90c95e87f69cd0c947b747f6f4050e",
+        "review_tree": "b897adc7887f4d67f824ba219a4a81050c98ba5a",
+        "manifest_digest": "sha256:b97cd1aba26d5f01266bca8e3d9f6c51ec9c4e495b42f33c1832af505732183c"
+      },
+      "reviewer_verdict_sha256": "sha256:d5c2e8a04586c58d995bc6b0603119d130612ff4512c488fda724110c8fabd92"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-a2538e6bd646-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The per-model report contains only rounds_by_model; add per-model recall and clean-case FP-rate series and test populated and model-less inputs.",
+      "anchor": "sha256:45627f60986e0ca92defc554b95c18b08aa09c7d7eaaed166b3cd7ad254341ed",
+      "evidence": {
+        "trigger": "A committed eval/report run containing model-identified reviewer results → the report emits rounds_by_model but no recall or clean-case FP-rate breakdown by model, so the required model comparison cannot be made.",
+        "caller_chain": [
+          "scripts/review-eval/report.ts:committedReport",
+          "scripts/review-eval/report.ts:summarizeRecords"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a2538e6bd646-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Retro disposition counts are global rather than per author model; group resolve/refute/accept_residual_risk by event author and cover two author models in the committed fixture.",
+      "anchor": "sha256:fb833037f258006232dc1a574d604ecb49f344cce448b94eda58c17023556f42",
+      "evidence": {
+        "trigger": "A session where p/m1 resolves one finding and p/m2 refutes another → sessionReport prints one aggregate dispositions line, attributing neither count to its author model.",
+        "caller_chain": [
+          "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:readSession",
+          "plugins/immune-brain/skills/revisit/scripts/review_retro.ts:sessionReport"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c35987921a1e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Standardize eval-run artifact model metadata: run.ts writes top-level model while byModel requires config.model, so normal runs disappear from the per-model report.",
+      "anchor": "sha256:94e6e50ef5e559de48a25182a3f2659cb0264daec9561ef7957472f9f28ef9b1",
+      "evidence": {
+        "trigger": "Run scripts/review-eval/run.ts and pass its output directory to report.ts --runs → the run's recall and clean-case FP rate are omitted from by_model because config.model is undefined.",
+        "caller_chain": [
+          "scripts/review-eval/run.ts",
+          "scripts/review-eval/report.ts",
+          "byModel"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c35987921a1e-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Compute the security_boundary share over all blocking findings, not only classified findings; legacy unclassified findings currently inflate the share.",
+      "anchor": "sha256:57bba030708aa23159de88f45ea3e43d0c7436d5f7696b53acb7b34bcf045626",
+      "evidence": {
+        "trigger": "A committed record with one security_boundary blocking finding and one blocking finding without violated.kind → summarizeRecords reports share 1 instead of the required 0.5 share of blocking findings.",
+        "caller_chain": [
+          "scripts/review-eval/report.ts",
+          "summarizeRecords"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c35987921a1e-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Apply the existing per-session finding deduplication before the per-author violated.kind aggregation; resubmitted findings currently inflate the new retro metrics.",
+      "anchor": "sha256:9593b83dda1801128e3ad39397d5112a6a6e9e541929c3bff790de7f707386cc",
+      "evidence": {
+        "trigger": "Submit the same blocking acceptance finding twice in one session → the established deduped total counts one finding, but the new per-author report counts acceptance=2.",
+        "caller_chain": [
+          "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+          "sessionReport"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c35987921a1e-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The committed baseline is explicitly a substitute-model sample, not S1's required baseline of the current pipeline's current reviewer model.",
+      "anchor": "sha256:cddb8ada0172c9ad535e352cdb4832be50bffb6f2df665b0bb20ed66a59ee507",
+      "evidence": {
+        "trigger": "Inspect the committed baseline configuration → it uses nextty/auto/deepseek-v4.1-flash and states that it is not the current pipeline's model, leaving no comparable current-pipeline baseline for the merge gate.",
+        "caller_chain": [
+          "benchmark-results/review-eval/2026-11-05-deepseek-v4.1-flash.json",
+          "benchmark-results/review-eval/2026-11-05-deepseek-v4.1-flash.md",
+          "tests/fixtures/review-eval/README.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c35987921a1e-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RVE-S1-A1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Make the normal eval runner emit the required short Markdown summary alongside JSON; currently only the clean-case baseline wrapper writes Markdown.",
+      "anchor": "sha256:c43f92554ea0f007d26e41aadc3ddb5d1d33ab6eafbaf6d4a4714a5f1bc93364",
+      "evidence": {
+        "trigger": "Run bun scripts/review-eval/run.ts <provider/model> <output.json> over a labelled corpus → only output.json is written and no accompanying Markdown run summary exists.",
+        "caller_chain": [
+          "scripts/review-eval/run.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "RVE-S1-A1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s1-metrics:2026-11-03T15:10:59.029Z",
+      "at": "2026-11-03T15:10:59.029Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s1-metrics.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s1-metrics:2026-11-03T15:11:21.549Z",
+      "at": "2026-11-03T15:11:21.549Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e39caa13\naction_v2_sha256:f8b30c96a34e5a7bea769df56f3a1bd35b809225f1408bb9d85ae948513ce63c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-59043058b60c2ee8",
+        "issued_at": "2026-11-03T15:11:21.549Z"
+      }
+    },
+    {
+      "id": "request_rework:review-verifier-eval-s1-metrics:2026-11-03T15:16:45.680Z",
+      "at": "2026-11-03T15:16:45.680Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:294b8467de8f2dfaaa5188a8e35c3281c165309bb460bcf78746d4844a6d6a68",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6397ec1136ccfad8",
+        "issued_at": "2026-11-03T15:16:45.681Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "265dd80455a2337b54048d20f6f132307758d95c",
+        "review_commit": "1ef18590428ec264800ba9db8f557d76cffbf2a2",
+        "review_tree": "5f2506b75a19bc6114fc70c52908f659a50210dd",
+        "manifest_digest": "sha256:512425409bd5040148096357e7b48f478541b0ed301fd2a05c3aeb2215e620c1"
+      }
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T15:18:52.462Z",
+      "at": "2026-11-03T15:18:52.462Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a2538e6bd646-1-review-1\naction_v2_sha256:27b387f97d9e69fcd8d62c9f0fad28a573c1ef31df5d8ea23403ef3e86aaeae6"
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T15:19:00.850Z",
+      "at": "2026-11-03T15:19:00.850Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a2538e6bd646-2-review-2\naction_v2_sha256:16460d6cc3fec2a073a705a47e5d3d0fd2d80c2c68a57a67c5893bf9076067cc"
+    },
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s1-metrics:2026-11-03T15:19:09.631Z",
+      "at": "2026-11-03T15:19:09.631Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s1-metrics.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s1-metrics:2026-11-03T15:19:31.327Z",
+      "at": "2026-11-03T15:19:31.327Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3f556231\naction_v2_sha256:898278c91abcd99c3d3e57917dc2e0d61040ce66b341822a27bf669f55475723",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9be7a93827ef83bc",
+        "issued_at": "2026-11-03T15:19:31.328Z"
+      }
+    },
+    {
+      "id": "request_rework:review-verifier-eval-s1-metrics:2026-11-03T15:25:49.642Z",
+      "at": "2026-11-03T15:25:49.642Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:703c7d2a32a043af5d15f59d82de0f52a2f117ff54ed7e376784d565f70c7fc6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-4129a7e7bee2d193",
+        "issued_at": "2026-11-03T15:25:49.642Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "265dd80455a2337b54048d20f6f132307758d95c",
+        "review_commit": "a6d334b40e6cde3e7bad87161ea0c6814940736f",
+        "review_tree": "a47c740b3a5e7769301aa5fb77c44387d8c645b0",
+        "manifest_digest": "sha256:c7e46b6cb7ab2e8b666983e6c9c2d683fb1ca3ebbcf38715be3efdbadbd915ef"
+      }
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T16:09:48.511Z",
+      "at": "2026-11-03T16:09:48.511Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c35987921a1e-1-review-1\naction_v2_sha256:4840d519a913238dce9ca915d3f5e3dc9745cb59c2645c70ef6c75009bdd372b"
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T16:10:34.788Z",
+      "at": "2026-11-03T16:10:34.788Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c35987921a1e-2-review-2\naction_v2_sha256:65264acc79353f4b8a21aaa17f810345f9d2561e3de00df5d4d9e2d8d61a97e2"
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T16:11:23.398Z",
+      "at": "2026-11-03T16:11:23.398Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c35987921a1e-3-review-3\naction_v2_sha256:0d845a7c2796597c52289ee1a1f3a436138d87e89b03e48fc7c076935e52a2aa"
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T16:11:39.757Z",
+      "at": "2026-11-03T16:11:39.757Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c35987921a1e-5-review-5\naction_v2_sha256:59d237703993d079e141585cfcbdc1f39089f9ebcf2ee5058e7695c3b7059e35"
+    },
+    {
+      "id": "resolve_finding:review-verifier-eval-s1-metrics:2026-11-03T16:12:10.294Z",
+      "at": "2026-11-03T16:12:10.294Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c35987921a1e-4-review-4\naction_v2_sha256:97ba0cb946e5aa84d0785b335f1e6ac625a29662925405cde8f12b0a8a6b1878"
+    },
+    {
+      "id": "freeze_artifacts:review-verifier-eval-s1-metrics:2026-11-03T16:27:16.671Z",
+      "at": "2026-11-03T16:27:16.671Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-verifier-eval-s1-metrics.intent.json"
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s1-metrics:2026-11-03T16:28:11.377Z",
+      "at": "2026-11-03T16:28:11.377Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0ae6bf69\naction_v2_sha256:fab237379684b8d266ea8b7bff0a2959ee29d80f8139d6c6960d9a9af3817838",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7dabfaea2b83eb18",
+        "issued_at": "2026-11-03T16:28:11.377Z"
+      }
+    },
+    {
+      "id": "record_approval:review-verifier-eval-s1-metrics:2026-11-03T16:34:21.548Z",
+      "at": "2026-11-03T16:34:21.548Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c087d323\naction_v2_sha256:a7ca165e92c2e22eb533bb255f4d3104c71a835546d94823288dc9bad8f7b47e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-b8a72d552db0cb9a",
+        "issued_at": "2026-11-03T16:34:21.548Z"
+      }
+    },
+    {
+      "id": "complete:review-verifier-eval-s1-metrics:2026-11-03T16:34:23.744Z",
+      "at": "2026-11-03T16:34:23.744Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:75a0c464d47572ccdf6f37e989ff54e0c31d1ef8b6f0f784a258fcac367ce9db"
+    }
+  ]
+}
