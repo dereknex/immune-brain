@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s4-lane-cleanup",
+  "owner": "user",
+  "goal": "Meet S4 of docs/specs/drive-always-lanes.spec.md: remove a delivered single-task Lane (worktree, imm-lane branch and imm/<task_id>) only on a runtime-observed normal exit of the current generation and a clean Lane, retain and report batch_lane_retained in every other case, keep batch Lanes retained, and amend ADR 0027's retained-Lane section for single tasks (Spec D7, BR-DEC-3).",
+  "acceptance": [
+    {
+      "id": "DAL-S4-A1",
+      "assertion": "End to end in manual mode with a fake Executor that settles the task: one literal drive entry opens exactly one native gate, the user's checkout then holds the task's changes as staged, uncommitted changes, and git worktree list shows no Lane for the task and git branch lists neither imm-lane/<task_id>/<task_id> nor imm/<task_id> (BR-SCN-1). The removal is recorded in the batch record as lane_removed with the exit observation it relied on. Seam: tests/single-task-lane-cleanup.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S4-A2",
+      "assertion": "End to end in auto mode with a fake Executor that settles the task: the user's current branch points at the delivery commit and no imm-lane/ branch, imm/<task_id> branch or Lane worktree remains (BR-SCN-2). Seam: tests/single-task-lane-cleanup.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S4-A3",
+      "assertion": "Each of these keeps the Lane worktree and both branches and reports batch_lane_retained naming the failed condition in the drive report (BR-SCN-5): an interrupted generation, a stopped_by_parent generation, a wait that never observed an exit (unobservable), an observation from a superseded generation after a relaunch, a tracked modification or untracked non-ignored file in the Lane, and a parked return step. An ignored file alone does not prevent removal. Seam: tests/single-task-lane-cleanup.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S4-A4",
+      "assertion": "Initiative batch Lanes are still never removed by the runtime: after integration they keep their worktree and branch and report batch_lane_retained as tests/unattended-batch-lanes.test.ts pins (BR-OUT-2); and docs/adr/0027-parent-branch-merge-queue.md carries an amendment headed 'Amendment: single-task Lane cleanup (drive-always-lanes S4)' stating the exit-proof conditions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s4-lane-cleanup.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/drive-always-lanes-s4-lane-cleanup.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+    "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+    "tests/single-task-lane-cleanup.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

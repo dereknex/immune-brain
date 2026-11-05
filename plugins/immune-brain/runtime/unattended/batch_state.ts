@@ -10,7 +10,7 @@ import { bindsAuthoritySubject } from "../kernel/batch_authority";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
-import type { LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
 	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
@@ -180,6 +180,10 @@ export interface BatchLaneChildRun {
 	runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
 	/** The integrated plugin build change that held this child's Lane admission or redo. */
 	runtime_reload?: RuntimeReloadGate;
+	/** Single task only (Spec drive-always-lanes D7): the Lane was removed on this runtime-observed exit. */
+	lane_removed?: { exit: LaneExit; worktree: string; branches: string[] };
+	/** Single task only: the delivered Lane is kept because this exit-proof or cleanliness condition failed. */
+	lane_retained?: { condition: string };
 }
 
 export interface RuntimeSkewAcknowledgement {
@@ -821,6 +825,15 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			delivery?.status === "blocked" && delivery.reason === child.reason;
 		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
+		if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
+			const removed = child.lane_removed as unknown, retained = child.lane_retained as unknown;
+			const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
+			if (record.plan_source !== "single_task" || (child.state !== "integrated" && child.state !== "released") || (removed !== undefined) === (retained !== undefined) ||
+				(removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null ||
+					typeof (removed as { worktree?: unknown }).worktree !== "string" || !Array.isArray((removed as { branches?: unknown }).branches))) ||
+				(retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition)))
+				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
+		}
 		const skew = child.runtime_skew_acknowledged;
 		if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) ||
 			(skew.loaded_bundle !== null && !isHash(skew.loaded_bundle))))

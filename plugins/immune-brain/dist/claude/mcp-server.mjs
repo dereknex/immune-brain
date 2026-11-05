@@ -6899,6 +6899,12 @@ function validateLaneRecordShape(value, batchId) {
     const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null && delivery?.status === "blocked" && delivery.reason === child.reason;
     if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
       throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
+    if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
+      const { lane_removed: removed, lane_retained: retained } = child;
+      const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
+      if (record.plan_source !== "single_task" || child.state !== "integrated" && child.state !== "released" || removed !== undefined === (retained !== undefined) || removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null || typeof removed.worktree !== "string" || !Array.isArray(removed.branches)) || retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition))
+        throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
+    }
     const skew = child.runtime_skew_acknowledged;
     if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) || skew.loaded_bundle !== null && !isHash(skew.loaded_bundle)))
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_skew_acknowledged`);
@@ -20222,7 +20228,7 @@ init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
 init_batch_final_report();
-import { spawnSync as spawnSync20 } from "node:child_process";
+import { spawnSync as spawnSync21 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
 import { isAbsolute as isAbsolute10, join as join30 } from "node:path";
@@ -20267,6 +20273,76 @@ function deliverSingleTask(root, base, head) {
   if (applied.status !== 0)
     return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
   return { mode, status: "staged", reason: null };
+}
+
+// plugins/immune-brain/runtime/unattended/lane_cleanup.ts
+import { spawnSync as spawnSync20 } from "node:child_process";
+var LANE_RETAINED_REASON = "batch_lane_retained";
+function exitProofCondition(generation, observation) {
+  if (!generation)
+    return "no Executor generation was supervised by the runtime, so no exit was observed";
+  if (generation.state === "interrupted")
+    return `Executor generation ${generation.generation} was interrupted`;
+  if (generation.state === "stopped_by_parent")
+    return `Executor generation ${generation.generation} was stopped by the Parent`;
+  if (generation.state !== "exited" || !generation.exit)
+    return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
+  const exit = observation ?? generation.exit;
+  if (exit.generation !== generation.generation)
+    return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
+  if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
+    return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
+  if (exit.code !== 0 || exit.signal !== null)
+    return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
+  return null;
+}
+function git10(cwd, ...args) {
+  return spawnSync20("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
+}
+function retainedLaneReason(condition) {
+  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
+}
+function cleanupSingleTaskLane(input) {
+  const retain = (condition) => ({ status: "retained", condition });
+  const proof = exitProofCondition(input.generation, input.observation);
+  if (proof)
+    return retain(proof);
+  const exit = input.observation ?? input.generation.exit;
+  const status = git10(input.lanePath, "status", "--porcelain", "--untracked-files=all");
+  if (status.status !== 0)
+    return retain("the Lane status is unreadable");
+  if (status.stdout.trim()) {
+    const paths = status.stdout.split(`
+`).filter(Boolean).map((line) => line.slice(3)).sort();
+    return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
+  }
+  const laneRef = `refs/heads/${input.laneBranch}`;
+  const laneTip = git10(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
+  const parentTip = git10(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  if (laneTip.status !== 0 || parentTip.status !== 0)
+    return retain("a Lane branch is unreadable");
+  if (git10(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
+    return retain(`the Lane branch carries commits that ${input.parentRef.replace("refs/heads/", "")} does not`);
+  const listed = git10(input.root, "worktree", "list", "--porcelain");
+  if (listed.status !== 0)
+    return retain("the worktree list is unreadable");
+  if (listed.stdout.split(`
+`).includes(`branch ${input.parentRef}`))
+    return retain(`${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree`);
+  const removed = git10(input.root, "worktree", "remove", input.lanePath);
+  if (removed.status !== 0)
+    return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
+  for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
+    const deleted = git10(input.root, "update-ref", "-d", ref, tip);
+    if (deleted.status !== 0)
+      return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
+  }
+  return {
+    status: "removed",
+    exit,
+    worktree: input.lanePath,
+    branches: [input.laneBranch, input.parentRef.replace("refs/heads/", "")]
+  };
 }
 
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
@@ -20415,7 +20491,7 @@ function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
 }
 function gitRead(root, args) {
-  const result = spawnSync20("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync21("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { status: result.status, stdout: (result.stdout ?? "").trim() };
 }
 function commonDir(root) {
@@ -20600,6 +20676,12 @@ function redoRetained(cause) {
 function retainedLaneNotices(root, record, lanes = createDefaultLaneGitPort()) {
   if (!isParentBranch(record.branch))
     return [];
+  if (record.plan_source === "single_task")
+    return record.children.filter((child) => child.lane && (child.lane_retained || child.state === "needs_human" && child.commit !== null) && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
+      task_id: child.task_id,
+      path: child.lane.path,
+      reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`)
+    }));
   return record.children.filter((child) => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists).map((child) => ({
     task_id: child.task_id,
     path: child.lane.path,
@@ -21325,8 +21407,18 @@ async function runLaneBatch(input, persisted) {
           if (final)
             record.final_verification_result = final;
           persist();
-          return finalizeLane(input.root, record, delivery.reason, "", { refusals, tracker, instruction, ...final ? { final } : {} });
+          return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
         }
+        persist();
+        const outcome = cleanupSingleTaskLane({
+          root: input.root,
+          lanePath: child.lane.path,
+          laneBranch: child.lane.branch,
+          parentRef: record.branch,
+          generation: laneGenerationStore(input.root, record.batch_id).read(),
+          observation: input.lane_exit_observation
+        });
+        record.children = record.children.map((c) => c.task_id !== child.task_id ? c : outcome.status === "removed" ? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } } : { ...c, lane_retained: { condition: outcome.condition } });
       } else
         record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
     }
@@ -21334,7 +21426,13 @@ async function runLaneBatch(input, persisted) {
     if (final)
       record.final_verification_result = final;
     persist();
-    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : final ? "all enrollable children integrated" : "final verification not run", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", { handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...final ? { final } : {} });
+    return finalizeLane(input.root, record, final && !final.passed ? `all enrollable children integrated; final verification did not pass: ${[...final.results, ...final.derived_checks ?? []].filter((r) => !r.passed).map((r) => r.command).join(", ")}` : final ? "all enrollable children integrated" : "final verification not run", final && !final.passed ? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back." : "", {
+      handoffs: releaseHandoffs(input, record, lanes),
+      refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
+      tracker,
+      instruction,
+      ...final ? { final } : {}
+    });
   }
   const handoffs = [];
   for (const child of record.children) {
@@ -21489,8 +21587,10 @@ async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
   });
   const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
   const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
+  const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
   return { state: "started", batch_id: record.batch_id, report: {
     ...reportFromLane(parked),
+    ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
     lane_supervision: { ...observation, not_applied: [] }
   } };
 }
@@ -21551,9 +21651,12 @@ async function superviseSingle(input, report) {
   } else if (observation.state === "unavailable" || observation.state === "unobservable") {
     report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
   }
+  const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
+  const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
   return {
     ...report,
     handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
+    ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
     next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
     lane_supervision: { ...observation, not_applied: choice.not_applied }
   };
@@ -21587,7 +21690,7 @@ async function startBatch(input) {
         const observed = await superviseSingle(input, reportFromLane(recorded));
         if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
           return observed;
-        const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
         return {
           ...advanced,
           handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
@@ -21610,7 +21713,7 @@ async function startBatch(input) {
     if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
       const observed = await superviseSingle(input, report);
       if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
-        const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
         return {
           ...advanced,
           handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),

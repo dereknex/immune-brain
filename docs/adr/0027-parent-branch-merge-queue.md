@@ -71,6 +71,25 @@ HEAD is an ancestor. A dirty path overlapping the delta parks the child without
 changing the checkout; an inapplicable delta also parks it. Initiative batches
 keep their existing return behavior.
 
+## Amendment: single-task Lane cleanup (drive-always-lanes S4)
+
+The runtime now owns the Executor of a single-task Lane (drive-always-lanes S2),
+so it holds exit proof for that Lane: the exit event of the child process it
+spawned, bound to the repository, Lane path, pid and current generation. After
+delivery (S3) it removes the Lane worktree, the `imm-lane/` branch and
+`imm/<task_id>` only when every condition holds: a normal exit (code 0, no
+signal) of the current generation, not an interrupted, `stopped_by_parent` or
+unobservable one and not an observation from a superseded generation; a clean
+Lane by `git status --porcelain --untracked-files=all` (ignored files do not
+count); the Lane branch contained in `imm/<task_id>`; and `imm/<task_id>` not
+checked out elsewhere. Removal is recorded as `lane_removed` with the exit
+observation it relied on. Any failed condition keeps the worktree and both
+branches and reports `batch_lane_retained` naming that condition; nothing is
+deleted automatically later.
+
+Initiative (multi-child) Lanes stay under the retained-Lane rule below: no
+Executor exit is observed for them, so they remain retained.
+
 ## Amendment: retained Lanes (batch-resource-safety S2)
 
 Neither supported Host reports a trusted Executor exit, and Git cleanliness,

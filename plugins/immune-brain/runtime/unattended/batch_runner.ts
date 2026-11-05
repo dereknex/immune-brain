@@ -9,6 +9,7 @@ import type { BatchRunnerGitPort } from "./batch_git";
 import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } from "./batch_preflight";
 import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBatch, createBatchTrackerPort, type LaneOffer } from "./batch_lanes";
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
+import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
 import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
@@ -106,6 +107,8 @@ export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; envir
 
 export interface StartBatchInput {
 	plan_source?: "single_task";
+	/** Single task only: the exit this call's own wait observed; cleanup compares its generation with the current one. */
+	lane_exit_observation?: import("./lane_supervisor").LaneExit | null;
 	supervision?: { supervisor: LaneSupervisor; parentHost: ExecutorHost; pluginDir: string; waitMs: number; signal?: AbortSignal; stop?: boolean; request?: ExecutorPreferences };
 	topology_digest?: string;
 	root: string;
@@ -175,7 +178,9 @@ export async function stopSingleTaskSupervisor(supervisor: LaneSupervisor, root:
 	const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
 	const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running"
 		? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
+	const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
 	return { state: "started" as const, batch_id: record.batch_id, report: { ...reportFromLane(parked),
+		...(condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {}),
 		lane_supervision: { ...observation, not_applied: [] } } as unknown as BatchRunReport };
 }
 
@@ -214,7 +219,11 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	} else if (observation.state === "unavailable" || observation.state === "unobservable") {
 		report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
 	}
+	// Spec drive-always-lanes D7: a Lane whose Executor did not exit normally under supervision is kept and said so.
+	const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
+	const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
 	return { ...report, handoffs: report.handoffs.filter(handoff => handoff.role !== "executor"),
+		...(kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {}),
 		next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
 			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
 			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
@@ -244,7 +253,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 				const observed = await superviseSingle(input, reportFromLane(recorded));
 				if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
 					return observed as unknown as BatchRunReport;
-				const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+				const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
 				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
 					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
 					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
@@ -262,7 +271,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 		if (input.plan_source === "single_task" && input.supervision && report.handoffs.some(h => h.role === "executor")) {
 			const observed = await superviseSingle(input, report);
 			if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
-				const advanced = await runLaneBatch(input, readAnyBatchRunState(input.root, input.batch_id));
+				const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
 				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
 					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
 					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
