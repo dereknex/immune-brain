@@ -155,7 +155,7 @@ export function reducePhaseEntryLog(text: string): PhaseEntryState | null {
 }
 
 export type PhaseOperation =
-	| { kind: "tool"; name: "enroll" | "start_unattended_batch" | "retire_stale_batch" }
+	| { kind: "tool"; name: "start_unattended_batch" | "retire_stale_batch" }
 	| { kind: "skill"; skill: keyof typeof PACKAGED };
 
 export type PhaseAdmission =
@@ -168,7 +168,7 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
 
 /**
  * Whether the session's entry state admits one operation. `state` is null when
- * the store could not be read, which refuses `enroll`, `start_unattended_batch`,
+ * the store could not be read, which refuses `start_unattended_batch`,
  * `retire_stale_batch` and the `drive` Skill. The Planner and Brainstorm Skills are never refused.
  */
 export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null): PhaseAdmission {

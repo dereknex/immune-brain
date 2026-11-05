@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s7-retire-in-place",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s7-retire-in-place",
+    "goal": "Meet S7 of docs/specs/drive-always-lanes.spec.md: retire in-place Enrollment by deleting the Claude Code enroll MCP tool and the Pi imm_canary_enrollment tool with their native-gate code, run-entry admission and contract text, move tests that used them as setup onto Kernel-level enrollment helpers, and keep TaskRecords enrolled in place before this change resumable until terminal as a drain-only path (owner: runtime) (Spec D10, D12; Retirement Completion Contract).",
+    "acceptance": [
+      {
+        "id": "DAL-S7-A1",
+        "assertion": "The Claude Code MCP tool list contains no enroll tool and the Pi package registers no imm_canary_enrollment tool: plugins/immune-brain/.pi-extension/imm-canary-enroll.ts is deleted and removed from .pi-extension/package.json, the enroll handler and its gate in runtime/claude are deleted, and runtime/assurance/phase_entry.ts admits only start_unattended_batch and retire_stale_batch as entry tools. A TaskRecord enrolled in place before this change still advances through the loop tools to terminal on both Hosts. Seam: the named tool-surface and package tests plus a drain fixture.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S7-A2",
+        "assertion": "No file under plugins/immune-brain/dist, plugins/immune-brain/runtime/prompts, plugins/immune-brain/BASELINE.md or CONTEXT.md instructs in-place Enrollment or current-context Executor execution outside a Lane, which tests/unattended-contracts.test.ts asserts; tests that used the Host enroll tools as setup enroll through Kernel-level helpers instead, and the named focused tests pass. The full-suite check of BR-REQ-7 is the batch final_verification (Spec D12).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s7-retire-in-place.md",
+      "CONTEXT.md",
+      "docs/plans/drive-always-lanes-s7-retire-in-place.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+      "plugins/immune-brain/.pi-extension/package.json",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/canary-command-retirement-contract.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/helpers",
+      "tests/packaged-contract-tool-surface.test.ts",
+      "tests/phase-entry.test.ts",
+      "tests/pi-canary-enroll-extension.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts",
+      "tests/pi-phase-entry-gate.test.ts",
+      "tests/pi-run-continuation.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "scope_size_reason": "Deletion-heavy retirement: the two Host enroll tools are used as setup by about 22 test files on both Hosts; deleting the tools without moving those tests to Kernel-level helpers in the same change leaves the suite red, so the deletion and the test migration cannot settle separately.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s7-retire-in-place.intent.json",
+    "content_hash": "sha256:3e0016ab002404ca48f002dfb665d6a40c28b123a7cea03a7c909b355cda34d7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3e0016ab002404ca48f002dfb665d6a40c28b123a7cea03a7c909b355cda34d7",
+  "git_base_head": "a5116cf0e6505ff4ca2de5d7fdf18d47dc25c572",
+  "attestations": [
+    {
+      "id": "approval-qa-e319654d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3e0016ab002404ca48f002dfb665d6a40c28b123a7cea03a7c909b355cda34d7",
+      "diff_hash": "sha256:c055e873fcea5c0b475091831fec29d9aa9a8f915a7dc475a97cca088d921c4e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:23dcda9d3c96770a97c9a50b3cfd2f707b172042059588af0137b7e56ff51a4e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:23dcda9d3c96770a97c9a50b3cfd2f707b172042059588af0137b7e56ff51a4e"
+        },
+        {
+          "acceptance_id": "DAL-S7-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:23dcda9d3c96770a97c9a50b3cfd2f707b172042059588af0137b7e56ff51a4e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-cb095b71",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:3e0016ab002404ca48f002dfb665d6a40c28b123a7cea03a7c909b355cda34d7",
+      "diff_hash": "sha256:c055e873fcea5c0b475091831fec29d9aa9a8f915a7dc475a97cca088d921c4e",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius tier medium: runtime/claude/kernel_ports.ts and mcp_server.ts, runtime/assurance/phase_entry.ts, the Pi extension manifest, and the generated dist/claude/mcp-server.mjs bundle. DAL-S7-A1 and DAL-S7-A2 are met at the named seams. The Claude enroll tool and handler, the Pi imm_canary_enrollment extension, and the enroll admission are all deleted. Entry tools are narrowed to start_unattended_batch and retire_stale_batch. Pre-existing records drain through the loop tools via tests/helpers/kernel-enroll.ts, in claude-host-authority and pi-canary-lifecycle-package. Tool-surface and package tests plus the new unattended-contracts block pin the retirement. I grepped the bundle and runtime at the review commit and found no dangling enroll tool or parkFailedCriticalGate. The deleted tests covered only the retired in-place handler.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a5116cf0e6505ff4ca2de5d7fdf18d47dc25c572",
+        "review_commit": "7fbe392037c39999729ec845982ea860f604fa8b",
+        "review_tree": "7143f46102d42ed69ee06934ed1889d7bb7ef1db",
+        "manifest_digest": "sha256:8164fee1aa36f45b61b42fc52f54ecace3d815ffb841d5a65575edd4e2f8b401"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-e993350dee86-1-review-1",
+          "acceptance_id": "DAL-S7-A2",
+          "summary": "plugins/immune-brain/BASELINE.md is unchanged by S7. Its paragraphs near lines 128-134 still describe a current-Host Enrollment confirmation, the Host creating the unborn-HEAD root commit, and a workspace_not_clean refusal before the gate opens. These match the retired in-place enroll handler, and the unattended-contracts regex does not cover them. The text is ambiguous rather than an explicit in-place instruction, since a Lane entry also has one native gate, so it is non-blocking. Reword it to Lane Enrollment in a follow-up.",
+          "anchor": "sha256:c392ee997bbe2c7f6564e217358a7ed42f8ed3b071cd8f5d3b4861fe625db808",
+          "evidence": {
+            "trigger": "A reader of BASELINE.md lines 128-134 is told a Host-side Enrollment confirmation precedes execution. S7 retired the Host enroll tool, so that wording can mislead about where Enrollment happens. This is documentation drift only; no runtime behavior is wrong.",
+            "caller_chain": [
+              "plugins/immune-brain/BASELINE.md",
+              "tests/unattended-contracts.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S7-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:248dacaf1e9077ea9be24e71ef0280f3510437056f50c93c06c70f84bb2f1daf"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s7-retire-in-place:2026-11-05T06:59:47.804Z",
+      "at": "2026-11-05T06:59:47.804Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s7-retire-in-place.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s7-retire-in-place:2026-11-05T07:00:16.910Z",
+      "at": "2026-11-05T07:00:16.910Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e319654d\naction_v2_sha256:9d1b43eef168698e060d0c7226622a4a4c79265e40e626890e6549e569fdd087",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T07:00:16.910Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s7-retire-in-place:2026-11-05T07:15:59.937Z",
+      "at": "2026-11-05T07:15:59.937Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-cb095b71\naction_v2_sha256:ddc2b254433fdf16024c1e77bf2e07be49b540bb4edc759d887cc6e2ee841b9b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-05T07:15:59.937Z"
+      },
+      "review_started_at": "2026-11-05T07:14:25.493Z",
+      "review_submitted_at": "2026-11-05T07:15:58.652Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:drive-always-lanes-s7-retire-in-place:2026-11-05T07:16:03.919Z",
+      "at": "2026-11-05T07:16:03.919Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9cf25b6ca2f16c01ea953d2eab32e6e170ca001eca55016c59f398866390b84b"
+    }
+  ]
+}

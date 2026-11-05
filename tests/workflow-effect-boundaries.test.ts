@@ -207,26 +207,24 @@ describe("S2 exact effects and outbound research", () => {
 		const contract = flat(BASELINE);
 		for (const fragment of [
 			"The repository's `Git integration` preference decides whether the runtime writes commits on its own (ADR 0024)",
-			"`manual`, the default, writes none outside batches: Enrollment stages its TaskIntent and Spec, and migration leaves its diff for the user to commit however they prefer",
-			"`auto` keeps the precondition commits and commits each task's settled scoped paths when it settles `done`",
+			"`manual`, the default, writes none outside batches: a single task's delivery lands staged and uncommitted in the checkout, and migration leaves its diff for the user to commit however they prefer",
+			"`auto` commits each task's settled scoped paths when it settles `done`",
 			"Either way the runtime runs Git hooks normally and grants no push, publication, history rewrite, or commit of any other path",
 			"a model never makes these commits itself or asks the user to make one",
 			// Host Confirmation Boundary
-			"Under `Git integration: manual` (the default) it stages them and makes no commit; under `auto` it commits them, and the native confirmation binds the HEAD that results",
-			"for the Enrollment set: the task's own TaskIntent and the Spec its binding names",
-			// Spec branch-boundary-r2 D23 replaced listed in-scope dirt with a clean workspace.
-			"A single task starts from a clean workspace: any other tracked or untracked non-ignored dirty path refuses with `workspace_not_clean: <paths>` before the gate opens",
+			"A new `drive` entry neither stages nor commits its TaskIntent or Spec in the user's checkout",
+			"The Lane starts at the user's HEAD and does not require a clean checkout",
+			"the runtime copies only the task's TaskIntent and bound Spec into the Lane, never other coordinator edits or the index",
 			"A batch child keeps its Lane's confirmed scope disclosure",
-			"When no precondition fails, nothing is staged or committed",
-			"With an unborn HEAD the empty root commit comes first in both modes; `auto` commits the scope after it, and `manual` claims the in-scope staged and untracked changes as task work instead",
-			"A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed",
-			"if Enrollment is declined, cancelled or fails afterwards, report the commit or staged paths that remain",
+			"an unborn HEAD refuses with `git_head_unreadable` and no empty root commit is created",
 		]) {
 			expect(contract).toContain(fragment);
 		}
 		expect(contract).not.toContain("A precondition commit is the one commit the runtime makes without a separate grant");
 		expect(contract).not.toContain("The commit is silent");
-		const enrollmentRule = contract.indexOf("the Host satisfies the precondition an untracked TaskIntent would otherwise fail");
+		expect(contract).not.toContain("the Host satisfies the precondition");
+		expect(contract).not.toContain("workspace_not_clean");
+		const enrollmentRule = contract.indexOf("A new `drive` entry neither stages nor commits its TaskIntent or Spec");
 		expect(enrollmentRule).toBeGreaterThan(contract.indexOf("### Host Confirmation Boundary"));
 		expect(enrollmentRule).toBeLessThan(contract.indexOf("## Parallel Read-Only Dispatch"));
 		expect(flat(LOOP)).toContain(

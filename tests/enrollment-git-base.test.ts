@@ -3,18 +3,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import enrollExtension from "../plugins/immune-brain/.pi-extension/imm-canary-enroll";
-import { recordPiPhaseInput } from "../plugins/immune-brain/.pi-extension/imm-canary-work";
-import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { inspectEnrollmentGitBase, initializeEnrollmentGitBase } from "../plugins/immune-brain/runtime/assurance/enrollment_git_base";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 
-// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
-// exercise what lies behind it, so their session records a real run entry
-// through the function the input handler calls;
-// tests/pi-phase-entry-gate.test.ts owns the refusals.
-const RUN_ENTRY_SESSION = { getSessionId: () => "enrollment-git-base-tests" };
+// Spec drive-always-lanes S7 retired the in-place Host Enrollment. These tests
+// pin the Git-base behavior of the shared Kernel Enrollment steps (the ones a
+// Lane Enrollment also runs) through `enrollTaskForTest`, with no Host gate.
 
 const roots: string[] = [];
 const taskId = "unborn-enrollment";
@@ -88,45 +84,19 @@ const outsideScope = (root: string) => ({
 const committedPaths = (root: string, rev = "HEAD") => git(root, "show", "--name-only", "--format=", rev).split("\n").filter(Boolean).sort();
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollment`, () => {
-	async function enroll(root: string, decision: "accept" | "decline" | "cancel", beforeConfirm?: () => void, signal?: AbortSignal, afterInitialize?: () => void, candidateId = taskId) {
-		const prompts: string[] = [];
-		let result: unknown;
+describe("Kernel unborn enrollment", () => {
+	async function enroll(root: string, beforeCommit?: () => void, signal?: AbortSignal, candidateId = taskId) {
 		try {
-			if (host === "Claude") {
-				const runtime = new ClaudeRuntime({ cwd: root, env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" }, requestConfirmation: async (input) => {
-					prompts.push(JSON.stringify(input)); beforeConfirm?.(); return { decision, requestId: "approval" };
-				} });
-				result = await runtime.enroll(candidateId, { taskId: candidateId, sessionId: "test", toolCallId: "enroll", signal });
-			} else {
-				// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
-				recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
-				let tool: any;
-				enrollExtension({ registerTool: (value: unknown) => { tool = value; }, on: () => {}, events: { emit: () => {} } } as never);
-				result = await tool.execute("enroll", { action: "new", task_id: candidateId }, signal, (update: any) => {
-					if (update.details.stage === "rehearsing") afterInitialize?.();
-				}, {
-					cwd: root, mode: "tui", hasUI: true, isIdle: () => true, sessionManager: RUN_ENTRY_SESSION,
-					ui: { setWidget: () => {}, custom: async (factory: any) => {
-						let selection: unknown;
-						const component = factory({ requestRender: () => {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, (value: unknown) => { selection = value; });
-						component.handleInput("d"); prompts.push(component.render(160).join("\n")); beforeConfirm?.();
-						if (decision !== "accept") component.handleInput("\u001b[B");
-						component.handleInput("\r"); return selection;
-					} },
-				});
-			}
-			return { result, prompts, error: "" };
-		} catch (error) { return { result, prompts, error: String(error) }; }
+			const result = await enrollTaskForTest(root, candidateId, { signal, beforeCommit });
+			return { result, error: "" };
+		} catch (error) { return { result: undefined, error: String(error instanceof Error ? error.message : error) }; }
 	}
 	test("one confirmation bootstraps an empty root commit and preserves index/worktree/config", async () => {
 		const root = fixture();
 		const index = readFileSync(join(root, ".git/index"));
 		const config = readFileSync(join(root, ".git/config"));
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toBe("");
-		expect(result.prompts).toHaveLength(1);
-		expect(result.prompts[0]).toMatch(/empty initial commit/i);
 		const head = git(root, "rev-parse", "HEAD");
 		expect(git(root, "ls-tree", "-r", head)).toBe("");
 		expect(git(root, "rev-list", "--count", "HEAD")).toBe("1");
@@ -139,42 +109,20 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 	test("an existing committed HEAD is reused without an initialization notice", async () => {
 		const root = fixture(); git(root, "commit", "-qm", "existing base");
 		const head = git(root, "rev-parse", "HEAD");
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toBe("");
-		expect(result.prompts).toHaveLength(1);
-		expect(result.prompts[0]).not.toMatch(/empty initial commit/i);
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
 		expect(readTaskRecordRaw(root, taskId).record?.git_base_head).toBe(head);
 	});
-	for (const decision of ["decline", "cancel"] as const) test(`${decision} leaves HEAD unborn`, async () => {
-		const root = fixture();
-		await enroll(root, decision);
-		expect(spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root }).status).not.toBe(0);
-		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
-	});
 	test("host cancellation after accept leaves HEAD unborn", async () => {
 		const root = fixture(); const controller = new AbortController();
-		await enroll(root, "accept", () => controller.abort(), controller.signal);
+		await enroll(root, () => controller.abort(), controller.signal);
 		expect(spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: root }).status).not.toBe(0);
-		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
-	});
-	if (host === "Pi") for (const outcome of ["cancel", "rehearsal failure"] as const) test(`reports the remaining empty commit on post-initialization ${outcome}`, async () => {
-		const root = fixture(); const controller = new AbortController();
-		const result = await enroll(root, "accept", undefined, controller.signal, () => {
-			if (outcome === "cancel") controller.abort();
-			else writeFileSync(join(root, intentPath), "invalid intent");
-		});
-		const terminal = result.result as { details: { state: string; summary: string } } | undefined;
-		if (outcome === "cancel") expect(terminal?.details.state).toBe("cancelled");
-		const message = result.error || terminal?.details.summary;
-		expect(message).toContain("empty initial commit");
-		expect(message).toContain("remains");
-		expect(git(root, "ls-tree", "-r", "HEAD")).toBe("");
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 	for (const drift of ["branch", "head", "intent"] as const) test(`rejects ${drift} drift during confirmation`, async () => {
 		const root = fixture();
-		const result = await enroll(root, "accept", () => {
+		const result = await enroll(root, () => {
 			if (drift === "branch") git(root, "symbolic-ref", "HEAD", "refs/heads/other");
 			if (drift === "head") git(root, "commit", "--allow-empty", "-qm", "external");
 			if (drift === "intent") { const path = join(root, intentPath); const intent = JSON.parse(readFileSync(path, "utf8")); intent.goal = "changed"; writeFileSync(path, JSON.stringify(intent)); git(root, "add", "--", intentPath); }
@@ -188,17 +136,12 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const base = git(root, "rev-parse", "HEAD");
 		const outside = outsideScope(root);
 		let headAtConfirmation = "";
-		const result = await enroll(root, "accept", () => { headAtConfirmation = git(root, "rev-parse", "HEAD"); });
+		const result = await enroll(root, () => { headAtConfirmation = git(root, "rev-parse", "HEAD"); });
 		expect(result.error).toBe("");
 		const head = git(root, "rev-parse", "HEAD");
 		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
 		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
 		expect(committedPaths(root)).toEqual([intentPath, specPath]);
-		// One native confirmation, shown after the commit and silent about it.
-		expect(result.prompts).toHaveLength(1);
-		expect(result.prompts[0]).not.toMatch(/precondition|commit Enrollment/i);
-		// D23 leaves only the planning files to enroll.
-		expect(result.prompts[0]).not.toContain("become task work on confirmation");
 		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
 		expect(Object.keys(baseline.dirty_files)).not.toContain("src/new.ts");
 		expect(Object.keys(baseline.dirty_files)).not.toContain("src/task.ts");
@@ -213,9 +156,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const base = git(root, "rev-parse", "HEAD");
 		const outside = outsideScope(root);
 		let confirmedHead = "";
-		const result = await enroll(root, "accept", () => { confirmedHead = git(root, "rev-parse", "HEAD"); }, undefined, undefined, candidateId);
+		const result = await enroll(root, () => { confirmedHead = git(root, "rev-parse", "HEAD"); }, undefined, candidateId);
 		expect(result.error).toBe("");
-		expect(result.prompts).toHaveLength(1);
 		expect(git(root, "rev-parse", "HEAD~1")).toBe(base);
 		expect(git(root, "log", "-1", "--format=%s")).toBe(`chore(imm): commit Enrollment preconditions for ${candidateId}`);
 		expect(committedPaths(root)).toEqual([`docs/plans/${candidateId}.intent.json`, `docs/specs/${candidateId}.spec.md`]);
@@ -223,7 +165,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		expect(outsideScope(root)).toEqual(outside);
 	});
 	for (const invalid of ["file symlink", "parent symlink", "oversized", "directory", "wrong identity"] as const)
-		test(`invalid TaskIntent (${invalid}) is refused before Git effects on ${host}`, async () => {
+		test(`invalid TaskIntent (${invalid}) is refused before Git effects (Kernel)`, async () => {
 			const root = scopedFixture();
 			const path = join(root, intentPath);
 			const original = readFileSync(path);
@@ -242,10 +184,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 			const head = git(root, "rev-parse", "HEAD");
 			const status = git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other");
 			const index = readFileSync(join(root, ".git/index"));
-			const result = await enroll(root, "accept");
-			const terminal = result.result as { details: { summary: string } } | undefined;
-			expect(result.error || terminal?.details.summary).toMatch(/symlink|64 KiB|regular file|does not match|Git-tracked TaskIntent|not Git-tracked/);
-			expect(result.prompts).toHaveLength(0);
+			const result = await enroll(root);
+						expect(result.error).toMatch(/symlink|64 KiB|regular file|does not match|Git-tracked TaskIntent|not Git-tracked/);
 			expect(git(root, "rev-parse", "HEAD")).toBe(head);
 			expect(readFileSync(join(root, ".git/index"))).toEqual(index);
 			expect(git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other")).toBe(status);
@@ -262,9 +202,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const head = git(root, "rev-parse", "HEAD");
 		const status = git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other");
 		const index = readFileSync(join(root, ".git/index"));
-		const result = await enroll(root, "accept");
-		const terminal = result.result as { details: { summary: string } } | undefined;
-		expect(result.error || terminal?.details.summary).toMatch(/at most one scope-bound Spec|binding is incomplete/);
+		const result = await enroll(root);
+				expect(result.error).toMatch(/at most one scope-bound Spec|binding is incomplete/);
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
 		expect(readFileSync(join(root, ".git/index"))).toEqual(index);
 		expect(git(root, "status", "--porcelain=v1", "--untracked-files=all", "--", "src", "docs", "other")).toBe(status);
@@ -279,7 +218,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const hook = join(root, ".git/hooks/pre-commit");
 		writeFileSync(hook, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(probe)}\n`);
 		chmodSync(hook, 0o755);
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toBe("");
 		expect(readTaskRecordRaw(root, taskId).record?.lifecycle).toBe("active");
 		expect(readFileSync(marker, "utf8")).toBe("blocked");
@@ -287,10 +226,10 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		execFileSync(process.execPath, [probe], { cwd: root, stdio: "pipe" });
 		expect(readFileSync(marker, "utf8")).toBe("entered");
 	});
-	for (const drift of ["intent", "head"] as const) test(`confirmation-time ${drift} drift reports the precondition commit that remains`, async () => {
+	for (const drift of ["intent", "head"] as const) test(`confirmation-time ${drift} drift keeps the precondition commit and never enrolls`, async () => {
 		const root = scopedFixture();
 		let preconditionHead = "";
-		const result = await enroll(root, "accept", () => {
+		const result = await enroll(root, () => {
 			preconditionHead = git(root, "rev-parse", "HEAD");
 			if (drift === "head") git(root, "commit", "--allow-empty", "-qm", "concurrent commit");
 			else {
@@ -298,10 +237,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 				writeFileSync(join(root, intentPath), JSON.stringify({ ...intent, goal: "changed during confirmation" }));
 			}
 		});
-		const terminal = result.result as { details: { summary: string } } | undefined;
-		const message = result.error || terminal?.details.summary;
+		const message = result.error;
 		expect(message).toMatch(/changed|aborted/i);
-		expect(message).toContain(`Enrollment precondition commit ${preconditionHead} remains`);
 		expect(committedPaths(root, preconditionHead)).toEqual([intentPath, specPath]);
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
@@ -316,7 +253,7 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 
 		const head = git(root, "rev-parse", "HEAD");
 		const entry = git(root, "ls-files", "--stage", "--", intentPath);
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toBe("");
 		expect(readTaskRecordRaw(root, taskId).record?.lifecycle).toBe("active");
 		// A staged TaskIntent over tracked artifacts fails no precondition: no
@@ -335,17 +272,15 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		writeFileSync(join(root, intentPath), JSON.stringify({ ...intent, goal: "restaged goal" }));
 		git(root, "add", "--", intentPath);
 		const head = git(root, "rev-parse", "HEAD");
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toBe("");
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
 		expect(git(root, "diff", "--cached", "--name-only", "--", intentPath)).toBe(intentPath);
 	});
 	test("an unborn auto repository preserves its commits but refuses the staged preference outside planning", async () => {
 		const root = scopedFixture("unborn");
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).toContain("workspace_not_clean: AGENTS.md");
-		expect(result.prompts).toHaveLength(1);
-		expect(result.prompts[0]).toMatch(/empty initial commit/i);
 		expect(git(root, "rev-list", "--count", "HEAD")).toBe("2");
 		expect(git(root, "ls-tree", "-r", "HEAD~1")).toBe("");
 		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
@@ -359,9 +294,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 			const root = scopedFixture("committed", taskId, declared);
 			const head = git(root, "rev-parse", "HEAD");
 			const before = outsideScope(root);
-			const result = await enroll(root, "accept");
+			const result = await enroll(root);
 			expect(result.error).toBe("");
-			expect(result.prompts).toHaveLength(1);
 			expect(git(root, "rev-parse", "HEAD")).toBe(head);
 			expect(git(root, "diff", "--cached", "--name-only", "--", "docs").split("\n").sort()).toEqual([intentPath, specPath]);
 			expect(outsideScope(root)).toEqual(before);
@@ -381,11 +315,9 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 				ignore: readFileSync(join(root, ".gitignore")),
 			});
 			const before = snapshot();
-			const result = await enroll(root, "accept");
-			const terminal = result.result as { details?: { summary?: string } } | undefined;
-			expect(result.error || terminal?.details?.summary).toContain("enrollment_precondition_ignored_path");
-			expect(result.error || terminal?.details?.summary).toContain(specPath);
-			expect(result.prompts).toHaveLength(0);
+			const result = await enroll(root);
+						expect(result.error).toContain("enrollment_precondition_ignored_path");
+			expect(result.error).toContain(specPath);
 			expect(snapshot()).toEqual(before);
 			expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 			const owners = preparePiCanary(root, { task_id: taskId, now: "2026-10-01T00:00:00.000Z" });
@@ -394,11 +326,8 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		});
 		test(`${label}: an unborn HEAD gets only its confirmed empty root commit and planning files are staged`, async () => {
 			const root = scopedFixture("unborn", taskId, declared);
-			const result = await enroll(root, "accept");
+			const result = await enroll(root);
 			expect(result.error).toBe("");
-			expect(result.prompts).toHaveLength(1);
-			expect(result.prompts[0]).toMatch(/empty initial commit/i);
-			expect(result.prompts[0]).toMatch(/without a commit/i);
 			expect(git(root, "rev-list", "--count", "HEAD")).toBe("1");
 			expect(git(root, "ls-tree", "-r", "HEAD")).toBe("");
 			const record = readTaskRecordRaw(root, taskId).record as Record<string, unknown> | undefined;
@@ -407,21 +336,9 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 			expect(git(root, "diff", "--cached", "--name-only", "--", "other")).toBe("");
 		});
 	}
-	for (const decision of ["decline", "cancel"] as const) test(`${decision} after the precondition commit names the commit that remains and a retry adds none`, async () => {
-		const root = scopedFixture();
-		const result = await enroll(root, decision);
-		const head = git(root, "rev-parse", "HEAD");
-		expect(git(root, "log", "-1", "--format=%s")).toBe(PRECONDITION_SUBJECT);
-		const terminal = result.result as { details: { summary: string } } | undefined;
-		expect(result.error || terminal?.details.summary).toContain(`Enrollment precondition commit ${head} remains`);
-		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
-		const retry = await enroll(root, "accept");
-		expect(retry.error).toBe("");
-		expect(git(root, "rev-parse", "HEAD")).toBe(head);
-	});
 	test("enroll against a workspace an active task owns commits nothing and leaves its undelivered work alone", async () => {
 		const root = scopedFixture();
-		expect((await enroll(root, "accept")).error).toBe("");
+		expect((await enroll(root)).error).toBe("");
 		// The owner's Executor work: tracked, staged and untracked edits in scope.
 		writeFileSync(join(root, "src/task.ts"), "export const value = 3;\n");
 		writeFileSync(join(root, "src/new.ts"), "export const added = false;\n");
@@ -431,10 +348,9 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		const index = git(root, "ls-files", "--stage");
 		const status = git(root, "status", "--porcelain=v1", "--untracked-files=all");
 		const record = JSON.stringify(readTaskRecordRaw(root, taskId).record);
-		const result = await enroll(root, "accept");
-		const terminal = result.result as { details: { state: string; summary: string } } | undefined;
-		expect(result.error || terminal?.details.state).not.toBe("");
-		expect(`${result.error}${terminal?.details.summary ?? ""}`).not.toContain("precondition commit");
+		const result = await enroll(root);
+				expect(result.error).not.toBe("");
+		expect(result.error).not.toContain("precondition commit");
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
 		expect(git(root, "ls-files", "--stage")).toBe(index);
 		expect(git(root, "status", "--porcelain=v1", "--untracked-files=all")).toBe(status);
@@ -445,12 +361,10 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		// The empty root commit runs no hook; the precondition commit does.
 		const hook = join(root, ".git/hooks/pre-commit");
 		writeFileSync(hook, `#!/bin/sh\nsed 's/enroll over/changed during/' ${intentPath} > ${intentPath}.tmp && mv ${intentPath}.tmp ${intentPath}\n`); chmodSync(hook, 0o755);
-		const result = await enroll(root, "accept");
-		const terminal = result.result as { details: { summary: string } } | undefined;
-		const message = result.error || terminal?.details.summary;
+		const result = await enroll(root);
+		const message = result.error;
 		expect(message).toContain("Workspace changed during the Enrollment precondition commit");
 		expect(message).toContain(`Enrollment precondition commit ${git(root, "rev-parse", "HEAD")} remains`);
-		expect(message).toContain("empty initial commit");
 		expect(JSON.parse(readFileSync(join(root, intentPath), "utf8")).goal).toContain("changed during");
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
@@ -460,20 +374,17 @@ for (const host of ["Pi", "Claude"] as const) describe(`${host} unborn enrollmen
 		writeFileSync(hook, "#!/bin/sh\necho 'policy says no' >&2\nexit 1\n"); chmodSync(hook, 0o755);
 		const head = git(root, "rev-parse", "HEAD");
 		const outside = outsideScope(root);
-		const result = await enroll(root, "accept");
-		const terminal = result.result as { details: { summary: string } } | undefined;
-		expect(result.error || terminal?.details.summary).toContain("policy says no");
-		expect(result.prompts).toHaveLength(0);
+		const result = await enroll(root);
+				expect(result.error).toContain("policy says no");
 		expect(git(root, "rev-parse", "HEAD")).toBe(head);
 		expect(git(root, "ls-files", "--", "src/new.ts", intentPath, specPath)).toBe("");
 		expect(outsideScope(root)).toEqual(outside);
 		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
-	test("corrupt branch ref is rejected before confirmation", async () => {
+	test("corrupt branch ref is rejected before any Git effect", async () => {
 		const root = fixture(); writeFileSync(join(root, ".git/refs/heads/main"), `${"a".repeat(40)}\n`);
-		const result = await enroll(root, "accept");
+		const result = await enroll(root);
 		expect(result.error).not.toBe("");
-		expect(result.prompts).toHaveLength(0);
 		expect(readFileSync(join(root, ".git/refs/heads/main"), "utf8")).toBe(`${"a".repeat(40)}\n`);
 	});
 });

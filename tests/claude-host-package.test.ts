@@ -108,7 +108,6 @@ describe("claude host package", () => {
       );
     for (const tool of [
       "Skill",
-      "mcp__plugin_immune-brain_immune-brain__enroll",
       "mcp__plugin_immune-brain_immune-brain__start_unattended_batch",
       "Edit",
       "Agent",
@@ -243,7 +242,6 @@ describe("claude host package", () => {
     expect(manifest.scripts["changeset:publish"]).toBe("bun run verify:release && changeset publish");
     expect(listMcpTools().map((tool) => tool.name)).toEqual([
       "status",
-      "enroll",
       "advance_assurance",
       "submit_review",
       "submit_verification",

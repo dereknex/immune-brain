@@ -3,7 +3,6 @@ import { PHASE_ENTRY_RECOVERY } from "../assurance/phase_entry";
 import type { ReworkChoice, ReworkExitsReadiness } from "../kernel/assurance_projection";
 
 export const PRIVILEGED_OPERATIONS = [
-	"enroll",
 	"request_authorization",
 	"approve_breaking_intent_revision",
 	"stop",

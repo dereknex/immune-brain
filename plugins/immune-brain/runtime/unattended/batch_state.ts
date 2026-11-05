@@ -7,6 +7,8 @@ import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import { bindsAuthoritySubject } from "../kernel/batch_authority";
+import { intentAuthorityHash } from "../kernel/intent";
+import type { TaskIntentV1 } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
@@ -1004,6 +1006,34 @@ export function parkLaneForExecutor(root: string, batchId: string, taskId: strin
 	});
 }
 
+/**
+ * Spec drive-always-lanes D11: the literal user approved a breaking revision of a
+ * single task inside its Lane, so the batch's approved identity for that child
+ * becomes the revision the Kernel committed. `plan_digest` is not touched: it is
+ * derived from the Parent checkout, which a Lane-only revision does not change.
+ * Replaying the same identity changes nothing; an older or equal revision with
+ * another hash is stale.
+ */
+export function rebindSingleTaskIdentity(root: string, batchId: string, input: { task_id: string; intent: TaskIntentV1; content_hash: string }): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const recorded = record.intent_identities?.[input.task_id];
+		if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id ||
+			!record.children.some(child => child.task_id === input.task_id && child.lane))
+			throw new Error(batchReason("lane_decision_rebind_failed").reason);
+		if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash) return record;
+		if (input.intent.revision <= recorded.intent_revision) throw new Error(batchReason("lane_decision_stale").reason);
+		const identity: BatchIntentIdentity = { intent_path: recorded.intent_path, intent_revision: input.intent.revision, intent_content_hash: input.content_hash,
+			...(recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}) };
+		const stored: BatchLaneRunStateRecord = { ...record, updated_at: new Date().toISOString(),
+			intent_identities: { ...record.intent_identities, [input.task_id]: identity } };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
 export function laneGenerationStore(root: string, batchId: string): LaneGenerationStore {
 	validateBatchId(batchId);
 	const directory = join(".imm", "state", "lane-supervisors");
@@ -1108,6 +1138,8 @@ export interface BatchLaneRunReport {
 	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string; not_applied: string[] };
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
+	/** Spec drive-always-lanes D11: the single-task Lane waits on a literal-user decision answered at the Parent's native gate. */
+	lane_decision_required?: import("./lane_decision").LaneDecisionFacts;
 	/**
 	 * Child Issue closures this tick attempted after integration. A failure is a
 	 * tracker observation beside the batch result, retried by the next tick.

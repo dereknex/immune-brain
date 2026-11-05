@@ -44,7 +44,7 @@ describe("Lane Executor supervision", () => {
 		const { dir, store } = fixture();
 		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 0\n");
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 2000, graceMs: 100,
+			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
 			project: async () => ({ record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }) });
 		expect(result).toMatchObject({ state: "exited", generation: 2, reason: "lane_executor_no_progress" });
 		expect(store.read()).toMatchObject({ no_progress: 2, handled_generation: 2 });

@@ -21,9 +21,9 @@ import {
 import { cacheDir, ensurePrivateDir, sessionHash } from "./review_host";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
-const GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(enroll|start_unattended_batch|retire_stale_batch|approve_breaking_intent_revision|stop)$/;
+const GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
 
-export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch" | "approve_breaking_intent_revision" | "stop";
+export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
@@ -216,9 +216,7 @@ export function antigravityPreToolUseHook(
 		const gated = match[1] as GatedTool;
 		const root = locations.root ?? tmpdir();
 		const state = readPhaseEntryState(payload.conversationId, root);
-		const opName: PhaseOperation = (gated === "enroll" || gated === "start_unattended_batch" || gated === "retire_stale_batch")
-			? { kind: "tool", name: gated }
-			: { kind: "tool", name: "enroll" };
+		const opName: PhaseOperation = { kind: "tool", name: gated };
 		const admission = admitPhaseOperation(opName, state);
 		if (!admission.ok) {
 			return { decision: "force_ask", reason: phaseRefusalMessage(admission) };

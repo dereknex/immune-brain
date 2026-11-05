@@ -49,16 +49,9 @@ import {
 	type CapabilityBindingV2,
 	type MutationAuthorityRegistry,
 } from "../kernel/authority_port";
-import {
-	createEnrollmentAuthorityRegistry,
-	type EnrollmentCapabilityBinding,
-} from "../kernel/enrollment_authority";
-import { enrollmentScopeDisclosure, EnrollmentRehearsalError, enrollTask, singleTaskEnrollmentDirt } from "../kernel/enrollment";
+import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
-import { inspectSpecBinding } from "../kernel/spec_binding";
 import { withSettleCommit } from "../assurance/workflow_autocommit";
-import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
-import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
@@ -70,7 +63,7 @@ import {
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
 import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
-import { runGithubTrackerOperation, assertIsolatedTaskPrerequisites } from "../github_issue_tracker";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
@@ -86,6 +79,7 @@ import {
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
+import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
@@ -288,6 +282,8 @@ export interface ClaudeRuntimeOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
+	laneRoot?: boolean;
 }
 
 /** ADR 0025: the run-internal authority operations a live entry token authorizes. */
@@ -326,6 +322,7 @@ export class ClaudeRuntime {
 	};
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
+	private readonly options: ClaudeRuntimeOptions;
 	private readonly env: Record<string, string | undefined>;
 	private readonly interactive: boolean;
 	private requestConfirmation?: NativeConfirmationPort;
@@ -341,6 +338,7 @@ export class ClaudeRuntime {
 
 	constructor(options: ClaudeRuntimeOptions) {
 		this.cwd = options.cwd;
+		this.options = options;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
 		this.parentHost = options.parentHost ?? "claude-code";
@@ -469,71 +467,6 @@ export class ClaudeRuntime {
 	/** The refusing projection every mutation and authorization is bound to. */
 	private async project(taskId: string, nextScope?: readonly string[]) {
 		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
-	}
-
-	async enroll(taskId: string, meta: ToolMeta) {
-		const now = new Date().toISOString();
-		// Commit the task's own dirty preconditions first, so the confirmation
-		// below binds the HEAD that results. An owned workspace commits nothing.
-		let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
-		try {
-			await assertIsolatedTaskPrerequisites(this.cwd, taskId);
-			let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-			const intent = await readTaskIntentForRecord(this.cwd, taskId);
-			const gitBase = inspectEnrollmentGitBase(this.cwd);
-			// In-scope changes that already exist are shown in the gate and only the
-			// ones shown are claimed as task work on confirmation.
-			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
-			// An unborn HEAD has no base to compare; the Kernel checks after it commits one.
-			// An invalid Spec binding keeps its own Kernel refusal.
-			if (gitBase.state !== "unborn" && inspectSpecBinding(intent.intent).ok) {
-				const dirt = singleTaskEnrollmentDirt(this.cwd, intent.intent_ref.path, intent.intent);
-				if (dirt.length > 0) throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
-			}
-			let claimedScopePaths: string[] = [];
-			const gate = await this.gate("enroll", { ...meta, taskId }, {
-				risk: intent.intent.risk,
-				intentRevision: preparation.intent?.revision,
-				intentContentHash: preparation.intent?.content_hash,
-				bindingDigest: preparation.digest,
-				gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join("\n") || undefined,
-			});
-			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
-			if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
-			throwIfCancelled(meta.signal);
-			preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
-			if (gitBase.state === "unborn") {
-				gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
-				// The scope could not be compared with an unborn HEAD; commit it
-				// now that a base exists and bind the HEAD that results.
-				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
-				gitBaseNote += preconditionCommitNote(late.result);
-				preparation = late.preparation;
-				claimedScopePaths = late.claimed_scope_paths;
-			}
-			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
-			const nonce = enrollmentNonce();
-			const binding: EnrollmentCapabilityBinding = {
-				task_id: taskId,
-				intent_path: preparation.intent.path,
-				intent_revision: preparation.intent.revision,
-				intent_content_hash: preparation.intent.content_hash,
-				preparation_digest: preparation.digest,
-				actor_id: LITERAL_USER_ACTOR_ID,
-				confirmation_ref: gate.confirmation_ref,
-				nonce,
-			};
-			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
-		} catch (error) {
-			if (!gitBaseNote) throw error;
-			// A native-gate error keeps its type and code; only the text grows.
-			if (error instanceof NativeAuthorityError) {
-				error.message += gitBaseNote;
-				throw error;
-			}
-			throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
-		}
 	}
 
 	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
@@ -675,7 +608,35 @@ export class ClaudeRuntime {
 		});
 	}
 
+	/**
+	 * Spec drive-always-lanes D11: a decision for a single-task Lane is answered at
+	 * the Parent's native gate and applied to the Lane store, then the next
+	 * Executor generation starts. Any other task keeps the in-place path.
+	 */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
+			? findLaneRelayTarget(this.cwd, taskId) : null;
+		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
+		const laneRuntime = new ClaudeRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
+			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
+		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
+		try {
+			const outcome = await relayLaneDecision({
+				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
+				expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
+				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
+				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
+				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
+				supervisor: this.laneSupervisor, parentHost: "claude-code",
+				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: claudeLaneWaitMs(this.env), signal: meta.signal,
+			});
+			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
+		} finally {
+			await laneRuntime.shutdown();
+		}
+	}
+
+	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
 			// The workspace owner is derived from the single active run, so a claim

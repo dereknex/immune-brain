@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { resolve } from "node:path";
 import {
@@ -490,14 +490,11 @@ test("projects GitHub terminal state only from an exact claimless tombstone", ()
 
 test("host hooks never project active state and publish terminal projection only from fresh claimless evidence", () => {
 	const root = resolve(import.meta.dir, "..");
-	const enrollment = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
 	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
 	const batch = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8");
 	// Durable absence guards: the retired mark-active projection is fully deleted
 	// from every Pi adapter source that owns tracker or batch glue.
-	expect(enrollment).not.toContain("markGithubTaskActive");
-	expect(enrollment).not.toContain("markGithubTaskTerminal");
-	expect(enrollment).toContain("assertIsolatedTaskPrerequisites(root, taskId)");
+	expect(existsSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"))).toBe(false);
 	expect(work).not.toContain("markGithubTaskActive");
 	expect(work).not.toContain("mark-active");
 	expect(batch).not.toContain("markGithubTaskActive");

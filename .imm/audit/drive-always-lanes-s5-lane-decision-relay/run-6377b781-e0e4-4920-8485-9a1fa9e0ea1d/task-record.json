@@ -1,0 +1,338 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s5-lane-decision-relay",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s5-lane-decision-relay",
+    "goal": "Meet S5 of docs/specs/drive-always-lanes.spec.md: when a single-task Lane Executor stops on a literal-user decision, the Parent opens its own Host's native gate bound to the Lane record, the runtime applies the decision to the Lane store and starts a new Executor generation, a relayed breaking revision rebinds the single-task batch identity, and a relayed stop stops the Lane task (Spec D11, D8; user decision Q5-A).",
+    "acceptance": [
+      {
+        "id": "DAL-S5-A1",
+        "assertion": "When a single-task Lane generation exits with its Lane TaskRecord awaiting_user, the single-task report carries lane_decision_required with the Lane decision facts (task_id, run_id, record revision, authorization state). On Claude Code and Pi, request_authorization or approve_breaking_intent_revision relayed for that Lane opens exactly one native gate in the Parent Host showing that binding, applies the decision to the Lane store through the same Kernel operation, and the supervisor starts generation N+1. A relayed breaking revision also rebinds the single-task batch's approved intent identity in the same transaction, so the next call does not refuse plan_changed. Refusals that apply nothing and spawn nothing: a stale record revision (lane_decision_stale), a cancelled or failed gate, and a relay aimed at an Initiative batch child, whose behavior is unchanged. Seam: tests/single-task-lane-decision.test.ts on both Hosts with a counting gate stub, plus tests/breaking-intent-revision-gate.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S5-A2",
+        "assertion": "A relayed stop of a single-task Lane opens the Parent Host's native stop gate once, stops the Lane TaskRecord, terminates any live generation through the S2 stop, and keeps the Lane retained; a cancelled stop gate changes nothing. Seam: tests/single-task-lane-decision.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s5-lane-decision-relay.md",
+      "docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+      "tests/breaking-intent-revision-gate.test.ts",
+      "tests/single-task-lane-decision.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json",
+    "content_hash": "sha256:c0d856aa94c1bf5e0f6a0158b83f49f827d1d7e031e521566a20ac3fc0806ebf"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c0d856aa94c1bf5e0f6a0158b83f49f827d1d7e031e521566a20ac3fc0806ebf",
+  "git_base_head": "aa207e280fbe74d4c9ce339a234023f58ec0d53c",
+  "attestations": [
+    {
+      "id": "approval-qa-e29291c9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c0d856aa94c1bf5e0f6a0158b83f49f827d1d7e031e521566a20ac3fc0806ebf",
+      "diff_hash": "sha256:3cbf51d936afd81da7384ae4fffc1183f7af93ec4dba401f1171e66f70be3c49",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5b4e5998e4c27bc9270826ef7e7d93d5afe86a07039c8ec937d6ccfbb6d0055b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5b4e5998e4c27bc9270826ef7e7d93d5afe86a07039c8ec937d6ccfbb6d0055b"
+        },
+        {
+          "acceptance_id": "DAL-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5b4e5998e4c27bc9270826ef7e7d93d5afe86a07039c8ec937d6ccfbb6d0055b"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9104c8ed",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c0d856aa94c1bf5e0f6a0158b83f49f827d1d7e031e521566a20ac3fc0806ebf",
+      "diff_hash": "sha256:3dd544eb95a14ab322c7e989c9cac9c15cc1ba9f440f1e04793961ad6b08b641",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:797217e04d6828dfd99210b900768c4cf0a4805198d002835a0327c30cead8c8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:797217e04d6828dfd99210b900768c4cf0a4805198d002835a0327c30cead8c8"
+        },
+        {
+          "acceptance_id": "DAL-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:797217e04d6828dfd99210b900768c4cf0a4805198d002835a0327c30cead8c8"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-17832575",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c0d856aa94c1bf5e0f6a0158b83f49f827d1d7e031e521566a20ac3fc0806ebf",
+      "diff_hash": "sha256:3dd544eb95a14ab322c7e989c9cac9c15cc1ba9f440f1e04793961ad6b08b641",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius: tier high (single-task Lane authority relay: kernel_ports.ts authorize, new lane_decision.ts, batch_state.ts identity rebind, lane_supervisor.ts exit accounting, dist bundle). The diff meets DAL-S5-A1 and A2. The Parent Host's own gate answers the decision and a stale revision is refused before the gate. A cancelled gate applies nothing and starts no generation. The breaking-revision rebind uses only the Kernel-committed revision. Initiative children are never matched by findLaneRelayTarget. QA outcomes passed for both acceptances.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "aa207e280fbe74d4c9ce339a234023f58ec0d53c",
+        "review_commit": "72e28ac911207f1e6df73bfa9c5a428f3e1593bd",
+        "review_tree": "e61635ecddf5f1782190f3ec07c0fe1eaa82ed6b",
+        "manifest_digest": "sha256:4de229b3c24beb53d1921be7653c98a6faf6444bae185d4e979b61fdbfda8cf9"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-52a37f66d9aa-1-review-1",
+          "acceptance_id": "DAL-S5-A2",
+          "summary": "relayLaneDecision reads Lane facts before every operation, including stop, and throws batch_lane_unreadable when the Lane record cannot be projected. A user then cannot stop a Lane whose record is unreadable through the relay. This is not blocking because A2 does not name that case.",
+          "anchor": "sha256:589e83befce93148c9e3af4a52c938d9221329da16fd5365e726e792bbefd5a8",
+          "evidence": {
+            "trigger": "A single-task Lane whose TaskRecord projection errors, then a relayed stop: readFacts throws batch_lane_unreadable before any stop gate opens, so the stop is refused.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S5-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:292b7b6d1eb0f84aab01b8e81c56862d7a751d51f4d41ba2ffbef196618b11a5"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-e93de9787959-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "DAL-S5-A1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The agreed seam (both Hosts, counting gate stub) is replaced by a direct call to the host-neutral relayLaneDecision. Nothing tests the Claude ClaudeRuntime.authorize relay, the Pi relayPiLaneDecision relay, the 'exactly one native gate' count, the lane_decision_required report field, the end-to-end breaking-revision rebind, or the Initiative-child refusal.",
+      "anchor": "sha256:6367bc46eb97957071bba1d20ff4708d97d4ca1ec53688cf78f3f32377b922ff",
+      "evidence": {
+        "trigger": "tests/single-task-lane-decision.test.ts imports only relayLaneDecision, laneDecisionFacts, rebindSingleTaskIdentity and startBatch. Its relay input uses a hand-written apply() closure, so the gate is never a Host gate and no counting stub is used. There is no ClaudeRuntime or Pi tool case. startBatch is never driven to a lane_decision_required report. approve_breaking_intent_revision is never relayed, because rebindSingleTaskIdentity is called directly. No test relays against an Initiative batch child through a Host entry (the only negative is a repo with no batch at all). The Host wiring at kernel_ports.ts (authorize, with applied: state !== 'replan_selected') and imm-canary-work.ts (relayPiLaneDecision, with applied: state === 'applied' and a Lane-rooted ctx) can therefore regress with no failing test. Observable wrong result: a Host that opens zero or two gates, applies in the Parent checkout instead of the Lane root, or omits lane_decision_required still passes the suite.",
+        "caller_chain": [
+          "tests/single-task-lane-decision.test.ts",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts#ClaudeRuntime.authorize",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts#relayPiLaneDecision",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts#relayLaneDecision",
+          "plugins/immune-brain/runtime/unattended/batch_runner.ts#superviseSingle"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "DAL-S5-A1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e93de9787959-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "DAL-S5-A2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A2's cancelled-stop-gate case and the Host-level stop relay are not tested. The stop test supplies a default apply that always reports applied and never exercises a native stop gate.",
+      "anchor": "sha256:4171629972c056a7dc0b1dbe19b246075b83bb32f867eb0d2a5ede779219aede",
+      "evidence": {
+        "trigger": "In the 'stops the live generation after a relayed Kernel stop' test, apply is the default stub (applied.value = true, returns {state:'applied'}). No test relays operation 'stop' with a cancelled or failed gate and asserts the Lane TaskRecord, the live generation and the retained Lane are unchanged. No test counts that the stop gate opens once on Claude Code or Pi. The stop semantics rest on each Host's applied predicate: Claude treats any non-throwing result other than replan_selected as applied, and Pi requires state === 'applied'. If a Host returns a cancelled result by value on Claude, stopSingleTaskSupervisor would terminate the generation although the user cancelled, and no test would catch it.",
+        "caller_chain": [
+          "tests/single-task-lane-decision.test.ts",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts#relayLaneDecision (stop branch)",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts#ClaudeRuntime.authorize",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts#relayPiLaneDecision"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "DAL-S5-A2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "qa-DAL-S5-A1-0a0bb40b-bf705d",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "DAL-S5-A1",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=6392B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s5-lane-decision-relay:2026-11-05T03:50:05.122Z",
+      "at": "2026-11-05T03:50:05.122Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s5-lane-decision-relay:2026-11-05T03:50:37.677Z",
+      "at": "2026-11-05T03:50:37.677Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e29291c9\naction_v2_sha256:63930ca3ece14c719ae0f5e823818f45931dd5470cb59bc1bb32d1583c79a12e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T03:50:37.677Z"
+      }
+    },
+    {
+      "id": "request_rework:drive-always-lanes-s5-lane-decision-relay:2026-11-05T03:54:15.957Z",
+      "at": "2026-11-05T03:54:15.957Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b611eb6787333bd59012dae414fc9e6c52672b216b940c03716d0c90b1eebcf3",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-05T03:54:15.958Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "aa207e280fbe74d4c9ce339a234023f58ec0d53c",
+        "review_commit": "f0dab9c488ac8d8549db21f3f7894ba092b78129",
+        "review_tree": "70a7268765d60e17a6d5d6a5eef8bea166cc8094",
+        "manifest_digest": "sha256:1ac0f4538fd1b6ee736ed10d87ba237ce99aae38cc33de33be5777b06a097f7d"
+      },
+      "review_started_at": "2026-11-05T03:52:57.261Z",
+      "review_submitted_at": "2026-11-05T03:54:15.400Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "resolve_finding:drive-always-lanes-s5-lane-decision-relay:2026-11-05T04:44:30.502Z",
+      "at": "2026-11-05T04:44:30.502Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e93de9787959-1-review-1\naction_v2_sha256:40826e1b1ae16d98e0e5d0a2d8c9cb380778a238b5dbbca4cfd7c093d93855d7"
+    },
+    {
+      "id": "resolve_finding:drive-always-lanes-s5-lane-decision-relay:2026-11-05T04:44:33.868Z",
+      "at": "2026-11-05T04:44:33.868Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e93de9787959-2-review-2\naction_v2_sha256:b433ab06ca1eb6b2507eb4af5de17b5765f324c1d281443c712c22ae3f9d2f0e"
+    },
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s5-lane-decision-relay:2026-11-05T04:44:39.697Z",
+      "at": "2026-11-05T04:44:39.697Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json"
+    },
+    {
+      "id": "request_rework:drive-always-lanes-s5-lane-decision-relay:2026-11-05T04:47:03.292Z",
+      "at": "2026-11-05T04:47:03.292Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:b6cb27bb6427371846c1642231a99fa39eb3d1a2c7903e833d2c46900905a2c7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T04:47:03.292Z"
+      }
+    },
+    {
+      "id": "resolve_finding:drive-always-lanes-s5-lane-decision-relay:2026-11-05T05:08:57.880Z",
+      "at": "2026-11-05T05:08:57.880Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-DAL-S5-A1-0a0bb40b-bf705d\naction_v2_sha256:6729ad7bdaca4a689db6e698e947b0dc48c35833e795b0cfc1462e4d896de40e"
+    },
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s5-lane-decision-relay:2026-11-05T05:09:01.902Z",
+      "at": "2026-11-05T05:09:01.902Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s5-lane-decision-relay:2026-11-05T05:11:30.353Z",
+      "at": "2026-11-05T05:11:30.353Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9104c8ed\naction_v2_sha256:8556069c827a6e1db9fbde2764767dd6ab3aacbe47967300b3c3d77bc0da8764",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T05:11:30.353Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s5-lane-decision-relay:2026-11-05T05:13:37.659Z",
+      "at": "2026-11-05T05:13:37.659Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-17832575\naction_v2_sha256:fd293f60df896b51b5856f9bad2f1833e6db85f6bcb40231cdc28cf536ddd5a6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-05T05:13:37.659Z"
+      },
+      "review_started_at": "2026-11-05T05:11:32.842Z",
+      "review_submitted_at": "2026-11-05T05:13:36.997Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:drive-always-lanes-s5-lane-decision-relay:2026-11-05T05:13:39.617Z",
+      "at": "2026-11-05T05:13:39.617Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c0880a905e7e4f9fe6ce45848bcf2d2816ed189e71a77c9985a005612e2cb4c9"
+    }
+  ]
+}

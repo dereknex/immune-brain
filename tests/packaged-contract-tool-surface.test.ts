@@ -132,6 +132,13 @@ describe("packaged contract tool surface", () => {
 		expect(markdownContracts().length).toBeGreaterThan(0);
 	});
 
+	test("neither Host registers an in-place Enrollment tool (drive-always-lanes D10)", () => {
+		expect(CLAUDE_TOOLS.has("enroll")).toBe(false);
+		expect(PI_TOOLS.has("imm_canary_enrollment")).toBe(false);
+		expect(CLAUDE_TOOLS.has("start_unattended_batch")).toBe(true);
+		expect(PI_TOOLS.has("start_unattended_batch")).toBe(true);
+	});
+
 	test("no packaged contract names a Host-specific tool spelling", () => {
 		expect(contractViolations()).toEqual([]);
 	});

@@ -7,7 +7,9 @@ import { resolveConfig } from "../runtime/config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
 
 export const PI_LANE_WAIT_MS = 5_000;
-const defaultSupervisor = new LaneSupervisor();
+/** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
+export const piLaneSupervisor = new LaneSupervisor();
+const defaultSupervisor = piLaneSupervisor;
 // The Pi batch adapter imports the host-neutral runtime modules statically,
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
@@ -532,7 +534,7 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
-	const supervisor = new LaneSupervisor();
+	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
@@ -574,7 +576,7 @@ export default function (
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -588,7 +590,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("start_unattended_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -653,7 +655,7 @@ export default function (
 			if (result.state !== "started" && result.state !== "native_parent") {
 				const failureState = result.state === "blocked" ? "blocked" : "failed";
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: failureState,
@@ -711,7 +713,7 @@ export default function (
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -725,7 +727,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("retire_stale_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -774,7 +776,7 @@ export default function (
 
 			if (result.state !== "retired") {
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: result.state === "blocked" ? "blocked" : "failed",

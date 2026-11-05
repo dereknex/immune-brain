@@ -50,7 +50,6 @@ describe("packed artifact loader", () => {
 		try {
 			const pkgDir = join(dir, "package");
 			for (const f of [
-				"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 				"plugins/immune-brain/skills/clarify/SKILL.md",
 				"plugins/immune-brain/skills/drive/SKILL.md",
@@ -80,8 +79,7 @@ describe("packed artifact loader", () => {
 				"imm-canary-authorize",
 				"imm-canary-succeed",
 			]) {
-				if (command !== "imm-canary-enroll")
-					expect(shippedFiles.some((file) => file.endsWith(`${command}.ts`))).toBe(false);
+				expect(shippedFiles.some((file) => file.endsWith(`${command}.ts`))).toBe(false);
 				expect(shippedText).not.toMatch(
 					new RegExp("(^|[\\s`])/(" + command + ")(?=[\\s<]|$)", "m"),
 				);
@@ -142,7 +140,6 @@ describe("packed artifact loader", () => {
 					.map((p: string) => p.split("/").pop() ?? p)
 					.sort();
 				expect(names).toEqual([
-					"imm-canary-enroll.ts",
 					"imm-canary-work.ts",
 					"imm-unattended-batch.ts",
 				]);

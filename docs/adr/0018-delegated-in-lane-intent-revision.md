@@ -113,3 +113,25 @@ Three accepted decisions stood in the way:
 - **Auto-superseding a drifted batch at preflight** (ADR 0016's rejected
   alternative). Still rejected: the reseal accepts only revisions the batch's
   own grant produced and never retires anything.
+
+## Amendment: single-task Lane decisions (drive-always-lanes S5)
+
+A single-task Lane has no coordinator tick that could hold a delegated grant, and
+its Executor is a non-interactive child that cannot open a native gate. When the
+Lane record waits on a literal-user decision, the Executor exits and the Parent's
+report carries `lane_decision_required` with the Lane record revision. The user
+answers it in the Parent: `request_authorization`, `approve_breaking_intent_revision`
+and `stop` for that task open the Parent Host's own native gate, the runtime
+applies the Kernel operation to the Lane store (the Lane root, not the checkout),
+and the supervisor starts the next generation. The literal user is still the only
+decider; nothing answers a dialog in a tab.
+
+A breaking revision approved this way also rebinds the single-task batch's
+approved intent identity (`rebindSingleTaskIdentity`) from the revision the Kernel
+committed in the Lane record, so the next tick does not refuse `plan_changed`
+or `batch_child_authority_changed`. `plan_digest` is not touched. Replaying the
+same identity changes nothing and an older revision is `lane_decision_stale`.
+A decision answered against a record revision that is no longer current, or whose
+Lane record moved while the gate was open, is `lane_decision_stale` and applies
+nothing; a cancelled gate applies nothing and starts no generation. Initiative
+(batch) children keep the delegated reseal above and are never relayed.

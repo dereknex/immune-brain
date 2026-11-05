@@ -118,7 +118,7 @@ describe("Pi run continuation boundary", () => {
 	});
 
 	test.each([
-		["imm_canary_enrollment", undefined], ["imm_kernel_canary", "request_authorization"],
+		["imm_kernel_canary", "request_authorization"],
 		["imm_kernel_canary", "approve_breaking_intent_revision"], ["imm_kernel_canary", "request_stop"],
 	])("%s %s: two failures stay retryable, the third suppresses gate retries until explicit entry (D9)", async (name, op) => {
 		const h = fixture(); try {

@@ -33,7 +33,6 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export const TOOLS = [
 	{ name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
-	{ name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
 	{ name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
 	{ name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
@@ -94,6 +93,8 @@ export function listMcpTools() {
 						task_id: { type: "string" },
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
+						// Spec drive-always-lanes D11: the record revision read in `lane_decision_required`; a Lane that moved since is refused as stale.
+						...(tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 						...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
@@ -131,7 +132,7 @@ export interface McpRuntimeOptions {
 	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
 	readInitiative?: import("../unattended/types").InitiativeObservationReader;
 	/**
-	 * Takes the admission the PreToolUse hook wrote for one `enroll`,
+	 * Takes the admission the PreToolUse hook wrote for one
 	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
 	 * private file store. `true` is an admission without an entry token.
 	 */
@@ -194,7 +195,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		const workspace = options.cwd ?? process.cwd();
 		const correlated = readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
-			throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
+			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
 		const grant = consumeAdmission(toolCallId, operation);
 		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
 		hookSessionId = correlated ?? hookSessionId;
@@ -323,10 +324,6 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 				signal: meta.signal,
 			};
-			if (name === "enroll") {
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
-				return runtime.enroll(taskId, entryToken ? { ...toolMeta, entryToken } : toolMeta);
-			}
 			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.

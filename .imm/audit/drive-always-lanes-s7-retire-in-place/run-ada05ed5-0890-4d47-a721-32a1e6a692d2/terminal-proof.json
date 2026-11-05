@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "drive-always-lanes-s7-retire-in-place",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:drive-always-lanes-s7-retire-in-place:2026-11-05T07:16:03.919Z",
+  "final_record_hash": "sha256:d7f6f9ebed98008edd03ce657a75e24a91fe33d22f182836e548e6e2628ab314",
+  "terminalized_at": "2026-11-05T07:16:03.919Z"
+}

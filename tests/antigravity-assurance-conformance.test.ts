@@ -163,7 +163,7 @@ describe("Antigravity Harness Conformance", () => {
 
 	describe("Lane Guard & Native Gate", () => {
 		it("recognizes privileged operations", () => {
-			expect(isPrivilegedOperation("enroll")).toBe(true);
+			expect(isPrivilegedOperation("enroll")).toBe(false);
 			expect(isPrivilegedOperation("start_unattended_batch")).toBe(true);
 			expect(isPrivilegedOperation("retire_stale_batch")).toBe(true);
 			expect(isPrivilegedOperation("advance_assurance")).toBe(false);
@@ -174,7 +174,7 @@ describe("Antigravity Harness Conformance", () => {
 			const result = antigravityPreToolUseHook({
 				conversationId: "conv-gate-1",
 				toolCall: {
-					name: "mcp__immune-brain__enroll",
+					name: "mcp__immune-brain__start_unattended_batch",
 					args: { taskId: "task-123" },
 				},
 			});
@@ -211,7 +211,7 @@ describe("Antigravity Harness Conformance", () => {
 				conversationId: "conv-drive-1",
 				stepIdx: 42,
 				toolCall: {
-					name: "mcp__immune-brain__enroll",
+					name: "mcp__immune-brain__start_unattended_batch",
 					args: { taskId: "task-999" },
 				},
 			});
@@ -221,7 +221,7 @@ describe("Antigravity Harness Conformance", () => {
 			const missingStep = antigravityPreToolUseHook({
 				conversationId: "conv-drive-1",
 				toolCall: {
-					name: "mcp__immune-brain__enroll",
+					name: "mcp__immune-brain__start_unattended_batch",
 					args: { taskId: "task-999" },
 				},
 			});
@@ -329,14 +329,18 @@ describe("Antigravity Harness Conformance", () => {
 					requestConfirmation: async () => ({ decision: "deny", reason: "User cancelled" }),
 				});
 
-				// Privileged operation enroll without entry token requires confirmation
+				// Privileged operation startUnattendedBatch without entry token requires confirmation
 				await expect(
-					runtime.enroll("task-01", {
-						sessionId: "s1",
-						toolCallId: "tc1",
-						taskId: "task-01",
-						interactive: true,
-					}),
+					runtime.startUnattendedBatch(
+						"task-01",
+						{
+							sessionId: "s1",
+							toolCallId: "tc1",
+							taskId: "task-01",
+							interactive: true,
+						},
+						{ plan_source: "single_task" },
+					),
 				).rejects.toThrow(NativeAuthorityError);
 			} finally {
 				rmSync(tempDir, { recursive: true, force: true });

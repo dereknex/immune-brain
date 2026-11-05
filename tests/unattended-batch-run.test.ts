@@ -806,6 +806,8 @@ describe("shared batch preflight projection", () => {
 			lane_executor_unavailable: ["lane_executor_unavailable", "Install the selected Executor on PATH and retry in the current Host."],
 			lane_executor_unobservable: ["lane_executor_unobservable", "Inspect the retained Lane and Executor process in the current Host."],
 			lane_executor_no_progress: ["lane_executor_no_progress", "Inspect the Lane and resume with a fresh drive entry."],
+			lane_decision_stale: ["lane_decision_stale", "Read the Lane decision facts again with status and relay the decision for the current record revision."],
+			lane_decision_rebind_failed: ["lane_decision_rebind_failed", "The decision was applied in the Lane; inspect the batch record with status before any further entry."],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {

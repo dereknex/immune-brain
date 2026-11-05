@@ -3,9 +3,8 @@ import { realpathSync } from "node:fs";
 import { projectTaskStatus } from "../runtime/assurance/coordinator";
 import { readTaskRecordRaw } from "../runtime/kernel/storage";
 import type { PhaseEntry } from "../runtime/assurance/phase_entry";
-import { recordParentRepair } from "../runtime/unattended/batch_git";
 import { readAnyBatchRunState } from "../runtime/unattended/batch_state";
-import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGate, releasesRunBinding, scopedSourceDigest,
+import { bindRun, decideRunContinuation, observeParentRun, releasesRunBinding, scopedSourceDigest,
 	type RunContinuationState, type ReviewContinuationState } from "../runtime/assurance/run_continuation";
 
 type SettleBoundary = {
@@ -53,9 +52,6 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 		const gate = `${event.toolName}:${gateInput.task_id ?? gateInput.initiative_slug ?? ""}:${gateInput.action?.op ?? ""}`;
 		if (failedGates.has(gate)) return { block: true, reason: `This native gate failed ${NATIVE_FAILURE_LIMIT} times under this entry; enter drive explicitly before retrying` };
 		if (!entered) return;
-		if (event.toolName === "imm_canary_enrollment" && state?.binding.kind === "parent" &&
-			state.binding.blocked_native_tasks?.includes(String(event.input.task_id)))
-			return { block: true, reason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly" };
 		if (event.toolName === "Agent" && reviewerPrompt &&
 			(event.input.subagent_type === "Review" || event.input.prompt === reviewerPrompt)) {
 			if (event.input.prompt !== reviewerPrompt || event.input.subagent_type !== "Review" || event.input.run_in_background !== false)
@@ -63,7 +59,7 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 			if (reviewerCallId) { review = "rejected"; return { block: true, reason: "Reserved Reviewer already dispatched; wait for its result and submit the verdict before any new dispatch" }; }
 			reviewerCallId = event.toolCallId; review = "running"; return;
 		}
-		if (!["imm_canary_enrollment", "imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
+		if (!["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
 		const input = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
 		calls.set(event.toolCallId, { name: event.toolName,
 			task_id: typeof input.task_id === "string" ? input.task_id : undefined,
@@ -100,10 +96,9 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 		const details = event.details as { state?: unknown; reason?: unknown; recovery_action?: unknown; next_action?: unknown;
 			agent_params?: { prompt?: unknown } } | undefined;
 		if ((event.isError || ["blocked", "cancelled", "rejected", "failed"].includes(String(details?.state))) &&
-			(call.name === "imm_canary_enrollment" || ["request_authorization", "approve_breaking_intent_revision", "request_stop"].includes(call.op ?? ""))) {
-			if (failNative(`${call.name}:${call.task_id}:${call.op ?? ""}`,
-				typeof details?.reason === "string" ? details.reason : "Native authority operation failed or was cancelled") &&
-				call.name === "imm_canary_enrollment" && state && await parkFailedCriticalGate(state.binding, call.task_id)) hostFailure = undefined;
+			["request_authorization", "approve_breaking_intent_revision", "request_stop"].includes(call.op ?? "")) {
+			failNative(`${call.name}:${call.task_id}:${call.op ?? ""}`,
+				typeof details?.reason === "string" ? details.reason : "Native authority operation failed or was cancelled");
 			return;
 		}
 		if (call.op === "advance_assurance" && !event.isError && details?.state === "review_ready") {
@@ -127,8 +122,6 @@ export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
 				review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; reviewRecovery = undefined;
 			}
 		}
-		if (call.name === "imm_canary_enrollment" && !event.isError && details?.state === "completed" && state?.binding.kind === "parent")
-			await recordParentRepair(ctx.cwd, state.binding.batch_id, call.task_id, state.binding.initiative_slug);
 		if (state || event.isError) return;
 		const status = await projectTaskStatus(ctx.cwd, call.task_id);
 		if (status.error || status.claim?.task_id !== call.task_id || status.projection.lifecycle !== "active" || !status.projection.run_id) return;

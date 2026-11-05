@@ -46,7 +46,7 @@ import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { writeEnrollmentBaseline } from "../plugins/immune-brain/runtime/workspace_scope";
 
-// The phase entry gate (ADR 0019) sits in front of `enroll` and
+// The phase entry gate (ADR 0019) sits in front of
 // `start_unattended_batch`. These tests exercise what lies behind it, so the
 // session records a real run entry and each gated call is admitted through the
 // real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
@@ -112,7 +112,6 @@ if (!(await hostPackagesAvailable())) {
 const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
 const { default: registerPiBatch, executePiUnattendedBatch: executePiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const executePiUnattendedBatch = (options: Parameters<typeof executePiBatch>[0]) => executePiBatch({ final_verification: ["bun --version"], ...options });
-const { default: registerPiEnroll } = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 
 // Registered seams are process-global; drop them when this file finishes so a
@@ -2277,6 +2276,8 @@ describe("dual-host assurance conformance", () => {
 		for (const key of keys) {
 			const spec = BATCH_REASONS[key];
 			if (typeof spec.reason === "function") continue;
+			// A reason equal to its key is a bare machine code with no prose to restate, and
+			// the adapter names that key to call batchReason, so this check cannot see it.
 			if (spec.reason === key) continue;
 			for (const source of adapterSources) {
 				expect({ key, present: source.includes(spec.reason) }).toEqual({ key, present: false });
@@ -2490,7 +2491,6 @@ describe("dual-host assurance conformance", () => {
 				registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<unknown> }) => tools.set(tool.name, tool),
 				registerCommand() {}, on() {}, events: { on() {}, emit() {} },
 			} as never;
-			registerPiEnroll(pi);
 			registerPiBatch(pi);
 			let piDialogs = 0;
 			const ctx = {
@@ -2511,9 +2511,9 @@ describe("dual-host assurance conformance", () => {
 
 			const expected = { reason_code: RUN_ENTRY_REQUIRED, recovery_action: PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED] };
 			const refusals = [
-				await claude("enroll", { task_id: "conformance-task" }),
+				await claude("retire_stale_batch", { initiative_slug: "conformance-initiative" }),
 				await claude("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
-				await piRefusal("imm_canary_enrollment", { action: "new", task_id: "conformance-task" }),
+				await piRefusal("retire_stale_batch", { initiative_slug: "conformance-initiative" }),
 				await piRefusal("start_unattended_batch", { initiative_slug: "conformance-initiative" }),
 			];
 			for (const refusal of refusals) expect(refusal).toEqual(expected);

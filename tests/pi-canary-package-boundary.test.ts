@@ -47,28 +47,6 @@ describe("pi canary package boundary", () => {
 		expect(pkg.pi.skills).toContain("./plugins/immune-brain/skills");
 	});
 
-	test("extension registers exactly one bounded enrollment Tool and no command", () => {
-		const ext = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
-		expect(ext.match(/registerTool\(/g)).toHaveLength(1);
-		expect(ext).toContain('name: "imm_canary_enrollment"');
-		expect(ext.match(/registerCommand\(/g) ?? []).toHaveLength(0);
-		expect(ext).not.toContain("registerFlag");
-		expect(ext).not.toContain("registerShortcut");
-	});
-
-	test("extension is TUI-only and rejects non-TUI modes", () => {
-		const ext = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
-		expect(ext).toContain('ctx.mode !== "tui"');
-	});
-
-	test("test issuer seam is excluded from the shipped extension", () => {
-		// The extension must never import the tests fixture.
-		const ext = readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"), "utf8");
-		expect(ext).not.toContain("tests/fixtures");
-		expect(ext).not.toContain("enrollment-capability-test-seam");
-		expect(ext).not.toContain("createEnrollmentCapabilityForTest");
-	});
-
 	test("kernel index still exposes no enrollment issuer or callback bridge", () => {
 		const index = readFileSync(join(ROOT, "plugins/immune-brain/runtime/kernel/index.ts"), "utf8");
 		expect(index).not.toContain("createEnrollmentAuthorityRegistry");
@@ -130,14 +108,6 @@ describe("pi canary package boundary", () => {
 		}
 	});
 
-	test("Pi Enrollment adapter reaches Kernel prepare only through the shared Enrollment boundary", () => {
-		const enroll = readFileSync(join(PI_EXTENSION_DIR, "imm-canary-enroll.ts"), "utf8");
-		expect(enroll).toContain("preparePiCanary");
-		expect(enroll).toContain("revalidatePiCanary");
-		expect(enroll).toContain('from "../runtime/assurance/enrollment"');
-		expect(enroll).not.toContain("pi_canary_prepare");
-	});
-
 	test("the production callers use the single Enrollment entry and none sequences rehearsal and commit", () => {
 		// D3: runtime/kernel/enrollment.ts's enrollTask is the only production
 		// sequencer of capability issue -> zero-write rehearsal -> commit. No
@@ -175,26 +145,15 @@ describe("pi canary package boundary", () => {
 			if (!isSequencerOrPort && (usesRehearsal || usesCommit))
 				sequencers.push(`${name}:${usesRehearsal ? "rehearsal" : ""}${usesCommit ? "commit" : ""}`);
 		}
-		// Pi enroll Tool, Claude enroll path, and the one shared Batch child
-		// Kernel port that serves both Hosts' batch children.
-		expect([...entryCalls].sort()).toEqual([
-			"imm-canary-enroll.ts",
-			"runtime/claude/kernel_ports.ts",
-			"runtime/unattended/batch_kernel_port.ts",
-		]);
+		// The Host in-place Enrollment tools are retired (drive-always-lanes D1,
+		// D2): the shared Batch child Kernel port is the only production caller.
+		expect([...entryCalls].sort()).toEqual(["runtime/unattended/batch_kernel_port.ts"]);
 		// Both Hosts' batch children reach the entry only through that port.
 		const sources = new Map(productionSources());
 		for (const host of ["imm-unattended-batch.ts", "runtime/claude/kernel_ports.ts"])
 			expect(sources.get(host)).toMatch(/\bcreateBatchKernelPort\s*\(/);
 		expect(importsEntry(sources.get("imm-unattended-batch.ts") ?? "")).toBe(false);
 		expect(sequencers).toEqual([]);
-		// Boundary: the Pi enroll Tool supplies its abort/begin-commit gate as
-		// the entry's checkpoint and reports the rehearsing and committing stages
-		// through the entry; no caller imports the primitives at all.
-		const enroll = readFileSync(join(PI_EXTENSION_DIR, "imm-canary-enroll.ts"), "utf8");
-		expect(enroll).not.toMatch(/\brunEnrollmentRehearsal\b/);
-		expect(enroll).not.toMatch(/\benrollCanaryTask\b/);
-		expect(enroll).toContain("checkpoint:");
 		// Negative controls: a source that calls both primitives outside the entry
 		// is flagged, and a caller that calls the entry is counted.
 		const positive = 'import { enrollTask, EnrollmentRehearsalError } from "../runtime/kernel/enrollment";';

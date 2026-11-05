@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -345,15 +346,6 @@ describe("acc-claude-batch-fail-closed", () => {
 			requestConfirmation: async input => { message = elicitationParams(input).message; return { decision: "decline", requestId: "critical" }; } });
 		expect((await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug })).state).toBe("rejected"); expect(message).toContain(`${f.slug}-c3 (S3) [risk: critical]`); noBatchWrites(f.root);
 	});
-	it("Local Slice dependency refusal precedes Claude Enrollment's native gate", async () => {
-		const f = fixture("boundary-local-dependency"); let gates = 0;
-		if (git(f.root, "remote").split("\n").includes("origin")) git(f.root, "remote", "remove", "origin");
-		mkdirSync(join(f.root, "docs/initiatives"), { recursive: true });
-		writeFileSync(join(f.root, `docs/initiatives/${f.slug}.md`), `# Parent\n## S1: predecessor\nTasks:\n- ${f.slug}-c1\n## S2: target\nTasks:\n- ${f.slug}-c2\nBlocked by: ${f.slug}-c1\n`);
-		const runtime = client(f, { ...withRunEntry(f.root, `/drive ${f.slug}-c2`), requestConfirmation: async () => { gates++; return { decision: "accept", requestId: "local" }; } });
-		await expect(runtime.callTool("enroll", { task_id: `${f.slug}-c2` })).rejects.toThrow(`Isolated Slice prerequisites are not integrated: ${f.slug}-c1`);
-		expect(gates).toBe(0);
-	});
 	it("status remains usable after a rejected batch", async () => {
 		const f = fixture("status-usable"); const runtime = client(f, { requestConfirmation: async () => ({ decision: "decline", requestId: "status" }) });
 		expect((await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug })).state).toBe("rejected");
@@ -586,7 +578,7 @@ describe("post-settlement tracker projection", () => {
 		const f = fixture("tracker-throw"), taskId = `${f.slug}-c1`;
 		const runtime = new ClaudeRuntime({ cwd: f.root, env: ENV, interactive: true, permissionMode: "manual", requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }) });
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll")); const realStatus = runtime.status.bind(runtime); let forced = 0;
+		await enrollTaskForTest(f.root, taskId); const realStatus = runtime.status.bind(runtime); let forced = 0;
 		runtime.status = (async id => { if (readTaskTombstone(f.root, id)) { forced++; throw new Error("terminal-tracker projection failed"); } return realStatus(id); }) as ClaudeRuntime["status"];
 		const result = await runtime.authorize(taskId, "stop", meta("stop")); expect(forced).toBe(1); expect(result.record.lifecycle).toBe("stopped");
 		expect((result as { tracker?: unknown }).tracker).toMatchObject({ operation: "mark-terminal", status: "retryable_failure" }); expect(readTaskTombstone(f.root, taskId)?.terminal_lifecycle).toBe("stopped"); expect(readTaskRecordRaw(f.root, taskId).record).toBeNull();
