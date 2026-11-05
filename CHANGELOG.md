@@ -1,5 +1,23 @@
 # Changelog
 
+## 7.2.0
+
+### Minor Changes
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`7295299`](https://github.com/dereknex/immune-brain/commit/7295299ea7ef05db585d8e77822dfdb70074ee66) Thanks [@dereknex](https://github.com/dereknex)! - Allow a standalone TaskIntent to start as a single-task Lane batch through the native batch authorization gate.
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`ac1b2e2`](https://github.com/dereknex/immune-brain/commit/ac1b2e25a5f961a0c3748aef3fd619fd81165322) Thanks [@dereknex](https://github.com/dereknex)! - Supervise a standalone Lane's Executor process from the invoking Host, including reattachment, interruption, and generation-bound exit observations.
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`96d350d`](https://github.com/dereknex/immune-brain/commit/96d350d21239dea506ec57904eeb3f5799299305) Thanks [@dereknex](https://github.com/dereknex)! - Return integrated single-task Lane changes to the user's checkout according to the Git integration preference, preserving unrelated edits and parking on conflicts.
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`aa207e2`](https://github.com/dereknex/immune-brain/commit/aa207e280fbe74d4c9ce339a234023f58ec0d53c) Thanks [@dereknex](https://github.com/dereknex)! - Remove a delivered single-task Lane, its `imm-lane/` branch and `imm/<task_id>` only on a runtime-observed normal exit of the current Executor generation and a clean Lane; otherwise retain it and report `batch_lane_retained` with the failed condition.
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`4c28646`](https://github.com/dereknex/immune-brain/commit/4c2864614f3507e89103e0a8cf0568f047be8056) Thanks [@dereknex](https://github.com/dereknex)! - Answer a single-task Lane's literal-user decision (resolve a user decision, authorize rework or review retry, approve a breaking revision, or stop) at the Parent Host's native gate: the runtime applies it to the Lane store, rebinds the batch's approved identity for a breaking revision, and starts the next Executor generation. Initiative batch children keep their behavior.
+
+  Also fix four defects the relay exposed in single-task Lane supervision: the batch report no longer drops `lane_decision_required` when the Executor exits, Pi mutations no longer fail layout checks once a Lane Executor has run (`.imm/state/lane-supervisors/` is a recognised state path), a Parent poll retries a transient `Kernel recovery projection changed` instead of aborting, and an Executor exit between two calls is recorded as handled so the next call starts generation N+1.
+
+- [#406](https://github.com/dereknex/immune-brain/pull/406) [`3838e09`](https://github.com/dereknex/immune-brain/commit/3838e09703761484065433479dfb8cd2c183a244) Thanks [@dereknex](https://github.com/dereknex)! - Retire in-place Enrollment: the Claude Code `enroll` MCP tool and the Pi `imm_canary_enrollment` tool are deleted with their native-gate code and run-entry admission, so every new single-task `drive` entry runs in a Lane. A TaskRecord enrolled in place earlier still advances to terminal through the loop tools.
+
 ## 7.1.0
 
 ### Minor Changes

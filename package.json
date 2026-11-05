@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "7.1.0",
+  "version": "7.2.0",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
@@ -29,7 +29,7 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "changeset:version": "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/plugin_versioning.ts validate",
+    "changeset:version": "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/build-antigravity-plugin.ts && bun scripts/plugin_versioning.ts validate",
     "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck && bun test && npm pack --dry-run --ignore-scripts",
     "changeset:publish": "bun run verify:release && changeset publish",
     "release": "bun run changeset:publish",

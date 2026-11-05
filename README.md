@@ -714,7 +714,7 @@ This repo uses [Changesets](https://github.com/changesets/changesets) for versio
 | Task | Command |
 |------|---------|
 | Add a changeset | `bunx changeset` — pick bump (patch/minor/major) and write summary |
-| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, then syncs and validates the Claude plugin manifest |
+| Bump version | `bun run changeset:version` — updates `package.json` + `CHANGELOG.md`, then syncs and validates the Claude and Antigravity plugin manifests |
 | Publish (local) | `bun run changeset:publish` — validates manifest versions, then publishes to npm (needs `NPM_TOKEN` or `npm login`) |
 
 **Automated flow (recommended):**
