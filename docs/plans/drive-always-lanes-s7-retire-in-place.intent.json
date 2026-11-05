@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s7-retire-in-place",
+  "owner": "user",
+  "goal": "Meet S7 of docs/specs/drive-always-lanes.spec.md: retire in-place Enrollment by deleting the Claude Code enroll MCP tool and the Pi imm_canary_enrollment tool with their native-gate code, run-entry admission and contract text, move tests that used them as setup onto Kernel-level enrollment helpers, and keep TaskRecords enrolled in place before this change resumable until terminal as a drain-only path (owner: runtime) (Spec D10, D12; Retirement Completion Contract).",
+  "acceptance": [
+    {
+      "id": "DAL-S7-A1",
+      "assertion": "The Claude Code MCP tool list contains no enroll tool and the Pi package registers no imm_canary_enrollment tool: plugins/immune-brain/.pi-extension/imm-canary-enroll.ts is deleted and removed from .pi-extension/package.json, the enroll handler and its gate in runtime/claude are deleted, and runtime/assurance/phase_entry.ts admits only start_unattended_batch and retire_stale_batch as entry tools. A TaskRecord enrolled in place before this change still advances through the loop tools to terminal on both Hosts. Seam: the named tool-surface and package tests plus a drain fixture.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S7-A2",
+      "assertion": "No file under plugins/immune-brain/dist, plugins/immune-brain/runtime/prompts, plugins/immune-brain/BASELINE.md or CONTEXT.md instructs in-place Enrollment or current-context Executor execution outside a Lane, which tests/unattended-contracts.test.ts asserts; tests that used the Host enroll tools as setup enroll through Kernel-level helpers instead, and the named focused tests pass. The full-suite check of BR-REQ-7 is the batch final_verification (Spec D12).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/packaged-contract-tool-surface.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s7-retire-in-place.md",
+    "CONTEXT.md",
+    "docs/plans/drive-always-lanes-s7-retire-in-place.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
+    "plugins/immune-brain/.pi-extension/package.json",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/canary-command-retirement-contract.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/enrollment-git-base.test.ts",
+    "tests/helpers",
+    "tests/packaged-contract-tool-surface.test.ts",
+    "tests/phase-entry.test.ts",
+    "tests/pi-canary-enroll-extension.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts",
+    "tests/pi-phase-entry-gate.test.ts",
+    "tests/pi-run-continuation.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "scope_size_reason": "Deletion-heavy retirement: the two Host enroll tools are used as setup by about 22 test files on both Hosts; deleting the tools without moving those tests to Kernel-level helpers in the same change leaves the suite red, so the deletion and the test migration cannot settle separately.",
+  "risk": "material",
+  "revision": 1
+}

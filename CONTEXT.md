@@ -49,7 +49,7 @@ One TaskIntent acceptance item combining an observable assertion with a focused 
 _Avoid_: implementation step, enrollment rehearsal
 
 **Enrollment**:
-The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `drive` entry, never by the Planner or Brainstorm (ADR 0019). It does not execute acceptance descriptors.
+The single native user-authority gate that atomically turns a validated, Git-tracked TaskIntent into an active TaskRecord and workspace claim. It is opened only as the first step of an explicit `drive` entry, never by the Planner or Brainstorm (ADR 0019), and it enrolls the task inside a Lane: no Host tool enrolls a task in the user's own conversation. It does not execute acceptance descriptors.
 _Avoid_: task creation, planning confirmation, QA
 
 **Task**:
@@ -255,7 +255,7 @@ The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). D
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.
-- Host integration: `plugins/immune-brain/.pi-extension/` owns Pi native Enrollment, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
+- Host integration: `plugins/immune-brain/.pi-extension/` owns the Pi batch gate, deterministic QA, foreground Review dispatch, authorization dialogs, and Task Rail presentation. `plugins/immune-brain/runtime/claude/` owns the Claude Code MCP/Hook adapter; the plugin manifests live under `plugins/immune-brain/.claude-plugin/`, `.mcp.json`, `hooks/`, and `agents/`.
 - Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task/Parent facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. Kernel and the existing batch driver retain execution ownership.
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude and Pi host adapters are callers only.

@@ -6,7 +6,7 @@
 //
 // Phase entry gate: UserPromptSubmit records which literal prompt entered
 // planning or execution, and a run entry mints the session's entry token (ADR
-// 0025); PreToolUse denies `enroll`, `start_unattended_batch`,
+// 0025); PreToolUse denies `start_unattended_batch`,
 // `retire_stale_batch` and the `drive` Skill without a live run entry, and
 // otherwise leaves an admission carrying that token, which the tool handler
 // consumes by tool-use id. A model Skill call for
@@ -38,9 +38,9 @@ import {
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
+const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(start_unattended_batch|retire_stale_batch)$/;
 
-export type GatedTool = "enroll" | "start_unattended_batch" | "retire_stale_batch";
+export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 
 /**
  * A consumed admission. `entry_token` is the live token the hook saw for this

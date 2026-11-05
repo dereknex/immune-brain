@@ -499,7 +499,7 @@ batch (`plan_source: "single_task"`, slug equal to `task_id`, `max_parallel` 1)
 under exactly one native gate on the current Host, bound to the TaskIntent
 revision, content hash and preparation digest. It creates the Lane at the user's
 HEAD, copies uncommitted planning input, and enrolls the child there; the
-Parent calls neither `enroll` nor `imm_canary_enrollment` and implements nothing.
+Parent enrolls nothing itself and implements nothing.
 Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
 
 - **Synchronous runtime supervision, on every Host including inside Herdr.** The
@@ -545,7 +545,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   revision, authorization and pending decisions). The
   Parent answers on its own Host with the native-gate tool the facts call for:
   `request_authorization`, `approve_breaking_intent_revision` with the complete
-  next intent, or `stop`, each passing the Lane's `task_id` and the
+  next intent, or a stop request, each passing the Lane's `task_id` and the
   `record_revision` it read. The runtime applies the approved decision to the
   Lane store through the same Kernel operation and starts the next generation; a
   breaking revision approved this way also rebinds the single-task batch's

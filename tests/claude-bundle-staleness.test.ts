@@ -14,7 +14,7 @@ import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattende
 // once its own bundle changed on disk, ahead of the phase entry gate.
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 const TOOL = (name: string) => `mcp__plugin_immune-brain_immune-brain__${name}`;
-const GATED: GatedTool[] = ["enroll", "start_unattended_batch", "retire_stale_batch"];
+const GATED: GatedTool[] = ["start_unattended_batch", "retire_stale_batch"];
 const AUTHORITY = [...GATED, "advance_assurance", "submit_review"] as const;
 const roots: string[] = [];
 
@@ -146,11 +146,12 @@ describe("Claude MCP server bundle staleness", () => {
 		const later = new Date(Date.now() + 60_000);
 		utimesSync(s.bundlePath, later, later);
 		s.prompt("/drive stale-a");
-		expect(s.hook("enroll", "toolu_enroll")).toBeNull();
-		const enrolled = await s.call("enroll", { task_id: "stale-a" }, "toolu_enroll");
-		expect(enrolled?.error).toBeUndefined();
-		expect(s.gateCalls()).toBe(1);
-		expect(readActiveClaimTaskId(s.cwd)).toBe("stale-a");
+		expect(s.hook("retire_stale_batch", "toolu_retire")).toBeNull();
+		const retired = await s.call("retire_stale_batch", { initiative_slug: "stale-init" }, "toolu_retire");
+		// An unchanged bundle reaches the operation itself (here it finds no batch), never the staleness refusal.
+		expect(retired?.error?.data?.reason_code).not.toBe("plugin_bundle_stale");
+		expect(retired?.error?.data?.reason_code).not.toBe("run_entry_required");
+		expect(s.consumed()).toBe(1);
 		for (const name of ["advance_assurance", "submit_review"]) {
 			const reply = await s.call(name, { task_id: "stale-a" }, `toolu_${name}`);
 			expect(reply?.error?.data?.reason_code).not.toBe("plugin_bundle_stale");
@@ -171,8 +172,8 @@ describe("Claude MCP server bundle staleness", () => {
 		const s = await session();
 		rmSync(s.bundlePath);
 		s.prompt("/drive stale-a");
-		expect(s.hook("enroll", "toolu_gone")).toBeNull();
-		expectStale(await s.call("enroll", { task_id: "stale-a" }, "toolu_gone"));
+		expect(s.hook("retire_stale_batch", "toolu_gone")).toBeNull();
+		expectStale(await s.call("retire_stale_batch", { initiative_slug: "stale-init" }, "toolu_gone"));
 		expect(s.consumed()).toBe(0);
 	});
 });

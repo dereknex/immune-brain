@@ -381,7 +381,7 @@ export function revokePiPhaseEntry(sessionId: string): void {
  * bound to another workspace refuses rather than falling back to a dialog.
  */
 export function piRunEntryRefusal(
-	operation: "enroll" | "start_unattended_batch" | "retire_stale_batch",
+	operation: "start_unattended_batch" | "retire_stale_batch",
 	ctx: PhaseEntryContext,
 ): Extract<PhaseAdmission, { ok: false }> | null {
 	const sessionId = piSessionId(ctx);
@@ -504,15 +504,6 @@ export default function (
 			// ADR 0030: validate marker-targeted dispatch before binding the reviewer.
 			return progression.piReviewHost.observeReviewDispatch(event.input as Parameters<typeof progression.piReviewHost.observeReviewDispatch>[0], event.toolCallId);
 		}
-		if (event.toolName === "imm_canary_enrollment" && ctx) {
-			const input = event.input as { task_id?: string } | undefined;
-			if (input?.task_id) presentTaskRail(ctx, {
-				task_id: input.task_id,
-				state: "Planning",
-				result: uxText(UX_LANG, "Preparing enrollment", "正在准备 Enrollment"),
-				next: uxText(UX_LANG, "Review the native enrollment decision", "请审查原生 Enrollment 决策"),
-			});
-		}
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
@@ -526,10 +517,6 @@ export default function (
 			const offeredModels = Array.isArray(result.details?.offered_models) && result.details.offered_models.every(item => typeof item === "string")
 				? result.details.offered_models as string[] : undefined;
 			progression.piReviewHost.observeReviewResult(result.toolCallId, text, model, offeredModels);
-		}
-		if (result.toolName === "imm_canary_enrollment" && ctx) {
-			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
-			if (taskId) presentTaskRailResult(ctx, taskId, result.details);
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {

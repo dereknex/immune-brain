@@ -294,6 +294,39 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 	});
 });
 
+describe("in-place Enrollment retired (Spec drive-always-lanes S7)", () => {
+	const shipped = [
+		"plugins/immune-brain/BASELINE.md",
+		"plugins/immune-brain/USER_GUIDE.md",
+		"plugins/immune-brain/skills/drive/SKILL.md",
+		"plugins/immune-brain/dist/drive.md",
+		"plugins/immune-brain/dist/drive-batch.md",
+		"plugins/immune-brain/dist/BASELINE.md",
+		"plugins/immune-brain/dist/role-prompts/executor.md",
+		"plugins/immune-brain/runtime/prompts/executor.md",
+		"CONTEXT.md",
+	].filter(rel => existsSync(resolve(REPO_ROOT, rel)));
+
+	it("names no Host enrollment tool in shipped contract text", () => {
+		for (const rel of shipped) {
+			const text = read(rel);
+			expect({ rel, retired: /imm_canary_enrollment|`enroll`(?: tool| or)/.test(text) }).toEqual({ rel, retired: false });
+		}
+	});
+
+	it("keeps only the drain-only sentence for a record enrolled in place earlier", () => {
+		const loop = normalized(LOOP_CONTRACT);
+		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal (drain-only, owner: runtime)");
+		expect(loop).toContain("a new entry never starts one");
+		expect(normalized(BATCH_CONTRACT)).toContain("An in-place TaskRecord enrolled before this change stays resumable");
+	});
+
+	it("never tells the Parent to implement a new entry in the current conversation", () => {
+		expect(normalized(LOOP_CONTRACT)).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
+		expect(normalized(BATCH_CONTRACT)).toContain("Parent enrolls nothing itself and implements nothing");
+	});
+});
+
 describe("unattended batch contract text", () => {
 	it("documents the opt-in entry, the single parameter, and the unchanged default", () => {
 		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");

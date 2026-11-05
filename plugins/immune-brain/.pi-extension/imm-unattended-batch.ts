@@ -576,7 +576,7 @@ export default function (
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -590,7 +590,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("start_unattended_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -655,7 +655,7 @@ export default function (
 			if (result.state !== "started" && result.state !== "native_parent") {
 				const failureState = result.state === "blocked" ? "blocked" : "failed";
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: failureState,
@@ -713,7 +713,7 @@ export default function (
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -727,7 +727,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("retire_stale_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -776,7 +776,7 @@ export default function (
 
 			if (result.state !== "retired") {
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: result.state === "blocked" ? "blocked" : "failed",

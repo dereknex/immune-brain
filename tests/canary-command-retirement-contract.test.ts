@@ -24,7 +24,6 @@ describe("Canary Slash Command retirement", () => {
 			pi: { extensions: string[] };
 		};
 		expect(manifest.pi.extensions).toEqual([
-			"./imm-canary-enroll.ts",
 			"./imm-canary-work.ts",
 			"./imm-unattended-batch.ts",
 		]);
@@ -33,7 +32,8 @@ describe("Canary Slash Command retirement", () => {
 	});
 
 	test("registers foreground Tools and the single read-only /imm-tasks overlay command", () => {
-		expect(loadFactory("imm-canary-enroll.ts")).toEqual({ tools: ["imm_canary_enrollment"], commands: [] });
+		// Spec drive-always-lanes S7: the in-place Enrollment Tool is retired with its factory.
+		expect(existsSync(join(EXT, "imm-canary-enroll.ts"))).toBe(false);
 		expect(loadFactory("imm-canary-work.ts")).toEqual({
 			tools: ["imm_kernel_canary", "imm_loop_action"],
 			commands: ["imm-tasks"],
@@ -41,7 +41,7 @@ describe("Canary Slash Command retirement", () => {
 	});
 
 	test("production extension sources register only the read-only /imm-tasks command", () => {
-		for (const file of ["imm-canary-enroll.ts", "imm-canary-work.ts"]) {
+		for (const file of ["imm-canary-work.ts"]) {
 			const source = readFileSync(join(EXT, file), "utf8");
 			expect(source).not.toMatch(/\/imm-canary-(new|enroll|assure|authorize|succeed)/);
 			for (const match of source.matchAll(/registerCommand\(\"([^\"]+)\"/g))

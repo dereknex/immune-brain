@@ -5040,10 +5040,6 @@ function preparePiCanary(root, input) {
   preparation.digest = `sha256:${sha256Hex2(stableStringify2(preparation))}`;
   return preparation;
 }
-function revalidatePiCanary(root, input, previous) {
-  const current = preparePiCanary(root, input);
-  return { unchanged: current.digest === previous.digest, current };
-}
 var SOURCE_PATH, GIT_OBJECT_ID2;
 var init_pi_canary_prepare = __esm(() => {
   init_backend_claim();
@@ -10965,19 +10961,6 @@ var init_lane_workspace = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
-var exports_coordinator = {};
-__export(exports_coordinator, {
-  AssuranceCoordinator: () => AssuranceCoordinator,
-  QaPreparationError: () => QaPreparationError,
-  TRACKER_PROJECTION_FAILURE: () => TRACKER_PROJECTION_FAILURE,
-  deliveryOf: () => deliveryOf,
-  projectTaskStatus: () => projectTaskStatus,
-  projectTerminalTrackerState: () => projectTerminalTrackerState,
-  qaPrepareObservation: () => qaPrepareObservation,
-  reviewAdvisoryRecords: () => reviewAdvisoryRecords,
-  reviewReworkFindings: () => reviewReworkFindings,
-  snapshotDigest: () => snapshotDigest
-});
 import { createHash as createHash18, randomUUID as randomUUID5 } from "node:crypto";
 import { execFileSync as execFileSync11 } from "node:child_process";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
@@ -14355,75 +14338,6 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
     return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
   }
 }
-async function assertIsolatedTaskPrerequisites(root, taskId, transport) {
-  const directory = resolve15(root, "docs/initiatives");
-  const local = existsSync11(directory) ? readdirSync6(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(entry.name)).filter((entry) => readFileSync19(resolve15(directory, entry.name), "utf8").includes(taskId)).map((entry) => observeLocalInitiative(root, entry.name.slice(0, -3))).filter((parent) => parent.tasks.some((task) => task.task_id === taskId)) : [];
-  if (local.length > 1)
-    throw new Error("Slice has ambiguous Local Initiative ownership");
-  if (local.length === 1) {
-    const parent = local[0];
-    const child = parent.tasks.find((task) => task.task_id === taskId);
-    if (child.blocked_by.length) {
-      await Promise.resolve().then(() => init_batch_git());
-      const proof = await observeParentCompletion(root, parent.initiative_id, child.blocked_by);
-      if (proof.missing_task_ids.length)
-        throw new Error(`Isolated Slice prerequisites are not integrated: ${proof.missing_task_ids.join(", ")}; execute only this Slice after its prerequisites are delivered`);
-    }
-    return;
-  }
-  if (!transport) {
-    const remotes = spawnSync14("git", ["-C", root, "remote"], { encoding: "utf8" });
-    if (remotes.status !== 0)
-      throw new Error("cannot verify repository carrier before Slice Enrollment");
-    if (!remotes.stdout.trim())
-      return;
-  }
-  const gh = transport ?? createGhTransport();
-  const source = await snapshot(resolve15(root), gh, "create-initiative");
-  if ("contract" in source)
-    throw new Error(source.message);
-  const task = taskLookup(source.issues, source.repository.id, taskId);
-  if (task.kind === "missing")
-    return;
-  if (task.kind === "ambiguous")
-    throw new Error(task.message);
-  const initiative = ownershipMarkerValue(task.issue.body, "initiative-id");
-  if (!initiative)
-    throw new Error("Task Issue has no unique Initiative identity");
-  const observation = await observeGithubInitiative(root, initiative, gh);
-  const child = observation.tasks.find((candidate) => candidate.task_id === taskId);
-  if (!child)
-    throw new Error("Task Issue is absent from its Parent topology");
-  const parent = initiativeLookup(source.issues, source.repository.id, initiative);
-  if (parent.kind !== "found")
-    throw new Error(`Cannot read published plan for Slice ${child.slice_id}`);
-  const sliceMarker = marker("slice-id", child.slice_id);
-  const body = parent.issue.body.split(/\r?\n/);
-  const at = body.flatMap((line, index) => line.includes(sliceMarker) ? [index] : []);
-  if (at.length !== 1 || countLiteral(body[at[0]], sliceMarker) !== 1)
-    throw new Error(`Published plan must contain exactly one marker for Slice ${child.slice_id}`);
-  const next = body.findIndex((line, index) => index > at[0] && line.includes("<!-- immune-brain:slice-id="));
-  const entry = body.slice(at[0], next === -1 ? body.length : next).join(`
-`);
-  const annotation = entry.match(/\(blocked by:([^)\n]*)\)[ \t]*$/m);
-  if (countLiteral(entry, "(blocked by:") > 1 || entry.includes("(blocked by:") && !annotation)
-    throw new Error(`Invalid prerequisites for Slice ${child.slice_id}`);
-  const prerequisites = annotation ? annotation[1].split(",").map((id) => id.trim()) : [];
-  try {
-    for (const id of prerequisites)
-      identifier(id, "prerequisite task_id");
-    if (new Set(prerequisites).size !== prerequisites.length || prerequisites.some((id) => id === taskId || !observation.tasks.some((task) => task.task_id === id)))
-      throw new Error("invalid prerequisite topology");
-  } catch {
-    throw new Error(`Invalid prerequisites for Slice ${child.slice_id}`);
-  }
-  if (!prerequisites.length)
-    return;
-  await Promise.resolve().then(() => init_batch_git());
-  const proof = await observeParentCompletion(root, initiative, prerequisites);
-  if (proof.missing_task_ids.length)
-    throw new Error(`Isolated Slice prerequisites are not integrated: ${proof.missing_task_ids.join(", ")}; execute only this Slice after its prerequisites are delivered`);
-}
 async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
   const id = identifier(initiativeId, "initiative_id");
   const source = await snapshot(resolve15(root), gh, "create-initiative");
@@ -16365,34 +16279,6 @@ async function advanceNativeParent(root, initiativeSlug, commands, readInitiativ
     final_verification_commands: native?.final_verification.results.map((result) => result.command) ?? commands
   };
 }
-async function recordParentRepair(root, batchId, taskId, initiativeSlug) {
-  const batch = batchId === null ? null : readAnyBatchRunState(root, batchId);
-  const native = batchId === null && initiativeSlug ? readNativeParentFinalReport(root, initiativeSlug) : null;
-  const container = batch ?? native;
-  if (!container || (batch ? batch.final_verification_result?.passed : native?.final_verification.passed) !== false)
-    return;
-  if (batch) {
-    const parent = await (await Promise.resolve().then(() => (init_batch_plan(), exports_batch_plan))).observeInitiative(root, batch.initiative_slug);
-    if (parent.tasks.some((child) => child.task_id === taskId))
-      return;
-  } else if (native.task_ids.includes(taskId))
-    return;
-  const status = await (await Promise.resolve().then(() => (init_coordinator(), exports_coordinator))).projectTaskStatus(root, taskId);
-  if (status.error || status.claim?.task_id !== taskId || status.projection.lifecycle !== "active" || !status.projection.run_id)
-    throw new Error("repair native Enrollment has no exact active run identity");
-  if (container.repair_tasks?.some((task) => task.task_id === taskId && task.run_id === status.projection.run_id))
-    return;
-  if (container.repair_tasks?.some((task) => task.task_id === taskId))
-    throw new Error("Parent repair task was replaced by another run");
-  container.repair_tasks = [...container.repair_tasks ?? [], { task_id: taskId, run_id: status.projection.run_id }];
-  if (batch) {
-    if (isLaneBatchRecord(batch))
-      writeBatchLaneRunState(root, batch);
-    else
-      writeBatchRunState(root, batch);
-  } else
-    writeNativeParentFinalReport(root, native);
-}
 function settledDeliveryInTree(root, commit, taskId, settled) {
   const paths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
   return [paths.record, paths.proof].every((path) => {
@@ -17634,7 +17520,6 @@ function phaseRefusalMessage(refusal) {
 
 // plugins/immune-brain/runtime/claude/interaction.ts
 var PRIVILEGED_OPERATIONS = [
-  "enroll",
   "request_authorization",
   "approve_breaking_intent_revision",
   "stop",
@@ -18413,15 +18298,6 @@ function bindRun(binding) {
     throw new Error("invalid failed native task observations");
   return { binding, progress_digest: null, unchanged_observations: 0, boundary_id: null };
 }
-async function parkFailedCriticalGate(binding, taskId) {
-  if (binding.kind !== "parent" || !taskId || readActiveClaimTaskId(binding.workspace) === taskId)
-    return false;
-  const parent = await observeInitiative(binding.workspace, binding.initiative_slug);
-  if (!parent.tasks.some((task) => task.task_id === taskId) || readTaskIntent(binding.workspace, taskId).intent.risk !== "critical")
-    return false;
-  binding.blocked_native_tasks = [...new Set([...binding.blocked_native_tasks ?? [], taskId])];
-  return true;
-}
 function releasesRunBinding(prompt, phase) {
   return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
 }
@@ -18758,7 +18634,7 @@ function isAbsent(error) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(enroll|start_unattended_batch|retire_stale_batch)$/;
+var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(start_unattended_batch|retire_stale_batch)$/;
 function denyPreToolUse(reason) {
   return JSON.stringify({
     hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason }
@@ -18954,7 +18830,6 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir6()) {
 // plugins/immune-brain/runtime/claude/run_continuation.ts
 init_coordinator();
 init_storage();
-init_batch_git();
 init_batch_state();
 import { existsSync as existsSync15, realpathSync as realpathSync19, lstatSync as lstatSync18, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
@@ -19053,7 +18928,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 // plugins/immune-brain/runtime/claude/run_continuation.ts
 import { homedir as homedir3 } from "node:os";
 var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
-var NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
 var blank = () => ({
@@ -19134,10 +19009,6 @@ function pauseRun(metadata, sessionId, root, reason) {
 async function observeNativeFailure(metadata, correlation, root, reason) {
   metadata.native_failures++;
   if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
-    save(correlation.session_id, root, metadata);
-    return;
-  }
-  if (correlation.operation === "enroll" && metadata.state && await parkFailedCriticalGate(metadata.state.binding, correlation.task_id ?? undefined)) {
     save(correlation.session_id, root, metadata);
     return;
   }
@@ -19249,12 +19120,6 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
           permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate`
         } });
       const input = payload.tool_input ?? {};
-      if (operation === "enroll" && metadata.state?.binding.kind === "parent" && metadata.state.binding.blocked_native_tasks?.includes(String(input.task_id)))
-        return JSON.stringify({ hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly"
-        } });
       const correlation = {
         session_id: sessionId,
         workspace,
@@ -19311,13 +19176,11 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
             plan_digest: batch.plan_digest
           });
       }
-      if (!metadata.state && correlated.task_id && ["enroll", "status"].includes(operation)) {
+      if (!metadata.state && correlated.task_id && operation === "status") {
         const status = await projectTaskStatus(workspace, correlated.task_id);
         if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
           metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
       }
-      if (operation === "enroll" && correlated.task_id && metadata.state?.binding.kind === "parent" && !["blocked", "cancelled", "failed", "rejected"].includes(String(response?.state)))
-        await recordParentRepair(workspace, metadata.state.binding.batch_id, correlated.task_id, metadata.state.binding.initiative_slug);
       if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
         return null;
       if (operation === "advance_assurance" && response?.state === "review_ready") {
@@ -19451,7 +19314,7 @@ init_verdict_authority();
 init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
-import { execFileSync as execFileSync15 } from "node:child_process";
+import { execFileSync as execFileSync14 } from "node:child_process";
 import { dirname as dirname16, join as join32, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
@@ -19729,470 +19592,9 @@ function createEnrollmentAuthorityRegistry() {
   }, "enrollment");
 }
 
-// plugins/immune-brain/runtime/kernel/enrollment.ts
-init_sqlite_store();
-init_intent();
-init_spec_binding();
-init_batch_authority();
-init_pi_canary_prepare();
-init_workspace_scope();
-init_run_identity();
-init_storage();
-function enrollmentScopeDisclosure(root, taskId) {
-  let paths = [];
-  try {
-    paths = dirtyScopePaths(root, readTaskIntent(root, taskId).intent.scope_hint, taskId);
-  } catch {
-    return { paths: [], notice: null };
-  }
-  return {
-    paths,
-    notice: paths.length === 0 ? null : `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`
-  };
-}
-function singleTaskEnrollmentDirt(root, intentPath, intent) {
-  const binding = inspectSpecBinding(intent);
-  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
-}
-
-class EnrollmentRehearsalError extends Error {
-  blockers;
-  constructor(blockers) {
-    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
-    this.name = "EnrollmentRehearsalError";
-    this.blockers = blockers;
-  }
-}
-function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
-  const blockers = [];
-  let validated = null;
-  try {
-    validated = registry.inspect(capability, input.capability_binding);
-    if (mode === "fail_fast" && validated.task_id !== input.task_id)
-      throw new Error("enrollment capability task mismatch");
-  } catch (error) {
-    if (mode === "fail_fast")
-      throw error;
-    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  beforeLock(validated);
-  return withKernelStoreLock(root, () => {
-    let current = null;
-    let workspace = null;
-    let intent = null;
-    let gitBaseHead = null;
-    let claimedScopePaths = [];
-    const fail = (report, error) => {
-      if (mode === "fail_fast")
-        throw error instanceof Error ? error : new Error(String(error));
-      blockers.push(report);
-    };
-    const localRun = reconcileKernelAuthority(root, input.task_id);
-    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
-    if (localTerminal) {
-      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
-    } else {
-      current = readTaskRecordRaw(root, input.task_id);
-      if (current.record)
-        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
-    }
-    workspace = readWorkspaceStateRaw(root);
-    if (workspace.state.current_working !== null)
-      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
-    try {
-      intent = readTaskIntent(root, input.task_id);
-    } catch (error) {
-      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent) {
-      const binding = inspectSpecBinding(intent.intent);
-      if (!binding.ok)
-        fail(binding.message, new Error(binding.message));
-    }
-    try {
-      gitBaseHead = readGitHead(root);
-    } catch (error) {
-      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
-    }
-    if (intent && gitBaseHead) {
-      try {
-        if (!input.batch) {
-          const binding = inspectSpecBinding(intent.intent);
-          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
-          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
-          if (dirty.length > 0) {
-            const message = `workspace_not_clean: ${dirty.join(", ")}`;
-            fail(message, new Error(message));
-          }
-        } else {
-          const disclosed = new Set(input.disclosed_scope_paths ?? []);
-          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
-          const unlisted = dirty.filter((path) => !disclosed.has(path));
-          if (unlisted.length > 0) {
-            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
-            fail(message, new Error(message));
-          } else
-            claimedScopePaths = dirty;
-        }
-      } catch (error) {
-        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
-      }
-    }
-    const state = {
-      validated,
-      current,
-      workspace,
-      intent,
-      gitBaseHead,
-      claimedScopePaths
-    };
-    return onReady ? onReady(state) : { ...state, blockers };
-  });
-}
-function buildTaskRecordV4(input, intent, gitBaseHead) {
-  return {
-    contract: "assurance_kernel/task_record/v4",
-    task_id: input.task_id,
-    intent_snapshot: intent.intent,
-    intent_ref: {
-      path: input.intent_path,
-      content_hash: intent.content_hash
-    },
-    lifecycle: "active",
-    artifact_state: "active",
-    baseline: intent.content_hash,
-    git_base_head: gitBaseHead,
-    attestations: [],
-    findings: [],
-    history: []
-  };
-}
-function runEnrollmentRehearsal(root, input, capability, registry) {
-  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
-    return;
-  });
-  return {
-    rehearsed: true,
-    writes_performed: false,
-    evidence: {
-      contract: "assurance_kernel/enrollment_rehearsal/v1",
-      task_id: input.task_id,
-      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
-      blockers: preconditions.blockers,
-      claimed_scope_paths: preconditions.claimedScopePaths,
-      generated_at: input.now
-    }
-  };
-}
-function enrollmentEventId(taskId, now) {
-  return enrollmentEventIdFor(taskId, now);
-}
-var CANCELLATION_BOUNDARY = Promise.resolve();
-async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
-  const capability = registry.issue(binding);
-  const input = {
-    task_id: binding.task_id,
-    intent_path: binding.intent_path,
-    intent_revision: binding.intent_revision,
-    preparation_digest: binding.preparation_digest,
-    capability,
-    capability_binding: binding,
-    ...batch ? { batch } : {},
-    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
-    now
-  };
-  const { eventId, digest } = digestForEnrollment(input);
-  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (committed) {
-    const result = {
-      record: committed.record,
-      backend_claim: committed.claim,
-      workspace: { revision: "", state: committed.workspace }
-    };
-    return checkpoint ? { outcome: "enrolled", result } : result;
-  }
-  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
-  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
-    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
-  await CANCELLATION_BOUNDARY;
-  if (checkpoint && !checkpoint())
-    return { outcome: "cancelled" };
-  const result = enrollCanaryTask(root, input, registry);
-  return checkpoint ? { outcome: "enrolled", result } : result;
-}
-function digestForEnrollment(input) {
-  const eventId = enrollmentEventId(input.task_id, input.now);
-  return {
-    eventId,
-    digest: enrollmentRequestDigest({
-      task_id: input.task_id,
-      intent_path: input.intent_path,
-      intent_revision: input.intent_revision,
-      intent_content_hash: input.capability_binding.intent_content_hash,
-      preparation_digest: input.preparation_digest,
-      enrollment_event_id: eventId,
-      actor_id: input.capability_binding.actor_id,
-      confirmation_ref: input.capability_binding.confirmation_ref,
-      nonce: input.capability_binding.nonce
-    })
-  };
-}
-function enrollCanaryTask(root, input, registry) {
-  const { eventId, digest } = digestForEnrollment(input);
-  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
-  if (replayed)
-    return {
-      record: replayed.record,
-      backend_claim: replayed.claim,
-      workspace: { revision: "", state: replayed.workspace }
-    };
-  let gitBaseHead = null;
-  let consumed = false;
-  try {
-    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
-      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (recomputed.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      gitBaseHead = recomputed.git_base_head;
-      if (!gitBaseHead)
-        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
-    }, (checks) => {
-      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
-        throw new Error("enrollment precondition state incomplete");
-      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
-      if (locked.digest !== input.preparation_digest)
-        throw new Error("enrollment preparation digest mismatch");
-      if (checks.intent.intent.revision !== input.intent_revision)
-        throw new Error("intent revision mismatch");
-      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
-        throw new Error("intent content hash mismatch");
-      if (checks.gitBaseHead !== gitBaseHead)
-        throw new Error("Git HEAD moved after the enrollment confirmation");
-      if (input.batch) {
-        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
-        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
-          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
-        if (checks.gitBaseHead !== input.batch.expected_head)
-          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
-      }
-      registry.consume(input.capability, input.capability_binding);
-      consumed = true;
-      if (input.batch)
-        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
-      if (!gitBaseHead)
-        throw new Error("enrollment requires a committed Git HEAD");
-      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
-      const nextWorkspace = {
-        ...checks.workspace.state,
-        current_working: input.task_id
-      };
-      const claim = {
-        contract: "assurance_kernel/backend_claim/v2",
-        backend: "kernel",
-        task_id: input.task_id,
-        intent_revision: input.intent_revision,
-        intent_content_hash: checks.intent.content_hash,
-        enrollment_event_id: eventId,
-        lifecycle_status: "active",
-        created_at: input.now,
-        updated_at: input.now
-      };
-      const mutation = commitEnrollmentLocked(root, input.task_id, {
-        contract: "assurance_kernel/workspace_transaction/v2",
-        task_id: input.task_id,
-        expected_record_hash: checks.current.revision,
-        next_record_content: `${JSON.stringify(record, null, 2)}
-`,
-        expected_workspace_hash: checks.workspace.revision,
-        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
-`
-      }, claim, digest);
-      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
-      return {
-        record: mutation.record,
-        backend_claim: claim,
-        workspace: { revision: "", state: mutation.workspace }
-      };
-    });
-  } catch (error) {
-    const ownership = (() => {
-      try {
-        return {
-          known: true,
-          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
-        };
-      } catch {
-        return { known: false, owned: false };
-      }
-    })();
-    if (consumed && input.batch && ownership.known && !ownership.owned)
-      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
-    throw error;
-  }
-}
-
 // plugins/immune-brain/runtime/claude/kernel_ports.ts
 init_storage();
-init_spec_binding();
 init_workflow_autocommit();
-
-// plugins/immune-brain/runtime/assurance/enrollment_git_base.ts
-init_intent();
-init_spec_binding();
-init_workspace_scope();
-init_workflow_autocommit();
-init_git_integration_preference();
-init_pi_canary_prepare();
-init_storage();
-import { execFileSync as execFileSync13, spawnSync as spawnSync18 } from "node:child_process";
-function git9(root, args, input, env = process.env) {
-  return execFileSync13("git", args, { cwd: root, encoding: "utf8", input, env, stdio: ["pipe", "pipe", "pipe"] }).trim();
-}
-function inspectEnrollmentGitBase(root) {
-  if (git9(root, ["rev-parse", "--is-inside-work-tree"]) !== "true")
-    throw new Error("Enrollment requires a Git working tree");
-  try {
-    return { state: "committed", head: readGitHead(root) };
-  } catch {}
-  const branch = git9(root, ["symbolic-ref", "--no-recurse", "HEAD"]);
-  if (!branch.startsWith("refs/heads/"))
-    throw new Error("Enrollment HEAD must name a local branch");
-  const ref = spawnSync18("git", ["show-ref", "--verify", "--quiet", branch], { cwd: root });
-  const symbolic = spawnSync18("git", ["symbolic-ref", "-q", branch], { cwd: root });
-  if (ref.status !== 1 || symbolic.status !== 1)
-    throw new Error("Enrollment Git HEAD is invalid; only an absent branch can be initialized");
-  return { state: "unborn", branch };
-}
-function enrollmentGitBaseNotice(base, root) {
-  if (base.state !== "unborn")
-    return;
-  const notice = `Git: create an empty initial commit on ${base.branch} before Enrollment; staged files and working tree remain unchanged. This commit remains if later Enrollment fails or is cancelled.`;
-  if (root === undefined)
-    return notice;
-  return readGitIntegrationPreference(root).mode === "manual" ? `${notice} In-scope staged and untracked changes become task work without a commit (Git integration: manual).` : `${notice} In-scope staged and untracked changes are then committed on top of it (Git integration: auto).`;
-}
-function enrollmentPreconditionSubject(taskId) {
-  return `chore(imm): commit Enrollment preconditions for ${taskId}`;
-}
-function enrollmentCommittablePaths(root, taskId, unbornScope = false) {
-  const intentPath = `docs/plans/${taskId}.intent.json`;
-  try {
-    if (inspectEnrollmentGitBase(root).state !== "committed")
-      return null;
-    const { intent } = observeEnrollmentTaskIntent(root, taskId);
-    const binding = inspectSpecBinding(intent);
-    if (!binding.ok)
-      return null;
-    const dirtyScope = unbornScope ? dirtyScopePaths(root, intent.scope_hint, taskId) : [];
-    const untrackedIntent = spawnSync18("git", ["ls-files", "--error-unmatch", "--", intentPath], { cwd: root }).status === 1;
-    if (dirtyScope.length === 0 && !untrackedIntent)
-      return [];
-    return [...new Set([intentPath, ...binding.binding ? [binding.binding.active] : [], ...dirtyScope])];
-  } catch {
-    return null;
-  }
-}
-function freshEnrollmentAdmitted(root, taskId) {
-  try {
-    const authority = reconcileKernelAuthority(root, taskId);
-    if (authority.state !== "unowned" && !(authority.state === "terminal_owner" && authority.owner_run_id === null))
-      return false;
-    const owners = preparePiCanary(root, { task_id: taskId, now: new Date().toISOString() });
-    return !owners.backend_claim.present && !owners.task_record_v3?.present && owners.workspace.current_working === null;
-  } catch {
-    return false;
-  }
-}
-function stagePaths(root, paths) {
-  const ignored = spawnSync18("git", ["check-ignore", "-z", "--stdin"], {
-    cwd: root,
-    encoding: "utf8",
-    input: `${paths.join("\x00")}\x00`
-  });
-  if (ignored.status === 0)
-    throw new Error(`enrollment_precondition_ignored_path: ${ignored.stdout.split("\x00").filter(Boolean).join(", ")}; adjust Git ignore rules or explicitly track these planning files before retrying Enrollment`);
-  if (ignored.status !== 1)
-    throw new Error(`enrollment_precondition_ignore_check_failed: ${ignored.error?.message ?? ignored.stderr.trim()}`);
-  execFileSync13("git", ["add", "--", ...paths], {
-    cwd: root,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, GIT_LITERAL_PATHSPECS: "1" }
-  });
-}
-function commitEnrollmentPreconditions(root, taskId, signal, unbornScope = false) {
-  return withKernelStoreLock(root, () => {
-    const paths = enrollmentCommittablePaths(root, taskId, unbornScope);
-    if (!paths || paths.length === 0 || !freshEnrollmentAdmitted(root, taskId))
-      return { committed: false };
-    if (readGitIntegrationPreference(root).mode === "manual") {
-      signal?.throwIfAborted();
-      const staged = unbornScope ? [] : paths;
-      if (staged.length > 0)
-        stagePaths(root, staged);
-      return { committed: false, staged };
-    }
-    return commitWorkflowPaths(root, { paths, subject: enrollmentPreconditionSubject(taskId), signal });
-  });
-}
-var withoutGit = ({ digest, git_base_head, git_error, ...owners }) => owners;
-function commitUnbornEnrollmentPreconditions(root, input, confirmed, signal) {
-  if (readGitIntegrationPreference(root).mode === "manual") {
-    signal?.throwIfAborted();
-    let claimed = [];
-    try {
-      if (freshEnrollmentAdmitted(root, input.task_id))
-        claimed = dirtyScopePaths(root, observeEnrollmentTaskIntent(root, input.task_id).intent.scope_hint, input.task_id);
-    } catch {}
-    return { result: { committed: false, staged: [] }, preparation: confirmed, claimed_scope_paths: claimed };
-  }
-  const result = commitEnrollmentPreconditions(root, input.task_id, signal, true);
-  if (!result.committed)
-    return { result, preparation: confirmed, claimed_scope_paths: [] };
-  const current = preparePiCanary(root, input);
-  if (current.git_base_head !== result.commit || JSON.stringify(withoutGit(current)) !== JSON.stringify(withoutGit(confirmed)))
-    throw new Error(`Workspace changed during the Enrollment precondition commit; retry Enrollment${preconditionCommitNote(result)}`);
-  return { result, preparation: current, claimed_scope_paths: [] };
-}
-function preconditionCommitNote(result) {
-  if (result.committed)
-    return `; Enrollment precondition commit ${result.commit} remains`;
-  return "staged" in result && result.staged.length > 0 ? `; Enrollment staged ${result.staged.join(", ")} without committing (Git integration: manual); they remain staged` : "";
-}
-function initializeEnrollmentGitBase(root, input, previous, base, signal) {
-  const assertUnchanged = () => {
-    signal?.throwIfAborted();
-    if (!revalidatePiCanary(root, input, previous).unchanged || JSON.stringify(inspectEnrollmentGitBase(root)) !== JSON.stringify(base))
-      throw new Error("Workspace or Git branch changed after confirmation; retry Enrollment");
-  };
-  assertUnchanged();
-  if (base.state === "committed")
-    return previous;
-  return withKernelStoreLock(root, () => {
-    let created;
-    try {
-      assertUnchanged();
-      if (!previous.intent || previous.backend_claim.present || previous.task_record_v3?.present || previous.workspace.current_working !== null)
-        throw new Error("Empty Git base initialization requires an unowned workspace and a tracked TaskIntent");
-      const tree = git9(root, ["hash-object", "-t", "tree", "-w", "--stdin"], "");
-      const commit = git9(root, ["commit-tree", tree, "-m", "chore: initialize empty Enrollment base"], undefined, identityEnv(root));
-      assertUnchanged();
-      git9(root, ["update-ref", "--no-deref", base.branch, commit, "0".repeat(commit.length)]);
-      created = commit;
-      const current = preparePiCanary(root, input);
-      if (git9(root, ["symbolic-ref", "--no-recurse", "HEAD"]) !== base.branch || current.git_base_head !== commit || JSON.stringify(withoutGit(current)) !== JSON.stringify(withoutGit(previous)))
-        throw new Error("Workspace changed during empty Git base initialization; retry Enrollment");
-      return current;
-    } catch (error) {
-      if (created)
-        throw new Error(`${error instanceof Error ? error.message : String(error)}; empty initial commit ${created} remains`);
-      throw error;
-    }
-  });
-}
-
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_pi_canary_prepare();
 init_qa();
 init_workspace_scope();
 init_batch_reasons();
@@ -20218,14 +19620,14 @@ init_role_prompt_bridge();
 init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
-import { execFileSync as execFileSync14 } from "node:child_process";
+import { execFileSync as execFileSync13 } from "node:child_process";
 import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join29 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
     bytes: readFileSync21(join29(root, relativePath)),
-    index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
+    index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
     })
@@ -20233,12 +19635,12 @@ function captureStagedIntent(root, relativePath) {
 }
 function restoreStagedIntent(root, snapshot) {
   writeFileSync11(join29(root, snapshot.path), snapshot.bytes);
-  execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
+  execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (snapshot.index_state.length > 0) {
-    execFileSync14("git", ["update-index", "-z", "--index-info"], {
+    execFileSync13("git", ["update-index", "-z", "--index-info"], {
       cwd: root,
       input: snapshot.index_state,
       stdio: ["pipe", "ignore", "pipe"]
@@ -20248,7 +19650,7 @@ function restoreStagedIntent(root, snapshot) {
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
-  const restoredIndex = execFileSync14("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
+  const restoredIndex = execFileSync13("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -20274,7 +19676,7 @@ init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
 init_batch_final_report();
-import { spawnSync as spawnSync21 } from "node:child_process";
+import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
 import { isAbsolute as isAbsolute10, join as join30 } from "node:path";
@@ -20283,11 +19685,11 @@ import { readFileSync as readFileSync22 } from "node:fs";
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 init_git_integration_preference();
 init_batch_preflight();
-import { spawnSync as spawnSync19 } from "node:child_process";
+import { spawnSync as spawnSync18 } from "node:child_process";
 function deliverSingleTask(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
   const blocked = (reason) => ({ mode, status: "blocked", reason });
-  const git = (...args) => spawnSync19("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+  const git = (...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
   const changed = git("diff", "--name-only", "--no-renames", "-z", base, head, "--");
   const dirty = porcelainEntries(root);
   if (changed.status !== 0 || !dirty)
@@ -20306,12 +19708,12 @@ function deliverSingleTask(root, base, head) {
       return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
     return { mode, status: "fast_forwarded", reason: null };
   }
-  const patch = spawnSync19("git", ["--no-optional-locks", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--"], { maxBuffer: 128 * 1024 * 1024 });
+  const patch = spawnSync18("git", ["--no-optional-locks", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--"], { maxBuffer: 128 * 1024 * 1024 });
   if (patch.status !== 0)
     return blocked("checkout_delivery_conflict: cannot read delivery delta");
   if (!patch.stdout.length)
     return { mode, status: "staged", reason: null };
-  const apply = (check) => spawnSync19("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
+  const apply = (check) => spawnSync18("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
   const checked = apply(true);
   if (checked.status !== 0)
     return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
@@ -20322,7 +19724,7 @@ function deliverSingleTask(root, base, head) {
 }
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
-import { spawnSync as spawnSync20 } from "node:child_process";
+import { spawnSync as spawnSync19 } from "node:child_process";
 var LANE_RETAINED_REASON = "batch_lane_retained";
 function exitProofCondition(generation, observation) {
   if (!generation)
@@ -20342,8 +19744,8 @@ function exitProofCondition(generation, observation) {
     return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
   return null;
 }
-function git10(cwd, ...args) {
-  return spawnSync20("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
+function git9(cwd, ...args) {
+  return spawnSync19("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
 function retainedLaneReason(condition) {
   return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
@@ -20354,7 +19756,7 @@ function cleanupSingleTaskLane(input) {
   if (proof)
     return retain(proof);
   const exit = input.observation ?? input.generation.exit;
-  const status = git10(input.lanePath, "status", "--porcelain", "--untracked-files=all");
+  const status = git9(input.lanePath, "status", "--porcelain", "--untracked-files=all");
   if (status.status !== 0)
     return retain("the Lane status is unreadable");
   if (status.stdout.trim()) {
@@ -20363,23 +19765,23 @@ function cleanupSingleTaskLane(input) {
     return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
   }
   const laneRef = `refs/heads/${input.laneBranch}`;
-  const laneTip = git10(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
-  const parentTip = git10(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  const laneTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
+  const parentTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
   if (laneTip.status !== 0 || parentTip.status !== 0)
     return retain("a Lane branch is unreadable");
-  if (git10(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
+  if (git9(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
     return retain(`the Lane branch carries commits that ${input.parentRef.replace("refs/heads/", "")} does not`);
-  const listed = git10(input.root, "worktree", "list", "--porcelain");
+  const listed = git9(input.root, "worktree", "list", "--porcelain");
   if (listed.status !== 0)
     return retain("the worktree list is unreadable");
   if (listed.stdout.split(`
 `).includes(`branch ${input.parentRef}`))
     return retain(`${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree`);
-  const removed = git10(input.root, "worktree", "remove", input.lanePath);
+  const removed = git9(input.root, "worktree", "remove", input.lanePath);
   if (removed.status !== 0)
     return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
   for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
-    const deleted = git10(input.root, "update-ref", "-d", ref, tip);
+    const deleted = git9(input.root, "update-ref", "-d", ref, tip);
     if (deleted.status !== 0)
       return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
   }
@@ -20537,7 +19939,7 @@ function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
 }
 function gitRead(root, args) {
-  const result = spawnSync21("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync20("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { status: result.status, stdout: (result.stdout ?? "").trim() };
 }
 function commonDir(root) {
@@ -21918,6 +21320,299 @@ async function startBatch(input) {
 init_batch_git();
 init_assurance_projection();
 init_batch_authority();
+
+// plugins/immune-brain/runtime/kernel/enrollment.ts
+init_sqlite_store();
+init_intent();
+init_spec_binding();
+init_batch_authority();
+init_pi_canary_prepare();
+init_workspace_scope();
+init_run_identity();
+init_storage();
+function singleTaskEnrollmentDirt(root, intentPath, intent) {
+  const binding = inspectSpecBinding(intent);
+  return dirtyWorkspacePaths(root, [intentPath, ...binding.ok && binding.binding ? [binding.binding.active] : []]);
+}
+
+class EnrollmentRehearsalError extends Error {
+  blockers;
+  constructor(blockers) {
+    super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+    this.name = "EnrollmentRehearsalError";
+    this.blockers = blockers;
+  }
+}
+function runEnrollmentPreconditionChecks(root, input, capability, registry, mode, beforeLock, onReady) {
+  const blockers = [];
+  let validated = null;
+  try {
+    validated = registry.inspect(capability, input.capability_binding);
+    if (mode === "fail_fast" && validated.task_id !== input.task_id)
+      throw new Error("enrollment capability task mismatch");
+  } catch (error) {
+    if (mode === "fail_fast")
+      throw error;
+    blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  beforeLock(validated);
+  return withKernelStoreLock(root, () => {
+    let current = null;
+    let workspace = null;
+    let intent = null;
+    let gitBaseHead = null;
+    let claimedScopePaths = [];
+    const fail = (report, error) => {
+      if (mode === "fail_fast")
+        throw error instanceof Error ? error : new Error(String(error));
+      blockers.push(report);
+    };
+    const localRun = reconcileKernelAuthority(root, input.task_id);
+    const localTerminal = localRun.state === "terminal_owner" && withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+    if (localTerminal) {
+      fail("local run is terminal; same-task re-enrollment is forbidden", new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`));
+    } else {
+      current = readTaskRecordRaw(root, input.task_id);
+      if (current.record)
+        fail("task record already exists", new Error(`task ${input.task_id} already has a TaskRecord`));
+    }
+    workspace = readWorkspaceStateRaw(root);
+    if (workspace.state.current_working !== null)
+      fail(`workspace already owned by ${workspace.state.current_working}`, new Error(`workspace is already owned by ${workspace.state.current_working}`));
+    try {
+      intent = readTaskIntent(root, input.task_id);
+    } catch (error) {
+      fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent) {
+      const binding = inspectSpecBinding(intent.intent);
+      if (!binding.ok)
+        fail(binding.message, new Error(binding.message));
+    }
+    try {
+      gitBaseHead = readGitHead(root);
+    } catch (error) {
+      fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+    }
+    if (intent && gitBaseHead) {
+      try {
+        if (!input.batch) {
+          const binding = inspectSpecBinding(intent.intent);
+          claimedScopePaths = [input.intent_path, ...binding.ok && binding.binding ? [binding.binding.active] : []];
+          const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
+          if (dirty.length > 0) {
+            const message = `workspace_not_clean: ${dirty.join(", ")}`;
+            fail(message, new Error(message));
+          }
+        } else {
+          const disclosed = new Set(input.disclosed_scope_paths ?? []);
+          const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+          const unlisted = dirty.filter((path) => !disclosed.has(path));
+          if (unlisted.length > 0) {
+            const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+            fail(message, new Error(message));
+          } else
+            claimedScopePaths = dirty;
+        }
+      } catch (error) {
+        fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+      }
+    }
+    const state = {
+      validated,
+      current,
+      workspace,
+      intent,
+      gitBaseHead,
+      claimedScopePaths
+    };
+    return onReady ? onReady(state) : { ...state, blockers };
+  });
+}
+function buildTaskRecordV4(input, intent, gitBaseHead) {
+  return {
+    contract: "assurance_kernel/task_record/v4",
+    task_id: input.task_id,
+    intent_snapshot: intent.intent,
+    intent_ref: {
+      path: input.intent_path,
+      content_hash: intent.content_hash
+    },
+    lifecycle: "active",
+    artifact_state: "active",
+    baseline: intent.content_hash,
+    git_base_head: gitBaseHead,
+    attestations: [],
+    findings: [],
+    history: []
+  };
+}
+function runEnrollmentRehearsal(root, input, capability, registry) {
+  const preconditions = runEnrollmentPreconditionChecks(root, input, capability, registry, "report", () => {
+    return;
+  });
+  return {
+    rehearsed: true,
+    writes_performed: false,
+    evidence: {
+      contract: "assurance_kernel/enrollment_rehearsal/v1",
+      task_id: input.task_id,
+      outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+      blockers: preconditions.blockers,
+      claimed_scope_paths: preconditions.claimedScopePaths,
+      generated_at: input.now
+    }
+  };
+}
+function enrollmentEventId(taskId, now) {
+  return enrollmentEventIdFor(taskId, now);
+}
+var CANCELLATION_BOUNDARY = Promise.resolve();
+async function enrollTask(root, registry, request) {
+  const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
+  const capability = registry.issue(binding);
+  const input = {
+    task_id: binding.task_id,
+    intent_path: binding.intent_path,
+    intent_revision: binding.intent_revision,
+    preparation_digest: binding.preparation_digest,
+    capability,
+    capability_binding: binding,
+    ...batch ? { batch } : {},
+    ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
+    now
+  };
+  const { eventId, digest } = digestForEnrollment(input);
+  const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (committed) {
+    const result = {
+      record: committed.record,
+      backend_claim: committed.claim,
+      workspace: { revision: "", state: committed.workspace }
+    };
+    return checkpoint ? { outcome: "enrolled", result } : result;
+  }
+  const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+  if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+    throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+  await CANCELLATION_BOUNDARY;
+  if (checkpoint && !checkpoint())
+    return { outcome: "cancelled" };
+  const result = enrollCanaryTask(root, input, registry);
+  return checkpoint ? { outcome: "enrolled", result } : result;
+}
+function digestForEnrollment(input) {
+  const eventId = enrollmentEventId(input.task_id, input.now);
+  return {
+    eventId,
+    digest: enrollmentRequestDigest({
+      task_id: input.task_id,
+      intent_path: input.intent_path,
+      intent_revision: input.intent_revision,
+      intent_content_hash: input.capability_binding.intent_content_hash,
+      preparation_digest: input.preparation_digest,
+      enrollment_event_id: eventId,
+      actor_id: input.capability_binding.actor_id,
+      confirmation_ref: input.capability_binding.confirmation_ref,
+      nonce: input.capability_binding.nonce
+    })
+  };
+}
+function enrollCanaryTask(root, input, registry) {
+  const { eventId, digest } = digestForEnrollment(input);
+  const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+  if (replayed)
+    return {
+      record: replayed.record,
+      backend_claim: replayed.claim,
+      workspace: { revision: "", state: replayed.workspace }
+    };
+  let gitBaseHead = null;
+  let consumed = false;
+  try {
+    return runEnrollmentPreconditionChecks(root, input, input.capability, registry, "fail_fast", () => {
+      const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (recomputed.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      gitBaseHead = recomputed.git_base_head;
+      if (!gitBaseHead)
+        throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+    }, (checks) => {
+      if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+        throw new Error("enrollment precondition state incomplete");
+      const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+      if (locked.digest !== input.preparation_digest)
+        throw new Error("enrollment preparation digest mismatch");
+      if (checks.intent.intent.revision !== input.intent_revision)
+        throw new Error("intent revision mismatch");
+      if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+        throw new Error("intent content hash mismatch");
+      if (checks.gitBaseHead !== gitBaseHead)
+        throw new Error("Git HEAD moved after the enrollment confirmation");
+      if (input.batch) {
+        const batch = input.batch.registry.inspect(input.batch.capability, input.batch.binding);
+        if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
+          assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
+        if (checks.gitBaseHead !== input.batch.expected_head)
+          throw new Error(`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`);
+      }
+      registry.consume(input.capability, input.capability_binding);
+      consumed = true;
+      if (input.batch)
+        input.batch.registry.consumeChild(input.batch.capability, input.batch.binding, input.task_id);
+      if (!gitBaseHead)
+        throw new Error("enrollment requires a committed Git HEAD");
+      const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+      const nextWorkspace = {
+        ...checks.workspace.state,
+        current_working: input.task_id
+      };
+      const claim = {
+        contract: "assurance_kernel/backend_claim/v2",
+        backend: "kernel",
+        task_id: input.task_id,
+        intent_revision: input.intent_revision,
+        intent_content_hash: checks.intent.content_hash,
+        enrollment_event_id: eventId,
+        lifecycle_status: "active",
+        created_at: input.now,
+        updated_at: input.now
+      };
+      const mutation = commitEnrollmentLocked(root, input.task_id, {
+        contract: "assurance_kernel/workspace_transaction/v2",
+        task_id: input.task_id,
+        expected_record_hash: checks.current.revision,
+        next_record_content: `${JSON.stringify(record, null, 2)}
+`,
+        expected_workspace_hash: checks.workspace.revision,
+        next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}
+`
+      }, claim, digest);
+      writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
+      return {
+        record: mutation.record,
+        backend_claim: claim,
+        workspace: { revision: "", state: mutation.workspace }
+      };
+    });
+  } catch (error) {
+    const ownership = (() => {
+      try {
+        return {
+          known: true,
+          owned: reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id
+        };
+      } catch {
+        return { known: false, owned: false };
+      }
+    })();
+    if (consumed && input.batch && ownership.known && !ownership.owned)
+      input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+    throw error;
+  }
+}
+
+// plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_storage();
 init_batch_preflight();
 function createBatchKernelPort(input) {
@@ -22367,67 +22062,6 @@ class ClaudeRuntime {
   async project(taskId, nextScope) {
     return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
   }
-  async enroll(taskId, meta) {
-    const now = new Date().toISOString();
-    let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
-    try {
-      await assertIsolatedTaskPrerequisites(this.cwd, taskId);
-      let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-      const intent = await readTaskIntentForRecord(this.cwd, taskId);
-      const gitBase = inspectEnrollmentGitBase(this.cwd);
-      const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
-      if (gitBase.state !== "unborn" && inspectSpecBinding(intent.intent).ok) {
-        const dirt = singleTaskEnrollmentDirt(this.cwd, intent.intent_ref.path, intent.intent);
-        if (dirt.length > 0)
-          throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
-      }
-      let claimedScopePaths = [];
-      const gate = await this.gate("enroll", { ...meta, taskId }, {
-        risk: intent.intent.risk,
-        intentRevision: preparation.intent?.revision,
-        intentContentHash: preparation.intent?.content_hash,
-        bindingDigest: preparation.digest,
-        gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join(`
-`) || undefined
-      });
-      const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-      if (!unchanged)
-        throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
-      if (!preparation.intent)
-        throw new Error("enrollment requires a readable TaskIntent");
-      throwIfCancelled(meta.signal);
-      preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
-      if (gitBase.state === "unborn") {
-        gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
-        const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
-        gitBaseNote += preconditionCommitNote(late.result);
-        preparation = late.preparation;
-        claimedScopePaths = late.claimed_scope_paths;
-      }
-      if (!preparation.intent)
-        throw new Error("Enrollment requires a readable TaskIntent");
-      const nonce = enrollmentNonce();
-      const binding = {
-        task_id: taskId,
-        intent_path: preparation.intent.path,
-        intent_revision: preparation.intent.revision,
-        intent_content_hash: preparation.intent.content_hash,
-        preparation_digest: preparation.digest,
-        actor_id: LITERAL_USER_ACTOR_ID,
-        confirmation_ref: gate.confirmation_ref,
-        nonce
-      };
-      return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
-    } catch (error) {
-      if (!gitBaseNote)
-        throw error;
-      if (error instanceof NativeAuthorityError) {
-        error.message += gitBaseNote;
-        throw error;
-      }
-      throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
-    }
-  }
   async advance(taskId, signal, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
@@ -22455,7 +22089,7 @@ class ClaudeRuntime {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
       if (existsSync18(join32(this.cwd, ".imm", "audit", taskId)))
-        execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+        execFileSync14("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
     } catch (error) {
@@ -22622,7 +22256,7 @@ class ClaudeRuntime {
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
         writeFileSync12(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync14("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -22755,7 +22389,7 @@ class ClaudeRuntime {
       if (priorBytes) {
         writeFileSync12(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
+        execFileSync14("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
@@ -23198,7 +22832,6 @@ init_assurance_projection();
 var MCP_PROTOCOL_VERSION = "2025-06-18";
 var TOOLS = [
   { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
-  { name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
   { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
   { name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
   { name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
@@ -23306,7 +22939,7 @@ function createMcpRuntime(options = {}) {
     const workspace = options.cwd ?? process.cwd();
     const correlated = readRunToolSession(toolCallId, operation, workspace);
     if (!options.consumePhaseAdmission && !correlated)
-      throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
+      throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
     const grant = consumeAdmission(toolCallId, operation);
     if (!grant)
       throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
@@ -23450,10 +23083,6 @@ function createMcpRuntime(options = {}) {
         interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
         signal: meta.signal
       };
-      if (name === "enroll") {
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
-        return runtime.enroll(taskId, entryToken ? { ...toolMeta, entryToken } : toolMeta);
-      }
       if (name === "advance_assurance")
         return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
       if (name === "submit_review") {

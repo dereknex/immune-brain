@@ -35,9 +35,8 @@ first Task when the entry names none and exactly one candidate fits), then call
 `start_unattended_batch` with that `task_id` once and without `initiative_slug`.
 The current Host opens exactly one native gate, without chat pre-confirmation;
 the runtime then creates the Lane, enrolls the child there, spawns the Lane's
-Executor and supervises it inside the tool call. The Parent does not call the
-`enroll` or `imm_canary_enrollment` tool for a new entry and does not implement
-the task in its own conversation. The Executor role runs inside the Lane
+Executor and supervises it inside the tool call. The Parent neither enrolls the
+task itself nor implements it in its own conversation. The Executor role runs inside the Lane
 process that the runtime spawns, never in the Parent conversation. The Parent
 continues from the returned report under
 [Single-Task Lane](drive-batch.md#single-task-lane): re-calling the same entry

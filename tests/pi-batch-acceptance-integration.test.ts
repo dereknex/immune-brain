@@ -28,7 +28,6 @@ try { await import("@earendil-works/pi-tui"); } catch {
 		truncateToWidth: (s: string, width: number) => s.slice(0, width), visibleWidth: (s: string) => s.length }));
 }
 const { default: registerPiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const { default: registerPiEnrollment } = await import("../plugins/immune-brain/.pi-extension/imm-canary-enroll");
 const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 // The phase entry gate (ADR 0019) sits in front of this Tool. These tests
 // exercise what lies behind it, so their session records a real run entry
@@ -95,7 +94,7 @@ async function fixture(slug: string) {
 		tasks: tasks.map((task, i) => ({ task_id: task, slice_id: `S${i + 1}`, issue_number: 101 + i, blocked_by: i ? [tasks[0]!] : [] })) };
 	let gates = 0;
 	let answer: () => Selection | Promise<Selection> = () => "confirm";
-	let batchTool: any, workTool: any, enrollmentTool: any;
+	let batchTool: any, workTool: any;
 	let entryPending = true;
 	const handlers = new Map<string, Function[]>();
 	// One Host session: both real extensions are registered with only the
@@ -106,11 +105,9 @@ async function fixture(slug: string) {
 		const pi = { registerTool: (tool: unknown) => tools.push(tool), registerCommand() {},
 			on(name: string, callback: Function) { handlers.set(name, [...(handlers.get(name) ?? []), callback]); }, events: { on() {}, emit() {} } } as never;
 		registerPiWork(pi);
-		registerPiEnrollment(pi);
 		registerPiBatch(pi, { readInitiative: async () => observation });
 		batchTool = tools.find(t => t.name === "start_unattended_batch");
 		workTool = tools.find(t => t.name === "imm_kernel_canary");
-		enrollmentTool = tools.find(t => t.name === "imm_canary_enrollment");
 	};
 	restart();
 	const lanePaths = new Map<string, string>();
@@ -129,14 +126,13 @@ async function fixture(slug: string) {
 			await emit("tool_call", event, cwd);
 			const response = await tool.execute(id, params, undefined, undefined, ctx(cwd));
 			await emit("tool_result", { ...response, ...event, isError: false }, cwd);
-			return tool.name === "imm_canary_enrollment" ? response.details : JSON.parse(response.content[0].text);
+			return JSON.parse(response.content[0].text);
 		} catch (error) {
 			await emit("tool_result", { ...event, isError: true, content: [{ type: "text", text: String(error) }] }, cwd);
 			return { state: "refused", reason: error instanceof Error ? error.message : String(error) };
 		}
 	};
 	return { root, slug, tasks, base, restart, observation, enter,
-		enroll: (task: string) => call(enrollmentTool, { action: "new", task_id: task }),
 		batch: async () => {
 			const result = await call(batchTool, { initiative_slug: slug, final_verification: ["bun --version"] });
 			for (const child of result.report?.children ?? []) if (child.lane) lanePaths.set(child.task_id, child.lane.path);
@@ -180,13 +176,6 @@ describe("registered Pi batch entry with real Kernel, QA and Git (routine fixtur
 		expect(settled).not.toHaveProperty("batch");
 		expect(f.state(first.batch_id).children[1]?.state).toBe("pending");
 		expect(f.head()).toBe(f.base); expect(f.gates()).toBe(1);
-	}, 60000);
-
-	it("Local Slice dependency refusal happens before Pi Enrollment's native gate", async () => {
-		const f = await fixture("acceptance-local-dependency");
-		await f.enter(`/drive ${f.tasks[1]}`);
-		expect(await f.enroll(f.tasks[1]!)).toMatchObject({ state: "refused", reason: expect.stringContaining(`Isolated Slice prerequisites are not integrated: ${f.tasks[0]}`) });
-		expect(f.gates()).toBe(0); expect(f.head()).toBe(f.base);
 	}, 60000);
 
 	it("hands off to the Executor before any QA and repeats that handoff without a second Enrollment, gate, QA run or commit", async () => {

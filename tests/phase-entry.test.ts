@@ -204,13 +204,12 @@ describe("phase entry state", () => {
 });
 
 describe("phase entry admission", () => {
-	const enroll = { kind: "tool", name: "enroll" } as const;
 	const batch = { kind: "tool", name: "start_unattended_batch" } as const;
 	const retire = { kind: "tool", name: "retire_stale_batch" } as const;
 	const skill = (name: "drive" | "draw-up" | "clarify") => ({ kind: "skill", skill: name }) as const;
 
-	test("enroll, batch start and batch retirement need a live run entry", () => {
-		for (const operation of [enroll, batch, retire]) {
+	test("batch start and batch retirement need a live run entry", () => {
+		for (const operation of [batch, retire]) {
 			expect(admitPhaseOperation(operation, after("run"))).toEqual({ ok: true });
 			expect(admitPhaseOperation(operation, after("run", null, null))).toEqual({ ok: true });
 			for (const state of [NO_PHASE_ENTRY, after(null), after("plan"), after("run", "plan"), null]) {

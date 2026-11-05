@@ -22,7 +22,7 @@ describe("explicit phase entry: drive owns Enrollment", () => {
 		expect(entry).toContain("Every new single-task `drive` entry goes through the single-task Lane path");
 		expect(entry).toContain("including a GitHub Initiative Child entry");
 		expect(entry).toContain("Its first step is `start_unattended_batch` with `task_id`");
-		expect(entry).toContain("The Parent does not call the `enroll` or `imm_canary_enrollment` tool for a new entry and does not implement the task in its own conversation");
+		expect(entry).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
 		expect(entry).toContain("The Executor role runs inside the Lane process that the runtime spawns, never in the Parent conversation");
 		expect(entry).toContain("For a Parent Issue, route to");
 		expect(entry).toContain("A Child entry verifies prerequisite settlement and integration");
@@ -70,14 +70,6 @@ describe("explicit phase entry: drive owns Enrollment", () => {
 		expect(loader).not.toContain("opens single-task Enrollment");
 		expect(loader).toContain("A Parent Issue selects its whole planned batch");
 		expect(loader).toContain("A Child Issue selects only its TaskIntent");
-	});
-
-	test("Pi Enrollment tool guidance binds the call to an drive entry", () => {
-		const source = readFileSync(join(PLUGIN, ".pi-extension/imm-canary-enroll.ts"), "utf8");
-		const guidelines = source.slice(source.indexOf("promptGuidelines: ["));
-		expect(guidelines).toContain("only as the first step of an explicit drive entry, never from draw-up or clarify");
-		expect(source).not.toContain("after natural-language routing selects Enrollment");
-		expect(source).not.toContain("natural-language routing selects");
 	});
 
 	test("ADR 0019 records the decision", () => {
