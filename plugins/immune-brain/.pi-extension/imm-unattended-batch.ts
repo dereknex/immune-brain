@@ -546,7 +546,7 @@ export default function (
 			initiative_slug: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
 			task_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
 			stop: Type.Optional(Type.Boolean()),
-			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code")])),
+			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
 			executor_model: Type.Optional(Type.String({ minLength: 1 })),
 			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
 			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
@@ -564,7 +564,7 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,

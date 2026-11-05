@@ -1,0 +1,38 @@
+{
+  "immune-brain": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/dist/antigravity/mcp-server.mjs\" --hook"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "edit_file|write_file|invoke_subagent|Subagent|mcp__.*immune-brain.*__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/dist/antigravity/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "invoke_subagent|Subagent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/dist/antigravity/mcp-server.mjs\" --hook"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node \"${PLUGIN_ROOT}/dist/antigravity/mcp-server.mjs\" --hook"
+      }
+    ]
+  }
+}

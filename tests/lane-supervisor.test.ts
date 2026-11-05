@@ -10,7 +10,7 @@ afterAll(() => { process.env.PATH = oldPath; for (const dir of dirs) rmSync(dir,
 function fixture() {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "lane-supervisor-"))); dirs.push(dir);
 	const source = '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" > args.txt\nexec sleep 10\n';
-	for (const name of ["claude", "pi"]) { const path = join(dir, name); writeFileSync(path, source); chmodSync(path, 0o755); }
+	for (const name of ["claude", "pi", "agy"]) { const path = join(dir, name); writeFileSync(path, source); chmodSync(path, 0o755); }
 	process.env.PATH = `${dir}:${oldPath}`;
 	let value: LaneGeneration | null = null;
 	const store: LaneGenerationStore = { read: () => value, update: fn => (value = fn(value)) };
@@ -44,7 +44,7 @@ describe("Lane Executor supervision", () => {
 		const { dir, store } = fixture();
 		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 0\n");
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 500, graceMs: 100,
+			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 2000, graceMs: 100,
 			project: async () => ({ record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }) });
 		expect(result).toMatchObject({ state: "exited", generation: 2, reason: "lane_executor_no_progress" });
 		expect(store.read()).toMatchObject({ no_progress: 2, handled_generation: 2 });
@@ -61,7 +61,7 @@ describe("Lane Executor supervision", () => {
 		expect(result).toMatchObject({ state: "exited", generation: 1, exit: { code: 7, signal: null } });
 		expect(store.read()).toMatchObject({ no_progress: 0, handled_generation: 1 });
 	});
-	for (const host of ["claude-code", "pi"] as const) {
+	for (const host of ["claude-code", "pi", "antigravity"] as const) {
 		it(`${host} attaches simultaneous calls to one generation`, async () => {
 			const { dir, store } = fixture();
 			const supervisor = new LaneSupervisor();
@@ -74,7 +74,8 @@ describe("Lane Executor supervision", () => {
 		});
 		it(`${host} escalates a stop to SIGKILL`, async () => {
 			const { dir, store } = fixture();
-			writeFileSync(join(dir, host === "pi" ? "pi" : "claude"), "#!/bin/sh\ntrap '' TERM\nprintf ready > ready\nexec /bin/sleep 30\n");
+			const binName = host === "pi" ? "pi" : host === "antigravity" ? "agy" : "claude";
+			writeFileSync(join(dir, binName), "#!/bin/sh\ntrap '' TERM\nprintf ready > ready\nexec /bin/sleep 30\n");
 			const supervisor = new LaneSupervisor();
 			const input = { key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
 				pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100 };
@@ -124,8 +125,11 @@ describe("Lane Executor supervision", () => {
 			for (let attempt = 0; attempt < 200 && !existsSync(join(dir, "args.txt")); attempt++)
 				await new Promise(resolve => setTimeout(resolve, 10));
 			const argv = readFileSync(join(dir, "args.txt"), "utf8").trim().split("\n");
-			expect(argv).toEqual([dir, "--print", ...(host === "claude-code" ? ["--plugin-dir", "/plugin"] : []), "--model", "model",
-				host === "claude-code" ? "--effort" : "--thinking", "high", `${host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} task`]);
+			const expectedArgs = host === "antigravity"
+				? [dir, "--print", "--dangerously-skip-permissions", "--model", "model", "--effort", "high", "/drive task"]
+				: [dir, "--print", ...(host === "claude-code" ? ["--plugin-dir", "/plugin"] : []), "--model", "model",
+					host === "claude-code" ? "--effort" : "--thinking", "high", `${host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} task`];
+			expect(argv).toEqual(expectedArgs);
 			const stopped = await supervisor.run({ ...input, stop: true });
 			expect(stopped).toMatchObject({ state: "stopped", generation: 1 });
 			expect(store.read()).toMatchObject({ state: "stopped_by_parent", exit: { pid, generation: 1 } });

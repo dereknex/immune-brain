@@ -23,6 +23,7 @@ import { readRunToolSession, runContinuationHookOutput } from "./run_continuatio
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
 import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
+import type { AssuranceHostPort } from "../assurance/host_port";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
 import { readSettledTaskEvidence } from "../kernel/storage";
 import { watchBundleIdentity, type BundleIdentityWatch } from "../plugin_source_skew";
@@ -61,7 +62,7 @@ export function listMcpTools() {
 							? {
 									task_id: { type: "string" },
 									stop: { type: "boolean" },
-									executor_host: { type: "string", enum: ["pi", "claude-code"] },
+									executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
 									executor_model: { type: "string", minLength: 1 },
 									executor_effort: { type: "string", minLength: 1 },
 									max_parallel: { type: "integer", minimum: 1 },
@@ -120,9 +121,10 @@ export function supportsElicitationProtocol(value: unknown): boolean {
 export interface McpRuntimeOptions {
 	cwd?: string;
 	env?: Record<string, string | undefined>;
+	parentHost?: import("../unattended/lane_supervisor").ExecutorHost;
 	ports?: AssuranceCoordinatorPorts;
 	authorityOverrides?: Partial<import("../assurance/verdict_authority").VerdictAuthority>;
-	host?: ClaudeReviewHost;
+	host?: AssuranceHostPort & { observe(event: any): void; consumeReview?(res: any): any; inspectReview?(res: any): any };
 	interactive?: boolean;
 	requestConfirmation?: NativeConfirmationPort;
 	batchKernel?: Partial<import("../unattended/batch_runner").BatchRunnerKernelPort>;
@@ -160,6 +162,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	const runtime = new ClaudeRuntime({
 		cwd: options.cwd ?? process.cwd(),
 		env: options.env ?? process.env,
+		parentHost: options.parentHost,
 		host,
 		ports: options.ports,
 		authorityOverrides: options.authorityOverrides,
@@ -229,7 +232,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
 				const task = typeof args.task_id === "string" ? args.task_id : "";
 				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
-				if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code") throw new Error("invalid executor_host");
+				if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code" && args.executor_host !== "antigravity") throw new Error("invalid executor_host");
 				for (const key of ["executor_model", "executor_effort"]) if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key])) throw new Error(`invalid ${key}`);
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;
@@ -259,7 +262,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 					...(task ? { plan_source: "single_task" as const } : {}),
 					...(args.stop === true ? { stop: true } : {}),
 					executor: {
-						...(args.executor_host === "pi" || args.executor_host === "claude-code" ? { executor_host: args.executor_host } : {}),
+						...(args.executor_host === "pi" || args.executor_host === "claude-code" || args.executor_host === "antigravity" ? { executor_host: args.executor_host } : {}),
 						...(typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {}),
 						...(typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}),
 					},
@@ -362,7 +365,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	};
 }
 
-interface JsonRpc {
+export interface JsonRpc {
 	jsonrpc: "2.0";
 	id?: string | number | null;
 	method?: string;

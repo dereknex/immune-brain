@@ -5,7 +5,8 @@ import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig } from "../config/layered_config";
-import { LaneSupervisor, type ExecutorPreferences } from "../unattended/lane_supervisor";
+import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
+import type { AssuranceHostPort } from "../assurance/host_port";
 
 export const CLAUDE_LANE_WAIT_MS = 500;
 
@@ -116,7 +117,8 @@ import {
 } from "./interaction";
 import { selectedClaudeParent } from "./run_continuation";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
-import { probeHost, type PermissionMode } from "./capability";
+import { probeHost, type PermissionMode, type HostProbe } from "./capability";
+import { probeHost as probeAntigravityHost } from "../antigravity/capability";
 
 export function diffSnapshotOf(root: string, record: TaskRecord): {
 	diff_hash: string;
@@ -159,14 +161,14 @@ import {
 export { extractVerdictJson };
 
 export async function submitClaudeReview(
-	host: ClaudeReviewHost,
+	host: { inspectReviewForTask?(taskId: string): any },
 	coordinator: AssuranceCoordinator,
 	ctx: HostContext,
 	taskId: string,
 	verdictInput: unknown,
 ): Promise<AssuranceSubmitReviewResult> {
 	// ADR 0017: an omitted verdict applies the hook-observed reviewer receipt.
-	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
+	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask ? host.inspectReviewForTask(taskId) : { ok: false, reason: "review inspection not supported", release: true });
 }
 
 /**
@@ -263,7 +265,13 @@ function throwIfCancelled(signal?: AbortSignal): void {
 export interface ClaudeRuntimeOptions {
 	cwd: string;
 	env?: Record<string, string | undefined>;
-	host?: ClaudeReviewHost;
+	parentHost?: ExecutorHost;
+	host?: AssuranceHostPort & {
+		observe(event: any): void;
+		consumeReview?(res: any): any;
+		inspectReview?(res: any): any;
+		inspectReviewForTask?(taskId: string): any;
+	};
 	/**
 	 * Overrides layered on top of the real production ports, never a
 	 * replacement for them. A whole synthetic ports object could previously be
@@ -309,7 +317,13 @@ type ClaudeBatchStartResult =
  */
 export class ClaudeRuntime {
 	private readonly laneSupervisor = new LaneSupervisor();
-	readonly host: ClaudeReviewHost;
+	private readonly parentHost: ExecutorHost;
+	readonly host: AssuranceHostPort & {
+		observe(event: any): void;
+		consumeReview?(res: any): any;
+		inspectReview?(res: any): any;
+		inspectReviewForTask?(taskId: string): any;
+	};
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
 	private readonly env: Record<string, string | undefined>;
@@ -329,6 +343,7 @@ export class ClaudeRuntime {
 		this.cwd = options.cwd;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
+		this.parentHost = options.parentHost ?? "claude-code";
 		this.requestConfirmation = options.requestConfirmation;
 		this.batchKernel = options.batchKernel;
 		this.batchGit = options.batchGit;
@@ -339,7 +354,7 @@ export class ClaudeRuntime {
 			...this.createKernelPorts(),
 			...options.ports,
 			host: this.host,
-			confirmationReference: ({ actorId }) => `claude:${actorId}`,
+			confirmationReference: ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`,
 		}, options.authorityOverrides);
 	}
 
@@ -350,6 +365,13 @@ export class ClaudeRuntime {
 	/** Bind the version announced by the connected Host during the MCP handshake. */
 	bindHostVersion(version: string | undefined): void {
 		this.hostVersion = version || undefined;
+	}
+
+	private probeHost(): HostProbe {
+		if (this.parentHost === "antigravity") {
+			return probeAntigravityHost(this.env, process.platform, this.hostVersion);
+		}
+		return probeHost(this.env, process.platform, this.hostVersion);
 	}
 
 	bindNativeConfirmation(port: NativeConfirmationPort): void {
@@ -413,7 +435,7 @@ export class ClaudeRuntime {
 		reviewRetryNotice?: string;
 	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
 		throwIfCancelled(meta.signal);
-		const probe = probeHost(this.env, process.platform, this.hostVersion);
+		const probe = this.probeHost();
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		const interactive = meta.interactive ?? this.interactive;
 		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
@@ -923,7 +945,7 @@ export class ClaudeRuntime {
 		const reuseOnly = options.reuseOnly === true;
 		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
 		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
-		const probe = probeHost(this.env, process.platform, this.hostVersion);
+		const probe = this.probeHost();
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		if (options.stop) {
 			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
@@ -1201,7 +1223,7 @@ export class ClaudeRuntime {
 		});
 		let report = await startBatch({
 			plan_source: options.plan_source,
-			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: "claude-code" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
 				waitMs: claudeLaneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
 			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
@@ -1249,7 +1271,7 @@ export class ClaudeRuntime {
 	 */
 	async retireStaleBatch(initiativeSlug: string, meta: ToolMeta): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
-		const probe = probeHost(this.env, process.platform, this.hostVersion);
+		const probe = this.probeHost();
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 		// Without an entry token the disposition opens a gate, so it needs a confirmation port.
 		if (!this.requestConfirmation && !meta.entryToken)

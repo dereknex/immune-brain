@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
 
-export type ExecutorHost = "claude-code" | "pi";
+export type ExecutorHost = "claude-code" | "pi" | "antigravity";
 export interface ExecutorPreferences { executor_host?: ExecutorHost; executor_model?: string; executor_effort?: string }
 export interface ExecutorChoice { host: ExecutorHost; model?: string; effort?: string; not_applied: string[] }
 
@@ -20,6 +20,15 @@ export function chooseExecutor(layers: ExecutorPreferences[], fallback: Executor
 }
 
 export function executorArguments(choice: ExecutorChoice, pluginDir: string, taskId: string): string[] {
+	if (choice.host === "antigravity") {
+		return [
+			"--print",
+			"--dangerously-skip-permissions",
+			...(choice.model ? ["--model", choice.model] : []),
+			...(choice.effort ? ["--effort", choice.effort] : []),
+			`/drive ${taskId}`,
+		];
+	}
 	return ["--print", ...(choice.host === "claude-code" ? ["--plugin-dir", pluginDir] : []),
 		...(choice.model ? ["--model", choice.model] : []),
 		...(choice.effort ? [choice.host === "claude-code" ? "--effort" : "--thinking", choice.effort] : []),
@@ -81,7 +90,8 @@ export class LaneSupervisor {
 		if (!handle && (input.signal?.aborted || (current?.state === "exited" && !input.restart)))
 			return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
 		if (!handle && !input.stop) {
-			const executable = (process.env.PATH ?? "").split(delimiter).map(dir => join(dir || ".", input.choice.host === "claude-code" ? "claude" : "pi"))
+			const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
+			const executable = (process.env.PATH ?? "").split(delimiter).map(dir => join(dir || ".", binaryName))
 				.find(path => { try { accessSync(path, constants.X_OK); return true; } catch { return false; } });
 			if (!executable) return { state: "unavailable", generation: current?.generation ?? null, exit: null };
 			const previous = current;

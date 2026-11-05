@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "immune-brain": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/dist/antigravity/mcp-server.mjs"
+      ]
+    }
+  }
+}
