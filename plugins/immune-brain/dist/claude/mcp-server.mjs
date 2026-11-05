@@ -22034,7 +22034,7 @@ function compareSemver2(left, right) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 function probeHost2(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION ?? "1.0.0";
+  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
   if (!version)
     return { ok: false, reason: "Antigravity version is unavailable" };
   if (!parseSemver2(version))

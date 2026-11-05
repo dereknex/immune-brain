@@ -93,6 +93,7 @@ The solution provides:
     ]
     ```
   - Standard process monitoring tracks PID, exit codes, and signals without manufacturing artificial events.
+  - **Permission Asymmetry and Security Boundary**: Unlike Pi (which runs non-interactively without stdin prompts) or Claude Code (whose headless print mode operates under explicit plugin options), `agy --print` in unattended mode blocks on interactive confirmation unless `--dangerously-skip-permissions` is supplied. Furthermore, while `lane_guard` enforces lane containment on file mutation tools (`write_file`, `edit_file`), it does not intercept general shell commands (`run_command`). The security and containment model for child lanes therefore relies on physical directory isolation via isolated Git worktrees (`imm/worktrees/...`) and pre/post-execution clean Git baseline checks, rather than shell command sandboxing.
 
 ### 7. Dual-Mode Status and Artifact Output
 - Standard tool responses emit structured Markdown summaries and obligation instructions.
@@ -120,9 +121,9 @@ The solution provides:
 
 - Developing proprietary Electron UI extensions or custom DOM webviews (Antigravity 2.0 does not admit external webview plugins; native Artifacts are used).
 - Modifying Kernel SQLite schemas, `TaskRecord` state definitions, or `TaskIntent` contracts.
-- Altering existing `pi` or `claude-code` host adapters.
+- Altering core Pi or Claude Code assurance protocols, user-facing tool contracts, or breaking existing dual-host behavioral parity (internal shared runtime parameterization of `parentHost` to support Antigravity is in scope).
 - Implementing remote agent execution without a local worktree claim.
 
 ## Further Notes
 
-- Once this specification is implemented, [ADR 0004](docs/adr/0004-dual-host-assurance-adapters.md) will be amended or superseded by a new ADR documenting the evolution to multi-host assurance adapters.
+- [ADR 0004](docs/adr/0004-dual-host-assurance-adapters.md) has been amended to document the evolution from dual-host to tri-host assurance adapters.

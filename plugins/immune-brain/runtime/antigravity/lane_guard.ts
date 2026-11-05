@@ -223,7 +223,10 @@ export function antigravityPreToolUseHook(
 		if (!admission.ok) {
 			return { decision: "force_ask", reason: phaseRefusalMessage(admission) };
 		}
-		const toolUseId = String(payload.stepIdx ?? payload.toolCall.name);
+		if (payload.stepIdx === undefined) {
+			return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
+		}
+		const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
 		const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace });
 		ensurePrivateDir(cacheDir(root));
 		writeFileSync(admissionPath(toolUseId, root), admitLine, { mode: 0o600 });

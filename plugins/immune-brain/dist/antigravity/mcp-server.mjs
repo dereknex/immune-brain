@@ -22038,7 +22038,7 @@ function compareSemver2(left, right) {
   return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 function probeHost2(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION ?? "1.0.0";
+  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
   if (!version)
     return { ok: false, reason: "Antigravity version is unavailable" };
   if (!parseSemver2(version))
@@ -24386,7 +24386,10 @@ function antigravityPreToolUseHook(payload, locations = {}) {
     if (!admission.ok) {
       return { decision: "force_ask", reason: phaseRefusalMessage(admission) };
     }
-    const toolUseId = String(payload.stepIdx ?? payload.toolCall.name);
+    if (payload.stepIdx === undefined) {
+      return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
+    }
+    const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
     const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace });
     ensurePrivateDir2(cacheDir2(root));
     writeFileSync14(admissionPath2(toolUseId, root), admitLine, { mode: 384 });

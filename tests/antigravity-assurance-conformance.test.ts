@@ -24,12 +24,28 @@ import type { ReviewRequest, VerificationRequest } from "../plugins/immune-brain
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 
 describe("Antigravity Harness Conformance", () => {
-	it("probes host capability and returns antigravity host ID", async () => {
-		const host = await probeHost();
-		expect(host.ok).toBe(true);
-		if (host.ok) {
-			expect(host.host).toBe("antigravity");
-			expect(host.version).toBeDefined();
+	it("probes host capability and enforces fail-closed version checking", () => {
+		// Fails closed when no version is declared
+		const unversioned = probeHost({}, "darwin");
+		expect(unversioned.ok).toBe(false);
+		if (!unversioned.ok) {
+			expect(unversioned.reason).toContain("Antigravity version is unavailable");
+		}
+
+		// Succeeds when explicit hostVersion is supplied
+		const explicit = probeHost({}, "darwin", "1.0.0");
+		expect(explicit.ok).toBe(true);
+		if (explicit.ok) {
+			expect(explicit.host).toBe("antigravity");
+			expect(explicit.version).toBe("1.0.0");
+		}
+
+		// Succeeds when environment variable is supplied
+		const fromEnv = probeHost({ ANTIGRAVITY_VERSION: "0.2.0" }, "linux");
+		expect(fromEnv.ok).toBe(true);
+		if (fromEnv.ok) {
+			expect(fromEnv.host).toBe("antigravity");
+			expect(fromEnv.version).toBe("0.2.0");
 		}
 	});
 
@@ -179,7 +195,7 @@ describe("Antigravity Harness Conformance", () => {
 			expect(result.decision).toBe("allow");
 		});
 
-		it("records /drive in PreInvocation hook", () => {
+		it("records /drive in PreInvocation hook and gates admission on stepIdx", () => {
 			const res = antigravityPreInvocationHook({
 				conversationId: "conv-drive-1",
 				lastUserInput: "/drive task-999",
@@ -189,6 +205,28 @@ describe("Antigravity Harness Conformance", () => {
 
 			const state = readPhaseEntryState("conv-drive-1");
 			expect(state?.run_live).toBe(true);
+
+			// PreToolUse with stepIdx succeeds and records admission
+			const admitted = antigravityPreToolUseHook({
+				conversationId: "conv-drive-1",
+				stepIdx: 42,
+				toolCall: {
+					name: "mcp__immune-brain__enroll",
+					args: { taskId: "task-999" },
+				},
+			});
+			expect(admitted.decision).toBe("allow");
+
+			// PreToolUse missing stepIdx fails closed
+			const missingStep = antigravityPreToolUseHook({
+				conversationId: "conv-drive-1",
+				toolCall: {
+					name: "mcp__immune-brain__enroll",
+					args: { taskId: "task-999" },
+				},
+			});
+			expect(missingStep.decision).toBe("deny");
+			expect(missingStep.reason).toContain("Tool invocation identity (stepIdx) is missing");
 		});
 
 		it("enforces lane boundary on file edits", () => {

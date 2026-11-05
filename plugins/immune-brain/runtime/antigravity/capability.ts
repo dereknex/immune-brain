@@ -25,7 +25,7 @@ export function probeHost(
 	platform = process.platform,
 	hostVersion?: string,
 ): HostProbe {
-	const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION ?? "1.0.0";
+	const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
 	if (!version) return { ok: false, reason: "Antigravity version is unavailable" };
 	if (!parseSemver(version)) return { ok: false, reason: `Antigravity version is invalid: ${version}` };
 	if (compareSemver(version, MIN_ANTIGRAVITY_VERSION) < 0) {
