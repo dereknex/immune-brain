@@ -67,7 +67,7 @@ describe("Pi-only release contract", () => {
     const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
     expect(existsSync(resolve(ROOT, "scripts/plugin_release.ts"))).toBe(false);
     expect(manifest.scripts["changeset:version"]).toBe(
-      "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/plugin_versioning.ts validate",
+      "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/build-antigravity-plugin.ts && bun scripts/plugin_versioning.ts validate",
     );
     expect(manifest.scripts["changeset:publish"]).toBe(
       "bun run verify:release && changeset publish",
