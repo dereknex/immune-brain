@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyGitTemplate } from "./helpers/git-template";
@@ -8,6 +8,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
+import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
@@ -58,8 +59,8 @@ try { await import("@earendil-works/pi-tui"); } catch {
 	}));
 }
 afterAll(() => mock.restore());
-const { executePiUnattendedBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
-const { recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
+const { PI_LANE_WAIT_MS, executePiUnattendedBatch, default: registerBatchExtension, mapDialogSelection } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
+const { default: registerPiWork, recordPiPhaseInput } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
 const runBatch = (options: Parameters<typeof executePiUnattendedBatch>[0]) => executePiUnattendedBatch({ final_verification: ["bun test", "bun run typecheck"], ...options });
 const SESSION = { getSessionId: () => "pi-batch-authority-tests" };
 const roots: string[] = [];
@@ -106,6 +107,10 @@ function context(root: string, selection: string, opened = { count: 0 }) {
 const textOf = (result: any) => JSON.parse(result.content.map((item: any) => item.text).join("\n"));
 
 describe("acc-pi-batch-gate", () => {
+	it("bounds the Lane wait in the Pi custom tool", () => {
+		// Pi agent-loop's executePreparedToolCall awaits custom tools without a fixed timeout.
+		expect(PI_LANE_WAIT_MS).toBe(5000);
+	});
 	it.each([{ final_verification: undefined }, { final_verification: [] }])("requires final verification on a new Pi tool start (%p)", async ({ final_verification }) => {
 		const f = fixture("final-required"); const before = snapshot(f.root); const opened = { count: 0 };
 		await expect(register(async () => f.observation).execute("final-required", {
@@ -116,10 +121,84 @@ describe("acc-pi-batch-gate", () => {
 	it("registers the Lane tool and exactly its supported parameters", () => {
 		const tool = register(async () => { throw new Error("schema does not read a plan"); });
 		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
-		expect(tool.parameters.required).toEqual(["initiative_slug"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(tool.parameters.required ?? []).toEqual([]);
 		const schema = tool.parameters.properties.max_parallel;
 		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
+	});
+	it("starts a standalone task in its own Lane after one native confirmation", async () => {
+		const f = fixture("single-pi"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		try {
+		const gates: any[] = [];
+		const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
+		expect(gates).toHaveLength(1);
+		expect(gates[0].summary).toContain("Preparation digest: sha256:");
+		expect(result.state).toBe("started");
+		if (result.state !== "started") throw new Error(result.reason);
+		expect((result.report as any).lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
+		const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+		const record = readAnyBatchRunState(f.root, result.batch_id)!;
+		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
+		const lane = (record.children[0] as any).lane;
+		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
+		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path)); expect(argv.at(-1)).toBe(`/skill:drive ${taskId}`);
+		expect((result.report as any).handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
+		const lost = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" },
+			supervisor: new LaneSupervisor(), confirmBatch: async () => "accept" });
+		expect((lost as any).report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
+		const stopped = await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+		expect((stopped as any).report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
+		const resumed = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+		expect((resumed as any).report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
+		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
+		const tools: any[] = [];
+		registerPiWork({ registerTool: (tool: unknown) => tools.push(tool), registerCommand() {}, on() {}, events: { on() {}, emit() {} } } as never);
+		const work = tools.find(tool => tool.name === "imm_kernel_canary");
+		const status = textOf(await work.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, context(f.root, "cancel")));
+		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
+		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
+		} finally {
+			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
+	it("refuses a task whose descriptor is not enrollment-ready before confirmation", async () => {
+		const f = fixture("invalid-single-pi"); let gates = 0;
+		const result = await executePiUnattendedBatch({ root: f.root, taskId: `${f.slug}-c1`,
+			confirmBatch: async () => { gates++; return "accept"; } });
+		expect(result).toMatchObject({ state: "rejected", reason: expect.stringContaining("failed to project batch plan") });
+		expect(gates).toBe(0); noBatchWrites(f.root);
+	});
+	it("rejects a single-task intent changed while confirmation is open", async () => {
+		const f = fixture("single-drift-pi"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		let gates = 0;
+		const result = await executePiUnattendedBatch({ root: f.root, taskId, confirmBatch: async () => {
+			gates++; intent.revision++; writeFileSync(path, JSON.stringify(intent)); return "accept";
+		} });
+		expect(gates).toBe(1); expect(result).toMatchObject({ state: "rejected", reason: expect.stringContaining("batch plan changed") });
+		noBatchWrites(f.root);
+	});
+	it("refuses ambiguous task and Initiative selectors without opening confirmation", async () => {
+		const f = fixture("ambiguous-pi"); const opened = { count: 0 };
+		for (const params of [{}, { initiative_slug: f.slug, task_id: `${f.slug}-c1` }])
+			await expect(register(async () => f.observation).execute("ambiguous", params, undefined, undefined, context(f.root, "confirm", opened))).rejects.toThrow("batch_entry_ambiguous");
+		expect(opened.count).toBe(0); noBatchWrites(f.root);
 	});
 	it.each([undefined, null, {}])("rejects unknown lane_revision before direct execution or tool effects (%p)", async lane_revision => {
 		const f = fixture("retired-revision"); const before = snapshot(f.root); const opened = { count: 0 };

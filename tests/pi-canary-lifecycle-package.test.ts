@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { enrollCanaryTask } from "../plugins/immune-brain/runtime/kernel/enrollment";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import {
@@ -45,56 +46,6 @@ const INTENT = {
 	owner: "user",
 } as const;
 const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
-
-function loadEnrollmentTool() {
-	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
-	let tool: { execute: (...args: any[]) => Promise<any> } | undefined;
-	const pi = {
-		registerTool: (candidate: { name: string; execute: (...args: any[]) => Promise<any> }) => {
-			if (candidate.name === "imm_canary_enrollment") tool = candidate;
-		},
-		registerCommand: () => undefined,
-		on: () => undefined,
-	};
-	mod.default(pi);
-	if (!tool) throw new Error("enrollment Tool not registered");
-	return tool;
-}
-
-// The phase entry gate (ADR 0019) sits in front of this Tool. These tests
-// exercise what lies behind it, so their session records a real run entry
-// through the function the input handler calls;
-// tests/pi-phase-entry-gate.test.ts owns the refusals.
-const RUN_ENTRY_SESSION = { getSessionId: () => "pi-canary-lifecycle-package-tests" };
-const { recordPiPhaseInput } = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
-
-function enrollmentContext(root: string) {
-	// The entry token binds the workspace realpath (ADR 0025), so each fixture root enters drive itself.
-	recordPiPhaseInput({ text: "/skill:drive", source: "interactive" }, { sessionManager: RUN_ENTRY_SESSION, cwd: root });
-	return {
-		mode: "tui",
-		sessionManager: RUN_ENTRY_SESSION,
-		hasUI: true,
-		cwd: root,
-		isIdle: () => true,
-		ui: {
-			custom: async (factory: any) => {
-				let selected: boolean | undefined;
-				const component = factory(
-					{ requestRender: () => undefined },
-					{ fg: (_color: string, text: string) => text, bold: (text: string) => text },
-					{},
-					(result: boolean) => { selected = result; },
-				);
-				component.handleInput?.("d");
-				component.handleInput?.("\r");
-				return selected ?? true;
-			},
-			notify: () => undefined,
-			confirm: async () => true,
-		},
-	};
-}
 
 function loadWorkSurface(dependencies: Record<string, unknown> = {}) {
 	const mod = require("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
@@ -142,12 +93,15 @@ describe("pi canary lifecycle package composition", () => {
 		expect(files).toContain("plugins/immune-brain/skills");
 		expect(files).not.toContain("tests");
 		for (const f of [
-			"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 			"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 			"plugins/immune-brain/skills/drive/SKILL.md",
 		]) {
 			expect(existsSync(join(ROOT, f))).toBe(true);
 		}
+		// In-place Enrollment is retired (drive-always-lanes D10): no Pi enrollment tool file or manifest entry ships.
+		expect(existsSync(join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"))).toBe(false);
+		const manifest = JSON.parse(readFileSync(join(ROOT, "plugins/immune-brain/.pi-extension/package.json"), "utf8"));
+		expect(manifest.pi.extensions).toEqual(["./imm-canary-work.ts", "./imm-unattended-batch.ts"]);
 		// The test issuer seam lives outside the shipped files.
 		expect(existsSync(join(ROOT, "tests/fixtures/mutation-authority-test-seam.ts"))).toBe(true);
 	});
@@ -212,7 +166,7 @@ describe("pi canary lifecycle package composition", () => {
 		}
 	});
 
-	test("packaged Tool lifecycle settles Enrollment handoff through terminal completion without command invocation", async () => {
+	test("packaged Tool lifecycle settles a pre-existing in-place record through terminal completion without command invocation", async () => {
 		const root = mkdtempSync(join(tmpdir(), "p2b2-tool-lifecycle-"));
 		mkdirSync(join(root, "docs", "plans"), { recursive: true });
 		mkdirSync(join(root, "docs", "specs"), { recursive: true });
@@ -226,15 +180,8 @@ describe("pi canary lifecycle package composition", () => {
 		execFileSync("git", ["add", "-A"], { cwd: root });
 		execFileSync("git", ["commit", "-qm", "intent"], { cwd: root });
 		try {
-			const enrollmentTool = loadEnrollmentTool();
-			const enrollment = await enrollmentTool.execute(
-				"enrollment",
-				{ action: "new", task_id: TASK },
-				undefined,
-				undefined,
-				enrollmentContext(root),
-			);
-			expect(enrollment.details).toMatchObject({ state: "completed" });
+			// Drain fixture: a record enrolled in place before S7 still advances through the loop tools.
+			await enrollTaskForTest(root, TASK);
 			expect(readBackendClaim(root)?.task_id).toBe(TASK);
 
 			const surface = loadWorkSurface({
@@ -283,6 +230,21 @@ describe("pi canary lifecycle package composition", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	}, 15_000);
+
+	test("no packaged Pi extension registers an enrollment tool", () => {
+		const names: string[] = [];
+		const pi = {
+			registerTool: (t: { name: string }) => names.push(t.name),
+			registerMessageRenderer: () => undefined,
+			registerCommand: () => undefined,
+			on: () => undefined,
+		};
+		for (const file of ["imm-canary-work.ts", "imm-unattended-batch.ts"])
+			require(`../plugins/immune-brain/.pi-extension/${file}`).default(pi);
+		expect(names).toContain("imm_kernel_canary");
+		expect(names).toContain("start_unattended_batch");
+		expect(names).not.toContain("imm_canary_enrollment");
+	});
 
 	test("lifecycle surface registers the foreground Tool and only the read-only /imm-tasks overlay command", () => {
 		const { tool, commands } = loadWorkSurface();

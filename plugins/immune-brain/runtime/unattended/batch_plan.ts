@@ -71,6 +71,14 @@ export const observeInitiative: InitiativeObservationReader = async (root, initi
 		? observeLocalInitiative(root, initiativeSlug)
 		: observeGithubInitiative(root, initiativeSlug);
 
+/** A standalone task has one child and no tracker-owned dependencies. */
+export const observeSingleTask: InitiativeObservationReader = async (_root, taskId) => ({
+	contract: "immune_brain/local_initiative_observation/v1",
+	initiative_id: taskId,
+	path: `docs/plans/${taskId}.intent.json`,
+	tasks: [{ task_id: taskId, slice_id: taskId, blocked_by: [] }],
+});
+
 function normalizeObservation(value: InitiativeObservation, initiativeSlug: string): InitiativeObservation {
 	const local = value?.contract === "immune_brain/local_initiative_observation/v1";
 	if (!value || (!local && value.contract !== "immune_brain/github_initiative_observation/v1"))

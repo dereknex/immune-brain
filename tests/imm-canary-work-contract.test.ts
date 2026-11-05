@@ -31,18 +31,12 @@ describe("drive Kernel routing contract", () => {
 		expect(quoted(piTargets![1]!)).toContain("lane-supply");
 		expect(quoted(piTargets![1]!)).toEqual(quoted(contractTargets![1]!));
 	});
-	test("enrollment validates descriptors without executing them", () => {
+	test("descriptor validation never executes a descriptor before QA", () => {
 		const guide = read("plugins/immune-brain/USER_GUIDE.md");
 		const kernelCommand = read("plugins/immune-brain/runtime/commands/kernel.ts");
-		const enrollment = read("plugins/immune-brain/.pi-extension/imm-canary-enroll.ts");
 		expect(guide).toContain("只在后置 QA");
 		expect(kernelCommand).toContain("parseVerificationDescriptor(item.verification)");
 		expect(kernelCommand).not.toContain("descriptor_rehearsal");
-		expect(enrollment).toContain('name: "imm_canary_enrollment"');
-		expect(enrollment).not.toContain("runDescriptorRehearsal");
-		expect(enrollment).not.toContain("checkout-index");
-		expect(enrollment).not.toContain("setWidget(");
-		expect(enrollment).not.toContain("setStatus(");
 	});
 
 	test("the public registry exposes Loop instead of the former canary Skill", () => {

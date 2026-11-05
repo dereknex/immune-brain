@@ -18,9 +18,8 @@
 - The repository's `Git integration` preference decides whether the runtime
   writes commits on its own (ADR 0024). Set `git_integration` in tracked
   `.imm/config.json`; the legacy instruction-file directive is deprecated.
-  `manual`, the default, writes none outside batches: Enrollment stages its TaskIntent and Spec, and migration
-  leaves its diff for the user to commit however they prefer. `auto` keeps the
-  precondition commits and commits each task's settled scoped paths when it
+  `manual`, the default, writes none outside batches: a single task's delivery lands staged and uncommitted in the checkout, and migration
+  leaves its diff for the user to commit however they prefer. `auto` commits each task's settled scoped paths when it
   settles `done`. Either way the runtime runs Git hooks normally and grants no
   push, publication, history rewrite, or commit of any other path, and a model
   never makes these commits itself or asks the user to make one.
@@ -129,9 +128,9 @@ Routine Managed enrollment is the first step of an explicit `drive` entry and us
 
 Run entry decision hosting (ADR 0025): a literal-user `drive` entry needs no chat confirmation, while Enrollment and unattended batch start each keep one native gate. Within that entry, only a side-effect-free rejection is retried, at most twice, and preflight is rerun before each retry; `plan_changed`, `head_moved` and a claim conflict are never retried. When preflight names a deterministic fix, apply it, commit the fixed files alone in one commit even under `Git integration: manual`, list that commit in the manifest, then retry. Push, PR, credentials, breaking intent revision and rework exits still stop for the user.
 
-For an unborn symbolic Git HEAD, the same Enrollment confirmation discloses an empty root commit. After approval, the Host creates that commit without staging project content or changing the index/worktree, then revalidates ownership and rehearses Enrollment against the new base. Git identity uses existing environment/config values with an explicit automation fallback, never config writes. Decline or pre-initialization cancellation leaves HEAD unborn; if later Enrollment fails or is cancelled, report the remaining commit. Invalid Git refs are errors, not initialization candidates.
+A new `drive` entry needs a committed Git HEAD, because its Lane starts there: an unborn HEAD refuses with `git_head_unreadable` and no empty root commit is created. Make the first commit, then enter `drive` again. Invalid Git refs are errors, not initialization candidates.
 
-Before Enrollment prepares its binding, the Host satisfies the precondition an untracked TaskIntent would otherwise fail, for the Enrollment set: the task's own TaskIntent and the Spec its binding names. Under `Git integration: manual` (the default) it stages them and makes no commit; under `auto` it commits them, and the native confirmation binds the HEAD that results. Neither needs a separate confirmation. A single task starts from a clean workspace: any other tracked or untracked non-ignored dirty path refuses with `workspace_not_clean: <paths>` before the gate opens, and the task's diff is taken from its Enrollment HEAD. A batch child keeps its Lane's confirmed scope disclosure. When no precondition fails, nothing is staged or committed. With an unborn HEAD the empty root commit comes first in both modes; `auto` commits the scope after it, and `manual` claims the in-scope staged and untracked changes as task work instead. A commit Git refuses fails Enrollment with Git's message and is never retried with hooks bypassed; if Enrollment is declined, cancelled or fails afterwards, report the commit or staged paths that remain.
+A new `drive` entry neither stages nor commits its TaskIntent or Spec in the user's checkout. The Lane starts at the user's HEAD and does not require a clean checkout; the runtime copies only the task's TaskIntent and bound Spec into the Lane, never other coordinator edits or the index. A batch child keeps its Lane's confirmed scope disclosure.
 
 ## Parallel Read-Only Dispatch
 

@@ -72,7 +72,7 @@ Host agent 直接完成 explanation、inspection 或 review，不创建 workflow
 
 1. `draw-up` 定义目标、acceptance、risk 与 canonical scope envelope；后续任何 scope 扩展都是 breaking revision，需要重新 enrollment。
 2. canonical `imm-kernel intent author/validate` 生成并验证 TaskIntent；`enrollment_ready=true` 表示 descriptor 结构、Git ownership 与 TaskIntent 约束满足 Enrollment 条件。
-3. Parent 在前台调用当前 Host 的原生 Enrollment Tool，并直接消费 terminal result。原生 gate 显示绑定后的 TaskIntent identity；Enrollment 只校验 TaskIntent、Git ownership、scope、workspace claim 与最终 authority 原子提交前提，acceptance descriptors 只在后置 QA 执行。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消。
+3. Parent 通过当前 Host 的 `start_unattended_batch`（传入 `task_id`）打开唯一一个原生 gate，runtime 在 Lane 内完成 child Enrollment 并监督 Executor。原生 gate 显示绑定后的 TaskIntent identity；Enrollment 只校验 TaskIntent、Git ownership、scope、workspace claim 与最终 authority 原子提交前提，acceptance descriptors 只在后置 QA 执行。Escape/host cancellation 是唯一的 pre-commit cancellation path；commit owner 建立后 settlement 不可取消。
 4. Agent 在当前 owner 和当前用户选择的 worktree 内连续实现，并用 `git add -- <exact task paths>` 显式声明 task-owned `HEAD -> index` snapshot；禁止在 dirty worktree 使用 bulk staging。
 5. `advance_assurance` 冻结 planning artifacts，并由 host deterministic QA 在当前 worktree 运行 acceptance descriptors；Kernel 在一个 mutation 内写入 QA attestation 与全部 acceptance results。timeout、输出上限、取消和进程树终止仍 fail closed。
 6. `routine` 在 QA 后完成；`material` 与 `critical` 追加单一 host native Review，Review 通过后自动完成。
@@ -113,7 +113,6 @@ The following are runtime tools or TUI operations, not public Skills:
 
 | 入口 | 用途 |
 | --- | --- |
-| `imm_canary_enrollment` | Parent 调用的 foreground Enrollment Tool；直接返回 bounded progress 与唯一 terminal result，不使用 background recovery |
 | `imm_kernel_canary` | Parent 调用的 artifact freeze、assurance、authorization 与 completion Tool |
 
 

@@ -767,6 +767,8 @@ describe("shared batch preflight projection", () => {
 		// existed. A key that disappears, or a text that is silently reworded, fails
 		// here rather than reaching an operator as changed prose.
 		const expected: Record<string, [string, string]> = {
+			batch_entry_ambiguous: ["batch_entry_ambiguous: specify exactly one of initiative_slug or task_id", "specify exactly one batch entry and retry in the current Host"],
+			batch_entry_kind_mismatch: ["batch_entry_kind_mismatch: the existing batch has a different plan source", "use the entry matching the existing batch in the current Host"],
 			batch_runtime_too_old: ["batch_runtime_too_old: <detail>", "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host"],
 			invalid_slug: ["invalid initiative slug: <detail>", "specify a valid initiative slug and retry in the current Host"],
 			batch_state_unreadable: ["batch run state is unreadable or invalid: <detail>", "resolve or remove the invalid batch state file, then retry in the current Host"],
@@ -800,6 +802,12 @@ describe("shared batch preflight projection", () => {
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
 			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
 			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"],
+			lane_config_invalid: ["lane_config_invalid", "Correct the Lane configuration and retry in the current Host."],
+			lane_executor_unavailable: ["lane_executor_unavailable", "Install the selected Executor on PATH and retry in the current Host."],
+			lane_executor_unobservable: ["lane_executor_unobservable", "Inspect the retained Lane and Executor process in the current Host."],
+			lane_executor_no_progress: ["lane_executor_no_progress", "Inspect the Lane and resume with a fresh drive entry."],
+			lane_decision_stale: ["lane_decision_stale", "Read the Lane decision facts again with status and relay the decision for the current record revision."],
+			lane_decision_rebind_failed: ["lane_decision_rebind_failed", "The decision was applied in the Lane; inspect the batch record with status before any further entry."],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {

@@ -132,22 +132,14 @@ describe("Initiative carrier Enrollment gate", () => {
 	it("performs no GitHub projection at Enrollment and only projects a settled task", () => {
 		// Enrollment is authority; the tracker is transport. The projection step is
 		// reachable only from a settlement path, never from enrollment.
-		const enrollmentSources = [
-			"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
-			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
-		];
-		for (const path of enrollmentSources) {
-			const source = readFileSync(resolve(path), "utf8");
-			// The whole enrollment extension for the Pi Host; for the Claude Host the
-			// enroll method up to the next method, so a settlement path later in the
-			// file is not read as part of enrollment.
-			const start = source.indexOf("async enroll(");
-			const body = start === -1 ? source : source.slice(start, source.indexOf("\n\tasync ", start + 1));
-			expect({ path, projectsAtEnroll: /projectTerminalTrackerState|mark-terminal/.test(body) }).toEqual({
-				path,
-				projectsAtEnroll: false,
-			});
-		}
+		// Since Spec drive-always-lanes S7 the Lane Enrollment is the only Enrollment;
+		// its Kernel port is the whole enrollment extension.
+		const path = "plugins/immune-brain/runtime/unattended/batch_kernel_port.ts";
+		const body = readFileSync(resolve(path), "utf8");
+		expect({ path, projectsAtEnroll: /projectTerminalTrackerState|mark-terminal/.test(body) }).toEqual({
+			path,
+			projectsAtEnroll: false,
+		});
 		// The shared step derives nothing without a tracker association: a repository
 		// with no tracker answer simply reports not_tracked, which is what keeps the
 		// projection opt-in rather than a required Enrollment prerequisite.

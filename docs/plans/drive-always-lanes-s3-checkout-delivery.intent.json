@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s3-checkout-delivery",
+  "owner": "user",
+  "goal": "Meet S3 of docs/specs/drive-always-lanes.spec.md: after a single-task child integrates onto imm/<task_id>, deliver it into the user's checkout according to the Git integration preference (manual: staged, uncommitted; auto: fast-forward of the current branch), park needs_human without touching the checkout when user dirt overlaps the delivery or the delivery cannot apply, keep unrelated user edits intact, and amend ADR 0024 and ADR 0027 for single tasks (Spec D5, D6).",
+  "acceptance": [
+    {
+      "id": "DAL-S3-A1",
+      "assertion": "Under Git integration manual, a single-task return applies the delivered delta (Lane base to the integrated commit, including the .imm/audit pair) to the user's index and worktree as staged changes, makes no commit, leaves HEAD and every branch ref unmoved, and reports return_to_coordinator.status staged. Initiative batch returns keep today's behavior, which tests/batch-parent-branch.test.ts still pins. Seam: tests/single-task-checkout-delivery.test.ts in a temporary repository.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S3-A2",
+      "assertion": "Under Git integration auto, a single-task return fast-forwards the user's current branch to the integrated commit when HEAD is an ancestor, also when unrelated paths are dirty, and reports fast_forwarded. A diverged HEAD (coordinator_head_diverged) and a detached HEAD (coordinator_branch_unavailable) each park the child needs_human, move no ref and write no file. Seam: tests/single-task-checkout-delivery.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S3-A3",
+      "assertion": "In either mode, a dirty user path that is also a delivered path parks the child needs_human with checkout_delivery_overlap naming that path, and the checkout is byte-identical before and after; this is pinned separately for a staged change, an unstaged modification, an untracked file, a deletion and a rename source or target. Dirty paths that are not delivered do not block delivery and stay byte-identical after it (BR-SCN-4). Under manual, a delta that no longer applies to the current HEAD parks with checkout_delivery_conflict and writes nothing, because the apply is checked before the index or worktree changes. The drive report names the reason and the paths (BR-SCN-3). Seam: tests/single-task-checkout-delivery.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\",\n      \"tests/batch-parent-branch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S3-A4",
+      "assertion": "docs/adr/0024-git-integration-preference.md and docs/adr/0027-parent-branch-merge-queue.md each carry an amendment headed 'Amendment: single-task Lane delivery (drive-always-lanes S3)' that states the manual staged delivery, the auto fast-forward over unrelated dirt, and the overlap park, and that Initiative batches are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q '^## Amendment: single-task Lane delivery (drive-always-lanes S3)' docs/adr/0024-git-integration-preference.md && grep -q '^## Amendment: single-task Lane delivery (drive-always-lanes S3)' docs/adr/0027-parent-branch-merge-queue.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 16384\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s3-checkout-delivery.md",
+    "docs/adr/0024-git-integration-preference.md",
+    "docs/adr/0027-parent-branch-merge-queue.md",
+    "docs/plans/drive-always-lanes-s3-checkout-delivery.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/git_integration_preference.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+    "tests/batch-parent-branch.test.ts",
+    "tests/single-task-checkout-delivery.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

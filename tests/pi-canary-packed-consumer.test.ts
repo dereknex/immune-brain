@@ -88,22 +88,6 @@ describe("packed consumer surface", () => {
 		}
 	});
 
-	test("packed enrollment does not create or execute an isolated descriptor environment", () => {
-		const guide = readFileSync(join(ROOT, "plugins/immune-brain/USER_GUIDE.md"), "utf8");
-		const enrollment = readFileSync(
-			join(ROOT, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"),
-			"utf8",
-		);
-		expect(guide).toContain("只在后置 QA");
-		expect(enrollment).toContain('name: "imm_canary_enrollment"');
-		expect(enrollment).not.toContain("runDescriptorRehearsal");
-		expect(enrollment).not.toContain("checkout-index");
-		expect(enrollment).toContain('pi.on("session_shutdown"');
-		expect(enrollment).toContain("class ForegroundEnrollmentCoordinator");
-		expect(enrollment).not.toContain("setWidget(");
-		expect(enrollment).not.toContain("setStatus(");
-	});
-
 	test("host registry inspection after real loading registers only the specified surface", async () => {
 		const { DefaultResourceLoader, SettingsManager } = await import(
 			"@earendil-works/pi-coding-agent"
@@ -128,12 +112,12 @@ describe("packed consumer surface", () => {
 				path?: string;
 			}>;
 			const paths = extensions.map((e) => e.path ?? "");
-			// Exactly the three canary Tool extensions are discovered; no other
-			// extension (and no issuer surface) is registered by the host.
-			expect(paths.filter((p) => p.endsWith("imm-canary-enroll.ts"))).toHaveLength(1);
+			// Exactly the two canary Tool extensions are discovered; no other
+			// extension (and no issuer or in-place Enrollment surface) is registered by the host.
+			expect(paths.filter((p) => p.endsWith("imm-canary-enroll.ts"))).toHaveLength(0);
 			expect(paths.filter((p) => p.endsWith("imm-canary-work.ts"))).toHaveLength(1);
 			expect(paths.filter((p) => p.endsWith("imm-unattended-batch.ts"))).toHaveLength(1);
-			expect(extensions.length).toBe(3);
+			expect(extensions.length).toBe(2);
 			// The exact registered Tool surface is proven by the factory tests;
 			// host discovery here proves no third extension or issuer-named
 			// surface exists in shipped bytes.

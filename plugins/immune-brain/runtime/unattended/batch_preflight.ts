@@ -18,7 +18,7 @@ import { spawnSync } from "node:child_process";
 import { LITERAL_USER_ACTOR_ID } from "../kernel/actor_identity";
 import { readBackendClaim } from "../kernel/backend_claim";
 import { computeBatchPlanDigest, type BatchAuthorizationBinding } from "../kernel/batch_authority";
-import { readGitHead } from "../kernel/pi_canary_prepare";
+import { preparePiCanary, readGitHead, type PiCanaryPreparation } from "../kernel/pi_canary_prepare";
 import { intentAuthorityHash, readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
 import type { TaskIntentV1 } from "../kernel/types";
 import { ignoredPaths, isBatchRef, isParentBranch, isProgressRef, parentBranchRef, readBatchRef } from "./batch_ref";
@@ -27,7 +27,9 @@ import { isWorkflowAuthoringPath } from "./batch_git";
 import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enrollmentEventIdFor, reconcileKernelAuthority } from "../kernel/storage";
 import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
-import { observeInitiative, projectBatchPlan } from "./batch_plan";
+import { observeInitiative, observeSingleTask, projectBatchPlan } from "./batch_plan";
+import { parseVerificationDescriptor } from "../verification_descriptor";
+import { scopeEstimateFailure } from "../kernel/intent_readiness";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
 import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
 import { assertLaneWorktreeAvailable } from "./batch_worktrees";
@@ -44,6 +46,7 @@ const INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export interface BatchPreflightOptions {
 	root: string;
+	plan_source?: "single_task";
 	max_parallel?: number;
 	initiative_slug: string;
 	now?: string;
@@ -51,6 +54,8 @@ export interface BatchPreflightOptions {
 }
 
 export interface BatchPreflightProjection {
+	plan_source?: "single_task";
+	preparation?: PiCanaryPreparation;
 	topology_digest?: string;
 	initiative_slug: string;
 	batch_branch: string;
@@ -464,7 +469,7 @@ type PlanSurfaceOutcome =
 /** Validate the whole confirmed graph before any Parent integration can write. */
 export async function readConfirmedBatchTopology(root: string, batch: AnyBatchRunStateRecord,
 	readInitiative: InitiativeObservationReader = observeInitiative) {
-	const observation = await readInitiative(root, batch.initiative_slug);
+	const observation = await (isLaneBatchRecord(batch) && batch.plan_source === "single_task" ? observeSingleTask : readInitiative)(root, batch.initiative_slug);
 	if (observation.initiative_id !== batch.initiative_slug) throw new Error("Initiative identity changed");
 	const tasks = [...observation.tasks].sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
 	if (new Set(tasks.map(task => task.task_id)).size !== tasks.length) throw new Error("duplicate Initiative Task");
@@ -667,7 +672,8 @@ export async function prepareBatchPreflight(
 async function projectPreflight(
 	options: BatchPreflightOptions, preparing: boolean,
 ): Promise<BatchPreflightOutcome> {
-	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
+	const { root, initiative_slug: initiativeSlug } = options;
+	const readInitiative = options.plan_source === "single_task" ? observeSingleTask : options.readInitiative;
 	if (!INITIATIVE_SLUG_PATTERN.test(initiativeSlug))
 		return reject("invalid_slug", initiativeSlug);
 
@@ -681,6 +687,23 @@ async function projectPreflight(
 	const activeRecord: AnyBatchRunStateRecord | null = found ? found.record : null;
 	if (activeRecord && !isLaneBatchRecord(activeRecord)) return reject("batch_record_shape_retired");
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
+	if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)
+		return reject("batch_entry_kind_mismatch");
+	if (options.plan_source === "single_task") {
+		const batchesDir = join(root, ".imm", "state", "batches");
+		if (existsSync(batchesDir)) for (const file of readdirSync(batchesDir)) {
+			if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
+			try {
+				const record = readAnyBatchRunState(root, file.slice(0, -5));
+				if (record && !isTerminalBatchState(record.batch_state) &&
+					(!isLaneBatchRecord(record) || record.plan_source !== "single_task") &&
+					record.children.some(child => child.task_id === initiativeSlug))
+					return reject("batch_entry_kind_mismatch");
+			} catch {
+				return reject("batch_state_unreadable", file);
+			}
+		}
+	}
 	const isResuming = activeRecord !== null;
 	// A batch records the branch it advances: its hidden ref, or a legacy imm/<slug> branch.
 	const batchBranch = activeRecord?.branch ?? parentBranchRef(initiativeSlug);
@@ -802,6 +825,23 @@ async function projectPreflight(
 	});
 	if (!planSurface.ok)
 		return reject(planSurface.key, planSurface.detail);
+	let preparation: PiCanaryPreparation | undefined;
+	if (options.plan_source === "single_task" && !isResuming) {
+		try {
+			const read = observeEnrollmentTaskIntent(root, initiativeSlug);
+			for (const acceptance of read.intent.acceptance) parseVerificationDescriptor(acceptance.verification);
+			const scopeFailure = scopeEstimateFailure(root, read.intent);
+			if (scopeFailure) throw new Error(scopeFailure);
+			if (spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
+				throw new Error("TaskIntent must be tracked");
+			preparation = preparePiCanary(root, { task_id: initiativeSlug, now });
+			if (!preparation.intent || preparation.intent.content_hash !== read.content_hash || !preparation.git_base_head ||
+				preparation.task_record_v3?.present || preparation.task_tombstone.present || preparation.backend_claim.present || preparation.workspace.current_working)
+				throw new Error("TaskIntent is not enrollment_ready");
+		} catch (error) {
+			return reject("plan_projection_failed", error instanceof Error ? error.message : String(error));
+		}
+	}
 	if (!isResuming && isParentBranch(batchBranch)) {
 		try {
 			for (const child of planSurface.surface.recovery_children) assertLaneWorktreeAvailable(root, initiativeSlug, child.task_id);
@@ -831,6 +871,8 @@ async function projectPreflight(
 	}
 
 	const projection: BatchPreflightProjection = {
+		...(options.plan_source ? { plan_source: options.plan_source } : {}),
+		...(preparation ? { preparation } : {}),
 		initiative_slug: initiativeSlug,
 		batch_branch: batchBranch,
 		is_resuming: isResuming,
@@ -864,7 +906,8 @@ export interface BatchDriftProjection {
 }
 
 export async function projectBatchDrift(options: BatchPreflightOptions): Promise<BatchDriftProjection> {
-	const { root, initiative_slug: initiativeSlug, readInitiative } = options;
+	const { root, initiative_slug: initiativeSlug } = options;
+	const readInitiative = options.plan_source === "single_task" ? observeSingleTask : options.readInitiative;
 	const found = findExistingActiveBatch(root, initiativeSlug);
 	const activeRecord: AnyBatchRunStateRecord | null = found && !found.corrupt ? found.record : null;
 	const existingBatch: AnyBatchRunStateRecord | null = activeRecord ?? findSettledBatchRecord(root, initiativeSlug);
@@ -907,6 +950,7 @@ export async function projectBatchDrift(options: BatchPreflightOptions): Promise
  * does.
  */
 export interface BatchConfirmationFacts {
+	preparation?: PiCanaryPreparation;
 	initiative_slug: string;
 	batch_branch: string;
 	plan_digest: string;
@@ -1009,6 +1053,7 @@ export async function authorizeBatch<HostRejection>(
 
 	const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID()}`;
 	const facts: BatchConfirmationFacts = {
+		...(projection.preparation ? { preparation: projection.preparation } : {}),
 		initiative_slug: initiativeSlug,
 		batch_branch: batchBranch,
 		plan_digest: planDigest,
@@ -1032,6 +1077,17 @@ export async function authorizeBatch<HostRejection>(
 		requestId = decision.request_id;
 	}
 
+	// A single-task grant must not race an Initiative that acquired this child
+	// while the native confirmation was open.
+	if (projection.plan_source === "single_task") {
+		const fresh = await prepareBatchPreflight({ root, initiative_slug: initiativeSlug,
+			plan_source: "single_task", now, readInitiative: options.readInitiative });
+		if (!fresh.ok) return { outcome: "rejected", rejection: fresh };
+		if (fresh.projection.is_resuming !== isResuming ||
+			JSON.stringify(fresh.projection.existing_batch) !== JSON.stringify(existingBatch))
+			return { outcome: "rejected", rejection: batchRejection("plan_changed") };
+	}
+
 	// Post-gate cascade: the drift projection reports the live claim it read
 	// before its own asynchronous plan read, so a claim swapped during the gate
 	// and one appearing during the read are both caught without either adapter
@@ -1039,6 +1095,7 @@ export async function authorizeBatch<HostRejection>(
 	const drift = await projectBatchDrift({
 		root,
 		initiative_slug: initiativeSlug,
+		plan_source: projection.plan_source,
 		now,
 		readInitiative: options.readInitiative,
 	});
@@ -1051,6 +1108,12 @@ export async function authorizeBatch<HostRejection>(
 	if (drift.base_head === null) return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
 	if (drift.base_head !== baseHead)
 		return { outcome: "rejected", rejection: batchRejection("head_moved", drift.base_head) };
+	if (projection.preparation) {
+		let digest: string | null = null;
+		try { digest = preparePiCanary(root, { task_id: initiativeSlug, now }).digest; } catch { /* refusal below */ }
+		if (digest !== projection.preparation.digest)
+			return { outcome: "rejected", rejection: batchRejection("plan_changed", "single-task preparation changed") };
+	}
 
 	// The drift projection's own claim read happened before its plan read; this
 	// one happens after it, so a foreign enrollment completing during that read is

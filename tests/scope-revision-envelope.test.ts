@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { ClaudeRuntime, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 
@@ -81,7 +82,7 @@ async function enrolled(taskId: string, decision: "accept" | "decline" = "accept
 		interactive: true,
 		permissionMode: "manual",
 	});
-	await runtime.enroll(taskId, meta("enroll"));
+	await enrollTaskForTest(fixture.root, taskId);
 	gateCalls.length = 0;
 	answer = decision;
 	return { ...fixture, runtime, meta, gateCalls };

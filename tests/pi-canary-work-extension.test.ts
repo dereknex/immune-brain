@@ -1156,11 +1156,12 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const requestAuthorization = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_authorization",
 		);
-		expect(Object.keys(requestAuthorization.properties)).toEqual(["op"]);
+		// record_revision is a staleness precondition for a single-task Lane decision relay (Spec drive-always-lanes D11); it carries no authority.
+		expect(Object.keys(requestAuthorization.properties)).toEqual(["op", "record_revision"]);
 		const requestStop = schema.properties.action.anyOf.find(
 			(item: Record<string, any>) => item.properties?.op?.const === "request_stop",
 		);
-		expect(Object.keys(requestStop.properties)).toEqual(["op"]);
+		expect(Object.keys(requestStop.properties)).toEqual(["op", "record_revision"]);
 		expect(requestStop.required).toEqual(["op"]);
 	});
 

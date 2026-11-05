@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "drive-always-lanes-s6-lane-default",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:drive-always-lanes-s6-lane-default:2026-11-05T05:27:33.262Z",
+  "final_record_hash": "sha256:4ca5178caf2acaa052f00220669b564ee2ba75c2ec0c8d7deffc60df6b61ad15",
+  "terminalized_at": "2026-11-05T05:27:33.262Z"
+}

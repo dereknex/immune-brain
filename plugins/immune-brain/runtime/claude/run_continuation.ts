@@ -4,9 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { projectTaskStatus } from "../assurance/coordinator";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { recordParentRepair } from "../unattended/batch_git";
 import { readAnyBatchRunState } from "../unattended/batch_state";
-import { bindRun, decideRunContinuation, observeParentRun, parkFailedCriticalGate, releasesRunBinding, scopedSourceDigest, USER_WAIT_GUIDANCE,
+import { bindRun, decideRunContinuation, observeParentRun, releasesRunBinding, scopedSourceDigest, USER_WAIT_GUIDANCE,
 	type RunContinuationState, type ReviewContinuationState } from "../assurance/run_continuation";
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
@@ -15,7 +14,7 @@ import { readPhaseEntryState, claudeLocalNames, dropPhaseEntryLog, revokeEntryTo
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
 
 const MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
-const NATIVE_OPERATIONS = new Set(["enroll", "start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
 const NATIVE_FAILURE_LIMIT = 3;
@@ -92,10 +91,6 @@ function pauseRun(metadata: ContinuationMetadata, sessionId: string, root: strin
 async function observeNativeFailure(metadata: ContinuationMetadata, correlation: Correlation, root: string, reason: string): Promise<void> {
 	metadata.native_failures++;
 	if (metadata.native_failures < NATIVE_FAILURE_LIMIT) { save(correlation.session_id, root, metadata); return; }
-	if (correlation.operation === "enroll" && metadata.state && await parkFailedCriticalGate(metadata.state.binding, correlation.task_id ?? undefined)) {
-		save(correlation.session_id, root, metadata);
-		return;
-	}
 	pauseRun(metadata, correlation.session_id, root, reason);
 }
 
@@ -175,9 +170,6 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 			if (metadata.paused && NATIVE_OPERATIONS.has(operation)) return JSON.stringify({ hookSpecificOutput: {
 				hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate` } });
 			const input = (payload.tool_input ?? {}) as Record<string, unknown>;
-			if (operation === "enroll" && metadata.state?.binding.kind === "parent" &&
-				metadata.state.binding.blocked_native_tasks?.includes(String(input.task_id))) return JSON.stringify({ hookSpecificOutput: {
-					hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "This critical gate is parked; continue independent work or resolve its same-Host recovery and enter drive explicitly" } });
 			const correlation: Correlation = { session_id: sessionId, workspace, tool_use_id: toolId, operation,
 				task_id: typeof input.task_id === "string" ? input.task_id : null };
 			if (!appendPrivate(callPath(toolId, root), cacheDir(root), JSON.stringify(correlation) + "\n")) throw new Error("tool correlation could not be recorded");
@@ -207,13 +199,11 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 				if (metadata.state?.binding.kind !== "parent") metadata.state = bindRun({ kind: "parent", workspace,
 					session_id: sessionId, batch_id: batch.batch_id, initiative_slug: batch.initiative_slug, plan_digest: batch.plan_digest });
 			}
-			if (!metadata.state && correlated.task_id && ["enroll", "status"].includes(operation)) {
+			if (!metadata.state && correlated.task_id && operation === "status") {
 				const status = await projectTaskStatus(workspace, correlated.task_id);
 				if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
 					metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
 			}
-			if (operation === "enroll" && correlated.task_id && metadata.state?.binding.kind === "parent" && !["blocked", "cancelled", "failed", "rejected"].includes(String(response?.state)))
-				await recordParentRepair(workspace, metadata.state.binding.batch_id, correlated.task_id, metadata.state.binding.initiative_slug);
 			if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id) return null;
 			if (operation === "advance_assurance" && response?.state === "review_ready") {
 				const params = response.agent_params as { prompt?: unknown } | undefined;

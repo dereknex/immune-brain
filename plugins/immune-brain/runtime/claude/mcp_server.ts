@@ -3,6 +3,7 @@ import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
+import { batchReason } from "../unattended/batch_reasons";
 import { BatchRuntimeTooOldError, isTerminalBatchState, readAnyBatchRunState } from "../unattended/batch_state";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -31,7 +32,6 @@ export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export const TOOLS = [
 	{ name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
-	{ name: "enroll", description: "Enroll a Git-tracked TaskIntent after native confirmation.", privileged: true },
 	{ name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
 	{ name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
 	{ name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
@@ -39,7 +39,7 @@ export const TOOLS = [
 	{ name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
 	{ name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
 	{ name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-	{ name: "start_unattended_batch", description: "Start an unattended Lane batch run for an Initiative under the literal-user drive entry.", privileged: true },
+	{ name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
 	{ name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
@@ -58,6 +58,11 @@ export function listMcpTools() {
 						initiative_slug: { type: "string" },
 						...(tool.name === "start_unattended_batch"
 							? {
+									task_id: { type: "string" },
+									stop: { type: "boolean" },
+									executor_host: { type: "string", enum: ["pi", "claude-code"] },
+									executor_model: { type: "string", minLength: 1 },
+									executor_effort: { type: "string", minLength: 1 },
 									max_parallel: { type: "integer", minimum: 1 },
 									lane_offers: {
 										type: "array",
@@ -87,13 +92,15 @@ export function listMcpTools() {
 						task_id: { type: "string" },
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
+						// Spec drive-always-lanes D11: the record revision read in `lane_decision_required`; a Lane that moved since is refused as stale.
+						...(tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 						...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),
 						...(tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}),
 					}),
 			},
-			required: tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch"
+			required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
 				: tool.name === "resolve_finding"
 					? ["task_id", "finding_id"]
@@ -123,7 +130,7 @@ export interface McpRuntimeOptions {
 	batchGit?: import("../unattended/batch_git").BatchRunnerGitPort;
 	readInitiative?: import("../unattended/types").InitiativeObservationReader;
 	/**
-	 * Takes the admission the PreToolUse hook wrote for one `enroll`,
+	 * Takes the admission the PreToolUse hook wrote for one
 	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
 	 * private file store. `true` is an admission without an entry token.
 	 */
@@ -185,7 +192,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		const workspace = options.cwd ?? process.cwd();
 		const correlated = readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
-			throw new NativeAuthorityError("run_entry_required", "Enrollment needs exact Hook session and workspace correlation");
+			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
 		const grant = consumeAdmission(toolCallId, operation);
 		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
 		hookSessionId = correlated ?? hookSessionId;
@@ -220,8 +227,13 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
 				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-				const initiativeSlug = String(args.initiative_slug ?? "");
-				if (!initiativeSlug) throw new Error("initiative_slug is required");
+				const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
+				const task = typeof args.task_id === "string" ? args.task_id : "";
+				if (args.stop !== undefined && typeof args.stop !== "boolean") throw new Error("stop must be a boolean");
+				if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code") throw new Error("invalid executor_host");
+				for (const key of ["executor_model", "executor_effort"]) if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key])) throw new Error(`invalid ${key}`);
+				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
+				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
 				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
 				if (!negotiatedInteractive) {
@@ -242,9 +254,16 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
-				const maxParallel = resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+				const maxParallel = task ? 1 : resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
+					...(task ? { plan_source: "single_task" as const } : {}),
+					...(args.stop === true ? { stop: true } : {}),
+					executor: {
+						...(args.executor_host === "pi" || args.executor_host === "claude-code" ? { executor_host: args.executor_host } : {}),
+						...(typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {}),
+						...(typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}),
+					},
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
@@ -302,10 +321,6 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 				signal: meta.signal,
 			};
-			if (name === "enroll") {
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
-				return runtime.enroll(taskId, entryToken ? { ...toolMeta, entryToken } : toolMeta);
-			}
 			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
@@ -559,6 +574,9 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			`Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
 			b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
 			input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+			input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
+			input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
+			input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
 			b?.children ? `Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}` : null,
 			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
 			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,

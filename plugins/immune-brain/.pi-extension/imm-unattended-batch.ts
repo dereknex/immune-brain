@@ -1,6 +1,15 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveConfig } from "../runtime/config/layered_config";
+import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
+
+export const PI_LANE_WAIT_MS = 5_000;
+/** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
+export const piLaneSupervisor = new LaneSupervisor();
+const defaultSupervisor = piLaneSupervisor;
 // The Pi batch adapter imports the host-neutral runtime modules statically,
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
@@ -12,13 +21,13 @@ import {
 } from "../runtime/kernel/batch_authority";
 import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
 import {
-	startBatch, completedParentReport,
+	startBatch, completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../runtime/unattended/batch_runner";
 import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
-import { observeInitiative } from "../runtime/unattended/batch_plan";
+import { observeInitiative, observeSingleTask } from "../runtime/unattended/batch_plan";
 import { integrateSettledCriticalSlices, advanceNativeParent } from "../runtime/unattended/batch_git";
 
 import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
@@ -103,7 +112,11 @@ function nonInteractiveRefusal(): { reason: string; recovery_action: string } {
  */
 export interface PiBatchExecutionOptions {
 	root: string;
-	initiativeSlug: string;
+	initiativeSlug?: string;
+	taskId?: string;
+	stop?: boolean;
+	executor?: ExecutorPreferences;
+	supervisor?: LaneSupervisor;
 	interactive?: boolean;
 	/**
 	 * Gate-free continuation after a foreground child: never opens the
@@ -167,11 +180,18 @@ export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
 	if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-	return executePreparedPiBatch(options);
+	if (!!options.initiativeSlug === !!options.taskId) return batchReason("batch_entry_ambiguous");
+	if (options.stop) {
+		if (!options.taskId) return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+		return stopSingleTaskSupervisor(options.supervisor ?? defaultSupervisor, options.root, options.taskId, options.signal);
+	}
+	if (options.taskId && !resolveConfig(options.root).lanes.valid) return batchReason("lane_config_invalid");
+	return executePreparedPiBatch({ ...options, initiativeSlug: options.taskId ?? options.initiativeSlug!,
+		...(options.taskId ? { plan_source: "single_task" as const, max_parallel: 1, readInitiative: observeSingleTask } : {}) });
 }
 
 async function executePreparedPiBatch(
-	options: PiBatchExecutionOptions,
+	options: PiBatchExecutionOptions & { initiativeSlug: string; plan_source?: "single_task" },
 ): Promise<PiBatchExecutionResult> {
 	const { root, initiativeSlug, signal } = options;
 	const reuseOnly = options.reuseOnly === true;
@@ -185,9 +205,11 @@ async function executePreparedPiBatch(
 	const existing = findExistingActiveBatch(root, initiativeSlug);
 	if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
 	const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(root, initiativeSlug);
+	if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
+		return batchReason("batch_entry_kind_mismatch");
 	let replayCompleted = true;
 	let replayReader = options.readInitiative;
-	if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+	if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
 		let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
 		try {
 			confirmed = await readConfirmedBatchTopology(root, integrationBatch, options.readInitiative);
@@ -203,9 +225,9 @@ async function executePreparedPiBatch(
 				await integrateSettledCriticalSlices(root, initiativeSlug, replayReader);
 		}
 	}
-	const completed = replayCompleted ? await completedParentReport(root, initiativeSlug, replayReader, options.batchTracker) : null;
+	const completed = !options.plan_source && replayCompleted ? await completedParentReport(root, initiativeSlug, replayReader, options.batchTracker) : null;
 	if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
-	const native = await advanceNativeParent(root, initiativeSlug, options.final_verification, options.readInitiative, options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
+	const native = options.plan_source ? null : await advanceNativeParent(root, initiativeSlug, options.final_verification, options.readInitiative, options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
 		async (effects) => {
 			// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 			if (reuseOnly || !options.confirmBatch) return batchReason("confirmation_port_unavailable");
@@ -240,6 +262,7 @@ async function executePreparedPiBatch(
 	const preflight = await prepareBatchPreflight({
 		root,
 		initiative_slug: initiativeSlug,
+		plan_source: options.plan_source,
 		now,
 		readInitiative: options.readInitiative,
 		max_parallel: options.max_parallel,
@@ -249,7 +272,7 @@ async function executePreparedPiBatch(
 		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
 	}
 	const isResuming = preflight.projection.is_resuming;
-	if (!isResuming && !options.final_verification?.length) return {
+	if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
 		state: "rejected",
 		reason: "final_verification_required",
 		recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
@@ -292,7 +315,7 @@ async function executePreparedPiBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}${facts.preparation?.intent ? `\nTaskIntent revision: ${facts.preparation.intent.revision}\nTaskIntent content hash: ${facts.preparation.intent.content_hash}\nPreparation digest: ${facts.preparation.digest}` : ""}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
@@ -332,7 +355,7 @@ async function executePreparedPiBatch(
 				requestId: request_id ?? randomUUID(),
 				operation: "start_unattended_batch",
 				initiativeSlug,
-				planDigest,
+				planDigest: `${planDigest}\0${preflight.projection.preparation?.digest ?? ""}`,
 			}),
 	});
 	if (authorization.outcome === "host_rejection") return authorization.value;
@@ -381,6 +404,9 @@ async function executePreparedPiBatch(
 	});
 
 	let report = await startBatch({
+		plan_source: options.plan_source,
+		...(options.plan_source ? { supervision: { supervisor: options.supervisor ?? defaultSupervisor, parentHost: "pi" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS,
+			signal, stop: options.stop, request: options.executor } } : {}),
 		topology_digest: preflight.projection.topology_digest,
 		root,
 		batch_id: batchId,
@@ -399,7 +425,7 @@ async function executePreparedPiBatch(
 		...(options.max_parallel !== undefined
 			? {
 					max_parallel: options.max_parallel,
-					tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
+					...(options.plan_source ? {} : { tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug) }),
 					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 				}
 			: {}),
@@ -410,7 +436,7 @@ async function executePreparedPiBatch(
 		return batchReason("batch_run_rejected", report.reason ?? "");
 	}
 
-	if (report.batch_state === "completed" && report.final_verification?.passed)
+	if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
 		report = await completedParentReport(root, initiativeSlug, options.readInitiative, options.batchTracker) ?? report;
 	return {
 		state: "started",
@@ -508,17 +534,23 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
+	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
-		description: "Start an unattended Lane batch run for an Initiative after native confirmation.",
+		description: "Start an unattended Lane batch for an Initiative or a single TaskIntent after native confirmation.",
 		promptSnippet: "Start unattended batch run: invoke once in foreground after plan confirmation.",
 		promptGuidelines: [
 			"Call only inside an explicit drive entry, after plan confirmation; execute once in the foreground and consume the direct terminal result.",
 			"Do not run this Tool in background, poll for completion, or issue a cancel subcommand.",
 		],
 		parameters: Type.Object({
-			initiative_slug: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+			initiative_slug: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
+			task_id: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" })),
+			stop: Type.Optional(Type.Boolean()),
+			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code")])),
+			executor_model: Type.Optional(Type.String({ minLength: 1 })),
+			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
 			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
 			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
@@ -534,17 +566,17 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
 		) => {
 			if (Object.hasOwn(params, "lane_revision")) throw new Error("unknown parameter: lane_revision");
-			const { initiative_slug: initiativeSlug } = params;
+			const initiativeSlug = params.task_id ?? params.initiative_slug ?? "";
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -558,7 +590,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("start_unattended_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: "blocked",
@@ -574,7 +606,11 @@ export default function (
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
-				initiativeSlug,
+				...(params.initiative_slug ? { initiativeSlug: params.initiative_slug } : {}),
+				...(params.task_id ? { taskId: params.task_id } : {}),
+				...(params.stop ? { stop: true } : {}),
+				executor: { executor_host: params.executor_host, executor_model: params.executor_model, executor_effort: params.executor_effort },
+				supervisor,
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
@@ -619,7 +655,7 @@ export default function (
 			if (result.state !== "started" && result.state !== "native_parent") {
 				const failureState = result.state === "blocked" ? "blocked" : "failed";
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "start_unattended_batch",
 					state: failureState,
@@ -641,8 +677,8 @@ export default function (
 			};
 		},
 		renderCall(args, theme) {
-			const params = args as { initiative_slug?: string };
-			return renderStructuredCall("start_unattended_batch", "start", params.initiative_slug, theme);
+			const params = args as { initiative_slug?: string; task_id?: string };
+			return renderStructuredCall("start_unattended_batch", "start", params.task_id ?? params.initiative_slug, theme);
 		},
 		renderResult(result, _options, theme) {
 			return renderStructuredResult(
@@ -677,7 +713,7 @@ export default function (
 			if (ctx.mode !== "tui") {
 				const refusal = nonInteractiveRefusal();
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -691,7 +727,7 @@ export default function (
 			const entryRefusal = piRunEntryRefusal("retire_stale_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: "blocked",
@@ -740,7 +776,7 @@ export default function (
 
 			if (result.state !== "retired") {
 				throwToolFailure({
-					tool: "imm_canary_enrollment",
+					tool: "start_unattended_batch",
 					task_id: initiativeSlug,
 					operation: "retire_stale_batch",
 					state: result.state === "blocked" ? "blocked" : "failed",

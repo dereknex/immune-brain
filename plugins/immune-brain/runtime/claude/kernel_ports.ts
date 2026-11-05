@@ -2,7 +2,17 @@ import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assur
 export { ensureReviewRevision as ensureClaudeReviewRevision } from "../assurance/verdict_authority";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveConfig } from "../config/layered_config";
+import { LaneSupervisor, type ExecutorPreferences } from "../unattended/lane_supervisor";
+
+export const CLAUDE_LANE_WAIT_MS = 500;
+
+function claudeLaneWaitMs(env: NodeJS.ProcessEnv): number {
+	const limit = Number(env.MCP_TOOL_TIMEOUT);
+	return Number.isFinite(limit) && limit > 0 ? Math.min(CLAUDE_LANE_WAIT_MS, Math.floor(limit / 2)) : CLAUDE_LANE_WAIT_MS;
+}
 import {
 	AssuranceCoordinator,
 	type AssuranceCoordinatorPorts,
@@ -38,16 +48,9 @@ import {
 	type CapabilityBindingV2,
 	type MutationAuthorityRegistry,
 } from "../kernel/authority_port";
-import {
-	createEnrollmentAuthorityRegistry,
-	type EnrollmentCapabilityBinding,
-} from "../kernel/enrollment_authority";
-import { enrollmentScopeDisclosure, EnrollmentRehearsalError, enrollTask, singleTaskEnrollmentDirt } from "../kernel/enrollment";
+import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
 import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
-import { inspectSpecBinding } from "../kernel/spec_binding";
 import { withSettleCommit } from "../assurance/workflow_autocommit";
-import { commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, inspectEnrollmentGitBase, enrollmentGitBaseNotice, initializeEnrollmentGitBase, preconditionCommitNote } from "../assurance/enrollment_git_base";
-import { preparePiCanary, revalidatePiCanary } from "../kernel/pi_canary_prepare";
 import { runDeterministicQa } from "../assurance/qa";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import { batchReason } from "../unattended/batch_reasons";
@@ -59,7 +62,7 @@ import {
 	restoreStagedIntent as restoreStagedIntentShared,
 } from "../staged_intent";
 import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
-import { runGithubTrackerOperation, assertIsolatedTaskPrerequisites } from "../github_issue_tracker";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import {
 	authorizeBatch,
@@ -70,11 +73,12 @@ import {
 	findSettledBatchRecord,
 } from "../unattended/batch_preflight";
 import {
-	startBatch, completedParentReport,
+	startBatch, completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
+import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
@@ -90,7 +94,7 @@ import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
 import { integrateSettledCriticalSlices, advanceNativeParent } from "../unattended/batch_git";
-import { observeInitiative } from "../unattended/batch_plan";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import {
 	confirmationRef,
 	enrollmentNonce,
@@ -270,6 +274,8 @@ export interface ClaudeRuntimeOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
+	laneRoot?: boolean;
 }
 
 /** ADR 0025: the run-internal authority operations a live entry token authorizes. */
@@ -298,9 +304,11 @@ type ClaudeBatchStartResult =
  * Called fresh pre/post confirmation and from ownsTaskClaim.
  */
 export class ClaudeRuntime {
+	private readonly laneSupervisor = new LaneSupervisor();
 	readonly host: ClaudeReviewHost;
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
+	private readonly options: ClaudeRuntimeOptions;
 	private readonly env: Record<string, string | undefined>;
 	private readonly interactive: boolean;
 	private requestConfirmation?: NativeConfirmationPort;
@@ -316,6 +324,7 @@ export class ClaudeRuntime {
 
 	constructor(options: ClaudeRuntimeOptions) {
 		this.cwd = options.cwd;
+		this.options = options;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
 		this.requestConfirmation = options.requestConfirmation;
@@ -436,71 +445,6 @@ export class ClaudeRuntime {
 	/** The refusing projection every mutation and authorization is bound to. */
 	private async project(taskId: string, nextScope?: readonly string[]) {
 		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
-	}
-
-	async enroll(taskId: string, meta: ToolMeta) {
-		const now = new Date().toISOString();
-		// Commit the task's own dirty preconditions first, so the confirmation
-		// below binds the HEAD that results. An owned workspace commits nothing.
-		let gitBaseNote = preconditionCommitNote(commitEnrollmentPreconditions(this.cwd, taskId, meta.signal));
-		try {
-			await assertIsolatedTaskPrerequisites(this.cwd, taskId);
-			let preparation = await preparePiCanary(this.cwd, { task_id: taskId, now });
-			const intent = await readTaskIntentForRecord(this.cwd, taskId);
-			const gitBase = inspectEnrollmentGitBase(this.cwd);
-			// In-scope changes that already exist are shown in the gate and only the
-			// ones shown are claimed as task work on confirmation.
-			const disclosure = enrollmentScopeDisclosure(this.cwd, taskId);
-			// An unborn HEAD has no base to compare; the Kernel checks after it commits one.
-			// An invalid Spec binding keeps its own Kernel refusal.
-			if (gitBase.state !== "unborn" && inspectSpecBinding(intent.intent).ok) {
-				const dirt = singleTaskEnrollmentDirt(this.cwd, intent.intent_ref.path, intent.intent);
-				if (dirt.length > 0) throw new EnrollmentRehearsalError([`workspace_not_clean: ${dirt.join(", ")}`]);
-			}
-			let claimedScopePaths: string[] = [];
-			const gate = await this.gate("enroll", { ...meta, taskId }, {
-				risk: intent.intent.risk,
-				intentRevision: preparation.intent?.revision,
-				intentContentHash: preparation.intent?.content_hash,
-				bindingDigest: preparation.digest,
-				gitBaseNotice: [enrollmentGitBaseNotice(gitBase, this.cwd), disclosure.notice].filter(Boolean).join("\n") || undefined,
-			});
-			const { unchanged } = await revalidatePiCanary(this.cwd, { task_id: taskId, now }, preparation);
-			if (!unchanged) throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
-			if (!preparation.intent) throw new Error("enrollment requires a readable TaskIntent");
-			throwIfCancelled(meta.signal);
-			preparation = initializeEnrollmentGitBase(this.cwd, { task_id: taskId, now }, preparation, gitBase, meta.signal);
-			if (gitBase.state === "unborn") {
-				gitBaseNote += `; empty initial commit ${preparation.git_base_head} remains`;
-				// The scope could not be compared with an unborn HEAD; commit it
-				// now that a base exists and bind the HEAD that results.
-				const late = commitUnbornEnrollmentPreconditions(this.cwd, { task_id: taskId, now }, preparation, meta.signal);
-				gitBaseNote += preconditionCommitNote(late.result);
-				preparation = late.preparation;
-				claimedScopePaths = late.claimed_scope_paths;
-			}
-			if (!preparation.intent) throw new Error("Enrollment requires a readable TaskIntent");
-			const nonce = enrollmentNonce();
-			const binding: EnrollmentCapabilityBinding = {
-				task_id: taskId,
-				intent_path: preparation.intent.path,
-				intent_revision: preparation.intent.revision,
-				intent_content_hash: preparation.intent.content_hash,
-				preparation_digest: preparation.digest,
-				actor_id: LITERAL_USER_ACTOR_ID,
-				confirmation_ref: gate.confirmation_ref,
-				nonce,
-			};
-			return await enrollTask(this.cwd, this.enrollmentRegistry, { binding, now, disclosed_scope_paths: [...disclosure.paths, ...claimedScopePaths] });
-		} catch (error) {
-			if (!gitBaseNote) throw error;
-			// A native-gate error keeps its type and code; only the text grows.
-			if (error instanceof NativeAuthorityError) {
-				error.message += gitBaseNote;
-				throw error;
-			}
-			throw new Error(`${error instanceof Error ? error.message : String(error)}${gitBaseNote}`);
-		}
 	}
 
 	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
@@ -642,7 +586,35 @@ export class ClaudeRuntime {
 		});
 	}
 
+	/**
+	 * Spec drive-always-lanes D11: a decision for a single-task Lane is answered at
+	 * the Parent's native gate and applied to the Lane store, then the next
+	 * Executor generation starts. Any other task keeps the in-place path.
+	 */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
+			? findLaneRelayTarget(this.cwd, taskId) : null;
+		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
+		const laneRuntime = new ClaudeRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
+			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
+		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
+		try {
+			const outcome = await relayLaneDecision({
+				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
+				expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
+				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
+				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
+				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
+				supervisor: this.laneSupervisor, parentHost: "claude-code",
+				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: claudeLaneWaitMs(this.env), signal: meta.signal,
+			});
+			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
+		} finally {
+			await laneRuntime.shutdown();
+		}
+	}
+
+	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
 			// The workspace owner is derived from the single active run, so a claim
@@ -898,7 +870,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -906,12 +878,20 @@ export class ClaudeRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
+		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
+		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
 		const probe = probeHost(this.env, process.platform, this.hostVersion);
 		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		if (options.stop) {
+			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+			return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+		}
+		if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+			return batchReason("lane_config_invalid");
 		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
 		const interactive = meta.interactive ?? this.interactive;
 		if (!reuseOnly && !interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
@@ -924,9 +904,11 @@ export class ClaudeRuntime {
 		const existing = findExistingActiveBatch(this.cwd, initiativeSlug);
 		if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
 		const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
+		if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
+			return batchReason("batch_entry_kind_mismatch");
 		let replayCompleted = true;
 		let replayReader = this.readInitiative;
-		if (integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+		if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
 			let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
 			try {
 				confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
@@ -942,9 +924,9 @@ export class ClaudeRuntime {
 					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
 			}
 		}
-		const completed = replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+		const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
 		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
-		const native = await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+		const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 			async (effects) => {
 				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 				if (reuseOnly) return batchReason("confirmation_port_unavailable");
@@ -988,8 +970,9 @@ export class ClaudeRuntime {
 		const preflight = await prepareBatchPreflight({
 			root: this.cwd,
 			initiative_slug: initiativeSlug,
+			plan_source: options.plan_source,
 			now,
-			readInitiative: this.readInitiative ?? observeInitiative,
+			readInitiative,
 			max_parallel: options.max_parallel,
 			signal: meta.signal, reuseOnly,
 		});
@@ -1001,7 +984,7 @@ export class ClaudeRuntime {
 			};
 		}
 		const isResuming = preflight.projection.is_resuming;
-		if (!isResuming && !options.final_verification?.length) return {
+		if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
 			state: "rejected",
 			reason: "final_verification_required",
 			recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
@@ -1025,7 +1008,7 @@ export class ClaudeRuntime {
 			initiative_slug: initiativeSlug,
 			now,
 			projection: preflight.projection,
-			readInitiative: this.readInitiative ?? observeInitiative,
+			readInitiative,
 			nonce: enrollmentNonce(),
 			gate: async (facts) => {
 				// A continuation after a foreground child never opens a gate: when the
@@ -1049,6 +1032,11 @@ export class ClaudeRuntime {
 						initiativeSlug,
 						toolCallId: meta.toolCallId,
 						planDigest,
+						...(facts.preparation?.intent ? {
+							intentRevision: facts.preparation.intent.revision,
+							intentContentHash: facts.preparation.intent.content_hash,
+							bindingDigest: facts.preparation.digest,
+						} : {}),
 						batchDetails: {
 							initiative_slug: facts.initiative_slug,
 							batch_branch: facts.batch_branch,
@@ -1131,6 +1119,7 @@ export class ClaudeRuntime {
 					operation: "start_unattended_batch",
 					initiativeSlug,
 					planDigest,
+					bindingDigest: preflight.projection.preparation?.digest,
 				}),
 		});
 		if (authorization.outcome === "host_rejection") return authorization.value;
@@ -1157,7 +1146,7 @@ export class ClaudeRuntime {
 			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
 			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 		};
-		const parent = await (this.readInitiative ?? observeInitiative)(this.cwd, initiativeSlug);
+		const parent = await readInitiative(this.cwd, initiativeSlug);
 		if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
 			return batchReason("plan_changed");
 		const kernelPort = createBatchKernelPort({
@@ -1172,6 +1161,9 @@ export class ClaudeRuntime {
 			overrides: this.batchKernel,
 		});
 		let report = await startBatch({
+			plan_source: options.plan_source,
+			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: "claude-code" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+				waitMs: claudeLaneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
 			topology_digest: preflight.projection.topology_digest,
 			root: this.cwd,
 			batch_id: batchId,
@@ -1190,7 +1182,7 @@ export class ClaudeRuntime {
 			...(options.max_parallel !== undefined
 				? {
 						max_parallel: options.max_parallel,
-						tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
 					}
 				: {}),
@@ -1200,7 +1192,7 @@ export class ClaudeRuntime {
 		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
 		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
 
-		if (report.batch_state === "completed" && report.final_verification?.passed)
+		if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
 			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
 		return {
 			state: "started",

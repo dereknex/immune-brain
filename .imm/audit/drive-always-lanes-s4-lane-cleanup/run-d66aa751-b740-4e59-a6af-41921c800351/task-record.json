@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s4-lane-cleanup",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s4-lane-cleanup",
+    "goal": "Meet S4 of docs/specs/drive-always-lanes.spec.md: remove a delivered single-task Lane (worktree, imm-lane branch and imm/<task_id>) only on a runtime-observed normal exit of the current generation and a clean Lane, retain and report batch_lane_retained in every other case, keep batch Lanes retained, and amend ADR 0027's retained-Lane section for single tasks (Spec D7, BR-DEC-3).",
+    "acceptance": [
+      {
+        "id": "DAL-S4-A1",
+        "assertion": "End to end in manual mode with a fake Executor that settles the task: one literal drive entry opens exactly one native gate, the user's checkout then holds the task's changes as staged, uncommitted changes, and git worktree list shows no Lane for the task and git branch lists neither imm-lane/<task_id>/<task_id> nor imm/<task_id> (BR-SCN-1). The removal is recorded in the batch record as lane_removed with the exit observation it relied on. Seam: tests/single-task-lane-cleanup.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S4-A2",
+        "assertion": "End to end in auto mode with a fake Executor that settles the task: the user's current branch points at the delivery commit and no imm-lane/ branch, imm/<task_id> branch or Lane worktree remains (BR-SCN-2). Seam: tests/single-task-lane-cleanup.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S4-A3",
+        "assertion": "Each of these keeps the Lane worktree and both branches and reports batch_lane_retained naming the failed condition in the drive report (BR-SCN-5): an interrupted generation, a stopped_by_parent generation, a wait that never observed an exit (unobservable), an observation from a superseded generation after a relaunch, a tracked modification or untracked non-ignored file in the Lane, and a parked return step. An ignored file alone does not prevent removal. Seam: tests/single-task-lane-cleanup.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S4-A4",
+        "assertion": "Initiative batch Lanes are still never removed by the runtime: after integration they keep their worktree and branch and report batch_lane_retained as tests/unattended-batch-lanes.test.ts pins (BR-OUT-2); and docs/adr/0027-parent-branch-merge-queue.md carries an amendment headed 'Amendment: single-task Lane cleanup (drive-always-lanes S4)' stating the exit-proof conditions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-cleanup.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s4-lane-cleanup.md",
+      "docs/adr/0027-parent-branch-merge-queue.md",
+      "docs/plans/drive-always-lanes-s4-lane-cleanup.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+      "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+      "tests/single-task-lane-cleanup.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s4-lane-cleanup.intent.json",
+    "content_hash": "sha256:2012e635b53d264e4853e9b48bb712bd7e3294dfcca1624279608898227afd60"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2012e635b53d264e4853e9b48bb712bd7e3294dfcca1624279608898227afd60",
+  "git_base_head": "ac1b2e25a5f961a0c3748aef3fd619fd81165322",
+  "attestations": [
+    {
+      "id": "approval-qa-9d53d445",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2012e635b53d264e4853e9b48bb712bd7e3294dfcca1624279608898227afd60",
+      "diff_hash": "sha256:580aec0d50d69490c1d595a39763c72419d4bb4ae89341e8a94fde0cc83d8ed6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:9ad623a01fe19e8c9214117fef0826628997ace97050a7e6cfa7ac7eecd0f1b6",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9ad623a01fe19e8c9214117fef0826628997ace97050a7e6cfa7ac7eecd0f1b6"
+        },
+        {
+          "acceptance_id": "DAL-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9ad623a01fe19e8c9214117fef0826628997ace97050a7e6cfa7ac7eecd0f1b6"
+        },
+        {
+          "acceptance_id": "DAL-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9ad623a01fe19e8c9214117fef0826628997ace97050a7e6cfa7ac7eecd0f1b6"
+        },
+        {
+          "acceptance_id": "DAL-S4-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9ad623a01fe19e8c9214117fef0826628997ace97050a7e6cfa7ac7eecd0f1b6"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-18cd837a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2012e635b53d264e4853e9b48bb712bd7e3294dfcca1624279608898227afd60",
+      "diff_hash": "sha256:580aec0d50d69490c1d595a39763c72419d4bb4ae89341e8a94fde0cc83d8ed6",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius: tier medium; load-bearing paths are runtime/unattended/lane_cleanup.ts, the single-task return step in batch_lanes.ts, the persisted lane_removed/lane_retained child record shape in batch_state.ts, and the dist bundle. Provenance was verified: the base and review commit resolve, the review commit's only parent is the base, and its tree matches. I read every per-file diff, including the dist bundle, whose changes mirror the source. Cleanup runs only after a recorded delivery and removes the Lane only when every exit-proof and clean-Lane condition holds. Initiative Lanes take the unchanged retained path. The tests cover the A1 to A3 scenarios and the ADR amendment (A4); the Kernel QA outcomes for all four acceptances are recorded as passed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ac1b2e25a5f961a0c3748aef3fd619fd81165322",
+        "review_commit": "e9dd1946c0c80cbf7b70cf44220df66e38a1f865",
+        "review_tree": "7cfc6c2aeaf43a0e7925e5fbd3e4e2fcb7eba916",
+        "manifest_digest": "sha256:a0a86740181bc9ce4dac13fdcb5c9911015af0f2d9b13f27eae2ea0e4cfcee62"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-4a061c477e8f-1-review-1",
+          "acceptance_id": "DAL-S4-A3",
+          "summary": "The superseded-generation case is tested only at the cleanupSingleTaskLane/exitProofCondition unit level, not through a real relaunch end to end. The unit case does assert both the condition text and that the Lane is kept. If the process dies after worktree remove but before the branch refs are deleted, the record carries no lane_removed or lane_retained; this is a narrow crash window, not a blocker.",
+          "anchor": "sha256:701ad6d595b2786ea27dc9f092c97429a802cac3c8fc655d035ee82b86e22dfe",
+          "evidence": {
+            "trigger": "A relaunch after an earlier generation, followed by a stale exit observation: the unit test covers it and the Lane is retained. A crash between worktree removal and ref deletion leaves a partially removed Lane with no cleanup record.",
+            "caller_chain": [
+              "tests/single-task-lane-cleanup.test.ts",
+              "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S4-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b7a04ecd295f8e08dfc2b15341e6738bf1a2327b0888d8a1f44fc27a9291b122"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s4-lane-cleanup:2026-11-05T01:24:45.002Z",
+      "at": "2026-11-05T01:24:45.002Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s4-lane-cleanup.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s4-lane-cleanup:2026-11-05T01:29:43.990Z",
+      "at": "2026-11-05T01:29:43.990Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9d53d445\naction_v2_sha256:13a0ec874cb64958eb80bb2bb2bd5ffcf3a0ed2f28345530368f99861cc3cafd",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T01:29:43.990Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s4-lane-cleanup:2026-11-05T01:33:38.887Z",
+      "at": "2026-11-05T01:33:38.887Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-18cd837a\naction_v2_sha256:0abbf85ba45277babd0393430a407dd5c5ad7238bd21b51f29e73a12d6d62693",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-05T01:33:38.888Z"
+      },
+      "review_started_at": "2026-11-05T01:32:29.606Z",
+      "review_submitted_at": "2026-11-05T01:33:38.442Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:drive-always-lanes-s4-lane-cleanup:2026-11-05T01:33:40.196Z",
+      "at": "2026-11-05T01:33:40.196Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:302312bd9e9e0d8c3882dfce638849061d2a61514a24f26b9d2eb0549b571ee9"
+    }
+  ]
+}

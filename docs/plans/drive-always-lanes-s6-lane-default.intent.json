@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s6-lane-default",
+  "owner": "user",
+  "goal": "Meet S6 of docs/specs/drive-always-lanes.spec.md: rewrite the drive contracts so every new single-task drive entry, including a GitHub Initiative Child entry, goes through the single-task Lane path, with synchronous runtime supervision, gate delegation, checkout delivery, cleanup and the decision relay described, the Herdr/background facility table labeled batch-only, and in-place records enrolled earlier still resumable (Spec D10).",
+  "acceptance": [
+    {
+      "id": "DAL-S6-A1",
+      "assertion": "plugins/immune-brain/dist/drive.md instructs that a new single-task drive entry calls start_unattended_batch with task_id as its first step and no longer instructs a new entry to call the enroll or imm_canary_enrollment tool or to implement the task in the Parent conversation; it keeps the Child entry's prerequisite and tracker checks, states that a TaskRecord enrolled in place before this change stays resumable until terminal, and states that the Executor role runs inside the Lane process. tests/unattended-contracts.test.ts and tests/explicit-phase-entry-run-contract.test.ts pin these statements and fail when the old new-entry enroll instruction returns.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S6-A2",
+      "assertion": "plugins/immune-brain/dist/drive-batch.md has a single-task Lane section stating synchronous runtime supervision on every Host (including inside Herdr), one native gate, manual staged and auto fast-forward delivery with the overlap park, exit-proof cleanup with batch_lane_retained otherwise, and the Parent decision relay; its supervised-session table and the Herdr Lane Tabs section are labeled as Initiative batch behavior. The named contract tests pin these statements.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "CONTEXT.md",
+    "docs/plans/drive-always-lanes-s6-lane-default.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "docs/user_manual.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/goal-driven-run-contract.test.ts",
+    "tests/lane-executor-status-guidance.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

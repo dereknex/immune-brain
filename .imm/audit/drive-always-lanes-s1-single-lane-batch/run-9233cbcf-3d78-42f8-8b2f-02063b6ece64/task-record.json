@@ -1,0 +1,174 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s1-single-lane-batch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s1-single-lane-batch",
+    "goal": "Meet S1 of docs/specs/drive-always-lanes.spec.md: on both Hosts, start_unattended_batch accepts a task_id and turns one standalone validated TaskIntent into a one-child Lane batch (plan_source single_task, slug = task_id, max_parallel 1) authorized by exactly one native gate, with the Lane child enrolled through deriveChildEnrollment, its state visible through status, and its settled delivery integrated onto imm/<task_id> by the existing merge queue (Spec D1, D2).",
+    "acceptance": [
+      {
+        "id": "DAL-S1-A1",
+        "assertion": "On Claude Code and Pi, a literal drive entry calling start_unattended_batch with task_id for a validated, enrollment-ready TaskIntent opens exactly one native gate bound to the TaskIntent revision, content hash and preparation digest, records a v2 Lane batch with plan_source single_task, slug equal to task_id and max_parallel 1, creates the Lane at imm/worktrees/<task_id>/<task_id> on imm-lane/<task_id>/<task_id> at the current HEAD, copies an uncommitted TaskIntent into it, and enrolls the child in the Lane store through deriveChildEnrollment without opening a second gate (BR-REQ-2, BR-DEC-5). Each of these refuses before any gate opens and creates no Lane: both initiative_slug and task_id (batch_entry_ambiguous), neither, a task_id whose TaskIntent is invalid or not enrollment_ready, a task_id that is a child of an active Initiative batch, and a task_id entry that meets an existing Initiative record or an Initiative entry that meets a single_task record (batch_entry_kind_mismatch). Initiative batches keep their current behavior. Seam: the Host entry with a counting native-gate stub in the named test files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S1-A2",
+        "assertion": "On both Hosts, status queried with the task_id of a single-task Lane batch returns that record in batch.record with its plan_source, batch_state and the child's Lane state and path, the same fields a batch child shows (BR-REQ-5); status for a task_id with no batch and no TaskRecord returns no batch record. Seam: the status read in the named test files.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S1-A3",
+        "assertion": "When the single-task Lane child settles done, the runner commits the settled delivery and its .imm/audit pair on the Lane branch and fast-forwards imm/<task_id> to a candidate whose changed paths and per-path content equal that commit; a candidate that does not match moves no ref and parks the child needs_human with the existing integration reason, never integrating part of the delivery (BR-REQ-4). Seam: tests/single-task-lane-batch.test.ts with a settled Lane fixture.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s1-single-lane-batch.md",
+      "docs/plans/drive-always-lanes-s1-single-lane-batch.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_plan.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/types.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/single-task-lane-batch.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s1-single-lane-batch.intent.json",
+    "content_hash": "sha256:a9f7f5729695681dc7cdcf0328146fb6a13fa4addc4435a5a4a19910e00ddc8b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:a9f7f5729695681dc7cdcf0328146fb6a13fa4addc4435a5a4a19910e00ddc8b",
+  "git_base_head": "0dfa18ad57dd80b724ca2c2e837f6d3d03e98aeb",
+  "attestations": [
+    {
+      "id": "approval-qa-947a8adf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a9f7f5729695681dc7cdcf0328146fb6a13fa4addc4435a5a4a19910e00ddc8b",
+      "diff_hash": "sha256:42b31cc518aa791e6725984eb4a1f39039ecdb1e090366ed0b948ce134680600",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e0f048c076a6ed54f66032c7f802b446f69cd4f5bf8462f2382e0c10cfeafc68",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0f048c076a6ed54f66032c7f802b446f69cd4f5bf8462f2382e0c10cfeafc68"
+        },
+        {
+          "acceptance_id": "DAL-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0f048c076a6ed54f66032c7f802b446f69cd4f5bf8462f2382e0c10cfeafc68"
+        },
+        {
+          "acceptance_id": "DAL-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e0f048c076a6ed54f66032c7f802b446f69cd4f5bf8462f2382e0c10cfeafc68"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7fd9e91a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:a9f7f5729695681dc7cdcf0328146fb6a13fa4addc4435a5a4a19910e00ddc8b",
+      "diff_hash": "sha256:42b31cc518aa791e6725984eb4a1f39039ecdb1e090366ed0b948ce134680600",
+      "actor_id": "parent-mediated-review",
+      "summary": "Provenance verified (base 0dfa18ad, review a6c0b2c single parent, tree bec7a95a, manifest digest matches); the task_id single-task entry, refusals, status read, and settled-delivery integration on both Hosts satisfy DAL-S1-A1/A2/A3 at the named seams with one-gate, no-write-on-refusal, and per-path-content assertions; blast radius medium, load-bearing paths runtime/unattended/batch_preflight.ts, batch_state.ts, both Host adapters and dist/claude/mcp-server.mjs.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0dfa18ad57dd80b724ca2c2e837f6d3d03e98aeb",
+        "review_commit": "a6c0b2c7ddbc45ecd3fd0fa13c78c89fbc6bbd33",
+        "review_tree": "bec7a95a12bbd18c61e535f20b21bd844a6addae",
+        "manifest_digest": "sha256:afac9728bf0d2431b6980fd2247f29d0b0d2ea22bc6a8203c37c5373442ff105"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-a00c6eda4682-1-review-1",
+          "acceptance_id": "DAL-S1-A1",
+          "summary": "The single-task preflight scan over .imm/state/batches rejects batch_state_unreadable when any batch state file fails to parse, even one unrelated to the task, so a single corrupt unrelated record blocks every single-task entry in the repository.",
+          "anchor": "sha256:262d03e5825bc11e8597816788b52ae5332eea8d015af98c4c6858e20d5cebbc",
+          "evidence": {
+            "trigger": "a repository with one unparseable .imm/state/batches/<id>.json unrelated to the task → start_unattended_batch with task_id refuses batch_state_unreadable instead of the task-specific outcome",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_preflight.ts:projectPreflight",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePiUnattendedBatch",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:ClaudeRuntime.startPreparedBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S1-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:42b92f128aeeb1bff1c4f0710eb0cd569ce9fe3428371469272c991849d95b5c"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s1-single-lane-batch:2026-11-04T15:26:30.087Z",
+      "at": "2026-11-04T15:26:30.087Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s1-single-lane-batch.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s1-single-lane-batch:2026-11-04T15:29:44.532Z",
+      "at": "2026-11-04T15:29:44.532Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-947a8adf\naction_v2_sha256:6ccbaa28ad2750bf16b4e0150fd7732ec78c5d97e310bf6e55d32080cdd5b884",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0df03b4d24d9808b",
+        "issued_at": "2026-11-04T15:29:44.532Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s1-single-lane-batch:2026-11-04T15:33:37.316Z",
+      "at": "2026-11-04T15:33:37.316Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7fd9e91a\naction_v2_sha256:d7d3da496c01e5d4fa174187c84022b265ab2ae1adc7f4c9ee45ece296ae4419",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-c620a0c4f328a812",
+        "issued_at": "2026-11-04T15:33:37.316Z"
+      },
+      "review_started_at": "2026-11-04T15:29:47.189Z",
+      "review_submitted_at": "2026-11-04T15:33:36.683Z"
+    },
+    {
+      "id": "complete:drive-always-lanes-s1-single-lane-batch:2026-11-04T15:33:39.211Z",
+      "at": "2026-11-04T15:33:39.211Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:3aa4626912563f546a133f0b082ea1cc03161160c23d3600cbcfb7aaf9e8a21e"
+    }
+  ]
+}

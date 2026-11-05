@@ -1,4 +1,5 @@
 import { reviewIncompleteFixture, exhaustReviewForRetry } from "./fixtures/review-incomplete-fixture";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
@@ -37,8 +38,8 @@ import { PLUGIN_VERSION } from "../plugins/immune-brain/runtime/plugin_version";
 import { readWorkspaceStateRaw } from "../plugins/immune-brain/runtime/kernel/storage";
 import { readBackendClaim } from "../plugins/immune-brain/runtime/kernel/backend_claim";
 
-// The phase entry gate (ADR 0019) sits in front of `enroll` and
-// `start_unattended_batch`. These tests exercise what lies behind it, so the
+// The phase entry gate (ADR 0019) sits in front of
+// `start_unattended_batch` and `retire_stale_batch`. These tests exercise what lies behind it, so the
 // session records a real run entry and each gated call is admitted through the
 // real hook; tests/claude-phase-entry-gate.test.ts owns the refusals.
 function withRunEntry(workspace?: string): { consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => ReturnType<typeof consumePhaseAdmission> } {
@@ -260,10 +261,11 @@ function jsonLineReader(output: PassThrough): () => Promise<Record<string, unkno
 	return () => queue.length ? Promise.resolve(queue.shift()!) : new Promise((resolve) => waiters.push(resolve));
 }
 
-async function runWireEnrollment(response: Record<string, unknown>, options: { cancelOuter?: boolean; replay?: boolean; unknownFirst?: boolean; prepare?: (root: string, taskId: string) => void } = {}) {
+/** Drives one native gate over the stdio wire: `stop` on a task enrolled at the Kernel (Spec drive-always-lanes S7 retired the in-place Enrollment gate). */
+async function runWireGate(response: Record<string, unknown>, options: { cancelOuter?: boolean; replay?: boolean; unknownFirst?: boolean } = {}) {
 	const taskId = `wire-${Math.random().toString(16).slice(2)}`;
 	const fixture = authorityFixtureRoot(taskId);
-	options.prepare?.(fixture.root, taskId);
+	await enrollTaskForTest(fixture.root, taskId);
 	const input = new PassThrough();
 	const output = new PassThrough();
 	const next = jsonLineReader(output);
@@ -285,7 +287,7 @@ async function runWireEnrollment(response: Record<string, unknown>, options: { c
 		jsonrpc: "2.0",
 		id: "outer",
 		method: "tools/call",
-		params: { name: "enroll", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
+		params: { name: "stop", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
 	});
 	const elicitation = await next();
 	// A refusal before the gate answers the outer call without an elicitation.
@@ -379,63 +381,9 @@ async function submitObservedReview(
 }
 
 describe("claude host authority", () => {
-	// The migrated Claude enroll path awaits the single Enrollment entry inside
-	// its try/catch, so a rehearsal rejection still carries the empty-initial-
-	// commit diagnostic the synchronous predecessor appended.
-	test("a refused precondition commit keeps the empty initial commit diagnostic", async () => {
-		const root = mkdtempSync(join(tmpdir(), "claude-unborn-enroll-"));
-		const taskId = "unborn-enroll-diagnostic";
-		const intent = {
-			contract: "assurance_kernel/task_intent/v1",
-			task_id: taskId,
-			owner: "user",
-			goal: "exercise the unborn-repository enrollment diagnostic",
-			acceptance: [{ id: "acc-1", assertion: "the artifact exists", verification: "bun test" }],
-			scope_hint: ["src", `docs/plans/${taskId}.intent.json`],
-			risk: "routine",
-			revision: 1,
-		};
-		mkdirSync(join(root, ".imm", "state"), { recursive: true });
-		mkdirSync(join(root, "src"), { recursive: true });
-		mkdirSync(join(root, "docs", "plans"), { recursive: true });
-		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
-		writeFileSync(join(root, "src", "task.ts"), "export const value = 1;\n");
-		// Enrollment commits only under Git integration: auto (ADR 0024).
-		writeFileSync(join(root, "AGENTS.md"), "- Git integration: auto\n");
-		// An unborn repository with the in-scope file already staged: the entry's
-		// empty initial commit makes that file dirty relative to the base, and
-		// Enrollment commits it. Here a Git hook refuses that commit, so
-		// Enrollment fails after the initial commit already exists.
-		// tests/enrollment-git-base.test.ts owns the path where it succeeds.
-		execFileSync("git", ["init", "-q", "-b", "main"], { cwd: root, stdio: "ignore" });
-		execFileSync("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: root, stdio: "ignore" });
-		writeFileSync(join(root, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho 'policy says no' >&2\nexit 1\n", { mode: 0o755 });
-		execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
-		const runtime = new ClaudeRuntime({
-			cwd: root,
-			env: ENV,
-			interactive: true,
-			permissionMode: "manual",
-			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
-		});
-		const error = await runtime.enroll(taskId, {
-			taskId,
-			sessionId: "s",
-			toolCallId: "enroll",
-			requiresUserInteraction: true,
-			interactive: true,
-			permissionMode: "manual",
-		}).then(() => null, (cause: unknown) => cause as Error);
-		expect(error).toBeInstanceOf(Error);
-		expect((error as Error).message).toMatch(/policy says no[\s\S]*; empty initial commit [0-9a-f]{7,40} remains/);
-		expect((error as Error).message).not.toContain("Enrollment precondition commit");
-		// The refusal leaves no Kernel authority behind.
-		expect(existsSync(join(root, ".imm", "state", "workspace.json"))).toBe(false);
-	});
-
 	test("privileged tools use the standard MCP destructive hint without vendor permission metadata", () => {
 		const tools = listMcpTools();
-		for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop"]) {
+		for (const name of ["request_authorization", "approve_breaking_intent_revision", "stop"]) {
 			expect(tools.find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 		}
 		const submitReview = tools.find((tool) => tool.name === "submit_review");
@@ -447,9 +395,8 @@ describe("claude host authority", () => {
 		const taskId = "verification-not-reserved";
 		const fixture = authorityFixtureRoot(taskId);
 		const runtime = new ClaudeRuntime({ cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
-			requestConfirmation: async () => ({ decision: "accept", requestId: "enroll" }) });
-		const meta: ToolMeta = { taskId, sessionId: "s", toolCallId: "enroll", requiresUserInteraction: true, interactive: true, permissionMode: "manual" };
-		await runtime.enroll(taskId, meta);
+			requestConfirmation: async () => ({ decision: "accept", requestId: "gate" }) });
+		await enrollTaskForTest(fixture.root, taskId);
 		const before = readTaskRecordRaw(fixture.root, taskId).revision;
 		expect(await runtime.submitVerification(taskId, undefined)).toMatchObject({ state: "blocked", reason: "no active verification operation" });
 		expect(readTaskRecordRaw(fixture.root, taskId).revision).toBe(before);
@@ -474,7 +421,7 @@ describe("claude host authority", () => {
 	});
 
 	test("only an exact native action can authorize", () => {
-		const base = { operation: "enroll", interactive: true } as const;
+		const base = { operation: "stop", interactive: true } as const;
 		expect(evaluateNativeGate({ ...base, decision: "accept" }).ok).toBe(true);
 		expect(evaluateNativeGate({ ...base, decision: "decline" }).ok).toBe(false);
 		expect(evaluateNativeGate({ ...base, decision: "cancel" }).ok).toBe(false);
@@ -486,6 +433,7 @@ describe("claude host authority", () => {
 	test("permission modes are non-authoritative and cannot replace native elicitation", async () => {
 		const h = makeCoordinator();
 		const root = authorityFixtureRoot(TASK).root;
+		await enrollTaskForTest(root, TASK);
 		const mcp = createMcpRuntime({
 			cwd: root,
 			env: { ...ENV, CLAUDE_CODE_PERMISSION_MODE: "future-mode" },
@@ -499,7 +447,7 @@ describe("claude host authority", () => {
 			method: "initialize",
 			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
 		}, mcp);
-		await expect(mcp.callTool("enroll", { task_id: TASK }, {
+		await expect(mcp.callTool("stop", { task_id: TASK }, {
 			interactive: true,
 			sessionId: "s",
 			toolCallId: "c1",
@@ -517,51 +465,17 @@ describe("claude host authority", () => {
 			.not.toBe(confirmationRef({ ...base, intentRevision: 3, intentContentHash: "sha256:other", bindingDigest: "sha256:diff" }));
 	});
 
-	test("stdio MCP elicitation accepts once and binds the prepared task identity", async () => {
-		const { root, taskId, elicitation, result } = await runWireEnrollment(
+	test("stdio MCP elicitation accepts once and binds the task identity", async () => {
+		const { root, taskId, elicitation, result } = await runWireGate(
 			{ result: { action: "accept", content: {} } },
 			{ replay: true, unknownFirst: true },
 		);
 		expect(elicitation).toMatchObject({ jsonrpc: "2.0", method: "elicitation/create" });
 		const message = ((elicitation.params as { message?: string }).message ?? "");
 		expect(message).toContain(`Task: ${taskId}`);
-		expect(message).toContain("Risk: routine");
-		expect(message).toContain("Intent revision: 1");
-		expect(message).toContain("Intent hash: sha256:");
-		expect(message).toContain("Binding digest:");
 		expect(JSON.stringify(result)).not.toContain("error");
-		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
-	});
-
-	// Spec host-owned-environment D8 / SCN-7: the gate lists in-scope changes
-	// that already exist, and accepting it makes them task work. Since Spec
-	// branch-boundary-r2 D23 only the intent and bound Spec may be dirty.
-	test("the Enrollment gate lists in-scope changes that already exist and acceptance claims them", async () => {
-		const dirty = (root: string, taskId: string) => {
-			writeFileSync(join(root, "docs", "specs", `${taskId}.spec.md`), `# ${taskId}\n\nwritten before Enrollment\n`);
-		};
-		const { root, taskId, elicitation, result } = await runWireEnrollment(
-			{ result: { action: "accept", content: {} } },
-			{ prepare: dirty },
-		);
-		const path = `docs/specs/${taskId}.spec.md`;
-		const message = ((elicitation.params as { message?: string }).message ?? "");
-		expect(message).toContain(`In-scope changes that already exist (1) and become task work on confirmation: ${path}`);
-		expect(JSON.stringify(result)).not.toContain("error");
-		expect(readWorkspaceStateRaw(root).state.current_working).toBe(taskId);
-		const baseline = JSON.parse(readFileSync(join(root, ".imm/state/enrollment-baseline.json"), "utf8"));
-		expect(Object.keys(baseline.dirty_files)).not.toContain(path);
-
-		const outside = await runWireEnrollment({ result: { action: "accept", content: {} } }, {
-			prepare: (root, taskId) => { dirty(root, taskId); writeFileSync(join(root, "outside.txt"), "not task work\n"); },
-		});
-		expect(outside.elicitation.method).toBeUndefined();
-		expect(JSON.stringify(outside.result)).toContain("workspace_not_clean: outside.txt");
-		expect(existsSync(join(outside.root, ".imm", "state", "workspace.json"))).toBe(false);
-
-		const declined = await runWireEnrollment({ result: { action: "decline" } }, { prepare: dirty });
-		expect((declined.elicitation.params as { message?: string }).message ?? "").toContain(`docs/specs/${declined.taskId}.spec.md`);
-		expect(readWorkspaceStateRaw(declined.root).state.current_working).toBeNull();
+		// One accept stops the task exactly once; the replayed and unknown-id responses mint nothing more.
+		expect(readTaskRecordRaw(root, taskId).record).toBeNull();
 	});
 
 	test("decline, cancel, malformed response, unsupported elicitation, and outer cancellation mint zero authority", async () => {
@@ -578,18 +492,19 @@ describe("claude host authority", () => {
 			{ response: { error: { code: -32601, message: "method not found" } }, code: "unsupported_host" },
 		];
 		for (const item of cases) {
-			const result = await runWireEnrollment(item.response);
+			const result = await runWireGate(item.response);
 			expect(JSON.stringify(result.result)).toContain(item.code);
-			expect(existsSync(join(result.root, ".imm", "state", "workspace.json"))).toBe(false);
+			expect(readTaskRecordRaw(result.root, result.taskId).record?.lifecycle).toBe("active");
 		}
-		const cancelled = await runWireEnrollment({}, { cancelOuter: true });
+		const cancelled = await runWireGate({}, { cancelOuter: true });
 		expect(JSON.stringify(cancelled.result)).toContain("user_cancelled");
-		expect(existsSync(join(cancelled.root, ".imm", "state", "workspace.json"))).toBe(false);
+		expect(readTaskRecordRaw(cancelled.root, cancelled.taskId).record?.lifecycle).toBe("active");
 	});
 
 	test("stdio output stream error terminates serveStdio and rejects pending elicitation", async () => {
 		const taskId = "wire-output-disconnect";
 		const fixture = authorityFixtureRoot(taskId);
+		await enrollTaskForTest(fixture.root, taskId);
 		const input = new PassThrough();
 		const output = new PassThrough();
 		const next = jsonLineReader(output);
@@ -612,7 +527,7 @@ describe("claude host authority", () => {
 			jsonrpc: "2.0",
 			id: "outer",
 			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
+			params: { name: "stop", arguments: { task_id: taskId }, _meta: { "claudecode/toolUseId": "toolu-wire" } },
 		})}\n`);
 		const elicitation = await next();
 		expect(elicitation.method).toBe("elicitation/create");
@@ -626,36 +541,18 @@ describe("claude host authority", () => {
 		// verify.
 		expect(process.exitCode).toBe(1);
 		process.exitCode = priorExitCode;
-		expect(existsSync(join(fixture.root, ".imm", "state", "workspace.json"))).toBe(false);
+		expect(readTaskRecordRaw(fixture.root, taskId).record?.lifecycle).toBe("active");
 	});
 
 	test("outer cancellation after native accept blocks capability issuance and commit", async () => {
-		const enrollFixture = authorityFixtureRoot("cancel-after-enroll-accept");
-		const enrollAbort = new AbortController();
-		const enrollRuntime = new ClaudeRuntime({
-			cwd: enrollFixture.root,
-			env: ENV,
-			requestConfirmation: async () => {
-				enrollAbort.abort();
-				return { decision: "accept", requestId: "nested-enroll" };
-			},
-		});
-		await expect(enrollRuntime.enroll("cancel-after-enroll-accept", {
-			taskId: "cancel-after-enroll-accept",
-			sessionId: "s",
-			toolCallId: "enroll",
-			signal: enrollAbort.signal,
-		})).rejects.toThrow("user_cancelled");
-		expect(existsSync(join(enrollFixture.root, ".imm", "state", "workspace.json"))).toBe(false);
-
 		const authorizeFixture = authorityFixtureRoot("cancel-after-authorize-accept");
 		const authorizeRuntime = new ClaudeRuntime({
 			cwd: authorizeFixture.root,
 			env: ENV,
 			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
 		});
-		const baseMeta = { taskId: "cancel-after-authorize-accept", sessionId: "s", toolCallId: "enroll" };
-		await authorizeRuntime.enroll("cancel-after-authorize-accept", baseMeta);
+		const baseMeta = { taskId: "cancel-after-authorize-accept", sessionId: "s", toolCallId: "setup" };
+		await enrollTaskForTest(authorizeFixture.root, "cancel-after-authorize-accept");
 		const authorizeAbort = new AbortController();
 		authorizeRuntime.bindNativeConfirmation(async () => {
 			authorizeAbort.abort();
@@ -680,7 +577,7 @@ describe("claude host authority", () => {
 			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		const nextIntent = { ...fixture.intent, acceptance: [{ id: "acc-1", assertion: "revised assertion", verification: "bun test" }], revision: 2 };
 		const result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta("approve"), { next_intent: nextIntent });
 		expect(result.record.intent_snapshot.revision).toBe(2);
@@ -714,7 +611,7 @@ describe("claude host authority", () => {
 			jsonrpc: "2.0",
 			id: 2,
 			method: "tools/call",
-			params: { name: "enroll", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
+			params: { name: "stop", arguments: { task_id: TASK }, _meta: { session_id: "s", tool_use_id: "t" } },
 		}, foreign);
 		expect(JSON.stringify(denied)).toContain("unsupported_host");
 		expect((denied?.error?.data as { recovery_action?: string })?.recovery_action).toBe("upgrade to a supported Claude Code version and retry in the current Host");
@@ -922,7 +819,7 @@ describe("claude host authority", () => {
 			requestConfirmation: async () => { confirmations++; return { decision: "accept", requestId: "binding-confirmation" }; },
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		confirmations = 0;
 		const run = withKernelRead(fixture.root, (db) => readRunRowByTask(db, taskId))!;
 		const record = JSON.parse(run.record_json);
@@ -974,7 +871,7 @@ describe("claude host authority", () => {
 			requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		const app = createCanaryApplication(createMutationAuthorityRegistry());
 		const prior = await readTaskIntent(fixture.root, taskId);
 		await app.execute({
@@ -1001,7 +898,7 @@ describe("claude host authority", () => {
 		const runtime = new ClaudeRuntime({ cwd: fixture.root, env: ENV, interactive: true, permissionMode: "manual",
 			requestConfirmation: async input => { requests.push(input); return { decision: "accept", requestId: "native-dispute", ...(input.verifierDispute ? { verifierChoice: choice } : {}) }; } });
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		const run = withKernelRead(fixture.root, db => readRunRowByTask(db, taskId))!;
 		const record = JSON.parse(run.record_json);
 		const evidence = { trigger: "input reaches the guard", caller_chain: ["src/task.ts"], violated: { kind: "acceptance" as const, ref: "A1" } };
@@ -1034,7 +931,7 @@ describe("claude host authority", () => {
 			}),
 		});
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		const registry = createMutationAuthorityRegistry();
 		const app = createCanaryApplication(registry);
 		const apply = async (operation: Record<string, unknown>, at: string) => {
@@ -1118,7 +1015,7 @@ describe("claude host authority", () => {
 			taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual",
 			...(entryToken ? { entryToken } : {}),
 		});
-		await runtime.enroll(taskId, meta("enroll"));
+		await enrollTaskForTest(fixture.root, taskId);
 		// Enrollment goes through the same confirmation port; only the rework gate is under test.
 		offered.length = 0;
 		const registry = createMutationAuthorityRegistry();
@@ -1821,9 +1718,9 @@ describe("hook entry writes only for active work", () => {
 		expect(result.stderr).toBe("");
 		expect(phaseEntryGateHookOutput({
 			hook_event_name: "PreToolUse", cwd: root, session_id: "hook-work-session",
-			tool_name: "mcp__plugin_immune-brain_immune-brain__enroll", tool_use_id: "hook-entry-admission",
+			tool_name: "mcp__plugin_immune-brain_immune-brain__start_unattended_batch", tool_use_id: "hook-entry-admission",
 		}, { root: store })).toBeNull();
-		expect(consumePhaseAdmission("hook-entry-admission", "enroll", store)).toMatchObject({ entry_token: expect.any(String) });
+		expect(consumePhaseAdmission("hook-entry-admission", "start_unattended_batch", store)).toMatchObject({ entry_token: expect.any(String) });
 	});
 });
 
@@ -2033,7 +1930,6 @@ describe("claude host resolve_finding", () => {
 		// reordered or re-annotated surface for prior tools.
 			expect(listMcpTools().map((tool) => tool.name)).toEqual([
 				"status",
-				"enroll",
 				"advance_assurance",
 				"submit_review",
 				"submit_verification",
@@ -2048,7 +1944,6 @@ describe("claude host resolve_finding", () => {
 				"refute_finding",
 			]);
 			expect([...PRIVILEGED_OPERATIONS]).toEqual([
-				"enroll",
 				"request_authorization",
 				"approve_breaking_intent_revision",
 				"stop",
@@ -2060,7 +1955,7 @@ describe("claude host resolve_finding", () => {
 			const submitVerification = listMcpTools().find((tool) => tool.name === "submit_verification");
 			expect(submitVerification?.inputSchema.required).toEqual(["task_id"]);
 			expect(submitVerification?.inputSchema.properties).toHaveProperty("result");
-			for (const name of ["enroll", "request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
+			for (const name of ["request_authorization", "approve_breaking_intent_revision", "stop", "start_unattended_batch", "retire_stale_batch"]) {
 				expect(listMcpTools().find((tool) => tool.name === name)?.annotations).toEqual({ destructiveHint: true });
 			}
 	});

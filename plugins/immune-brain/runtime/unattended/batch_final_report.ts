@@ -29,7 +29,7 @@ export interface BatchFinalReport {
 		runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
 	}>;
 	final_verification: FinalVerificationReport | null;
-	return_to_coordinator: { mode: GitIntegrationMode; status: "manual" | "fast_forwarded" | "blocked"; reason: string | null };
+	return_to_coordinator: { mode: GitIntegrationMode; status: "manual" | "staged" | "fast_forwarded" | "blocked"; reason: string | null };
 }
 
 function git(root: string, ...argv: string[]) {

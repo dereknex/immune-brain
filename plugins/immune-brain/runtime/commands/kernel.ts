@@ -48,22 +48,7 @@ import { commitPendingMigrationDiff, migrateAndCommitLegacyLayout } from "../ker
 import { readBackendClaim } from "../kernel/backend_claim";
 import { inspectEnrollmentGitBase, type EnrollmentGitBase } from "../assurance/enrollment_git_base";
 import { probeKernelStore } from "../kernel";
-import { readDerivedFiles } from "../derived_files";
-
-// Candidate planning guard only: enrolled reads and revisions retain their scope freedom.
-function scopeEstimateFailure(root: string, intent: TaskIntentV1): string | null {
-	if (intent.scope_size_reason !== undefined) return null;
-	const outputs = new Set(readDerivedFiles(root).flatMap((entry) => entry.outputs));
-	const counted = intent.scope_hint.filter((path) =>
-		!path.startsWith(".changeset/") &&
-		path !== `docs/plans/${intent.task_id}.intent.json` &&
-		!/^docs\/specs\/[^/]+\.spec\.md$/.test(path) &&
-		!outputs.has(path),
-	).length;
-	return counted > 15
-		? `${counted} counted scope_hint paths exceed the 15-path cap; split the Slice or provide scope_size_reason`
-		: null;
-}
+import { scopeEstimateFailure } from "../kernel/intent_readiness";
 
 export interface KernelCommandResult {
 	stdout: string;

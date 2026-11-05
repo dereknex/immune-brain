@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,7 +46,7 @@ describe("native repair recovery round trip", () => {
    writeFileSync(join(root, "docs/plans/original.intent.json"), JSON.stringify(original, null, 2) + "\n");
    writeFileSync(join(root, "docs/initiatives/repair-parent.md"), "# Parent\n## S1: Original\nTasks:\n- original\n");
    git("init", "-q", "-b", "main"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.com"); git("add", "."); git("commit", "-qm", "fixture");
-   await runtime.enroll("original", meta("original"));
+   await enrollTaskForTest(root, "original");
    writeFileSync(join(root, "delivered.txt"), "done\n"); git("add", "delivered.txt");
    expect((await runtime.advance("original") as any).state).toBe("completed");
    // The first run of caller-supplied final commands needs the user's native confirmation of exactly those commands.
@@ -68,15 +69,7 @@ describe("native repair recovery round trip", () => {
    // the settled original's tracked audit evidence is committed with the candidate.
    git("add", "docs/plans", ".imm/audit"); git("commit", "-qm", "repair candidate");
    const head = git("rev-parse", "HEAD"), report = readNativeParentFinalReport(root, "repair-parent");
-   decision = "decline";
-   await expect(runtime.enroll(task, meta(task))).rejects.toThrow();
-   expect(readTaskRecordRaw(root, task).record).toBeNull();
-   expect(git("rev-parse", "HEAD")).toBe(head);
-   expect(readFileSync(join(root, "integration.txt"), "utf8")).toBe("broken\n");
-   expect(readNativeParentFinalReport(root, "repair-parent")).toEqual(report);
-   expect(JSON.stringify(readAuditTaskPair(root, "original"))).toBe(originalBytes);
-   decision = "accept";
-   await runtime.enroll(task, meta(task));
+   await enrollTaskForTest(root, task);
    await recordParentRepair(root, null, task, "repair-parent");
    expect(readNativeParentFinalReport(root, "repair-parent")?.repair_tasks?.[0]?.task_id).toBe(task);
    expect((await advanceNativeParent(root, "repair-parent"))?.proof.complete).toBe(false);
@@ -100,7 +93,7 @@ describe("native repair recovery round trip", () => {
    expect(complete?.final_verification?.passed).toBe(true);
    expect(JSON.stringify(readAuditTaskPair(root, "original"))).toBe(originalBytes);
    expect(readFileSync(join(root, "delivered.txt"), "utf8")).toBe("done\n");
-   expect(gates).toBe(5); // original enroll, final decline/accept, repair enroll decline/accept
+   expect(gates).toBe(2); // final verification decline/accept; enrollment has no in-place gate (S7)
   } finally { await runtime.shutdown(); rmSync(root, { recursive: true, force: true }); }
  }, 60000);
 });

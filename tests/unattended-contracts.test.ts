@@ -250,6 +250,83 @@ if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did no
 `;
 }
 
+describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
+	const flatText = (text: string): string => text.replace(/\s+/g, " ");
+
+	it("routes a new single-task entry to start_unattended_batch with task_id", () => {
+		const loop = flatText(LOOP_CONTRACT);
+		expect(loop).toContain("Its first step is `start_unattended_batch` with `task_id`");
+		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal");
+		expect(loop).toContain("The Executor role runs inside the Lane process that the runtime spawns");
+		expect(loop).not.toContain("Enrollment is the first step of a single-task explicit `drive` entry");
+		expect(loop).not.toContain("native Enrollment gate once");
+		expect(loop).not.toContain("a standalone validated candidate opens native Enrollment");
+		expect(flatText(LOOP_LOADER)).not.toContain("opens single-task Enrollment");
+		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
+	});
+
+	it("states the single-task Lane behavior and labels the Herdr and session table as batch-only", () => {
+		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
+		for (const claim of [
+			"calls `start_unattended_batch` with `task_id` and no `initiative_slug`",
+			"under exactly one native gate",
+			"waits for it inside the Host tool call",
+			"on every Host including inside Herdr",
+			"`HERDR_ENV` changes nothing",
+			"call the same entry again to re-attach",
+			"`stop: true` on the same entry terminates the current generation",
+			"never exit proof",
+			"`manual` stages the delivered delta, uncommitted, and moves no HEAD",
+			"`auto` fast-forwards the current branch",
+			"`checkout_delivery_overlap: <paths>` and writes nothing",
+			"Unrelated user edits are never blocked",
+			"only when the current generation's exit was observed as a normal exit",
+			"`batch_lane_retained`",
+			"`lane_decision_required`",
+			"`approve_breaking_intent_revision`",
+			"rebinds the single-task batch's approved identity",
+			"`lane_decision_stale`",
+		]) expect(lane).toContain(claim);
+		const supervision = flatText(section(BATCH_CONTRACT, "#### Lane Executor Supervision"));
+		expect(supervision).toContain("This section and its supervised-session table describe Initiative batch behavior only");
+		const herdr = flatText(section(BATCH_CONTRACT, "##### Herdr Lane Tabs"));
+		expect(herdr).toContain("This facility is Initiative batch behavior only");
+	});
+});
+
+describe("in-place Enrollment retired (Spec drive-always-lanes S7)", () => {
+	const shipped = [
+		"plugins/immune-brain/BASELINE.md",
+		"plugins/immune-brain/USER_GUIDE.md",
+		"plugins/immune-brain/skills/drive/SKILL.md",
+		"plugins/immune-brain/dist/drive.md",
+		"plugins/immune-brain/dist/drive-batch.md",
+		"plugins/immune-brain/dist/BASELINE.md",
+		"plugins/immune-brain/dist/role-prompts/executor.md",
+		"plugins/immune-brain/runtime/prompts/executor.md",
+		"CONTEXT.md",
+	].filter(rel => existsSync(resolve(REPO_ROOT, rel)));
+
+	it("names no Host enrollment tool in shipped contract text", () => {
+		for (const rel of shipped) {
+			const text = read(rel);
+			expect({ rel, retired: /imm_canary_enrollment|`enroll`(?: tool| or)/.test(text) }).toEqual({ rel, retired: false });
+		}
+	});
+
+	it("keeps only the drain-only sentence for a record enrolled in place earlier", () => {
+		const loop = normalized(LOOP_CONTRACT);
+		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal (drain-only, owner: runtime)");
+		expect(loop).toContain("a new entry never starts one");
+		expect(normalized(BATCH_CONTRACT)).toContain("An in-place TaskRecord enrolled before this change stays resumable");
+	});
+
+	it("never tells the Parent to implement a new entry in the current conversation", () => {
+		expect(normalized(LOOP_CONTRACT)).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
+		expect(normalized(BATCH_CONTRACT)).toContain("Parent enrolls nothing itself and implements nothing");
+	});
+});
+
 describe("unattended batch contract text", () => {
 	it("documents the opt-in entry, the single parameter, and the unchanged default", () => {
 		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");
@@ -454,6 +531,8 @@ describe("unattended batch contract text", () => {
 			),
 		).toEqual([
 			"contract",
+			// Spec drive-always-lanes D1: a single-task batch records its plan source.
+			"plan_source",
 			"topology_digest",
 			"progress_mode",
 			"final_report",

@@ -5,7 +5,7 @@ export type AssuranceFailureDetails = Pick<AssuranceAdvanceResult,
 
 export interface ToolFailureV1 extends AssuranceFailureDetails {
 	contract: "immune_brain/tool_failure/v1";
-	tool: "imm_canary_enrollment" | "imm_kernel_canary";
+	tool: "start_unattended_batch" | "imm_kernel_canary";
 	task_id: string;
 	operation: string;
 	state: "blocked" | "failed" | "authority_conflict" | "settlement_unknown" | "review_preparation_failed";

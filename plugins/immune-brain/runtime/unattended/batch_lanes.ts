@@ -2,8 +2,9 @@
 // each child in a Lane: a separate worktree on its own branch, supplied by
 // someone else, with its own Authority Store. This module admits offered Lanes,
 // enrolls children into them, commits their settled delivery on the lane branch
-// and integrates it into the batch branch. It never creates, switches or
-// deletes a Git worktree and never names a workspace tool.
+// and integrates it into the batch branch. It never switches a Git worktree and
+// never names a workspace tool; only a delivered single-task Lane with exit
+// proof is removed (lane_cleanup.ts), and Initiative batch Lanes are never.
 // Defined by docs/specs/parallel-batch-lanes.spec.md and ADR 0013.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -22,6 +23,8 @@ import { readFileSync } from "node:fs";
 import { readDerivedFilesAt } from "../derived_files";
 import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
+import { deliverSingleTask } from "./checkout_delivery";
+import { cleanupSingleTaskLane, retainedLaneReason } from "./lane_cleanup";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -45,6 +48,7 @@ import {
 	type BatchLaneRunStateRecord,
 	isLaneBatchRecord,
 	isTerminalBatchState,
+	laneGenerationStore,
 	prepareBatchLaneRunState,
 	writeBatchLaneRunState,
 	writeBatchRunReport,
@@ -515,6 +519,12 @@ function redoRetained(cause: string | null | undefined): string {
 /** Integrated children whose runtime-created Lane is still present; delivery never implies cleanup. */
 export function retainedLaneNotices(root: string, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort = createDefaultLaneGitPort()): NonNullable<BatchLaneRunReport["lane_refusals"]> {
 	if (!isParentBranch(record.branch)) return [];
+	// Spec drive-always-lanes D7: a single task's cleanup decision is recorded, so its notice names the failed condition.
+	if (record.plan_source === "single_task")
+		return record.children
+			.filter(child => child.lane && (child.lane_retained || (child.state === "needs_human" && child.commit !== null)) && lanes.inspectLane(root, child.lane.path).exists)
+			.map(child => ({ task_id: child.task_id, path: child.lane!.path,
+				reason: retainedLaneReason(child.lane_retained?.condition ?? `the return step is parked (${child.reason})`) }));
 	return record.children
 		.filter(child => child.state === "integrated" && child.lane && lanes.inspectLane(root, child.lane.path).exists)
 		.map(child => ({ task_id: child.task_id, path: child.lane!.path,
@@ -779,6 +789,8 @@ export async function runLaneBatch(
 ): Promise<BatchLaneRunReport> {
 	if (persisted && !isLaneBatchRecord(persisted))
 		return { ...refuse(input, persisted, "batch_record_shape_retired", "v1 serial batch records are read-and-retire only"), next_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host." };
+	if (persisted && persisted.plan_source !== input.plan_source)
+		return refuse(input, persisted, "batch_entry_kind_mismatch", "the recorded batch has a different plan source");
 	if (persisted && input.max_parallel !== undefined && input.max_parallel !== persisted.max_parallel)
 		return refuse(input, persisted, PARALLEL_MISMATCH, `the recorded batch runs with max_parallel ${persisted.max_parallel}`);
 	if (input.lane_offers !== undefined && (!persisted || isParentBranch(persisted.branch)))
@@ -830,6 +842,10 @@ export async function runLaneBatch(
 			for (const child of record.children) {
 				if (child.state !== "needs_human") { resumed.push(child); continue; }
 				if (!child.lane?.run_id) { resumed.push(child); continue; }
+				if (record.plan_source === "single_task" && child.commit && record.final_report?.return_to_coordinator.status === "blocked" &&
+					record.final_report.return_to_coordinator.reason === child.reason) {
+					resumed.push({ ...child, state: "integrated", reason: null }); continue;
+				}
 				// A durable grant already passed the fresh-confirmation boundary.
 				if (child.redo_head) { resumed.push(child); continue; }
 				const facts = lanes.inspectLane(input.root, child.lane.path);
@@ -889,6 +905,7 @@ export async function runLaneBatch(
 		});
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
+			plan_source: input.plan_source,
 			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
 			initiative_slug: input.initiative_slug,
@@ -1342,7 +1359,25 @@ export async function runLaneBatch(
 		if (isParentBranch(record.branch)) {
 			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
 			persist(); // Keep the report even if the return step is interrupted.
-			record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
+			if (record.plan_source === "single_task") {
+				const child = record.children[0]!;
+				const delivery = deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
+				record.final_report.return_to_coordinator = delivery;
+				if (delivery.status === "blocked") {
+					record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
+					record.batch_state = "needs_human";
+					if (final) record.final_verification_result = final;
+					persist();
+					return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...(final ? { final } : {}) });
+				}
+				persist(); // The delivery is recorded before any cleanup step.
+				const outcome = cleanupSingleTaskLane({ root: input.root, lanePath: child.lane!.path, laneBranch: child.lane!.branch,
+					parentRef: record.branch, generation: laneGenerationStore(input.root, record.batch_id).read(),
+					observation: input.lane_exit_observation });
+				record.children = record.children.map(c => c.task_id !== child.task_id ? c : outcome.status === "removed"
+					? { ...c, lane_removed: { exit: outcome.exit, worktree: outcome.worktree, branches: outcome.branches } }
+					: { ...c, lane_retained: { condition: outcome.condition } });
+			} else record.final_report.return_to_coordinator = returnBatchToCoordinator(input.root, record.final_report.head, final ?? null);
 		}
 		record.batch_state = "completed";
 		if (final) record.final_verification_result = final;
@@ -1356,7 +1391,8 @@ export async function runLaneBatch(
 			final && !final.passed
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
-			{ handoffs: releaseHandoffs(input, record, lanes), refusals, tracker, instruction, ...(final ? { final } : {}) },
+			{ handoffs: releaseHandoffs(input, record, lanes), refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
+				tracker, instruction, ...(final ? { final } : {}) },
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];

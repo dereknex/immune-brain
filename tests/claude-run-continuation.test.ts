@@ -186,7 +186,7 @@ describe("Claude run continuation", () => {
 			expect(JSON.parse((await h.stop())!).systemMessage).toContain("failed 3 times");
 			expect(readPhaseEntryState("hook-session", h.root)?.token ?? null).toBeNull();
 			// With the entry spent, the phase-entry gate denies and records no admission for tools/call to consume.
-			for (const operation of ["retire_stale_batch", "enroll", "start_unattended_batch"] as const) {
+			for (const operation of ["retire_stale_batch", "start_unattended_batch"] as const) {
 				const denial = JSON.parse(phaseEntryGateHookOutput({ hook_event_name: "PreToolUse",
 					tool_name: `mcp__plugin_immune-brain_immune-brain__${operation}`, tool_input: {}, tool_use_id: `paused-${operation}`,
 					session_id: "hook-session", cwd: h.root }, { root: h.root })!);

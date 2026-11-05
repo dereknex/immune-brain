@@ -7,9 +7,12 @@ import { dirname, join } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import { bindsAuthoritySubject } from "../kernel/batch_authority";
+import { intentAuthorityHash } from "../kernel/intent";
+import type { TaskIntentV1 } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
+import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
 	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
@@ -179,6 +182,10 @@ export interface BatchLaneChildRun {
 	runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
 	/** The integrated plugin build change that held this child's Lane admission or redo. */
 	runtime_reload?: RuntimeReloadGate;
+	/** Single task only (Spec drive-always-lanes D7): the Lane was removed on this runtime-observed exit. */
+	lane_removed?: { exit: LaneExit; worktree: string; branches: string[] };
+	/** Single task only: the delivered Lane is kept because this exit-proof or cleanliness condition failed. */
+	lane_retained?: { condition: string };
 }
 
 export interface RuntimeSkewAcknowledgement {
@@ -209,6 +216,8 @@ export interface LaneIntervention {
  */
 export interface BatchLaneRunStateRecord {
 	contract: "assurance_kernel/batch_run_state/v2";
+	/** Absent on existing Initiative batches. */
+	plan_source?: "single_task";
 	/** Complete confirmed Parent topology, including excluded prerequisites. */
 	topology_digest?: string;
 	progress_mode?: "parent_branch";
@@ -661,6 +670,12 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	const record = value as Record<string, unknown>;
 	if (record.contract !== "assurance_kernel/batch_run_state/v2")
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	if (record.plan_source !== undefined && record.plan_source !== "single_task")
+		throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+	if (record.plan_source === "single_task" &&
+		(record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 ||
+		 (record.children[0] as { task_id?: unknown } | undefined)?.task_id !== record.initiative_slug))
+		throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
 	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
 		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
@@ -806,8 +821,21 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
 		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
-		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released")
+		const report = record.final_report;
+		const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
+		const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null &&
+			delivery?.status === "blocked" && delivery.reason === child.reason;
+		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
+		if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
+			const removed = child.lane_removed as unknown, retained = child.lane_retained as unknown;
+			const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
+			if (record.plan_source !== "single_task" || (child.state !== "integrated" && child.state !== "released") || (removed !== undefined) === (retained !== undefined) ||
+				(removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null ||
+					typeof (removed as { worktree?: unknown }).worktree !== "string" || !Array.isArray((removed as { branches?: unknown }).branches))) ||
+				(retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition)))
+				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
+		}
 		const skew = child.runtime_skew_acknowledged;
 		if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) ||
 			(skew.loaded_bundle !== null && !isHash(skew.loaded_bundle))))
@@ -839,7 +867,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
 		if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} but holds a lane`);
-		const integrated = child.state === "integrated" || child.state === "released";
+		const integrated = child.state === "integrated" || child.state === "released" || deliveryParked;
 		if (integrated && child.commit === null)
 			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a commit`);
 		if (!integrated && child.commit !== null)
@@ -883,6 +911,7 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 }
 
 export function prepareBatchLaneRunState(input: {
+	plan_source?: "single_task";
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -900,6 +929,7 @@ export function prepareBatchLaneRunState(input: {
 	validateBatchId(input.batch_id);
 	return {
 		contract: "assurance_kernel/batch_run_state/v2",
+		...(input.plan_source ? { plan_source: input.plan_source } : {}),
 		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
@@ -959,6 +989,86 @@ export function readBatchLaneRunState(root: string, batchId: string): BatchLaneR
 	const path = statePath(batchId);
 	if (!existsSync(join(root, path))) return null;
 	return parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+}
+
+export function parkLaneForExecutor(root: string, batchId: string, taskId: string, reason: "lane_executor_no_progress" | "lane_executor_stopped" | "lane_executor_interrupted"): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const child = record.children.find(value => value.task_id === taskId);
+		if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason) return record;
+		if (record.plan_source !== "single_task" || !child || child.state !== "enrolled") throw new Error("lane_executor_generation_changed");
+		const stored: BatchLaneRunStateRecord = { ...record, batch_state: "needs_human", updated_at: new Date().toISOString(),
+			children: record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value) };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+/**
+ * Spec drive-always-lanes D11: the literal user approved a breaking revision of a
+ * single task inside its Lane, so the batch's approved identity for that child
+ * becomes the revision the Kernel committed. `plan_digest` is not touched: it is
+ * derived from the Parent checkout, which a Lane-only revision does not change.
+ * Replaying the same identity changes nothing; an older or equal revision with
+ * another hash is stale.
+ */
+export function rebindSingleTaskIdentity(root: string, batchId: string, input: { task_id: string; intent: TaskIntentV1; content_hash: string }): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const recorded = record.intent_identities?.[input.task_id];
+		if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id ||
+			!record.children.some(child => child.task_id === input.task_id && child.lane))
+			throw new Error(batchReason("lane_decision_rebind_failed").reason);
+		if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash) return record;
+		if (input.intent.revision <= recorded.intent_revision) throw new Error(batchReason("lane_decision_stale").reason);
+		const identity: BatchIntentIdentity = { intent_path: recorded.intent_path, intent_revision: input.intent.revision, intent_content_hash: input.content_hash,
+			...(recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}) };
+		const stored: BatchLaneRunStateRecord = { ...record, updated_at: new Date().toISOString(),
+			intent_identities: { ...record.intent_identities, [input.task_id]: identity } };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+export function laneGenerationStore(root: string, batchId: string): LaneGenerationStore {
+	validateBatchId(batchId);
+	const directory = join(".imm", "state", "lane-supervisors");
+	const path = join(directory, `${batchId}.json`);
+	const read = (): LaneGeneration | null => {
+		if (!existsSync(join(root, path))) return null;
+		const value: unknown = JSON.parse(readSecureProjectFile(root, path));
+		if (!isObject(value) || typeof value.repository !== "string" || !value.repository ||
+			typeof value.lane_path !== "string" || !value.lane_path ||
+			!Number.isSafeInteger(value.generation) || (value.generation as number) < 1 ||
+			(value.pid !== null && (!Number.isSafeInteger(value.pid) || (value.pid as number) < 1)) ||
+			!Number.isSafeInteger(value.owner_pid) || (value.owner_pid as number) < 1 ||
+			!["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) ||
+			typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || (value.no_progress as number) < 0 ||
+			(value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || (value.handled_generation as number) < 1 || (value.handled_generation as number) > (value.generation as number))) ||
+			((value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null)) ||
+			(value.state === "running" && (value.pid === null || value.exit !== null)) ||
+			(value.state === "unobservable" && value.exit !== null) ||
+			(["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null)) ||
+			(value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path ||
+				value.exit.generation !== value.generation || value.exit.pid !== value.pid ||
+				(value.exit.code !== null && !Number.isInteger(value.exit.code)) ||
+				(value.exit.signal !== null && typeof value.exit.signal !== "string") ||
+				((value.exit.code === null) === (value.exit.signal === null)))))
+			throw new Error(`invalid lane supervisor state for ${batchId}`);
+		return value as unknown as LaneGeneration;
+	};
+	return { read, update(fn) {
+		return withKernelStoreLock(root, () => {
+			const next = fn(read());
+			ensureSecureDirectory(root, directory);
+			writeFileAtomically(root, path, JSON.stringify(next));
+			return next;
+		});
+	} };
 }
 
 export function writeBatchLaneRunState(root: string, record: BatchLaneRunStateRecord): BatchLaneRunStateRecord {
@@ -1025,8 +1135,11 @@ export interface BatchLaneRunReport {
 	reason: string | null;
 	final_report?: import("./batch_final_report").BatchFinalReport;
 	handoffs: BatchLaneHandoff[];
+	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string; not_applied: string[] };
 	/** Offers refused at admission; a refused offer wrote nothing. */
 	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
+	/** Spec drive-always-lanes D11: the single-task Lane waits on a literal-user decision answered at the Parent's native gate. */
+	lane_decision_required?: import("./lane_decision").LaneDecisionFacts;
 	/**
 	 * Child Issue closures this tick attempted after integration. A failure is a
 	 * tracker observation beside the batch result, retried by the next tick.

@@ -22,12 +22,15 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
 import { findResumableBatchSlugForTask } from "../runtime/unattended/batch_preflight";
-import { executePiUnattendedBatch } from "./imm-unattended-batch";
+import { executePiUnattendedBatch, piLaneSupervisor, PI_LANE_WAIT_MS } from "./imm-unattended-batch";
+import { batchReason } from "../runtime/unattended/batch_reasons";
+import { findLaneRelayTarget, relayLaneDecision, type LaneRelayTarget } from "../runtime/unattended/lane_decision";
 import { registerPiRunContinuation } from "./pi-run-continuation";
 import {
 } from "./pi-canary-verification";
@@ -378,7 +381,7 @@ export function revokePiPhaseEntry(sessionId: string): void {
  * bound to another workspace refuses rather than falling back to a dialog.
  */
 export function piRunEntryRefusal(
-	operation: "enroll" | "start_unattended_batch" | "retire_stale_batch",
+	operation: "start_unattended_batch" | "retire_stale_batch",
 	ctx: PhaseEntryContext,
 ): Extract<PhaseAdmission, { ok: false }> | null {
 	const sessionId = piSessionId(ctx);
@@ -501,15 +504,6 @@ export default function (
 			// ADR 0030: validate marker-targeted dispatch before binding the reviewer.
 			return progression.piReviewHost.observeReviewDispatch(event.input as Parameters<typeof progression.piReviewHost.observeReviewDispatch>[0], event.toolCallId);
 		}
-		if (event.toolName === "imm_canary_enrollment" && ctx) {
-			const input = event.input as { task_id?: string } | undefined;
-			if (input?.task_id) presentTaskRail(ctx, {
-				task_id: input.task_id,
-				state: "Planning",
-				result: uxText(UX_LANG, "Preparing enrollment", "正在准备 Enrollment"),
-				next: uxText(UX_LANG, "Review the native enrollment decision", "请审查原生 Enrollment 决策"),
-			});
-		}
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
@@ -523,10 +517,6 @@ export default function (
 			const offeredModels = Array.isArray(result.details?.offered_models) && result.details.offered_models.every(item => typeof item === "string")
 				? result.details.offered_models as string[] : undefined;
 			progression.piReviewHost.observeReviewResult(result.toolCallId, text, model, offeredModels);
-		}
-		if (result.toolName === "imm_canary_enrollment" && ctx) {
-			const taskId = typeof result.details?.task_id === "string" ? result.details.task_id : undefined;
-			if (taskId) presentTaskRailResult(ctx, taskId, result.details);
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -559,8 +549,9 @@ export default function (
 				Type.Object({ op: Type.Literal("advance_assurance") }),
 				Type.Object({ op: Type.Literal("submit_review"), verdict: Type.Optional(Type.Unknown()) }),
 				Type.Object({ op: Type.Literal("submit_verification"), result: Type.Optional(Type.String()) }),
-				Type.Object({ op: Type.Literal("request_authorization") }),
-				Type.Object({ op: Type.Literal("request_stop") }),
+				// record_revision: the Lane record revision read in `lane_decision_required` (Spec drive-always-lanes D11); a Lane that moved since is refused as stale.
+				Type.Object({ op: Type.Literal("request_authorization"), record_revision: Type.Optional(Type.String()) }),
+				Type.Object({ op: Type.Literal("request_stop"), record_revision: Type.Optional(Type.String()) }),
 				Type.Object({ op: Type.Literal("repair_authority_state") }),
 				Type.Object({ op: Type.Literal("freeze_artifacts") }),
 				Type.Object({
@@ -585,6 +576,7 @@ export default function (
 				Type.Object({
 					op: Type.Literal("approve_breaking_intent_revision"),
 					next_intent: TASK_INTENT_SCHEMA,
+					record_revision: Type.Optional(Type.String()),
 				}),
 				Type.Object({ op: Type.Literal("complete") }),
 			]),
@@ -685,7 +677,12 @@ export default function (
 			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "submit_verification" || action.op === "approve_breaking_intent_revision") {
 				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
-				const result = action.op === "advance_assurance"
+				// Spec drive-always-lanes D11: a single-task Lane's decision is answered at this Host's gate and applied to the Lane store.
+				const laneTarget = action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision"
+					? findLaneRelayTarget(ctx.cwd, taskId) : null;
+				const result = laneTarget
+					? await relayPiLaneDecision(laneTarget, action as { op: "request_stop" | "request_authorization" | "approve_breaking_intent_revision"; next_intent?: unknown; record_revision?: string }, ctx, signal)
+					: action.op === "advance_assurance"
 					? await progression.advance(taskId, ctx, signal, (update: any) => {
 						onUpdate?.(update);
 						presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
@@ -879,6 +876,31 @@ export default function (
 			);
 		},
 	});
+
+	async function relayPiLaneDecision(
+		target: LaneRelayTarget,
+		action: { op: "request_stop" | "request_authorization" | "approve_breaking_intent_revision"; next_intent?: unknown; record_revision?: string },
+		ctx: ExtensionContext,
+		signal?: AbortSignal,
+	) {
+		const taskId = target.task_id;
+		// The Lane store is the authority root for the gate; every other Host fact stays the Parent's.
+		const laneCtx = Object.create(ctx, { cwd: { value: target.lane_path, enumerable: true } }) as ExtensionContext;
+		const operation = action.op === "request_stop" ? "stop" : action.op;
+		const outcome = await relayLaneDecision<AuthorizationOutcome>({
+			root: ctx.cwd, taskId, operation, expectedRecordRevision: action.record_revision,
+			project: (lanePath, id) => projectAssuranceForTask(lanePath, id),
+			apply: async () => action.op === "approve_breaking_intent_revision"
+				? authorizeExactOperation(taskId, "approve-breaking-intent-revision", laneCtx, action.next_intent)
+				: action.op === "request_stop"
+					? authorizeExactOperation(taskId, "stop", Object.create(laneCtx, { signal: { value: signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal, enumerable: true } }) as ExtensionContext)
+					: requestAuthorization(taskId, laneCtx),
+			applied: result => result.state === "applied",
+			supervisor: piLaneSupervisor, parentHost: "pi",
+			pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS, signal,
+		});
+		return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : { state: "blocked" as const, reason: batchReason("lane_decision_stale").reason };
+	}
 
 	type AuthorizationOutcome =
 		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string; delivery_error?: string }

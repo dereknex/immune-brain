@@ -1,8 +1,8 @@
-// canary-001 regression: Pi extension discovery must load exactly the two
+// canary-001 regression: Pi extension discovery must load exactly the
 // foreground Tool factories from .pi-extension/ and never auto-discover helper modules.
 //
-// acc-1: the real Pi resource loader discovers exactly imm-canary-enroll.ts
-//        and imm-canary-work.ts from the repo package with zero load errors;
+// acc-1: the real Pi resource loader discovers exactly imm-canary-work.ts
+//        and imm-unattended-batch.ts from the repo package with zero load errors;
 //        no discovered path contains a helper module name.
 // acc-2: the explicit entry manifest (plugins/immune-brain/.pi-extension/
 //        package.json) is load-bearing: a scratch copy WITHOUT it makes the
@@ -17,7 +17,6 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(__dirname, "..");
 
 const FACTORY_FILES = [
-	"plugins/immune-brain/.pi-extension/imm-canary-enroll.ts",
 	"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 	"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
 ];
@@ -78,10 +77,9 @@ function basenameOf(p: string): string {
 describe("pi extension discovery regression (canary-001)", () => {
 	test("acc-1: foreground Tool factories are discovered from the repo package without helpers", async () => {
 		const { paths, errors } = await loadExtensions(ROOT);
-		expect(paths.length).toBe(3);
+		expect(paths.length).toBe(2);
 		const names = paths.map(basenameOf).sort();
 		expect(names).toEqual([
-			"imm-canary-enroll.ts",
 			"imm-canary-work.ts",
 			"imm-unattended-batch.ts",
 		]);
@@ -128,8 +126,7 @@ describe("pi extension discovery regression (canary-001)", () => {
 
 			const { paths, errors } = await loadExtensions(scratch);
 			const names = paths.map(basenameOf);
-			// The two factory files still load (they export valid factories).
-			expect(names).toContain("imm-canary-enroll.ts");
+			// The factory files still load (they export valid factories).
 			expect(names).toContain("imm-canary-work.ts");
 			// Without the manifest the loader tries to load every top-level
 			// .ts file as an extension, so each helper module produces a

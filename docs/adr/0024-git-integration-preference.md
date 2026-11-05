@@ -69,3 +69,12 @@ precondition.
 - BASELINE no longer describes a silent commit as the one exception to the
   separate commit grant; it describes this preference. Commit stays a
   separately granted effect for everything else.
+
+## Amendment: single-task Lane delivery (drive-always-lanes S3)
+
+After integration, a single-task Lane returns its delta, including audit evidence,
+into the user's checkout. `manual` stages the delta without a commit or ref move;
+`auto` fast-forwards the current branch even with unrelated dirty paths. An
+intersection with a dirty path parks the child without changing the checkout;
+an inapplicable delta also parks it. Initiative batches keep their existing return
+behavior.

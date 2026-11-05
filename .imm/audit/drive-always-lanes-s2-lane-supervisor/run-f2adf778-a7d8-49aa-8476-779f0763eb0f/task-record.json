@@ -1,0 +1,191 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s2-lane-supervisor",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s2-lane-supervisor",
+    "goal": "Meet S2 of docs/specs/drive-always-lanes.spec.md: for a single-task Lane the runtime itself spawns one non-interactive Executor (claude --print or pi --print) chosen by Lane Preferences, waits for it inside the Host tool call, re-attaches across wait windows, can stop it, and records a generation-bound exit observation taken only from its own child-process exit event (Spec D3, D4, D8, settlement enumeration).",
+    "acceptance": [
+      {
+        "id": "DAL-S2-A1",
+        "assertion": "For a single-task Lane the runtime spawns exactly one Executor process with the Lane as cwd and the Executor Host's drive entry for task_id as its only prompt: claude-code as claude --print with --plugin-dir of the loaded plugin directory and, when resolved, --model and --effort; pi as pi --print with, when resolved, --model and --thinking. Host, model and effort resolve per field from the literal request, the selected user Lane profile, project lanes defaults, then the Parent's own Host; a model or effort from a layer other than its executor_host's is dropped and reported not_applied (BR-REQ-6). HERDR_ENV=1 does not change the spawn and no Herdr tab is created (BR-DEC-4). Refusals that spawn nothing: lanes.valid false, and an Executor binary that is not on PATH (lane_executor_unavailable, with no substitute Host, detached job or in-process subagent). Seam: tests/lane-supervisor.test.ts with fake claude and pi executables that record their argv and cwd, plus the adapter tests on both Hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S2-A2",
+        "assertion": "The single-task call blocks until the spawned generation exits or a per-Host wait window elapses. On exit it records {repository, lane path, generation, pid, exit code or signal} from the runtime's own child exit event and then reads the Lane Kernel projection; exit code 0 with a Lane record that is not done is not settlement, and a non-zero exit with a done record still settles. On window elapse it returns lane_supervision.state running for the same generation, and the next call re-attaches without a second spawn, so a Lane never has two live generations. After the Host process lost its handle (a fresh adapter instance with a recorded live generation) the call returns lane_executor_unobservable, records the exit as unknown and spawns nothing while that pid is alive. A generation that ends without Kernel progress is relaunched once as generation N+1; a second end without progress parks needs_human with lane_executor_no_progress. Each Host's window is a named constant that a test pins below that Host's tool-call limit, verified during implementation (Spec D4). Live, exited and unknown processes are tested for both the claude-code and pi providers. Seam: tests/lane-supervisor.test.ts with real child processes from fake executables.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S2-A3",
+        "assertion": "A single-task call with stop: true terminates the current generation with SIGTERM and, after a bounded grace period, SIGKILL, and records stopped_by_parent; cancelling the waiting call through its AbortSignal does the same and records interrupted. Neither observation, nor a timeout, counts as a normal exit, and a stop with no live generation changes nothing and reports so. Batch (Initiative) supervision and its handoffs are unchanged. Seam: tests/lane-supervisor.test.ts and the adapter tests on both Hosts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/pi-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/drive-always-lanes-s2-lane-supervisor.md",
+      "docs/plans/drive-always-lanes-s2-lane-supervisor.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+      "tests/claude-batch-authority.test.ts",
+      "tests/fixtures/lane-executor",
+      "tests/lane-supervisor.test.ts",
+      "tests/pi-batch-authority.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s2-lane-supervisor.intent.json",
+    "content_hash": "sha256:6b8b10fc407c867ca83ceb3242bde80e910da2ecb4ad3adfec6a6429be7df464"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6b8b10fc407c867ca83ceb3242bde80e910da2ecb4ad3adfec6a6429be7df464",
+  "git_base_head": "7295299ea7ef05db585d8e77822dfdb70074ee66",
+  "attestations": [
+    {
+      "id": "approval-qa-18f2490d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b8b10fc407c867ca83ceb3242bde80e910da2ecb4ad3adfec6a6429be7df464",
+      "diff_hash": "sha256:32ab4ff55e489b4e58202bd46ea450f3420ac7848316b1454a5598063668dba2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:c05c067e9d657a5ee401d419268e1f4061bdb6771562d70484ee438288dcd1d3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c05c067e9d657a5ee401d419268e1f4061bdb6771562d70484ee438288dcd1d3"
+        },
+        {
+          "acceptance_id": "DAL-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c05c067e9d657a5ee401d419268e1f4061bdb6771562d70484ee438288dcd1d3"
+        },
+        {
+          "acceptance_id": "DAL-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c05c067e9d657a5ee401d419268e1f4061bdb6771562d70484ee438288dcd1d3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-fabb624b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6b8b10fc407c867ca83ceb3242bde80e910da2ecb4ad3adfec6a6429be7df464",
+      "diff_hash": "sha256:32ab4ff55e489b4e58202bd46ea450f3420ac7848316b1454a5598063668dba2",
+      "actor_id": "parent-mediated-review",
+      "summary": "S2 Lane supervisor delivered at the named seams with generation-bound exit events, reattachment, stop/abort and no-progress parking verified by pinned tests on both Hosts; blast radius high, load-bearing paths runtime/unattended/lane_supervisor.ts, batch_runner.ts, batch_state.ts and the dist/claude bundle mirror.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7295299ea7ef05db585d8e77822dfdb70074ee66",
+        "review_commit": "0dabddf7120ca6ebb5542cfc4e36ed8f3bd315ae",
+        "review_tree": "91030e647cbefe713824e1cd087ec667b3802bf5",
+        "manifest_digest": "sha256:6fa9605e35a550a9f250e311a081c7cfef7f23a8538a61a8d2d6ddf941dcf56e"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-696eb4a535cb-1-review-1",
+          "acceptance_id": "DAL-S2-A2",
+          "summary": "stopSingleTaskSupervisor hardcodes waitMs 5000 and choice.host 'pi' instead of the per-Host named wait constants, so a Claude-Host stop call ignores CLAUDE_LANE_WAIT_MS and the MCP_TOOL_TIMEOUT clamp.",
+          "anchor": "sha256:45a95c6d71216d911ddee494306dba8b89b74edc206bc8782c182c5f61b45074",
+          "evidence": {
+            "trigger": "start_unattended_batch with task_id and stop:true in the Claude Host while the terminated generation's subtree lingers past SIGKILL: the stop call can block up to ~6s regardless of the pinned 500ms Claude window.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:stopSingleTaskSupervisor",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:startPreparedBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S2-A2"
+            }
+          }
+        },
+        {
+          "id": "review-696eb4a535cb-2-review-2",
+          "acceptance_id": "DAL-S2-A1",
+          "summary": "startBatch's single-task invalid-lanes branch throws a bare Error('lane_config_invalid') when no recorded lane record exists instead of returning the batchReason shape; only adapter-level pre-checks shield callers.",
+          "anchor": "sha256:9d6e24ae0cad6b33b85ed0697ae482e0d2c4c6147636197637159783d5b4aea0",
+          "evidence": {
+            "trigger": "A single_task startBatch call with supervision and lanes.valid false but no prior lane record reaches the throw directly, surfacing a raw error message rather than the lane_config_invalid reason object.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:startBatch",
+              "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePreparedPiBatch",
+              "plugins/immune-brain/runtime/claude/kernel_ports.ts:startPreparedBatch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "DAL-S2-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:5ca35a71f28122a0e0e5ee02d8505ff984972b446d4175fc8c0c1b93aa4740c1"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s2-lane-supervisor:2026-11-04T17:21:34.414Z",
+      "at": "2026-11-04T17:21:34.414Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s2-lane-supervisor.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s2-lane-supervisor:2026-11-04T17:27:49.694Z",
+      "at": "2026-11-04T17:27:49.694Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-18f2490d\naction_v2_sha256:094f7f6077f07c0f6b0561c59ede1e61ea979c6c8bd2484d13f11e4262b9c8cf",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6fee13ea1dc03e18",
+        "issued_at": "2026-11-04T17:27:49.694Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s2-lane-supervisor:2026-11-04T17:33:57.684Z",
+      "at": "2026-11-04T17:33:57.684Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-fabb624b\naction_v2_sha256:5e0b5978b416d3f32db6716ff14b8d0daa36074358e1455e16d57e4dabed43e4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-2e65b175c8fd4837",
+        "issued_at": "2026-11-04T17:33:57.684Z"
+      },
+      "review_started_at": "2026-11-04T17:27:51.688Z",
+      "review_submitted_at": "2026-11-04T17:33:57.200Z"
+    },
+    {
+      "id": "complete:drive-always-lanes-s2-lane-supervisor:2026-11-04T17:33:59.148Z",
+      "at": "2026-11-04T17:33:59.148Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:11fee10c7b2e2bcce499f11ccc493c34f5090df41c3f1e6aa55a2802d0099577"
+    }
+  ]
+}

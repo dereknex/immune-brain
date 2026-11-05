@@ -78,15 +78,6 @@ export function bindRun(binding: RunBinding): RunContinuationState {
 	return { binding, progress_digest: null, unchanged_observations: 0, boundary_id: null };
 }
 
-/** Suppress only this rejected gate; independently authorized branches remain runnable. */
-export async function parkFailedCriticalGate(binding: RunBinding, taskId: string | undefined): Promise<boolean> {
-	if (binding.kind !== "parent" || !taskId || readActiveClaimTaskId(binding.workspace) === taskId) return false;
-	const parent = await observeInitiative(binding.workspace, binding.initiative_slug);
-	if (!parent.tasks.some(task => task.task_id === taskId) || readTaskIntent(binding.workspace, taskId).intent.risk !== "critical") return false;
-	binding.blocked_native_tasks = [...new Set([...(binding.blocked_native_tasks ?? []), taskId])];
-	return true;
-}
-
 /** Explicit cancellation or a planning entry releases conversational continuation only. */
 export function releasesRunBinding(prompt: string, phase: "run" | "planner" | "brainstorm" | null): boolean {
 	return phase === "planner" || phase === "brainstorm" ||
