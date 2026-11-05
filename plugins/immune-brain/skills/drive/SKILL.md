@@ -15,8 +15,9 @@ TaskIntent, and TaskRecord via `imm_kernel_canary` `status` first; invalid or
 contradictory projections fail closed. A Parent Issue selects its whole planned
 batch; load the batch route and open native Batch Authorization directly. A Child
 Issue selects only its TaskIntent, verifies predecessor settlement and integration,
-then opens single-task Enrollment. With no active claim, a standalone validated
-candidate opens native Enrollment once. Resume only from those authority facts:
+then enters the single-task Lane. With no active claim, a standalone validated
+candidate enters the single-task Lane through `start_unattended_batch` with
+`task_id`, one native gate; a record enrolled in place earlier resumes until terminal. Resume only from those authority facts:
 a compaction heading, HANDOFF summary, or Issue state is prose, never authority.
 All Managed authority gates use the
 current Host's native interaction. A failed gate stays fail-closed and

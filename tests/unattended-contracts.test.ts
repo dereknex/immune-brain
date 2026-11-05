@@ -250,6 +250,50 @@ if (!adopted || adopted.commit !== commit) throw new Error("commit lookup did no
 `;
 }
 
+describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
+	const flatText = (text: string): string => text.replace(/\s+/g, " ");
+
+	it("routes a new single-task entry to start_unattended_batch with task_id", () => {
+		const loop = flatText(LOOP_CONTRACT);
+		expect(loop).toContain("Its first step is `start_unattended_batch` with `task_id`");
+		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal");
+		expect(loop).toContain("The Executor role runs inside the Lane process that the runtime spawns");
+		expect(loop).not.toContain("Enrollment is the first step of a single-task explicit `drive` entry");
+		expect(loop).not.toContain("native Enrollment gate once");
+		expect(loop).not.toContain("a standalone validated candidate opens native Enrollment");
+		expect(flatText(LOOP_LOADER)).not.toContain("opens single-task Enrollment");
+		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
+	});
+
+	it("states the single-task Lane behavior and labels the Herdr and session table as batch-only", () => {
+		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
+		for (const claim of [
+			"calls `start_unattended_batch` with `task_id` and no `initiative_slug`",
+			"under exactly one native gate",
+			"waits for it inside the Host tool call",
+			"on every Host including inside Herdr",
+			"`HERDR_ENV` changes nothing",
+			"call the same entry again to re-attach",
+			"`stop: true` on the same entry terminates the current generation",
+			"never exit proof",
+			"`manual` stages the delivered delta, uncommitted, and moves no HEAD",
+			"`auto` fast-forwards the current branch",
+			"`checkout_delivery_overlap: <paths>` and writes nothing",
+			"Unrelated user edits are never blocked",
+			"only when the current generation's exit was observed as a normal exit",
+			"`batch_lane_retained`",
+			"`lane_decision_required`",
+			"`approve_breaking_intent_revision`",
+			"rebinds the single-task batch's approved identity",
+			"`lane_decision_stale`",
+		]) expect(lane).toContain(claim);
+		const supervision = flatText(section(BATCH_CONTRACT, "#### Lane Executor Supervision"));
+		expect(supervision).toContain("This section and its supervised-session table describe Initiative batch behavior only");
+		const herdr = flatText(section(BATCH_CONTRACT, "##### Herdr Lane Tabs"));
+		expect(herdr).toContain("This facility is Initiative batch behavior only");
+	});
+});
+
 describe("unattended batch contract text", () => {
 	it("documents the opt-in entry, the single parameter, and the unchanged default", () => {
 		const optIn = section(BATCH_CONTRACT, "## Unattended Batch Opt-In");

@@ -1,0 +1,139 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "drive-always-lanes-s6-lane-default",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "drive-always-lanes-s6-lane-default",
+    "goal": "Meet S6 of docs/specs/drive-always-lanes.spec.md: rewrite the drive contracts so every new single-task drive entry, including a GitHub Initiative Child entry, goes through the single-task Lane path, with synchronous runtime supervision, gate delegation, checkout delivery, cleanup and the decision relay described, the Herdr/background facility table labeled batch-only, and in-place records enrolled earlier still resumable (Spec D10).",
+    "acceptance": [
+      {
+        "id": "DAL-S6-A1",
+        "assertion": "plugins/immune-brain/dist/drive.md instructs that a new single-task drive entry calls start_unattended_batch with task_id as its first step and no longer instructs a new entry to call the enroll or imm_canary_enrollment tool or to implement the task in the Parent conversation; it keeps the Child entry's prerequisite and tracker checks, states that a TaskRecord enrolled in place before this change stays resumable until terminal, and states that the Executor role runs inside the Lane process. tests/unattended-contracts.test.ts and tests/explicit-phase-entry-run-contract.test.ts pin these statements and fail when the old new-entry enroll instruction returns.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "DAL-S6-A2",
+        "assertion": "plugins/immune-brain/dist/drive-batch.md has a single-task Lane section stating synchronous runtime supervision on every Host (including inside Herdr), one native gate, manual staged and auto fast-forward delivery with the overlap park, exit-proof cleanup with batch_lane_retained otherwise, and the Parent decision relay; its supervised-session table and the Herdr Lane Tabs section are labeled as Initiative batch behavior. The named contract tests pin these statements.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "CONTEXT.md",
+      "docs/plans/drive-always-lanes-s6-lane-default.intent.json",
+      "docs/specs/drive-always-lanes.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/goal-driven-run-contract.test.ts",
+      "tests/lane-executor-status-guidance.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/drive-always-lanes-s6-lane-default.intent.json",
+    "content_hash": "sha256:d3de24829b6f8b96b7fd8b3fd83d8fa23acd0bc2e95837a9046d415feeef9735"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d3de24829b6f8b96b7fd8b3fd83d8fa23acd0bc2e95837a9046d415feeef9735",
+  "git_base_head": "4c2864614f3507e89103e0a8cf0568f047be8056",
+  "attestations": [
+    {
+      "id": "approval-qa-2cc829d8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3de24829b6f8b96b7fd8b3fd83d8fa23acd0bc2e95837a9046d415feeef9735",
+      "diff_hash": "sha256:46bd7a3b474837d1d351bfa692833a1468069f13be7e145702e654a6e9ca611c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:c67b7d1813cc58c3f0e13bc20a1a65312af8b8a36bc6757ef90bd0eedc7d5ea0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "DAL-S6-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c67b7d1813cc58c3f0e13bc20a1a65312af8b8a36bc6757ef90bd0eedc7d5ea0"
+        },
+        {
+          "acceptance_id": "DAL-S6-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c67b7d1813cc58c3f0e13bc20a1a65312af8b8a36bc6757ef90bd0eedc7d5ea0"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a4cab0c7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3de24829b6f8b96b7fd8b3fd83d8fa23acd0bc2e95837a9046d415feeef9735",
+      "diff_hash": "sha256:46bd7a3b474837d1d351bfa692833a1468069f13be7e145702e654a6e9ca611c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Tier low: contract prose (dist/drive.md, dist/drive-batch.md, drive SKILL.md) plus the contract tests that pin it. No runtime code, migration or persisted shape. DAL-S6-A1 and A2 are satisfied as written. drive.md routes a new single-task entry, Child entry included, to start_unattended_batch with task_id first, and drops the enroll and imm_canary_enrollment instruction and Parent-side implementation. It keeps the tracker and prerequisite checks, the drain-only in-place record statement and the Executor-in-Lane statement. drive-batch.md adds a Single-Task Lane section covering synchronous supervision including Herdr, one native gate, manual and auto delivery with the overlap park, exit-proof cleanup with batch_lane_retained, and the decision relay. The supervised-session table and Herdr Lane Tabs section are labeled batch-only. Tests assert each statement and the negative old-instruction strings, and the Kernel QA outcomes for both acceptances passed. The SKILL.md edit is outside scope_hint but disclosed as beyond_estimate, and it is needed to keep the loader consistent with the tests.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4c2864614f3507e89103e0a8cf0568f047be8056",
+        "review_commit": "2ca2f2f36b7f0239ea0fae1a1ccea11c662a2c1c",
+        "review_tree": "91b099a2441c78c7d8120a23ed25ffd9f32d9b59",
+        "manifest_digest": "sha256:3db2ee314bb8a3476fd946f96a9de0f595e45d8e5018d4117e0dd78286a59308"
+      },
+      "reviewer_verdict_sha256": "sha256:e113c3a9f010d0dd1f601fac6495b7ad5433a274aadd0fa68302f7e72ef11759"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:drive-always-lanes-s6-lane-default:2026-11-05T05:26:42.843Z",
+      "at": "2026-11-05T05:26:42.843Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/drive-always-lanes-s6-lane-default.intent.json"
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s6-lane-default:2026-11-05T05:26:50.176Z",
+      "at": "2026-11-05T05:26:50.176Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2cc829d8\naction_v2_sha256:6a64babf66c418a941f40a9108b75a531853326eac66acfde9636e8a0d50e385",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-05T05:26:50.176Z"
+      }
+    },
+    {
+      "id": "record_approval:drive-always-lanes-s6-lane-default:2026-11-05T05:27:32.101Z",
+      "at": "2026-11-05T05:27:32.101Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a4cab0c7\naction_v2_sha256:f70ef056aee8ddcfa9006ed901ba0eedea480105681289e0229d19c75442b265",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-05T05:27:32.101Z"
+      },
+      "review_started_at": "2026-11-05T05:26:51.840Z",
+      "review_submitted_at": "2026-11-05T05:27:31.698Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:drive-always-lanes-s6-lane-default:2026-11-05T05:27:33.262Z",
+      "at": "2026-11-05T05:27:33.262Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ad73939eb1baafcae4df43aac4066fe7839812b553581f10e6a6dc69890885c4"
+    }
+  ]
+}

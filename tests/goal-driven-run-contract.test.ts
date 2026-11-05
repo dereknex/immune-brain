@@ -21,7 +21,7 @@ describe("published goal-driven run contract", () => {
   expect(batch).toContain("new batch must supply a non-empty `final_verification` list");
   expect(batch).toContain("The confirmed batch records these commands");
   expect(batch).toContain("whole-plan proof");
-  expect(batch).toContain("fresh single-task native Enrollment");
+  expect(batch).toContain("start it through the [Single-Task Lane](#single-task-lane) with its own `task_id` and native gate");
  });
  it("keeps every Skill contract pointer reachable", () => {
   const source = join(plugin, "skills/drive/SKILL.md");

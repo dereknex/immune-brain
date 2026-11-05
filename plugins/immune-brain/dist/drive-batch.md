@@ -12,8 +12,8 @@ with `initiative_slug`, directly opening native Batch Authorization. Parent
 selection is the batch opt-in; it needs no separate chat question. An explicit
 `drive <Slice/Child Issue>` executes only that TaskIntent after its entrypoint
 verifies predecessor settlement and Git integration. Reading Parent context
-grants no authority to start predecessors or siblings. A standalone task id uses
-single-task Enrollment.
+grants no authority to start predecessors or siblings. A standalone task id, and
+every Child entry, uses the [Single-Task Lane](#single-task-lane).
 
 Every new batch uses runtime-created Lanes. Fixed Parent/Lane names do not prove
 ownership: a same-tip Parent can be reused only with a validated matching batch
@@ -100,8 +100,8 @@ needs a rerun. The integration Slice
 owns cross-Slice verification and repair scope before its settlement. On a later
 final failure, restore a recoverable local environment and retry the recorded
 commands; otherwise diagnose, author and validate the smallest repair TaskIntent
-for the original goal, then open a fresh single-task native Enrollment without
-chat pre-confirmation. Settled Slices retain their evidence. Track only an observed
+for the original goal, then start it through the [Single-Task Lane](#single-task-lane)
+with its own `task_id` and native gate, without chat pre-confirmation. Settled Slices retain their evidence. Track only an observed
 repair run and rerun final verification once it settles. Parent
 Issue closure waits for this whole-plan proof; a tracker failure reports the local
 proof and one synchronization recovery action.
@@ -318,6 +318,10 @@ request or project config supplies it.
 
 #### Lane Executor Supervision
 
+This section and its supervised-session table describe Initiative batch behavior
+only. A single-task Lane never uses them: the runtime itself supervises its
+Executor on every Host under the [Single-Task Lane](#single-task-lane).
+
 The Parent launches and supervises every Lane's Executor Host; no other role
 starts one. This is the one case in which the Parent starts another Loop
 process, and it starts it only in an admitted Lane. For each `executor` handoff
@@ -365,6 +369,10 @@ finished. Supervision is per Lane: Lanes that can be supervised are, and the
 rest are reported.
 
 ##### Herdr Lane Tabs
+
+This facility is Initiative batch behavior only. A single-task Lane inside Herdr
+is still supervised by the runtime's own child process; Herdr tabs, `herdr agent
+wait` and `lane_instruction` do not apply to it (Spec drive-always-lanes D3).
 
 Inside Herdr the Parent drives the `herdr` CLI itself; the runtime and the
 `lane-steward` never do. Each Lane gets a tab of its own, so its Executor Host
@@ -479,3 +487,72 @@ Host session, and reports "cannot supply" rather than improvising. A `release`
 handoff is the user's to carry out: the Parent removes no Lane and dispatches no
 one to remove it. It reports each such Lane once, with its `task_id`, Lane path
 and tab, as ready for the user to close and remove.
+
+### Single-Task Lane
+
+Every new single-task `drive` entry, including a GitHub Initiative Child entry,
+calls `start_unattended_batch` with `task_id` and no `initiative_slug` (both, or
+neither, refuses `batch_entry_ambiguous`; an Initiative record and a
+single-task record never match each other's entry, `batch_entry_kind_mismatch`).
+The runtime turns the one validated standalone TaskIntent into a one-child Lane
+batch (`plan_source: "single_task"`, slug equal to `task_id`, `max_parallel` 1)
+under exactly one native gate on the current Host, bound to the TaskIntent
+revision, content hash and preparation digest. It creates the Lane at the user's
+HEAD, copies uncommitted planning input, and enrolls the child there; the
+Parent calls neither `enroll` nor `imm_canary_enrollment` and implements nothing.
+Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
+
+- **Synchronous runtime supervision, on every Host including inside Herdr.** The
+  runtime spawns one non-interactive Executor (`claude --print` or `pi --print`)
+  with the Lane as working directory and `drive <task_id>` as its only prompt,
+  and waits for it inside the Host tool call. Arguments come only from the
+  loaded plugin location and [Lane Preferences](#lane-preferences), which the
+  runtime resolves itself; the Parent passes none and `HERDR_ENV` changes
+  nothing. The report carries `lane_supervision` with `generation`, `state`
+  (`running`, `exited`, `unobservable`, `stopped` or `unavailable`) and `exit`.
+  When the wait window elapses the call returns `running` for the same
+  generation; call the same entry again to re-attach, which never spawns a second
+  Executor. `stop: true` on the same entry terminates the current generation;
+  cancelling the call does the same and records `interrupted`. An exit is
+  observed only from the runtime's own child-process exit event for that
+  generation. The Executor's exit code and output, Claude Code background
+  notices, Herdr state and elapsed time are never exit proof, and the Parent
+  never launches, polls or closes a session for a single task.
+- **One native gate.** The entry opens one native gate and nothing after it asks
+  for a second confirmation. A declined, cancelled or failed gate reports one
+  same-Host recovery action and is never retried automatically.
+- **Checkout delivery.** After the child settles and integrates onto
+  `imm/<task_id>`, the runtime delivers into the user's checkout by the `Git
+  integration` preference: `manual` stages the delivered delta, uncommitted, and
+  moves no HEAD; `auto` fast-forwards the current branch when HEAD is an ancestor
+  of the delivery. If any dirty entry in the checkout (staged, unstaged,
+  untracked, deleted or renamed) overlaps a delivered path, the task parks
+  `needs_human` with `checkout_delivery_overlap: <paths>` and writes nothing; a
+  delivery that cannot apply parks as `checkout_delivery_conflict`. Unrelated
+  user edits are never blocked and stay byte-identical.
+- **Exit-proof cleanup.** Right after a successful delivery, in the same call,
+  the runtime removes the Lane worktree, `imm-lane/<task_id>/<task_id>` and
+  `imm/<task_id>` only when the current generation's exit was observed as a
+  normal exit and `git status --porcelain --untracked-files=all` in the Lane is
+  empty. In every other case (interrupted, unobserved or abnormal exit, a dirty
+  Lane, a parked delivery) the Lane is kept and reported as
+  `batch_lane_retained` with the failed condition; the Parent deletes nothing.
+  Initiative batch Lanes are always retained as described above. A fresh
+  `drive <task_id>` on a parked or retained Lane opens a fresh native gate and
+  resumes in the same Lane with a new generation.
+- **Parent decision relay.** When the Lane's Executor stops on a literal-user
+  decision, the report carries `lane_decision_required` (task, run and record
+  revision, authorization and pending decisions). The
+  Parent answers on its own Host with the native-gate tool the facts call for:
+  `request_authorization`, `approve_breaking_intent_revision` with the complete
+  next intent, or `stop`, each passing the Lane's `task_id` and the
+  `record_revision` it read. The runtime applies the approved decision to the
+  Lane store through the same Kernel operation and starts the next generation; a
+  breaking revision approved this way also rebinds the single-task batch's
+  approved identity, and a stop ends the Lane task. A changed record is refused
+  as `lane_decision_stale`, and a cancelled or failed gate applies nothing. The
+  Parent never decides for the user, and a child of an Initiative batch keeps the
+  batch behavior above.
+
+An in-place TaskRecord enrolled before this change stays resumable through the
+Execution Loop in [`drive.md`](drive.md#execution-loop) until terminal.
