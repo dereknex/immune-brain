@@ -802,6 +802,10 @@ describe("shared batch preflight projection", () => {
 			batch_run_rejected: ["<detail>", "delete or rename the conflicting branch, or commit working changes and retry in the current Host"],
 			stale_batch_absent: ["no retirable batch record to dispose: <detail>", "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"],
 			stale_batch_in_flight: ["a batch child is still mid-flight, so the record cannot be disposed: <detail>", "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"],
+			lane_config_invalid: ["lane_config_invalid", "Correct the Lane configuration and retry in the current Host."],
+			lane_executor_unavailable: ["lane_executor_unavailable", "Install the selected Executor on PATH and retry in the current Host."],
+			lane_executor_unobservable: ["lane_executor_unobservable", "Inspect the retained Lane and Executor process in the current Host."],
+			lane_executor_no_progress: ["lane_executor_no_progress", "Inspect the Lane and resume with a fresh drive entry."],
 		};
 		expect(Object.keys(BATCH_REASONS).sort()).toEqual(Object.keys(expected).sort());
 		for (const [key, [reason, recoveryAction]] of Object.entries(expected)) {
