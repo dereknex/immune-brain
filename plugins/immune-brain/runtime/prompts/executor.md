@@ -20,8 +20,8 @@ not start QA; the Parent owns the subsequent Kernel Assurance and foreground
 Review handoff under the same still-valid batch authorization. A child settlement
 returns execution to the bound Parent; continue dependency-ready independent
 work until whole-plan integration and final verification pass. Critical and new
-repair tasks use their own native Enrollment; stopped or excluded work never
-counts as Parent success.
+repair tasks start through the Single-Task Lane with their own `task_id` and
+native gate; stopped or excluded work never counts as Parent success.
 
 Before handoff, run the permitted diagnostic checks and stage the task-owned
 changes. On rework, also complete the Delivery Evidence check below and return

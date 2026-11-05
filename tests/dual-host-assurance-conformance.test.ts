@@ -2276,6 +2276,9 @@ describe("dual-host assurance conformance", () => {
 		for (const key of keys) {
 			const spec = BATCH_REASONS[key];
 			if (typeof spec.reason === "function") continue;
+			// A reason equal to its key is a bare machine code with no prose to restate, and
+			// the adapter names that key to call batchReason, so this check cannot see it.
+			if (spec.reason === key) continue;
 			for (const source of adapterSources) {
 				expect({ key, present: source.includes(spec.reason) }).toEqual({ key, present: false });
 			}
