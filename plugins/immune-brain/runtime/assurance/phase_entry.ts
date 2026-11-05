@@ -8,7 +8,7 @@
 export type PhaseEntry = "plan" | "run";
 
 /** The Host this recognition runs for: Pi's `skill:` resolves a same-named local skill first. */
-export type PhaseHost = "claude" | "pi";
+export type PhaseHost = "claude" | "pi" | "antigravity";
 
 /** The user's and project's local names that can shadow a packaged bare name (ADR 0031). */
 export interface LocalNames {

@@ -43,3 +43,20 @@ Assurance boundary without copying the Kernel or weakening attestation.
   this coordinator through `plugins/immune-brain/runtime/claude/` and ships as
   one versioned plugin next to Pi.
 - ADR-0002 still owns self-contained distribution and distinct consumer paths.
+
+## Amendment: Antigravity as Third First-Class Host (2026-11-05)
+
+### Context
+
+Issue #397 introduces Google Antigravity (CLI `agy` and Antigravity 2.0 Desktop/IDE) as the third first-class host harness alongside Pi and Claude Code.
+
+### Decision
+
+1. The architectural invariant of ADR-0004 stands: **one Kernel, one persisted authority protocol, no generic Host registry or autonomous dispatcher**.
+2. Antigravity integrates as a first-class adapter under `plugins/immune-brain/runtime/antigravity/` and collocated plugin manifests (`plugin.json`, `mcp_config.json`, `hooks.json`).
+3. Host-specific governance leverages native Antigravity lifecycle hooks:
+   - `PreInvocation` monitors explicit `/drive` user prompts to establish session-bound Run Entry tokens.
+   - `PreToolUse` enforces native enrollment gates via `force_ask` and restricts file modifications to active Lane boundaries.
+   - Read-only Reviewer subagents are dispatched natively via `define_subagent` (disabling write tools) and `invoke_subagent`.
+   - `Stop` lifecycle hook drives run continuation for active claims and unattended lanes.
+4. Conformance verification expands from dual-host parity to tri-host assurance parity across Pi, Claude Code, and Antigravity.

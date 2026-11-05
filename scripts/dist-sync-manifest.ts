@@ -221,6 +221,12 @@ export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [
 		kind: "adapted",
 		reason: "Generated Node stdio bundle; drift is guarded by tests/claude-host-package.test.ts.",
 	},
+	{
+		packaged: "antigravity/mcp-server.mjs",
+		source: "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+		kind: "adapted",
+		reason: "Generated Node stdio bundle; drift is guarded by scripts/build-antigravity-plugin.ts --check.",
+	},
 ];
 
 export function renderDistDoc(entry: DistDocEntry, source: string): string {

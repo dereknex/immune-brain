@@ -74,7 +74,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const validateLane = (o: Obj, file: string, path: string) => {
 		validKeys(o, laneKeys, file, path, "lanes");
 		for (const [k, v] of Object.entries(o)) {
-			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k === "executor_host" ? v === "pi" || v === "claude-code" : k === "executor_model" || k === "executor_effort" ? typeof v === "string" && v.length > 0 : true;
+			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k === "executor_host" ? v === "pi" || v === "claude-code" || v === "antigravity" : k === "executor_model" || k === "executor_effort" ? typeof v === "string" && v.length > 0 : true;
 			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
 		}
 	};

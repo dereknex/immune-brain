@@ -730,7 +730,7 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 					task_id: "task-a",
 					lane_branch: laneBranchName(SLUG, "task-a"),
 					base_head: fx.base,
-					executor_hosts: ["claude-code", "pi"],
+					executor_hosts: ["claude-code", "pi", "antigravity"],
 				},
 			]);
 			expect(first).not.toHaveProperty("handoff");

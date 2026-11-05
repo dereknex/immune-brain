@@ -44,6 +44,9 @@ jobs:
       - name: Check the built Claude plugin is in sync
         run: bun scripts/build-claude-plugin.ts --check
 
+      - name: Check the built Antigravity plugin is in sync
+        run: bun scripts/build-antigravity-plugin.ts --check
+
       - name: Check bundled docs are in sync
         run: bun scripts/sync-dist-docs.ts --check
 

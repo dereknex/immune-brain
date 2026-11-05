@@ -53,7 +53,7 @@ export type VerificationReceipt =
 	| { ok: false; reason: string; release: boolean };
 
 export interface AssuranceHostPort {
-	readonly host: "pi" | "claude-code" | "fake";
+	readonly host: "pi" | "claude-code" | "antigravity" | "fake";
 	prepareReview(request: ReviewRequest): HostReviewReservation;
 	prepareVerification?(request: VerificationRequest): HostReviewReservation;
 	inspectVerification?(reservation: HostReviewReservation): VerificationReceipt;
