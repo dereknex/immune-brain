@@ -93,6 +93,8 @@ export function listMcpTools() {
 						task_id: { type: "string" },
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" ? { reason: { type: "string" } } : {}),
+						// Spec drive-always-lanes D11: the record revision read in `lane_decision_required`; a Lane that moved since is refused as stale.
+						...(tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {}),
 						...(tool.name === "submit_review" ? { verdict: { type: "object" } } : {}),
 						...(tool.name === "submit_verification" ? { result: { type: "string" } } : {}),
 						...(tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {}),

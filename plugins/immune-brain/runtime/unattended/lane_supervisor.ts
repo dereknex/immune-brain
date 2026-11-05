@@ -163,6 +163,21 @@ export class LaneSupervisor {
 	}
 }
 
+/**
+ * The Executor writes its Lane record while the Parent polls it, so a projection can be overtaken between its two
+ * reads ("recovery projection changed"). That is transient by construction: read again a bounded number of times,
+ * and let any other error, or a mismatch that persists, surface unchanged.
+ */
+async function projectStable<T>(project: () => Promise<T>, attempts = 6, delayMs = 25): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		try { return await project(); }
+		catch (error) {
+			if (attempt >= attempts || !/recovery projection changed/.test(error instanceof Error ? error.message : String(error))) throw error;
+			await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+		}
+	}
+}
+
 /** Observe Kernel progress only after the process has actually exited. */
 export async function superviseLane(
 	supervisor: LaneSupervisor,
@@ -170,27 +185,34 @@ export async function superviseLane(
 		project: () => Promise<{ record_revision: string; lifecycle: string; next_obligation: string; open_user_decision_count: number }>;
 	},
 ): Promise<Awaited<ReturnType<LaneSupervisor["run"]>> & { reason?: string }> {
-	let projection = await input.project();
+	const project = () => projectStable(input.project);
+	/** Account for one exited generation exactly once: progress resets the counter, none adds to it. */
+	const markHandled = (generation: NonNullable<ReturnType<typeof input.store.read>>, advanced: boolean) => input.store.update(value => {
+		if (!value || value.generation !== generation.generation || value.state !== "exited") throw new Error("lane_executor_generation_changed");
+		if (value.handled_generation === value.generation) return value;
+		return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
+	});
+	let projection = await project();
 	const deadline = Date.now() + input.waitMs;
 	for (;;) {
 		const before = input.store.read();
 		if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
 			return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
 		const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
-		if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0))
+		if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0)) {
+			// An exit seen only between calls is accounted for here as well: otherwise a decision answered in the same
+			// call would re-attach to this exit instead of starting the next generation (Spec D11).
+			if (before?.state === "exited") markHandled(before, projection.record_revision !== before.baseline);
 			return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
+		}
 		const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
 		const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
 		if (observation.state !== "exited" || observation.generation === null) return observation;
 		const generation = input.store.read();
 		if (!generation || generation.generation !== observation.generation || generation.state !== "exited") throw new Error("lane_executor_generation_changed");
-		projection = await input.project();
+		projection = await project();
 		const advanced = projection.record_revision !== generation.baseline;
-		const observed = input.store.update(value => {
-			if (!value || value.generation !== generation.generation || value.state !== "exited") throw new Error("lane_executor_generation_changed");
-			if (value.handled_generation === value.generation) return value;
-			return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
-		});
+		const observed = markHandled(generation, advanced);
 		if (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0 || advanced)
 			return observation;
 		if (observed.no_progress >= 2) return { ...observation, reason: "lane_executor_no_progress" };

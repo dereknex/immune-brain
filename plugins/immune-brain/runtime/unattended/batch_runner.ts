@@ -10,6 +10,7 @@ import { expectedBatchHead, findExistingActiveBatch, findSettledBatchRecord } fr
 import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBatch, createBatchTrackerPort, type LaneOffer } from "./batch_lanes";
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
 import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
+import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
 import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
@@ -190,6 +191,19 @@ function reportFromLane(record: import("./batch_state").BatchLaneRunStateRecord)
 		reason: null, handoffs: [], next_action: "Continue supervising the Lane.", created_at: record.updated_at };
 }
 
+/**
+ * The report after a single-task Executor exited and the batch advanced once more. A Lane that waits on a
+ * literal-user decision keeps `lane_decision_required` and its next_action: the advanced report alone would
+ * tell the caller to start another generation instead of answering the decision (Spec D11).
+ */
+function afterExecutorExit(advanced: BatchLaneRunReport, observed: BatchLaneRunReport): BatchRunReport {
+	const decision = observed.lane_decision_required;
+	return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
+		...(decision ? { lane_decision_required: decision } : {}),
+		next_action: decision ? observed.next_action : advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+		lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
+}
+
 async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {
 	const options = input.supervision!;
 	const child = report.children.find(c => c.task_id === input.initiative_slug && c.lane);
@@ -219,12 +233,20 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	} else if (observation.state === "unavailable" || observation.state === "unobservable") {
 		report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
 	}
+	// Spec drive-always-lanes D11: an Executor that stopped on a literal-user decision is answered at this Host's native gate.
+	let decision: LaneDecisionFacts | null = null;
+	if (observation.state === "exited" && !observation.reason) {
+		const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+		if (read.error === null) decision = laneDecisionFacts(child.task_id, read.projection);
+	}
 	// Spec drive-always-lanes D7: a Lane whose Executor did not exit normally under supervision is kept and said so.
 	const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
 	const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
 	return { ...report, handoffs: report.handoffs.filter(handoff => handoff.role !== "executor"),
 		...(kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {}),
-		next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
+		...(decision ? { lane_decision_required: decision } : {}),
+		next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` :
+			observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
 			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
 			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
 		lane_supervision: { ...observation, not_applied: choice.not_applied } };
@@ -254,9 +276,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 				if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
 					return observed as unknown as BatchRunReport;
 				const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
-					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
+				return afterExecutorExit(advanced, observed);
 			}
 		}
 		const report = await runLaneBatch(input, recorded);
@@ -272,9 +292,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			const observed = await superviseSingle(input, report);
 			if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
 				const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-				return { ...advanced, handoffs: advanced.handoffs.filter(h => h.role !== "executor"),
-					next_action: advanced.handoffs.some(h => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-					lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
+				return afterExecutorExit(advanced, observed);
 			}
 			return observed as unknown as BatchRunReport;
 		}

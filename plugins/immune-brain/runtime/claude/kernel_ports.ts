@@ -85,6 +85,7 @@ import {
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
+import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
@@ -280,6 +281,8 @@ export interface ClaudeRuntimeOptions {
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
+	laneRoot?: boolean;
 }
 
 /** ADR 0025: the run-internal authority operations a live entry token authorizes. */
@@ -312,6 +315,7 @@ export class ClaudeRuntime {
 	readonly host: ClaudeReviewHost;
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
+	private readonly options: ClaudeRuntimeOptions;
 	private readonly env: Record<string, string | undefined>;
 	private readonly interactive: boolean;
 	private requestConfirmation?: NativeConfirmationPort;
@@ -327,6 +331,7 @@ export class ClaudeRuntime {
 
 	constructor(options: ClaudeRuntimeOptions) {
 		this.cwd = options.cwd;
+		this.options = options;
 		this.env = options.env ?? process.env;
 		this.interactive = options.interactive ?? true;
 		this.requestConfirmation = options.requestConfirmation;
@@ -653,7 +658,35 @@ export class ClaudeRuntime {
 		});
 	}
 
+	/**
+	 * Spec drive-always-lanes D11: a decision for a single-task Lane is answered at
+	 * the Parent's native gate and applied to the Lane store, then the next
+	 * Executor generation starts. Any other task keeps the in-place path.
+	 */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
+			? findLaneRelayTarget(this.cwd, taskId) : null;
+		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
+		const laneRuntime = new ClaudeRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
+			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
+		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
+		try {
+			const outcome = await relayLaneDecision({
+				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
+				expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
+				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
+				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
+				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
+				supervisor: this.laneSupervisor, parentHost: "claude-code",
+				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: claudeLaneWaitMs(this.env), signal: meta.signal,
+			});
+			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
+		} finally {
+			await laneRuntime.shutdown();
+		}
+	}
+
+	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
 		if (operation === "repair_authority_state") {
 			const authority = reconcileKernelAuthority(this.cwd, taskId);
 			// The workspace owner is derived from the single active run, so a claim

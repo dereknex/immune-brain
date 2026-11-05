@@ -6416,6 +6416,8 @@ var init_batch_reasons = __esm(() => {
     lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
     lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
     lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
+    lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
+    lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
     batch_entry_ambiguous: {
       state: "rejected",
       reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
@@ -7031,6 +7033,33 @@ function parkLaneForExecutor(root, batchId, taskId, reason) {
     return stored;
   });
 }
+function rebindSingleTaskIdentity(root, batchId, input) {
+  const path = statePath(batchId);
+  return withKernelStoreLock(root, () => {
+    const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+    const recorded = record.intent_identities?.[input.task_id];
+    if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id && child.lane))
+      throw new Error(batchReason("lane_decision_rebind_failed").reason);
+    if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash)
+      return record;
+    if (input.intent.revision <= recorded.intent_revision)
+      throw new Error(batchReason("lane_decision_stale").reason);
+    const identity = {
+      intent_path: recorded.intent_path,
+      intent_revision: input.intent.revision,
+      intent_content_hash: input.content_hash,
+      ...recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}
+    };
+    const stored = {
+      ...record,
+      updated_at: new Date().toISOString(),
+      intent_identities: { ...record.intent_identities, [input.task_id]: identity }
+    };
+    validateLaneRecordShape(stored, batchId);
+    writeFileAtomically(root, path, canonicalBytes(stored));
+    return stored;
+  });
+}
 function laneGenerationStore(root, batchId) {
   validateBatchId(batchId);
   const directory = join10(".imm", "state", "lane-supervisors");
@@ -7129,6 +7158,7 @@ var init_batch_state = __esm(() => {
   init_storage();
   init_batch_final_verification();
   init_batch_authority();
+  init_intent();
   init_runtime_contracts();
   init_batch_reasons();
   BatchRuntimeTooOldError = class BatchRuntimeTooOldError extends Error {
@@ -19606,16 +19636,38 @@ class LaneSupervisor {
     }
   }
 }
+async function projectStable(project, attempts = 6, delayMs = 25) {
+  for (let attempt = 1;; attempt++) {
+    try {
+      return await project();
+    } catch (error) {
+      if (attempt >= attempts || !/recovery projection changed/.test(error instanceof Error ? error.message : String(error)))
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+}
 async function superviseLane(supervisor, input) {
-  let projection = await input.project();
+  const project = () => projectStable(input.project);
+  const markHandled = (generation, advanced) => input.store.update((value) => {
+    if (!value || value.generation !== generation.generation || value.state !== "exited")
+      throw new Error("lane_executor_generation_changed");
+    if (value.handled_generation === value.generation)
+      return value;
+    return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
+  });
+  let projection = await project();
   const deadline = Date.now() + input.waitMs;
   for (;; ) {
     const before = input.store.read();
     if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
       return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
     const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
-    if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0))
+    if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0)) {
+      if (before?.state === "exited")
+        markHandled(before, projection.record_revision !== before.baseline);
       return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
+    }
     const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
     const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
     if (observation.state !== "exited" || observation.generation === null)
@@ -19623,15 +19675,9 @@ async function superviseLane(supervisor, input) {
     const generation = input.store.read();
     if (!generation || generation.generation !== observation.generation || generation.state !== "exited")
       throw new Error("lane_executor_generation_changed");
-    projection = await input.project();
+    projection = await project();
     const advanced = projection.record_revision !== generation.baseline;
-    const observed = input.store.update((value) => {
-      if (!value || value.generation !== generation.generation || value.state !== "exited")
-        throw new Error("lane_executor_generation_changed");
-      if (value.handled_generation === value.generation)
-        return value;
-      return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
-    });
+    const observed = markHandled(generation, advanced);
     if (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0 || advanced)
       return observation;
     if (observed.no_progress >= 2)
@@ -21508,6 +21554,133 @@ async function runLaneBatch(input, persisted) {
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_batch_state();
+
+// plugins/immune-brain/runtime/unattended/lane_decision.ts
+init_storage();
+init_layered_config();
+init_batch_preflight();
+init_batch_reasons();
+init_batch_state();
+function laneDecisionFacts(taskId, projection) {
+  if (projection.lifecycle !== "active")
+    return null;
+  const waiting = projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.replan_required_ids.length > 0 || projection.authorization.state !== "none";
+  if (!waiting)
+    return null;
+  return {
+    task_id: taskId,
+    run_id: projection.run_id,
+    record_revision: projection.record_revision,
+    authorization: projection.authorization,
+    open_user_decision_count: projection.open_user_decision_count,
+    replan_required_ids: [...projection.replan_required_ids]
+  };
+}
+function findLaneRelayTarget(root, taskId) {
+  const found = findExistingActiveBatch(root, taskId);
+  if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task")
+    return null;
+  const child = found.record.children.find((value) => value.task_id === taskId);
+  if (!child?.lane || child.state !== "enrolled" && child.state !== "needs_human")
+    return null;
+  return { batch_id: found.record.batch_id, task_id: taskId, lane_path: child.lane.path };
+}
+
+class LaneDecisionStaleError extends Error {
+  reason = "lane_decision_stale";
+  constructor(detail) {
+    super(`${batchReason("lane_decision_stale").reason}: ${detail}`);
+  }
+}
+async function readFacts(input, target) {
+  const read = await input.project(target.lane_path, target.task_id);
+  if (read.error !== null)
+    throw new Error(`batch_lane_unreadable: ${read.error}`);
+  return laneDecisionFacts(target.task_id, read.projection);
+}
+async function relayLaneDecision(input) {
+  const target = findLaneRelayTarget(input.root, input.taskId);
+  if (!target)
+    return { relayed: false };
+  const before = await readFacts(input, target);
+  if (input.operation !== "stop") {
+    if (!before)
+      throw new LaneDecisionStaleError("the Lane record waits on no decision");
+    if (input.expectedRecordRevision && input.expectedRecordRevision !== before.record_revision)
+      throw new LaneDecisionStaleError(`record revision ${input.expectedRecordRevision} is no longer current`);
+  }
+  let result;
+  try {
+    result = await input.apply(target, before);
+  } catch (error) {
+    if (before) {
+      const after = await readFacts(input, target).catch(() => before);
+      if (after?.record_revision !== before.record_revision)
+        throw new LaneDecisionStaleError("the Lane record changed while the gate was open");
+    }
+    throw error;
+  }
+  if (input.applied && !input.applied(result))
+    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
+  if (input.operation === "stop") {
+    const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
+    const report = stopped.state === "started" ? stopped.report : {};
+    return { relayed: true, result, lane_relay: {
+      batch_id: target.batch_id,
+      operation: input.operation,
+      applied: true,
+      rebound: false,
+      lane_supervision: report.lane_supervision ?? null,
+      ...report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}
+    } };
+  }
+  let rebound = false;
+  if (input.operation === "approve_breaking_intent_revision") {
+    try {
+      const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
+      if (!committed)
+        throw new Error("the Lane TaskRecord is unreadable");
+      rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
+      rebound = true;
+    } catch (error) {
+      throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const config = resolveConfig(input.root);
+  if (!config.lanes.valid)
+    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
+  const active = config.lanes.active.value;
+  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+  const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
+  const observation = await superviseLane(input.supervisor, {
+    key: `${input.root}\x00${target.batch_id}`,
+    repository: input.root,
+    lanePath: target.lane_path,
+    taskId: input.taskId,
+    choice,
+    pluginDir: input.pluginDir,
+    store: laneGenerationStore(input.root, target.batch_id),
+    baseline: "",
+    waitMs: input.waitMs,
+    graceMs: 1000,
+    signal: input.signal,
+    project: async () => {
+      const read = await input.project(target.lane_path, target.task_id);
+      if (read.error !== null)
+        throw new Error(`batch_lane_unreadable: ${read.error}`);
+      return read.projection;
+    }
+  });
+  return { relayed: true, result, lane_relay: {
+    batch_id: target.batch_id,
+    operation: input.operation,
+    applied: true,
+    rebound,
+    lane_supervision: { ...observation, not_applied: choice.not_applied }
+  } };
+}
+
+// plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_layered_config();
 init_backend_claim();
 init_batch_plan();
@@ -21609,6 +21782,16 @@ function reportFromLane(record) {
     created_at: record.updated_at
   };
 }
+function afterExecutorExit(advanced, observed) {
+  const decision = observed.lane_decision_required;
+  return {
+    ...advanced,
+    handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
+    ...decision ? { lane_decision_required: decision } : {},
+    next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+    lane_supervision: observed.lane_supervision
+  };
+}
 async function superviseSingle(input, report) {
   const options = input.supervision;
   const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
@@ -21651,13 +21834,20 @@ async function superviseSingle(input, report) {
   } else if (observation.state === "unavailable" || observation.state === "unobservable") {
     report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
   }
+  let decision = null;
+  if (observation.state === "exited" && !observation.reason) {
+    const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+    if (read.error === null)
+      decision = laneDecisionFacts(child.task_id, read.projection);
+  }
   const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
   const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
   return {
     ...report,
     handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
     ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
-    next_action: observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
+    ...decision ? { lane_decision_required: decision } : {},
+    next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
     lane_supervision: { ...observation, not_applied: choice.not_applied }
   };
 }
@@ -21691,12 +21881,7 @@ async function startBatch(input) {
         if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
           return observed;
         const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return {
-          ...advanced,
-          handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
-          next_action: advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-          lane_supervision: observed.lane_supervision
-        };
+        return afterExecutorExit(advanced, observed);
       }
     }
     const report = await runLaneBatch(input, recorded);
@@ -21714,12 +21899,7 @@ async function startBatch(input) {
       const observed = await superviseSingle(input, report);
       if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
         const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return {
-          ...advanced,
-          handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
-          next_action: advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-          lane_supervision: observed.lane_supervision
-        };
+        return afterExecutorExit(advanced, observed);
       }
       return observed;
     }
@@ -22082,6 +22262,7 @@ class ClaudeRuntime {
   host;
   coordinator;
   cwd;
+  options;
   env;
   interactive;
   requestConfirmation;
@@ -22096,6 +22277,7 @@ class ClaudeRuntime {
   readInitiative;
   constructor(options) {
     this.cwd = options.cwd;
+    this.options = options;
     this.env = options.env ?? process.env;
     this.interactive = options.interactive ?? true;
     this.requestConfirmation = options.requestConfirmation;
@@ -22330,6 +22512,42 @@ class ClaudeRuntime {
     });
   }
   async authorize(taskId, operation, meta, extra = {}) {
+    const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot ? findLaneRelayTarget(this.cwd, taskId) : null;
+    if (!relayed)
+      return this.authorizeInRoot(taskId, operation, meta, extra);
+    const laneRuntime = new ClaudeRuntime({
+      ...this.options,
+      cwd: relayed.lane_path,
+      laneRoot: true,
+      requestConfirmation: this.requestConfirmation,
+      batchKernel: undefined,
+      batchGit: undefined,
+      batchTracker: undefined,
+      readInitiative: undefined
+    });
+    if (this.hostVersion)
+      laneRuntime.bindHostVersion(this.hostVersion);
+    try {
+      const outcome = await relayLaneDecision({
+        root: this.cwd,
+        taskId,
+        operation,
+        expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
+        project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
+        apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
+        applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
+        supervisor: this.laneSupervisor,
+        parentHost: "claude-code",
+        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        waitMs: claudeLaneWaitMs(this.env),
+        signal: meta.signal
+      });
+      return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
+    } finally {
+      await laneRuntime.shutdown();
+    }
+  }
+  async authorizeInRoot(taskId, operation, meta, extra = {}) {
     if (operation === "repair_authority_state") {
       const authority = reconcileKernelAuthority(this.cwd, taskId);
       if (authority.state === "terminal_owner" || authority.state === "unowned")
@@ -23036,6 +23254,7 @@ function listMcpTools() {
           task_id: { type: "string" },
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+          ...tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {},
           ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
           ...tool.name === "submit_verification" ? { result: { type: "string" } } : {},
           ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {},

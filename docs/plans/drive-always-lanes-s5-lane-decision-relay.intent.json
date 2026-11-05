@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "drive-always-lanes-s5-lane-decision-relay",
+  "owner": "user",
+  "goal": "Meet S5 of docs/specs/drive-always-lanes.spec.md: when a single-task Lane Executor stops on a literal-user decision, the Parent opens its own Host's native gate bound to the Lane record, the runtime applies the decision to the Lane store and starts a new Executor generation, a relayed breaking revision rebinds the single-task batch identity, and a relayed stop stops the Lane task (Spec D11, D8; user decision Q5-A).",
+  "acceptance": [
+    {
+      "id": "DAL-S5-A1",
+      "assertion": "When a single-task Lane generation exits with its Lane TaskRecord awaiting_user, the single-task report carries lane_decision_required with the Lane decision facts (task_id, run_id, record revision, authorization state). On Claude Code and Pi, request_authorization or approve_breaking_intent_revision relayed for that Lane opens exactly one native gate in the Parent Host showing that binding, applies the decision to the Lane store through the same Kernel operation, and the supervisor starts generation N+1. A relayed breaking revision also rebinds the single-task batch's approved intent identity in the same transaction, so the next call does not refuse plan_changed. Refusals that apply nothing and spawn nothing: a stale record revision (lane_decision_stale), a cancelled or failed gate, and a relay aimed at an Initiative batch child, whose behavior is unchanged. Seam: tests/single-task-lane-decision.test.ts on both Hosts with a counting gate stub, plus tests/breaking-intent-revision-gate.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "DAL-S5-A2",
+      "assertion": "A relayed stop of a single-task Lane opens the Parent Host's native stop gate once, stops the Lane TaskRecord, terminates any live generation through the S2 stop, and keeps the Lane retained; a cancelled stop gate changes nothing. Seam: tests/single-task-lane-decision.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/drive-always-lanes-s5-lane-decision-relay.md",
+    "docs/plans/drive-always-lanes-s5-lane-decision-relay.intent.json",
+    "docs/specs/drive-always-lanes.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+    "tests/breaking-intent-revision-gate.test.ts",
+    "tests/single-task-lane-decision.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

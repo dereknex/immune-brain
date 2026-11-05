@@ -7,7 +7,9 @@ import { resolveConfig } from "../runtime/config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
 
 export const PI_LANE_WAIT_MS = 5_000;
-const defaultSupervisor = new LaneSupervisor();
+/** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
+export const piLaneSupervisor = new LaneSupervisor();
+const defaultSupervisor = piLaneSupervisor;
 // The Pi batch adapter imports the host-neutral runtime modules statically,
 // exactly as the Claude adapter does; the adapter-owned helpers it drives
 // (the shared session progression accessors and the batch projection) live in
@@ -532,7 +534,7 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
-	const supervisor = new LaneSupervisor();
+	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
