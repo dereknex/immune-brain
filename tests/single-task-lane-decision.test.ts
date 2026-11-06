@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,10 +128,10 @@ function executors(script: string) {
 }
 
 /** A started single-task batch whose Lane child waits on a literal-user decision. */
-async function waitingLane() {
+async function waitingLane(executor_mode?: "interactive") {
 	const { repo, base } = fixture();
 	const k = kernel();
-	const args = () => request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) });
+	const args = () => ({ ...request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) }), executor_mode });
 	const first = laneReport(await startBatch(args()));
 	const lane = first.children[0]!.lane!.path;
 	return { repo, base, lane, args, first };
@@ -164,6 +164,38 @@ describe("single-task Lane decision relay (S5)", () => {
 		expect(readFileSync(join(lane, "gen.txt"), "utf8").trim()).toBe(lane);
 	});
 
+	it.each(["request_authorization", "stop"] as const)("applies %s to an interactive Lane without launching a runtime Executor", async operation => {
+		executors('#!/bin/sh\nprintf x > gen.txt\n');
+		const { repo, lane, args } = await waitingLane("interactive");
+		const { input, applied } = relayInput(repo, lane, { operation });
+		const outcome = await relayLaneDecision(input);
+		expect(applied.calls).toBe(1);
+		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, operation, lane_supervision: null } });
+		expect(existsSync(join(lane, "gen.txt"))).toBe(false);
+		expect(existsSync(lane)).toBe(true);
+		if (operation === "stop") {
+			expect(readAnyBatchRunState(repo, BATCH_ID)).toMatchObject({ batch_state: "needs_human",
+				children: [{ state: "needs_human", reason: "lane_executor_stopped" }] });
+			expect(outcome).toMatchObject({ lane_relay: { next_action: expect.stringContaining("Close") } });
+			const next = laneReport(await startBatch(args()));
+			expect(next.children[0]!.reason).toBe("lane_executor_stopped");
+		}
+	});
+
+	it("records an approved stop for an already parked interactive Lane", async () => {
+		const { repo, lane } = await waitingLane("interactive");
+		const record = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord;
+		writeBatchLaneRunState(repo, { ...record, batch_state: "needs_human",
+			children: record.children.map(child => ({ ...child, state: "needs_human", reason: "awaiting_user" })) });
+		const { input } = relayInput(repo, lane, { operation: "stop" });
+		const outcome = await relayLaneDecision(input);
+		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: true, lane_supervision: null,
+			next_action: expect.stringContaining("Close") } });
+		expect(readAnyBatchRunState(repo, BATCH_ID)).toMatchObject({ batch_state: "needs_human",
+			children: [{ state: "needs_human", reason: "lane_executor_stopped" }] });
+		expect(existsSync(lane)).toBe(true);
+	});
+
 	it("refuses a decision answered against a record revision that is no longer current", async () => {
 		executors('#!/bin/sh\nprintf x > gen.txt\n');
 		const { repo, lane } = await waitingLane();
@@ -183,13 +215,15 @@ describe("single-task Lane decision relay (S5)", () => {
 		expect(existsSync(join(lane, "gen.txt"))).toBe(false);
 	});
 
-	it("starts nothing when the user cancels the gate", async () => {
+	it.each([undefined, "interactive"] as const)("starts nothing when the user cancels the gate (mode=%s)", async mode => {
 		executors('#!/bin/sh\nprintf x > gen.txt\n');
-		const { repo, lane } = await waitingLane();
+		const { repo, lane } = await waitingLane(mode);
+		const before = readAnyBatchRunState(repo, BATCH_ID);
 		const { input } = relayInput(repo, lane, { apply: async () => ({ state: "cancelled" }), applied: result => result.state === "applied" });
 		const outcome = await relayLaneDecision(input);
 		expect(outcome).toMatchObject({ relayed: true, lane_relay: { applied: false, lane_supervision: null } });
 		expect(existsSync(join(lane, "gen.txt"))).toBe(false);
+		expect(readAnyBatchRunState(repo, BATCH_ID)).toEqual(before);
 	});
 
 	it("reports a record that moved while the gate was open as stale, and keeps other gate errors", async () => {
@@ -376,6 +410,10 @@ function piHarness(root: string): HostHarness {
 const decisionStatus = (lane: string) => readTaskRecordRaw(lane, TASK).record?.findings.find(finding => finding.id === DECISION_ID)?.status;
 
 for (const host of ["claude", "pi"] as const) describe(`single-task Lane decision relay through the ${host} Host (S5)`, () => {
+	let herdrEnv: string | undefined;
+	beforeEach(() => { herdrEnv = process.env.HERDR_ENV; delete process.env.HERDR_ENV; });
+	afterEach(() => { if (herdrEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = herdrEnv; });
+
 	async function waitingHostLane(kind: "unresolved_user_decision" | "replan_required" = "unresolved_user_decision") {
 		const f = hostFixture(kind);
 		const h = host === "claude" ? claudeHarness(f.root) : piHarness(f.root);

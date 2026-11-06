@@ -108,6 +108,8 @@ export type BatchChildAdvanceResult = { diagnostics?: QaCheckDiagnostic[]; envir
 
 export interface StartBatchInput {
 	plan_source?: "single_task";
+	/** The Parent supplies an interactive Executor session instead of a runtime child. */
+	executor_mode?: "interactive";
 	/** Single task only: the exit this call's own wait observed; cleanup compares its generation with the current one. */
 	lane_exit_observation?: import("./lane_supervisor").LaneExit | null;
 	supervision?: { supervisor: LaneSupervisor; parentHost: ExecutorHost; pluginDir: string; waitMs: number; signal?: AbortSignal; stop?: boolean; request?: ExecutorPreferences };
@@ -171,6 +173,8 @@ export async function stopSingleTaskSupervisor(supervisor: LaneSupervisor, root:
 	if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
 		return { state: "blocked" as const, reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
 	const record = existing.record;
+	if (record.executor_mode === "interactive")
+		return { state: "blocked" as const, reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
 	const lane = record.children.find(child => child.task_id === taskId)?.lane;
 	if (!lane) return { state: "blocked" as const, reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
 	const observation = await supervisor.run({ key: `${root}\0${record.batch_id}`, repository: root, lanePath: lane.path, taskId,
@@ -254,6 +258,9 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 
 export async function startBatch(input: StartBatchInput): Promise<BatchRunReport> {
 	const recorded = readAnyBatchRunState(input.root, input.batch_id);
+	// Keep the recorded execution mode across re-entry; an existing runtime child is never replaced.
+	const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
+	if (interactive) input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
 	if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
 		const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
 		if (!report) throw new Error("lane_config_invalid");
@@ -280,6 +287,20 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			}
 		}
 		const report = await runLaneBatch(input, recorded);
+		if (interactive) {
+			const child = report.children.find(c => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
+			if (child?.lane) {
+				const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+				if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
+				const decision = laneDecisionFacts(child.task_id, read.projection);
+				if (decision) return { ...report, lane_decision_required: decision,
+					handoffs: report.handoffs.filter(h => h.role !== "executor"),
+					next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.` } as unknown as BatchRunReport;
+			}
+			return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some(h => h.role === "executor")
+				? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.`
+				: report.next_action } as unknown as BatchRunReport;
+		}
 		if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
 			const store = laneGenerationStore(input.root, input.batch_id);
 			const generation = store.read();

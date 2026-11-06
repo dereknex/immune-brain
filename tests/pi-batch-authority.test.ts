@@ -126,7 +126,7 @@ describe("acc-pi-batch-gate", () => {
 		const schema = tool.parameters.properties.max_parallel;
 		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);
 	});
-	it("starts a standalone task in its own Lane after one native confirmation", async () => {
+	it.each([false, true])("starts a standalone task after one native confirmation (Herdr=%s)", async herdr => {
 		const f = fixture("single-pi"), taskId = `${f.slug}-c1`;
 		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
 		const intent = JSON.parse(readFileSync(path, "utf8"));
@@ -135,7 +135,8 @@ describe("acc-pi-batch-gate", () => {
 		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
 		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
 		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
-		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT, oldHerdr = process.env.HERDR_ENV;
+		if (herdr) process.env.HERDR_ENV = "1"; else delete process.env.HERDR_ENV;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
 		const gates: any[] = [];
@@ -144,6 +145,18 @@ describe("acc-pi-batch-gate", () => {
 		expect(gates[0].summary).toContain("Preparation digest: sha256:");
 		expect(result.state).toBe("started");
 		if (result.state !== "started") throw new Error(result.reason);
+		if (herdr) {
+			expect((result.report as any).lane_supervision).toBeUndefined();
+			expect((result.report as any).handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
+			delete process.env.HERDR_ENV;
+			const resumed = await executePiUnattendedBatch({ root: f.root, taskId, confirmBatch: async () => { throw new Error("must reuse authorization"); } });
+			expect((resumed as any).report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			expect((resumed as any).report.lane_supervision).toBeUndefined();
+			expect(existsSync(join(bins, "args"))).toBe(false);
+			return;
+		}
 		expect((result.report as any).lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
 		const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
 		const record = readAnyBatchRunState(f.root, result.batch_id)!;
@@ -170,6 +183,7 @@ describe("acc-pi-batch-gate", () => {
 		} finally {
 			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
 			rmSync(bins, { recursive: true, force: true });
 		}
 	}, 30000);

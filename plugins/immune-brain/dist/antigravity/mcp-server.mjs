@@ -6814,6 +6814,8 @@ function validateLaneRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an unknown contract`);
   if (record.plan_source !== undefined && record.plan_source !== "single_task")
     throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+  if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
+    throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
   if (record.plan_source === "single_task" && (record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 || record.children[0]?.task_id !== record.initiative_slug))
     throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
   if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
@@ -6958,6 +6960,7 @@ function prepareBatchLaneRunState(input) {
   return {
     contract: "assurance_kernel/batch_run_state/v2",
     ...input.plan_source ? { plan_source: input.plan_source } : {},
+    ...input.executor_mode ? { executor_mode: input.executor_mode } : {},
     topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
     batch_id: input.batch_id,
     initiative_slug: input.initiative_slug,
@@ -7016,7 +7019,7 @@ function parkLaneForExecutor(root, batchId, taskId, reason) {
     const child = record.children.find((value) => value.task_id === taskId);
     if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason)
       return record;
-    if (record.plan_source !== "single_task" || !child || child.state !== "enrolled")
+    if (record.plan_source !== "single_task" || !child || child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))
       throw new Error("lane_executor_generation_changed");
     const stored = {
       ...record,
@@ -16964,6 +16967,9 @@ async function projectPreflight(options, preparing) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
+          const candidate = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+          if (classifyBatchRunStateContract(candidate?.contract) === "foreign")
+            continue;
           const record = readAnyBatchRunState(root, file.slice(0, -5));
           if (record && !isTerminalBatchState(record.batch_state) && (!isLaneBatchRecord(record) || record.plan_source !== "single_task") && record.children.some((child) => child.task_id === initiativeSlug))
             return reject("batch_entry_kind_mismatch");
@@ -19807,6 +19813,146 @@ function cleanupSingleTaskLane(input) {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/lane_decision.ts
+init_storage();
+init_layered_config();
+init_batch_preflight();
+init_batch_reasons();
+init_batch_state();
+function laneDecisionFacts(taskId, projection) {
+  if (projection.lifecycle !== "active")
+    return null;
+  const waiting = projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.replan_required_ids.length > 0 || projection.authorization.state !== "none";
+  if (!waiting)
+    return null;
+  return {
+    task_id: taskId,
+    run_id: projection.run_id,
+    record_revision: projection.record_revision,
+    authorization: projection.authorization,
+    open_user_decision_count: projection.open_user_decision_count,
+    replan_required_ids: [...projection.replan_required_ids]
+  };
+}
+function findLaneRelayTarget(root, taskId) {
+  const found = findExistingActiveBatch(root, taskId);
+  if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task")
+    return null;
+  const child = found.record.children.find((value) => value.task_id === taskId);
+  if (!child?.lane || child.state !== "enrolled" && child.state !== "needs_human")
+    return null;
+  return { batch_id: found.record.batch_id, task_id: taskId, lane_path: child.lane.path };
+}
+
+class LaneDecisionStaleError extends Error {
+  reason = "lane_decision_stale";
+  constructor(detail) {
+    super(`${batchReason("lane_decision_stale").reason}: ${detail}`);
+  }
+}
+async function readFacts(input, target) {
+  const read = await input.project(target.lane_path, target.task_id);
+  if (read.error !== null)
+    throw new Error(`batch_lane_unreadable: ${read.error}`);
+  return laneDecisionFacts(target.task_id, read.projection);
+}
+async function relayLaneDecision(input) {
+  const target = findLaneRelayTarget(input.root, input.taskId);
+  if (!target)
+    return { relayed: false };
+  const before = await readFacts(input, target);
+  if (input.operation !== "stop") {
+    if (!before)
+      throw new LaneDecisionStaleError("the Lane record waits on no decision");
+    if (input.expectedRecordRevision && input.expectedRecordRevision !== before.record_revision)
+      throw new LaneDecisionStaleError(`record revision ${input.expectedRecordRevision} is no longer current`);
+  }
+  let result;
+  try {
+    result = await input.apply(target, before);
+  } catch (error) {
+    if (before) {
+      const after = await readFacts(input, target).catch(() => before);
+      if (after?.record_revision !== before.record_revision)
+        throw new LaneDecisionStaleError("the Lane record changed while the gate was open");
+    }
+    throw error;
+  }
+  if (input.applied && !input.applied(result))
+    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
+  const batch = findExistingActiveBatch(input.root, input.taskId);
+  const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
+  if (input.operation === "stop") {
+    if (interactive) {
+      parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
+      return { relayed: true, result, lane_relay: {
+        batch_id: target.batch_id,
+        operation: input.operation,
+        applied: true,
+        rebound: false,
+        lane_supervision: null,
+        next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained."
+      } };
+    }
+    const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
+    const report = stopped.state === "started" ? stopped.report : {};
+    return { relayed: true, result, lane_relay: {
+      batch_id: target.batch_id,
+      operation: input.operation,
+      applied: true,
+      rebound: false,
+      lane_supervision: report.lane_supervision ?? null,
+      ...report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}
+    } };
+  }
+  let rebound = false;
+  if (input.operation === "approve_breaking_intent_revision") {
+    try {
+      const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
+      if (!committed)
+        throw new Error("the Lane TaskRecord is unreadable");
+      rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
+      rebound = true;
+    } catch (error) {
+      throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (interactive)
+    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
+  const config = resolveConfig(input.root);
+  if (!config.lanes.valid)
+    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
+  const active = config.lanes.active.value;
+  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+  const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
+  const observation = await superviseLane(input.supervisor, {
+    key: `${input.root}\x00${target.batch_id}`,
+    repository: input.root,
+    lanePath: target.lane_path,
+    taskId: input.taskId,
+    choice,
+    pluginDir: input.pluginDir,
+    store: laneGenerationStore(input.root, target.batch_id),
+    baseline: "",
+    waitMs: input.waitMs,
+    graceMs: 1000,
+    signal: input.signal,
+    project: async () => {
+      const read = await input.project(target.lane_path, target.task_id);
+      if (read.error !== null)
+        throw new Error(`batch_lane_unreadable: ${read.error}`);
+      return read.projection;
+    }
+  });
+  return { relayed: true, result, lane_relay: {
+    batch_id: target.batch_id,
+    operation: input.operation,
+    applied: true,
+    rebound,
+    lane_supervision: { ...observation, not_applied: choice.not_applied }
+  } };
+}
+
 // plugins/immune-brain/runtime/unattended/batch_lanes.ts
 init_github_issue_tracker();
 init_local_initiative();
@@ -20454,6 +20600,7 @@ async function runLaneBatch(input, persisted) {
       return refuse2(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
     record = prepareBatchLaneRunState({
       plan_source: input.plan_source,
+      executor_mode: input.executor_mode,
       topology_digest: input.topology_digest,
       batch_id: input.batch_id,
       initiative_slug: input.initiative_slug,
@@ -20679,6 +20826,8 @@ async function runLaneBatch(input, persisted) {
       continue;
     }
     if (child.correction_due)
+      continue;
+    if (record.executor_mode === "interactive" && laneDecisionFacts(child.task_id, fresh.projection))
       continue;
     if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen")
       continue;
@@ -20970,133 +21119,6 @@ async function runLaneBatch(input, persisted) {
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_batch_state();
-
-// plugins/immune-brain/runtime/unattended/lane_decision.ts
-init_storage();
-init_layered_config();
-init_batch_preflight();
-init_batch_reasons();
-init_batch_state();
-function laneDecisionFacts(taskId, projection) {
-  if (projection.lifecycle !== "active")
-    return null;
-  const waiting = projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.replan_required_ids.length > 0 || projection.authorization.state !== "none";
-  if (!waiting)
-    return null;
-  return {
-    task_id: taskId,
-    run_id: projection.run_id,
-    record_revision: projection.record_revision,
-    authorization: projection.authorization,
-    open_user_decision_count: projection.open_user_decision_count,
-    replan_required_ids: [...projection.replan_required_ids]
-  };
-}
-function findLaneRelayTarget(root, taskId) {
-  const found = findExistingActiveBatch(root, taskId);
-  if (!found || found.corrupt || !isLaneBatchRecord(found.record) || found.record.plan_source !== "single_task")
-    return null;
-  const child = found.record.children.find((value) => value.task_id === taskId);
-  if (!child?.lane || child.state !== "enrolled" && child.state !== "needs_human")
-    return null;
-  return { batch_id: found.record.batch_id, task_id: taskId, lane_path: child.lane.path };
-}
-
-class LaneDecisionStaleError extends Error {
-  reason = "lane_decision_stale";
-  constructor(detail) {
-    super(`${batchReason("lane_decision_stale").reason}: ${detail}`);
-  }
-}
-async function readFacts(input, target) {
-  const read = await input.project(target.lane_path, target.task_id);
-  if (read.error !== null)
-    throw new Error(`batch_lane_unreadable: ${read.error}`);
-  return laneDecisionFacts(target.task_id, read.projection);
-}
-async function relayLaneDecision(input) {
-  const target = findLaneRelayTarget(input.root, input.taskId);
-  if (!target)
-    return { relayed: false };
-  const before = await readFacts(input, target);
-  if (input.operation !== "stop") {
-    if (!before)
-      throw new LaneDecisionStaleError("the Lane record waits on no decision");
-    if (input.expectedRecordRevision && input.expectedRecordRevision !== before.record_revision)
-      throw new LaneDecisionStaleError(`record revision ${input.expectedRecordRevision} is no longer current`);
-  }
-  let result;
-  try {
-    result = await input.apply(target, before);
-  } catch (error) {
-    if (before) {
-      const after = await readFacts(input, target).catch(() => before);
-      if (after?.record_revision !== before.record_revision)
-        throw new LaneDecisionStaleError("the Lane record changed while the gate was open");
-    }
-    throw error;
-  }
-  if (input.applied && !input.applied(result))
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
-  if (input.operation === "stop") {
-    const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
-    const report = stopped.state === "started" ? stopped.report : {};
-    return { relayed: true, result, lane_relay: {
-      batch_id: target.batch_id,
-      operation: input.operation,
-      applied: true,
-      rebound: false,
-      lane_supervision: report.lane_supervision ?? null,
-      ...report.lane_refusals ? { lane_refusals: report.lane_refusals } : {}
-    } };
-  }
-  let rebound = false;
-  if (input.operation === "approve_breaking_intent_revision") {
-    try {
-      const committed = readTaskRecordRaw(target.lane_path, input.taskId).record;
-      if (!committed)
-        throw new Error("the Lane TaskRecord is unreadable");
-      rebindSingleTaskIdentity(input.root, target.batch_id, { task_id: input.taskId, intent: committed.intent_snapshot, content_hash: committed.intent_ref.content_hash });
-      rebound = true;
-    } catch (error) {
-      throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  const config = resolveConfig(input.root);
-  if (!config.lanes.valid)
-    return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const active = config.lanes.active.value;
-  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-  const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
-  const observation = await superviseLane(input.supervisor, {
-    key: `${input.root}\x00${target.batch_id}`,
-    repository: input.root,
-    lanePath: target.lane_path,
-    taskId: input.taskId,
-    choice,
-    pluginDir: input.pluginDir,
-    store: laneGenerationStore(input.root, target.batch_id),
-    baseline: "",
-    waitMs: input.waitMs,
-    graceMs: 1000,
-    signal: input.signal,
-    project: async () => {
-      const read = await input.project(target.lane_path, target.task_id);
-      if (read.error !== null)
-        throw new Error(`batch_lane_unreadable: ${read.error}`);
-      return read.projection;
-    }
-  });
-  return { relayed: true, result, lane_relay: {
-    batch_id: target.batch_id,
-    operation: input.operation,
-    applied: true,
-    rebound,
-    lane_supervision: { ...observation, not_applied: choice.not_applied }
-  } };
-}
-
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_layered_config();
 init_backend_claim();
 init_batch_plan();
@@ -21157,6 +21179,8 @@ async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
   if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
     return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
   const record = existing.record;
+  if (record.executor_mode === "interactive")
+    return { state: "blocked", reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
   const lane = record.children.find((child) => child.task_id === taskId)?.lane;
   if (!lane)
     return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
@@ -21269,6 +21293,9 @@ async function superviseSingle(input, report) {
 }
 async function startBatch(input) {
   const recorded = readAnyBatchRunState(input.root, input.batch_id);
+  const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
+  if (interactive)
+    input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
   if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
     const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
     if (!report)
@@ -21301,6 +21328,23 @@ async function startBatch(input) {
       }
     }
     const report = await runLaneBatch(input, recorded);
+    if (interactive) {
+      const child = report.children.find((c) => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
+      if (child?.lane) {
+        const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+        if (read.error !== null)
+          throw new Error(`batch_lane_unreadable: ${read.error}`);
+        const decision = laneDecisionFacts(child.task_id, read.projection);
+        if (decision)
+          return {
+            ...report,
+            lane_decision_required: decision,
+            handoffs: report.handoffs.filter((h) => h.role !== "executor"),
+            next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.`
+          };
+      }
+      return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some((h) => h.role === "executor") ? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.` : report.next_action };
+    }
     if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
       const store = laneGenerationStore(input.root, input.batch_id);
       const generation = store.read();
@@ -22751,6 +22795,7 @@ class ClaudeRuntime {
     });
     let report = await startBatch({
       plan_source: options.plan_source,
+      ...options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" } : {},
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,

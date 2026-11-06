@@ -1184,6 +1184,7 @@ export class ClaudeRuntime {
 		});
 		let report = await startBatch({
 			plan_source: options.plan_source,
+			...(options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
 			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
 				waitMs: claudeLaneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
 			topology_digest: preflight.projection.topology_digest,

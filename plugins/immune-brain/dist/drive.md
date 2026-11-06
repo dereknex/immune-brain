@@ -34,14 +34,15 @@ resolve the validated candidate the user named (or the Planner's recommended
 first Task when the entry names none and exactly one candidate fits), then call
 `start_unattended_batch` with that `task_id` once and without `initiative_slug`.
 The current Host opens exactly one native gate, without chat pre-confirmation;
-the runtime then creates the Lane, enrolls the child there, spawns the Lane's
-Executor and supervises it inside the tool call. The Parent neither enrolls the
+the runtime then creates the Lane and enrolls the child there. Inside Herdr the
+Parent launches its interactive Executor tab; elsewhere the runtime spawns and
+supervises the Executor inside the tool call. The Parent neither enrolls the
 task itself nor implements it in its own conversation. The Executor role runs inside the Lane
-process that the runtime spawns, never in the Parent conversation. The Parent
+process, never in the Parent conversation. The Parent
 continues from the returned report under
-[Single-Task Lane](drive-batch.md#single-task-lane): re-calling the same entry
-re-attaches to a running generation, and an `executor` handoff is never
-launched by the Parent for a single task. Planner and Brainstorm never open that
+[Single-Task Lane](drive-batch.md#single-task-lane): an interactive `executor`
+handoff uses [Herdr Lane Tabs](drive-batch.md#herdr-lane-tabs); a runtime-supervised
+entry re-attaches to its running generation. Planner and Brainstorm never open that
 gate; a confirmation given to either is not this entry. A gate failure preserves
 the candidate and reports its stable reason plus exactly one same-Host recovery
 action; never recommend another Host, worktree, Direct Path, unmanaged

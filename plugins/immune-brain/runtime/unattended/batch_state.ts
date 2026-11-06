@@ -218,6 +218,8 @@ export interface BatchLaneRunStateRecord {
 	contract: "assurance_kernel/batch_run_state/v2";
 	/** Absent on existing Initiative batches. */
 	plan_source?: "single_task";
+	/** The Parent owns the interactive session; no runtime process exit is inferred. */
+	executor_mode?: "interactive";
 	/** Complete confirmed Parent topology, including excluded prerequisites. */
 	topology_digest?: string;
 	progress_mode?: "parent_branch";
@@ -672,6 +674,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an unknown contract`);
 	if (record.plan_source !== undefined && record.plan_source !== "single_task")
 		throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+	if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
+		throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
 	if (record.plan_source === "single_task" &&
 		(record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 ||
 		 (record.children[0] as { task_id?: unknown } | undefined)?.task_id !== record.initiative_slug))
@@ -912,6 +916,7 @@ export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: st
 
 export function prepareBatchLaneRunState(input: {
 	plan_source?: "single_task";
+	executor_mode?: "interactive";
 	topology_digest?: string;
 	batch_id: string;
 	initiative_slug: string;
@@ -930,6 +935,7 @@ export function prepareBatchLaneRunState(input: {
 	return {
 		contract: "assurance_kernel/batch_run_state/v2",
 		...(input.plan_source ? { plan_source: input.plan_source } : {}),
+		...(input.executor_mode ? { executor_mode: input.executor_mode } : {}),
 		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
 		batch_id: input.batch_id,
 		initiative_slug: input.initiative_slug,
@@ -997,7 +1003,7 @@ export function parkLaneForExecutor(root: string, batchId: string, taskId: strin
 		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
 		const child = record.children.find(value => value.task_id === taskId);
 		if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason) return record;
-		if (record.plan_source !== "single_task" || !child || child.state !== "enrolled") throw new Error("lane_executor_generation_changed");
+		if (record.plan_source !== "single_task" || !child || (child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))) throw new Error("lane_executor_generation_changed");
 		const stored: BatchLaneRunStateRecord = { ...record, batch_state: "needs_human", updated_at: new Date().toISOString(),
 			children: record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value) };
 		validateLaneRecordShape(stored, batchId);

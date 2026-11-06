@@ -318,9 +318,10 @@ request or project config supplies it.
 
 #### Lane Executor Supervision
 
-This section and its supervised-session table describe Initiative batch behavior
-only. A single-task Lane never uses them: the runtime itself supervises its
-Executor on every Host under the [Single-Task Lane](#single-task-lane).
+This section and its supervised-session table describe Initiative batches and
+single-task Lanes recorded with `executor_mode: "interactive"` inside Herdr.
+Other single-task Lanes use runtime supervision under
+[Single-Task Lane](#single-task-lane).
 
 The Parent launches and supervises every Lane's Executor Host; no other role
 starts one. This is the one case in which the Parent starts another Loop
@@ -370,9 +371,15 @@ rest are reported.
 
 ##### Herdr Lane Tabs
 
-This facility is Initiative batch behavior only. A single-task Lane inside Herdr
-is still supervised by the runtime's own child process; Herdr tabs, `herdr agent
-wait` and `lane_instruction` do not apply to it (Spec drive-always-lanes D3).
+This facility applies to Initiative batches and single-task Lanes inside Herdr.
+For a single task, call `start_unattended_batch` with the same `task_id` on every
+re-entry; keep `initiative_slug` absent. The runtime creates the Lane and returns
+its `executor` handoff; the Parent opens and supervises its interactive tab below.
+The recorded `executor_mode: "interactive"` survives re-entry outside Herdr: resume
+it in Herdr instead of launching a non-interactive replacement. Existing tasks
+with a runtime-owned Executor keep that process until settlement; never add a tab.
+For a single-task user decision, follow [Parent decision relay](#single-task-lane)
+and resume the existing tab after the native decision is applied.
 
 Inside Herdr the Parent drives the `herdr` CLI itself; the runtime and the
 `lane-steward` never do. Each Lane gets a tab of its own, so its Executor Host
@@ -502,13 +509,23 @@ HEAD, copies uncommitted planning input, and enrolls the child there; the
 Parent enrolls nothing itself and implements nothing.
 Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
 
-- **Synchronous runtime supervision, on every Host including inside Herdr.** The
+- **Inside Herdr (`HERDR_ENV=1`).** A new single-task entry records
+  `executor_mode: "interactive"` and returns an `executor` handoff instead of
+  spawning a child process. The Parent creates one Herdr tab in the admitted
+  Lane, starts the selected interactive Executor with the resolved model and
+  effort, submits its `drive` entry and arms `herdr agent wait` under
+  [Herdr Lane Tabs](#herdr-lane-tabs). Re-entry uses the recorded mode and the
+  existing tab, never a second Executor. `stop: true` reports
+  `lane_executor_interactive` and asks the user to close that tab; it invents
+  no process exit. The Lane and branches remain retained after delivery because
+  Herdr session state is never exit proof.
+- **Synchronous runtime supervision outside Herdr.** The
   runtime spawns one non-interactive Executor (`claude --print` or `pi --print`)
   with the Lane as working directory and `drive <task_id>` as its only prompt,
   and waits for it inside the Host tool call. Arguments come only from the
   loaded plugin location and [Lane Preferences](#lane-preferences), which the
-  runtime resolves itself; the Parent passes none and `HERDR_ENV` changes
-  nothing. The report carries `lane_supervision` with `generation`, `state`
+  runtime resolves itself; the Parent passes none. Existing runtime-owned tasks
+  keep this supervision even when resumed inside Herdr. The report carries `lane_supervision` with `generation`, `state`
   (`running`, `exited`, `unobservable`, `stopped` or `unavailable`) and `exit`.
   When the wait window elapses the call returns `running` for the same
   generation; call the same entry again to re-attach, which never spawns a second
@@ -517,7 +534,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   observed only from the runtime's own child-process exit event for that
   generation. The Executor's exit code and output, Claude Code background
   notices, Herdr state and elapsed time are never exit proof, and the Parent
-  never launches, polls or closes a session for a single task.
+  never launches, polls or closes a session for a runtime-supervised single task.
 - **One native gate.** The entry opens one native gate and nothing after it asks
   for a second confirmation. A declined, cancelled or failed gate reports one
   same-Host recovery action and is never retried automatically.
@@ -547,9 +564,18 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `request_authorization`, `approve_breaking_intent_revision` with the complete
   next intent, or a stop request, each passing the Lane's `task_id` and the
   `record_revision` it read. The runtime applies the approved decision to the
-  Lane store through the same Kernel operation and starts the next generation; a
+  Lane store through the same Kernel operation and starts the next generation
+  for runtime supervision. An interactive Lane keeps its existing Herdr tab and
+  starts no runtime child; after the gate succeeds, re-enter the same `task_id`
+  and resume the tab's `drive` entry once it is idle. A
   breaking revision approved this way also rebinds the single-task batch's
-  approved identity, and a stop ends the Lane task. A changed record is refused
+  approved identity, and a stop ends the Lane task. An interactive Lane waiting
+  on a decision stays enrolled even when its artifacts are frozen; the batch
+  skips another Assurance attempt and returns `lane_decision_required`. The
+  same decision facts remain visible for an already parked child. An approved
+  interactive stop records `lane_executor_stopped` in the batch immediately;
+  `lane_relay.next_action` asks the user to close the tab while retaining the
+  Lane and branches. A changed record is refused
   as `lane_decision_stale`, and a cancelled or failed gate applies nothing. The
   Parent never decides for the user, and a child of an Initiative batch keeps the
   batch behavior above.

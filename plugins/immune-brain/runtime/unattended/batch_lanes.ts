@@ -25,6 +25,7 @@ import { runFinalVerification, type FinalVerificationReport } from "./batch_fina
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { deliverSingleTask } from "./checkout_delivery";
 import { cleanupSingleTaskLane, retainedLaneReason } from "./lane_cleanup";
+import { laneDecisionFacts } from "./lane_decision";
 import { runGithubTrackerOperation } from "../github_issue_tracker";
 import { hasLocalInitiative } from "../local_initiative";
 import type { BatchTrackerPort, StartBatchInput } from "./batch_runner";
@@ -906,6 +907,7 @@ export async function runLaneBatch(
 		if (!preflight.ok) return refuse(input, null, preflight.reason, preflight.message || "Correct the preflight condition and re-confirm.");
 		record = prepareBatchLaneRunState({
 			plan_source: input.plan_source,
+			executor_mode: input.executor_mode,
 			topology_digest: input.topology_digest,
 			batch_id: input.batch_id,
 			initiative_slug: input.initiative_slug,
@@ -1147,6 +1149,8 @@ export async function runLaneBatch(
 		}
 		// A child waiting for its coordinator correction gets no further attempt.
 		if (child.correction_due) continue;
+		// A pending interactive decision belongs to the Parent's native gate, not another Assurance attempt.
+		if (record.executor_mode === "interactive" && laneDecisionFacts(child.task_id, fresh.projection)) continue;
 		// An unfrozen child, or one with QA pending the Executor's own attempt,
 		// is the Executor's to move; the batch never reruns that attempt.
 		if (fresh.projection.next_obligation === "run_qa" || fresh.projection.artifact_state !== "frozen") continue;

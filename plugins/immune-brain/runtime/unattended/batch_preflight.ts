@@ -694,6 +694,8 @@ async function projectPreflight(
 		if (existsSync(batchesDir)) for (const file of readdirSync(batchesDir)) {
 			if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
 			try {
+				const candidate = JSON.parse(readFileSync(join(batchesDir, file), "utf8"));
+				if (classifyBatchRunStateContract(candidate?.contract) === "foreign") continue;
 				const record = readAnyBatchRunState(root, file.slice(0, -5));
 				if (record && !isTerminalBatchState(record.batch_state) &&
 					(!isLaneBatchRecord(record) || record.plan_source !== "single_task") &&

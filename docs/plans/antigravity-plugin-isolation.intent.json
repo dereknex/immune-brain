@@ -1,0 +1,73 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-plugin-isolation",
+  "owner": "user",
+  "goal": "Repair the verified Antigravity plugin discovery and executable-path defects by delivering an isolated, relocatable plugin at plugins/immune-brain-antigravity/ with native role definitions and complete skill/CLI/runtime dependencies, preserving the existing Pi/Claude roots and one npm release/version authority. Follow docs/specs/antigravity-plugin-isolation.spec.md; do not claim full Managed lifecycle certification.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Source: Spec E2. At tests/antigravity-host-package.test.ts, the isolated artifact has .antigravity-plugin/plugin.json, its five expected native role definitions with preserved shared prompts and read-only/no-tool restrictions, and its public skill inventory; the old shared-root Antigravity manifests and bundle are retired. Claude loader files/frontmatter and Pi extensions are absent from the artifact. Concrete string-valued-tools and cross-host-component fixtures fail the package checks; transitive runtime/claude implementation modules remain allowed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Source: Spec E2. At tests/antigravity-host-package.test.ts, each configured hook command starts from a relocated artifact path containing spaces with PLUGIN_ROOT unset, processes an isolated non-authorizing payload and returns parseable JSON without Kernel mutation. The MCP configuration resolves its own bundle using the supported PLUGIN_ROOT interpolation. Removing the bundle produces a nonzero launch failure rather than a successful check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Source: Spec E5. At tests/antigravity-host-package.test.ts, an artifact copied without repository siblings resolves all shipped skill/contract and role-prompt references internally, answers bundled MCP initialize/tools/list and runs bin/imm-plan --routing-status --json and read-only bin/imm-kernel inspect --json. Removing a referenced contract, runtime dependency or role prompt fails the corresponding closure check; no symlink or parent-relative external dependency supplies the missing content.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Source: Spec E7. At tests/antigravity-host-package.test.ts and tests/pi-only-release-contract.test.ts, npm dry-run includes the complete isolated artifact and excludes retired Antigravity entrypoints while retaining Pi/Claude paths. Version stamp/validate includes the relocated manifest and rejects its absence or version mismatch. Generated-output checks detect changed source, missing output and stale extra output, remain read-only, clean temporary files on success/failure, and fixture builds produce identical owned bytes. CI and release verification invoke the expanded Antigravity output check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/pi-only-release-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Source: Spec E6. Existing tests/claude-host-package.test.ts, tests/pi-only-package-surface.test.ts, tests/pi-only-release-contract.test.ts and tests/antigravity-assurance-conformance.test.ts pass with only the required inventory/path expectations updated; Pi/Claude install roots, loader configuration, native MCP/reviewer behavior, package exclusions and existing Antigravity authorization assertions remain protected.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-only-package-surface.test.ts\",\n      \"tests/pi-only-release-contract.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "Source: Spec E2. The official native validator agy plugin validate plugins/immune-brain-antigravity --strict --json exits zero with no errors or warnings for the delivered artifact. The required validator is the observed agy 1.5.1 CLI supplied by the QA host; missing CLI is a failed prerequisite, not a skip. AC1 separately requires the complete component inventory, so removing agents cannot satisfy the repair.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"agy\",\n    \"argv\": [\n      \"plugin\",\n      \"validate\",\n      \"plugins/immune-brain-antigravity\",\n      \"--strict\",\n      \"--json\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-plugin-isolation.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/antigravity-plugin-isolation.intent.json",
+    "docs/specs/antigravity-plugin-isolation.spec.md",
+    "package.json",
+    "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json",
+    "plugins/immune-brain-antigravity/BASELINE.md",
+    "plugins/immune-brain-antigravity/README.md",
+    "plugins/immune-brain-antigravity/agents/**",
+    "plugins/immune-brain-antigravity/bin/**",
+    "plugins/immune-brain-antigravity/dist/**",
+    "plugins/immune-brain-antigravity/hooks.json",
+    "plugins/immune-brain-antigravity/mcp_config.json",
+    "plugins/immune-brain-antigravity/runtime/**",
+    "plugins/immune-brain-antigravity/skills/**",
+    "plugins/immune-brain/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain/hooks.json",
+    "plugins/immune-brain/mcp_config.json",
+    "plugins/immune-brain/plugin.json",
+    "scripts/build-antigravity-plugin.ts",
+    "scripts/dist-sync-manifest.ts",
+    "scripts/plugin_versioning.ts",
+    "tests/antigravity-host-package.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/pi-only-package-surface.test.ts",
+    "tests/pi-only-release-contract.test.ts",
+    "tests/role-prompt-bundled-layout.test.ts"
+  ],
+  "scope_size_reason": "One atomic install-root correction must move host entrypoints together with native agents, skill/CLI/runtime reference closure, npm inclusion, versioning and regression checks. Most new-root paths are deterministic copies of existing shared delivery inputs, to be registered as derived outputs; splitting them would leave an incomplete or unversioned install artifact.",
+  "risk": "material",
+  "revision": 1
+}

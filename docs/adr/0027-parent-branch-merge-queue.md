@@ -90,6 +90,24 @@ deleted automatically later.
 Initiative (multi-child) Lanes stay under the retained-Lane rule below: no
 Executor exit is observed for them, so they remain retained.
 
+## Amendment: single-task Herdr execution
+
+The owner's 2026-11-05 correction replaces Spec drive-always-lanes D3 inside
+Herdr: a new single-task entry records `executor_mode: "interactive"`, returns
+an Executor handoff and uses the same Parent-created Herdr tab and event-driven
+wait as an Initiative Lane. This gives Pi an interactive TUI for Kernel writes.
+The runtime still creates, enrolls, integrates and delivers the Lane. Re-entry
+keeps the recorded mode, so it never starts a runtime child alongside a tab;
+existing runtime-owned tasks retain their original supervision until settlement.
+Outside Herdr new tasks keep runtime supervision. Interactive session state
+supplies no trusted process exit, so these Lanes and branches remain retained.
+Parent decision relay still applies Kernel decisions and rebinds approved Intent
+revisions, but starts no runtime Executor for an interactive Lane.
+
+Verification: `tests/claude-batch-authority.test.ts`,
+`tests/pi-batch-authority.test.ts`, `tests/single-task-lane-batch.test.ts`,
+`tests/single-task-lane-decision.test.ts` and `tests/unattended-contracts.test.ts`.
+
 ## Amendment: retained Lanes (batch-resource-safety S2)
 
 Neither supported Host reports a trusted Executor exit, and Git cleanliness,

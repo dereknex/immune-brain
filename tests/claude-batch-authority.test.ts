@@ -210,7 +210,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
 		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
 	});
-	it("starts a standalone task in its own Lane after one native confirmation", async () => {
+	it.each([false, true])("starts a standalone task after one native confirmation (Herdr=%s)", async herdr => {
 		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;
 		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
 		const intent = JSON.parse(readFileSync(path, "utf8"));
@@ -222,12 +222,22 @@ describe("acc-claude-batch-gate", () => {
 		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT;
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		const gates: any[] = [];
-		const runtime = client(f, { requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
+		const runtime = client(f, { env: { ...ENV, HERDR_ENV: herdr ? "1" : undefined }, requestConfirmation: async input => { gates.push(input); return { decision: "accept", requestId: "single" }; } });
 		try {
 		const result = await runtime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
 		expect(gates).toHaveLength(1);
 		expect(elicitationParams(gates[0]).message).toContain("Preparation digest: sha256:");
 		expect(result.state).toBe("started");
+		if (herdr) {
+			expect(result.report.lane_supervision).toBeUndefined();
+			expect(result.report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ executor_mode: "interactive", plan_source: "single_task" });
+			const resumed = await client(f, { requestConfirmation: async () => { throw new Error("must reuse authorization"); } }).callTool("start_unattended_batch", { task_id: taskId });
+			expect(resumed.report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId }));
+			expect(resumed.report.lane_supervision).toBeUndefined();
+			expect(existsSync(join(bins, "args"))).toBe(false);
+			return;
+		}
 		expect(result.report.lane_supervision).toMatchObject({ state: "running", generation: 1, exit: null });
 		const record = readAnyBatchRunState(f.root, result.batch_id)!;
 		expect(record).toMatchObject({ plan_source: "single_task", initiative_slug: taskId, max_parallel: 1, children: [{ task_id: taskId, state: "enrolled" }] });
@@ -237,7 +247,7 @@ describe("acc-claude-batch-gate", () => {
 		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path));
 		expect(argv).toContain("--plugin-dir"); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
 		expect(result.report.handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
-		const freshRuntime = client(f, { requestConfirmation: async () => ({ decision: "accept", requestId: "fresh" }) });
+		const freshRuntime = client(f, { env: { ...ENV, HERDR_ENV: "1" }, requestConfirmation: async () => ({ decision: "accept", requestId: "fresh" }) });
 		const lost = await freshRuntime.callTool("start_unattended_batch", { task_id: taskId, executor_host: "claude-code" });
 		expect(lost.report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
 		const stopped = await runtime.callTool("start_unattended_batch", { task_id: taskId, stop: true });
@@ -566,8 +576,8 @@ describe("lane mode parameters and resume", () => {
 			else { expect(next.batch_id).not.toBe(first.batch_id); expect(gates).toBe(2); expect(readFileSync(path)).toEqual(bytes); }
 		}
 	}, 30000);
-	it("reads no workspace-tool environment variables in either Host adapter or Lane runtime", () => {
-		for (const file of ["plugins/immune-brain/.pi-extension/imm-unattended-batch.ts", "plugins/immune-brain/runtime/claude/mcp_server.ts", "plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/unattended/batch_integration.ts"]) {
+	it("keeps Lane integration free of workspace tools and reads Herdr only at the Host boundary", () => {
+		for (const file of ["plugins/immune-brain/runtime/claude/mcp_server.ts", "plugins/immune-brain/runtime/unattended/batch_lanes.ts", "plugins/immune-brain/runtime/unattended/batch_integration.ts"]) {
 			expect({ file, herdr: /HERDR/i.test(readFileSync(join(import.meta.dir, "..", file), "utf8")) }).toEqual({ file, herdr: false });
 		}
 	});

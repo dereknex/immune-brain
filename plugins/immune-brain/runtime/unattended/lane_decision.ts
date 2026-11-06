@@ -9,7 +9,7 @@ import { readTaskRecordRaw } from "../kernel/storage";
 import { resolveConfig } from "../config/layered_config";
 import { findExistingActiveBatch } from "./batch_preflight";
 import { batchReason } from "./batch_reasons";
-import { isLaneBatchRecord, laneGenerationStore, rebindSingleTaskIdentity } from "./batch_state";
+import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, rebindSingleTaskIdentity } from "./batch_state";
 import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
 import { stopSingleTaskSupervisor } from "./batch_runner";
 
@@ -81,7 +81,7 @@ export interface LaneRelayInput<R> {
 
 export type LaneRelayOutcome<R> =
 	| { relayed: false }
-	| { relayed: true; result: R; lane_relay: { batch_id: string; operation: LaneDecisionOperation; applied: boolean; rebound: boolean; lane_supervision: unknown; lane_refusals?: unknown } };
+	| { relayed: true; result: R; lane_relay: { batch_id: string; operation: LaneDecisionOperation; applied: boolean; rebound: boolean; lane_supervision: unknown; lane_refusals?: unknown; next_action?: string } };
 
 async function readFacts(input: Pick<LaneRelayInput<unknown>, "project">, target: LaneRelayTarget) {
 	const read = await input.project(target.lane_path, target.task_id);
@@ -112,7 +112,14 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	}
 	if (input.applied && !input.applied(result))
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
+	const batch = findExistingActiveBatch(input.root, input.taskId);
+	const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
 	if (input.operation === "stop") {
+		if (interactive) {
+			parkLaneForExecutor(input.root, target.batch_id, input.taskId, "lane_executor_stopped");
+			return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound: false,
+				lane_supervision: null, next_action: "The Lane task is stopped. Close its Herdr Executor tab yourself; the Lane and branches are retained." } };
+		}
 		// The Kernel stop of the Lane record was just applied under the user's gate; the
 		// generation is then terminated and the Lane kept (parked by the supervisor stop).
 		const stopped = await stopSingleTaskSupervisor(input.supervisor, input.root, input.taskId, input.signal);
@@ -132,6 +139,8 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 			throw new Error(`${batchReason("lane_decision_rebind_failed").reason}: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
+	if (interactive)
+		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
 	const config = resolveConfig(input.root);
 	if (!config.lanes.valid) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
 	const active = config.lanes.active.value;

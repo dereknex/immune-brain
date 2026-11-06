@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, test } from "bun:test";
+import { afterAll, describe, expect, it, spyOn, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,9 +10,10 @@ import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattende
 import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/enrollment_authority";
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { startBatch, stopSingleTaskSupervisor } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { parseBatchLaneRunState, prepareBatchLaneRunState, readAnyBatchRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parseBatchLaneRunState, prepareBatchLaneRunState, readAnyBatchRunState, writeBatchLaneRunState, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { readSettledRunEvidence, recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
@@ -42,6 +43,9 @@ test("single-task batch records retain their source and reject a different child
 	expect(parse(record).plan_source).toBe("single_task");
 	expect(() => parse({ ...record, max_parallel: 2 })).toThrow("invalid single_task plan");
 	expect(() => parse({ ...record, initiative_slug: "other" })).toThrow("invalid single_task plan");
+	expect(parse({ ...record, executor_mode: "interactive" }).executor_mode).toBe("interactive");
+	expect(() => parse({ ...record, executor_mode: "unknown" })).toThrow("invalid executor_mode");
+	expect(() => parse({ ...record, plan_source: undefined, executor_mode: "interactive" })).toThrow("invalid executor_mode");
 });
 
 const roots: string[] = [];
@@ -149,6 +153,21 @@ function request(repo: string, base: string, fx: { kernel: ReturnType<typeof ker
 const laneReport = (report: unknown) => report as BatchLaneRunReport;
 
 describe("single-task entry refusals", () => {
+	it.each([
+		["consolidation", JSON.stringify({ contract: "assurance_kernel/parent_delivery_consolidation/v1", envelope: {} }), true],
+		["malformed-json", "{", false],
+		["invalid-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v2", initiative_slug: "other" }), false],
+		["newer-batch", JSON.stringify({ contract: "assurance_kernel/batch_run_state/v3", initiative_slug: "other" }), false],
+	] as const)("classifies %s records before checking Initiative membership", async (name, bytes, allowed) => {
+		const { repo } = fixture();
+		const path = join(repo, `.imm/state/batches/${name}.json`);
+		writeBatch(path, bytes);
+		const result = await prepareBatchPreflight({ root: repo, initiative_slug: TASK, plan_source: "single_task", now });
+		if (allowed) expect(result).toMatchObject({ ok: true });
+		else expect(result).toMatchObject({ ok: false, reason: expect.stringContaining("batch run state is unreadable or invalid:") });
+		expect(readFileSync(path, "utf8")).toBe(bytes);
+	});
+
 	it("refuses an existing Initiative batch for a task_id entry and the inverse", async () => {
 		let { repo, base } = fixture();
 		const intent = readTaskIntent(repo, TASK);
@@ -216,6 +235,77 @@ describe("single-task Lane delivery", () => {
 		return { repo, base, port, kernel: k,
 			args: () => request(repo, base, { kernel: k, git: Object.assign(laneCommits, { lane: port }) }) };
 	}
+
+	it("keeps an interactive Lane on re-entry, delivers its settlement and retains its worktree", async () => {
+		const f = owned();
+		const project = f.kernel.projectTask;
+		let decisionPending = false;
+		let decisionArtifactState: "active" | "frozen" = "active";
+		const advance = spyOn(f.kernel, "advanceTask").mockImplementation(async () => { throw new Error("the Executor or user owns the next action"); });
+		f.kernel.projectTask = async (...args) => {
+			const result = await project(...args);
+			if (result.projection.lifecycle === "active") result.projection.artifact_state = decisionPending ? decisionArtifactState : "active";
+			if (decisionPending) {
+				result.projection.next_obligation = "resolve_user_decision";
+				result.projection.open_user_decision_count = 1;
+			}
+			return result;
+		};
+		const supervisor = new LaneSupervisor();
+		const spawn = spyOn(supervisor, "run").mockImplementation(async () => { throw new Error("must not spawn a runtime Executor"); });
+		const args = { ...f.args(), executor_mode: "interactive" as const,
+			supervision: { supervisor, parentHost: "pi" as const, pluginDir: "/plugin", waitMs: 1 } };
+		const first = laneReport(await startBatch(args));
+		const lane = first.children[0]!.lane!.path;
+		expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: TASK, lane_path: lane }));
+		expect(first.lane_supervision).toBeUndefined();
+		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ executor_mode: "interactive" });
+		const again = laneReport(await startBatch({ ...args, executor_mode: undefined }));
+		expect(again.children[0]!.lane!.path).toBe(lane);
+		expect(again.next_action).toContain("Resume inside Herdr");
+		expect(again.next_action).toContain(`task_id ${TASK} and no initiative_slug`);
+		expect(again.handoffs).toContainEqual(expect.objectContaining({ role: "executor", lane_path: lane }));
+		decisionPending = true;
+		for (const artifactState of ["active", "frozen"] as const) {
+			decisionArtifactState = artifactState;
+			const decision = laneReport(await startBatch(args));
+			expect(decision.lane_decision_required).toMatchObject({ task_id: TASK, record_revision: "r1", open_user_decision_count: 1 });
+			expect(decision.batch_state).toBe("running");
+			expect(decision.children[0]!.state).toBe("enrolled");
+			expect(decision.handoffs.some(h => h.role === "executor")).toBe(false);
+		}
+		expect(advance).not.toHaveBeenCalled();
+		decisionPending = false;
+		expect(await stopSingleTaskSupervisor(supervisor, f.repo, TASK)).toMatchObject({ state: "blocked", reason: "lane_executor_interactive" });
+		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
+		settleLane(lane);
+		f.kernel.settled.add(TASK);
+		auditPair(lane, TASK);
+		git(lane, "add", "--", "delivery.txt");
+		const done = laneReport(await startBatch({ ...args, executor_mode: undefined }));
+		expect(done.batch_state).toBe("completed");
+		expect(done.final_report?.return_to_coordinator.status).toBe("staged");
+		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
+		expect(git(f.repo, "worktree", "list", "--porcelain")).toContain(lane);
+		expect(done.children[0]!.lane_retained).toBeDefined();
+		expect(spawn).not.toHaveBeenCalled();
+	});
+
+	it("reports a pending decision in an already parked interactive Lane without resuming it", async () => {
+		const f = owned();
+		const args = { ...f.args(), executor_mode: "interactive" as const };
+		await startBatch(args);
+		const record = readAnyBatchRunState(f.repo, BATCH_ID) as BatchLaneRunStateRecord;
+		writeBatchLaneRunState(f.repo, { ...record, batch_state: "needs_human",
+			children: record.children.map(child => ({ ...child, state: "needs_human", reason: "awaiting_user" })) });
+		args.kernel.projectTask = async (_root, taskId) => ({ contract: "assurance_kernel/assurance_projection/v1", task_id: taskId,
+			error: null, claim: { task_id: taskId, lifecycle_status: "active" }, projection: projectionBody({
+				artifact_state: "frozen", next_obligation: "resolve_user_decision", open_user_decision_count: 1 }) }) as AssuranceProjectionResult;
+		const report = laneReport(await startBatch(args));
+		expect(report.lane_decision_required).toMatchObject({ task_id: TASK, open_user_decision_count: 1 });
+		expect(report.batch_state).toBe("needs_human");
+		expect(report.children[0]!.state).toBe("needs_human");
+	});
 
 	it("integrates the settled delivery onto imm/<task_id> with identical per-path content", async () => {
 		const f = owned();

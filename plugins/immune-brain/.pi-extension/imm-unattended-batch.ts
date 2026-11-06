@@ -405,6 +405,7 @@ async function executePreparedPiBatch(
 
 	let report = await startBatch({
 		plan_source: options.plan_source,
+		...(options.plan_source && process.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
 		...(options.plan_source ? { supervision: { supervisor: options.supervisor ?? defaultSupervisor, parentHost: "pi" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS,
 			signal, stop: options.stop, request: options.executor } } : {}),
 		topology_digest: preflight.projection.topology_digest,

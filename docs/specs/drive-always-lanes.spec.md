@@ -16,7 +16,7 @@
 
 ## Outcome
 
-Every `drive` entry delivers through a Lane. A single TaskIntent becomes a one-child Lane batch authorized by one native gate. The runtime spawns a non-interactive Executor in the Lane, observes its exit itself, integrates the settled child onto the task's Parent ref, delivers the result into the user's checkout according to the Git integration preference, and removes the Lane only on runtime-observed exit proof. User decisions the Lane Executor reaches are answered in the Parent session. In-place Enrollment is retired.
+Every `drive` entry delivers through a Lane. A single TaskIntent becomes a one-child Lane batch authorized by one native gate. Inside Herdr the Parent launches and supervises an interactive Executor tab; outside Herdr the runtime spawns a non-interactive Executor and observes its exit itself. Both paths integrate the settled child onto the task's Parent ref and deliver the result into the user's checkout according to the Git integration preference. Only runtime-observed exit proof permits automatic Lane removal; interactive Lanes remain retained. User decisions the Lane Executor reaches can be answered in the Parent session. In-place Enrollment is retired.
 
 ## Sources
 
@@ -91,15 +91,15 @@ No `BR-Q-*` item is open.
 
 - **Kernel** (`runtime/kernel/`): owns Enrollment, Batch Authorization and the derived child Enrollment. It is unchanged except for one rebind operation (D11) that lets a literal-user approval of a breaking revision update the single-task batch's approved identity.
 - **Unattended runner** (`runtime/unattended/`): owns the single-task plan source (S1), the Lane supervisor (S2), checkout delivery (S3), Lane cleanup (S4) and the decision relay state (S5). It never opens a native gate.
-- **Host adapters** (`runtime/claude/`, `.pi-extension/`): open the one native gate, expose the single-task entry through `start_unattended_batch`, hold the in-memory Executor handle for the call's lifetime, and relay decisions. Adapters depend on the runner; the runner never imports an adapter.
-- **Contracts** (`dist/drive.md`, `dist/drive-batch.md`): describe the Parent's obligations. The Parent model no longer launches single-task Executors; the runtime does.
+- **Host adapters** (`runtime/claude/`, `.pi-extension/`): open the one native gate, expose the single-task entry through `start_unattended_batch`, select interactive mode from `HERDR_ENV=1` for new tasks, hold runtime Executor handles where applicable, and relay decisions. Adapters depend on the runner; the runner never imports an adapter.
+- **Contracts** (`dist/drive.md`, `dist/drive-batch.md`): describe the Parent's obligations. Inside Herdr the Parent launches and supervises the single-task Executor tab; elsewhere the runtime owns that process.
 
 Prohibited coupling: the runner never treats Host output (exit code, stdout, a notification) as Kernel progress, and an adapter never writes a Lane store directly.
 
 ### Component interfaces
 
 - `start_unattended_batch` gains `task_id` (exclusive with `initiative_slug`; both or neither refuses `batch_entry_ambiguous`). With `task_id` it records a v2 Lane batch with `plan_source: "single_task"`, slug equal to `task_id`, `max_parallel` 1, and the child's approved intent identity. An Initiative-slug entry never matches a `single_task` record and a `task_id` entry never matches an Initiative record (`batch_entry_kind_mismatch`).
-- The single-task call supervises synchronously (S2): it admits the Lane, spawns the Executor, and waits inside the call. Its report adds `lane_supervision: { generation, state: "running" | "exited" | "unobservable", exit }`. `stop: true` on the same entry terminates the current generation (S2-A3). `lane_decision` carries a relayed decision (S5).
+- Outside Herdr the single-task call supervises synchronously (S2): it admits the Lane, spawns the Executor, and waits inside the call. Inside Herdr it records `executor_mode: "interactive"` and returns an `executor` handoff for the Parent's tab; the recorded mode survives re-entry, and existing runtime-owned tasks retain their original supervision. Its runtime-supervised report adds `lane_supervision: { generation, state: "running" | "exited" | "unobservable", exit }`. `stop: true` on the same entry terminates the current generation (S2-A3). `lane_decision` carries a relayed decision (S5).
 - `status` with `task_id` already returns `batch.record` for a slug; S1 makes the single-task record and its child state readable through that read on both Hosts.
 - Errors are stable reason codes in `batch_reasons.ts`: `batch_entry_ambiguous`, `batch_entry_kind_mismatch`, `lane_executor_unavailable`, `lane_executor_unobservable`, `lane_executor_no_progress`, `checkout_delivery_overlap`, `checkout_delivery_conflict`, `coordinator_head_diverged` (existing), `lane_decision_stale`. No retirement-wall reason is introduced: S7 deletes the tools instead.
 
@@ -108,7 +108,7 @@ Prohibited coupling: the runner never treats Host output (exit code, stdout, a n
 1. Source: the validated TaskIntent at `docs/plans/<task_id>.intent.json` (tracked or uncommitted, E2).
 2. Gate: the adapter projects the single-task plan and opens one native gate bound to the TaskIntent revision, content hash and preparation digest (BR-REQ-2).
 3. Lane: the runner creates `imm/worktrees/<task_id>/<task_id>` on `imm-lane/<task_id>/<task_id>` at the user's HEAD, copies uncommitted planning input, and enrolls the child via `deriveChildEnrollment` (E1).
-4. Execution: the supervisor spawns the Executor; the Lane's own Assurance produces the settled TaskRecord and audit pair.
+4. Execution: inside Herdr the Parent opens one interactive Executor tab; otherwise the supervisor spawns the Executor. The Lane's own Assurance produces the settled TaskRecord and audit pair.
 5. Integration: the existing merge queue commits the settled delivery on the Lane branch and fast-forwards `imm/<task_id>` to a matching candidate; a mismatch parks (BR-REQ-4).
 6. Delivery: S3 applies `base..integrated` to the user's checkout (`manual`) or fast-forwards the user's branch (`auto`), after the overlap check.
 7. Cleanup: S4 removes the Lane only with exit proof and a recorded delivery.
@@ -116,6 +116,11 @@ Prohibited coupling: the runner never treats Host output (exit code, stdout, a n
 Validation precedes every write: the overlap and apply checks run before any byte of the checkout changes (S3), and the exit proof is checked before any removal (S4).
 
 ### State transitions
+
+The diagram below describes runtime supervision outside Herdr. Interactive Lanes
+instead enter execution through the Parent's tab, use Kernel facts for settlement
+and pending decisions, and always finish with `lane_retained` because tab state
+provides no trusted exit observation.
 
 States of a single-task child: `lane_admitted` → `executing(gen)` → (`settled` | `awaiting_user(gen)` | `no_progress` | `unobservable`) → `integrated` → (`delivered` | `parked`) → (`lane_removed` | `lane_retained`). Terminal ownership: Kernel lifecycle facts come only from the Lane TaskRecord; exit facts only from the runtime's own child-process exit event; delivery facts only from the return step's Git result; the literal user owns every decision relayed in S5.
 
@@ -162,7 +167,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | D1 | A single task is a one-child Lane batch, `max_parallel` 1, slug equal to `task_id`, recorded with `plan_source: "single_task"`. | BR-DEC-5 |
 | D2 | Lane Enrollment uses `deriveChildEnrollment`; uncommitted planning input reaches the Lane through the existing preflight copy. | BR-DEC-5 |
-| D3 | On every Host, including inside Herdr, the single-task Executor is `claude --print` or `pi --print` spawned by the runtime with the Lane as cwd and `drive <task_id>` as its only prompt; arguments come only from the loaded plugin location and Lane Preferences. | BR-DEC-4, E7 |
+| D3 | Inside Herdr (`HERDR_ENV=1`), a new single-task entry records `executor_mode: "interactive"`; the Parent launches one tab in the admitted Lane and supervises it through the existing Herdr Lane Tabs contract. Outside Herdr the runtime spawns `claude --print` or `pi --print` with the Lane as cwd and `drive <task_id>` as its only prompt. Both use the loaded plugin location and Lane Preferences. Re-entry keeps the recorded execution mode; existing runtime-owned tasks continue until settlement. Interactive session state never supplies cleanup exit proof. | BR-DEC-4, E7; owner correction 2026-11-05; `tests/claude-batch-authority.test.ts`, `tests/pi-batch-authority.test.ts`, `tests/single-task-lane-batch.test.ts` |
 | D4 | Synchronous supervision waits inside the Host tool call for at most a wait window no longer than the verified tool-call limit of that Host; on elapse the call returns `running` for the same generation, and the next call re-attaches without spawning. S2 verifies the Claude Code MCP and Pi tool-call limits during implementation and pins each Host's window as a named constant whose test asserts it stays below the verified limit; the Spec is not edited. | delegated technical choice (BR-DEC-8) |
 | D5 | Delivery: `manual` applies the delivered delta to the index and worktree with no commit and no HEAD move; `auto` fast-forwards the user's current branch when HEAD is an ancestor. ADR 0024 and ADR 0027 §5 are amended for single tasks only. | BR-DEC-1 |
 | D6 | The overlap check compares delivered paths with every dirty entry (staged, unstaged, untracked, deleted, renamed source or target). Any overlap parks `needs_human` with `checkout_delivery_overlap: <paths>` and writes nothing. Unrelated dirt never blocks and is left byte-identical. | BR-DEC-2 |

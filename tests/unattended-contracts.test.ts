@@ -257,7 +257,7 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		const loop = flatText(LOOP_CONTRACT);
 		expect(loop).toContain("Its first step is `start_unattended_batch` with `task_id`");
 		expect(loop).toContain("A TaskRecord enrolled in place before this change stays resumable until terminal");
-		expect(loop).toContain("The Executor role runs inside the Lane process that the runtime spawns");
+		expect(loop).toContain("The Executor role runs inside the Lane process, never in the Parent conversation");
 		expect(loop).not.toContain("Enrollment is the first step of a single-task explicit `drive` entry");
 		expect(loop).not.toContain("native Enrollment gate once");
 		expect(loop).not.toContain("a standalone validated candidate opens native Enrollment");
@@ -265,14 +265,15 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 		expect(flatText(BATCH_CONTRACT)).not.toContain("A standalone task id uses single-task Enrollment");
 	});
 
-	it("states the single-task Lane behavior and labels the Herdr and session table as batch-only", () => {
+	it("routes single-task Herdr sessions to interactive tabs and other sessions to runtime supervision", () => {
 		const lane = flatText(section(BATCH_CONTRACT, "### Single-Task Lane"));
 		for (const claim of [
 			"calls `start_unattended_batch` with `task_id` and no `initiative_slug`",
 			"under exactly one native gate",
 			"waits for it inside the Host tool call",
-			"on every Host including inside Herdr",
-			"`HERDR_ENV` changes nothing",
+			"`executor_mode: \"interactive\"`",
+			"The Parent creates one Herdr tab",
+			"Synchronous runtime supervision outside Herdr",
 			"call the same entry again to re-attach",
 			"`stop: true` on the same entry terminates the current generation",
 			"never exit proof",
@@ -288,9 +289,11 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 			"`lane_decision_stale`",
 		]) expect(lane).toContain(claim);
 		const supervision = flatText(section(BATCH_CONTRACT, "#### Lane Executor Supervision"));
-		expect(supervision).toContain("This section and its supervised-session table describe Initiative batch behavior only");
+		expect(supervision).toContain("single-task Lanes recorded with `executor_mode: \"interactive\"` inside Herdr");
 		const herdr = flatText(section(BATCH_CONTRACT, "##### Herdr Lane Tabs"));
-		expect(herdr).toContain("This facility is Initiative batch behavior only");
+		expect(herdr).toContain("This facility applies to Initiative batches and single-task Lanes inside Herdr");
+		expect(herdr).toContain("with the same `task_id` on every re-entry");
+		expect(herdr).toContain("Existing tasks with a runtime-owned Executor keep that process until settlement");
 	});
 });
 
@@ -533,6 +536,7 @@ describe("unattended batch contract text", () => {
 			"contract",
 			// Spec drive-always-lanes D1: a single-task batch records its plan source.
 			"plan_source",
+			"executor_mode",
 			"topology_digest",
 			"progress_mode",
 			"final_report",
