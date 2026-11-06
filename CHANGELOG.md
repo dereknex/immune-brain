@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.2.1
+
+### Patch Changes
+
+- [`297c5c9`](https://github.com/dereknex/immune-brain/commit/297c5c999bb890e71729670bab4bbda11a016354) Thanks [@dereknex](https://github.com/dereknex)! - Run new single-task Lanes inside Herdr in interactive Executor tabs, using the same Parent supervision as Initiative batches. Persist the execution mode across re-entry, preserve existing runtime-supervised tasks, and keep interactive Lanes after delivery when no trusted process exit is available. Parent decision relay no longer starts a background Executor for an interactive Lane. Frozen Lanes waiting on user decisions remain enrolled and expose the decision in their report. An approved interactive stop records the stopped reason immediately and returns the instruction to close the Executor tab.
+
+- [`297c5c9`](https://github.com/dereknex/immune-brain/commit/297c5c999bb890e71729670bab4bbda11a016354) Thanks [@dereknex](https://github.com/dereknex)! - Fix single-task Lane preflight rejecting historical consolidation records as invalid batch state. Skip records with unrelated contracts while retaining fail-closed validation for malformed JSON and invalid or unsupported batch records.
+
 ## 7.2.0
 
 ### Minor Changes
