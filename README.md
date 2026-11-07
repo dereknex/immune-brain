@@ -71,6 +71,17 @@ Or load the local directory directly:
 claude --plugin-dir ./plugins/immune-brain
 ```
 
+### In Antigravity
+
+Install the self-contained directory `plugins/immune-brain-antigravity/` (not `plugins/immune-brain/`):
+
+```bash
+agy plugin install ./plugins/immune-brain-antigravity
+agy plugin validate ./plugins/immune-brain-antigravity --strict
+```
+
+Earlier releases discovered Antigravity components from `plugins/immune-brain/`; reinstall from the new directory when upgrading. See [its README](plugins/immune-brain-antigravity/README.md).
+
 ### Verification
 
 ```bash

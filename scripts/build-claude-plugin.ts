@@ -38,7 +38,7 @@ description: Independent Immune-Brain Review authority. Read-only evidence revie
 tools: Read, Grep, Glob, Bash
 ---`;
 
-function generateReviewerDefinition(root: string): string {
+export function generateReviewerDefinition(root: string): string {
 	const rolePrompt = readFileSync(resolve(root, REVIEWER_PROMPT_SRC), "utf8").trim();
 	return [
 		REVIEWER_FRONTMATTER,
@@ -49,7 +49,7 @@ function generateReviewerDefinition(root: string): string {
 	].join("\n\n");
 }
 
-function generateVerifierDefinition(root: string): string {
+export function generateVerifierDefinition(root: string): string {
 	return [
 		"---\nname: immune-brain-review-verifier\ndescription: Read-only verification of blocking Review findings against an immutable revision.\ntools: Read, Grep, Glob, Bash\n---",
 		readFileSync(resolve(root, VERIFIER_PROMPT_SRC), "utf8").trim(),
@@ -82,7 +82,7 @@ export function reviewerDefinitionDrift(root: string): string | null {
  * read-only without shell instead — narrower than the reviewer, which needs
  * `Bash` for read-only Git commands.
  */
-function generateReadonlyRoleDefinitions(root: string): Array<{ out: string; content: string; sources: string }> {
+export function generateReadonlyRoleDefinitions(root: string): Array<{ out: string; content: string; sources: string }> {
 	return Object.values(CLAUDE_READONLY_ROLE_AGENTS).map((spec) => {
 		const out = spec.definition;
 		const name = out.slice(out.lastIndexOf("/") + 1).replace(/\.md$/, "");

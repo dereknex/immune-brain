@@ -1,0 +1,35 @@
+export * from "./types";
+export * from "./intent";
+export * from "./validation";
+export * from "./legacy_task_record";
+export * from "./completion";
+// v4 storage retirement: the v1 TaskRecord storage entry points are no
+// longer part of the production kernel surface. Only the v2 store read/commit
+// primitives (used by enrollment/rehearsal/audit) remain exported from
+// ./storage; the v1 writer/reader names are absent.
+export {
+	readWorkspaceStateRaw,
+	readTaskRecordRaw,
+	readSettledRunEvidence,
+	readSettledTaskEvidence,
+	enrollmentEventIdFor,
+	readSecureProjectFile,
+	commitTaskRecordLocked,
+	withKernelStoreLock,
+	withKernelStoreLockForTask,
+	probeKernelStore,
+	serializeWorkspace,
+	revisionForContent,
+	appendJournalEntry,
+	KernelStoreSecurityError,
+	setAfterTaskTransactionWriteForTest,
+	type JournalEntry,
+	type JournalReasonCode,
+} from "./storage";
+export {
+	reduceTask,
+	canonicalRecordHash,
+	actionFingerprint,
+	recordedActionFingerprint,
+	isReducedMutation,
+} from "./reducer";

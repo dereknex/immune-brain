@@ -30,7 +30,7 @@
   "scripts": {
     "changeset": "changeset",
     "changeset:version": "changeset version && bun scripts/build-claude-plugin.ts && bun scripts/build-antigravity-plugin.ts && bun scripts/plugin_versioning.ts validate",
-    "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck && bun test && npm pack --dry-run --ignore-scripts",
+    "verify:release": "bun scripts/plugin_versioning.ts validate && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck && bun test && npm pack --dry-run --ignore-scripts",
     "changeset:publish": "bun run verify:release && changeset publish",
     "release": "bun run changeset:publish",
     "typecheck": "tsc -p tsconfig.json"
@@ -97,13 +97,11 @@
     ".claude-plugin",
     "plugins/immune-brain/.claude-plugin",
     "plugins/immune-brain/.mcp.json",
-    "plugins/immune-brain/plugin.json",
-    "plugins/immune-brain/mcp_config.json",
-    "plugins/immune-brain/hooks.json",
     "plugins/immune-brain/hooks",
     "plugins/immune-brain/agents",
     "plugins/immune-brain/skills",
     "plugins/immune-brain/dist",
-    "plugins/immune-brain/bin"
+    "plugins/immune-brain/bin",
+    "plugins/immune-brain-antigravity"
   ]
 }

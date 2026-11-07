@@ -15,7 +15,7 @@ review is `code-review`.
 
 Allowed: read pi session JSONL under `~/.pi/agent/sessions` (or `--root`),
 read the committed `.imm/audit/` of one named project at HEAD through
-`--audit <project-root>` ([ADR 0032](../../../docs/adr/0032-revisit-reads-committed-audit.md)),
+`--audit <project-root>` (ADR 0032, `docs/adr/0032-revisit-reads-committed-audit.md` in the source repository),
 run the bundled analyzer, and write a stdout report.
 
 Blocked: code, test, Spec, Plan, or `.imm/` edits; session-log writes;
@@ -248,7 +248,7 @@ stopped managed run.
 Keep unavailable cost, escaped-defect and post-delivery outcome metrics unknown,
 and do not copy local metrics into standing rules.
 
-[The ten-task baseline](../../docs/reports/workflow-evidence-baseline.md) is a
+The ten-task baseline (`docs/reports/workflow-evidence-baseline.md` in the source repository) is a
 fixed historical worked example of this method, not a threshold for future tasks.
 
 ## Caveats

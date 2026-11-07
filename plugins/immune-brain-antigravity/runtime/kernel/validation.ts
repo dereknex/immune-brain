@@ -1,0 +1,1329 @@
+import {
+	TASK_ARTIFACT_STATES,
+	TASK_LIFECYCLES,
+	TASK_RECORD_CONTRACT_V3,
+	TASK_RECORD_CONTRACT_V4,
+	REVIEW_REVISION_IDENTITY_CONTRACT,
+	type ApprovalAuthorityRole,
+	type ApprovalKind,
+	type EvidenceStatus,
+	type FindingCounterevidence,
+	type FindingEvidence,
+	type FindingKind,
+	type FindingSource,
+	type FindingStatus,
+	type ReplanCause,
+	type ResidualRiskAcceptanceV1,
+	type TaskAction,
+	type ReviewAdvisoryFindingV1,
+	type ReviewVerificationHistoryV1,
+	type ReviewVerifierDisputeV1,
+	type TaskApprovalV2,
+	type TaskAttestationV3,
+	type AuthorityAuditDescriptor,
+	type TaskFinding,
+	type TaskHistoryEntryV3,
+	type TaskIntentV1,
+	type ReviewRevisionIdentityV1,
+	type TaskRecord,
+	type TaskRecordV3,
+	type TaskRecordV4,
+} from "./types";
+import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
+import { refutationIdentity, refutationIsLive, anchorForEvidence, isFreshPassingQaAttestation } from "./refutation";
+
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+
+export class KernelValidationError extends Error {
+	readonly code = "kernel_schema_invalid";
+
+	constructor(readonly violations: string[]) {
+		super(violations.join("; "));
+		this.name = "KernelValidationError";
+	}
+}
+
+export class KernelInvariantError extends Error {
+	readonly code = "kernel_invariant_violation";
+
+	constructor(readonly violations: string[]) {
+		super(violations.join("; "));
+		this.name = "KernelInvariantError";
+	}
+}
+
+export function objectAt(
+	value: unknown,
+	path: string,
+	violations: string[],
+): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		violations.push(`${path} must be an object`);
+		return {};
+	}
+	return value as Record<string, unknown>;
+}
+
+export function rejectUnknown(
+	record: Record<string, unknown>,
+	allowed: readonly string[],
+	path: string,
+	violations: string[],
+): void {
+	for (const key of Object.keys(record)) {
+		if (!allowed.includes(key))
+			violations.push(
+				path === "record" ? `unknown field: ${key}` : `unknown field: ${path}.${key}`,
+			);
+	}
+}
+
+export function stringAt(
+	value: unknown,
+	path: string,
+	violations: string[],
+): string {
+	if (typeof value !== "string" || !value.trim()) {
+		violations.push(`${path} must be a non-empty string`);
+		return "";
+	}
+	return value;
+}
+
+export function positiveInteger(
+	value: unknown,
+	path: string,
+	violations: string[],
+): number {
+	if (!Number.isInteger(value) || Number(value) < 1) {
+		violations.push(`${path} must be a positive integer`);
+		return 0;
+	}
+	return Number(value);
+}
+
+function nullableString(
+	value: unknown,
+	path: string,
+	violations: string[],
+): string | null {
+	if (value === null) return null;
+	return stringAt(value, path, violations);
+}
+
+function nullablePositiveInteger(
+	value: unknown,
+	path: string,
+	violations: string[],
+): number | null {
+	if (value === null) return null;
+	return positiveInteger(value, path, violations);
+}
+
+export function enumAt<T extends string>(
+	value: unknown,
+	allowed: readonly T[],
+	path: string,
+	violations: string[],
+): T {
+	if (typeof value !== "string" || !allowed.includes(value as T)) {
+		violations.push(`${path} must be one of ${allowed.join(", ")}`);
+		return allowed[0];
+	}
+	return value as T;
+}
+
+export function arrayAt(value: unknown, path: string, violations: string[]): unknown[] {
+	if (!Array.isArray(value)) {
+		violations.push(`${path} must be an array`);
+		return [];
+	}
+	return value;
+}
+
+export function uniqueIds(
+	items: Array<{ id: string }>,
+	path: string,
+	violations: string[],
+): void {
+	const seen = new Set<string>();
+	for (const item of items) {
+		if (seen.has(item.id)) violations.push(`${path} contains duplicate id ${item.id}`);
+		seen.add(item.id);
+	}
+}
+
+export const EVIDENCE_STATUSES: EvidenceStatus[] = ["passed", "failed", "blocked"];
+const FINDING_KINDS: FindingKind[] = [
+	"blocking",
+	"advisory",
+	"unresolved_user_decision",
+	"replan_required",
+];
+const FINDING_STATUSES: FindingStatus[] = ["open", "resolved", "refuted", "accepted_risk"];
+const REPLAN_CAUSES: ReplanCause[] = ["budget_exhausted", "repeated_security_boundary"];
+/** Upper bound of one `authorize_rework` grant. */
+export const MAX_REWORK_GRANT_ROUNDS = 5;
+const FINDING_SOURCES: FindingSource[] = [
+	"execution",
+	"review",
+	"kernel",
+	"migration",
+];
+const APPROVAL_KINDS: ApprovalKind[] = ["review", "qa", "user"];
+const APPROVAL_AUTHORITY_ROLES: ApprovalAuthorityRole[] = [
+	"reviewer",
+	"qa",
+	"user",
+];
+
+function nullableAnchor(
+	value: unknown,
+	path: string,
+	violations: string[],
+): string | null {
+	if (value === null || value === undefined) return null;
+	return stringAt(value, path, violations);
+}
+
+function parseFindingEvidence(
+	value: unknown,
+	path: string,
+	violations: string[],
+): FindingEvidence | null {
+	if (value === null || value === undefined) return null;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["trigger", "caller_chain", "violated"], path, violations);
+	const trigger = stringAt(item.trigger, `${path}.trigger`, violations);
+	const chain = arrayAt(item.caller_chain, `${path}.caller_chain`, violations);
+	if (chain.length === 0)
+		violations.push(`${path}.caller_chain must contain at least one entry`);
+	const caller_chain = chain.map((entry, index) =>
+		stringAt(entry, `${path}.caller_chain[${index}]`, violations),
+	);
+	const violatedRaw = objectAt(item.violated, `${path}.violated`, violations);
+	rejectUnknown(violatedRaw, ["kind", "ref"], `${path}.violated`, violations);
+	const kind = enumAt(
+		violatedRaw.kind,
+		["acceptance", "security_boundary"] as const,
+		`${path}.violated.kind`,
+		violations,
+	);
+	const ref = stringAt(violatedRaw.ref, `${path}.violated.ref`, violations);
+	return { trigger, caller_chain, violated: { kind, ref } };
+}
+
+function parseFindingCounterevidence(
+	value: unknown,
+	path: string,
+	violations: string[],
+): FindingCounterevidence | null {
+	if (value === null || value === undefined) return null;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["attestation_id", "acceptance_id"], path, violations);
+	return {
+		attestation_id: stringAt(item.attestation_id, `${path}.attestation_id`, violations),
+		acceptance_id: stringAt(item.acceptance_id, `${path}.acceptance_id`, violations),
+	};
+}
+
+export function parseFinding(
+	value: unknown,
+	index: number,
+	violations: string[],
+): TaskFinding {
+	const path = `record.findings[${index}]`;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(
+		item,
+		[
+			"id",
+			"kind",
+			"status",
+			"acceptance_id",
+			"source",
+			"review_round",
+			"summary",
+			"anchor",
+			"evidence",
+			"counterevidence",
+			"replan_cause",
+		],
+		path,
+		violations,
+	);
+	return {
+		id: stringAt(item.id, `${path}.id`, violations),
+		kind: enumAt(item.kind, FINDING_KINDS, `${path}.kind`, violations),
+		status: enumAt(item.status, FINDING_STATUSES, `${path}.status`, violations),
+		acceptance_id: nullableString(item.acceptance_id, `${path}.acceptance_id`, violations),
+		source: enumAt(item.source, FINDING_SOURCES, `${path}.source`, violations),
+		review_round: nullablePositiveInteger(item.review_round, `${path}.review_round`, violations),
+		summary: stringAt(item.summary, `${path}.summary`, violations),
+		...(item.anchor !== undefined
+			? { anchor: nullableAnchor(item.anchor, `${path}.anchor`, violations) }
+			: {}),
+		...(item.evidence !== undefined
+			? { evidence: parseFindingEvidence(item.evidence, `${path}.evidence`, violations) }
+			: {}),
+		...(item.counterevidence !== undefined
+			? {
+					counterevidence: parseFindingCounterevidence(
+						item.counterevidence,
+						`${path}.counterevidence`,
+						violations,
+					),
+				}
+			: {}),
+		...(item.replan_cause !== undefined
+			? { replan_cause: enumAt(item.replan_cause, REPLAN_CAUSES, `${path}.replan_cause`, violations) }
+			: {}),
+	};
+}
+
+function parseReviewVerificationHistory(value: unknown, path: string, violations: string[]): ReviewVerificationHistoryV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["snapshot_digest", "intent_content_hash", "diff_hash", "verdict_sha256", "dispatched_at", "submitted_at", "result_sha256", "verifier_actor", "reviewer_model", "verifier_model", "model_relation", "checked", "verifier_refutations", "failure"], path, violations);
+	const digest = (value: unknown, field: string) => {
+		const result = stringAt(value, `${path}.${field}`, violations);
+		if (!SHA256_HEX.test(result)) violations.push(`${path}.${field} must be sha256:<64 hex>`);
+		return result;
+	};
+	const snapshotDigest = digest(item.snapshot_digest, "snapshot_digest");
+	const intentHash = digest(item.intent_content_hash, "intent_content_hash");
+	const diffHash = digest(item.diff_hash, "diff_hash");
+	const verdictHash = digest(item.verdict_sha256, "verdict_sha256");
+	const dispatchedAt = stringAt(item.dispatched_at, `${path}.dispatched_at`, violations);
+	const submittedAt = stringAt(item.submitted_at, `${path}.submitted_at`, violations);
+	if (!Number.isFinite(Date.parse(dispatchedAt)) || !Number.isFinite(Date.parse(submittedAt)) || Date.parse(submittedAt) < Date.parse(dispatchedAt))
+		violations.push(`${path} must have ordered verification timestamps`);
+	const resultHash = item.result_sha256 === null ? null : digest(item.result_sha256, "result_sha256");
+	const actor = nullableString(item.verifier_actor, `${path}.verifier_actor`, violations);
+	const reviewerModel = nullableString(item.reviewer_model, `${path}.reviewer_model`, violations);
+	const model = nullableString(item.verifier_model, `${path}.verifier_model`, violations);
+	const relation = item.model_relation === null ? null : enumAt(item.model_relation, ["same", "different"] as const, `${path}.model_relation`, violations);
+	if (reviewerModel && model && relation !== (reviewerModel === model ? "same" : "different")) violations.push(`${path}.model_relation must match the observed models`);
+	const checked = positiveInteger(item.checked, `${path}.checked`, violations);
+	const refutations = arrayAt(item.verifier_refutations, `${path}.verifier_refutations`, violations).map((raw, index) => {
+		const location = `${path}.verifier_refutations[${index}]`;
+		const refutation = objectAt(raw, location, violations);
+		rejectUnknown(refutation, ["anchor", "finding_id", "counter_path", "verifier_actor"], location, violations);
+		const anchor = stringAt(refutation.anchor, `${location}.anchor`, violations);
+		if (!SHA256_HEX.test(anchor)) violations.push(`${location}.anchor must be sha256:<64 hex>`);
+		const findingId = stringAt(refutation.finding_id, `${location}.finding_id`, violations);
+		const counterPath = stringAt(refutation.counter_path, `${location}.counter_path`, violations);
+		const verifierActor = stringAt(refutation.verifier_actor, `${location}.verifier_actor`, violations);
+		if (!findingId.trim() || !counterPath.trim() || !verifierActor.trim()) violations.push(`${location} fields must be non-empty`);
+		if (verifierActor !== actor) violations.push(`${location}.verifier_actor must match verification actor`);
+		return { anchor, finding_id: findingId, counter_path: counterPath, verifier_actor: verifierActor };
+	});
+	if (new Set(refutations.map(refutation => refutation.finding_id)).size !== refutations.length) violations.push(`${path}.verifier_refutations must have unique finding ids`);
+	if (refutations.length > checked) violations.push(`${path}.verifier_refutations exceeds checked count`);
+	const failure = item.failure === undefined ? undefined : stringAt(item.failure, `${path}.failure`, violations);
+	if (failure !== undefined && (!failure.trim() || refutations.length > 0)) violations.push(`${path}.failure requires a reason and no refutations`);
+	if (failure === undefined && (!actor?.trim() || !reviewerModel?.trim() || !model?.trim() || relation === null || resultHash === null)) violations.push(`${path} requires a bound verifier receipt`);
+	return { snapshot_digest: snapshotDigest, intent_content_hash: intentHash, diff_hash: diffHash, verdict_sha256: verdictHash,
+		dispatched_at: dispatchedAt, submitted_at: submittedAt, result_sha256: resultHash, verifier_actor: actor, reviewer_model: reviewerModel, verifier_model: model, model_relation: relation, checked, verifier_refutations: refutations,
+		...(failure !== undefined ? { failure } : {}) };
+}
+
+function parseReviewVerifierDispute(value: unknown, path: string, violations: string[]): ReviewVerifierDisputeV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["decision_id", "finding", "counter_path", "verdict_sha256", "intent_content_hash", "diff_hash"], path, violations);
+	const decisionId = stringAt(item.decision_id, `${path}.decision_id`, violations);
+	if (!/^user-decision-[A-Za-z0-9._-]+$/.test(decisionId)) violations.push(`${path}.decision_id is not a valid user decision id`);
+	const finding = objectAt(item.finding, `${path}.finding`, violations);
+	rejectUnknown(finding, ["id", "acceptance_id", "summary", "anchor", "evidence"], `${path}.finding`, violations);
+	const id = stringAt(finding.id, `${path}.finding.id`, violations);
+	const acceptanceId = nullableString(finding.acceptance_id, `${path}.finding.acceptance_id`, violations);
+	const summary = stringAt(finding.summary, `${path}.finding.summary`, violations);
+	const anchor = stringAt(finding.anchor, `${path}.finding.anchor`, violations);
+	const evidence = parseFindingEvidence(finding.evidence, `${path}.finding.evidence`, violations);
+	if (!evidence || !SHA256_HEX.test(anchor) || anchorForEvidence(evidence) !== anchor) violations.push(`${path}.finding must bind evidence to its anchor`);
+	const counterPath = stringAt(item.counter_path, `${path}.counter_path`, violations);
+	if (!id.trim() || !summary.trim() || !counterPath.trim()) violations.push(`${path} claim and counter-path must be non-empty`);
+	const digest = (value: unknown, field: string) => {
+		const result = stringAt(value, `${path}.${field}`, violations);
+		if (!SHA256_HEX.test(result)) violations.push(`${path}.${field} must be sha256:<64 hex>`);
+		return result;
+	};
+	return { decision_id: decisionId, finding: { id, acceptance_id: acceptanceId, summary, anchor, evidence: evidence! },
+		counter_path: counterPath, verdict_sha256: digest(item.verdict_sha256, "verdict_sha256"),
+		intent_content_hash: digest(item.intent_content_hash, "intent_content_hash"), diff_hash: digest(item.diff_hash, "diff_hash") };
+}
+
+function parseReviewObservation(value: unknown, path: string, violations: string[]) {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["review_started_at", "review_submitted_at", "reviewer_model"], path, violations);
+	const review_started_at = stringAt(item.review_started_at, `${path}.review_started_at`, violations);
+	const review_submitted_at = stringAt(item.review_submitted_at, `${path}.review_submitted_at`, violations);
+	const start = Date.parse(review_started_at), end = Date.parse(review_submitted_at);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) violations.push(`${path} requires ordered review timestamps`);
+	const reviewer_model = item.reviewer_model === undefined ? undefined : stringAt(item.reviewer_model, `${path}.reviewer_model`, violations);
+	if (reviewer_model !== undefined && !reviewer_model.trim()) violations.push(`${path}.reviewer_model must be non-empty`);
+	return { review_started_at, review_submitted_at, ...(reviewer_model === undefined ? {} : { reviewer_model }) };
+}
+
+function parseHistoryV3(
+	value: unknown,
+	index: number,
+	violations: string[],
+	allowVerification = false,
+): TaskHistoryEntryV3 {
+	const path = `record.history[${index}]`;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["id", "at", "type", "from_state", "to_state", "reason", "authority", "review_revision", "review_started_at", "review_submitted_at", "reviewer_model", ...(allowVerification ? ["verification", "review_verifier_dispute"] : [])], path, violations);
+	let authority: AuthorityAuditDescriptor | undefined;
+	if (item.authority !== undefined) {
+		const auth = objectAt(item.authority, `${path}.authority`, violations);
+		rejectUnknown(auth, ["authority_kind", "actor_id", "confirmation_ref", "issued_at", "expires_at"], `${path}.authority`, violations);
+		authority = {
+			authority_kind: enumAt(auth.authority_kind, ["review", "qa", "user"], `${path}.authority.authority_kind`, violations) as AuthorityAuditDescriptor["authority_kind"],
+			actor_id: stringAt(auth.actor_id, `${path}.authority.actor_id`, violations),
+			confirmation_ref: stringAt(auth.confirmation_ref, `${path}.authority.confirmation_ref`, violations),
+			issued_at: stringAt(auth.issued_at, `${path}.authority.issued_at`, violations),
+			...(auth.expires_at !== undefined
+				? { expires_at: stringAt(auth.expires_at, `${path}.authority.expires_at`, violations) }
+				: {}),
+		};
+	}
+	const reviewRevision = item.review_revision === undefined
+		? undefined
+		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
+	if (reviewRevision && authority?.authority_kind !== "review")
+		violations.push(`${path}.review_revision is only valid on review-authored history`);
+	const verification = item.verification === undefined || !allowVerification ? undefined : parseReviewVerificationHistory(item.verification, `${path}.verification`, violations);
+	if (verification && (item.type !== "verification" || authority?.authority_kind !== "review"))
+		violations.push(`${path}.verification requires a review-authorized verification event`);
+	const dispute = item.review_verifier_dispute === undefined || !allowVerification ? undefined : parseReviewVerifierDispute(item.review_verifier_dispute, `${path}.review_verifier_dispute`, violations);
+	if (dispute && (item.type !== "record_review_verifier_dispute" || authority?.authority_kind !== "review"))
+		violations.push(`${path}.review_verifier_dispute requires Review authority`);
+	const observation = item.review_started_at === undefined && item.review_submitted_at === undefined && item.reviewer_model === undefined ? undefined : parseReviewObservation({ review_started_at: item.review_started_at, review_submitted_at: item.review_submitted_at, ...(item.reviewer_model === undefined ? {} : { reviewer_model: item.reviewer_model }) }, path, violations);
+	if (observation && authority?.authority_kind !== "review" && item.type !== "record_review_incomplete") violations.push(`${path} review observation requires review authority`);
+	return {
+		id: stringAt(item.id, `${path}.id`, violations),
+		at: stringAt(item.at, `${path}.at`, violations),
+		type: stringAt(item.type, `${path}.type`, violations),
+		from_state: stringAt(item.from_state, `${path}.from_state`, violations),
+		to_state: stringAt(item.to_state, `${path}.to_state`, violations),
+		reason: stringAt(item.reason, `${path}.reason`, violations),
+		...(authority ? { authority } : {}),
+		...(reviewRevision ? { review_revision: reviewRevision } : {}),
+		...(verification ? { verification } : {}),
+		...(dispute ? { review_verifier_dispute: dispute } : {}),
+		...(observation ?? {}),
+	};
+}
+
+export const SHA256_HEX = /^sha256:[a-f0-9]{64}$/;
+
+export function parseApprovalV2(
+	value: unknown,
+	index: number,
+	violations: string[],
+	allowReviewRevision = false,
+): TaskApprovalV2 {
+	const item = objectAt(value, `record.approvals[${index}]`, violations);
+	rejectUnknown(
+		item,
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "advisory_findings", "reviewer_verdict_sha256",
+			...(allowReviewRevision ? ["review_revision"] : [])],
+		`record.approvals[${index}]`,
+		violations,
+	);
+	const intentContentHash = stringAt(
+		item.intent_content_hash,
+		`record.approvals[${index}].intent_content_hash`,
+		violations,
+	);
+	if (!SHA256_HEX.test(intentContentHash))
+		violations.push(`record.approvals[${index}].intent_content_hash must be sha256:<64 hex>`);
+	const diffHash = stringAt(item.diff_hash, `record.approvals[${index}].diff_hash`, violations);
+	if (!SHA256_HEX.test(diffHash))
+		violations.push(`record.approvals[${index}].diff_hash must be sha256:<64 hex>`);
+	return {
+		id: stringAt(item.id, `record.approvals[${index}].id`, violations),
+		kind: enumAt(item.kind, APPROVAL_KINDS, `record.approvals[${index}].kind`, violations),
+		authority_role: enumAt(
+			item.authority_role,
+			APPROVAL_AUTHORITY_ROLES,
+			`record.approvals[${index}].authority_role`,
+			violations,
+		),
+		task_revision: positiveInteger(
+			item.task_revision,
+			`record.approvals[${index}].task_revision`,
+			violations,
+		),
+		intent_content_hash: intentContentHash,
+		diff_hash: diffHash,
+		actor_id: stringAt(item.actor_id, `record.approvals[${index}].actor_id`, violations),
+		summary: stringAt(item.summary, `record.approvals[${index}].summary`, violations),
+		...(allowReviewRevision && item.review_revision !== undefined
+			? { review_revision: parseReviewRevisionIdentity(item.review_revision, `record.approvals[${index}].review_revision`, violations) }
+			: {}),
+		...(item.advisory_findings !== undefined
+			? {
+					advisory_findings: arrayAt(
+						item.advisory_findings,
+						`record.approvals[${index}].advisory_findings`,
+						violations,
+					).map((entry, advisoryIndex) =>
+						parseAdvisoryFinding(
+							entry,
+							`record.approvals[${index}].advisory_findings[${advisoryIndex}]`,
+							violations,
+						),
+					),
+				}
+			: {}),
+		...(item.reviewer_verdict_sha256 !== undefined
+			? { reviewer_verdict_sha256: stringAt(item.reviewer_verdict_sha256, `record.approvals[${index}].reviewer_verdict_sha256`, violations) }
+			: {}),
+	};
+}
+
+/**
+ * An advisory is recorded inside the review attestation, so it needs the same
+ * machine-checkable provenance a blocking finding carries but no lifecycle.
+ */
+function parseAdvisoryFinding(value: unknown, path: string, violations: string[]): ReviewAdvisoryFindingV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["id", "acceptance_id", "summary", "anchor", "evidence"], path, violations);
+	return {
+		id: stringAt(item.id, `${path}.id`, violations),
+		acceptance_id: nullableString(item.acceptance_id, `${path}.acceptance_id`, violations),
+		summary: stringAt(item.summary, `${path}.summary`, violations),
+		anchor: item.anchor === undefined ? null : nullableAnchor(item.anchor, `${path}.anchor`, violations),
+		evidence: parseFindingEvidence(item.evidence ?? null, `${path}.evidence`, violations),
+	};
+}
+
+function parseReviewRevisionIdentity(
+	value: unknown,
+	path: string,
+	violations: string[],
+): ReviewRevisionIdentityV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(item, ["contract", "base_head", "review_commit", "review_tree", "manifest_digest"], path, violations);
+	if (item.contract !== REVIEW_REVISION_IDENTITY_CONTRACT)
+		violations.push(`${path}.contract must equal ${REVIEW_REVISION_IDENTITY_CONTRACT}`);
+	const identity = {
+		contract: REVIEW_REVISION_IDENTITY_CONTRACT,
+		base_head: stringAt(item.base_head, `${path}.base_head`, violations),
+		review_commit: stringAt(item.review_commit, `${path}.review_commit`, violations),
+		review_tree: stringAt(item.review_tree, `${path}.review_tree`, violations),
+		manifest_digest: stringAt(item.manifest_digest, `${path}.manifest_digest`, violations),
+	};
+	for (const field of ["base_head", "review_commit", "review_tree"] as const)
+		if (!GIT_OBJECT_ID.test(identity[field]))
+			violations.push(`${path}.${field} must be a lowercase Git object id`);
+	if (!SHA256_HEX.test(identity.manifest_digest))
+		violations.push(`${path}.manifest_digest must be sha256:<64 hex>`);
+	return identity;
+}
+
+function parseAttestationV3(
+	value: unknown,
+	index: number,
+	acceptanceIds: Set<string>,
+	violations: string[],
+	allowReviewRevision = false,
+): TaskAttestationV3 {
+	const path = `record.attestations[${index}]`;
+	const item = objectAt(value, path, violations);
+	rejectUnknown(
+		item,
+		["id", "kind", "authority_role", "task_revision", "intent_content_hash", "diff_hash", "actor_id", "summary", "acceptance_results", "advisory_findings", "reviewer_verdict_sha256",
+			...(allowReviewRevision ? ["review_revision"] : [])],
+		path,
+		violations,
+	);
+	const kind = enumAt(item.kind, APPROVAL_KINDS, `${path}.kind`, violations);
+	const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
+	const diffHash = stringAt(item.diff_hash, `${path}.diff_hash`, violations);
+	if (!SHA256_HEX.test(intentContentHash)) violations.push(`${path}.intent_content_hash must be sha256:<64 hex>`);
+	if (!SHA256_HEX.test(diffHash)) violations.push(`${path}.diff_hash must be sha256:<64 hex>`);
+	const acceptanceResults = arrayAt(item.acceptance_results, `${path}.acceptance_results`, violations).map((raw, resultIndex) => {
+		const resultPath = `${path}.acceptance_results[${resultIndex}]`;
+		const result = objectAt(raw, resultPath, violations);
+		rejectUnknown(result, ["acceptance_id", "status", "summary"], resultPath, violations);
+		const acceptanceId = stringAt(result.acceptance_id, `${resultPath}.acceptance_id`, violations);
+		if (!acceptanceIds.has(acceptanceId)) violations.push(`${resultPath}.acceptance_id is not in the current intent`);
+		return {
+			acceptance_id: acceptanceId,
+			status: enumAt(result.status, EVIDENCE_STATUSES, `${resultPath}.status`, violations),
+			summary: stringAt(result.summary, `${resultPath}.summary`, violations),
+		};
+	});
+	if (kind !== "qa" && acceptanceResults.length > 0)
+		violations.push(`${path}.acceptance_results is only valid for qa attestations`);
+	if (kind === "qa") {
+		const resultIds = acceptanceResults.map((result) => result.acceptance_id);
+		if (resultIds.length !== acceptanceIds.size || new Set(resultIds).size !== acceptanceIds.size)
+			violations.push(`${path}.acceptance_results must cover every acceptance exactly once`);
+	}
+	const reviewRevision = item.review_revision === undefined
+		? undefined
+		: parseReviewRevisionIdentity(item.review_revision, `${path}.review_revision`, violations);
+	if (reviewRevision && kind !== "review")
+		violations.push(`${path}.review_revision is only valid on review attestations`);
+	if (allowReviewRevision && kind === "review" && !reviewRevision)
+		violations.push(`${path}.review_revision is required for v4 review attestations`);
+	const advisoryFindings = item.advisory_findings === undefined
+		? undefined
+		: arrayAt(item.advisory_findings, `${path}.advisory_findings`, violations).map((entry, advisoryIndex) =>
+				parseAdvisoryFinding(entry, `${path}.advisory_findings[${advisoryIndex}]`, violations),
+			);
+	if (advisoryFindings !== undefined && kind !== "review")
+		violations.push(`${path}.advisory_findings is only valid on review attestations`);
+	const reviewerVerdictSha256 = item.reviewer_verdict_sha256 === undefined
+		? undefined
+		: stringAt(item.reviewer_verdict_sha256, `${path}.reviewer_verdict_sha256`, violations);
+	if (reviewerVerdictSha256 !== undefined && kind !== "review")
+		violations.push(`${path}.reviewer_verdict_sha256 is only valid on review attestations`);
+	if (reviewerVerdictSha256 !== undefined && !SHA256_HEX.test(reviewerVerdictSha256))
+		violations.push(`${path}.reviewer_verdict_sha256 must be sha256:<64 hex>`);
+	return {
+		id: stringAt(item.id, `${path}.id`, violations),
+		kind,
+		authority_role: enumAt(item.authority_role, APPROVAL_AUTHORITY_ROLES, `${path}.authority_role`, violations),
+		task_revision: positiveInteger(item.task_revision, `${path}.task_revision`, violations),
+		intent_content_hash: intentContentHash,
+		diff_hash: diffHash,
+		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
+		summary: stringAt(item.summary, `${path}.summary`, violations),
+		acceptance_results: acceptanceResults,
+		...(reviewRevision ? { review_revision: reviewRevision } : {}),
+		...(advisoryFindings !== undefined ? { advisory_findings: advisoryFindings } : {}),
+		...(reviewerVerdictSha256 !== undefined ? { reviewer_verdict_sha256: reviewerVerdictSha256 } : {}),
+	};
+}
+
+function parseResidualRiskAcceptance(
+	value: unknown,
+	path: string,
+	violations: string[],
+): ResidualRiskAcceptanceV1 {
+	const item = objectAt(value, path, violations);
+	rejectUnknown(
+		item,
+		["intent_revision", "intent_content_hash", "diff_hash", "finding_ids", "reason", "actor_id", "accepted_at"],
+		path,
+		violations,
+	);
+	const intentContentHash = stringAt(item.intent_content_hash, `${path}.intent_content_hash`, violations);
+	if (!SHA256_HEX.test(intentContentHash)) violations.push(`${path}.intent_content_hash must be sha256:<64 hex>`);
+	const diffHash = stringAt(item.diff_hash, `${path}.diff_hash`, violations);
+	if (!SHA256_HEX.test(diffHash)) violations.push(`${path}.diff_hash must be sha256:<64 hex>`);
+	const reason = stringAt(item.reason, `${path}.reason`, violations);
+	if (reason.trim() === "") violations.push(`${path}.reason must be non-empty`);
+	const findingIds = arrayAt(item.finding_ids, `${path}.finding_ids`, violations).map((entry, index) =>
+		stringAt(entry, `${path}.finding_ids[${index}]`, violations),
+	);
+	if (findingIds.length === 0) violations.push(`${path}.finding_ids must name at least one finding`);
+	return {
+		intent_revision: positiveInteger(item.intent_revision, `${path}.intent_revision`, violations),
+		intent_content_hash: intentContentHash,
+		diff_hash: diffHash,
+		finding_ids: findingIds,
+		reason,
+		actor_id: stringAt(item.actor_id, `${path}.actor_id`, violations),
+		accepted_at: stringAt(item.accepted_at, `${path}.accepted_at`, violations),
+	};
+}
+
+export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskRecordV3 | TaskRecordV4 {
+	const violations: string[] = [];
+	const value = objectAt(raw, "record", violations);
+	rejectUnknown(
+		value,
+		["contract", "task_id", "intent_snapshot", "intent_ref", "lifecycle", "artifact_state", "baseline", "attestations", "findings", "history",
+			...(version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : [])],
+		"record",
+		violations,
+	);
+	const expectedContract = version === 4 ? TASK_RECORD_CONTRACT_V4 : TASK_RECORD_CONTRACT_V3;
+	if (value.contract !== expectedContract)
+		violations.push(`contract must equal ${expectedContract}`);
+
+	let snapshot: TaskIntentV1 | null = null;
+	try {
+		snapshot = parseTaskIntentV1(value.intent_snapshot);
+	} catch {
+		violations.push("record.intent_snapshot must be a valid TaskIntent v1");
+	}
+	const taskId = stringAt(value.task_id, "record.task_id", violations);
+	const refRaw = objectAt(value.intent_ref, "record.intent_ref", violations);
+	rejectUnknown(refRaw, ["path", "content_hash"], "record.intent_ref", violations);
+	const refPath = stringAt(refRaw.path, "record.intent_ref.path", violations);
+	const refContentHash = stringAt(refRaw.content_hash, "record.intent_ref.content_hash", violations);
+	if (!SHA256_HEX.test(refContentHash))
+		violations.push("record.intent_ref.content_hash must be sha256:<64 hex>");
+	const lifecycle = enumAt(value.lifecycle, TASK_LIFECYCLES, "record.lifecycle", violations);
+	const artifactState = enumAt(value.artifact_state, TASK_ARTIFACT_STATES, "record.artifact_state", violations);
+	const activeIntentPath = `docs/plans/${taskId}.intent.json`;
+	const frozenIntentPath = `docs/plans/archive/${taskId}.intent.json`;
+	if (snapshot && (snapshot.task_id !== taskId || (refPath !== activeIntentPath && refPath !== frozenIntentPath)))
+		violations.push("intent_snapshot and intent_ref must match record identity");
+	if (artifactState === "active" && refPath !== activeIntentPath)
+		violations.push("active artifact_state requires the active intent path");
+	if (artifactState === "frozen" && refPath !== activeIntentPath && refPath !== frozenIntentPath)
+		violations.push("frozen artifact_state requires the active or archived intent path");
+	if (snapshot && refContentHash !== "" && canonicalIntentHash(snapshot) !== refContentHash)
+		violations.push("intent_ref.content_hash must equal the snapshot canonical hash");
+	if (lifecycle !== "active" && artifactState !== "frozen")
+		violations.push("terminal lifecycle requires frozen artifacts");
+
+	const baseline = stringAt(value.baseline, "record.baseline", violations);
+	if (!SHA256_HEX.test(baseline)) violations.push("record.baseline must be sha256:<64 hex>");
+	let gitBaseHead = "";
+	if (version === 4) {
+		const rawGitBaseHead = stringAt(value.git_base_head, "record.git_base_head", violations);
+		if (rawGitBaseHead !== rawGitBaseHead.toLowerCase())
+			violations.push("record.git_base_head must be lowercase");
+		gitBaseHead = rawGitBaseHead;
+		if (!GIT_OBJECT_ID.test(gitBaseHead))
+			violations.push("record.git_base_head must be a lowercase Git commit id");
+	}
+	const acceptanceIds = new Set(snapshot ? snapshot.acceptance.map((item) => item.id) : []);
+	const attestations = arrayAt(value.attestations, "record.attestations", violations).map((item, index) => parseAttestationV3(item, index, acceptanceIds, violations, version === 4));
+	if (version === 4) {
+		for (const [index, attestation] of attestations.entries()) {
+			if (attestation.kind === "review" && attestation.review_revision && attestation.review_revision.base_head !== gitBaseHead)
+				violations.push(`record.attestations[${index}].review_revision.base_head must equal record.git_base_head`);
+		}
+	}
+	const findings = arrayAt(value.findings, "record.findings", violations).map((item, index) => parseFinding(item, index, violations));
+	const history = arrayAt(value.history, "record.history", violations).map((item, index) => parseHistoryV3(item, index, violations, version === 4));
+	if (version === 4) {
+		for (const [index, entry] of history.entries()) {
+			if (entry.review_revision && entry.review_revision.base_head !== gitBaseHead)
+				violations.push(`record.history[${index}].review_revision.base_head must equal record.git_base_head`);
+		}
+	}
+	for (const [index, finding] of findings.entries()) {
+		const path = `record.findings[${index}]`;
+		if (finding.replan_cause !== undefined && finding.kind !== "replan_required")
+			violations.push(`${path}.replan_cause is only valid on a replan_required finding`);
+		if (finding.status === "accepted_risk" && (finding.kind !== "blocking" || finding.source !== "review"))
+			violations.push(`${path} accepted_risk requires a blocking Review finding`);
+	}
+	let budgetExtension: number | undefined;
+	if (value.review_round_budget_extension !== undefined) {
+		budgetExtension = positiveInteger(value.review_round_budget_extension, "record.review_round_budget_extension", violations);
+	}
+	const residualRiskAcceptance = value.residual_risk_acceptance === undefined
+		? undefined
+		: parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+	if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
+		violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
+	if (residualRiskAcceptance) {
+		for (const id of residualRiskAcceptance.finding_ids) {
+			if (!findings.some((finding) => finding.id === id && finding.status === "accepted_risk"))
+				violations.push(`record.residual_risk_acceptance.finding_ids names ${id}, which is not accepted_risk`);
+		}
+	}
+	uniqueIds(attestations, "record.attestations", violations);
+	uniqueIds(findings, "record.findings", violations);
+	uniqueIds(history, "record.history", violations);
+	// A persisted refutation is authority: it suppresses a blocking finding
+	// until its bound evidence goes stale. The record must therefore prove the
+	// binding is one the Kernel could have written, or a malformed record could
+	// suppress a finding with evidence for a different acceptance.
+	for (const [index, finding] of findings.entries()) {
+		const path = `record.findings[${index}]`;
+		if (finding.anchor != null && !SHA256_HEX.test(finding.anchor))
+			violations.push(`${path}.anchor must be sha256:<64 hex>`);
+		const anchor = finding.anchor ?? null;
+		const evidence = finding.evidence ?? null;
+		if ((anchor === null) !== (evidence === null))
+			violations.push(`${path} must carry anchor and evidence together`);
+		if (anchor !== null && evidence !== null && anchor !== anchorForEvidence(evidence))
+			violations.push(`${path}.anchor must equal the digest of its evidence`);
+		// A refuted user decision or replan boundary would hide the very gate
+		// those findings exist to hold; only review claims may be refuted.
+		if (
+			finding.status === "refuted" &&
+			(finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+		)
+			violations.push(`${path} refuted requires a blocking or advisory finding`);
+		const counterevidence = finding.counterevidence ?? null;
+		if (finding.status === "refuted" && !counterevidence)
+			violations.push(`${path} status refuted requires counterevidence`);
+		if (!counterevidence) continue;
+		if (finding.status === "open")
+			violations.push(`${path} open finding cannot carry counterevidence`);
+		// The binding need not name the finding's own acceptance: an inherited
+		// refutation carries the QA evidence it was originally proved with. It
+		// must name an acceptance that evidence actually reports as passed, or
+		// the refutation would assert nothing.
+		const attestation = attestations.find(
+			(item) => item.id === counterevidence.attestation_id,
+		);
+		if (!attestation || attestation.kind !== "qa")
+			violations.push(
+				`${path}.counterevidence.attestation_id must reference a qa attestation`,
+			);
+		else if (
+			!attestation.acceptance_results.some(
+				(result) =>
+					result.acceptance_id === counterevidence.acceptance_id &&
+					result.status === "passed",
+			)
+		)
+			violations.push(
+				`${path}.counterevidence.acceptance_id must be an acceptance its attestation passed`,
+			);
+	}
+	if (violations.length > 0) throw new KernelValidationError(violations);
+	const record = {
+		contract: expectedContract,
+		task_id: taskId,
+		intent_snapshot: snapshot as TaskIntentV1,
+		intent_ref: { path: refPath, content_hash: refContentHash },
+		lifecycle: lifecycle as TaskRecordV3["lifecycle"],
+		artifact_state: artifactState as TaskRecordV3["artifact_state"],
+		baseline,
+		...(version === 4 ? { git_base_head: gitBaseHead } : {}),
+		...(version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {}),
+		...(version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {}),
+		attestations,
+		findings,
+		history,
+	};
+	return record as TaskRecordV3 | TaskRecordV4;
+}
+
+/** Strict v4 parser: the Enrollment base commit is mandatory. */
+export function parseTaskRecordV4(raw: unknown): TaskRecordV4 {
+	return parseTaskRecordAtVersion(raw, 4) as TaskRecordV4;
+}
+
+/** Live TaskRecord parser. The v3 drain window is closed: a non-v4 contract is rejected, not fallen back on. */
+export function parseTaskRecord(raw: unknown): TaskRecord {
+	const contract = (raw as { contract?: unknown } | null)?.contract;
+	if (contract !== TASK_RECORD_CONTRACT_V4)
+		throw new KernelValidationError([`contract must equal ${TASK_RECORD_CONTRACT_V4}`]);
+	return parseTaskRecordV4(raw);
+}
+
+export function assertKernelInvariantsV3(intentRaw: TaskIntentV1, recordRaw: TaskRecord): void {
+	const intent = parseTaskIntentV1(intentRaw);
+	const record = parseTaskRecord(recordRaw);
+	const violations: string[] = [];
+	if (intent.task_id !== record.task_id) violations.push("intent and record task_id must match");
+	if (intent.revision !== record.intent_snapshot.revision) violations.push("intent revision must match record snapshot");
+	if (canonicalIntentHash(record.intent_snapshot) !== record.intent_ref.content_hash)
+		violations.push("record intent_ref.content_hash must match its snapshot");
+	const requiredRole: Record<ApprovalKind, ApprovalAuthorityRole> = { review: "reviewer", qa: "qa", user: "user" };
+	for (const approval of record.attestations) {
+		if (approval.authority_role !== requiredRole[approval.kind])
+			violations.push(`approval ${approval.id} kind ${approval.kind} requires authority_role ${requiredRole[approval.kind]}`);
+	}
+	if (violations.length > 0) throw new KernelInvariantError(violations);
+}
+
+// ---------------------------------------------------------------------------
+// R2C2 TaskAction strict parser and update invariants.
+// ---------------------------------------------------------------------------
+
+const ACTION_V2_TYPES = [
+	"authorize_review_retry",
+	"record_review_incomplete",
+	"record_verification",
+	"record_review_verifier_dispute",
+	"record_finding",
+	"resolve_finding",
+	"refute_finding",
+	"record_approval",
+	"revise_intent",
+	"approve_breaking_intent_revision",
+	"request_rework",
+	"complete",
+	"stop",
+	"authorize_rework",
+	"accept_residual_risk",
+	"resolve_user_decision",
+] as const;
+
+const ACTION_BASE_FIELDS = [
+	"type",
+	"event_id",
+	"at",
+	"actor_id",
+	"expected_record_hash",
+	"expected_workspace_hash",
+	"diff_hash",
+] as const;
+
+function parseActionBase(
+	value: Record<string, unknown>,
+	path: string,
+	violations: string[],
+): {
+	type: (typeof ACTION_V2_TYPES)[number];
+	event_id: string;
+	at: string;
+	actor_id: string;
+	expected_record_hash: string;
+	expected_workspace_hash: string;
+	diff_hash: string;
+} {
+	const type = enumAt(value.type, ACTION_V2_TYPES as unknown as string[], `${path}.type`, violations);
+	for (const field of ACTION_BASE_FIELDS) {
+		if (field !== "type" && !(field in value))
+			violations.push(`${path}.${field} is required`);
+	}
+	return {
+		type: type as (typeof ACTION_V2_TYPES)[number],
+		event_id: stringAt(value.event_id, `${path}.event_id`, violations),
+		at: stringAt(value.at, `${path}.at`, violations),
+		actor_id: stringAt(value.actor_id, `${path}.actor_id`, violations),
+		expected_record_hash: stringAt(
+			value.expected_record_hash,
+			`${path}.expected_record_hash`,
+			violations,
+		),
+		expected_workspace_hash: stringAt(
+			value.expected_workspace_hash,
+			`${path}.expected_workspace_hash`,
+			violations,
+		),
+		diff_hash: stringAt(value.diff_hash, `${path}.diff_hash`, violations),
+	};
+}
+
+export function parseTaskAction(raw: unknown): TaskAction {
+	const violations: string[] = [];
+	const value = objectAt(raw, "action", violations);
+	const base = parseActionBase(value, "action", violations);
+	if (!SHA256_HEX.test(base.expected_record_hash))
+		violations.push("action.expected_record_hash must be sha256:<64 hex>");
+	if (!SHA256_HEX.test(base.expected_workspace_hash))
+		violations.push("action.expected_workspace_hash must be sha256:<64 hex>");
+	if (!SHA256_HEX.test(base.diff_hash))
+		violations.push("action.diff_hash must be sha256:<64 hex>");
+
+	let action: TaskAction | null = null;
+	switch (base.type) {
+		case "authorize_review_retry": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash"], "action", violations);
+			if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash)) violations.push("invalid retry intent hash");
+			if (typeof value.review_contract_hash !== "string" || !SHA256_HEX.test(value.review_contract_hash)) violations.push("invalid retry review contract hash");
+			action = { ...base, type: "authorize_review_retry", intent_content_hash: value.intent_content_hash as string, review_contract_hash: value.review_contract_hash as string };
+			break;
+		}
+		case "record_review_incomplete": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "intent_content_hash", "review_contract_hash", "turn_budget", "inspected_paths", "reason", "review_observation"], "action", violations);
+			if (typeof value.intent_content_hash !== "string" || !SHA256_HEX.test(value.intent_content_hash)) violations.push("invalid incomplete intent hash");
+			if (!Number.isSafeInteger(value.turn_budget) || Number(value.turn_budget) < 1 || Number(value.turn_budget) > 96) violations.push("invalid incomplete turn budget");
+			if (!Array.isArray(value.inspected_paths) || value.inspected_paths.some(p => typeof p !== "string" || !p.trim()) || new Set(value.inspected_paths).size !== value.inspected_paths.length) violations.push("invalid incomplete inspected_paths");
+			if (typeof value.reason !== "string" || !value.reason.trim() || /[\r\n\u2028\u2029]/.test(value.reason)) violations.push("incomplete reason must be a non-empty single line");
+			if (value.review_contract_hash !== undefined && (typeof value.review_contract_hash !== "string" || !SHA256_HEX.test(value.review_contract_hash))) violations.push("invalid incomplete review contract hash");
+			action = { ...base, type: "record_review_incomplete", intent_content_hash: value.intent_content_hash as string, turn_budget: value.turn_budget as number, inspected_paths: value.inspected_paths as string[], reason: value.reason as string, ...(value.review_contract_hash !== undefined ? { review_contract_hash: value.review_contract_hash as string } : {}), ...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }) };
+			break;
+		}
+		case "record_verification": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "verification"], "action", violations);
+			action = { ...base, type: "record_verification", verification: parseReviewVerificationHistory(value.verification, "action.verification", violations) };
+			break;
+		}
+		case "record_review_verifier_dispute": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "dispute", "verification"], "action", violations);
+			const verification = value.verification === undefined ? undefined : parseReviewVerificationHistory(value.verification, "action.verification", violations);
+			action = { ...base, type: "record_review_verifier_dispute", dispute: parseReviewVerifierDispute(value.dispute, "action.dispute", violations), ...(verification ? { verification } : {}) };
+			break;
+		}
+		case "record_finding": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "finding"],
+				"action",
+				violations,
+			);
+			action = {
+				...base,
+				type: "record_finding",
+				finding: parseFinding(value.finding, 0, violations),
+			};
+			break;
+		}
+		case "resolve_finding": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "finding_id"],
+				"action",
+				violations,
+			);
+			action = {
+				...base,
+				type: "resolve_finding",
+				finding_id: stringAt(
+					value.finding_id,
+					"action.finding_id",
+					violations,
+				),
+			};
+			break;
+		}
+		case "refute_finding": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "finding_id", "attestation_id"],
+				"action",
+				violations,
+			);
+			action = {
+				...base,
+				type: "refute_finding",
+				finding_id: stringAt(
+					value.finding_id,
+					"action.finding_id",
+					violations,
+				),
+				attestation_id: stringAt(
+					value.attestation_id,
+					"action.attestation_id",
+					violations,
+				),
+			};
+			break;
+		}
+		case "record_approval": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "approval", "review_observation"],
+				"action",
+				violations,
+			);
+			const approval = parseApprovalV2(value.approval, 0, violations, true);
+			if (approval.review_revision && approval.kind !== "review")
+				violations.push("action.approval.review_revision is only valid on review approvals");
+			action = {
+				...base,
+				type: base.type,
+				approval,
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
+			};
+			break;
+		}
+		case "revise_intent":
+		case "approve_breaking_intent_revision": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "next_intent", "next_intent_ref"],
+				"action",
+				violations,
+			);
+			let nextIntent: TaskIntentV1 | null = null;
+			try {
+				nextIntent = parseTaskIntentV1(value.next_intent);
+			} catch {
+				violations.push("action.next_intent must be a valid TaskIntent v1");
+			}
+			const refRaw = objectAt(
+				value.next_intent_ref,
+				"action.next_intent_ref",
+				violations,
+			);
+			rejectUnknown(
+				refRaw,
+				["path", "content_hash"],
+				"action.next_intent_ref",
+				violations,
+			);
+			const refPath = stringAt(
+				refRaw.path,
+				"action.next_intent_ref.path",
+				violations,
+			);
+			const refContentHash = stringAt(
+				refRaw.content_hash,
+				"action.next_intent_ref.content_hash",
+				violations,
+			);
+			if (!SHA256_HEX.test(refContentHash))
+				violations.push(
+					"action.next_intent_ref.content_hash must be sha256:<64 hex>",
+				);
+			action = {
+				...base,
+				type: base.type,
+				next_intent: nextIntent as TaskIntentV1,
+				next_intent_ref: {
+					path: refPath,
+					content_hash: refContentHash,
+				},
+			};
+			break;
+		}
+		case "complete": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS], "action", violations);
+			action = { ...base, type: base.type };
+			break;
+		}
+		case "authorize_rework": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "rounds"], "action", violations);
+			let rounds: number | undefined;
+			if (value.rounds !== undefined) {
+				rounds = positiveInteger(value.rounds, "action.rounds", violations);
+				if (rounds > MAX_REWORK_GRANT_ROUNDS)
+					violations.push(`action.rounds must be an integer from 1 to ${MAX_REWORK_GRANT_ROUNDS}`);
+			}
+			action = { ...base, type: "authorize_rework", ...(rounds !== undefined ? { rounds } : {}) };
+			break;
+		}
+		case "accept_residual_risk": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "reason"], "action", violations);
+			const reason = stringAt(value.reason, "action.reason", violations);
+			if (reason.trim() === "") violations.push("accept_residual_risk requires a non-empty reason");
+			action = { ...base, type: "accept_residual_risk", reason };
+			break;
+		}
+		case "request_rework": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "findings", "review_revision", "verification", "review_observation"],
+				"action",
+				violations,
+			);
+			const findings = arrayAt(
+				value.findings,
+				"action.findings",
+				violations,
+			).map((item, index) => parseFinding(item, index, violations));
+			if (findings.length === 0)
+				violations.push("action.findings must contain at least one finding");
+			const reviewRevision = value.review_revision === undefined
+				? undefined
+				: parseReviewRevisionIdentity(value.review_revision, "action.review_revision", violations);
+			const verification = value.verification === undefined ? undefined : parseReviewVerificationHistory(value.verification, "action.verification", violations);
+			action = {
+				...base,
+				type: "request_rework",
+				findings,
+				...(reviewRevision ? { review_revision: reviewRevision } : {}),
+				...(verification ? { verification } : {}),
+				...(value.review_observation === undefined ? {} : { review_observation: parseReviewObservation(value.review_observation, "action.review_observation", violations) }),
+			};
+			break;
+		}
+		case "stop": {
+			rejectUnknown(value, [...ACTION_BASE_FIELDS, "reason"], "action", violations);
+			action = {
+				...base,
+				type: "stop",
+				reason: stringAt(value.reason, "action.reason", violations),
+			};
+			break;
+		}
+		case "resolve_user_decision": {
+			rejectUnknown(
+				value,
+				[...ACTION_BASE_FIELDS, "finding_id", "resolution"],
+				"action",
+				violations,
+			);
+			action = {
+				...base,
+				type: "resolve_user_decision",
+				finding_id: stringAt(
+					value.finding_id,
+					"action.finding_id",
+					violations,
+				),
+				resolution: stringAt(
+					value.resolution,
+					"action.resolution",
+					violations,
+				),
+			};
+			break;
+		}
+	}
+
+	if (violations.length > 0) throw new KernelValidationError(violations);
+	return action as TaskAction;
+}
+
+export function assertTaskRecordUpdateV3(
+	previousRaw: TaskRecord,
+	nextRaw: TaskRecord,
+	action: TaskAction,
+): void {
+	const previous = parseTaskRecord(previousRaw);
+	const next = parseTaskRecord(nextRaw);
+	const violations: string[] = [];
+
+	if (next.contract !== previous.contract)
+		violations.push("record contract must remain immutable");
+	if (next.task_id !== previous.task_id)
+		violations.push("record task_id must remain immutable");
+	if (next.baseline !== previous.baseline)
+		violations.push("record baseline must remain immutable");
+	if (previous.contract === TASK_RECORD_CONTRACT_V4 && next.contract === TASK_RECORD_CONTRACT_V4 && next.git_base_head !== previous.git_base_head)
+		violations.push("record git_base_head must remain immutable");
+
+	const isIntentAction =
+		action.type === "revise_intent" ||
+		action.type === "approve_breaking_intent_revision";
+
+	if (isIntentAction) {
+		if (
+			next.intent_snapshot.task_id !== previous.intent_snapshot.task_id ||
+			next.intent_snapshot.goal !== previous.intent_snapshot.goal ||
+			next.intent_snapshot.owner !== previous.intent_snapshot.owner
+		)
+			violations.push("intent revision cannot change task identity, goal, or owner");
+	} else {
+		if (
+			next.intent_snapshot.task_id !== previous.intent_snapshot.task_id ||
+			next.intent_snapshot.goal !== previous.intent_snapshot.goal ||
+			next.intent_snapshot.risk !== previous.intent_snapshot.risk ||
+			next.intent_snapshot.revision !== previous.intent_snapshot.revision ||
+			next.intent_snapshot.owner !== previous.intent_snapshot.owner ||
+			canonicalIntentHash(next.intent_snapshot) !==
+				canonicalIntentHash(previous.intent_snapshot)
+		)
+			violations.push("non-intent action cannot change the intent snapshot");
+		if (next.intent_ref.content_hash !== previous.intent_ref.content_hash)
+			violations.push("non-intent action cannot change intent_ref content hash");
+		if (
+			next.intent_ref.path !== previous.intent_ref.path &&
+			action.type !== "request_rework" &&
+			!(action.type === "resolve_user_decision" && action.resolution === "accept_verifier_dispute") &&
+			action.type !== "authorize_rework" &&
+			action.type !== "stop"
+		)
+			violations.push("only artifact transitions may change intent_ref path");
+	}
+
+	// The budget extension grows only by an authorize_rework grant, and the
+	// residual-risk acceptance changes only by accept_residual_risk.
+	const previousExtension = previous.review_round_budget_extension ?? 0;
+	const expectedExtension = previousExtension +
+		(action.type === "authorize_rework" ? (action.rounds ?? 1) : 0);
+	if ((next.review_round_budget_extension ?? 0) !== expectedExtension)
+		violations.push("review_round_budget_extension changes only by an authorize_rework grant");
+	if (action.type === "accept_residual_risk") {
+		const acceptance = next.residual_risk_acceptance;
+		const newlyAccepted = next.findings
+			.filter((item) => item.status === "accepted_risk" &&
+				previous.findings.find((prior) => prior.id === item.id)?.status !== "accepted_risk")
+			.map((item) => item.id)
+			.sort();
+		if (!acceptance)
+			violations.push("accept_residual_risk must record residual_risk_acceptance");
+		else if (
+			acceptance.diff_hash !== action.diff_hash ||
+			acceptance.intent_revision !== next.intent_snapshot.revision ||
+			acceptance.intent_content_hash !== next.intent_ref.content_hash ||
+			acceptance.reason !== action.reason ||
+			acceptance.actor_id !== action.actor_id ||
+			JSON.stringify([...acceptance.finding_ids].sort()) !== JSON.stringify(newlyAccepted)
+		)
+			violations.push("residual_risk_acceptance must bind the accepting action and the findings it accepted");
+	} else if (
+		JSON.stringify(next.residual_risk_acceptance ?? null) !==
+		JSON.stringify(previous.residual_risk_acceptance ?? null)
+	)
+		violations.push("residual_risk_acceptance changes only by accept_residual_risk");
+
+	// Attestations and history are append-only.
+	if (next.attestations.length < previous.attestations.length)
+		violations.push("attestations are append-only");
+	const expectedHistoryEntries = (action.type === "request_rework" || action.type === "record_review_verifier_dispute") && action.verification ? 2 : 1;
+	if (next.history.length !== previous.history.length + expectedHistoryEntries)
+		violations.push(`exactly ${expectedHistoryEntries} history entr${expectedHistoryEntries === 1 ? "y" : "ies"} must be appended`);
+
+	for (const prior of previous.attestations) {
+		const current = next.attestations.find((item) => item.id === prior.id);
+		if (!current || JSON.stringify(current) !== JSON.stringify(prior))
+			violations.push(`attestation ${prior.id} was rewritten`);
+	}
+	const resolvingFindingIds =
+		action.type === "resolve_finding"
+			? [action.finding_id]
+			: action.type === "resolve_user_decision"
+				? [action.finding_id]
+			: action.type === "authorize_rework" ||
+				  action.type === "accept_residual_risk" ||
+				  action.type === "approve_breaking_intent_revision"
+				? previous.findings
+					.filter((item) => item.kind === "replan_required" && item.status === "open")
+					.map((item) => item.id)
+				: [];
+	// A transition may change only the fields it writes; a legal-looking
+	// transition must not carry a rewritten claim along with it.
+	const withoutFields = (finding: TaskFinding, fields: readonly string[]): string => {
+		const copy: Record<string, unknown> = { ...finding };
+		for (const field of fields) delete copy[field];
+		return JSON.stringify(copy);
+	};
+	for (const prior of previous.findings) {
+		const current = next.findings.find((item) => item.id === prior.id);
+		if (!current)
+			violations.push(`finding item ${prior.id} was removed`);
+		else if (
+			JSON.stringify(current) !== JSON.stringify(prior) &&
+			// A finding may move to resolved from open, or from a refutation
+			// whose bound evidence went stale (the Spec's stale -> resolved
+			// edge); a refutation that is still live already suppresses the
+			// finding and may not be made permanent. Only refute_finding may set
+			// or renew refuted, and only stale refutations are rebindable.
+			!(
+				resolvingFindingIds.includes(prior.id) &&
+				prior.status !== "resolved" &&
+				current.status === "resolved" &&
+				(prior.status === "open" ||
+					!refutationIsLive(
+						prior,
+						previous.attestations,
+						refutationIdentity(previous, action.diff_hash),
+					)) &&
+				withoutFields(prior, ["status"]) === withoutFields(current, ["status"])
+			) &&
+			!(
+				// accept_residual_risk moves an open blocking Review finding to
+				// accepted_risk and changes nothing else about it.
+				action.type === "accept_residual_risk" &&
+				prior.kind === "blocking" &&
+				prior.source === "review" &&
+				prior.status === "open" &&
+				current.status === "accepted_risk" &&
+				withoutFields(prior, ["status"]) === withoutFields(current, ["status"])
+			) &&
+			!(
+				action.type === "refute_finding" &&
+				prior.id === action.finding_id &&
+				prior.status !== "resolved" &&
+				current.status === "refuted" &&
+				// First refutation, or the Spec's stale -> refuted renewal: a
+				// refutation that is still live may neither be renewed nor
+				// rebound to other evidence.
+				(prior.status === "open" ||
+					!refutationIsLive(
+						prior,
+						previous.attestations,
+						refutationIdentity(previous, action.diff_hash),
+					)) &&
+				current.counterevidence?.attestation_id === action.attestation_id &&
+				// The renewal binds the acceptance the finding names, not just any
+				// acceptance the attestation happens to pass (Spec: the evidence
+				// must cover the finding's own acceptance_id).
+				current.counterevidence?.acceptance_id === prior.acceptance_id &&
+				isFreshPassingQaAttestation(
+					previous.attestations.find((item) => item.id === action.attestation_id),
+					current.counterevidence?.acceptance_id ?? "",
+					refutationIdentity(previous, action.diff_hash),
+				) &&
+				withoutFields(prior, ["status", "counterevidence"]) ===
+					withoutFields(current, ["status", "counterevidence"])
+			)
+		)
+			violations.push(`finding item ${prior.id} was rewritten`);
+	}
+
+	if (violations.length > 0) throw new KernelInvariantError(violations);
+}

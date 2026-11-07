@@ -1,0 +1,455 @@
+export const TASK_PHASES = ["working", "review", "done", "stopped"] as const;
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+export const TASK_LIFECYCLES = ["active", "done", "stopped"] as const;
+export type TaskLifecycle = (typeof TASK_LIFECYCLES)[number];
+export const TASK_ARTIFACT_STATES = ["active", "frozen"] as const;
+export type TaskArtifactState = (typeof TASK_ARTIFACT_STATES)[number];
+
+export const TASK_RISKS = ["routine", "material", "critical"] as const;
+export type TaskRisk = (typeof TASK_RISKS)[number];
+
+export type EvidenceStatus = "passed" | "failed" | "blocked";
+
+export type FindingKind =
+	| "blocking"
+	| "advisory"
+	| "unresolved_user_decision"
+	| "replan_required";
+export type FindingStatus = "open" | "resolved" | "refuted" | "accepted_risk";
+
+/**
+ * Why a `replan_required` boundary was raised. Absent on boundaries written
+ * before this field existed; such a boundary offers no residual-risk exit.
+ */
+export type ReplanCause = "budget_exhausted" | "repeated_security_boundary";
+export type FindingSource = "execution" | "review" | "kernel" | "migration";
+
+/** Machine-checkable provenance a Review finding must carry at the verdict boundary. */
+export interface FindingEvidence {
+	trigger: string;
+	caller_chain: string[];
+	violated: {
+		kind: "acceptance" | "security_boundary";
+		ref: string;
+	};
+}
+
+export interface FindingCounterevidence {
+	attestation_id: string;
+	acceptance_id: string;
+}
+
+export interface TaskFinding {
+	id: string;
+	kind: FindingKind;
+	status: FindingStatus;
+	acceptance_id: string | null;
+	source: FindingSource;
+	review_round: number | null;
+	summary: string;
+	/**
+	 * Additive v4 fields. Absent on records written before this contract
+	 * extension, so the TaskRecord contract is not bumped; `parseFinding`
+	 * normalizes them to null.
+	 *
+	 * `anchor` identifies the claim (sha256 over violated + caller_chain),
+	 * `evidence` is the reviewer-supplied provenance that produced it, and
+	 * `counterevidence` binds a refutation to the Kernel-validated QA
+	 * attestation that contradicted the claim.
+	 */
+	anchor?: string | null;
+	evidence?: FindingEvidence | null;
+	counterevidence?: FindingCounterevidence | null;
+	/** `replan_required` findings only: the Kernel-observed cause of the boundary. */
+	replan_cause?: ReplanCause;
+}
+
+export type ApprovalKind = "review" | "qa" | "user";
+export type ApprovalAuthorityRole = "reviewer" | "qa" | "user";
+
+export interface UserAuthorityAudit {
+	actor_id: string;
+	source: "literal_user";
+	confirmation_ref: string;
+}
+
+export interface CompletionDecision {
+	complete: boolean;
+	fresh_acceptance_ids: string[];
+	missing_acceptance_ids: string[];
+	stale_attestation_ids: string[];
+	missing_approval_kinds: ApprovalKind[];
+	blocking_finding_ids: string[];
+	unresolved_user_decision_ids: string[];
+	replan_required_ids: string[];
+	independence_violations: string[];
+}
+
+export type AssuranceObligation =
+	| "resolve_findings"
+	| "resolve_user_decision"
+	| "revise_intent"
+	| "submit_assurance"
+	| "run_qa"
+	| "run_review"
+	| "complete"
+	| "none";
+
+export interface LegacyMapping {
+	phase: TaskPhase | null;
+	reason: string;
+	ambiguous: boolean;
+	source_states: string[];
+}
+
+export interface V3CommitSourceEvent {
+	id: string;
+	action: string;
+	at: string | null;
+}
+
+export interface V3AuthorityObservation {
+	contract: "assurance_kernel/v3_authority_observation/v1";
+	observer_version: string;
+	observation_id: string;
+	commit_id: string;
+	ledger_revision: string;
+	committed_at: string;
+	plan_path: string | null;
+	plan_signature: string | null;
+	source_events: V3CommitSourceEvent[];
+	shadow: LegacyMapping;
+	divergence: {
+		detected: boolean;
+		fields: string[];
+	};
+}
+
+// ---------------------------------------------------------------------------
+// P2C1 additive identity contracts (TaskIntent v1 / TaskRecord v2).
+// Existing v1 contracts above remain byte-for-byte unchanged.
+// ---------------------------------------------------------------------------
+
+export const TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1" as const;
+export const TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2" as const;
+export const TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3" as const;
+export const TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4" as const;
+export const REVIEW_REVISION_IDENTITY_CONTRACT =
+	"assurance_kernel/review_revision_identity/v1" as const;
+
+export interface TaskIntentAcceptanceItemV1 {
+	id: string;
+	assertion: string;
+	verification: string;
+}
+
+export interface TaskIntentV1 {
+	contract: typeof TASK_INTENT_CONTRACT_V1;
+	task_id: string;
+	goal: string;
+	acceptance: TaskIntentAcceptanceItemV1[];
+	scope_hint: string[];
+	scope_size_reason?: string;
+	risk: TaskRisk;
+	revision: number;
+	owner: "user";
+}
+
+export interface TaskIntentRefV1 {
+	path: string;
+	revision: number;
+	content_hash: string;
+}
+
+export interface TaskIntentRefV3 {
+	path: string;
+	content_hash: string;
+}
+
+/**
+ * One non-blocking Review note. Advisories travel inside the attestation itself
+ * so a crash can never commit a pass verdict without its notes.
+ */
+export interface ReviewAdvisoryFindingV1 {
+	id: string;
+	acceptance_id: string | null;
+	summary: string;
+	anchor: string | null;
+	evidence: FindingEvidence | null;
+}
+
+export interface TaskApprovalV2 {
+	id: string;
+	kind: ApprovalKind;
+	authority_role: ApprovalAuthorityRole;
+	task_revision: number;
+	intent_content_hash: string;
+	diff_hash: string;
+	actor_id: string;
+	summary: string;
+	/**
+	 * Immutable Git revision identity the reviewer actually analyzed. Legal only
+	 * on a review attestation of a TaskRecord v4; the strict parser rejects it
+	 * anywhere else, so QA and user attestations never carry revision bytes.
+	 */
+	review_revision?: ReviewRevisionIdentityV1;
+	/** Legal only on a review attestation, alongside its revision identity. */
+	advisory_findings?: ReviewAdvisoryFindingV1[];
+	/**
+	 * ADR 0017: sha256 over the reviewer's own result bytes as observed by the
+	 * host, bound at submission so post-hoc audit can prove the persisted
+	 * verdict equals what the reviewer produced. Legal only on a review
+	 * attestation; emitted only when present so legacy records stay stable.
+	 */
+	reviewer_verdict_sha256?: string;
+}
+
+export interface ReviewRevisionIdentityV1 {
+	contract: typeof REVIEW_REVISION_IDENTITY_CONTRACT;
+	base_head: string;
+	review_commit: string;
+	review_tree: string;
+	manifest_digest: string;
+}
+
+export interface TaskAttestationV3 extends TaskApprovalV2 {
+	acceptance_results: Array<{
+		acceptance_id: string;
+		status: EvidenceStatus;
+		summary: string;
+	}>;
+}
+
+export interface ReviewVerifierRefutationV1 {
+	anchor: string;
+	finding_id: string;
+	counter_path: string;
+	verifier_actor: string;
+}
+
+/** An observation, not a Review approval. */
+export interface ReviewVerificationHistoryV1 {
+	snapshot_digest: string;
+	intent_content_hash: string;
+	diff_hash: string;
+	verdict_sha256: string;
+	dispatched_at: string;
+	submitted_at: string;
+	result_sha256: string | null;
+	verifier_actor: string | null;
+	reviewer_model: string | null;
+	verifier_model: string | null;
+	model_relation: "same" | "different" | null;
+	checked: number;
+	verifier_refutations: ReviewVerifierRefutationV1[];
+	failure?: string;
+}
+
+export interface ReviewVerifierDisputeV1 {
+	decision_id: string;
+	finding: { id: string; acceptance_id: string | null; summary: string; anchor: string; evidence: FindingEvidence };
+	counter_path: string;
+	verdict_sha256: string;
+	intent_content_hash: string;
+	diff_hash: string;
+}
+
+export interface ReviewObservationFacts {
+	review_started_at: string;
+	review_submitted_at: string;
+	reviewer_model?: string;
+}
+
+export interface TaskHistoryEntryV3 {
+	id: string;
+	at: string;
+	type: string;
+	from_state: string;
+	to_state: string;
+	reason: string;
+	authority?: AuthorityAuditDescriptor;
+	/**
+	 * The revision a Review-authored rework analyzed. Optional so legacy records
+	 * and QA or user rework stay valid; later rounds derive their delta from it.
+	 */
+	review_revision?: ReviewRevisionIdentityV1;
+	/** A verification event never grants a Review approval. */
+	verification?: ReviewVerificationHistoryV1;
+	/** Claim and counter-path presented to the literal user. */
+	review_verifier_dispute?: ReviewVerifierDisputeV1;
+	review_started_at?: string;
+	review_submitted_at?: string;
+	reviewer_model?: string;
+}
+
+export interface TaskRecordV3 {
+	contract: typeof TASK_RECORD_CONTRACT_V3;
+	task_id: string;
+	intent_snapshot: TaskIntentV1;
+	intent_ref: TaskIntentRefV3;
+	lifecycle: TaskLifecycle;
+	artifact_state: TaskArtifactState;
+	baseline: string;
+	attestations: TaskAttestationV3[];
+	findings: TaskFinding[];
+	history: TaskHistoryEntryV3[];
+}
+
+/**
+ * TaskRecord v4 binds the Enrollment commit so Review, QA, authorization, and
+ * completion derive one revision from base to final index tree. For a clean-start
+ * single task, `git_base_head` is its enrollment_head and includes the whole delta.
+ * It is immutable from Enrollment through terminal settlement.
+ */
+export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
+	contract: typeof TASK_RECORD_CONTRACT_V4;
+	git_base_head: string;
+	/**
+	 * Cumulative Review rework rounds the literal user granted past
+	 * `REVIEW_REWORK_ROUND_BUDGET`. Optional and additive; absent means 0.
+	 */
+	review_round_budget_extension?: number;
+	/** The literal user's acceptance of the open blocking Review findings for one exact revision. */
+	residual_risk_acceptance?: ResidualRiskAcceptanceV1;
+}
+
+/**
+ * Binds an `accept_residual_risk` decision to the intent revision and diff it
+ * was made for. It stands in for the Review approval only while all three
+ * still match the current identity; any later change makes it stale and
+ * Review is required again.
+ */
+export interface ResidualRiskAcceptanceV1 {
+	intent_revision: number;
+	intent_content_hash: string;
+	diff_hash: string;
+	finding_ids: string[];
+	reason: string;
+	actor_id: string;
+	accepted_at: string;
+}
+
+/** The live record shape every Kernel owner passes around. The v3 drain window is closed: `TaskRecordV2`/`TaskRecordV3` remain only as the frozen historical shapes `readAuditTaskPair` reads from `.imm/audit/`. */
+export type TaskRecord = TaskRecordV4;
+
+export interface TaskProjectionV3 extends CompletionDecision {
+	contract: "assurance_kernel/projection/v3";
+	task_id: string;
+	intent_revision: number;
+	lifecycle: TaskLifecycle;
+	artifact_state: TaskArtifactState;
+	blocked: boolean;
+	next_obligation: AssuranceObligation;
+}
+
+export type IntentRevisionClass =
+	| "unchanged"
+	| "compatible"
+	| "breaking";
+
+export const TASK_ACTION_CONTRACT = "assurance_kernel/task_action/v2" as const;
+
+export type MutationAuthorityKind = "review" | "qa" | "user";
+
+export interface AuthorityAuditDescriptor {
+	authority_kind: MutationAuthorityKind;
+	actor_id: string;
+	confirmation_ref: string;
+	issued_at: string;
+	/** Read-only: history written before authority lost its clock still carries it. Never written. */
+	expires_at?: string;
+}
+
+export interface TaskActionBase {
+	event_id: string;
+	at: string;
+	actor_id: string;
+	expected_record_hash: string;
+	expected_workspace_hash: string;
+	diff_hash: string;
+}
+
+export interface ReviewIncompleteFacts {
+	/** Optional only for reading history; live writes require the current contract. */
+	review_contract_hash?: string;
+	intent_content_hash: string;
+	diff_hash: string;
+	turn_budget: number;
+	inspected_paths: string[];
+	reason: string;
+}
+
+export type TaskAction =
+	| (TaskActionBase & { type: "authorize_review_retry"; intent_content_hash: string; review_contract_hash: string })
+	| (TaskActionBase & ReviewIncompleteFacts & { type: "record_review_incomplete"; review_observation?: ReviewObservationFacts })
+	| (TaskActionBase & { type: "record_verification"; verification: ReviewVerificationHistoryV1 })
+	| (TaskActionBase & { type: "record_review_verifier_dispute"; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1 })
+	| (TaskActionBase & { type: "record_finding"; finding: TaskFinding })
+	| (TaskActionBase & { type: "resolve_finding"; finding_id: string })
+	| (TaskActionBase & {
+			type: "refute_finding";
+			finding_id: string;
+			attestation_id: string;
+	  })
+	| (TaskActionBase & { type: "record_approval"; approval: TaskApprovalV2; review_observation?: ReviewObservationFacts })
+	| (TaskActionBase & {
+			type: "revise_intent";
+			next_intent: TaskIntentV1;
+			next_intent_ref: TaskIntentRefV3;
+	  })
+	| (TaskActionBase & {
+			type: "approve_breaking_intent_revision";
+			next_intent: TaskIntentV1;
+			next_intent_ref: TaskIntentRefV3;
+	  })
+	| (TaskActionBase & {
+			type: "request_rework";
+			findings: TaskFinding[];
+			/** Review-authored rework only: the immutable revision that Review analyzed. */
+			review_revision?: ReviewRevisionIdentityV1;
+			/** Verification facts committed atomically with the kept findings. */
+			verification?: ReviewVerificationHistoryV1;
+			review_observation?: ReviewObservationFacts;
+	  })
+	| (TaskActionBase & { type: "complete" })
+	| (TaskActionBase & { type: "stop"; reason: string })
+	| (TaskActionBase & {
+			type: "authorize_rework";
+			/** Further Review rework rounds granted, 1-5. Absent means 1. */
+			rounds?: number;
+	  })
+	| (TaskActionBase & { type: "accept_residual_risk"; reason: string })
+	| (TaskActionBase & { type: "resolve_user_decision"; finding_id: string; resolution: string });
+
+
+/** Branded, non-serializable reducer result. */
+export const REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
+
+export interface ReducedTaskMutation {
+	readonly [REDUCED_MUTATION_BRAND]: true;
+	readonly record: TaskRecord;
+	readonly next_workspace_working: string | null;
+}
+
+export interface StoredTaskMutationV3 {
+	revision: string;
+	record: TaskRecord;
+	workspace: {
+		revision: string;
+		state: WorkspaceStateLike;
+	};
+}
+
+export interface WorkspaceStateLike {
+	contract: "assurance_kernel/workspace/v1";
+	current_working: string | null;
+}
+
+export const MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol(
+	"assurance-kernel-mutation-authority-capability",
+);
+
+export interface MutationAuthorityCapabilityV2 {
+	readonly [MUTATION_AUTHORITY_CAPABILITY_BRAND]: true;
+}

@@ -72,7 +72,7 @@ describe("current Pi-only contracts", () => {
     expect(readFileSync(resolve(ROOT, "plugins/immune-brain/README.md"), "utf8")).toContain("Pi host extension or the Claude Code plugin");
     const preferencesDoc = readFileSync(resolve(ROOT, "docs/reference/immune-brain-config.md"), "utf8");
     // ADR 0034: one user file and one tracked project file replace instruction-file directives and the Lane preset.
-    for (const term of ["~/.config/immune-brain/config.json", "`.imm/config.json`", "imm-kernel config --json", "../adr/0034-layered-configuration.md"])
+    for (const term of ["~/.config/immune-brain/config.json", "`.imm/config.json`", "imm-kernel config --json", "`docs/adr/0034-layered-configuration.md`"])
       expect(preferencesDoc).toContain(term);
     // Each legacy source is documented with its replacement key.
     for (const [legacy, replacement] of [

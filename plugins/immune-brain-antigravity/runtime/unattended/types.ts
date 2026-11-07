@@ -1,0 +1,93 @@
+import type { GithubInitiativeObservation } from "../github_issue_tracker";
+import type { LocalInitiativeObservation } from "../local_initiative";
+
+export interface BatchPlanBudget {
+	max_children: number;
+	qa_failure_limit: number;
+}
+
+export interface BatchPlanBudgetInput {
+	max_children?: number;
+	qa_failure_limit?: number;
+}
+
+export interface BatchPlanDigestChild {
+	task_id: string;
+	intent_path: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	/** Frozen authority subject (Spec branch-boundary D5); absent on a legacy plan. */
+	intent_authority_hash?: string;
+	blocked_by: string[];
+}
+
+export type BatchPlanChildStatus =
+	| "enrollable"
+	| "already_settled"
+	| "already_owned"
+	| "needs_human"
+	| "blocked";
+
+/**
+ * Stable per-child exclusion reasons a Host renders verbatim. The Spec-binding
+ * reasons mirror the shared enrollment precondition, and the incomplete form
+ * names every path the TaskIntent has to add.
+ */
+export type BatchPlanChildReason =
+	| "invalid_intent"
+	| "dependency_unavailable"
+	| "spec_binding_missing"
+	| "spec_binding_ambiguous"
+	| `spec_binding_incomplete: ${string}`;
+
+export interface BatchPlanChild {
+	task_id: string;
+	slice_id: string;
+	blocked_by: string[];
+	status: BatchPlanChildStatus;
+	reason: BatchPlanChildReason | null;
+	intent_path: string | null;
+	intent_revision: number | null;
+	intent_content_hash: string | null;
+	/** Frozen authority subject of an enrollable child (Spec branch-boundary D5). */
+	intent_authority_hash?: string;
+}
+
+/** Start waves of enrollable children: each is ready and pairwise scope-disjoint. */
+export type BatchPlanParallelGroups = string[][];
+
+/**
+ * A ready child held out of a start wave because its scope cannot be proved
+ * disjoint from the listed children, so it serializes after them.
+ */
+export interface BatchPlanScopeConflict {
+	task_id: string;
+	overlaps_with: string[];
+}
+
+export interface BatchPlan {
+	contract: "assurance_kernel/batch_plan/v1";
+	initiative_slug: string;
+	confirmation_time: string;
+	tracker_observation: InitiativeObservation;
+	children: BatchPlanChild[];
+	enrollable: BatchPlanDigestChild[];
+	plan_digest: string;
+	budget: BatchPlanBudget;
+	/** Additive projection; not part of `plan_digest`. */
+	parallel_groups: BatchPlanParallelGroups;
+	scope_conflicts: BatchPlanScopeConflict[];
+}
+
+export interface ProjectBatchPlanInput {
+	confirmation_time: string;
+	budget?: BatchPlanBudgetInput;
+}
+
+/** What either Initiative carrier yields: the Tasks, their Slices, and their dependencies. */
+export type InitiativeObservation = GithubInitiativeObservation | LocalInitiativeObservation;
+
+export type InitiativeObservationReader = (
+	root: string,
+	initiativeSlug: string,
+) => Promise<InitiativeObservation>;

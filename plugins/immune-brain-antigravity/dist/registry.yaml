@@ -1,0 +1,76 @@
+version: 1
+source_glob: skills/*/SKILL.md
+skills:
+  - name: clarify
+    path: skills/clarify/SKILL.md
+    role: brainstorm
+    title: Clarify
+    role_class: framing
+    canonical: true
+    modes: [default, roundtable, adversarial]
+    output_artifacts: [brainstorm_framing]
+    next_actions: [draw-up]
+    boundary: Problem framing only; no implementation or QA closure.
+  - name: draw-up
+    path: skills/draw-up/SKILL.md
+    role: plan
+    title: Draw Up
+    role_class: authority
+    canonical: true
+    output_artifacts: [validated_plan]
+    next_actions: [drive]
+    boundary: Owns plan creation and revision; no executor edits.
+  - name: drive
+    path: skills/drive/SKILL.md
+    role: coordinate
+    title: Drive
+    role_class: coordinator
+    canonical: true
+    output_artifacts: [run_status]
+    next_actions: [draw-up]
+    boundary: Coordinate the validated plan through execution, review, and settlement; no planning bypass.
+  - name: fix-pr
+    path: skills/fix-pr/SKILL.md
+    role: execute
+    title: Fix PR
+    role_class: repair
+    canonical: true
+    output_artifacts: [repair_report]
+    next_actions: []
+    boundary: Repair one GitHub PR directly; no Managed authority mutation or scope expansion.
+  - name: prune-docs
+    path: skills/prune-docs/SKILL.md
+    role: execute
+    title: Prune Docs
+    role_class: repair
+    canonical: true
+    output_artifacts: [prune_report]
+    next_actions: []
+    boundary: Prune stale current documentation after explicit manifest approval; no Managed authority mutation or authority-artifact deletion.
+  - name: slim
+    path: skills/slim/SKILL.md
+    role: execute
+    title: Slim
+    role_class: repair
+    canonical: true
+    output_artifacts: [maintain_report]
+    next_actions: []
+    boundary: Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation.
+  - name: prune-tests
+    path: skills/prune-tests/SKILL.md
+    role: execute
+    title: Prune Tests
+    role_class: repair
+    canonical: true
+    output_artifacts: [test_prune_report]
+    next_actions: []
+    boundary: Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening.
+  - name: revisit
+    path: skills/revisit/SKILL.md
+    role: execute
+    title: Revisit
+    role_class: discovery
+    canonical: true
+    output_artifacts: [retro_report]
+    next_actions: []
+    boundary: Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation.

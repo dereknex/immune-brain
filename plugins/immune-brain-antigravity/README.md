@@ -1,0 +1,44 @@
+# Immune-Brain for Antigravity
+
+Independently installable Antigravity plugin for Immune-Brain: public skills, native
+read-only role definitions, hooks, the bundled MCP server and the `imm-*` CLI wrappers.
+Everything it references resolves inside this directory; install this directory, not
+`plugins/immune-brain/` (the Pi and Claude Code root).
+
+## Install
+
+```sh
+agy plugin install ./plugins/immune-brain-antigravity
+agy plugin validate ./plugins/immune-brain-antigravity --strict
+```
+
+The npm package ships this directory as `plugins/immune-brain-antigravity/`. Existing
+installs of the former shared-root manifest must be reinstalled from this directory.
+
+## Layout
+
+| Path | Owner |
+| --- | --- |
+| `.antigravity-plugin/plugin.json`, `mcp_config.json`, `hooks.json`, `README.md` | Maintained here; the manifest version is stamped from the root `package.json` |
+| `agents/` | Generated native role definitions: reviewer, review verifier, QA, UI review, advisory reviewer. Read-only tools, no shell |
+| `skills/`, `bin/`, `runtime/`, `dist/`, `BASELINE.md` | Generated from `plugins/immune-brain/` |
+| `dist/antigravity/mcp-server.mjs` | Generated MCP server and hook bundle |
+
+Do not edit generated paths. Regenerate with `bun scripts/build-antigravity-plugin.ts`;
+`bun scripts/build-antigravity-plugin.ts --check` fails on changed, missing or stale
+generated files and never writes.
+
+## Known limitation: native reviewer and verifier
+
+The native reviewer and review-verifier definitions are read-only and have no shell tool.
+Immutable Git access and review-packet hash verification by those native roles are not
+certified: the shared Review prompt expects immutable Git commands and packet hash
+checks that a shell-less native role cannot run. This package does not grant shell tools,
+copy source into the review packet, or change shared Review authority, and it does not
+certify the complete Managed lifecycle (Enrollment, QA, Review, completion) on Antigravity.
+Package checks verify the read-only restrictions and this disclosure, not real model behavior.
+
+## Hooks and MCP
+
+Hook commands run from the plugin directory (`node "./dist/antigravity/mcp-server.mjs" --hook`)
+and need no `PLUGIN_ROOT`. The MCP server is resolved with `${PLUGIN_ROOT}`.

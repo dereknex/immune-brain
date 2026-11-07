@@ -1,0 +1,7 @@
+{
+  "contract": "immune_brain/runtime_contracts/v1",
+  "task_record": "assurance_kernel/task_record/v4",
+  "task_tombstone": "assurance_kernel/task_tombstone/v2",
+  "assurance_projection": "assurance_kernel/assurance_projection/v1",
+  "kernel_store_schema": 1
+}

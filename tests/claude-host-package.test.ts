@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, cpSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { buildClaudePlugin, checkClaudePlugin, readonlyRoleDefinitionDrift, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
 import {
@@ -45,6 +45,9 @@ function withPackageFixture<T>(run: (root: string) => T): T {
   try {
     cpSync(join(ROOT, "package.json"), join(root, "package.json"));
     cpSync(PLUGIN_ROOT, join(root, "plugins/immune-brain"), { recursive: true });
+    const antigravityManifest = "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json";
+    mkdirSync(dirname(join(root, antigravityManifest)), { recursive: true });
+    cpSync(join(ROOT, antigravityManifest), join(root, antigravityManifest));
     return run(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -72,6 +75,7 @@ describe("claude host package", () => {
     expect(validateManifests(ROOT).files).toEqual([
       "package.json",
       "plugins/immune-brain/.claude-plugin/plugin.json",
+      "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json",
       "plugins/immune-brain/runtime/plugin_version.ts",
     ]);
     const missing = mkdtempSync(join(tmpdir(), "missing-plugin-"));
