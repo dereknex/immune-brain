@@ -1,0 +1,154 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "single-task-delivery-path-identity",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "single-task-delivery-path-identity",
+    "goal": "Make single-task manual checkout delivery succeed per delivered path when that path already exists byte-, mode- and index-identical, while every non-identical or conflicting path keeps blocking without being overwritten. Follow docs/specs/single-task-delivery-path-identity.spec.md. Keep deliveryAlreadyApplied whole-delivery semantics and auto-mode lineage behavior unchanged, and keep overlap protection for unsatisfied paths. Do not deliver the other parked batches here and do not edit batch records, Kernel state or user planning files.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source: Spec E1. At tests/single-task-checkout-delivery.test.ts, in manual mode a delivery whose one path is already staged with identical bytes and mode while the others are absent returns staged, applies exactly the remaining paths, keeps the satisfied path index- and byte-identical, and leaves the checkout fully applied.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source: Spec E2. At tests/single-task-checkout-delivery.test.ts, four negative shapes still block with checkout_delivery_overlap and leave HEAD, index and worktree byte-identical: (a) a would-be satisfied path whose worktree bytes differ, (b) an executable-bit drift on that path, (c) a delivered deletion still present, (d) an overlapping unrelated user file. A path accepted on bytes alone or an unsatisfied path silently skipped fails this check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source: Spec E1. At tests/single-task-checkout-delivery.test.ts, a second delivery call after a successful partial delivery reports the same success, changes nothing in the checkout snapshot, and agrees with deliveryAlreadyApplied.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-checkout-delivery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Source: Spec E5. At tests/single-task-lane-batch.test.ts, the startBatch driver for a settled child whose delivery includes the coordinator's own staged planning sidecar reports batch_state completed with return_to_coordinator.status staged; the sidecar keeps its bytes, every delivered path is applied exactly once, and the task audit pair is present.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/single-task-delivery-path-identity.md",
+      "docs/plans/single-task-delivery-path-identity.intent.json",
+      "docs/specs/single-task-delivery-path-identity.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+      "tests/single-task-checkout-delivery.test.ts",
+      "tests/single-task-lane-batch.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/single-task-delivery-path-identity.intent.json",
+    "content_hash": "sha256:562ea1738671b44ee9b1cf61b69d8c6f607c41a7a2620122b01e2b80d5cf7317"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:562ea1738671b44ee9b1cf61b69d8c6f607c41a7a2620122b01e2b80d5cf7317",
+  "git_base_head": "afe1b4a45716567a682e771feccf1fa879bd87a1",
+  "attestations": [
+    {
+      "id": "approval-qa-f832ffb1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:562ea1738671b44ee9b1cf61b69d8c6f607c41a7a2620122b01e2b80d5cf7317",
+      "diff_hash": "sha256:e96e16265be67855e919acadbcf1284cfa93880d0a94c127cfa2a197a738bdf1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:f6e701d3f231a7e104b4ac2244c865bd76385f2d28c2c0faab1e41b0e98d93cd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f6e701d3f231a7e104b4ac2244c865bd76385f2d28c2c0faab1e41b0e98d93cd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f6e701d3f231a7e104b4ac2244c865bd76385f2d28c2c0faab1e41b0e98d93cd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f6e701d3f231a7e104b4ac2244c865bd76385f2d28c2c0faab1e41b0e98d93cd"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:f6e701d3f231a7e104b4ac2244c865bd76385f2d28c2c0faab1e41b0e98d93cd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d00101cd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:562ea1738671b44ee9b1cf61b69d8c6f607c41a7a2620122b01e2b80d5cf7317",
+      "diff_hash": "sha256:e96e16265be67855e919acadbcf1284cfa93880d0a94c127cfa2a197a738bdf1",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius: tier medium, load-bearing path plugins/immune-brain/runtime/unattended/checkout_delivery.ts and its generated Claude bundle. The diff makes manual delivery per-path: satisfied paths are skipped, and pending paths keep overlap blocking and patch-by-pathspec. Auto mode and whole-delivery replay are unchanged, and the bundle matches the source. The tests cover AC1-AC4, including the bytes, mode, deletion and unrelated-file negative cases, and the driver-level sidecar delivery. Kernel QA reports passed outcomes for AC1-AC3 and the visible part of the outcomes line shows AC4 starting with 'pa', which I assume is also passed.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "afe1b4a45716567a682e771feccf1fa879bd87a1",
+        "review_commit": "cd8b4f28ef7e838d10929ddbe2d3fa7408104762",
+        "review_tree": "70c0279da38ae93f2ed8855e90b425cd125e39e3",
+        "manifest_digest": "sha256:dd9fd631ee83e7501722d0907c2933097e8755a64c79d53330a51ff6eca64a13"
+      },
+      "reviewer_verdict_sha256": "sha256:aca0d2094d649af5ca6e5b4c1729651c98924fbbcaf1dac24c22d9aee9f8d2ba"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:single-task-delivery-path-identity:2026-11-06T15:21:33.254Z",
+      "at": "2026-11-06T15:21:33.254Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-task-delivery-path-identity.intent.json"
+    },
+    {
+      "id": "record_approval:single-task-delivery-path-identity:2026-11-06T15:22:35.927Z",
+      "at": "2026-11-06T15:22:35.927Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f832ffb1\naction_v2_sha256:374342a25065e0ae8e9e61aa966715dec6041d0836792c633e8042a5828fb362",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-06T15:22:35.927Z"
+      }
+    },
+    {
+      "id": "record_approval:single-task-delivery-path-identity:2026-11-06T15:25:36.184Z",
+      "at": "2026-11-06T15:25:36.184Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d00101cd\naction_v2_sha256:ca0ede9726f58c4355c270ed5369fe84891abb449e616995c4b5682951fe5cba",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-06T15:25:36.184Z"
+      },
+      "review_started_at": "2026-11-06T15:22:37.760Z",
+      "review_submitted_at": "2026-11-06T15:25:35.763Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:single-task-delivery-path-identity:2026-11-06T15:25:37.628Z",
+      "at": "2026-11-06T15:25:37.628Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:78cd7a8e8de631d3cd6636c9343107b3c0951b96ef5bb6e47e7797cb75cc1a17"
+    }
+  ]
+}

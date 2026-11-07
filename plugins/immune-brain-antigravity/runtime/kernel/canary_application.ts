@@ -1,0 +1,641 @@
+// P2B2 canary application service. NOT exported from kernel/index.ts.
+// The only production caller of applyTaskAction and the only production
+// owner of the active -> draining claim transition. Accepts a closed semantic
+// operation union; callers can never supply raw TaskAction, CAS identities,
+// authority descriptors, or generic patches. Event identity, timestamps,
+// expected hashes, and Intent-derived facts are derived inside the trusted
+// application boundary. The paired mutation-authority registry is created
+// once inside the Pi lifecycle extension activation closure; tests use
+// tests/fixtures/mutation-authority-test-seam.ts.
+
+import { terminalRequestDigest } from "./run_identity";
+import {
+	type MutationAuthorityRegistry,
+} from "./authority_port";
+import { applyTaskAction } from "./application";
+import { asTaskDiffSnapshot } from "./completion";
+import { taskDeliveryIdentity } from "../workspace_scope";
+import { readTaskIntent } from "./intent";
+import {
+	inspectIntentTokenPair,
+	consumeIntentToken,
+} from "./intent_token_registry";
+import {
+	readBackendClaim,
+	serializeBackendClaim,
+	type BackendClaim,
+} from "./backend_claim";
+import { canonicalIntentHash } from "./intent";
+import { assertValidSpecBinding, boundSpecPath, readBoundActiveSpec } from "./spec_binding";
+import { parseTaskRecord } from "./validation";
+import type { TaskIntentIdentityToken } from "./intent_token_registry";
+import {
+	commitDrainLocked,
+	commitTaskRecordLocked,
+	readTaskRecordRaw,
+	currentRunId,
+	readCommittedTerminalResult,
+	readWorkspaceStateRaw,
+	revisionForContent,
+	withKernelStoreLock,
+} from "./storage";
+import { KernelInvariantError } from "./validation";
+import type {
+	ReviewRevisionIdentityV1,
+	ReviewVerificationHistoryV1,
+	ReviewVerifierDisputeV1,
+	ReviewObservationFacts,
+	StoredTaskMutationV3,
+	TaskAction,
+	TaskApprovalV2,
+	TaskFinding,
+	TaskIntentV1,
+	TaskRecord,
+} from "./types";
+
+export type CanaryOperation =
+	| { op: "authorize_review_retry"; capability: object; actor_id: string; intent_content_hash: string; review_contract_hash: string }
+	| { op: "record_review_incomplete"; actor_id: string; snapshot: { record_revision: string; workspace_revision: string; intent_content_hash: string; diff_hash: string }; turn_budget: number; inspected_paths: string[]; reason: string; review_contract_hash?: string; review_observation?: ReviewObservationFacts }
+	| { op: "record_verification"; capability: object; verification: ReviewVerificationHistoryV1; actor_id: string }
+	| { op: "record_review_verifier_dispute"; capability: object; dispute: ReviewVerifierDisputeV1; verification?: ReviewVerificationHistoryV1; actor_id: string }
+	| { op: "freeze_artifacts"; actor_id: string }
+	| { op: "record_finding"; finding: Omit<TaskFinding, "status" | "source" | "review_round">; actor_id: string }
+	| { op: "resolve_finding"; finding_id: string; actor_id: string }
+	| { op: "refute_finding"; finding_id: string; attestation_id: string; actor_id: string }
+	| {
+			op: "request_rework";
+			capability: object;
+			findings: TaskFinding[];
+			actor_id: string;
+			/** Review-authored rework: the immutable revision Review analyzed. */
+			review_revision?: ReviewRevisionIdentityV1;
+			verification?: ReviewVerificationHistoryV1;
+			review_observation?: ReviewObservationFacts;
+	  }
+	| { op: "record_approval"; capability: object; approval: TaskApprovalV2; actor_id: string; review_observation?: ReviewObservationFacts }
+	| { op: "revise_intent"; next_intent: TaskIntentV1; actor_id: string }
+	| { op: "approve_breaking_intent_revision"; capability: object; next_intent: TaskIntentV1; actor_id: string }
+	| { op: "complete"; actor_id: string }
+	| { op: "stop"; capability: object; reason: string; actor_id: string }
+	| { op: "authorize_rework"; capability: object; actor_id: string; rounds?: number }
+	| { op: "accept_residual_risk"; capability: object; reason: string; actor_id: string }
+	| { op: "resolve_user_decision"; capability: object; finding_id: string; resolution: string; actor_id: string };
+
+export interface CanaryExecuteInput {
+	root: string;
+	task_id: string;
+	operation: CanaryOperation;
+	prior_intent_token: TaskIntentIdentityToken;
+	/** Trusted host-computed current Review contract; required for retry and incomplete writes. */
+	reviewContractHash?: string;
+	/** Trusted injected diff provider; the application derives the diff identity.
+	 * Defaults to the shared delivery identity selector when omitted. */
+	diffProvider?: (root: string, record: TaskRecord) => string | { diff_hash: string; changed_paths?: readonly string[] };
+	now?: string;
+}
+
+export interface CanaryApplication {
+	readonly registry: MutationAuthorityRegistry;
+	/** Execute a closed semantic operation through the paired reducer port. */
+	execute(input: CanaryExecuteInput): StoredTaskMutationV3;
+	/**
+	 * User-confirmed routing-only operation: converges the workspace-active
+	 * claim unidirectionally active -> draining under the Kernel store lock.
+	 * Preserves TaskRecord and workspace bytes; never touches the reducer.
+	 */
+	beginDrain(input: {
+		root: string;
+		task_id: string;
+		capability: object;
+		now?: string;
+	}): BackendClaim;
+}
+
+/**
+ * Canonical capability-bound action identity for begin_drain. Shared by the
+ * issuer (Pi TUI confirm) and the consuming application so the action digest
+ * binds the exact drain request.
+ */
+export function beginDrainCapabilityAction(taskId: string, at: string): TaskAction {
+	return {
+		type: "stop",
+		event_id: `begin_drain:${taskId}:${at}`,
+		at,
+		actor_id: "user",
+		expected_record_hash: "",
+		expected_workspace_hash: "",
+		diff_hash: "",
+		reason: "begin_drain",
+	};
+}
+
+/**
+ * Canonical privileged action builder shared by capability issuance and the
+ * consuming application. Returns the exact action object (field order and
+ * payload shape) that execute()/applyTaskAction() will inspect, so a
+ * capability minted against this action's digest always validates.
+ * "begin-drain" delegates to the canonical begin_drain action.
+ */
+/** Fixed key order so the minted digest equals the parsed action's digest. */
+function canonicalReviewRevision(revision: ReviewRevisionIdentityV1): ReviewRevisionIdentityV1 {
+	return {
+		contract: revision.contract,
+		base_head: revision.base_head,
+		review_commit: revision.review_commit,
+		review_tree: revision.review_tree,
+		manifest_digest: revision.manifest_digest,
+	};
+}
+
+function canonicalReviewVerification(value: ReviewVerificationHistoryV1): ReviewVerificationHistoryV1 {
+	return {
+		snapshot_digest: value.snapshot_digest, intent_content_hash: value.intent_content_hash, diff_hash: value.diff_hash,
+		verdict_sha256: value.verdict_sha256, dispatched_at: value.dispatched_at, submitted_at: value.submitted_at,
+		result_sha256: value.result_sha256, verifier_actor: value.verifier_actor,
+		reviewer_model: value.reviewer_model, verifier_model: value.verifier_model, model_relation: value.model_relation, checked: value.checked,
+		verifier_refutations: value.verifier_refutations.map(({ anchor, finding_id, counter_path, verifier_actor }) => ({ anchor, finding_id, counter_path, verifier_actor })),
+		...(value.failure !== undefined ? { failure: value.failure } : {}),
+	};
+}
+
+function canonicalVerifierDispute(value: ReviewVerifierDisputeV1): ReviewVerifierDisputeV1 {
+	const { id, acceptance_id, summary, anchor, evidence } = value.finding;
+	return { decision_id: value.decision_id, finding: { id, acceptance_id, summary, anchor,
+		evidence: { trigger: evidence.trigger, caller_chain: [...evidence.caller_chain], violated: { kind: evidence.violated.kind, ref: evidence.violated.ref } } },
+		counter_path: value.counter_path, verdict_sha256: value.verdict_sha256, intent_content_hash: value.intent_content_hash, diff_hash: value.diff_hash };
+}
+
+export function capabilityActionFor(input: {
+	op: string;
+	task_id: string;
+	at: string;
+	actor_id: string;
+	reason?: string;
+	findings?: unknown[];
+	approval?: unknown;
+	next_intent?: unknown;
+	next_intent_ref?: unknown;
+	finding_id?: string;
+	resolution?: unknown;
+	review_revision?: ReviewRevisionIdentityV1;
+	verification?: ReviewVerificationHistoryV1;
+	dispute?: ReviewVerifierDisputeV1;
+	review_observation?: ReviewObservationFacts;
+	intent_content_hash?: string;
+	review_contract_hash?: string;
+	/** authorize_rework only: further Review rounds granted, 1-5. */
+	rounds?: number;
+}): TaskAction {
+	if (input.op === "begin-drain") {
+		return beginDrainCapabilityAction(input.task_id, input.at);
+	}
+	const base = {
+		type: input.op,
+		event_id: `${input.op}:${input.task_id}:${input.at}`,
+		at: input.at,
+		actor_id: input.actor_id,
+		// Placeholder hashes satisfy the strict v2 action parser; the digest
+		// excludes these three fields, so the minted digest equals the digest
+		// of the parsed action the application will inspect.
+		expected_record_hash: "sha256:" + "0".repeat(64),
+		expected_workspace_hash: "sha256:" + "0".repeat(64),
+		diff_hash: "sha256:" + "0".repeat(64),
+	};
+	switch (input.op) {
+		case "authorize_review_retry":
+			return { ...base, type: "authorize_review_retry", intent_content_hash: input.intent_content_hash, review_contract_hash: input.review_contract_hash } as TaskAction;
+		case "record_approval":
+			return { ...base, approval: input.approval, ...(input.review_observation ? { review_observation: input.review_observation } : {}) } as TaskAction;
+		case "record_verification":
+			return { ...base, verification: input.verification && canonicalReviewVerification(input.verification) } as TaskAction;
+		case "record_review_verifier_dispute":
+			return { ...base, dispute: input.dispute && canonicalVerifierDispute(input.dispute),
+				...(input.verification ? { verification: canonicalReviewVerification(input.verification) } : {}) } as TaskAction;
+		case "request_rework":
+			return {
+				...base,
+				findings: input.findings,
+				...(input.review_revision ? { review_revision: canonicalReviewRevision(input.review_revision) } : {}),
+				...(input.verification ? { verification: canonicalReviewVerification(input.verification) } : {}),
+				...(input.review_observation ? { review_observation: input.review_observation } : {}),
+			} as TaskAction;
+		case "authorize_rework":
+			// `rounds` joins the digest only when present, so a legacy caller
+			// keeps the exact digest it always minted.
+			return {
+				...base,
+				type: "authorize_rework",
+				...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
+			} as TaskAction;
+		case "accept_residual_risk":
+			return { ...base, type: "accept_residual_risk", reason: input.reason } as TaskAction;
+		case "stop":
+			return { ...base, reason: input.reason } as TaskAction;
+		case "approve_breaking_intent_revision":
+			return {
+				...base,
+				next_intent: input.next_intent,
+				next_intent_ref: input.next_intent_ref,
+			} as TaskAction;
+		case "resolve_user_decision":
+			return {
+				...base,
+				finding_id: input.finding_id,
+				resolution: input.resolution,
+			} as TaskAction;
+		default:
+			throw new KernelInvariantError([
+				`unsupported capability action: ${input.op}`,
+			]);
+	}
+}
+
+function transitionFor(
+	root: string,
+	record: { intent_ref: { path: string }; intent_snapshot: TaskIntentV1; artifact_state: "active" | "frozen" },
+	direction: "freeze" | "restore",
+	allowMissingSpec = false,
+) {
+	const activeIntent = `docs/plans/${record.intent_snapshot.task_id}.intent.json`;
+	if (direction === "freeze") {
+		if (record.intent_ref.path !== activeIntent)
+			throw new KernelInvariantError(["artifact freeze requires the active intent path"]);
+		const spec = readBoundActiveSpec(root, record.intent_snapshot);
+		if (boundSpecPath(record.intent_snapshot) && !spec && !allowMissingSpec)
+			throw new KernelInvariantError([`source_missing: ${boundSpecPath(record.intent_snapshot)}`]);
+		return {
+			relocations: [] as { from_path: string; to_path: string; content_hash: string }[],
+			next_intent_path: activeIntent,
+			next_artifact_state: "frozen" as const,
+		};
+	}
+	if (record.artifact_state !== "frozen")
+		throw new KernelInvariantError(["artifact restore requires a frozen TaskRecord"]);
+	return {
+		relocations: [] as { from_path: string; to_path: string; content_hash: string }[],
+		next_intent_path: activeIntent,
+		next_artifact_state: "active" as const,
+	};
+}
+
+export function createCanaryApplication(
+	registry: MutationAuthorityRegistry,
+): CanaryApplication {
+	function freezeArtifacts(input: CanaryExecuteInput): StoredTaskMutationV3 {
+		return withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
+			if (!current.record)
+				throw new KernelInvariantError([`task ${input.task_id} has no TaskRecord v3`]);
+			assertValidSpecBinding(current.record.intent_snapshot);
+			const workspace = readWorkspaceStateRaw(input.root);
+			if (current.record.artifact_state === "frozen")
+				return { revision: current.revision, record: current.record, workspace };
+			if (current.record.lifecycle !== "active")
+				throw new KernelInvariantError([`artifact freeze requires active lifecycle, got ${current.record.lifecycle}`]);
+			if (workspace.state.current_working !== input.task_id)
+				throw new KernelInvariantError([`workspace is not owned by task ${input.task_id}`]);
+			const fresh = readTaskIntent(input.root, input.task_id, current.record.intent_ref.path, current.record.intent_snapshot);
+			const pair = inspectIntentTokenPair(input.prior_intent_token, fresh.token);
+			if (
+				pair.prior.intent_content_hash !== current.record.intent_ref.content_hash
+				|| pair.current.intent_content_hash !== current.record.intent_ref.content_hash
+				|| pair.prior.sidecar_path !== current.record.intent_ref.path
+				|| pair.current.sidecar_path !== current.record.intent_ref.path
+				|| pair.prior.path_dev !== pair.current.path_dev
+				|| pair.prior.path_ino !== pair.current.path_ino
+				|| pair.prior.fd_dev !== pair.current.fd_dev
+				|| pair.prior.fd_ino !== pair.current.fd_ino
+			)
+				throw new KernelInvariantError(["intent token does not bind the active freeze artifact"]);
+			const transition = transitionFor(input.root, current.record, "freeze");
+			consumeIntentToken(input.prior_intent_token);
+			consumeIntentToken(fresh.token);
+			const at = input.now ?? new Date().toISOString();
+			const nextRecord = parseTaskRecord({
+				...current.record,
+				intent_ref: { ...current.record.intent_ref, path: transition.next_intent_path },
+				artifact_state: transition.next_artifact_state,
+				history: [
+					...current.record.history,
+					{
+						id: `freeze_artifacts:${input.task_id}:${at}`,
+						at,
+						type: "freeze_artifacts",
+						from_state: "active:active",
+						to_state: "active:frozen",
+						reason: `TaskIntent frozen in place at ${transition.next_intent_path}`,
+					},
+				],
+			});
+			return commitTaskRecordLocked(
+				input.root,
+				input.task_id,
+				current.revision,
+				nextRecord,
+				workspace.revision,
+				workspace.state,
+				transition.relocations,
+			);
+		});
+	}
+
+	function execute(input: CanaryExecuteInput): StoredTaskMutationV3 {
+		if (input.operation.op === "freeze_artifacts") return freezeArtifacts(input);
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
+			throw new KernelInvariantError(["task id is not a safe file identity"]);
+		const now = input.now ?? new Date().toISOString();
+		const operation = input.operation;
+		if (operation.op === "authorize_review_retry" || operation.op === "record_review_incomplete") {
+			if (!input.reviewContractHash || !/^sha256:[a-f0-9]{64}$/.test(input.reviewContractHash) || operation.review_contract_hash !== input.reviewContractHash)
+				throw new KernelInvariantError(["operation requires the trusted current Review contract hash"]);
+		}
+		const at = now;
+		// A settled run clears the active record, so a lost settlement response can
+		// only be answered from the committed operation — and only with the
+		// committed result. This runs before the record, token and capability
+		// checks, which a terminal run can no longer satisfy.
+		if (operation.op === "complete" || operation.op === "stop") {
+			const replayed = readCommittedTerminalResult(
+				input.root,
+				input.task_id,
+				`${operation.op}:${input.task_id}:${at}`,
+				terminalRequestDigest({
+					type: operation.op,
+					event_id: `${operation.op}:${input.task_id}:${at}`,
+					at,
+					actor_id: operation.actor_id,
+					reason: "reason" in operation ? operation.reason : undefined,
+				}),
+			);
+			if (replayed)
+				return {
+					// The committed result is the answer: same record identity, same
+					// cleared workspace, no second write.
+					revision: revisionForContent(`${JSON.stringify(replayed.record, null, 2)}\n`),
+					record: replayed.record,
+					workspace: {
+						revision: revisionForContent(`${JSON.stringify(replayed.workspace, null, 2)}\n`),
+						state: replayed.workspace,
+					},
+				};
+		}
+		// Preflight snapshot inside the store lock derives the exact current
+		// identities; authoritative CAS revalidation still happens inside the
+		// locked application port, so any concurrent change fails closed.
+		const snapshot = withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
+			if (!current.record)
+				throw new KernelInvariantError([
+					`task ${input.task_id} has no TaskRecord v2`,
+				]);
+			const workspace = readWorkspaceStateRaw(input.root);
+			return {
+				record_revision: current.revision,
+				workspace_revision: workspace.revision,
+				intent_revision: current.record.intent_snapshot.revision,
+				intent_content_hash: current.record.intent_ref.content_hash,
+				intent_snapshot: current.record.intent_snapshot,
+				record: current.record,
+			};
+		});
+		const diffHash = asTaskDiffSnapshot((input.diffProvider ?? taskDeliveryIdentity)(input.root, snapshot.record)).diff_hash;
+		if (operation.op === "stop" && !("capability" in operation))
+			throw new KernelInvariantError(["stop requires user authority capability"]);
+		// Only a capability-bound breaking revision may recover an invalid prior
+		// binding. Validate the replacement before any authority write.
+		if (operation.op === "approve_breaking_intent_revision") assertValidSpecBinding(operation.next_intent);
+		else assertValidSpecBinding(snapshot.intent_snapshot);
+		const hasBoundSpec = operation.op === "approve_breaking_intent_revision"
+			? boundSpecPath(operation.next_intent) !== undefined
+			: boundSpecPath(snapshot.intent_snapshot) !== undefined;
+		if (operation.op === "complete" && hasBoundSpec && snapshot.record.artifact_state !== "frozen")
+			throw new KernelInvariantError(["complete requires frozen planning artifacts"]);
+		const artifactTransition =
+			snapshot.record.artifact_state === "frozen" &&
+			(
+				operation.op === "request_rework" ||
+				(operation.op === "resolve_user_decision" && operation.resolution === "accept_verifier_dispute") ||
+				operation.op === "authorize_rework" ||
+				operation.op === "approve_breaking_intent_revision"
+			)
+				? transitionFor(input.root, snapshot.record, "restore")
+				: operation.op === "stop" && snapshot.record.artifact_state !== "frozen"
+					? transitionFor(input.root, snapshot.record, "freeze", true)
+					: undefined;
+		const event_id = `${operation.op}:${input.task_id}:${at}`;
+		const base = {
+			event_id,
+			at,
+			actor_id: operation.actor_id,
+			expected_record_hash: snapshot.record_revision,
+			expected_workspace_hash: snapshot.workspace_revision,
+			diff_hash: diffHash,
+		};
+		let action: unknown;
+		let capability: object | undefined;
+		switch (operation.op) {
+			case "authorize_review_retry":
+				capability = operation.capability;
+				action = { ...base, type: "authorize_review_retry", intent_content_hash: operation.intent_content_hash, review_contract_hash: operation.review_contract_hash };
+				break;
+			case "record_review_incomplete": {
+				const expected = operation.snapshot;
+				if (expected.record_revision !== snapshot.record_revision || expected.workspace_revision !== snapshot.workspace_revision || expected.intent_content_hash !== snapshot.intent_content_hash || expected.diff_hash !== diffHash)
+					throw new KernelInvariantError(["Review incomplete snapshot changed"]);
+				action = { ...base, type: "record_review_incomplete", intent_content_hash: snapshot.intent_content_hash, turn_budget: operation.turn_budget, inspected_paths: operation.inspected_paths, reason: operation.reason, review_contract_hash: operation.review_contract_hash, ...(operation.review_observation ? { review_observation: operation.review_observation } : {}) };
+				break;
+			}
+			case "record_finding":
+				action = {
+					...base,
+					type: "record_finding",
+					finding: {
+						...operation.finding,
+						status: "open",
+						source: operation.finding.kind === "unresolved_user_decision" ? "kernel" : "execution",
+						review_round: null,
+					},
+				};
+				break;
+			case "resolve_finding":
+				action = { ...base, type: "resolve_finding", finding_id: operation.finding_id };
+				break;
+			case "refute_finding":
+				action = {
+					...base,
+					type: "refute_finding",
+					finding_id: operation.finding_id,
+					attestation_id: operation.attestation_id,
+				};
+				break;
+			case "record_verification":
+				capability = operation.capability;
+				action = { ...base, type: "record_verification", verification: canonicalReviewVerification(operation.verification) };
+				break;
+			case "record_review_verifier_dispute":
+				capability = operation.capability;
+				action = { ...base, type: "record_review_verifier_dispute", dispute: canonicalVerifierDispute(operation.dispute),
+					...(operation.verification ? { verification: canonicalReviewVerification(operation.verification) } : {}) };
+				break;
+			case "request_rework":
+				capability = operation.capability;
+				action = {
+					...base,
+					type: "request_rework",
+					findings: operation.findings,
+					...(operation.review_revision
+						? { review_revision: canonicalReviewRevision(operation.review_revision) }
+						: {}),
+					...(operation.verification ? { verification: canonicalReviewVerification(operation.verification) } : {}),
+					...(operation.review_observation ? { review_observation: operation.review_observation } : {}),
+				};
+				break;
+			case "record_approval":
+				capability = operation.capability;
+				action = { ...base, type: "record_approval", approval: operation.approval, ...(operation.review_observation ? { review_observation: operation.review_observation } : {}) };
+				break;
+			case "revise_intent":
+				action = {
+					...base,
+					type: "revise_intent",
+					next_intent: operation.next_intent,
+					next_intent_ref: {
+						path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
+						content_hash: canonicalIntentHash(operation.next_intent),
+					},
+				};
+				break;
+			case "approve_breaking_intent_revision":
+				capability = operation.capability;
+				action = {
+					...base,
+					type: "approve_breaking_intent_revision",
+					next_intent: operation.next_intent,
+					next_intent_ref: {
+						path: `docs/plans/${operation.next_intent.task_id}.intent.json`,
+						content_hash: canonicalIntentHash(operation.next_intent),
+					},
+				};
+				break;
+			case "complete":
+				action = { ...base, type: "complete" };
+				break;
+			case "stop":
+				capability = operation.capability;
+				action = { ...base, type: "stop", reason: operation.reason };
+				break;
+			case "authorize_rework":
+				capability = operation.capability;
+				action = {
+					...base,
+					type: "authorize_rework",
+					...(operation.rounds !== undefined ? { rounds: operation.rounds } : {}),
+				};
+				break;
+			case "accept_residual_risk":
+				capability = operation.capability;
+				action = { ...base, type: "accept_residual_risk", reason: operation.reason };
+				break;
+			case "resolve_user_decision":
+				capability = operation.capability;
+				action = {
+					...base,
+					type: "resolve_user_decision",
+					finding_id: operation.finding_id,
+					resolution: operation.resolution,
+				};
+				break;
+			default: {
+				const unreachable: never = operation;
+				throw new KernelInvariantError([
+					`unsupported canary operation: ${String((unreachable as CanaryOperation).op)}`,
+				]);
+			}
+		}
+		return applyTaskAction({
+			root: input.root,
+			task_id: input.task_id,
+			action,
+			prior_intent_token: input.prior_intent_token,
+			registry,
+			capability: capability as never,
+			diffProvider: input.diffProvider,
+			...(operation.op === "complete" || operation.op === "stop"
+				? { terminal: { terminalized_at: now } }
+				: {}),
+			...(artifactTransition ? { artifact_transition: artifactTransition } : {}),
+		});
+	}
+
+	function beginDrain(input: {
+		root: string;
+		task_id: string;
+		capability: object;
+		run_id?: string | null;
+		now?: string;
+	}): BackendClaim {
+		if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
+			throw new KernelInvariantError(["task id is not a safe file identity"]);
+		const now = input.now ?? new Date().toISOString();
+		return withKernelStoreLock(input.root, () => {
+			const current = readTaskRecordRaw(input.root, input.task_id);
+			if (!current.record)
+				throw new KernelInvariantError([
+					`task ${input.task_id} has no TaskRecord v2`,
+				]);
+			const workspace = readWorkspaceStateRaw(input.root);
+			const claim = readBackendClaim(input.root);
+			if (!claim)
+				throw new KernelInvariantError([
+					`task ${input.task_id} has no active backend claim`,
+				]);
+			if (claim.task_id !== input.task_id)
+				throw new KernelInvariantError([
+					`backend claim belongs to task ${claim.task_id}, not ${input.task_id}`,
+				]);
+			if (claim.lifecycle_status === "draining") {
+				// Exact committed drain replay is idempotent: the claim is
+				// already draining and the capability is not re-consumed.
+				return claim;
+			}
+			if (claim.lifecycle_status !== "active")
+				throw new KernelInvariantError([
+					`backend claim is not active for task ${input.task_id}`,
+				]);
+			if (current.record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`task ${input.task_id} is already terminal; drain is not permitted`,
+				]);
+			if (workspace.state.current_working !== input.task_id)
+				throw new KernelInvariantError([
+					`workspace is not owned by task ${input.task_id}`,
+				]);
+			// The capability is bound to the canonical begin_drain action *and* to
+			// the run this worktree holds.
+			const validated = registry.consume(input.capability as never, {
+				task_id: input.task_id,
+				run_id: currentRunId(input.root, input.task_id) ?? undefined,
+				action: beginDrainCapabilityAction(input.task_id, now),
+				expected_record_hash: current.revision,
+				intent_revision: current.record.intent_snapshot.revision,
+				intent_content_hash: current.record.intent_ref.content_hash,
+				diff_hash: "sha256:" + "0".repeat(64),
+			});
+			const nextClaim: BackendClaim = {
+				...claim,
+				lifecycle_status: "draining",
+				updated_at: now,
+			};
+			return commitDrainLocked(
+				input.root,
+				input.task_id,
+				serializeBackendClaim(claim),
+				serializeBackendClaim(nextClaim),
+				now,
+				validated.run_id,
+			);
+		});
+	}
+
+	return { registry, execute, beginDrain };
+}

@@ -1,0 +1,231 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "single-task-batch-finalization",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "single-task-batch-finalization",
+    "goal": "Repair single-task batch finalization so successful verification followed by blocked checkout persists a readable legal state and real reason, with safe interruption/replay and no unverified delivery. Follow docs/specs/single-task-batch-finalization.spec.md. Preserve completed-only proof validation, user-file overlap protection, settled child identities and existing native gates. Include the already-approved baseline test assertion repair if still needed. The required recovery phase resumes the preserved Antigravity delivery through the same Host once the validated runtime is loaded; unresolved activation or user-file conflict remains incomplete, never silently bypassed.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source: Spec E2. At tests/single-task-lane-batch.test.ts, the public startBatch seam with explicit passing final commands finishes clean manual and auto delivery with a re-readable completed batch and correct content. Top-level final_verification_result remains illegal in running or needs_human records; the producer must persist only legal shapes rather than weaken that validator.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source: Spec E3. At tests/single-task-lane-batch.test.ts and tests/single-task-checkout-delivery.test.ts, successful final verification followed by checkout overlap returns durable needs_human with the exact conflicting path and nested passing result, without the completed-only exception or a top-level completed proof. Cover staged canonical planning input and preserve existing staged, unstaged, untracked, deletion, rename and manual/auto protections; user index/worktree/HEAD and integrated commit remain unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/single-task-checkout-delivery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source: Spec E5. At tests/single-task-lane-batch.test.ts and tests/batch-final-report.test.ts, replay of the observed running/integrated/nested-pass shape and a freshly authorized delivery park resumes the same batch without duplicate enrollment, commit or integration. Reuse only unchanged validated verification; stale head, changed commands and contradictory results cannot authorize delivery. Interrupt after apply before completion: reconcile only equal full delivery identity including modes, and park changed bytes. Terminal replay is idempotent.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Source: Spec D4. At tests/single-task-lane-batch.test.ts and tests/batch-final-verification-required.test.ts, nonzero exit, missing required verification and a bounded timeout produce explicit failure with duration evidence, preserve integrated refs/audit and readable reports, and cause neither checkout delivery nor cleanup. A successful result bound to a different tip cannot be promoted. No skipped required check counts as a pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/batch-final-verification-required.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Source: Spec E7. At tests/batch-merge-queue.test.ts, tests/unattended-batch-lanes.test.ts and tests/single-task-lane-cleanup.test.ts, preserve Initiative completion, existing native parking/resume, protected user files, unknown/newer-record refusal and normal-exit/clean-Lane cleanup requirements. New single-task finalization does not grant a fresh child authority or treat an interactive idle/done signal as process-exit proof.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "Source: Spec E9. At tests/explicit-phase-entry-run-contract.test.ts, align the already-approved stale sentence with canonical drive.md: The Executor role runs inside the Lane process, never in the Parent conversation. All five existing checks run and pass, no check is removed or skipped, and the canonical drive contract remains unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/single-task-batch-finalization.md",
+      "docs/plans/single-task-batch-finalization.intent.json",
+      "docs/specs/single-task-batch-finalization.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+      "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+      "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+      "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "tests/batch-final-report.test.ts",
+      "tests/batch-final-verification-required.test.ts",
+      "tests/batch-merge-queue.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/single-task-checkout-delivery.test.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/single-task-lane-cleanup.test.ts",
+      "tests/unattended-batch-lanes.test.ts"
+    ],
+    "scope_size_reason": "This single finalization invariant spans the lifecycle producer, persisted validator, checkout/replay consumers and shared Host callers. Transition owners are listed for settlement coverage even where unchanged. Splitting writer, reader and replay verification would leave invalid intermediate state; generated bundle is derived output.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/single-task-batch-finalization.intent.json",
+    "content_hash": "sha256:01ab1cffd3188f92a8f297c0ee5273ea554abd295545d5fce6da45a7324893d7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:01ab1cffd3188f92a8f297c0ee5273ea554abd295545d5fce6da45a7324893d7",
+  "git_base_head": "297c5c999bb890e71729670bab4bbda11a016354",
+  "attestations": [
+    {
+      "id": "approval-qa-6e1d48db",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:01ab1cffd3188f92a8f297c0ee5273ea554abd295545d5fce6da45a7324893d7",
+      "diff_hash": "sha256:3ce816b0f291e08f706180c249c6bd085127a6c4b0d36c210798bc528a84c99e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:f4bdf7580010bfda12d0540aed12cac231613c6d31143d3ece49eb0f8b4e28c5"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-37d2eca6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:01ab1cffd3188f92a8f297c0ee5273ea554abd295545d5fce6da45a7324893d7",
+      "diff_hash": "sha256:3ce816b0f291e08f706180c249c6bd085127a6c4b0d36c210798bc528a84c99e",
+      "actor_id": "parent-mediated-review",
+      "summary": "Tier medium; load-bearing paths are runtime/unattended/batch_lanes.ts (finalization sequence), checkout_delivery.ts (replay guard) and batch_final_verification.ts (reuse gate), plus the regenerated Claude bundle. The producer no longer writes the top-level final_verification_result in needs_human, reuses only a same-head, same-command, same-declaration pass, blocks delivery on a failed or mismatched verification, and reconciles an applied delivery only on equal full identity. The persisted record shape and validator are unchanged. Provenance verified: base, review commit, single parent and tree match the manifest.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "297c5c999bb890e71729670bab4bbda11a016354",
+        "review_commit": "f300b9805f83afe3cdababc9b7b0cf25469f3e90",
+        "review_tree": "9c417399be6448c62cd1c29e682363f431242019",
+        "manifest_digest": "sha256:7b2c919026728b33e975cbdf1577f3cbc7d1bca0af71340cc19a358c40c98682"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d4dca70ac503-1-review-1",
+          "acceptance_id": "AC4",
+          "summary": "StartBatchInput gains a production field final_verification_timeout_ms that no Host passes. Its only purpose is the bounded-timeout test, and the spec did not authorize a new input. It is harmless because it is absent by default, but it is a new seam on the public input type.",
+          "anchor": "sha256:3b5ae393e2434b98d4eb512fdaaf4cff730255b083e3610c9e519eae3284aaec",
+          "evidence": {
+            "trigger": "No Host sets the field, so the default 30-minute verifier timeout still applies. The field is reachable only from tests, so no wrong result is produced. This is advisory, not blocking.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+              "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+              "tests/single-task-lane-batch.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC4"
+            }
+          }
+        },
+        {
+          "id": "review-d4dca70ac503-2-review-2",
+          "acceptance_id": "AC3",
+          "summary": "The new describe block in tests/single-task-lane-batch.test.ts duplicates the sibling describe's owned() helper, with a different final_verification default. The duplication adds maintenance cost but does not weaken any assertion.",
+          "anchor": "sha256:0412ae0ef564953426aafd3994eb53c70ef7ea4e39cafff3803690d925a0d2f9",
+          "evidence": {
+            "trigger": "If the sibling owned() helper changes, the copy can drift silently. No observable behavior is wrong today.",
+            "caller_chain": [
+              "tests/single-task-lane-batch.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:12732e151d6f9fae2e952541a123cb4e2974dccb7d2f8abeb0fa457c892794d8"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:single-task-batch-finalization:2026-11-06T11:25:28.668Z",
+      "at": "2026-11-06T11:25:28.668Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/single-task-batch-finalization.intent.json"
+    },
+    {
+      "id": "record_approval:single-task-batch-finalization:2026-11-06T11:30:10.408Z",
+      "at": "2026-11-06T11:30:10.408Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6e1d48db\naction_v2_sha256:55fbe1a8c748a30acc3dae46bd85b79ce020945859a12a234feec34a38006524",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-06T11:30:10.408Z"
+      }
+    },
+    {
+      "id": "record_approval:single-task-batch-finalization:2026-11-06T11:32:23.609Z",
+      "at": "2026-11-06T11:32:23.609Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-37d2eca6\naction_v2_sha256:120ba8bea005a8bfaeca9d6c7b8fa13e496874e0f120f1cb71fc3382e4bdbee2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-06T11:32:23.610Z"
+      },
+      "review_started_at": "2026-11-06T11:30:12.855Z",
+      "review_submitted_at": "2026-11-06T11:32:23.034Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:single-task-batch-finalization:2026-11-06T11:32:25.301Z",
+      "at": "2026-11-06T11:32:25.301Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e0d96b83acd82dab5c7f319685c86b07b5758a0f5f2889e4f42877b252069fa7"
+    }
+  ]
+}

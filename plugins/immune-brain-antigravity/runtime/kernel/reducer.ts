@@ -1,0 +1,1078 @@
+// Pure TaskRecord v4 reducer with a closed factual action vocabulary.
+// Never reads files, Git, workspace, or host context. Returns a branded
+// ReducedTaskMutation; the caller cannot construct or serialize it.
+
+import { createHash } from "node:crypto";
+import { isLiteralUserActor } from "./actor_identity";
+import { completionDecision, projectTask } from "./completion";
+import { NO_RISK_FLOOR, type RiskFloor } from "./risk_floor";
+import { anchorForEvidence, isFreshPassingQaAttestation, refutationIdentity, refutationIsLive } from "./refutation";
+import {
+	REDUCED_MUTATION_BRAND,
+	type AuthorityAuditDescriptor,
+	type ReducedTaskMutation,
+	type ReviewRevisionIdentityV1,
+	type ReviewVerificationHistoryV1,
+	type TaskAction,
+	type TaskFinding,
+	type TaskIntentRefV3,
+	type TaskIntentV1,
+	type TaskRecord,
+} from "./types";
+import {
+	KernelInvariantError,
+	assertKernelInvariantsV3,
+	assertTaskRecordUpdateV3,
+	parseTaskAction,
+	parseTaskRecord,
+} from "./validation";
+import {
+	canonicalIntentHash,
+	classifyIntentRevision,
+} from "./intent";
+import { assertValidSpecBinding } from "./spec_binding";
+
+const RISK_RANK: Record<TaskIntentV1["risk"], number> = {
+	routine: 0,
+	material: 1,
+	critical: 2,
+};
+
+function transitionLifecycle(record: TaskRecord, to: "done" | "stopped"): void {
+	if (record.lifecycle !== "active")
+		throw new KernelInvariantError([
+			`illegal lifecycle transition: ${record.lifecycle} -> ${to}`,
+		]);
+	record.lifecycle = to;
+}
+
+function stateOf(record: TaskRecord): string {
+	return `${record.lifecycle}:${record.artifact_state}`;
+}
+
+function stableJson(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+	if (value && typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		return `{${Object.keys(record)
+			.sort()
+			.map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
+			.join(",")}}`;
+	}
+	const primitive = JSON.stringify(value);
+	return primitive === undefined ? "null" : primitive;
+}
+
+export function canonicalRecordHash(record: TaskRecord): string {
+	// Must equal the storage CAS revision: the exact serialized file bytes.
+	return `sha256:${createHash("sha256")
+		.update(`${JSON.stringify(record, null, 2)}\n`)
+		.digest("hex")}`;
+}
+
+export function actionFingerprint(
+	action: TaskAction,
+	intentRevision: number,
+	intentContentHash: string,
+	audit: AuthorityAuditDescriptor | null,
+): string {
+	// The fingerprint binds the semantic payload, not the caller-supplied CAS
+	// expectations, so an exact replay retried against an advanced record
+	// still matches its committed history entry while any payload change
+	// (including the diff identity) is detected as a conflict.
+	const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...payload } = action;
+	const base = audit
+		? { action: payload, intentRevision, intentContentHash, audit }
+		: { action: payload, intentRevision, intentContentHash };
+	return createHash("sha256").update(stableJson(base)).digest("hex");
+}
+
+function historyReason(
+	action: TaskAction,
+	intentRevision: number,
+	intentContentHash: string,
+	audit: AuthorityAuditDescriptor | null,
+	detail: string | null,
+): string {
+	const fingerprint = `action_v2_sha256:${actionFingerprint(
+		action,
+		intentRevision,
+		intentContentHash,
+		audit,
+	)}`;
+	return detail ? `${detail}\n${fingerprint}` : fingerprint;
+}
+
+export function recordedActionFingerprint(reason: string | null): string | null {
+	const matched = reason?.match(/(?:^|\n)action_v2_sha256:([a-f0-9]{64})$/);
+	return matched?.[1] ?? null;
+}
+
+function copyRecord(record: TaskRecord): TaskRecord {
+	return {
+		...record,
+		intent_snapshot: { ...record.intent_snapshot },
+		intent_ref: { ...record.intent_ref },
+		attestations: record.attestations.map((item) => ({
+			...item,
+			acceptance_results: item.acceptance_results.map((result) => ({ ...result })),
+		})),
+		findings: record.findings.map((item) => ({ ...item })),
+		history: record.history.map((item) => ({ ...item })),
+	};
+}
+
+function reviewRound(record: TaskRecord): number {
+	return (
+		Math.max(
+			0,
+			...record.findings
+				.filter((item) => item.source === "review")
+				.map((item) => item.review_round ?? 0),
+		) + 1
+	);
+}
+
+function appendHistory(
+	record: TaskRecord,
+	action: TaskAction,
+	from: string,
+	detail: string | null,
+	audit: AuthorityAuditDescriptor | null,
+	reviewRevision?: ReviewRevisionIdentityV1,
+): void {
+	if (record.history.some((entry) => entry.id === action.event_id))
+		throw new KernelInvariantError([
+			`history contains duplicate id ${action.event_id}`,
+		]);
+	const entry: {
+		id: string;
+		at: string;
+		type: string;
+		from_state: string;
+		to_state: string;
+		reason: string;
+		authority?: AuthorityAuditDescriptor;
+		review_revision?: ReviewRevisionIdentityV1;
+	} = {
+		id: action.event_id,
+		at: action.at,
+		type: action.type,
+		from_state: from,
+		to_state: stateOf(record),
+		reason: historyReason(
+			action,
+			record.intent_snapshot.revision,
+			record.intent_ref.content_hash,
+			audit,
+			detail,
+		),
+	};
+	if (audit) entry.authority = { ...audit };
+	if (reviewRevision) entry.review_revision = { ...reviewRevision };
+	if ((action.type === "record_approval" || action.type === "request_rework" || action.type === "record_review_incomplete") && action.review_observation) {
+		if (action.type !== "record_review_incomplete" && audit?.authority_kind !== "review") throw new KernelInvariantError(["review observation requires review authority"]);
+		Object.assign(entry, action.review_observation);
+	}
+	record.history.push(entry as (typeof record.history)[number]);
+}
+
+function appendVerificationHistory(record: TaskRecord, action: TaskAction, from: string, audit: AuthorityAuditDescriptor, verification: ReviewVerificationHistoryV1): void {
+	const id = action.type === "record_verification" ? action.event_id : `${action.event_id}:verification`;
+	if (record.history.some(entry => entry.id === id)) throw new KernelInvariantError([`history contains duplicate id ${id}`]);
+	record.history.push({ id, at: action.at, type: "verification", from_state: from, to_state: from,
+		reason: historyReason(action, record.intent_snapshot.revision, record.intent_ref.content_hash, audit, `checked ${verification.checked}, refuted ${verification.verifier_refutations.length}`),
+		authority: { ...audit }, verification });
+}
+
+function validateVerification(record: TaskRecord, action: TaskAction, audit: AuthorityAuditDescriptor | null, verification: ReviewVerificationHistoryV1): void {
+	if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || audit?.authority_kind !== "review")
+		throw new KernelInvariantError(["verification requires a frozen active task and Review authority"]);
+	if (verification.diff_hash !== action.diff_hash || verification.intent_content_hash !== record.intent_ref.content_hash)
+		throw new KernelInvariantError(["verification does not bind the current intent and diff"]);
+}
+
+function intentRefMatches(intent: TaskIntentV1, ref: TaskIntentRefV3): boolean {
+	const activePath = `docs/plans/${intent.task_id}.intent.json`;
+	const archivedPath = `docs/plans/archive/${intent.task_id}.intent.json`;
+	return (
+		(ref.path === activePath || ref.path === archivedPath) &&
+		ref.content_hash === canonicalIntentHash(intent)
+	);
+}
+
+function hasPrivilegedKind(action: TaskAction): boolean {
+	return (
+		action.type === "record_approval" ||
+		action.type === "record_verification" ||
+		action.type === "record_review_verifier_dispute" ||
+		action.type === "approve_breaking_intent_revision" ||
+		action.type === "request_rework" ||
+		action.type === "authorize_rework" ||
+		action.type === "authorize_review_retry" ||
+		action.type === "accept_residual_risk" ||
+		action.type === "stop" ||
+		action.type === "resolve_user_decision"
+	);
+}
+
+/**
+ * Normalized findings digest for a request_rework capability binding. Derived
+ * from the same projection the capability issuer must bind (id, kind,
+ * acceptance_id, summary), so a capability cannot be bound to one findings
+ * set and applied to another.
+ */
+export function findingsDigestV2(findings: TaskFinding[]): string {
+	// Anchor and evidence are included only when the finding actually carries
+	// them, so a pre-extension findings set keeps its historical bytes while a
+	// capability minted over one anchor set cannot be spent on another.
+	const normalized = findings.map((finding) => ({
+		id: finding.id,
+		kind: finding.kind,
+		acceptance_id: finding.acceptance_id,
+		summary: finding.summary,
+		...(finding.anchor !== undefined ? { anchor: finding.anchor ?? null } : {}),
+		...(finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}),
+	}));
+	return `sha256:${createHash("sha256").update(stableJson(normalized)).digest("hex")}`;
+}
+
+/**
+ * Rework rounds one Review run may demand before the Kernel pauses the task for
+ * a human decision. Ordinary defects return to execution without a user gate,
+ * but an unbounded repair/review cycle is not progress either. The literal user
+ * may extend it with `authorize_rework` rounds; the grant is cumulative and
+ * persisted as `review_round_budget_extension`.
+ */
+export const REVIEW_REWORK_ROUND_BUDGET = 5;
+
+export function effectiveReviewRoundBudget(record: TaskRecord): number {
+	return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
+}
+
+/** Stable across factual history writes, manifest regeneration and coordinator restarts. */
+export function reviewIncompleteHistory(history: ReadonlyArray<{ type: string; reason: string }> = [], identity: { intent_content_hash: string; diff_hash: string }) {
+	type Rounds = { count: number; previous_budget: number | null; round_limit: 2 | 3; last_contract_hash: string | null; retry_authorized: boolean; authorized_contract_hash: string | null };
+	const empty = (): Rounds => ({ count: 0, previous_budget: null, round_limit: 2, last_contract_hash: null, retry_authorized: false, authorized_contract_hash: null });
+	const snapshots = new Map<string, Rounds>();
+	for (const entry of history) {
+		if (entry.type !== "record_review_incomplete" && entry.type !== "authorize_review_retry") continue;
+		const lines = entry.reason.split("\n");
+		if (lines.length !== 2 || !recordedActionFingerprint(entry.reason)) throw new KernelInvariantError(["invalid incomplete history"]);
+		let facts: Record<string, unknown>;
+		try { facts = JSON.parse(lines[0]!); } catch { throw new KernelInvariantError(["invalid incomplete history"]); }
+		if (!facts || typeof facts !== "object" || Array.isArray(facts)) throw new KernelInvariantError(["invalid incomplete history"]);
+		const fields = entry.type === "authorize_review_retry"
+			? "diff_hash,intent_content_hash,review_contract_hash"
+			: ("review_contract_hash" in facts ? "diff_hash,inspected_paths,intent_content_hash,reason,review_contract_hash,turn_budget" : "diff_hash,inspected_paths,intent_content_hash,reason,turn_budget");
+		if (Object.keys(facts).sort().join(",") !== fields) throw new KernelInvariantError(["invalid incomplete history"]);
+		// Drain-only legacy reader: remove hash-less history support once old active tasks drain; owner: runtime.
+		const parsed = parseTaskAction({ ...facts, type: entry.type, event_id: "history", at: "history", actor_id: "history", expected_record_hash: facts.diff_hash, expected_workspace_hash: facts.diff_hash });
+		if (parsed.type !== "record_review_incomplete" && parsed.type !== "authorize_review_retry") throw new KernelInvariantError(["invalid incomplete history"]);
+		const key = `${parsed.intent_content_hash}:${parsed.diff_hash}`;
+		const rounds = snapshots.get(key) ?? empty();
+		if (parsed.type === "authorize_review_retry") {
+			if (rounds.count !== 2 || rounds.retry_authorized || rounds.last_contract_hash === parsed.review_contract_hash) throw new KernelInvariantError(["invalid review retry grant history"]);
+			rounds.retry_authorized = true;
+			rounds.round_limit = 3;
+			rounds.authorized_contract_hash = parsed.review_contract_hash;
+		} else {
+			if (rounds.count >= rounds.round_limit || (rounds.previous_budget !== null && parsed.turn_budget !== Math.min(96, rounds.previous_budget * 2)) || (rounds.count === 2 && parsed.review_contract_hash !== rounds.authorized_contract_hash)) throw new KernelInvariantError(["invalid incomplete history sequence"]);
+			rounds.count++;
+			rounds.previous_budget = parsed.turn_budget;
+			rounds.last_contract_hash = parsed.review_contract_hash ?? null;
+		}
+		snapshots.set(key, rounds);
+	}
+	return snapshots.get(`${identity.intent_content_hash}:${identity.diff_hash}`) ?? empty();
+}
+
+export function reduceTask(
+	recordRaw: TaskRecord,
+	actionRaw: TaskAction,
+	authorityAudit: AuthorityAuditDescriptor | null = null,
+	changedPaths?: readonly string[],
+	floor: RiskFloor = NO_RISK_FLOOR,
+): ReducedTaskMutation {
+	const previous = parseTaskRecord(recordRaw);
+	assertKernelInvariantsV3(previous.intent_snapshot, previous);
+	const action = parseTaskAction(actionRaw);
+	const record = copyRecord(previous);
+	const from = stateOf(record);
+
+	if (!action.event_id.trim())
+		throw new KernelInvariantError(["event_id must be a non-empty string"]);
+	if (!action.at.trim())
+		throw new KernelInvariantError(["event timestamp must be a non-empty string"]);
+
+	const privileged = hasPrivilegedKind(action);
+	if (privileged && !authorityAudit)
+		throw new KernelInvariantError([
+			`${action.type} requires an authority audit descriptor`,
+		]);
+	if (!privileged && authorityAudit)
+		throw new KernelInvariantError([
+			`${action.type} does not accept an authority audit descriptor`,
+		]);
+
+	const recordHash = canonicalRecordHash(previous);
+	const intentRevision = previous.intent_snapshot.revision;
+	const intentContentHash = previous.intent_ref.content_hash;
+
+	// Exact committed replay or conflicting event reuse. Replay is detected
+	// against the action-expected identity so an identical retry returns the
+	// committed snapshot even after the record has advanced.
+	const existingEvent = previous.history.find((entry) => entry.id === action.event_id);
+	if (existingEvent) {
+		if (
+			existingEvent.type === action.type &&
+			existingEvent.at === action.at &&
+			recordedActionFingerprint(existingEvent.reason) ===
+				actionFingerprint(action, intentRevision, intentContentHash, authorityAudit)
+		)
+			return brandResult(previous, null);
+		throw new KernelInvariantError([
+			`event_id ${action.event_id} conflicts with a recorded action`,
+		]);
+	}
+
+	// New events must carry the exact current record identity.
+	if (action.expected_record_hash !== recordHash)
+		throw new KernelInvariantError([
+			`expected record hash mismatch: ${action.expected_record_hash} != ${recordHash}`,
+		]);
+
+	const diffHash = action.diff_hash;
+	if (!/^sha256:[a-f0-9]{64}$/.test(diffHash))
+		throw new KernelInvariantError(["diff_hash must be a canonical sha256 hash"]);
+
+	switch (action.type) {
+		case "authorize_review_retry": {
+			if (authorityAudit?.authority_kind !== "user" || !isLiteralUserActor(authorityAudit.actor_id)) throw new KernelInvariantError(["authorize_review_retry requires literal-user authority"]);
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash) throw new KernelInvariantError(["review retry requires the current frozen active snapshot"]);
+			if (!changedPaths || projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review") throw new KernelInvariantError(["review retry requires fresh QA and a pending Review"]);
+			const prior = reviewIncompleteHistory(record.history, action);
+			if (prior.count !== 2 || prior.retry_authorized || prior.last_contract_hash === action.review_contract_hash) throw new KernelInvariantError(["review retry requires two incompletes, no prior grant, and a changed or legacy-unknown contract"]);
+			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, review_contract_hash: action.review_contract_hash }), authorityAudit);
+			break;
+		}
+		case "record_review_incomplete": {
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || action.intent_content_hash !== record.intent_ref.content_hash)
+				throw new KernelInvariantError(["incomplete requires the current frozen active snapshot"]);
+			if (!changedPaths || action.inspected_paths.some(path => !changedPaths.includes(path))) throw new KernelInvariantError(["incomplete inspected_paths must be a subset of changed paths"]);
+			if (projectTask(record.intent_snapshot, record, action.diff_hash, action.intent_content_hash, changedPaths, floor).next_obligation !== "run_review") throw new KernelInvariantError(["incomplete requires fresh QA and a pending Review"]);
+			const prior = reviewIncompleteHistory(record.history, action);
+			if (!action.review_contract_hash) throw new KernelInvariantError(["live incomplete requires review_contract_hash"]);
+			if (prior.count >= prior.round_limit || (prior.previous_budget !== null && action.turn_budget !== Math.min(96, prior.previous_budget * 2))) throw new KernelInvariantError(["incomplete round budget exhausted or invalid"]);
+			if (prior.retry_authorized && action.review_contract_hash !== prior.authorized_contract_hash) throw new KernelInvariantError(["incomplete contract must match retry grant"]);
+			appendHistory(record, action, from, JSON.stringify({ intent_content_hash: action.intent_content_hash, diff_hash: action.diff_hash, turn_budget: action.turn_budget, inspected_paths: action.inspected_paths, reason: action.reason, review_contract_hash: action.review_contract_hash }), null);
+			break;
+		}
+		case "record_finding": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot record findings while lifecycle is ${record.lifecycle}`,
+				]);
+			const finding = action.finding;
+			if (record.findings.some((item) => item.id === finding.id))
+				throw new KernelInvariantError([
+					`findings contains duplicate id ${finding.id}`,
+				]);
+			if (finding.kind === "replan_required")
+				throw new KernelInvariantError([
+					"record_finding cannot create a replan boundary; use request_rework",
+				]);
+			if (
+				finding.kind === "unresolved_user_decision" &&
+				!/^user-decision-[A-Za-z0-9._-]+$/.test(finding.id)
+			)
+				throw new KernelInvariantError([
+					"unresolved_user_decision findings require a canonical user-decision- id",
+				]);
+			record.findings.push({
+				...finding,
+				status: "open",
+				source: finding.source === "execution" || finding.source === "review" || finding.source === "kernel" ? finding.source : "execution",
+				review_round: null,
+			});
+			appendHistory(record, action, from, finding.id, authorityAudit);
+			break;
+		}
+		case "resolve_finding": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot resolve findings while lifecycle is ${record.lifecycle}`,
+				]);
+			const finding = record.findings.find(
+				(item) => item.id === action.finding_id,
+			);
+			if (!finding)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} does not exist`,
+				]);
+			if (finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+				throw new KernelInvariantError([
+					"generic resolve_finding cannot resolve a user decision or replan boundary",
+				]);
+			if (finding.status === "resolved")
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already resolved`,
+				]);
+			// A live refutation already suppresses the finding, so resolving it
+			// would make that suppression permanent. Only a refutation whose bound
+			// evidence went stale may still be resolved.
+			if (
+				finding.status === "refuted" &&
+				refutationIsLive(
+					finding,
+					record.attestations,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is still refuted by live counterevidence`,
+				]);
+			finding.status = "resolved";
+			appendHistory(record, action, from, action.finding_id, authorityAudit);
+			break;
+		}
+		case "refute_finding": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot refute findings while lifecycle is ${record.lifecycle}`,
+				]);
+			const finding = record.findings.find(
+				(item) => item.id === action.finding_id,
+			);
+			if (!finding)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} does not exist`,
+				]);
+			if (finding.kind === "unresolved_user_decision" || finding.kind === "replan_required")
+				throw new KernelInvariantError([
+					"refute_finding cannot refute a user decision or replan boundary",
+				]);
+			if (finding.status === "resolved")
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already resolved`,
+				]);
+			if (!finding.acceptance_id)
+				throw new KernelInvariantError([
+					"refute_finding requires a finding bound to an acceptance id",
+				]);
+			if (
+				finding.status === "refuted" &&
+				refutationIsLive(
+					finding,
+					record.attestations,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already refuted by live counterevidence`,
+				]);
+			// The actor cannot assert a refutation; it can only bind a QA
+			// attestation the Kernel already validated as fresh and passing for
+			// this acceptance. A stale binding is rebindable with new evidence,
+			// which is how a refutation is renewed after a diff or intent change.
+			if (
+				!isFreshPassingQaAttestation(
+					record.attestations.find((item) => item.id === action.attestation_id),
+					finding.acceptance_id,
+					refutationIdentity(record, action.diff_hash),
+				)
+			)
+				throw new KernelInvariantError([
+					`refute_finding requires a fresh passing QA attestation covering ${finding.acceptance_id ?? "null"}`,
+				]);
+			finding.status = "refuted";
+			finding.counterevidence = {
+				attestation_id: action.attestation_id,
+				acceptance_id: finding.acceptance_id,
+			};
+			appendHistory(record, action, from, action.finding_id, authorityAudit);
+			break;
+		}
+		case "record_approval": {
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
+				throw new KernelInvariantError([
+					`cannot record approval while state is ${stateOf(record)}`,
+				]);
+			const approval = action.approval;
+			if (approval.kind !== "review" && approval.kind !== "qa")
+				throw new KernelInvariantError([
+					"record_approval accepts only review or qa approvals",
+				]);
+			if (!authorityAudit)
+				throw new KernelInvariantError([
+					"record_approval requires a consumed authority capability",
+				]);
+			const expectedRole =
+				authorityAudit.authority_kind === "review"
+					? "reviewer"
+					: authorityAudit.authority_kind;
+			if (approval.authority_role !== expectedRole)
+				throw new KernelInvariantError([
+					"approval authority_role must match the consumed capability kind",
+				]);
+			if (approval.task_revision !== record.intent_snapshot.revision)
+				throw new KernelInvariantError(["approval task_revision must equal the current intent revision"]);
+			if (approval.intent_content_hash !== record.intent_ref.content_hash)
+				throw new KernelInvariantError(["approval intent_content_hash must equal the current intent hash"]);
+			if (approval.diff_hash !== diffHash)
+				throw new KernelInvariantError(["approval diff_hash must equal the action diff hash"]);
+			if (record.attestations.some((item) => item.id === approval.id))
+				throw new KernelInvariantError([
+					`attestations contains duplicate id ${approval.id}`,
+				]);
+			// A v4 review attestation must pin the exact immutable revision the
+			// reviewer analyzed; nothing else may carry that identity.
+			const reviewRevision = approval.review_revision;
+			if (reviewRevision && approval.kind !== "review")
+				throw new KernelInvariantError(["review_revision is only valid on review approvals"]);
+			if (approval.reviewer_verdict_sha256 && approval.kind !== "review")
+				throw new KernelInvariantError(["reviewer_verdict_sha256 is only valid on review approvals"]);
+			if (approval.kind === "review") {
+				if (!reviewRevision)
+					throw new KernelInvariantError(["v4 review approval requires review_revision"]);
+				if (reviewRevision.base_head !== record.git_base_head)
+					throw new KernelInvariantError(["review_revision.base_head must equal the Enrollment git_base_head"]);
+			}
+				// Re-emit the optional review-only fields in the strict parser's emission
+			// order so a written attestation stays byte-identical to its parse roundtrip.
+			const {
+				review_revision: storedReviewRevision,
+				advisory_findings: storedAdvisoryFindings,
+				reviewer_verdict_sha256: storedReviewerDigest,
+				...approvalWithoutExtras
+			} = approval;
+			record.attestations.push({
+				...approvalWithoutExtras,
+				acceptance_results: approval.kind === "qa"
+					? record.intent_snapshot.acceptance.map((item) => ({
+						acceptance_id: item.id,
+						status: "passed" as const,
+						summary: `host-attested QA: ${approval.summary}`,
+					}))
+					: [],
+				...(storedReviewRevision ? { review_revision: storedReviewRevision } : {}),
+				...(storedAdvisoryFindings ? { advisory_findings: storedAdvisoryFindings } : {}),
+				...(storedReviewerDigest ? { reviewer_verdict_sha256: storedReviewerDigest } : {}),
+			});
+			appendHistory(record, action, from, approval.id, authorityAudit);
+			break;
+		}
+		case "revise_intent":
+		case "approve_breaking_intent_revision": {
+			assertValidSpecBinding(action.next_intent);
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot revise intent while lifecycle is ${record.lifecycle}`,
+				]);
+			const revisionClass = classifyIntentRevision(
+				record.intent_snapshot,
+				action.next_intent,
+			);
+			if (action.type === "revise_intent" && revisionClass !== "compatible")
+				throw new KernelInvariantError([
+					"revise_intent requires a compatible revision",
+				]);
+			if (action.type === "approve_breaking_intent_revision" && revisionClass !== "breaking")
+				throw new KernelInvariantError([
+					"approve_breaking_intent_revision requires a breaking revision",
+				]);
+			if (!authorityAudit && action.type === "approve_breaking_intent_revision")
+				throw new KernelInvariantError([
+					"breaking intent revision requires user authority",
+				]);
+			if (action.next_intent.task_id !== record.task_id ||
+				action.next_intent.task_id !== record.intent_snapshot.task_id)
+				throw new KernelInvariantError([
+					"intent revision cannot change task identity",
+				]);
+			if (
+				action.next_intent.goal !== record.intent_snapshot.goal ||
+				action.next_intent.owner !== record.intent_snapshot.owner
+			)
+				throw new KernelInvariantError([
+					"intent revision cannot change goal or owner",
+				]);
+			if (RISK_RANK[action.next_intent.risk] < RISK_RANK[record.intent_snapshot.risk])
+				throw new KernelInvariantError([
+					"intent revision cannot reduce risk",
+				]);
+			if (!intentRefMatches(action.next_intent, action.next_intent_ref))
+				throw new KernelInvariantError([
+					"next intent ref must match the next intent",
+				]);
+			record.intent_snapshot = { ...action.next_intent };
+			record.intent_ref = { ...action.next_intent_ref };
+			if (action.type === "approve_breaking_intent_revision") {
+				for (const finding of record.findings) {
+					if (finding.kind === "replan_required" && finding.status === "open")
+						finding.status = "resolved";
+				}
+				if (record.artifact_state === "frozen") record.artifact_state = "active";
+			}
+			appendHistory(
+				record,
+				action,
+				from,
+				`intent_revision_${record.intent_snapshot.revision}`,
+				authorityAudit,
+			);
+			break;
+		}
+		case "record_verification": {
+			validateVerification(record, action, authorityAudit, action.verification);
+			if (action.verification.failure || action.verification.verifier_refutations.length !== action.verification.checked)
+				throw new KernelInvariantError(["standalone verification requires every finding to be refuted"]);
+			if (record.history.some(entry => entry.verification?.intent_content_hash === action.verification.intent_content_hash
+				&& entry.verification.diff_hash === action.verification.diff_hash
+				&& !entry.verification.failure
+				&& entry.verification.verifier_refutations.length === entry.verification.checked))
+				throw new KernelInvariantError(["all-refuted Review already obtained its redispatch for this snapshot"]);
+			if (projectTask(record.intent_snapshot, record, action.diff_hash, record.intent_ref.content_hash, changedPaths ?? [], floor).next_obligation !== "run_review")
+				throw new KernelInvariantError(["verification requires fresh QA and pending Review"]);
+			appendVerificationHistory(record, action, from, authorityAudit!, action.verification);
+			break;
+		}
+		case "record_review_verifier_dispute": {
+			const dispute = action.dispute;
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen" || authorityAudit?.authority_kind !== "review")
+				throw new KernelInvariantError(["review verifier dispute requires frozen artifacts and Review authority"]);
+			if (dispute.intent_content_hash !== record.intent_ref.content_hash || dispute.diff_hash !== action.diff_hash)
+				throw new KernelInvariantError(["review verifier dispute must bind the current intent and diff"]);
+			const previous = record.history.filter(entry => entry.verification?.intent_content_hash === dispute.intent_content_hash
+				&& entry.verification.diff_hash === dispute.diff_hash).map(entry => entry.verification!);
+			if (action.verification) {
+				validateVerification(record, action, authorityAudit, action.verification);
+				if (!previous.some(event => !event.failure && event.checked === event.verifier_refutations.length)
+					|| action.verification.failure || action.verification.checked !== action.verification.verifier_refutations.length
+					|| action.verification.verdict_sha256 !== dispute.verdict_sha256
+					|| !action.verification.verifier_refutations.some(refutation => refutation.finding_id === dispute.finding.id
+						&& refutation.anchor === dispute.finding.anchor && refutation.counter_path === dispute.counter_path))
+					throw new KernelInvariantError(["exhausted redispatch dispute requires the current all-refuted receipt"]);
+				appendVerificationHistory(record, action, from, authorityAudit, action.verification);
+			} else if (!previous.flatMap(event => event.verifier_refutations)
+				.some(refutation => refutation.anchor === dispute.finding.anchor && refutation.counter_path === dispute.counter_path)) {
+				throw new KernelInvariantError(["review verifier dispute must repeat a refuted anchor and its recorded counter-path"]);
+			}
+			if (record.findings.some(finding => finding.id === dispute.decision_id || finding.id === dispute.finding.id))
+				throw new KernelInvariantError(["review verifier dispute finding identity is already in use"]);
+			record.findings.push({ id: dispute.decision_id, kind: "unresolved_user_decision", status: "open", acceptance_id: dispute.finding.acceptance_id,
+				source: "kernel", review_round: null, summary: `Claim: ${dispute.finding.summary}\nTrigger: ${dispute.finding.evidence.trigger}\nCounter-path: ${dispute.counter_path}` });
+			appendHistory(record, action, from, dispute.decision_id, authorityAudit);
+			record.history[record.history.length - 1].review_verifier_dispute = dispute;
+			break;
+		}
+		case "request_rework": {
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
+				throw new KernelInvariantError([
+					`cannot request rework while state is ${stateOf(record)}`,
+				]);
+			if (action.findings.length === 0)
+				throw new KernelInvariantError([
+					"request_rework requires at least one finding",
+				]);
+			if (!authorityAudit)
+				throw new KernelInvariantError([
+					"request_rework requires an authority audit descriptor",
+				]);
+			if (
+				authorityAudit.authority_kind !== "review" &&
+				authorityAudit.authority_kind !== "qa" &&
+				authorityAudit.authority_kind !== "user"
+			)
+				throw new KernelInvariantError([
+					"request_rework requires review, qa, or user authority",
+				]);
+			const round = reviewRound(record);
+			// The reviewed revision is audit data for the next round's delta, not
+			// authority: it is legal only on Review rework and, on a v4 record, must
+			// name the Enrollment base exactly as an approval does. Its absence is a
+			// legacy record and never blocks.
+			if (action.review_revision) {
+				if (authorityAudit.authority_kind !== "review")
+					throw new KernelInvariantError([
+						`${authorityAudit.authority_kind} rework cannot carry a review revision`,
+					]);
+				if (
+					record.contract === "assurance_kernel/task_record/v4" &&
+					action.review_revision.base_head !== record.git_base_head
+				)
+					throw new KernelInvariantError([
+						"review_revision.base_head must equal the Enrollment git_base_head",
+					]);
+			}
+			// An anchor is authority: it decides whether this claim inherits an
+			// existing refutation. The Kernel recomputes it from the finding's own
+			// evidence, so a caller cannot bind one claim's identity to another
+			// claim's provenance.
+			for (const finding of action.findings) {
+				const anchor = finding.anchor ?? null;
+				const evidence = finding.evidence ?? null;
+				if ((anchor === null) !== (evidence === null))
+					throw new KernelInvariantError([
+						`finding ${finding.id} must carry anchor and evidence together`,
+					]);
+				if (evidence && anchor !== anchorForEvidence(evidence))
+					throw new KernelInvariantError([
+						`finding ${finding.id} anchor must equal the digest of its evidence`,
+					]);
+				// Only a Review rework carries reviewer provenance; a QA or user
+				// rework that does would be a caller asserting review identity.
+				if (anchor !== null && authorityAudit.authority_kind !== "review")
+					throw new KernelInvariantError([
+						`${authorityAudit.authority_kind} rework cannot carry review provenance`,
+					]);
+			}
+			const identity = refutationIdentity(record, action.diff_hash);
+			// A prior blocking Review claim is only a repeat offence when it names the
+			// same security boundary. Ordinary defects on an already-covered
+			// acceptance return to execution: changing the plan is a human decision,
+			// fixing a bug is not. A claim still refuted by live evidence is not an
+			// outstanding dispute at all.
+			const priorBlockingReviewFindings = record.findings.filter(
+				(finding) =>
+					finding.source === "review" &&
+					finding.kind === "blocking" &&
+					finding.review_round !== null &&
+					!(
+						finding.status === "refuted" &&
+						refutationIsLive(finding, record.attestations, identity)
+					),
+			);
+			// Anchor reconciliation: a new Review finding whose anchor matches a
+			// Review finding that is still live-refuted is admitted as refuted with
+			// the inherited counterevidence binding, for blocking and advisory
+			// claims alike. The claim's identity is the anchor, so the inherited
+			// binding keeps the acceptance its QA evidence was actually proved on.
+			// A refutation whose evidence went stale no longer suppresses anything,
+			// so the same claim is admitted as open and blocks again.
+			const admissions = action.findings.map((finding) => {
+				const inherited =
+					finding.anchor != null
+						? record.findings.find(
+								(prior) =>
+									prior.source === "review" &&
+									prior.status === "refuted" &&
+									prior.anchor === finding.anchor &&
+									refutationIsLive(prior, record.attestations, identity),
+							)
+						: undefined;
+				return { finding, inherited };
+			});
+			const disputed = admissions.find(
+				({ finding, inherited }) =>
+					finding.kind === "blocking" &&
+					inherited === undefined &&
+					finding.evidence?.violated.kind === "security_boundary" &&
+					priorBlockingReviewFindings.some(
+						(prior) =>
+							prior.evidence?.violated.kind === "security_boundary" &&
+							prior.evidence?.violated.ref === finding.evidence?.violated.ref,
+					),
+			)?.finding;
+			// Only rounds that actually raised an unrefuted blocking claim count
+			// against the budget: a claim live QA evidence already answers is not
+			// progress lost, so repeating it can never park the task.
+			const effectiveBlockingRounds = new Set(
+				priorBlockingReviewFindings.map((finding) => finding.review_round),
+			).size;
+			const hasEffectiveBlockingNow = admissions.some(
+				({ finding, inherited }) => finding.kind === "blocking" && inherited === undefined,
+			);
+			const parkForReplan =
+				authorityAudit.authority_kind === "review" &&
+				(disputed !== undefined ||
+					(hasEffectiveBlockingNow && effectiveBlockingRounds >= effectiveReviewRoundBudget(record)));
+			if (!parkForReplan) {
+				record.artifact_state = "active";
+				record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+			}
+			const findingIds = new Set(record.findings.map((item) => item.id));
+			for (const { finding, inherited } of admissions) {
+				if (findingIds.has(finding.id))
+					throw new KernelInvariantError([
+						`findings contains duplicate id ${finding.id}`,
+					]);
+				findingIds.add(finding.id);
+				record.findings.push({
+					id: finding.id,
+					kind: finding.kind,
+					status: inherited ? "refuted" : "open",
+					acceptance_id: finding.acceptance_id,
+					source: authorityAudit.authority_kind === "review" ? "review" : "execution",
+					review_round: authorityAudit.authority_kind === "review" ? round : null,
+					summary: finding.summary,
+					...(finding.anchor !== undefined ? { anchor: finding.anchor } : {}),
+					...(finding.evidence !== undefined ? { evidence: finding.evidence } : {}),
+					counterevidence: inherited ? { ...inherited.counterevidence! } : null,
+				});
+			}
+			if (
+				parkForReplan &&
+				!record.findings.some(
+					(item) => item.status === "open" && item.kind === "replan_required",
+				)
+			) {
+				const boundary = {
+					id: `${action.event_id}:replan-required`,
+					kind: "replan_required" as const,
+					status: "open" as const,
+					acceptance_id: disputed?.acceptance_id ?? null,
+					source: "kernel" as const,
+					review_round: round,
+					replan_cause:
+						disputed !== undefined
+							? ("repeated_security_boundary" as const)
+							: ("budget_exhausted" as const),
+					summary:
+						disputed !== undefined
+							? "Review returned the same security boundary twice; a durable replan is required."
+							: `Review exhausted its ${effectiveReviewRoundBudget(record)}-round rework budget; a durable replan is required.`,
+				};
+				if (findingIds.has(boundary.id))
+					throw new KernelInvariantError([
+						`findings contains duplicate id ${boundary.id}`,
+					]);
+				record.findings.push(boundary);
+			}
+			if (action.verification) {
+				validateVerification(previous, action, authorityAudit, action.verification);
+				if (action.verification.checked !== action.findings.length + action.verification.verifier_refutations.length)
+					throw new KernelInvariantError(["verification counts must cover the kept and refuted findings"]);
+				const refutedIds = new Set(action.verification.verifier_refutations.map(finding => finding.finding_id));
+				if (action.findings.some(finding => refutedIds.has(finding.id)))
+					throw new KernelInvariantError(["a refuted finding cannot be projected as rework"]);
+				const priorRefuted = new Set(previous.history.flatMap(entry =>
+					entry.verification?.intent_content_hash === action.verification!.intent_content_hash && entry.verification.diff_hash === action.diff_hash
+						? entry.verification.verifier_refutations.map(finding => finding.anchor) : []));
+				if (action.findings.some(finding => finding.anchor && priorRefuted.has(finding.anchor))
+					|| action.verification.verifier_refutations.some(finding => priorRefuted.has(finding.anchor)))
+					throw new KernelInvariantError(["a repeated refuted anchor requires a literal-user dispute"]);
+				appendVerificationHistory(record, action, from, authorityAudit!, action.verification);
+			}
+			appendHistory(
+				record,
+				action,
+				from,
+				`review_round_${round}`,
+				authorityAudit,
+				action.review_revision,
+			);
+			break;
+		}
+		case "authorize_rework": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot authorize rework while lifecycle is ${record.lifecycle}`,
+				]);
+			if (authorityAudit?.authority_kind !== "user")
+				throw new KernelInvariantError([
+					"authorize_rework requires literal-user authority",
+				]);
+			const open = record.findings.filter(
+				(finding) => finding.kind === "replan_required" && finding.status === "open",
+			);
+			if (open.length === 0)
+				throw new KernelInvariantError([
+					"authorize_rework requires an open replan boundary",
+				]);
+			for (const finding of open) finding.status = "resolved";
+			// The grant is cumulative so the budget is a single derivable number;
+			// a legacy caller without `rounds` grants exactly one further round.
+			record.review_round_budget_extension =
+				(record.review_round_budget_extension ?? 0) + (action.rounds ?? 1);
+			record.artifact_state = "active";
+			record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+			appendHistory(record, action, from, open.map((finding) => finding.id).join(","), authorityAudit);
+			break;
+		}
+		case "accept_residual_risk": {
+			// A parked record has already restored its artifacts for replan, so the
+			// exit cannot require a frozen snapshot; the open budget boundary below
+			// is the real gate and completion re-freezes through the normal path.
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot accept residual risk while lifecycle is ${record.lifecycle}`,
+				]);
+			if (authorityAudit?.authority_kind !== "user")
+				throw new KernelInvariantError([
+					"accept_residual_risk requires literal-user authority",
+				]);
+			const boundaries = record.findings.filter(
+				(finding) => finding.kind === "replan_required" && finding.status === "open",
+			);
+			// Only a budget exhaustion offers this exit. A boundary without a
+			// recorded cause predates the field and a repeated security boundary is
+			// a dispute about the design: both stay replan or stop only.
+			if (
+				boundaries.length === 0 ||
+				boundaries.some((finding) => finding.replan_cause !== "budget_exhausted")
+			)
+				throw new KernelInvariantError([
+					"accept_residual_risk requires an open replan boundary caused by budget exhaustion",
+				]);
+			if (record.findings.some((finding) => finding.kind === "unresolved_user_decision" && finding.status === "open"))
+				throw new KernelInvariantError([
+					"accept_residual_risk cannot settle a task with an open user decision",
+				]);
+			const accepted = record.findings.filter(
+				(finding) =>
+					finding.kind === "blocking" &&
+					finding.source === "review" &&
+					finding.status === "open",
+			);
+			if (accepted.length === 0)
+				throw new KernelInvariantError([
+					"accept_residual_risk requires at least one open blocking Review finding",
+				]);
+			for (const finding of boundaries) finding.status = "resolved";
+			for (const finding of accepted) finding.status = "accepted_risk";
+			record.residual_risk_acceptance = {
+				intent_revision: record.intent_snapshot.revision,
+				intent_content_hash: record.intent_ref.content_hash,
+				diff_hash: diffHash,
+				finding_ids: accepted.map((finding) => finding.id),
+				reason: action.reason,
+				actor_id: action.actor_id,
+				accepted_at: action.at,
+			};
+			appendHistory(
+				record,
+				action,
+				from,
+				`accepted_risk:${accepted.map((finding) => finding.id).join(",")}\n${action.reason}`,
+				authorityAudit,
+			);
+			break;
+		}
+		case "complete": {
+			if (record.lifecycle !== "active" || record.artifact_state !== "frozen")
+				throw new KernelInvariantError([
+					`cannot complete while state is ${stateOf(record)}`,
+				]);
+			if (!Array.isArray(changedPaths))
+				throw new KernelInvariantError(["complete requires trusted changed paths"]);
+			const decision = completionDecision(
+				record.intent_snapshot,
+				record,
+				diffHash,
+				record.intent_ref.content_hash,
+				changedPaths,
+				floor,
+			);
+			if (!decision.complete)
+				throw new KernelInvariantError([
+					"task is not eligible for completion",
+				]);
+			transitionLifecycle(record, "done");
+			appendHistory(record, action, from, null, authorityAudit);
+			break;
+		}
+		case "stop": {
+			if (!action.reason.trim())
+				throw new KernelInvariantError(["stop requires a reason"]);
+			transitionLifecycle(record, "stopped");
+			record.artifact_state = "frozen";
+			appendHistory(record, action, from, action.reason, authorityAudit);
+			break;
+		}
+		case "resolve_user_decision": {
+			if (record.lifecycle !== "active")
+				throw new KernelInvariantError([
+					`cannot resolve user decisions while lifecycle is ${record.lifecycle}`,
+				]);
+			if (!action.resolution.trim())
+				throw new KernelInvariantError([
+					"resolve_user_decision requires a resolution",
+				]);
+			const finding = record.findings.find(
+				(item) => item.id === action.finding_id,
+			);
+			if (!finding)
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} does not exist`,
+				]);
+			if (finding.kind !== "unresolved_user_decision")
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is not a user decision`,
+				]);
+			if (finding.status === "resolved")
+				throw new KernelInvariantError([
+					`finding ${action.finding_id} is already resolved`,
+				]);
+			const verifierDispute = record.history.find(entry => entry.review_verifier_dispute?.decision_id === finding.id)?.review_verifier_dispute;
+			if (verifierDispute) {
+				if (authorityAudit?.authority_kind !== "user" || !isLiteralUserActor(authorityAudit.actor_id))
+					throw new KernelInvariantError(["review verifier dispute requires literal-user authority"]);
+				if (verifierDispute.diff_hash !== action.diff_hash || verifierDispute.intent_content_hash !== record.intent_ref.content_hash)
+					throw new KernelInvariantError(["review verifier dispute no longer matches the current snapshot"]);
+				if (action.resolution !== "accept_verifier_dispute" && action.resolution !== "dismiss_verifier_dispute")
+					throw new KernelInvariantError(["review verifier dispute requires accept or dismiss"]);
+				if (action.resolution === "accept_verifier_dispute") {
+					if (record.findings.some(item => item.id === verifierDispute.finding.id)) throw new KernelInvariantError(["disputed finding identity is already in use"]);
+					record.findings.push({ ...verifierDispute.finding, kind: "blocking", status: "open", source: "review", review_round: reviewRound(record), counterevidence: null });
+					record.artifact_state = "active";
+					record.intent_ref.path = `docs/plans/${record.task_id}.intent.json`;
+				}
+			}
+			finding.status = "resolved";
+			appendHistory(
+				record,
+				action,
+				from,
+				`${action.finding_id}: ${action.resolution}`,
+				authorityAudit,
+			);
+			break;
+		}
+		default: {
+			const unreachable: never = action as never;
+			throw new KernelInvariantError([
+				`unsupported task action: ${String((unreachable as TaskAction).type)}`,
+			]);
+		}
+	}
+
+	assertTaskRecordUpdateV3(previous, record, action);
+	return brandResult(record, nextWorkingFor(record));
+}
+
+function nextWorkingFor(record: TaskRecord): string | null {
+	return record.lifecycle === "active" ? record.task_id : null;
+}
+
+function brandResult(
+	record: TaskRecord,
+	nextWorking: string | null,
+): ReducedTaskMutation {
+	const target = {} as ReducedTaskMutation;
+	Object.defineProperty(target, REDUCED_MUTATION_BRAND, {
+		value: true,
+		enumerable: false,
+		writable: false,
+		configurable: false,
+	});
+	Object.defineProperty(target, "record", {
+		value: record,
+		enumerable: true,
+		writable: false,
+	});
+	Object.defineProperty(target, "next_workspace_working", {
+		value: nextWorking,
+		enumerable: true,
+		writable: false,
+	});
+	return Object.freeze(target);
+}
+
+export function isReducedMutation(value: unknown): value is ReducedTaskMutation {
+	return (
+		!!value &&
+		typeof value === "object" &&
+		(value as ReducedTaskMutation)[REDUCED_MUTATION_BRAND] === true
+	);
+}

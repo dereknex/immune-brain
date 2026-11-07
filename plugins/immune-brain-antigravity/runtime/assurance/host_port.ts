@@ -1,0 +1,61 @@
+import type { SnapshotDescriptor } from "./coordinator";
+import type { ReviewPacket } from "./review_packet";
+
+export type ConfirmationReferenceSource = (input: {
+	snapshot: SnapshotDescriptor;
+	actorId: string;
+	now: string;
+}) => string;
+
+export interface ReviewEvidence {
+	path: string;
+	writePacket(name: string, content: string): ReviewPacket;
+	remove(): void;
+}
+
+export interface ReviewRequest {
+	taskId: string;
+	operationId: string;
+	/**
+	 * The complete Review prompt: internal role contract, static review rules and
+	 * the per-dispatch facts. Written into the packet by a Host whose reviewer
+	 * agent carries no instructions of its own.
+	 */
+	prompt: string;
+	/**
+	 * The per-dispatch facts alone, a strict suffix of `prompt`. A Host whose
+	 * reviewer definition already carries the role contract and the static rules
+	 * writes only this into the packet, so static instructions stay generated from one
+	 * source instead of being sent twice.
+	 */
+	snapshotPrompt: string;
+	evidencePath: string;
+	writePacket: ReviewEvidence["writePacket"];
+	/** Requested budget, also stated in the prompt for Hosts without a native turn-cap parameter. */
+	maxTurns: number;
+}
+
+export interface HostReviewReservation {
+	id: string;
+	dispatch: unknown;
+}
+
+export interface VerificationRequest {
+	taskId: string;
+	operationId: string;
+	prompt: string;
+	model: string;
+	writePacket: ReviewEvidence["writePacket"];
+}
+
+export type VerificationReceipt =
+	| { ok: true; receipt: { actorId: string; result: string; model: string } }
+	| { ok: false; reason: string; release: boolean };
+
+export interface AssuranceHostPort {
+	readonly host: "pi" | "claude-code" | "antigravity" | "fake";
+	prepareReview(request: ReviewRequest): HostReviewReservation;
+	prepareVerification?(request: VerificationRequest): HostReviewReservation;
+	inspectVerification?(reservation: HostReviewReservation): VerificationReceipt;
+	releaseReview(reservation: HostReviewReservation): void;
+}

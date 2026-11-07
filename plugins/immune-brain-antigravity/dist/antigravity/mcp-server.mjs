@@ -6265,6 +6265,20 @@ function parseFinalVerificationReport(value, commands) {
     throw new Error("final verification commands changed");
   return report;
 }
+function reusableFinalVerification(observed, input) {
+  let report;
+  try {
+    report = parseFinalVerificationReport(observed, input.commands);
+  } catch {
+    return null;
+  }
+  if (!report.passed || report.head !== input.head || report.content_identity !== undefined)
+    return null;
+  const derived = report.derived_checks ?? [];
+  if (!sameJson(derived.map((item) => [item.id, item.invocation]), input.declared.map((item) => [item.id, item.check])))
+    return null;
+  return report;
+}
 function runOne(root, command, timeoutMs, invocation, dependencyRoot = root) {
   const [executable, ...argv] = invocation ? [invocation.executable, ...invocation.argv] : command.split(" ");
   const started = Date.now();
@@ -6338,7 +6352,7 @@ async function runFinalVerification(root, commands, options = {}) {
     ...derived_checks.length ? { derived_checks } : {}
   };
 }
-var MAX_FINAL_VERIFICATION_COMMANDS = 8, MAX_COMMAND_LENGTH = 512, DEFAULT_TIMEOUT_MS;
+var MAX_FINAL_VERIFICATION_COMMANDS = 8, MAX_COMMAND_LENGTH = 512, DEFAULT_TIMEOUT_MS, sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 var init_batch_final_verification = __esm(() => {
   init_intent();
   init_derived_files();
@@ -17346,7 +17360,7 @@ init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
-import { join as join33 } from "node:path";
+import { join as join34 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -19325,7 +19339,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { dirname as dirname16, join as join32, resolve as resolve16 } from "node:path";
+import { dirname as dirname16, join as join33, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
@@ -19699,23 +19713,78 @@ init_batch_final_report();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute10, join as join30 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join31 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 init_git_integration_preference();
 init_batch_preflight();
 import { spawnSync as spawnSync18 } from "node:child_process";
+import { lstatSync as lstatSync19 } from "node:fs";
+import { join as join30 } from "node:path";
+var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+function deliveredPaths(root, base, head) {
+  const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
+  if (raw.status !== 0)
+    return null;
+  const fields = raw.stdout.split("\x00").filter(Boolean);
+  const paths = [];
+  for (let i = 0;i + 1 < fields.length; i += 2) {
+    const meta = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(fields[i]);
+    if (!meta)
+      return null;
+    paths.push({ path: fields[i + 1], newMode: meta[2], newBlob: meta[4], deleted: meta[5] === "D" });
+  }
+  return paths;
+}
+function pathSatisfied(root, entry) {
+  const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
+  if (staged.status !== 0)
+    return false;
+  if (entry.deleted) {
+    if (staged.stdout.length)
+      return false;
+    try {
+      lstatSync19(join30(root, entry.path));
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
+    return false;
+  let stat;
+  try {
+    stat = lstatSync19(join30(root, entry.path));
+  } catch {
+    return false;
+  }
+  const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
+  if (worktreeMode !== entry.newMode)
+    return false;
+  const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
+  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
+}
+function deliveryAlreadyApplied(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  if (mode === "auto")
+    return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
+  const paths = deliveredPaths(root, base, head);
+  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
+}
 function deliverSingleTask(root, base, head) {
   const { mode } = readGitIntegrationPreference(root);
   const blocked = (reason) => ({ mode, status: "blocked", reason });
-  const git = (...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
-  const changed = git("diff", "--name-only", "--no-renames", "-z", base, head, "--");
+  const git = (...args) => gitIn(root, ...args);
+  if (deliveryAlreadyApplied(root, base, head))
+    return { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null };
+  const changed = deliveredPaths(root, base, head);
   const dirty = porcelainEntries(root);
-  if (changed.status !== 0 || !dirty)
+  if (!changed || !dirty)
     return blocked("coordinator_status_unreadable");
-  const delivered = changed.stdout.split("\x00").filter(Boolean);
-  const overlaps = dirty.map((entry) => entry.path).filter((path) => delivered.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
+  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
+  const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
   if (overlaps.length)
     return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
   if (mode === "auto") {
@@ -19728,7 +19797,9 @@ function deliverSingleTask(root, base, head) {
       return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
     return { mode, status: "fast_forwarded", reason: null };
   }
-  const patch = spawnSync18("git", ["--no-optional-locks", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--"], { maxBuffer: 128 * 1024 * 1024 });
+  if (!pending.length)
+    return { mode, status: "staged", reason: null };
+  const patch = spawnSync18("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
   if (patch.status !== 0)
     return blocked("checkout_delivery_conflict: cannot read delivery delta");
   if (!patch.stdout.length)
@@ -20058,7 +20129,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join30(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join31(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -20495,7 +20566,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join30(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join31(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -20668,7 +20739,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join30(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync16(join31(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -21004,19 +21075,26 @@ async function runLaneBatch(input, persisted) {
       return failed;
   }
   if (record.children.every((c) => c.state === "integrated" || c.state === "released")) {
-    const final = record.final_verification?.length || readDerivedFilesAt(input.root, record.base_head).length ? await runFinalVerification(input.root, record.final_verification ?? [], { declaration_head: record.base_head, ...isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } : isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {} }) : undefined;
+    const declared = readDerivedFilesAt(input.root, record.base_head);
+    const singleTask = record.plan_source === "single_task" && isParentBranch(record.branch);
+    const reused = singleTask ? reusableFinalVerification(record.final_report?.final_verification, { head: expectedBatchHead(record), commands: record.final_verification ?? [], declared }) : null;
+    const final = reused ?? (record.final_verification?.length || declared.length ? await runFinalVerification(input.root, record.final_verification ?? [], {
+      declaration_head: record.base_head,
+      ...input.final_verification_timeout_ms ? { timeoutMs: input.final_verification_timeout_ms } : {},
+      ...isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } : isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}
+    }) : undefined);
     if (isParentBranch(record.branch)) {
       record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
       persist();
       if (record.plan_source === "single_task") {
         const child = record.children[0];
-        const delivery = deliverSingleTask(input.root, child.lane.base_head, record.final_report.head);
+        const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map((item) => ({ ...item, command: item.id }))].filter((item) => !item.passed).map((item) => item.command) : [];
+        const unverified = final && (!final.passed || final.head !== record.final_report.head) ? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
+        const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked", reason: unverified } : deliverSingleTask(input.root, child.lane.base_head, record.final_report.head);
         record.final_report.return_to_coordinator = delivery;
         if (delivery.status === "blocked") {
           record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
           record.batch_state = "needs_human";
-          if (final)
-            record.final_verification_result = final;
           persist();
           return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
         }
@@ -21747,7 +21825,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join32 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -21767,7 +21845,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join31(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join32(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -22188,7 +22266,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync18(join32(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync18(join33(this.cwd, ".imm", "audit", taskId)))
         execFileSync14("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -22341,7 +22419,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join32(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join33(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22482,7 +22560,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join32(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join33(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -23800,7 +23878,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join33(cwd, ".imm", "state", "batches");
+    const batchesDir = join34(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
@@ -23830,7 +23908,7 @@ if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
 init_review_packet();
 import { createHash as createHash27 } from "node:crypto";
 import { mkdirSync as mkdirSync12, readdirSync as readdirSync11, rmSync as rmSync12, writeFileSync as writeFileSync13, readFileSync as readFileSync24 } from "node:fs";
-import { join as join34 } from "node:path";
+import { join as join35 } from "node:path";
 import { tmpdir as tmpdir8 } from "node:os";
 var REVIEWER_AGENT2 = "immune-brain-reviewer";
 var VERIFIER_AGENT = "immune-brain-review-verifier";
@@ -23864,7 +23942,7 @@ function sessionHash2(sessionId) {
   return createHash27("sha256").update(sessionId).digest("hex");
 }
 function cacheDir2(root) {
-  return join34(root, CACHE_DIR2);
+  return join35(root, CACHE_DIR2);
 }
 function ensurePrivateDir2(dir) {
   try {
@@ -23886,7 +23964,7 @@ class FileHookEventLog2 {
     return path;
   }
   file(sessionId) {
-    return join34(this.dir(), `${sessionHash2(sessionId)}.events.jsonl`);
+    return join35(this.dir(), `${sessionHash2(sessionId)}.events.jsonl`);
   }
   append(event) {
     try {
@@ -24178,17 +24256,17 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync19, realpathSync as realpathSync22, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
+import { lstatSync as lstatSync20, realpathSync as realpathSync22, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { homedir as homedir4, tmpdir as tmpdir9 } from "node:os";
-import { join as join35 } from "node:path";
+import { join as join36 } from "node:path";
 var FILE_TOOLS2 = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 var GATED_MCP_TOOL2 = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
 function entryLogPath2(sessionId, root) {
-  return join35(cacheDir2(root), `${sessionHash2(sessionId)}.entry`);
+  return join36(cacheDir2(root), `${sessionHash2(sessionId)}.entry`);
 }
 function admissionPath2(toolUseId, root) {
-  return join35(cacheDir2(root), `${sessionHash2(toolUseId)}.admit`);
+  return join36(cacheDir2(root), `${sessionHash2(toolUseId)}.admit`);
 }
 function dropPrivate2(path) {
   try {
@@ -24196,17 +24274,17 @@ function dropPrivate2(path) {
   } catch {}
 }
 function antigravityLocalNames(cwd, home) {
-  const roots = [join35(cwd, ".agents"), join35(home, ".agents"), join35(home, ".gemini/config")];
+  const roots = [join36(cwd, ".agents"), join36(home, ".agents"), join36(home, ".gemini/config")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        const body = readAliasFile(join36(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join36(root, "skills"), name))
   };
 }
 function readPhaseEntryState2(sessionId, root = tmpdir9()) {
@@ -24214,7 +24292,7 @@ function readPhaseEntryState2(sessionId, root = tmpdir9()) {
     return null;
   const path = entryLogPath2(sessionId, root);
   try {
-    lstatSync19(path);
+    lstatSync20(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }

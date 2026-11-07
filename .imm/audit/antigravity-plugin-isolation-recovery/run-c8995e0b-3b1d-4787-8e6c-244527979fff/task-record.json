@@ -1,0 +1,242 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-plugin-isolation-recovery",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-plugin-isolation-recovery",
+    "goal": "Recover the complete isolated Antigravity package delivery from the digest-bound retained implementation, including nested Markdown closure and executable-mode repairs; obtain fresh QA and Review and runtime checkout delivery without altering the old settled task or bypassing reviewed-delivery identity. Follow docs/specs/antigravity-plugin-isolation-recovery.spec.md. Preserve original package AC1-AC6, Pi/Claude roots and read-only native tools; disclose the unresolved native reviewer capability limitation and do not claim complete Managed lifecycle certification.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source: recovery Spec E1. At tests/antigravity-host-package.test.ts, the isolated artifact has .antigravity-plugin/plugin.json, its five expected native role definitions with preserved shared prompts and read-only/no-tool restrictions, and its public skill inventory; the old shared-root Antigravity manifests and bundle are retired. Claude loader files/frontmatter and Pi extensions are absent from the artifact. Concrete string-valued-tools and cross-host-component fixtures fail the package checks; transitive runtime/claude implementation modules remain allowed. The artifact README discloses that native reviewer/verifier immutable Git and packet-hash access is not certified; this package test asserts disclosure and read-only restrictions, not real model behavior.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source: recovery Spec E1. At tests/antigravity-host-package.test.ts, each configured hook command starts from a relocated artifact path containing spaces with PLUGIN_ROOT unset, processes an isolated non-authorizing payload and returns parseable JSON without Kernel mutation. The MCP configuration resolves its own bundle using the supported PLUGIN_ROOT interpolation. Removing the bundle produces a nonzero launch failure rather than a successful check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source: recovery Spec E1. At tests/antigravity-host-package.test.ts, an artifact copied without repository siblings resolves all shipped skill/contract and role-prompt references internally, answers bundled MCP initialize/tools/list and runs bin/imm-plan --routing-status --json and read-only bin/imm-kernel inspect --json. Removing a referenced contract, runtime dependency or role prompt fails the corresponding closure check; no symlink or parent-relative external dependency supplies the missing content.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Source: recovery Spec E1. At tests/antigravity-host-package.test.ts and tests/pi-only-release-contract.test.ts, npm dry-run includes the complete isolated artifact and excludes retired Antigravity entrypoints while retaining Pi/Claude paths. Version stamp/validate includes the relocated manifest and rejects its absence or version mismatch. Generated-output checks detect changed source, missing output and stale extra output, remain read-only, clean temporary files on success/failure, and fixture builds produce identical owned bytes. CI and release verification invoke the expanded Antigravity output check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/pi-only-release-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Source: recovery Spec E1. Existing tests/claude-host-package.test.ts, tests/pi-only-package-surface.test.ts, tests/pi-only-release-contract.test.ts and tests/antigravity-assurance-conformance.test.ts pass with only the required inventory/path expectations updated; Pi/Claude install roots, loader configuration, native MCP/reviewer behavior, package exclusions and existing Antigravity authorization assertions remain protected.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/pi-only-package-surface.test.ts\",\n      \"tests/pi-only-release-contract.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "Source: recovery Spec E1. The official native validator agy plugin validate plugins/immune-brain-antigravity --strict --json exits zero with no errors or warnings for the delivered artifact. The required validator is the observed agy 1.5.1 CLI supplied by the QA host; missing CLI is a failed prerequisite, not a skip. AC1 separately requires the complete component inventory, so removing agents cannot satisfy the repair.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"agy\",\n    \"argv\": [\n      \"plugin\",\n      \"validate\",\n      \"plugins/immune-brain-antigravity\",\n      \"--strict\",\n      \"--json\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC7",
+        "assertion": "Source: recovery Spec E4. At tests/antigravity-host-package.test.ts and tests/pi-only-current-contracts.test.ts, a complete relocated artifact passes closure while a missing link in nested dist/docs and an escaping link in nested dist/role-prompts fail it. A bin/imm-kernel wrapper changed to 0644 fails the mode check; rebuilding restores executable permission and passes. The unshipped ADR link is repaired at its canonical document and mirrors without weakening config contract assertions. These checks extend the retained fixture seams rather than adding a duplicate test file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"tests/pi-only-current-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-plugin-isolation.md",
+      "CONTEXT.md",
+      "README.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/antigravity-plugin-isolation-recovery.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/antigravity-plugin-isolation-recovery.spec.md",
+      "package.json",
+      "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json",
+      "plugins/immune-brain-antigravity/BASELINE.md",
+      "plugins/immune-brain-antigravity/README.md",
+      "plugins/immune-brain-antigravity/agents/**",
+      "plugins/immune-brain-antigravity/bin/**",
+      "plugins/immune-brain-antigravity/dist/**",
+      "plugins/immune-brain-antigravity/hooks.json",
+      "plugins/immune-brain-antigravity/mcp_config.json",
+      "plugins/immune-brain-antigravity/runtime/**",
+      "plugins/immune-brain-antigravity/skills/**",
+      "plugins/immune-brain/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/hooks.json",
+      "plugins/immune-brain/mcp_config.json",
+      "plugins/immune-brain/plugin.json",
+      "scripts/build-antigravity-plugin.ts",
+      "scripts/build-claude-plugin.ts",
+      "scripts/dist-sync-manifest.ts",
+      "scripts/plugin_versioning.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/pi-only-current-contracts.test.ts",
+      "tests/pi-only-package-surface.test.ts",
+      "tests/pi-only-release-contract.test.ts",
+      "tests/role-prompt-bundled-layout.test.ts"
+    ],
+    "scope_size_reason": "One replacement delivery must carry the whole isolated artifact, the packaging/version/host regression contracts and the two post-settlement fixes under one fresh snapshot; most paths are generated copies. Revision 2 adds only tests/explicit-phase-entry-run-contract.test.ts to align one assertion stale since HEAD 297c5c999.",
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-plugin-isolation-recovery.intent.json",
+    "content_hash": "sha256:206f4b03796ca15a02fa668965c8cebad850232942519870222865be8b3721cb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:3ffc19e1ed6b4bde8271ad3c7e97eb491a6cd5959bbdc18fb64296cddf3b67f2",
+  "git_base_head": "297c5c999bb890e71729670bab4bbda11a016354",
+  "attestations": [
+    {
+      "id": "approval-qa-19ee08ac",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:206f4b03796ca15a02fa668965c8cebad850232942519870222865be8b3721cb",
+      "diff_hash": "sha256:9791bd7286efb994ff650d5f21f303f5527e278f83dc8b3058f326ee46c902c4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        },
+        {
+          "acceptance_id": "AC7",
+          "status": "passed",
+          "summary": "host-attested QA: all 8 project verification check(s) passed; execution=sha256:f0347fe6947cf4056c82ee08938888b7b29e1cad1e204a179ab75fe921073831"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e02df5ba",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:206f4b03796ca15a02fa668965c8cebad850232942519870222865be8b3721cb",
+      "diff_hash": "sha256:9791bd7286efb994ff650d5f21f303f5527e278f83dc8b3058f326ee46c902c4",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius tier medium: relocates the Antigravity install root to plugins/immune-brain-antigravity (package.json files, scripts/build-antigravity-plugin.ts, scripts/plugin_versioning.ts, derived-files.json). The shared-root manifest, hooks, MCP config and bundle are retired. Provenance was verified (single parent, tree f8653649). All seven ACs have passed QA outcomes. I read the full diffs of the builder, versioning, package.json, hooks, docs and tests, and the new test file. I compared the mirrored artifact tree to the shared sources by git blob OID and mode, and every mirrored path is byte-identical. The only differences are the generated native agents and the hand-maintained README, which I read directly. No blocking defects found.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "297c5c999bb890e71729670bab4bbda11a016354",
+        "review_commit": "a5a737191da005dccc256f63491ae13ab09b88ac",
+        "review_tree": "f86536499c0b6f86626d2d74af6940b873f60dab",
+        "manifest_digest": "sha256:29f35a926030ea653d7e90b3be6188dcec34a038ef92776ae58ad0d6c67a76a5"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-60ee107efdd0-1-review-1",
+          "acceptance_id": "AC5",
+          "summary": "tests/explicit-phase-entry-run-contract.test.ts changes a drive-contract phrase expectation that is not an inventory or path expectation. It drops 'that the runtime spawns' so the assertion matches the unchanged dist/drive.md. The edit only repairs a test that did not match the base; tests/unattended-contracts.test.ts already asserts the shorter phrase. It is benign but goes beyond AC5's 'only inventory/path expectations updated'.",
+          "anchor": "sha256:f8e2966d024fb4d8563f9aeef6fa9988551588df45dbf8a3d5d1f19a5d5c3933",
+          "evidence": {
+            "trigger": "Base 297c5c999 asserted a phrase that plugins/immune-brain/dist/drive.md did not contain, so the test would have failed before this change; the executor aligned the test rather than the contract. No wrong runtime result.",
+            "caller_chain": [
+              "tests/explicit-phase-entry-run-contract.test.ts",
+              "plugins/immune-brain/dist/drive.md",
+              "tests/unattended-contracts.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC5"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:ac18818b3b7f771ef842c4fb3dc7cde39c722e935deabe3afead3c3b70e1d4fe"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "revise_intent:antigravity-plugin-isolation-recovery:2026-11-06T09:51:46.535Z",
+      "at": "2026-11-06T09:51:46.535Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:4870a56913915022002fa72e597565ae1a1449bd17b1730e3775d454dd2de61f"
+    },
+    {
+      "id": "freeze_artifacts:antigravity-plugin-isolation-recovery:2026-11-06T10:11:00.745Z",
+      "at": "2026-11-06T10:11:00.745Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-plugin-isolation-recovery.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-plugin-isolation-recovery:2026-11-06T10:11:50.875Z",
+      "at": "2026-11-06T10:11:50.875Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-19ee08ac\naction_v2_sha256:0b5810ad3e9293e9d719b950d26654b44f3760fe9032d6fb2dd7068ba8d0cf6b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-06T10:11:50.875Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-plugin-isolation-recovery:2026-11-06T10:18:16.490Z",
+      "at": "2026-11-06T10:18:16.490Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e02df5ba\naction_v2_sha256:192b0eaf4b2fae5e4f6d1496dedb9099b068c41bfe3c686af2962f217bf2a19d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "claude:parent-mediated-review",
+        "issued_at": "2026-11-06T10:18:16.490Z"
+      },
+      "review_started_at": "2026-11-06T10:15:46.981Z",
+      "review_submitted_at": "2026-11-06T10:18:12.453Z",
+      "reviewer_model": "claude-sonnet-5-5"
+    },
+    {
+      "id": "complete:antigravity-plugin-isolation-recovery:2026-11-06T10:18:28.710Z",
+      "at": "2026-11-06T10:18:28.710Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:524b024b1c3d0ee2724dd8da7159d45af44beed3854bbe1936726ab7a0e388fd"
+    }
+  ]
+}

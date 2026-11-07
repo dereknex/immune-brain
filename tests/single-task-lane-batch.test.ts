@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, spyOn, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
@@ -17,6 +17,7 @@ import { parseBatchLaneRunState, prepareBatchLaneRunState, readAnyBatchRunState,
 import { readSettledRunEvidence, recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
+import { deliverSingleTask } from "../plugins/immune-brain/runtime/unattended/checkout_delivery";
 import { prepareBatchPreflight } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { projectTaskStatus } from "../plugins/immune-brain/runtime/assurance/coordinator";
 
@@ -51,7 +52,7 @@ test("single-task batch records retain their source and reject a different child
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 
-function fixture() {
+function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean } = {}) {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-single-task-")));
 	roots.push(dir);
 	mkdirSync(join(dir, "docs/plans"), { recursive: true });
@@ -63,9 +64,16 @@ function fixture() {
 	writeFileSync(join(dir, `docs/plans/${TASK}.intent.json`), `${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id: TASK,
 		owner: "user", goal: "Deliver the single task", acceptance: [{ id: "A1", assertion: "A1 holds", verification }],
 		scope_hint: ["delivery.txt"], risk: "material", revision: 1 })}\n`);
+	if (options.mode) {
+		mkdirSync(join(dir, ".imm"), { recursive: true });
+		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: options.mode }));
+	}
 	git(dir, "init", "-q", "-b", "main");
 	git(dir, "add", "-A");
+	if (options.untrackedIntent) git(dir, "rm", "-q", "--cached", `docs/plans/${TASK}.intent.json`);
 	git(dir, "commit", "-qm", "base");
+	// The canonical planning input is staged in the coordinator checkout but absent from HEAD.
+	if (options.untrackedIntent) git(dir, "add", `docs/plans/${TASK}.intent.json`);
 	return { repo: dir, base: git(dir, "rev-parse", "HEAD") };
 }
 
@@ -128,7 +136,9 @@ function settleLane(lane: string) {
 	recoverKernelStoreFollowUps(lane, TASK);
 }
 
-function request(repo: string, base: string, fx: { kernel: ReturnType<typeof kernel>; git: BatchRunnerGitPort }): StartBatchInput {
+function request(repo: string, base: string, fx: { kernel: ReturnType<typeof kernel>; git: BatchRunnerGitPort },
+	extra: Partial<StartBatchInput> & { confirmedAt?: string } = {}): StartBatchInput {
+	const { confirmedAt = CONFIRMED_AT, ...overrides } = extra;
 	const intent = readTaskIntent(repo, TASK);
 	const children: BatchPlanChild[] = [{ task_id: TASK, slice_id: TASK, blocked_by: [], status: "enrollable", reason: null,
 		intent_path: intent.intent_ref.path, intent_revision: intent.intent_ref.revision,
@@ -138,16 +148,16 @@ function request(repo: string, base: string, fx: { kernel: ReturnType<typeof ker
 	const budget = { max_children: 1, qa_failure_limit: 2 };
 	const capability = registry.issue({ batch_id: BATCH_ID, initiative_slug: TASK, plan_digest: planDigest,
 		branch: `refs/heads/imm/${TASK}`, base_head: base, budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" },
-	children, CONFIRMED_AT);
+	children, confirmedAt);
 	return { root: repo, plan_source: "single_task", batch_id: BATCH_ID, initiative_slug: TASK, registry, capability,
-		children, plan_digest: planDigest, base_head: base, confirmation_time: CONFIRMED_AT, budget, now,
+		children, plan_digest: planDigest, base_head: base, confirmation_time: confirmedAt, budget, now,
 		kernel: createBatchKernelPort({ root: repo, enrollmentRegistry: createEnrollmentAuthorityRegistry(), registry,
 			capability, binding: { batch_id: BATCH_ID, initiative_slug: TASK, plan_digest: planDigest, branch: `refs/heads/imm/${TASK}`,
 				base_head: base, budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" },
 			advanceTask: async () => ({ state: "completed" }),
 			resume: { isResuming: false, existingBatch: null, batchBranch: `refs/heads/imm/${TASK}` },
 			overrides: fx.kernel }),
-		git: fx.git, max_parallel: 1 };
+		git: fx.git, max_parallel: 1, ...overrides };
 }
 
 const laneReport = (report: unknown) => report as BatchLaneRunReport;
@@ -227,13 +237,14 @@ describe("single-task status", () => {
 });
 
 describe("single-task Lane delivery", () => {
-	function owned() {
-		const { repo, base } = fixture();
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+		const { repo, base } = fixture(options);
 		const port = createDefaultLaneGitPort();
 		const k = kernel();
 		const laneCommits = createDefaultBatchGitPort();
 		return { repo, base, port, kernel: k,
-			args: () => request(repo, base, { kernel: k, git: Object.assign(laneCommits, { lane: port }) }) };
+			args: (extra: Partial<StartBatchInput> & { confirmedAt?: string } = {}) =>
+				request(repo, base, { kernel: k, git: Object.assign(laneCommits, { lane: port }) }, { ...options.extra, ...extra }) };
 	}
 
 	it("keeps an interactive Lane on re-entry, delivers its settlement and retains its worktree", async () => {
@@ -376,5 +387,229 @@ describe("single-task Lane delivery", () => {
 		expect(second.children[0]!.reason).toContain("batch_change_already_present");
 		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(parentHead);
 		expect(second.batch_state).toBe("needs_human");
+	});
+});
+
+describe("single-task final verification and checkout delivery", () => {
+	const PASS = ["bun --version"];
+	const LATER = "2026-01-03T00:00:00.000Z";
+	type Fixture = ReturnType<typeof ownedFixture>;
+	const ownedFixture = (options: Parameters<typeof owned>[0] = {}) => owned(options);
+	// `owned` lives in the sibling describe; rebuild the same wiring here.
+	function owned(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean; extra?: Partial<StartBatchInput> & { confirmedAt?: string } } = {}) {
+		const { repo, base } = fixture(options);
+		const port = createDefaultLaneGitPort();
+		const k = kernel();
+		const laneCommits = createDefaultBatchGitPort();
+		return { repo, base, port, kernel: k,
+			args: (extra: Partial<StartBatchInput> & { confirmedAt?: string } = {}) =>
+				request(repo, base, { kernel: k, git: Object.assign(laneCommits, { lane: port }) }, { final_verification: PASS, ...options.extra, ...extra }) };
+	}
+	/** Enroll, then deliver and settle the Lane so the next tick integrates and finalizes. */
+	async function settled(f: Fixture) {
+		const first = laneReport(await startBatch(f.args()));
+		const lane = first.children[0]!.lane!.path;
+		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
+		settleLane(lane);
+		auditPair(lane, TASK);
+		git(lane, "add", "--", "delivery.txt");
+		return lane;
+	}
+	const read = (f: Fixture) => readAnyBatchRunState(f.repo, BATCH_ID) as BatchLaneRunStateRecord;
+	const recordBytes = (f: Fixture) => readFileSync(join(f.repo, `.imm/state/batches/${BATCH_ID}.json`), "utf8");
+	/** Park the settled child on a dirty overlap after a passing verification. */
+	async function parkedOnOverlap(f: Fixture, overlap = "delivery.txt") {
+		await settled(f);
+		writeFileSync(join(f.repo, overlap), "user content\n");
+		const parked = laneReport(await startBatch(f.args()));
+		expect(parked.batch_state).toBe("needs_human");
+		return parked;
+	}
+	/** The interruption shape from the observed failure: running, integrated child, nested passing report. */
+	function asObservedRunning(f: Fixture, mutate: (record: BatchLaneRunStateRecord) => void = () => {}) {
+		const record = read(f);
+		record.batch_state = "running";
+		record.children = record.children.map(child => ({ ...child, state: "integrated", reason: null }));
+		record.final_report!.return_to_coordinator = { ...record.final_report!.return_to_coordinator, status: "blocked", reason: "return_pending" };
+		record.final_report!.final_verification!.results[0]!.duration_ms = 12345;
+		mutate(record);
+		writeBatchLaneRunState(f.repo, record);
+	}
+
+	it.each(["manual", "auto"] as const)("%s: completes with passing final commands and a re-readable completed-only proof", async mode => {
+		const f = owned({ mode });
+		await settled(f);
+		const done = laneReport(await startBatch(f.args()));
+		expect(done.batch_state).toBe("completed");
+		const record = read(f);
+		expect(record).toMatchObject({ batch_state: "completed", final_verification_result: { passed: true, head: done.commits[0] },
+			final_report: { final_verification: { passed: true }, return_to_coordinator: { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null } } });
+		expect(readFileSync(join(f.repo, "delivery.txt"), "utf8")).toBe("delivered\n");
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(mode === "auto" ? done.commits[0]! : f.base);
+		if (mode === "manual") expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
+	});
+
+	it.each(["manual", "auto"] as const)("%s: parks a passing verification on a dirty overlap with the exact path and a nested result only", async mode => {
+		const f = owned({ mode });
+		const parked = await parkedOnOverlap(f);
+		const reason = "checkout_delivery_overlap: delivery.txt";
+		expect(parked.children[0]).toMatchObject({ state: "needs_human", reason });
+		const record = read(f);
+		expect(record.batch_state).toBe("needs_human");
+		expect(record.final_verification_result).toBeUndefined();
+		expect(record.final_report).toMatchObject({ final_verification: { passed: true, head: parked.commits[0] }, return_to_coordinator: { mode, status: "blocked", reason } });
+		expect(record.children[0]!.lane_removed ?? record.children[0]!.lane_retained).toBeUndefined();
+		expect(readFileSync(join(f.repo, "delivery.txt"), "utf8")).toBe("user content\n");
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
+		expect(git(f.repo, "status", "--porcelain")).toBe("?? delivery.txt");
+		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(parked.commits[0]!);
+		// The producer must never persist the illegal combination, and the reader still rejects it.
+		for (const batch_state of ["running", "needs_human"] as const)
+			expect(() => parseBatchLaneRunState(JSON.stringify({ ...record, batch_state, final_verification_result: record.final_report!.final_verification }), BATCH_ID))
+				.toThrow("final verification requires a completed lane batch");
+	});
+
+	it("delivers around the coordinator's own identical staged planning input and keeps its bytes", async () => {
+		const f = owned({ untrackedIntent: true });
+		const lane = await settled(f);
+		// The Lane copies the planning input and delivers it; the coordinator keeps its own identical staged copy for resume.
+		const intentPath = `docs/plans/${TASK}.intent.json`;
+		git(lane, "add", "--", intentPath);
+		const sidecar = readFileSync(join(f.repo, intentPath), "utf8");
+		const sidecarIndex = git(f.repo, "ls-files", "--stage", "--", intentPath);
+		const done = laneReport(await startBatch(f.args()));
+		expect(done.batch_state).toBe("completed");
+		expect(done.final_report?.return_to_coordinator).toEqual({ mode: "manual", status: "staged", reason: null });
+		expect(read(f).final_report?.return_to_coordinator).toEqual({ mode: "manual", status: "staged", reason: null });
+		expect(readFileSync(join(f.repo, intentPath), "utf8")).toBe(sidecar);
+		expect(git(f.repo, "ls-files", "--stage", "--", intentPath)).toBe(sidecarIndex);
+		const pair = `.imm/audit/${TASK}/${readSettledRunEvidence(lane, TASK)!.run_id}`;
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
+		expect(readFileSync(join(f.repo, "delivery.txt"), "utf8")).toBe("delivered\n");
+		expect(git(f.repo, "diff", "--cached", "--name-only").split("\n").sort())
+			.toEqual([`${pair}/task-record.json`, `${pair}/terminal-proof.json`, "delivery.txt", intentPath].sort());
+		for (const file of ["task-record.json", "terminal-proof.json"]) expect(existsSync(join(f.repo, pair, file))).toBe(true);
+		// A second tick delivers nothing more.
+		const index = git(f.repo, "diff", "--cached");
+		await startBatch(f.args());
+		expect(git(f.repo, "diff", "--cached")).toBe(index);
+	});
+
+	it("resumes a delivery park with fresh authorization without a new child, integration or verification", async () => {
+		const f = owned();
+		const enroll = spyOn(f.kernel, "enrollTask");
+		const parked = await parkedOnOverlap(f);
+		const enrolled = enroll.mock.calls.length;
+		const integrated = parked.commits[0]!;
+		const record = read(f);
+		record.final_report!.final_verification!.results[0]!.duration_ms = 12345;
+		writeBatchLaneRunState(f.repo, record);
+		expect(laneReport(await startBatch(f.args())).batch_state).toBe("needs_human"); // no fresh authorization yet
+		rmSync(join(f.repo, "delivery.txt"));
+		const done = laneReport(await startBatch(f.args({ confirmedAt: LATER })));
+		expect(done.batch_state).toBe("completed");
+		expect(enroll.mock.calls.length).toBe(enrolled);
+		expect(done.commits).toEqual([integrated]);
+		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(integrated);
+		expect(read(f).final_verification_result!.results[0]!.duration_ms).toBe(12345);
+		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
+	});
+
+	it("replays the observed running/integrated/nested-pass shape once, reusing unchanged verification", async () => {
+		const f = owned();
+		const enroll = spyOn(f.kernel, "enrollTask");
+		const parked = await parkedOnOverlap(f);
+		const enrolled = enroll.mock.calls.length;
+		asObservedRunning(f);
+		rmSync(join(f.repo, "delivery.txt"));
+		const done = laneReport(await startBatch(f.args()));
+		expect(done.batch_state).toBe("completed");
+		expect(enroll.mock.calls.length).toBe(enrolled);
+		expect(done.commits).toEqual(parked.commits);
+		expect(read(f).final_verification_result!.results[0]!.duration_ms).toBe(12345);
+		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
+	});
+
+	it.each([
+		["another head", (r: BatchLaneRunStateRecord) => { r.final_report!.final_verification!.head = "0".repeat(40); }],
+		["a changed command list", (r: BatchLaneRunStateRecord) => { r.final_report!.final_verification!.results[0]!.command = "git status"; }],
+		["a contradictory result", (r: BatchLaneRunStateRecord) => { r.final_report!.final_verification!.results[0]!.passed = false; }],
+		["a failed observation", (r: BatchLaneRunStateRecord) => { r.final_report!.final_verification!.passed = false; r.final_report!.final_verification!.results[0]!.passed = false; r.final_report!.final_verification!.results[0]!.exit_code = 1; }],
+	] as const)("reruns verification instead of reusing %s", async (_name, mutate) => {
+		const f = owned();
+		await parkedOnOverlap(f);
+		asObservedRunning(f, mutate);
+		rmSync(join(f.repo, "delivery.txt"));
+		const done = laneReport(await startBatch(f.args()));
+		expect(done.batch_state).toBe("completed");
+		const result = read(f).final_verification_result!;
+		expect(result).toMatchObject({ passed: true, results: [{ command: "bun --version", passed: true }] });
+		expect(result.results[0]!.duration_ms).not.toBe(12345);
+	});
+
+	it.each(["manual", "auto"] as const)("%s: reconciles an already applied delivery after an interruption, once", async mode => {
+		const f = owned({ mode });
+		const parked = await parkedOnOverlap(f);
+		asObservedRunning(f);
+		rmSync(join(f.repo, "delivery.txt"));
+		const baseHead = read(f).children[0]!.lane!.base_head;
+		expect(deliverSingleTask(f.repo, baseHead, parked.commits[0]!).reason).toBeNull();
+		const before = { head: git(f.repo, "rev-parse", "HEAD"), status: git(f.repo, "status", "--porcelain"), index: git(f.repo, "diff", "--cached", "--binary") };
+		const done = laneReport(await startBatch(f.args()));
+		expect(done.reason).toBe("all enrollable children integrated");
+		expect(done.batch_state).toBe("completed");
+		expect(done.final_report?.return_to_coordinator).toMatchObject({ status: mode === "auto" ? "fast_forwarded" : "staged", reason: null });
+		expect({ head: git(f.repo, "rev-parse", "HEAD"), status: git(f.repo, "status", "--porcelain"), index: git(f.repo, "diff", "--cached", "--binary") }).toEqual(before);
+		expect(done.commits).toEqual(parked.commits);
+	});
+
+	it("parks instead of reconciling when the applied delivery bytes changed", async () => {
+		const f = owned();
+		const parked = await parkedOnOverlap(f);
+		asObservedRunning(f);
+		rmSync(join(f.repo, "delivery.txt"));
+		deliverSingleTask(f.repo, read(f).children[0]!.lane!.base_head, parked.commits[0]!);
+		writeFileSync(join(f.repo, "delivery.txt"), "user edited after apply\n");
+		const again = laneReport(await startBatch(f.args()));
+		expect(again.batch_state).toBe("needs_human");
+		expect(again.children[0]!.reason).toContain("checkout_delivery_overlap: ");
+		expect(again.children[0]!.reason).toContain("delivery.txt");
+		expect(readFileSync(join(f.repo, "delivery.txt"), "utf8")).toBe("user edited after apply\n");
+		expect(read(f).final_verification_result).toBeUndefined();
+	});
+
+	it("replays a completed batch idempotently", async () => {
+		const f = owned();
+		await settled(f);
+		const done = laneReport(await startBatch(f.args()));
+		const before = { record: recordBytes(f), head: git(f.repo, "rev-parse", "HEAD"), index: git(f.repo, "diff", "--cached", "--binary"), ref: git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`) };
+		const replay = laneReport(await startBatch(f.args()));
+		expect(replay.batch_state).toBe("completed");
+		expect(replay.commits).toEqual(done.commits);
+		expect({ record: recordBytes(f), head: git(f.repo, "rev-parse", "HEAD"), index: git(f.repo, "diff", "--cached", "--binary"), ref: git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`) }).toEqual(before);
+	});
+
+	it.each([
+		["a nonzero exit", ["git no-such-subcommand"], undefined, "final_verification_failed: git no-such-subcommand"],
+		["a bounded timeout", ["sleep 5"], 200, "final_verification_failed: sleep 5"],
+	] as const)("%s parks the child with duration evidence and neither delivers nor cleans up", async (_name, commands, timeout, reason) => {
+		const f = owned({ extra: { final_verification: [...commands], ...(timeout ? { final_verification_timeout_ms: timeout } : {}) } });
+		await settled(f);
+		const parked = laneReport(await startBatch(f.args()));
+		expect(parked.batch_state).toBe("needs_human");
+		expect(parked.children[0]).toMatchObject({ state: "needs_human", reason });
+		const record = read(f);
+		expect(record.final_verification_result).toBeUndefined();
+		const nested = record.final_report!.final_verification!;
+		expect(nested.passed).toBe(false);
+		expect(nested.results[0]!.duration_ms).toBeGreaterThanOrEqual(0);
+		if (timeout) expect(nested.results[0]).toMatchObject({ signal: "timeout", exit_code: null });
+		expect(record.final_report!.return_to_coordinator).toMatchObject({ status: "blocked", reason });
+		expect(record.children[0]!.lane_removed ?? record.children[0]!.lane_retained).toBeUndefined();
+		expect(git(f.repo, "worktree", "list", "--porcelain")).toContain(record.children[0]!.lane!.path);
+		expect(git(f.repo, "status", "--porcelain")).toBe("");
+		expect(git(f.repo, "rev-parse", "HEAD")).toBe(f.base);
+		expect(git(f.repo, "rev-parse", `refs/heads/imm/${TASK}`)).toBe(parked.commits[0]!);
+		expect(parked.commits).toHaveLength(1);
 	});
 });

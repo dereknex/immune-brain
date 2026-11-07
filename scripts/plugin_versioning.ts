@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 
 const PACKAGE_MANIFEST = "package.json"
 const PLUGIN_MANIFEST = "plugins/immune-brain/.claude-plugin/plugin.json"
+const ANTIGRAVITY_MANIFEST = "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json"
 const PLUGIN_VERSION_MODULE = "plugins/immune-brain/runtime/plugin_version.ts"
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const TAG_RE = /^immune-brain-v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))$/
@@ -56,9 +57,9 @@ function packageVersion(root: string): string {
   return manifest.version
 }
 
-function requirePluginPath(root: string): string {
-  const path = manifestPath(root, PLUGIN_MANIFEST)
-  if (!existsSync(path)) throw new VersionError(`Missing ${PLUGIN_MANIFEST}`)
+function requirePluginPath(root: string, rel = PLUGIN_MANIFEST): string {
+  const path = manifestPath(root, rel)
+  if (!existsSync(path)) throw new VersionError(`Missing ${rel}`)
   return path
 }
 
@@ -70,10 +71,14 @@ export function stampPluginManifest(root = "."): { version: string; files: strin
   const version = packageVersion(root)
   const path = requirePluginPath(root)
   const plugin = readManifest(path)
+  const antigravityPath = requirePluginPath(root, ANTIGRAVITY_MANIFEST)
+  const antigravity = readManifest(antigravityPath)
   plugin.version = version
+  antigravity.version = version
   writeManifest(path, plugin)
+  writeManifest(antigravityPath, antigravity)
   writeFileSync(manifestPath(root, PLUGIN_VERSION_MODULE), renderPluginVersionModule(version), "utf8")
-  return { version, files: [PLUGIN_MANIFEST, PLUGIN_VERSION_MODULE] }
+  return { version, files: [PLUGIN_MANIFEST, ANTIGRAVITY_MANIFEST, PLUGIN_VERSION_MODULE] }
 }
 
 export function loadManifestVersions(root = "."): Record<string, string> {
@@ -83,6 +88,10 @@ export function loadManifestVersions(root = "."): Record<string, string> {
   if (typeof plugin.version !== "string") throw new VersionError(`Missing string version in ${PLUGIN_MANIFEST}`)
   SemVer.parse(plugin.version)
   if (plugin.version !== version) throw new VersionError(`${PLUGIN_MANIFEST} version ${plugin.version} does not match ${PACKAGE_MANIFEST} ${version}`)
+  const antigravity = readManifest(requirePluginPath(root, ANTIGRAVITY_MANIFEST))
+  if (typeof antigravity.version !== "string") throw new VersionError(`Missing string version in ${ANTIGRAVITY_MANIFEST}`)
+  SemVer.parse(antigravity.version)
+  if (antigravity.version !== version) throw new VersionError(`${ANTIGRAVITY_MANIFEST} version ${antigravity.version} does not match ${PACKAGE_MANIFEST} ${version}`)
   const versionModule = manifestPath(root, PLUGIN_VERSION_MODULE)
   if (!existsSync(versionModule)) throw new VersionError(`Missing ${PLUGIN_VERSION_MODULE}`)
   if (readFileSync(versionModule, "utf8") !== renderPluginVersionModule(version)) {
@@ -91,6 +100,7 @@ export function loadManifestVersions(root = "."): Record<string, string> {
   return {
     [PACKAGE_MANIFEST]: version,
     [PLUGIN_MANIFEST]: plugin.version,
+    [ANTIGRAVITY_MANIFEST]: antigravity.version,
     [PLUGIN_VERSION_MODULE]: version,
   }
 }

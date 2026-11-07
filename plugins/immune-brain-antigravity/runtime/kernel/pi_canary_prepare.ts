@@ -1,0 +1,209 @@
+// P2B1 U1: read-only canary preparation. NOT exported from kernel/index.ts.
+// Aggregates every authoritative owner into one immutable preview + digest.
+// Contains NO confirm callback, authority issuer, capability, rehearsal,
+// enrollment call, or writer. Direct import cannot authorize or mutate.
+
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { readBackendClaim, readTaskTombstone } from "./backend_claim";
+import { readTaskIntent } from "./intent";
+import {
+	readTaskRecordRaw,
+	readWorkspaceStateRaw,
+} from "./storage";
+import { stateDatabasePath } from "./storage_paths";
+
+const SOURCE_PATH = stateDatabasePath();
+const GIT_OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+
+/**
+ * The Enrollment base commit. v4 TaskRecords bind this exact commit so QA,
+ * Review, authorization, and completion can all derive one scoped revision.
+ */
+export function readGitHead(root: string): string {
+	const result = spawnSync("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], {
+		encoding: "utf8",
+	});
+	const head = typeof result.stdout === "string" ? result.stdout.trim() : "";
+	if (result.status !== 0 || !GIT_OBJECT_ID.test(head))
+		throw new Error("enrollment requires a committed Git HEAD in the project root");
+	return head.toLowerCase();
+}
+
+export interface PiCanaryPrepareInput {
+	task_id: string;
+	now: string;
+}
+
+export interface PiCanaryPreparation {
+	contract: "assurance_kernel/pi_canary_preparation/v1";
+	task_id: string;
+	generated_at: string;
+	root_state_path: string;
+	intent: {
+		path: string;
+		revision: number;
+		content_hash: string;
+	} | null;
+	backend_claim: {
+		present: boolean;
+		task_id: string | null;
+		lifecycle_status: string | null;
+	};
+	task_tombstone: {
+		present: boolean;
+		terminal_lifecycle: string | null;
+	};
+	task_record_v3: {
+		present: boolean;
+		lifecycle: string | null;
+		artifact_state: string | null;
+	} | null;
+	/** Commit the confirmation is bound to; becomes TaskRecord v4 `git_base_head`. */
+	git_base_head: string | null;
+	git_error: string | null;
+	workspace: {
+		current_working: string | null;
+		/**
+		 * The workspace CAS token at preparation time. A workspace can return to
+		 * the same owner value at a different revision (another task enrolled and
+		 * settled in between), so the owner alone cannot prove the confirmed
+		 * state is still current.
+		 */
+		revision: string;
+	};
+	digest: string;
+}
+
+function sha256Hex(bytes: string | Buffer): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+	if (value === null || typeof value !== "object") return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+	const record = value as Record<string, unknown>;
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+		.join(",")}}`;
+}
+
+/**
+ * Build the immutable preparation identity for one exact canary task.
+ * Read-only: no writes, no capability, no confirmation callback.
+ */
+export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCanaryPreparation {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(input.task_id))
+		throw new Error("task id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}");
+	const canonicalRoot = resolve(root);
+	const statePath = resolve(canonicalRoot, SOURCE_PATH);
+
+	let intent: PiCanaryPreparation["intent"] = null;
+	try {
+		const read = readTaskIntent(canonicalRoot, input.task_id);
+		intent = {
+			path: read.intent_ref.path,
+			revision: read.intent_ref.revision,
+			content_hash: read.content_hash,
+		};
+	} catch {
+		intent = null;
+	}
+
+	// Fail-closed owner reads: malformed, unreadable, symlinked, or
+	// contradictory claim/record/workspace/tombstone state is a structured
+	// rejection and is never normalized to absence. Only ENOENT means absent.
+	const claim = readBackendClaim(canonicalRoot);
+	const backend: PiCanaryPreparation["backend_claim"] = claim
+		? {
+				present: true,
+				task_id: claim.task_id,
+				lifecycle_status: claim.lifecycle_status,
+			}
+		: { present: false, task_id: null, lifecycle_status: null };
+	if (claim && claim.task_id !== input.task_id)
+		throw new Error(
+			`backend claim belongs to task ${claim.task_id}, not ${input.task_id}`,
+		);
+
+	const tombstone = readTaskTombstone(canonicalRoot, input.task_id);
+	const taskTombstone: PiCanaryPreparation["task_tombstone"] = tombstone
+		? {
+				present: true,
+				terminal_lifecycle: tombstone.terminal_lifecycle,
+			}
+		: { present: false, terminal_lifecycle: null };
+	if (tombstone && claim)
+		throw new Error(
+			`task ${input.task_id} has both an active backend claim and a terminal tombstone`,
+		);
+
+	const current = readTaskRecordRaw(canonicalRoot, input.task_id);
+	const record: PiCanaryPreparation["task_record_v3"] = current.record
+		? { present: true, lifecycle: current.record.lifecycle, artifact_state: current.record.artifact_state }
+		: { present: false, lifecycle: null, artifact_state: null };
+	if (claim && !current.record)
+		throw new Error(
+			`backend claim exists for task ${input.task_id} but its TaskRecord v3 is absent`,
+		);
+	if (claim && !intent)
+		throw new Error(
+			`backend claim exists for task ${input.task_id} but its intent sidecar is unreadable`,
+		);
+	if (current.record && current.record.task_id !== input.task_id)
+		throw new Error(
+			`task record identity is inconsistent for ${input.task_id}`,
+		);
+
+	const state = readWorkspaceStateRaw(canonicalRoot);
+	const workspace: PiCanaryPreparation["workspace"] = {
+		current_working: state.state.current_working,
+		revision: state.revision,
+	};
+	if (claim && state.state.current_working !== claim.task_id)
+		throw new Error(
+			`workspace owner ${state.state.current_working} contradicts backend claim task ${claim.task_id}`,
+		);
+
+	// A missing HEAD is a readiness blocker, not a crash: the rehearsal and the
+	// native gate must be able to report it while still binding the digest.
+	let gitBaseHead: string | null = null;
+	let gitError: string | null = null;
+	try {
+		gitBaseHead = readGitHead(canonicalRoot);
+	} catch (error) {
+		gitError = error instanceof Error ? error.message : String(error);
+	}
+
+	const preparation: PiCanaryPreparation = {
+		contract: "assurance_kernel/pi_canary_preparation/v1",
+		task_id: input.task_id,
+		generated_at: input.now,
+		root_state_path: statePath,
+		intent,
+		backend_claim: backend,
+		task_tombstone: taskTombstone,
+		task_record_v3: record,
+		git_base_head: gitBaseHead,
+		git_error: gitError,
+		workspace,
+		digest: "",
+	};
+	preparation.digest = `sha256:${sha256Hex(stableStringify(preparation))}`;
+	return preparation;
+}
+
+/**
+ * Revalidate an immutable preparation: recompute from live owners and assert
+ * the digest is unchanged. Read-only.
+ */
+export function revalidatePiCanary(
+	root: string,
+	input: PiCanaryPrepareInput,
+	previous: PiCanaryPreparation,
+): { unchanged: boolean; current: PiCanaryPreparation } {
+	const current = preparePiCanary(root, input);
+	return { unchanged: current.digest === previous.digest, current };
+}

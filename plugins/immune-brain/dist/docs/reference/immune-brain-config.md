@@ -2,7 +2,7 @@
 
 Pi and Claude Code are supported code-agent hosts. Both read the same two
 configuration files through one runtime resolver, recorded in
-[ADR 0034](../adr/0034-layered-configuration.md):
+ADR 0034 (`docs/adr/0034-layered-configuration.md` in the repository):
 
 - the **user file**, `~/.config/immune-brain/config.json`
   (`$XDG_CONFIG_HOME/immune-brain/config.json` when `XDG_CONFIG_HOME` is an
