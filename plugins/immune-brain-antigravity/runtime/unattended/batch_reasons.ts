@@ -1,0 +1,262 @@
+// One frozen table is the only producer of batch-gate reason and recovery prose.
+// Both Host adapters render from it, so a condition reads identically on either
+// Host by construction rather than because two copies still agree. The table is
+// Host-neutral: it names no Host, no SDK, and no transport.
+//
+// Deliberately NOT in this table: a Host's own transport prose, which names that
+// Host's interaction form — Pi's interactive-TUI refusal and its missing-port
+// message, Claude's MCP elicitation refusal — and a transport error's own
+// `message`/`recoveryAction`, which the transport owns. Those stay in the
+// adapter that owns the transport.
+
+export type BatchReasonKey =
+	| "batch_entry_ambiguous"
+	| "batch_entry_kind_mismatch"
+	| "lane_config_invalid"
+	| "lane_executor_unavailable"
+	| "lane_executor_unobservable"
+	| "lane_executor_no_progress"
+	| "lane_decision_stale"
+	| "lane_decision_rebind_failed"
+	| "invalid_slug"
+	| "batch_state_unreadable"
+	| "batch_runtime_too_old"
+	| "batch_record_shape_retired"
+	| "claim_already_active"
+	| "kernel_authority_conflict"
+	| "git_head_unreadable"
+	| "branch_already_exists"
+	| "batch_parent_branch_exists"
+	| "batch_resource_collision"
+	| "git_status_unreadable"
+	| "working_tree_dirty"
+	| "authorized_scope_underivable"
+	| "working_tree_unstaged"
+	| "working_tree_out_of_scope"
+	| "audit_evidence_ignored"
+	| "empty_enrollable_set"
+	| "plan_projection_failed"
+	| "confirmation_port_unavailable"
+	| "confirmation_cancelled"
+	| "confirmation_declined"
+	| "confirmation_no_decision"
+	| "confirmation_failed"
+	| "claim_appeared_during_confirmation"
+	| "plan_became_unreadable"
+	| "plan_changed"
+	| "repository_became_unreadable"
+	| "head_moved"
+	| "cancelled_before_execution"
+	| "precondition_commit_failed"
+	| "batch_run_rejected"
+	| "stale_batch_absent"
+	| "stale_batch_in_flight";
+
+export interface BatchReasonSpec {
+	readonly state: "rejected" | "cancelled" | "blocked";
+	/** A fixed sentence, or a template given the condition's own detail. */
+	readonly reason: string | ((detail: string) => string);
+	readonly recovery_action: string;
+}
+
+export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = Object.freeze({
+	lane_config_invalid: { state: "rejected", reason: "lane_config_invalid", recovery_action: "Correct the Lane configuration and retry in the current Host." },
+	lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
+	lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
+	lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
+	lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
+	lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
+	batch_entry_ambiguous: {
+		state: "rejected",
+		reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
+		recovery_action: "specify exactly one batch entry and retry in the current Host",
+	},
+	batch_entry_kind_mismatch: {
+		state: "rejected",
+		reason: "batch_entry_kind_mismatch: the existing batch has a different plan source",
+		recovery_action: "use the entry matching the existing batch in the current Host",
+	},
+	batch_record_shape_retired: {
+		state: "rejected",
+		reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+		recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host.",
+	},
+	batch_parent_branch_exists: {
+		state: "rejected",
+		reason: detail => `batch_parent_branch_exists: ${detail} does not point at base_head`,
+		recovery_action: "inspect the existing Parent branch and retry with a reconciled base in the current Host",
+	},
+	batch_resource_collision: {
+		state: "rejected",
+		reason: detail => `batch_resource_collision: ${detail}`,
+		recovery_action: "inspect the retained branch or Lane and its missing provenance in the current Host before retrying",
+	},
+	invalid_slug: {
+		state: "rejected",
+		reason: (detail: string) => `invalid initiative slug: ${detail}`,
+		recovery_action: "specify a valid initiative slug and retry in the current Host",
+	},
+	batch_runtime_too_old: {
+		state: "blocked",
+		reason: (detail: string) => `batch_runtime_too_old: ${detail}`,
+		recovery_action: "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host",
+	},
+	batch_state_unreadable: {
+		state: "blocked",
+		reason: (detail: string) => `batch run state is unreadable or invalid: ${detail}`,
+		recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host",
+	},
+	claim_already_active: {
+		state: "blocked",
+		reason: (detail: string) => `an active workspace claim already exists for task: ${detail}`,
+		recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+	},
+	kernel_authority_conflict: {
+		state: "rejected",
+		reason: (detail: string) => `Kernel authority conflict: ${detail}`,
+		recovery_action: "resolve the Kernel storage conflict before resuming in the current Host",
+	},
+	git_head_unreadable: {
+		state: "rejected",
+		reason: (detail: string) => detail,
+		recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host",
+	},
+	branch_already_exists: {
+		state: "rejected",
+		reason: (detail: string) => `branch preflight failed: branch refs/heads/${detail} already exists`,
+		recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host",
+	},
+	git_status_unreadable: {
+		state: "rejected",
+		reason: "branch preflight failed: git status is unreadable",
+		recovery_action: "check the repository integrity and retry in the current Host",
+	},
+	working_tree_dirty: {
+		state: "rejected",
+		reason: (detail: string) => `branch preflight failed: working tree is dirty${detail ? `: ${detail}` : ""}`,
+		recovery_action: "resolve the listed remaining paths outside the batch committable set, then retry in the current Host",
+	},
+	authorized_scope_underivable: {
+		state: "rejected",
+		reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
+		recovery_action: "resolve the child's intent record, then retry in the current Host",
+	},
+	working_tree_unstaged: {
+		state: "rejected",
+		reason: (detail: string) =>
+			`branch preflight failed: working tree has unstaged or untracked changes${detail ? ` (not restored: ${detail})` : ""}`,
+		recovery_action: "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host",
+	},
+	working_tree_out_of_scope: {
+		state: "rejected",
+		reason: "branch preflight failed: working tree has changes outside the authorized child scope",
+		recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host",
+	},
+	audit_evidence_ignored: {
+		state: "rejected",
+		reason: (detail: string) => `batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: ${detail}`,
+		recovery_action: "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host",
+	},
+	empty_enrollable_set: {
+		state: "rejected",
+		reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+		recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host",
+	},
+	plan_projection_failed: {
+		state: "rejected",
+		reason: (detail: string) => `failed to project batch plan: ${detail}`,
+		recovery_action: "review initiative issues and planning sidecars in the current Host",
+	},
+	confirmation_port_unavailable: {
+		state: "rejected",
+		reason: "native confirmation port is unavailable",
+		recovery_action: "retry through a fresh native gate in the current Host",
+	},
+	confirmation_cancelled: {
+		state: "cancelled",
+		reason: "native interaction cancelled",
+		recovery_action: "wait for a fresh literal-user request",
+	},
+	confirmation_declined: {
+		state: "rejected",
+		reason: "native interaction declined",
+		recovery_action: "wait for a fresh literal-user request",
+	},
+	confirmation_no_decision: {
+		state: "rejected",
+		reason: "native interaction returned no decision",
+		recovery_action: "retry through a fresh native gate in the current Host",
+	},
+	confirmation_failed: {
+		state: "rejected",
+		reason: (detail: string) => detail,
+		recovery_action: "retry through a fresh native gate in the current Host",
+	},
+	claim_appeared_during_confirmation: {
+		state: "blocked",
+		reason: (detail: string) => `an active workspace claim appeared during confirmation for task: ${detail}`,
+		recovery_action: "resolve or stop the active task before starting a batch in the current Host",
+	},
+	plan_became_unreadable: {
+		state: "rejected",
+		reason: "batch plan became unreadable after native confirmation",
+		recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+	},
+	plan_changed: {
+		state: "rejected",
+		reason: "batch plan changed after native confirmation",
+		recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+	},
+	repository_became_unreadable: {
+		state: "rejected",
+		reason: "Git repository became unreadable after native confirmation",
+		recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+	},
+	head_moved: {
+		state: "rejected",
+		reason: "Git HEAD moved after native confirmation",
+		recovery_action: "review the current workspace and retry through a fresh native gate in the current Host",
+	},
+	cancelled_before_execution: {
+		state: "cancelled",
+		reason: "user cancelled before batch execution",
+		recovery_action: "wait for a fresh literal-user request",
+	},
+	precondition_commit_failed: {
+		state: "rejected",
+		reason: (detail: string) => `batch precondition commit failed: ${detail}`,
+		recovery_action: "repair the reported Git precondition failure and retry the batch in the current Host",
+	},
+	batch_run_rejected: {
+		state: "rejected",
+		// The runner owns the specific reason; the fallback is this entry's own text.
+		reason: (detail: string) => detail || "batch run rejected",
+		recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host",
+	},
+	stale_batch_absent: {
+		state: "rejected",
+		reason: (detail: string) => `no retirable batch record to dispose: ${detail}`,
+		recovery_action: "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host",
+	},
+	stale_batch_in_flight: {
+		state: "blocked",
+		reason: (detail: string) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
+		recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition",
+	},
+});
+
+export interface BatchReason {
+	state: "rejected" | "cancelled" | "blocked";
+	reason: string;
+	recovery_action: string;
+}
+
+/** Resolve one key into the envelope fields both Hosts return. */
+export function batchReason(key: BatchReasonKey, detail = ""): BatchReason {
+	const spec = BATCH_REASONS[key];
+	return {
+		state: spec.state,
+		reason: typeof spec.reason === "function" ? spec.reason(detail) : spec.reason,
+		recovery_action: spec.recovery_action,
+	};
+}

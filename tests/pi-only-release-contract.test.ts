@@ -12,6 +12,7 @@ describe("Pi-only release contract", () => {
     expect(Object.keys(versions)).toEqual([
       "package.json",
       "plugins/immune-brain/.claude-plugin/plugin.json",
+      "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json",
       "plugins/immune-brain/runtime/plugin_version.ts",
     ]);
     expect(validateManifests(ROOT)).toMatchObject({
@@ -19,6 +20,7 @@ describe("Pi-only release contract", () => {
       files: [
         "package.json",
         "plugins/immune-brain/.claude-plugin/plugin.json",
+        "plugins/immune-brain-antigravity/.antigravity-plugin/plugin.json",
         "plugins/immune-brain/runtime/plugin_version.ts",
       ],
       valid: true,

@@ -1,0 +1,446 @@
+// Batch Authorization for unattended Initiative batch runs. NOT exported from
+// kernel/index.ts. One literal-user confirmation binds an ordered child plan;
+// each child consumes exactly one slot and derives its own Enrollment
+// capability from a freshly recomputed preparation at enroll time.
+//
+// The confirmation cannot bind a preparation digest: enrollment rejects a moved
+// Git HEAD, and every settled child moves it. The batch binds `plan_digest`
+// plus an advancing HEAD lineage instead.
+
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { createCapabilityRegistry } from "./capability_registry";
+import { isLiteralUserActor } from "./actor_identity";
+import type { BaseCapabilityBinding, EnrollmentCapabilityBinding } from "./enrollment_authority";
+import { preparePiCanary, type PiCanaryPreparation } from "./pi_canary_prepare";
+import { intentAuthorityHash, readTaskIntent } from "./intent";
+
+export const BATCH_AUTHORITY_CAPABILITY_BRAND = Symbol.for(
+	"assurance-kernel.batch-authority-capability-brand",
+);
+
+const GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
+
+
+export interface BatchPlanChild {
+	task_id: string;
+	intent_path: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	/**
+	 * The child's frozen authority subject (Spec branch-boundary D5). A plan whose
+	 * every child carries it binds the subject instead of revision and content
+	 * hash; a plan without it keeps whole-intent binding (D9).
+	 */
+	intent_authority_hash?: string;
+	blocked_by: string[];
+}
+
+export interface BatchBudget {
+	max_children: number;
+	qa_failure_limit: number;
+}
+
+export interface BatchAuthorizationBinding extends BaseCapabilityBinding {
+	batch_id: string;
+	initiative_slug: string;
+	plan_digest: string;
+	branch: string;
+	base_head: string;
+	budget: BatchBudget;
+	nonce: string;
+}
+
+export interface ValidatedBatchAuthorization {
+	batch_id: string;
+	initiative_slug: string;
+	plan_digest: string;
+	branch: string;
+	base_head: string;
+	budget: BatchBudget;
+	actor_id: string;
+	confirmation_ref: string;
+	issued_at: string;
+	nonce: string;
+}
+
+export interface BatchAuthorityRegistry {
+	readonly brand: symbol;
+	/**
+	 * Issue one Batch Authorization bound to an exact ordered child plan.
+	 * The plan is retained so per-child consumption can prove membership.
+	 */
+	issue(
+		binding: BatchAuthorizationBinding,
+		children: BatchPlanChild[],
+		issuedAt?: string,
+	): object;
+	inspect(
+		capability: object,
+		expected: BatchAuthorizationBinding,
+	): ValidatedBatchAuthorization;
+	children(capability: object): BatchPlanChild[];
+	consumedChildren(capability: object): string[];
+	isChildConsumed(capability: object, taskId: string): boolean;
+	/** Mark exactly one child slot used; the authorization stays valid for the rest. */
+	consumeChild(
+		capability: object,
+		expected: BatchAuthorizationBinding,
+		taskId: string,
+	): ValidatedBatchAuthorization;
+	/** Undo one slot consumption when the bound write did not commit. */
+	releaseChild(capability: object, taskId: string): void;
+	redoGrants(capability: object, taskId: string): number;
+	/** Restore durable consumption and redo spend on a freshly issued capability. */
+	restoreChild(capability: object, expected: BatchAuthorizationBinding, taskId: string, redoGrants: number): void;
+	isExhausted(capability: object): boolean;
+}
+
+function sha256Hex(bytes: string): string {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+	if (value === null || typeof value !== "object") return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+	const record = value as Record<string, unknown>;
+	return `{${Object.keys(record)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+		.join(",")}}`;
+}
+
+/**
+ * The authorization subject. A TaskIntent carries no Initiative or dependency
+ * field, so the confirmed ordered plan — not remote tracker state — is what the
+ * literal user approves, and this digest is what binds it.
+ */
+export function computeBatchPlanDigest(children: BatchPlanChild[]): string {
+	if (bindsAuthoritySubject(children)) {
+		const canonical = children.map((child) => ({
+			blocked_by: [...child.blocked_by],
+			intent_authority_hash: child.intent_authority_hash,
+			intent_path: child.intent_path,
+			task_id: child.task_id,
+		}));
+		return `sha256:${sha256Hex(stableStringify({ binding: "authority_subject", children: canonical }))}`;
+	}
+	const canonical = children.map((child) => ({
+		blocked_by: [...child.blocked_by],
+		intent_content_hash: child.intent_content_hash,
+		intent_path: child.intent_path,
+		intent_revision: child.intent_revision,
+		task_id: child.task_id,
+	}));
+	return `sha256:${sha256Hex(stableStringify(canonical))}`;
+}
+
+/** Whether a plan binds each child's authority subject rather than its whole intent. */
+export function bindsAuthoritySubject(children: ReadonlyArray<{ intent_authority_hash?: string | null }>): boolean {
+	return children.length > 0 && children.every((child) => typeof child.intent_authority_hash === "string" && child.intent_authority_hash.length > 0);
+}
+
+function requireNonEmpty(binding: BatchAuthorizationBinding): void {
+	const missing: string[] = [];
+	for (const key of [
+		"batch_id",
+		"initiative_slug",
+		"plan_digest",
+		"branch",
+		"base_head",
+		"actor_id",
+		"confirmation_ref",
+		"nonce",
+	] as const) {
+		const value = binding[key];
+		if (value === undefined || value === null || value === "") missing.push(key);
+	}
+	if (!binding.budget || typeof binding.budget !== "object") missing.push("budget");
+	if (missing.length > 0)
+		throw new Error(`batch authorization binding is incomplete: ${missing.join(", ")}`);
+}
+
+function validateBudget(budget: BatchBudget): void {
+	if (!Number.isInteger(budget.max_children) || budget.max_children <= 0)
+		throw new Error("batch budget max_children must be a positive integer");
+	if (!Number.isInteger(budget.qa_failure_limit) || budget.qa_failure_limit <= 0)
+		throw new Error("batch budget qa_failure_limit must be a positive integer");
+}
+
+function validateChildren(children: BatchPlanChild[], planDigest: string): void {
+	if (!Array.isArray(children) || children.length === 0)
+		throw new Error("batch authorization requires a non-empty child plan");
+	const seen = new Set<string>();
+	for (const child of children) {
+		if (!child || typeof child !== "object")
+			throw new Error("batch plan child must be an object");
+		for (const key of ["task_id", "intent_path", "intent_content_hash"] as const) {
+			if (typeof child[key] !== "string" || child[key] === "")
+				throw new Error(`batch plan child ${key} must be a non-empty string`);
+		}
+		if (!Number.isInteger(child.intent_revision) || child.intent_revision <= 0)
+			throw new Error("batch plan child intent_revision must be a positive integer");
+		if (!Array.isArray(child.blocked_by) || child.blocked_by.some((id) => typeof id !== "string" || id === ""))
+			throw new Error("batch plan child blocked_by must be an array of task ids");
+		if (seen.has(child.task_id))
+			throw new Error(`batch plan child ${child.task_id} appears more than once`);
+		seen.add(child.task_id);
+	}
+	for (const child of children) {
+		for (const blocker of child.blocked_by) {
+			if (!seen.has(blocker))
+				throw new Error(
+					`batch plan child ${child.task_id} is blocked by ${blocker}, which is not in the confirmed plan`,
+				);
+		}
+	}
+	const dependencies = new Map(children.map((child) => [child.task_id, child.blocked_by]));
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	function visit(taskId: string): void {
+		if (visiting.has(taskId)) throw new Error(`batch plan dependency cycle at ${taskId}`);
+		if (visited.has(taskId)) return;
+		visiting.add(taskId);
+		for (const blocker of dependencies.get(taskId)!) visit(blocker);
+		visiting.delete(taskId);
+		visited.add(taskId);
+	}
+	for (const child of children) visit(child.task_id);
+	if (computeBatchPlanDigest(children) !== planDigest)
+		throw new Error("batch plan digest does not match the confirmed child plan");
+}
+
+export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
+	const inner = createCapabilityRegistry<
+		BatchAuthorizationBinding,
+		BatchAuthorizationBinding,
+		ValidatedBatchAuthorization
+	>(
+		BATCH_AUTHORITY_CAPABILITY_BRAND,
+		{
+			validateBinding(binding) {
+				requireNonEmpty(binding);
+				// Both the canonical literal-user spelling and the historical `user`
+				// spelling are read, so a batch authorized before the convergence keeps
+				// validating; new bindings are written canonically.
+				if (!isLiteralUserActor(binding.actor_id))
+					throw new Error("batch authorization requires a literal-user actor_id");
+				if (!GIT_COMMIT_ID.test(binding.base_head))
+					throw new Error("batch authorization base_head must be a committed 40-hex commit id");
+				validateBudget(binding.budget);
+			},
+			validateAndProject(state, expected) {
+				for (const key of Object.keys(expected) as Array<keyof BatchAuthorizationBinding>) {
+					if (key === "budget") {
+						const a = state.budget ?? ({} as BatchBudget);
+						const b = expected.budget ?? ({} as BatchBudget);
+						if (
+							a.max_children !== b.max_children ||
+							a.qa_failure_limit !== b.qa_failure_limit
+						)
+							throw new Error("batch authorization budget mismatch");
+						continue;
+					}
+					if (state[key] !== expected[key])
+						throw new Error(`batch authorization ${key} mismatch`);
+				}
+				return {
+					batch_id: state.batch_id,
+					initiative_slug: state.initiative_slug,
+					plan_digest: state.plan_digest,
+					branch: state.branch,
+					base_head: state.base_head,
+					budget: { ...state.budget },
+					// Kept faithful to the stored state: a batch authorized before the
+					// convergence resumes with the spelling it was issued under, and the
+					// recorded audit identity is canonicalized once, where it is written.
+					actor_id: state.actor_id,
+					confirmation_ref: state.confirmation_ref,
+					issued_at: state.issued_at,
+					nonce: state.nonce,
+				};
+			},
+		},
+		"batch authorization",
+	);
+
+	const plans = new WeakMap<object, BatchPlanChild[]>();
+	const consumed = new WeakMap<object, Set<string>>();
+	const redos = new WeakMap<object, Map<string, number>>();
+
+	function planOf(capability: object): BatchPlanChild[] {
+		const plan = plans.get(capability);
+		if (!plan) throw new Error("batch authorization capability is not recognized by this registry");
+		return plan;
+	}
+
+	function slotsOf(capability: object): Set<string> {
+		const slots = consumed.get(capability);
+		if (!slots) throw new Error("batch authorization capability is not recognized by this registry");
+		return slots;
+	}
+
+	return {
+		brand: inner.brand,
+		issue(binding, children, issuedAt = new Date().toISOString()) {
+			requireNonEmpty(binding);
+			validateChildren(children, binding.plan_digest);
+			const capability = inner.issue(binding, issuedAt) as object;
+			plans.set(
+				capability,
+				children.map((child) => ({ ...child, blocked_by: [...child.blocked_by] })),
+			);
+			consumed.set(capability, new Set<string>());
+			redos.set(capability, new Map());
+			return capability;
+		},
+		inspect(capability, expected) {
+			planOf(capability);
+			return inner.inspect(capability, expected);
+		},
+		children(capability) {
+			return planOf(capability).map((child) => ({ ...child, blocked_by: [...child.blocked_by] }));
+		},
+		consumedChildren(capability) {
+			return [...slotsOf(capability)];
+		},
+		isChildConsumed(capability, taskId) {
+			return slotsOf(capability).has(taskId);
+		},
+		consumeChild(capability, expected, taskId) {
+			const validated = this.inspect(capability, expected);
+			const plan = planOf(capability);
+			if (!plan.some((child) => child.task_id === taskId))
+				throw new Error(`batch_child_not_in_plan: ${taskId}`);
+			const slots = slotsOf(capability);
+			if (slots.has(taskId)) throw new Error(`batch_child_slot_consumed: ${taskId}`);
+			slots.add(taskId);
+			return validated;
+		},
+		releaseChild(capability, taskId) {
+			slotsOf(capability).delete(taskId);
+		},
+		redoGrants(capability, taskId) {
+			if (!planOf(capability).some(child => child.task_id === taskId))
+				throw new Error(`batch_child_not_in_plan: ${taskId}`);
+			return redos.get(capability)!.get(taskId) ?? 0;
+		},
+		restoreChild(capability, expected, taskId, count) {
+			this.inspect(capability, expected);
+			const current = this.redoGrants(capability, taskId);
+			if (!Number.isInteger(count) || count < current || count > 2)
+				throw new Error(`batch_child_redo_count_invalid: ${taskId}`);
+			redos.get(capability)!.set(taskId, count);
+			slotsOf(capability).add(taskId);
+		},
+		isExhausted(capability) {
+			return slotsOf(capability).size >= planOf(capability).length;
+		},
+	};
+}
+
+/**
+ * Before a batch has consumed a slot it has created no commit, so its lineage
+ * can only stand on the confirmed base_head or on a fast-forward of it: the
+ * user's own commit on the batch branch, which the runner adopts. A head that
+ * does not descend from base_head is not a lineage.
+ */
+export function assertBatchLineageOrigin(root: string, baseHead: string, expectedHead: string): void {
+	if (expectedHead === baseHead) return;
+	const descends =
+		spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", baseHead, expectedHead], {
+			stdio: ["ignore", "ignore", "ignore"],
+		}).status === 0;
+	if (!descends)
+		throw new Error(
+			`batch_head_lineage_broken: the first child must enroll on the confirmed base_head ${baseHead} or a fast-forward of it, not ${expectedHead}`,
+		);
+}
+
+export interface DeriveChildEnrollmentInput {
+	capability: object;
+	binding: BatchAuthorizationBinding;
+	task_id: string;
+	/** Batch HEAD lineage: base_head, then each commit this batch created. */
+	expected_head: string;
+	now: string;
+}
+
+export interface DerivedChildEnrollment {
+	child: BatchPlanChild;
+	preparation: PiCanaryPreparation;
+	binding: EnrollmentCapabilityBinding;
+}
+
+/**
+ * Derive one child's Enrollment binding from a Batch Authorization. The
+ * preparation digest is recomputed here, never carried from the confirmation.
+ */
+export function deriveChildEnrollment(
+	root: string,
+	registry: BatchAuthorityRegistry,
+	input: DeriveChildEnrollmentInput,
+): DerivedChildEnrollment {
+	const validated = registry.inspect(input.capability, input.binding);
+	const child = registry
+		.children(input.capability)
+		.find((entry) => entry.task_id === input.task_id);
+	if (!child) throw new Error(`batch_child_not_in_plan: ${input.task_id}`);
+	if (registry.isChildConsumed(input.capability, input.task_id))
+		throw new Error(`batch_child_slot_consumed: ${input.task_id}`);
+	if (!GIT_COMMIT_ID.test(input.expected_head))
+		throw new Error("batch_head_lineage_broken: expected_head is not a commit id");
+
+	const preparation = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+	if (!preparation.git_base_head)
+		throw new Error(preparation.git_error ?? "enrollment requires a committed Git HEAD");
+	if (preparation.git_base_head !== input.expected_head)
+		throw new Error(
+			`batch_head_lineage_broken: expected ${input.expected_head}, found ${preparation.git_base_head}`,
+		);
+	if (!preparation.intent)
+		throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+	if (child.intent_authority_hash) {
+		// Spec branch-boundary D7: only the frozen subject binds; a scope-only or
+		// run-parameter revision enrolls under the same authorization.
+		let live: string | null = null;
+		try {
+			const read = readTaskIntent(root, input.task_id, preparation.intent.path);
+			if (read.content_hash === preparation.intent.content_hash) live = intentAuthorityHash(read.intent);
+		} catch {
+			live = null;
+		}
+		if (live === null) throw new Error(`batch_child_intent_changed: ${input.task_id} intent sidecar is unreadable`);
+		if (preparation.intent.path !== child.intent_path || live !== child.intent_authority_hash)
+			throw new Error(`batch_child_authority_changed: ${input.task_id}`);
+	} else if (
+		preparation.intent.path !== child.intent_path ||
+		preparation.intent.revision !== child.intent_revision ||
+		preparation.intent.content_hash !== child.intent_content_hash
+	)
+		throw new Error(`batch_child_intent_changed: ${input.task_id}`);
+
+	// The lineage starts at the confirmed base_head. Until this batch has
+	// settled a child there is no commit it could have created, so a
+	// caller-supplied expected_head other than base_head is not a lineage.
+	// Checked last so the intent-divergence reason keeps its precedence.
+	if (registry.consumedChildren(input.capability).length === 0)
+		assertBatchLineageOrigin(root, validated.base_head, input.expected_head);
+
+	return {
+		child,
+		preparation,
+		binding: {
+			task_id: child.task_id,
+			intent_path: child.intent_path,
+			// The single-task TaskRecord binds the live full content (D7): under a
+			// subject binding that is the revised sidecar the subject check admitted.
+			intent_revision: child.intent_authority_hash ? preparation.intent.revision : child.intent_revision,
+			intent_content_hash: child.intent_authority_hash ? preparation.intent.content_hash : child.intent_content_hash,
+			preparation_digest: preparation.digest,
+			actor_id: validated.actor_id,
+			confirmation_ref: validated.confirmation_ref,
+			nonce: `${validated.nonce}:${child.task_id}`,
+		},
+	};
+}

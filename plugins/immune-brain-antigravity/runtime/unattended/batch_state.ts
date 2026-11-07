@@ -1,0 +1,1292 @@
+// Batch run state persistence for unattended Initiative batch runs.
+// State lives at .imm/state/batches/<batch_id>.json, written only under the
+// kernel store lock, and is Git-ignored with the rest of .imm/state/.
+import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
+import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
+import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
+import { bindsAuthoritySubject } from "../kernel/batch_authority";
+import { intentAuthorityHash } from "../kernel/intent";
+import type { TaskIntentV1 } from "../kernel/types";
+import type { BatchPlanChild } from "./types";
+import { runningRuntimeSource } from "../kernel/runtime_contracts";
+import { batchReason } from "./batch_reasons";
+import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+
+export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
+	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
+	if (contract === "assurance_kernel/batch_run_state/v2") return "v2";
+	if (typeof contract !== "string" || !contract.startsWith("assurance_kernel/batch_run_state/")) return "foreign";
+	const version = /^assurance_kernel\/batch_run_state\/v([0-9]+)$/.exec(contract);
+	return version && BigInt(version[1]!) > 2n ? "newer" : "unreadable";
+}
+
+export class BatchRuntimeTooOldError extends Error {
+	readonly loadedFrom: string;
+	readonly detail: string;
+	constructor(readonly path: string, readonly contract: string) {
+		const loadedFrom = runningRuntimeSource();
+		const detail = `${path} uses ${contract}, newer than this runtime supports (batch_run_state/v2); runtime loaded from ${loadedFrom}`;
+		super(batchReason("batch_runtime_too_old", detail).reason);
+		this.loadedFrom = loadedFrom;
+		this.detail = detail;
+		this.name = "BatchRuntimeTooOldError";
+	}
+}
+
+export type BatchRunState =
+	| "prepared"
+	| "running"
+	| "needs_human"
+	| "completed"
+	| "budget_stopped"
+	| "failed"
+	| "rejected"
+	/**
+	 * Retired by an explicit literal-user disposition after the batch plan moved
+	 * past it. Terminal, and not a failure of the batch's own: the record, its
+	 * children, its commits and its branch stay as evidence, and the retired
+	 * authorization is never reused for the revised plan.
+	 */
+	| "superseded";
+
+export type BatchChildRunState =
+	| "pending"
+	| "enrolled"
+	| "settled"
+	| "committed"
+	| "needs_human"
+	| "skipped_blocked";
+
+/**
+ * One child's TaskIntent identity as the batch authorized it. A record whose
+ * every identity carries `intent_authority_hash` binds the frozen subject
+ * (Spec branch-boundary D7); one without keeps whole-intent comparison (D9).
+ */
+export interface BatchIntentIdentity {
+	intent_path: string;
+	intent_revision: number;
+	intent_content_hash: string;
+	intent_authority_hash?: string;
+}
+
+export interface BatchChildRun {
+	task_id: string;
+	slice_id: string;
+	blocked_by: string[];
+	state: BatchChildRunState;
+	/** Terminal reason for needs_human / skipped_blocked / failed children. */
+	reason: string | null;
+	/** Commit created after the Kernel reported this child done. */
+	commit: string | null;
+}
+
+export interface BatchRunStateRecord {
+	contract: "assurance_kernel/batch_run_state/v1";
+	batch_id: string;
+	initiative_slug: string;
+	plan_digest: string;
+	base_head: string;
+	/** Dedicated batch branch, e.g. imm/<initiative-slug>. */
+	branch?: string;
+	/** Timestamp of the literal-user batch confirmation. */
+	confirmation_time: string;
+	budget: {
+		max_children: number;
+		qa_failure_limit: number;
+	};
+	batch_state: BatchRunState;
+	children: BatchChildRun[];
+	/** Consecutive deterministic-QA failures across children in this run. */
+	consecutive_qa_failures: number;
+	/** Commit heads produced by this batch, in child order. */
+	commits: string[];
+	/** Recorded at confirmation; a resume never replaces these commands. */
+	final_verification?: string[];
+	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	/** Host observation of separately enrolled repairs; grants no task authority. */
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
+	/**
+	 * Fast-forward commits the user made on the batch branch, adopted as the new
+	 * expected head. Never attributed to a child and never rewritten.
+	 */
+	adopted_heads?: Array<{ from: string; to: string }>;
+	/** Each child's authorized identity; written only for a plan that binds the authority subject. */
+	intent_identities?: Record<string, BatchIntentIdentity>;
+	created_at: string;
+	updated_at: string;
+}
+
+/**
+ * Lane-mode child states. `integrated` plays the role `committed` plays in the
+ * serial record: it is what unblocks dependents. `released` is recorded by the
+ * lane steward once an integrated Lane is gone.
+ */
+export type BatchLaneChildRunState =
+	| "pending"
+	| "lane_admitted"
+	| "enrolled"
+	| "settled"
+	| "lane_committed"
+	| "integrated"
+	| "released"
+	| "needs_human"
+	| "skipped_blocked";
+
+export interface BatchLaneBinding {
+	/** Absolute, real path of the admitted Lane worktree. */
+	path: string;
+	branch: string;
+	/** The batch head the Lane was provisioned at and the child was enrolled on. */
+	base_head: string;
+	/** Commit created in the Lane after the Lane Kernel settled the child. */
+	lane_commit: string | null;
+	/** Kernel run observed at enrollment; absent historical bindings cannot resume a parked child. */
+	run_id?: string | null;
+}
+
+export interface BatchLaneChildRun {
+	task_id: string;
+	slice_id: string;
+	blocked_by: string[];
+	state: BatchLaneChildRunState;
+	reason: string | null;
+	/** Commit on the batch branch once this child is integrated. */
+	commit: string | null;
+	lane: BatchLaneBinding | null;
+	qa_failures: number;
+	/** Kernel settlement time orders the durable merge queue, including across ticks. */
+	settled_at?: string;
+	/** Automatic integration redos already granted under the original authorization. */
+	redo_grants?: number;
+	/** Granted redo awaiting Lane recreation; the old binding remains until recreation succeeds. */
+	redo_head?: string;
+	/**
+	 * The Child Issue was closed by the coordinator after this child's commit was
+	 * integrated. Absent until then; a Lane settlement never closes it.
+	 */
+	tracker_closed?: boolean;
+	/** Coordinator corrections already spent on this child (at most two). */
+	corrections?: number;
+	/**
+	 * Set when the child exhausted its rework budget and waits for one
+	 * design-level coordinator correction instead of parking; cleared when the
+	 * correction is recorded.
+	 */
+	correction_due?: string;
+	/**
+	 * Admitted after a fresh resume while the Parent tip's plugin build still
+	 * differed from the coordinator's loaded build (Spec branch-boundary-r2-followups D9).
+	 */
+	runtime_skew_acknowledged?: RuntimeSkewAcknowledgement;
+	/** The integrated plugin build change that held this child's Lane admission or redo. */
+	runtime_reload?: RuntimeReloadGate;
+	/** Single task only (Spec drive-always-lanes D7): the Lane was removed on this runtime-observed exit. */
+	lane_removed?: { exit: LaneExit; worktree: string; branches: string[] };
+	/** Single task only: the delivered Lane is kept because this exit-proof or cleanliness condition failed. */
+	lane_retained?: { condition: string };
+}
+
+export interface RuntimeSkewAcknowledgement {
+	commit: string;
+	parent_bundle: string;
+	loaded_bundle: string | null;
+}
+
+/** An integrated plugin build change that holds Lane admission until a fresh resume acknowledges it. */
+export interface RuntimeReloadGate {
+	commit: string;
+	parent_bundle: string;
+	state: "required" | "acknowledged";
+}
+
+export interface LaneIntervention {
+	at: string;
+	task_id: string;
+	/** `instruction` is an ordinary correction; `correction` is a design-level correction after an exhausted budget. */
+	kind: "instruction" | "correction";
+	text: string;
+	text_digest: string;
+}
+
+/**
+ * Lane-mode batch state. A serial batch never writes this contract; a v1
+ * record is never upgraded. Every v1-gated reader skips it by contract.
+ */
+export interface BatchLaneRunStateRecord {
+	contract: "assurance_kernel/batch_run_state/v2";
+	/** Absent on existing Initiative batches. */
+	plan_source?: "single_task";
+	/** The Parent owns the interactive session; no runtime process exit is inferred. */
+	executor_mode?: "interactive";
+	/** Complete confirmed Parent topology, including excluded prerequisites. */
+	topology_digest?: string;
+	progress_mode?: "parent_branch";
+	/** D24 delivery observation, retained on replay without repeating the return step. */
+	final_report?: import("./batch_final_report").BatchFinalReport;
+	batch_id: string;
+	initiative_slug: string;
+	plan_digest: string;
+	base_head: string;
+	branch?: string;
+	confirmation_time: string;
+	budget: {
+		max_children: number;
+		qa_failure_limit: number;
+	};
+	max_parallel: number;
+	batch_state: BatchRunState;
+	children: BatchLaneChildRun[];
+	/** Batch-branch commits produced by integration, in integration order. */
+	commits: string[];
+	adopted_heads?: Array<{ from: string; to: string }>;
+	/**
+	 * Lane writes that leaked into the coordinator checkout and were restored on
+	 * re-entry, each with the backup that undoes it. Absent until one happens.
+	 */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	/**
+	 * Every text instruction the coordinator sent a Lane session, recorded before
+	 * it was sent, so coordinator intervention is told apart from the Executor's
+	 * own behavior afterwards.
+	 */
+	interventions?: LaneIntervention[];
+	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
+	final_verification?: string[];
+	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
+	/** Legacy v2 fields, preserved for reading and retirement only (D20). */
+	revision_delegation?: { confirmation_time: string };
+	delegated_revisions?: Array<{ at: string; task_id: string; from_revision: number; to_revision: number; intent_content_hash: string; confirmation_ref: string }>;
+	/** Each child's TaskIntent identity behind `plan_digest`. */
+	intent_identities?: Record<string, BatchIntentIdentity>;
+	/** Each `plan_digest` reseal at integration, with the digest before and after. */
+	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string; intent_authority_hash?: string }>;
+	created_at: string;
+	updated_at: string;
+}
+
+export type AnyBatchRunStateRecord = BatchRunStateRecord | BatchLaneRunStateRecord;
+
+export function isLaneBatchRecord(record: AnyBatchRunStateRecord): record is BatchLaneRunStateRecord {
+	return record.contract === "assurance_kernel/batch_run_state/v2";
+}
+
+const BATCH_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+const CHILD_RUN_STATES: ReadonlySet<string> = new Set([
+	"pending",
+	"enrolled",
+	"settled",
+	"committed",
+	"needs_human",
+	"skipped_blocked",
+]);
+
+export const BATCH_RUN_STATES: ReadonlySet<string> = new Set([
+	"prepared",
+	"running",
+	"needs_human",
+	"completed",
+	"budget_stopped",
+	"failed",
+	"rejected",
+	"superseded",
+]);
+
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+function isCanonicalTimestamp(value: unknown): value is string {
+	if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN.test(value)) return false;
+	const milliseconds = Date.parse(value);
+	return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString() === value;
+}
+
+function validateBatchId(batchId: string): void {
+	if (typeof batchId !== "string" || !BATCH_ID_PATTERN.test(batchId))
+		throw new Error("batch id is not a safe file identity");
+}
+
+function statePath(batchId: string): string {
+	validateBatchId(batchId);
+	return join(".imm", "state", "batches", `${batchId}.json`);
+}
+
+/**
+ * A record persisted while batch authorization still carried a clock holds
+ * `authorization_expires_at` and `budget.deadline_at`. They are ignored on read
+ * and never written back.
+ */
+function withoutRetiredClock<T extends AnyBatchRunStateRecord>(record: T): T {
+	const { authorization_expires_at: _expiry, ...rest } = record as T & { authorization_expires_at?: unknown };
+	const { deadline_at: _deadline, ...budget } = rest.budget as T["budget"] & { deadline_at?: unknown };
+	return { ...rest, budget } as unknown as T;
+}
+
+function canonicalBytes(record: AnyBatchRunStateRecord): string {
+	return `${JSON.stringify(withoutRetiredClock(record), null, 2)}\n`;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const isHash = (v: unknown) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v);
+const isRevision = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
+const isCommit = (v: unknown) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v);
+
+/** The authorized identities of a plan's children, keyed by task id. */
+export function batchIntentIdentities(children: BatchPlanChild[]): Record<string, BatchIntentIdentity> {
+	return Object.fromEntries(
+		children
+			.filter((child) => child.intent_path !== null && child.intent_revision !== null && child.intent_content_hash !== null)
+			.map((child) => [child.task_id, {
+				intent_path: child.intent_path!,
+				intent_revision: child.intent_revision!,
+				intent_content_hash: child.intent_content_hash!,
+				...(child.intent_authority_hash ? { intent_authority_hash: child.intent_authority_hash } : {}),
+			}]),
+	);
+}
+
+/**
+ * The recorded authority hash of every child, or null when the record predates
+ * authority-subject binding (D9) and so compares whole intents.
+ */
+export function recordedAuthorityHashes(record: AnyBatchRunStateRecord): Map<string, string> | null {
+	const identities = record.intent_identities;
+	if (!identities) return null;
+	const hashes = new Map<string, string>();
+	for (const child of record.children) {
+		const hash = identities[child.task_id]?.intent_authority_hash;
+		if (typeof hash !== "string" || !hash) return null;
+		hashes.set(child.task_id, hash);
+	}
+	return hashes;
+}
+
+function validateIntentIdentities(record: Record<string, unknown>, batchId: string): void {
+	if (record.intent_identities !== undefined &&
+		(!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i: unknown) =>
+			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash ||
+			(i.intent_authority_hash !== undefined && !isHash(i.intent_authority_hash)))))
+		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+}
+
+function validateRepairTasks(record: Record<string, unknown>): void {
+	if (record.repair_tasks === undefined) return;
+	if (!Array.isArray(record.repair_tasks) || record.repair_tasks.some(task => !task ||
+		typeof task.task_id !== "string" || !BATCH_ID_PATTERN.test(task.task_id) ||
+		typeof task.run_id !== "string" || !BATCH_ID_PATTERN.test(task.run_id)) ||
+		new Set(record.repair_tasks.map(task => task.task_id)).size !== record.repair_tasks.length)
+		throw new Error("invalid Parent repair task identities");
+}
+
+function validateRecordShape(value: unknown, batchId: string): asserts value is BatchRunStateRecord {
+	if (typeof value !== "object" || value === null)
+		throw new Error(`batch run state ${batchId} is not an object`);
+	const record = value as Record<string, unknown>;
+	if (record.contract !== "assurance_kernel/batch_run_state/v1")
+		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	parseFinalVerification(record.final_verification);
+	validateRepairTasks(record);
+	validateIntentIdentities(record, batchId);
+	if (record.final_verification_result !== undefined) {
+		parseFinalVerificationReport(record.final_verification_result, record.final_verification as string[] | undefined);
+		if (record.batch_state !== "completed") throw new Error("final verification requires a completed serial batch");
+	}
+	if (record.batch_id !== batchId)
+		throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
+	if (typeof record.plan_digest !== "string" || !record.plan_digest)
+		throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
+	if (typeof record.base_head !== "string" || !record.base_head)
+		throw new Error(`batch run state ${batchId} has an invalid base_head`);
+	if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+		throw new Error(`batch run state ${batchId} has an invalid branch`);
+	if (!isCanonicalTimestamp(record.confirmation_time))
+		throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+	if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+		throw new Error(`batch run state ${batchId} has invalid state timestamps`);
+	if (!Array.isArray(record.children) || record.children.length === 0)
+		throw new Error(`batch run state ${batchId} has no children`);
+	if (!BATCH_RUN_STATES.has(String(record.batch_state)))
+		throw new Error(`batch run state ${batchId} has an invalid batch_state`);
+	if (
+		typeof record.consecutive_qa_failures !== "number" ||
+		!Number.isInteger(record.consecutive_qa_failures) ||
+		record.consecutive_qa_failures < 0
+	)
+		throw new Error(`batch run state ${batchId} has an invalid consecutive_qa_failures`);
+	const budget = record.budget as Record<string, unknown>;
+	if (
+		typeof record.budget !== "object" ||
+		record.budget === null ||
+		typeof budget.max_children !== "number" ||
+		!Number.isInteger(budget.max_children) ||
+		budget.max_children <= 0 ||
+		typeof budget.qa_failure_limit !== "number" ||
+		!Number.isInteger(budget.qa_failure_limit) ||
+		budget.qa_failure_limit <= 0
+	)
+		throw new Error(`batch run state ${batchId} has an invalid budget`);
+	if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
+		throw new Error(`batch run state ${batchId} has an invalid commits list`);
+	if (
+		record.adopted_heads !== undefined &&
+		(!Array.isArray(record.adopted_heads) ||
+			record.adopted_heads.some(
+				(a: unknown) =>
+					typeof a !== "object" ||
+					a === null ||
+					typeof (a as { from?: unknown }).from !== "string" ||
+					!(a as { from: string }).from ||
+					typeof (a as { to?: unknown }).to !== "string" ||
+					!(a as { to: string }).to,
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
+	const seenTaskIds = new Set<string>();
+	for (const child of record.children) {
+		if (
+			typeof child !== "object" ||
+			child === null ||
+			typeof child.task_id !== "string" ||
+			!child.task_id ||
+			typeof child.slice_id !== "string" ||
+			!child.slice_id
+		)
+			throw new Error(`batch run state ${batchId} has an invalid child entry`);
+		if (!CHILD_RUN_STATES.has(String(child.state)))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
+		if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b: unknown) => typeof b !== "string"))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
+		if (
+			(child.reason !== null && typeof child.reason !== "string") ||
+			(child.commit !== null && typeof child.commit !== "string")
+		)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
+		// State invariants: commit/reason pair coherently with the state.
+		if (child.state === "committed" && child.commit === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is committed without a commit`);
+		if (child.state !== "committed" && child.commit !== null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not committed`);
+		if (
+			(child.state === "needs_human" || child.state === "skipped_blocked") &&
+			child.reason === null
+		)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
+		if (seenTaskIds.has(child.task_id))
+			throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
+		seenTaskIds.add(child.task_id);
+	}
+	// A committed child must appear in the commits list (review-1).
+	for (const child of record.children) {
+		if (child.state === "committed" && child.commit !== null && !record.commits.includes(child.commit))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
+	}
+	// `superseded` is exempt: a retired record carries its children untouched, and
+	// the disposition owner admits a mid-flight state only when the Kernel store
+	// proves that run already ended outside the batch (ADR 0016).
+	if (
+		(record.batch_state === "budget_stopped" ||
+			record.batch_state === "failed" ||
+			record.batch_state === "rejected") &&
+		record.children.some((child) => child.state === "enrolled" || child.state === "settled")
+	)
+		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+	if (
+		record.batch_state === "completed" &&
+		record.children.some((child) => child.state !== "committed")
+	)
+		throw new Error(`batch run state ${batchId} is completed but a child is not committed`);
+}
+
+export function prepareBatchRunState(input: {
+	batch_id: string;
+	initiative_slug: string;
+	children: BatchPlanChild[];
+	plan_digest: string;
+	base_head: string;
+	branch?: string;
+	confirmation_time: string;
+	budget: { max_children: number; qa_failure_limit: number };
+	now: string;
+	final_verification?: string[];
+}): BatchRunStateRecord {
+	validateBatchId(input.batch_id);
+	const prepared: BatchRunStateRecord = {
+		contract: "assurance_kernel/batch_run_state/v1",
+		...(input.final_verification ? { final_verification: parseFinalVerification(input.final_verification)! } : {}),
+		batch_id: input.batch_id,
+		initiative_slug: input.initiative_slug,
+		plan_digest: input.plan_digest,
+		base_head: input.base_head,
+		branch: input.branch ?? `imm/${input.initiative_slug}`,
+		confirmation_time: input.confirmation_time,
+		budget: input.budget,
+		batch_state: "prepared",
+		children: input.children.map((child) => ({
+			task_id: child.task_id,
+			slice_id: child.slice_id,
+			blocked_by: [...child.blocked_by],
+			state: "pending",
+			reason: null,
+			commit: null,
+		})),
+		consecutive_qa_failures: 0,
+		commits: [],
+		// Only a plan that binds the authority subject records identities (D9).
+		...(bindsAuthoritySubject(input.children) ? { intent_identities: batchIntentIdentities(input.children) } : {}),
+		created_at: input.now,
+		updated_at: input.now,
+	};
+	return prepared;
+}
+
+/** Validate a captured snapshot without reading or writing filesystem state. */
+export function parseBatchRunState(raw: string, batchId: string): BatchRunStateRecord {
+	validateBatchId(batchId);
+	const parsed: unknown = JSON.parse(raw);
+	validateRecordShape(parsed, batchId);
+	return withoutRetiredClock(parsed);
+}
+
+export function readBatchRunState(root: string, batchId: string): BatchRunStateRecord | null {
+	const path = statePath(batchId);
+	if (!existsSync(join(root, path))) return null;
+	return parseBatchRunState(readSecureProjectFile(root, path), batchId);
+}
+
+function ensureSecureDirectory(root: string, relative: string): string {
+	// review-4: create the directory with lstat verification so a pre-existing
+	// symlink cannot redirect state writes outside the project; mirrors the
+	// kernel storage boundary.
+	const target = join(root, relative);
+	const parent = dirname(target);
+	if (!existsSync(parent)) mkdirSync(parent, { recursive: true });
+	if (existsSync(target)) {
+		const stats = lstatSync(target);
+		if (!stats.isDirectory()) throw new Error(`${relative} exists but is not a directory`);
+	} else {
+		mkdirSync(target);
+	}
+	return target;
+}
+
+function writeFileAtomically(root: string, relative: string, bytes: string): void {
+	// review-4: no-symlink atomic write; lstat each created directory and the
+	// target so writes cannot be redirected by a pre-existing symlink.
+	const target = join(root, relative);
+	const targetDir = dirname(target);
+	const stats = lstatSync(targetDir);
+	if (!stats.isDirectory()) throw new Error(`${dirname(relative)} is not a directory`);
+	const tempPath = `${target}.${randomUUID()}.tmp`;	let fd: number | null = null;
+	try {
+		fd = openSync(tempPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+		writeFileSync(fd, bytes, "utf8");
+		closeSync(fd);
+		fd = null;
+		renameSync(tempPath, target);
+	} finally {
+		if (fd !== null) closeSync(fd);
+		if (existsSync(tempPath)) { try { rmSync(tempPath); } catch { /* temp already moved */ } }
+	}
+}
+
+/** Replace an existing authorization only after a locked expected-byte check. */
+export function replaceBatchRunState(root: string, expected: Buffer, next: BatchRunStateRecord, validate: () => void): BatchRunStateRecord {
+	const path = statePath(next.batch_id);
+	validateRecordShape(next, next.batch_id);
+	return withKernelStoreLock(root, () => {
+		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
+		validate();
+		const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+/** Replace a record of either version only after a locked expected-byte check. */
+export function replaceAnyBatchRunState(
+	root: string,
+	expected: Buffer,
+	next: AnyBatchRunStateRecord,
+	validate: () => void,
+): AnyBatchRunStateRecord {
+	const path = statePath(next.batch_id);
+	if (isLaneBatchRecord(next)) validateLaneRecordShape(next, next.batch_id);
+	else validateRecordShape(next, next.batch_id);
+	return withKernelStoreLock(root, () => {
+		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
+		validate();
+		const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+export function writeBatchRunState(
+	root: string,
+	record: BatchRunStateRecord,
+): BatchRunStateRecord {
+	const path = statePath(record.batch_id);
+	validateRecordShape(record, record.batch_id);
+	return withKernelStoreLock(root, () => {
+		const existing = existsSync(join(root, path)) ? readSecureProjectFile(root, path) : null;
+		if (existing !== null && existing === canonicalBytes(record)) return record;
+		const stored = withoutRetiredClock({
+			...record,
+			updated_at: new Date().toISOString(),
+		});
+		// review-4: secure directory + atomic no-symlink write.
+		ensureSecureDirectory(root, join(".imm", "state", "batches"));
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+
+const LANE_CHILD_STATES: ReadonlySet<string> = new Set([
+	"pending",
+	"lane_admitted",
+	"enrolled",
+	"settled",
+	"lane_committed",
+	"integrated",
+	"released",
+	"needs_human",
+	"skipped_blocked",
+]);
+
+/** Lane-mode states whose child must carry a Lane binding. */
+const LANE_BOUND_STATES: ReadonlySet<string> = new Set([
+	"lane_admitted",
+	"enrolled",
+	"settled",
+	"lane_committed",
+	"integrated",
+	"released",
+]);
+
+function validateLaneRecordShape(value: unknown, batchId: string): asserts value is BatchLaneRunStateRecord {
+	if (typeof value !== "object" || value === null)
+		throw new Error(`batch run state ${batchId} is not an object`);
+	const record = value as Record<string, unknown>;
+	if (record.contract !== "assurance_kernel/batch_run_state/v2")
+		throw new Error(`batch run state ${batchId} has an unknown contract`);
+	if (record.plan_source !== undefined && record.plan_source !== "single_task")
+		throw new Error(`batch run state ${batchId} has an invalid plan_source`);
+	if (record.executor_mode !== undefined && (record.executor_mode !== "interactive" || record.plan_source !== "single_task"))
+		throw new Error(`batch run state ${batchId} has an invalid executor_mode`);
+	if (record.plan_source === "single_task" &&
+		(record.max_parallel !== 1 || !Array.isArray(record.children) || record.children.length !== 1 ||
+		 (record.children[0] as { task_id?: unknown } | undefined)?.task_id !== record.initiative_slug))
+		throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
+	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
+		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
+	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
+		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
+	if (record.batch_id !== batchId)
+		throw new Error(`batch run state ${batchId} carries batch_id ${String(record.batch_id)}`);
+	if (typeof record.plan_digest !== "string" || !record.plan_digest)
+		throw new Error(`batch run state ${batchId} has an invalid plan_digest`);
+	if (typeof record.base_head !== "string" || !record.base_head)
+		throw new Error(`batch run state ${batchId} has an invalid base_head`);
+	if (record.branch !== undefined && (typeof record.branch !== "string" || !record.branch))
+		throw new Error(`batch run state ${batchId} has an invalid branch`);
+	if (!isCanonicalTimestamp(record.confirmation_time))
+		throw new Error(`batch run state ${batchId} has an invalid confirmation_time`);
+	if (!isCanonicalTimestamp(record.created_at) || !isCanonicalTimestamp(record.updated_at))
+		throw new Error(`batch run state ${batchId} has invalid state timestamps`);
+	if (!Array.isArray(record.children) || record.children.length === 0)
+		throw new Error(`batch run state ${batchId} has no children`);
+	if (!BATCH_RUN_STATES.has(String(record.batch_state)))
+		throw new Error(`batch run state ${batchId} has an invalid batch_state`);
+	if (typeof record.max_parallel !== "number" || !Number.isSafeInteger(record.max_parallel) || record.max_parallel <= 0)
+		throw new Error(`batch run state ${batchId} has an invalid max_parallel`);
+	const budget = record.budget as Record<string, unknown>;
+	if (
+		typeof record.budget !== "object" ||
+		record.budget === null ||
+		typeof budget.max_children !== "number" ||
+		!Number.isInteger(budget.max_children) ||
+		budget.max_children <= 0 ||
+		typeof budget.qa_failure_limit !== "number" ||
+		!Number.isInteger(budget.qa_failure_limit) ||
+		budget.qa_failure_limit <= 0
+	)
+		throw new Error(`batch run state ${batchId} has an invalid budget`);
+	if (!Array.isArray(record.commits) || record.commits.some((c) => typeof c !== "string"))
+		throw new Error(`batch run state ${batchId} has an invalid commits list`);
+	if (
+		record.adopted_heads !== undefined &&
+		(!Array.isArray(record.adopted_heads) ||
+			record.adopted_heads.some(
+				(a: unknown) =>
+					typeof a !== "object" ||
+					a === null ||
+					typeof (a as { from?: unknown }).from !== "string" ||
+					!(a as { from: string }).from ||
+					typeof (a as { to?: unknown }).to !== "string" ||
+					!(a as { to: string }).to,
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid adopted_heads list`);
+	if (
+		record.restores !== undefined &&
+		(!Array.isArray(record.restores) ||
+			record.restores.some(
+				(r: unknown) =>
+					typeof r !== "object" || r === null ||
+					typeof (r as { backup?: unknown }).backup !== "string" ||
+					!Array.isArray((r as { paths?: unknown }).paths),
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid restores list`);
+	if (
+		record.final_verification !== undefined &&
+		(!Array.isArray(record.final_verification) ||
+			record.final_verification.length === 0 ||
+			record.final_verification.some((c: unknown) => typeof c !== "string" || !c))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid final_verification list`);
+	validateRepairTasks(record);
+	if (record.final_verification_result !== undefined) {
+		parseFinalVerificationReport(record.final_verification_result, record.final_verification as string[] | undefined);
+		if (record.batch_state !== "completed") throw new Error("final verification requires a completed lane batch");
+	}
+	if (
+		record.interventions !== undefined &&
+		(!Array.isArray(record.interventions) ||
+			record.interventions.some(
+				(i: unknown) =>
+					typeof i !== "object" || i === null ||
+					typeof (i as LaneIntervention).task_id !== "string" ||
+					((i as LaneIntervention).kind !== "instruction" && (i as LaneIntervention).kind !== "correction") ||
+					typeof (i as LaneIntervention).text !== "string" ||
+					typeof (i as LaneIntervention).text_digest !== "string",
+			))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
+	if (record.revision_delegation !== undefined &&
+		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
+			!isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
+		throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
+	if (record.delegated_revisions !== undefined &&
+		(!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) ||
+			(r.to_revision as number) <= (r.from_revision as number) || !isHash(r.intent_content_hash) ||
+			typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) ||
+			!isCanonicalTimestamp(r.at))))
+		throw new Error(`batch run state ${batchId} has an invalid delegated_revisions list`);
+	if (record.delegated_revisions?.length && !record.revision_delegation)
+		throw new Error(`batch run state ${batchId} records delegated revisions without a delegation grant`);
+	validateIntentIdentities(record, batchId);
+	if (record.reseals !== undefined &&
+		(!Array.isArray(record.reseals) || record.reseals.some((r: unknown) =>
+			!isObject(r) || typeof r.task_id !== "string" || typeof r.from_digest !== "string" || typeof r.to_digest !== "string" ||
+			!isRevision(r.intent_revision) || !isHash(r.intent_content_hash) ||
+			!(record.delegated_revisions as Array<{ task_id: string; intent_content_hash: string }> | undefined)?.some((d) => d.task_id === r.task_id && d.intent_content_hash === r.intent_content_hash))))
+		throw new Error(`batch run state ${batchId} has an invalid reseals list`);
+	if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
+		throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+	const seenTaskIds = new Set<string>();
+	for (const child of record.children) {
+		if (
+			typeof child !== "object" ||
+			child === null ||
+			typeof child.task_id !== "string" ||
+			!child.task_id ||
+			typeof child.slice_id !== "string" ||
+			!child.slice_id
+		)
+			throw new Error(`batch run state ${batchId} has an invalid child entry`);
+		if (!LANE_CHILD_STATES.has(String(child.state)))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid state`);
+		if (!Array.isArray(child.blocked_by) || child.blocked_by.some((b: unknown) => typeof b !== "string"))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid blocked_by`);
+		if (
+			(child.reason !== null && typeof child.reason !== "string") ||
+			(child.commit !== null && typeof child.commit !== "string")
+		)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has invalid terminal fields`);
+		if (typeof child.qa_failures !== "number" || !Number.isInteger(child.qa_failures) || child.qa_failures < 0)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid qa_failures`);
+		if (child.settled_at !== undefined && !isCanonicalTimestamp(child.settled_at))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid settled_at`);
+		if (child.redo_grants !== undefined && (!Number.isInteger(child.redo_grants) || child.redo_grants < 0 || child.redo_grants > 2))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_grants`);
+		if (child.redo_head !== undefined &&
+			(typeof child.redo_head !== "string" || !/^[0-9a-f]{40}$/.test(child.redo_head) ||
+			 !child.redo_grants || (child.state !== "lane_committed" && child.state !== "needs_human")))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head`);
+		if (child.corrections !== undefined && (!Number.isInteger(child.corrections) || child.corrections < 0 || child.corrections > 2))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid corrections count`);
+		if (child.correction_due !== undefined && (typeof child.correction_due !== "string" || !child.correction_due || child.state !== "enrolled"))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid correction_due`);
+		if (child.tracker_closed !== undefined && child.tracker_closed !== true)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid tracker_closed`);
+		const report = record.final_report;
+		const delivery = isObject(report) && isObject(report.return_to_coordinator) ? report.return_to_coordinator : null;
+		const deliveryParked = record.plan_source === "single_task" && child.state === "needs_human" && child.commit !== null &&
+			delivery?.status === "blocked" && delivery.reason === child.reason;
+		if (child.tracker_closed === true && child.state !== "integrated" && child.state !== "released" && !deliveryParked)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} closed its tracker Issue before integration`);
+		if (child.lane_removed !== undefined || child.lane_retained !== undefined) {
+			const removed = child.lane_removed as unknown, retained = child.lane_retained as unknown;
+			const exit = isObject(removed) && isObject(removed.exit) ? removed.exit : null;
+			if (record.plan_source !== "single_task" || (child.state !== "integrated" && child.state !== "released") || (removed !== undefined) === (retained !== undefined) ||
+				(removed !== undefined && (!exit || !Number.isSafeInteger(exit.generation) || exit.code !== 0 || exit.signal !== null ||
+					typeof (removed as { worktree?: unknown }).worktree !== "string" || !Array.isArray((removed as { branches?: unknown }).branches))) ||
+				(retained !== undefined && (!isObject(retained) || typeof retained.condition !== "string" || !retained.condition)))
+				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane cleanup record`);
+		}
+		const skew = child.runtime_skew_acknowledged;
+		if (skew !== undefined && (!isObject(skew) || !isCommit(skew.commit) || !isHash(skew.parent_bundle) ||
+			(skew.loaded_bundle !== null && !isHash(skew.loaded_bundle))))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_skew_acknowledged`);
+		const gate = child.runtime_reload;
+		if (gate !== undefined && (!isObject(gate) || !isCommit(gate.commit) || !isHash(gate.parent_bundle) ||
+			(gate.state !== "required" && gate.state !== "acknowledged")))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_reload`);
+		const lane = child.lane as BatchLaneBinding | null | undefined;
+		if (lane !== null) {
+			if (
+				typeof lane !== "object" ||
+				typeof lane.path !== "string" ||
+				!lane.path ||
+				typeof lane.branch !== "string" ||
+				!lane.branch ||
+				typeof lane.base_head !== "string" ||
+				!lane.base_head ||
+				(lane.lane_commit !== null && typeof lane.lane_commit !== "string") ||
+				(lane.run_id !== undefined && lane.run_id !== null && (typeof lane.run_id !== "string" || !lane.run_id))
+			)
+				throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane`);
+		}
+		if (child.redo_head !== undefined &&
+			(record.branch !== `refs/heads/imm/${record.initiative_slug}` || !lane?.run_id ||
+				(child.state === "lane_committed" && !lane.lane_commit)))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid redo_head binding`);
+		if (LANE_BOUND_STATES.has(child.state) && lane === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane`);
+		if ((child.state === "pending" || child.state === "skipped_blocked") && lane !== null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} but holds a lane`);
+		const integrated = child.state === "integrated" || child.state === "released" || deliveryParked;
+		if (integrated && child.commit === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a commit`);
+		if (!integrated && child.commit !== null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has a commit but is not integrated`);
+		if (integrated && lane?.lane_commit === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is ${child.state} without a lane commit`);
+		if (child.state === "lane_committed" && lane?.lane_commit === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} is lane_committed without a lane commit`);
+		if ((child.state === "needs_human" || child.state === "skipped_blocked") && child.reason === null)
+			throw new Error(`batch run state ${batchId} child ${child.task_id} needs a terminal reason`);
+		if (seenTaskIds.has(child.task_id))
+			throw new Error(`batch run state ${batchId} has a duplicate child ${child.task_id}`);
+		seenTaskIds.add(child.task_id);
+	}
+	for (const child of record.children) {
+		if (child.commit !== null && !record.commits.includes(child.commit))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} commit is missing from commits`);
+	}
+	const inFlight = (child: { state: string }) =>
+		child.state === "lane_admitted" ||
+		child.state === "enrolled" ||
+		child.state === "settled" ||
+		child.state === "lane_committed";
+	// `superseded` is exempt for the same reason as the serial record (ADR 0016).
+	if (
+		(record.batch_state === "budget_stopped" || record.batch_state === "failed" || record.batch_state === "rejected") &&
+		record.children.some(inFlight)
+	)
+		throw new Error(`batch run state ${batchId} is ${String(record.batch_state)} but a child is still mid-flight`);
+	if (
+		record.batch_state === "completed" &&
+		record.children.some((child) => child.state !== "integrated" && child.state !== "released")
+	)
+		throw new Error(`batch run state ${batchId} is completed but a child is not integrated`);
+}
+
+export function batchTopologyDigest(tasks: Array<{ task_id: string; slice_id: string; blocked_by: string[] }>): string {
+	const topology = tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id,
+		blocked_by: [...task.blocked_by].sort() })).sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
+	return `sha256:${createHash("sha256").update(JSON.stringify(topology)).digest("hex")}`;
+}
+
+export function prepareBatchLaneRunState(input: {
+	plan_source?: "single_task";
+	executor_mode?: "interactive";
+	topology_digest?: string;
+	batch_id: string;
+	initiative_slug: string;
+	children: BatchPlanChild[];
+	plan_digest: string;
+	base_head: string;
+	branch?: string;
+	confirmation_time: string;
+	budget: { max_children: number; qa_failure_limit: number };
+	max_parallel: number;
+	progress_mode?: "parent_branch";
+	now: string;
+	final_verification?: string[];
+}): BatchLaneRunStateRecord {
+	validateBatchId(input.batch_id);
+	return {
+		contract: "assurance_kernel/batch_run_state/v2",
+		...(input.plan_source ? { plan_source: input.plan_source } : {}),
+		...(input.executor_mode ? { executor_mode: input.executor_mode } : {}),
+		topology_digest: input.topology_digest ?? batchTopologyDigest(input.children),
+		batch_id: input.batch_id,
+		initiative_slug: input.initiative_slug,
+		plan_digest: input.plan_digest,
+		base_head: input.base_head,
+		branch: input.branch ?? `imm/${input.initiative_slug}`,
+		confirmation_time: input.confirmation_time,
+		budget: input.budget,
+		max_parallel: input.max_parallel,
+		...(input.progress_mode ? { progress_mode: input.progress_mode } : {}),
+		batch_state: "prepared",
+		children: input.children.map((child) => ({
+			task_id: child.task_id,
+			slice_id: child.slice_id,
+			blocked_by: [...child.blocked_by],
+			state: "pending",
+			reason: null,
+			commit: null,
+			lane: null,
+			qa_failures: 0,
+		})),
+		commits: [],
+		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
+		intent_identities: batchIntentIdentities(input.children),
+		created_at: input.now,
+		updated_at: input.now,
+	};
+}
+
+/** Validate a captured v2 snapshot without reading or writing filesystem state. */
+export function parseBatchLaneRunState(raw: string, batchId: string): BatchLaneRunStateRecord {
+	validateBatchId(batchId);
+	const parsed: unknown = JSON.parse(raw);
+	validateLaneRecordShape(parsed, batchId);
+	return withoutRetiredClock(parsed);
+}
+
+/** Parse either record version by its contract; an unknown contract is refused. */
+export function parseAnyBatchRunState(raw: string, batchId: string, path = statePath(batchId)): AnyBatchRunStateRecord {
+	validateBatchId(batchId);
+	const parsed: unknown = JSON.parse(raw);
+	const contract = typeof parsed === "object" && parsed !== null ? (parsed as { contract?: unknown }).contract : undefined;
+	const kind = classifyBatchRunStateContract(contract);
+	if (kind === "newer") throw new BatchRuntimeTooOldError(path, contract as string);
+	if (kind === "v2") return parseBatchLaneRunState(raw, batchId);
+	return parseBatchRunState(raw, batchId);
+}
+
+/** Read the persisted record of either version; null when the batch has none. */
+export function readAnyBatchRunState(root: string, batchId: string): AnyBatchRunStateRecord | null {
+	const path = statePath(batchId);
+	if (!existsSync(join(root, path))) return null;
+	return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join(root, path));
+}
+
+export function readBatchLaneRunState(root: string, batchId: string): BatchLaneRunStateRecord | null {
+	const path = statePath(batchId);
+	if (!existsSync(join(root, path))) return null;
+	return parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+}
+
+export function parkLaneForExecutor(root: string, batchId: string, taskId: string, reason: "lane_executor_no_progress" | "lane_executor_stopped" | "lane_executor_interrupted"): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const child = record.children.find(value => value.task_id === taskId);
+		if (record.plan_source === "single_task" && record.batch_state === "needs_human" && child?.state === "needs_human" && child.reason === reason) return record;
+		if (record.plan_source !== "single_task" || !child || (child.state !== "enrolled" && !(reason === "lane_executor_stopped" && child.state === "needs_human"))) throw new Error("lane_executor_generation_changed");
+		const stored: BatchLaneRunStateRecord = { ...record, batch_state: "needs_human", updated_at: new Date().toISOString(),
+			children: record.children.map(value => value.task_id === taskId ? { ...value, state: "needs_human", reason } : value) };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+/**
+ * Spec drive-always-lanes D11: the literal user approved a breaking revision of a
+ * single task inside its Lane, so the batch's approved identity for that child
+ * becomes the revision the Kernel committed. `plan_digest` is not touched: it is
+ * derived from the Parent checkout, which a Lane-only revision does not change.
+ * Replaying the same identity changes nothing; an older or equal revision with
+ * another hash is stale.
+ */
+export function rebindSingleTaskIdentity(root: string, batchId: string, input: { task_id: string; intent: TaskIntentV1; content_hash: string }): BatchLaneRunStateRecord {
+	const path = statePath(batchId);
+	return withKernelStoreLock(root, () => {
+		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
+		const recorded = record.intent_identities?.[input.task_id];
+		if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id ||
+			!record.children.some(child => child.task_id === input.task_id && child.lane))
+			throw new Error(batchReason("lane_decision_rebind_failed").reason);
+		if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash) return record;
+		if (input.intent.revision <= recorded.intent_revision) throw new Error(batchReason("lane_decision_stale").reason);
+		const identity: BatchIntentIdentity = { intent_path: recorded.intent_path, intent_revision: input.intent.revision, intent_content_hash: input.content_hash,
+			...(recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}) };
+		const stored: BatchLaneRunStateRecord = { ...record, updated_at: new Date().toISOString(),
+			intent_identities: { ...record.intent_identities, [input.task_id]: identity } };
+		validateLaneRecordShape(stored, batchId);
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+export function laneGenerationStore(root: string, batchId: string): LaneGenerationStore {
+	validateBatchId(batchId);
+	const directory = join(".imm", "state", "lane-supervisors");
+	const path = join(directory, `${batchId}.json`);
+	const read = (): LaneGeneration | null => {
+		if (!existsSync(join(root, path))) return null;
+		const value: unknown = JSON.parse(readSecureProjectFile(root, path));
+		if (!isObject(value) || typeof value.repository !== "string" || !value.repository ||
+			typeof value.lane_path !== "string" || !value.lane_path ||
+			!Number.isSafeInteger(value.generation) || (value.generation as number) < 1 ||
+			(value.pid !== null && (!Number.isSafeInteger(value.pid) || (value.pid as number) < 1)) ||
+			!Number.isSafeInteger(value.owner_pid) || (value.owner_pid as number) < 1 ||
+			!["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) ||
+			typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || (value.no_progress as number) < 0 ||
+			(value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || (value.handled_generation as number) < 1 || (value.handled_generation as number) > (value.generation as number))) ||
+			((value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null)) ||
+			(value.state === "running" && (value.pid === null || value.exit !== null)) ||
+			(value.state === "unobservable" && value.exit !== null) ||
+			(["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null)) ||
+			(value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path ||
+				value.exit.generation !== value.generation || value.exit.pid !== value.pid ||
+				(value.exit.code !== null && !Number.isInteger(value.exit.code)) ||
+				(value.exit.signal !== null && typeof value.exit.signal !== "string") ||
+				((value.exit.code === null) === (value.exit.signal === null)))))
+			throw new Error(`invalid lane supervisor state for ${batchId}`);
+		return value as unknown as LaneGeneration;
+	};
+	return { read, update(fn) {
+		return withKernelStoreLock(root, () => {
+			const next = fn(read());
+			ensureSecureDirectory(root, directory);
+			writeFileAtomically(root, path, JSON.stringify(next));
+			return next;
+		});
+	} };
+}
+
+export function writeBatchLaneRunState(root: string, record: BatchLaneRunStateRecord): BatchLaneRunStateRecord {
+	const path = statePath(record.batch_id);
+	validateLaneRecordShape(record, record.batch_id);
+	return withKernelStoreLock(root, () => {
+		const existing = existsSync(join(root, path)) ? readSecureProjectFile(root, path) : null;
+		if (existing !== null && existing === canonicalBytes(record)) return record;
+		const stored = withoutRetiredClock({ ...record, updated_at: new Date().toISOString() });
+		ensureSecureDirectory(root, join(".imm", "state", "batches"));
+		writeFileAtomically(root, path, canonicalBytes(stored));
+		return stored;
+	});
+}
+
+export interface BatchRunReport {
+	contract: "assurance_kernel/batch_run_report/v1";
+	batch_id: string;
+	initiative_slug: string;
+	batch_state: BatchRunState;
+	children: BatchChildRun[];
+	commits: string[];
+	reason: string | null;
+	/** Non-authoritative foreground implementation obligation, never persisted as readiness. */
+	handoff?: {
+		role: "executor";
+		task_id: string;
+		run_id: string | null;
+		record_revision: string;
+		next_obligation: import("../kernel/types").AssuranceObligation;
+	};
+	/** Safe observation only; never an execution-readiness certificate. */
+	recovery?: import("../assurance/coordinator").AssuranceRecovery;
+	diagnostics?: import("../assurance/qa").QaCheckDiagnostic[];
+	/** Final commands passed on this exact integrated head; absent means unverified. */
+	final_verification?: import("./batch_final_verification").FinalVerificationReport;
+	/** Latest Parent synchronization observation; does not replace delivery evidence. */
+	tracker?: { status: string; message: string };
+	/** The literal-user act that retired this batch, bound to its plan digest (ADR 0025). */
+	retirement?: BatchRetirement;
+	/** The single next action for the operator. */
+	next_action: string;
+	created_at: string;
+}
+
+export interface BatchRetirement {
+	confirmation_ref: string;
+	plan_digest: string;
+}
+
+/**
+ * The lane-mode report: the serial report's identity fields with lane children
+ * and `handoffs[]` in place of the single `handoff`. Handoffs are observations,
+ * never readiness.
+ */
+export interface BatchLaneRunReport {
+	contract: "assurance_kernel/batch_run_report/v1";
+	batch_id: string;
+	initiative_slug: string;
+	batch_state: BatchRunState;
+	max_parallel: number;
+	children: BatchLaneChildRun[];
+	commits: string[];
+	reason: string | null;
+	final_report?: import("./batch_final_report").BatchFinalReport;
+	handoffs: BatchLaneHandoff[];
+	lane_supervision?: { state: "running" | "exited" | "unobservable" | "stopped" | "unavailable"; generation: number | null; exit: import("./lane_supervisor").LaneExit | null; reason?: string; not_applied: string[] };
+	/** Offers refused at admission; a refused offer wrote nothing. */
+	lane_refusals?: Array<{ task_id: string; path: string; reason: string }>;
+	/** Spec drive-always-lanes D11: the single-task Lane waits on a literal-user decision answered at the Parent's native gate. */
+	lane_decision_required?: import("./lane_decision").LaneDecisionFacts;
+	/**
+	 * Child Issue closures this tick attempted after integration. A failure is a
+	 * tracker observation beside the batch result, retried by the next tick.
+	 */
+	tracker_observations?: Array<{ task_id: string; status: string; message: string }>;
+	/** The completion run of the recorded final verification commands; `passed: false` marks the batch not passed. */
+	final_verification?: import("./batch_final_verification").FinalVerificationReport;
+	/** Coordinator instructions sent to Lane sessions (see BatchLaneRunStateRecord.interventions). */
+	interventions?: LaneIntervention[];
+	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
+	reseals?: BatchLaneRunStateRecord["reseals"];
+	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
+	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
+	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */
+	restores?: import("./batch_leak_restore").LaneLeakRestore[];
+	retirement?: BatchRetirement;
+	next_action: string;
+	created_at: string;
+}
+
+export type BatchLaneHandoff =
+	| {
+			role: "lane-steward";
+			action: "provision";
+			task_id: string;
+			lane_branch: string;
+			base_head: string;
+			executor_hosts: readonly string[];
+	  }
+	| { role: "lane-steward"; action: "release"; task_id: string; lane_branch: string }
+	| {
+			/**
+			 * The child exhausted its rework budget. The Parent reads the findings of
+			 * every round from the Lane's Kernel state, decides whether they share one
+			 * root cause, starts a new Lane session and sends one design-level
+			 * correction as `lane_instruction` kind `correction`.
+			 */
+			role: "coordinator";
+			action: "correct";
+			task_id: string;
+			reason: string;
+			corrections_used: number;
+			corrections_left: number;
+			lane_path: string;
+	  }
+	| {
+			role: "executor";
+			task_id: string;
+			run_id: string | null;
+			record_revision: string;
+			next_obligation: import("../kernel/types").AssuranceObligation;
+			lane_branch: string;
+			/** Where the Executor Host must be rooted; an observation, never authority. */
+			lane_path: string;
+	  };
+
+type PersistableReport = Pick<BatchRunReport | BatchLaneRunReport, "contract" | "batch_id" | "batch_state">;
+
+function reportPath(batchId: string): string {
+	validateBatchId(batchId);
+	return join(".imm", "state", "batches", `${batchId}.report.json`);
+}
+
+/** Persist one current stop report per batch. Terminal reports are immutable;
+ * a resumable needs_human report may be replaced by the later stop reached
+ * after a fresh literal-user confirmation. */
+export interface NativeParentFinalReport {
+	contract: "assurance_kernel/parent_final_report/v1";
+	/** Legacy binding from retired delivery consolidation; ignored when read, never written. */
+	consolidation_digest?: string;
+	initiative_slug: string;
+	task_ids: string[];
+	final_verification: import("./batch_final_verification").FinalVerificationReport;
+	repair_tasks?: Array<{ task_id: string; run_id: string }>;
+}
+
+function nativeParentReportPath(slug: string) {
+	validateBatchId(slug);
+	return join(".imm", "state", "batches", `${slug}.native.report.json`);
+}
+
+function validateNativeParentReport(report: NativeParentFinalReport) {
+	if (report.contract !== "assurance_kernel/parent_final_report/v1" || !Array.isArray(report.task_ids) || !report.task_ids.length ||
+		new Set(report.task_ids).size !== report.task_ids.length || report.task_ids.some(id => typeof id !== "string" || !BATCH_ID_PATTERN.test(id)))
+		throw new Error("invalid Parent final observation");
+	validateBatchId(report.initiative_slug);
+	validateRepairTasks({ repair_tasks: report.repair_tasks });
+	parseFinalVerificationReport(report.final_verification);
+}
+
+/** Final observations for Parents needing no ordinary batch; never a BatchAuthorization or readiness store. */
+export function readNativeParentFinalReport(root: string, slug: string): NativeParentFinalReport | null {
+	const path = nativeParentReportPath(slug);
+	if (!existsSync(join(root, path))) return null;
+	const report = JSON.parse(readSecureProjectFile(root, path));
+	validateNativeParentReport(report);
+	if (report.initiative_slug !== slug) throw new Error("Parent final observation identity changed");
+	return report;
+}
+
+export function writeNativeParentFinalReport(root: string, report: NativeParentFinalReport): void {
+	validateNativeParentReport(report);
+	withKernelStoreLock(root, () => {
+		ensureSecureDirectory(root, join(".imm", "state", "batches"));
+		writeFileAtomically(root, nativeParentReportPath(report.initiative_slug), JSON.stringify(report, null, 2) + "\n");
+	});
+}
+
+export function writeBatchRunReport<T extends PersistableReport>(root: string, report: T): T {
+	const relative = reportPath(report.batch_id);
+	return withKernelStoreLock(root, () => {
+		const path = join(root, relative);
+		if (existsSync(path)) {
+			const original: unknown = JSON.parse(readSecureProjectFile(root, relative));
+			if (
+				typeof original !== "object" ||
+				original === null ||
+				(original as BatchRunReport).contract !== "assurance_kernel/batch_run_report/v1"
+			)
+				throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
+			const prior = original as T;
+			if (canonicalReportBytes(prior) === canonicalReportBytes(report)) return prior;
+			if (prior.batch_state !== "needs_human") return prior;
+		}
+		ensureSecureDirectory(root, join(".imm", "state", "batches"));
+		writeFileAtomically(root, relative, canonicalReportBytes(report));
+		return report;
+	});
+}
+
+function canonicalReportBytes(report: PersistableReport): string {
+	return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+/** All terminal batch states; needs_human is a park, not terminal. */
+export function isTerminalBatchState(state: BatchRunState): boolean {
+	return (
+		state === "completed" ||
+		state === "budget_stopped" ||
+		state === "failed" ||
+		state === "rejected" ||
+		state === "superseded"
+	);
+}

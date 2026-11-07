@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "antigravity-plugin-isolation-recovery",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:antigravity-plugin-isolation-recovery:2026-11-06T10:18:28.710Z",
+  "final_record_hash": "sha256:495203364d2e0aa826d153a4c1ca80bd6e2f8cc81334a24abe560bf82b608303",
+  "terminalized_at": "2026-11-06T10:18:28.710Z"
+}

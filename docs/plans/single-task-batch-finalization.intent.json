@@ -1,0 +1,70 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "single-task-batch-finalization",
+  "owner": "user",
+  "goal": "Repair single-task batch finalization so successful verification followed by blocked checkout persists a readable legal state and real reason, with safe interruption/replay and no unverified delivery. Follow docs/specs/single-task-batch-finalization.spec.md. Preserve completed-only proof validation, user-file overlap protection, settled child identities and existing native gates. Include the already-approved baseline test assertion repair if still needed. The required recovery phase resumes the preserved Antigravity delivery through the same Host once the validated runtime is loaded; unresolved activation or user-file conflict remains incomplete, never silently bypassed.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Source: Spec E2. At tests/single-task-lane-batch.test.ts, the public startBatch seam with explicit passing final commands finishes clean manual and auto delivery with a re-readable completed batch and correct content. Top-level final_verification_result remains illegal in running or needs_human records; the producer must persist only legal shapes rather than weaken that validator.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Source: Spec E3. At tests/single-task-lane-batch.test.ts and tests/single-task-checkout-delivery.test.ts, successful final verification followed by checkout overlap returns durable needs_human with the exact conflicting path and nested passing result, without the completed-only exception or a top-level completed proof. Cover staged canonical planning input and preserve existing staged, unstaged, untracked, deletion, rename and manual/auto protections; user index/worktree/HEAD and integrated commit remain unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/single-task-checkout-delivery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Source: Spec E5. At tests/single-task-lane-batch.test.ts and tests/batch-final-report.test.ts, replay of the observed running/integrated/nested-pass shape and a freshly authorized delivery park resumes the same batch without duplicate enrollment, commit or integration. Reuse only unchanged validated verification; stale head, changed commands and contradictory results cannot authorize delivery. Interrupt after apply before completion: reconcile only equal full delivery identity including modes, and park changed bytes. Terminal replay is idempotent.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/batch-final-report.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Source: Spec D4. At tests/single-task-lane-batch.test.ts and tests/batch-final-verification-required.test.ts, nonzero exit, missing required verification and a bounded timeout produce explicit failure with duration evidence, preserve integrated refs/audit and readable reports, and cause neither checkout delivery nor cleanup. A successful result bound to a different tip cannot be promoted. No skipped required check counts as a pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/batch-final-verification-required.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Source: Spec E7. At tests/batch-merge-queue.test.ts, tests/unattended-batch-lanes.test.ts and tests/single-task-lane-cleanup.test.ts, preserve Initiative completion, existing native parking/resume, protected user files, unknown/newer-record refusal and normal-exit/clean-Lane cleanup requirements. New single-task finalization does not grant a fresh child authority or treat an interactive idle/done signal as process-exit proof.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/batch-merge-queue.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\",\n      \"tests/single-task-lane-cleanup.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "Source: Spec E9. At tests/explicit-phase-entry-run-contract.test.ts, align the already-approved stale sentence with canonical drive.md: The Executor role runs inside the Lane process, never in the Parent conversation. All five existing checks run and pass, no check is removed or skipped, and the canonical drive contract remains unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/single-task-batch-finalization.md",
+    "docs/plans/single-task-batch-finalization.intent.json",
+    "docs/specs/single-task-batch-finalization.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/unattended/batch_disposition.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_report.ts",
+    "plugins/immune-brain/runtime/unattended/batch_final_verification.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/unattended/batch_worktrees.ts",
+    "plugins/immune-brain/runtime/unattended/checkout_delivery.ts",
+    "plugins/immune-brain/runtime/unattended/lane_cleanup.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "tests/batch-final-report.test.ts",
+    "tests/batch-final-verification-required.test.ts",
+    "tests/batch-merge-queue.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/single-task-checkout-delivery.test.ts",
+    "tests/single-task-lane-batch.test.ts",
+    "tests/single-task-lane-cleanup.test.ts",
+    "tests/unattended-batch-lanes.test.ts"
+  ],
+  "scope_size_reason": "This single finalization invariant spans the lifecycle producer, persisted validator, checkout/replay consumers and shared Host callers. Transition owners are listed for settlement coverage even where unchanged. Splitting writer, reader and replay verification would leave invalid intermediate state; generated bundle is derived output.",
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,646 @@
+// Canary enrollment core. NOT exported from kernel/index.ts.
+// Atomically creates TaskRecord v4 + workspace working claim + backend claim
+// for one confirmed canary task through a valid EnrollmentCapability.
+// Production callers go through the single `enrollTask` entry (D3): it issues
+// the capability, rehearses zero-write, runs the optional caller checkpoint,
+// then commits. `runEnrollmentRehearsal` stays exported as a zero-write
+// precheck for tests and diagnostics only.
+
+import { readRunRowByTask, withKernelRead } from "./sqlite_store";
+import { readTaskIntent } from "./intent";
+import { inspectSpecBinding } from "./spec_binding";
+import {
+	type EnrollmentAuthorityRegistry,
+	type EnrollmentCapabilityBinding,
+} from "./enrollment_authority";
+import type {
+	BatchAuthorityRegistry,
+	BatchAuthorizationBinding,
+} from "./batch_authority";
+import type { BackendClaim } from "./backend_claim";
+import { assertBatchLineageOrigin } from "./batch_authority";
+import { preparePiCanary, readGitHead } from "./pi_canary_prepare";
+import { dirtyScopePaths, dirtyWorkspacePaths, writeEnrollmentBaseline } from "../workspace_scope";
+import { enrollmentRequestDigest } from "./run_identity";
+import {
+	commitEnrollmentLocked,
+	enrollmentEventIdFor,
+	readCommittedEnrollmentResult,
+	readTaskRecordRaw,
+	readWorkspaceStateRaw,
+	reconcileKernelAuthority,
+	withKernelStoreLock,
+} from "./storage";
+import type { TaskIntentV1, TaskRecord, TaskRecordV4, WorkspaceStateLike } from "./types";
+
+/**
+ * Present only for a batch-derived enrollment. The child slot is consumed
+ * inside the same store lock as the TaskRecord write and released again if that
+ * write does not commit, so a consumed slot and a TaskRecord always agree.
+ */
+export interface EnrollBatchContext {
+	registry: BatchAuthorityRegistry;
+	capability: object;
+	binding: BatchAuthorizationBinding;
+	/** base_head, then each commit this batch created on its own branch. */
+	expected_head: string;
+}
+
+export interface EnrollCanaryInput {
+	task_id: string;
+	intent_path: string;
+	intent_revision: number;
+	preparation_digest: string;
+	capability: object;
+	capability_binding: EnrollmentCapabilityBinding;
+	batch?: EnrollBatchContext;
+	/**
+	 * The in-scope paths the confirmed Enrollment gate listed as already staged,
+	 * modified or untracked. Only these are claimed as task work; absent means
+	 * the gate listed none, so any in-scope dirt refuses the Enrollment.
+	 */
+	disclosed_scope_paths?: readonly string[];
+	now: string;
+}
+
+/**
+ * What an Enrollment gate must show about a scope that is already dirty: the
+ * paths, and the one line both Hosts print for them. A scope that cannot be
+ * inspected discloses nothing, and the Enrollment itself reports why.
+ */
+export function enrollmentScopeDisclosure(root: string, taskId: string): { paths: string[]; notice: string | null } {
+	let paths: string[] = [];
+	try {
+		paths = dirtyScopePaths(root, readTaskIntent(root, taskId).intent.scope_hint, taskId);
+	} catch {
+		return { paths: [], notice: null };
+	}
+	return {
+		paths,
+		notice: paths.length === 0
+			? null
+			: `In-scope changes that already exist (${paths.length}) and become task work on confirmation: ${paths.join(", ")}`,
+	};
+}
+
+/**
+ * Spec branch-boundary-r2 D23: the dirt that refuses a single-task Enrollment,
+ * everything outside the Planner-produced intent and its bound Spec. Hosts
+ * check it before opening the gate so the user never confirms a refused task.
+ */
+export function singleTaskEnrollmentDirt(root: string, intentPath: string, intent: TaskIntentV1): string[] {
+	const binding = inspectSpecBinding(intent);
+	return dirtyWorkspacePaths(root, [intentPath, ...(binding.ok && binding.binding ? [binding.binding.active] : [])]);
+}
+
+/**
+ * A rehearsal that is not ready rejects through this single typed error so the
+ * "Kernel enrollment rehearsal failed" message is produced in exactly one place
+ * (deepen-authority-seams D3). Callers that decorate it — the Pi enroll Tool
+ * appends its empty-initial-commit note — read `message` or `blockers`.
+ */
+export class EnrollmentRehearsalError extends Error {
+	readonly blockers: readonly string[];
+	constructor(blockers: readonly string[]) {
+		super(`Kernel enrollment rehearsal failed: ${blockers.join("; ")}`);
+		this.name = "EnrollmentRehearsalError";
+		this.blockers = blockers;
+	}
+}
+
+/**
+ * The one Enrollment entry's request. The entry issues the capability for this
+ * binding itself, so a caller supplies the binding, not a pre-issued capability.
+ */
+export interface EnrollmentEntryRequest {
+	binding: EnrollmentCapabilityBinding;
+	/** Present only for a batch-derived child enrollment. */
+	batch?: EnrollBatchContext;
+	/** The in-scope paths the confirmed gate listed; see `EnrollCanaryInput`. */
+	disclosed_scope_paths?: readonly string[];
+	now: string;
+	/**
+	 * Optional caller checkpoint run after a ready rehearsal and before the
+	 * commit. Declining cancels the Enrollment with zero Kernel writes; once the
+	 * commit has started, cancellation has no effect.
+	 */
+	checkpoint?: () => boolean;
+}
+
+/** The same request with a mandatory checkpoint: the entry yields a discriminated outcome. */
+export interface EnrollmentEntryRequestWithCheckpoint extends EnrollmentEntryRequest {
+	checkpoint: () => boolean;
+}
+
+/** The entry's outcome when a checkpoint is supplied: enrolled, or cancelled. */
+export type EnrollmentEntryOutcome =
+	| { outcome: "enrolled"; result: EnrollCanaryResult }
+	| { outcome: "cancelled" };
+
+export interface EnrollCanaryResult {
+	record: TaskRecord;
+	backend_claim: BackendClaim;
+	workspace: { revision: string; state: WorkspaceStateLike };
+}
+
+type EnrollmentPreconditionState = {
+	validated: ReturnType<EnrollmentAuthorityRegistry["inspect"]> | null;
+	current: ReturnType<typeof readTaskRecordRaw> | null;
+	workspace: ReturnType<typeof readWorkspaceStateRaw> | null;
+	intent: Awaited<ReturnType<typeof readTaskIntent>> | null;
+	gitBaseHead: string | null;
+	/** In-scope dirt the confirmed gate listed; left out of the Enrollment baseline. */
+	claimedScopePaths: string[];
+};
+
+type EnrollmentPreconditionResult = EnrollmentPreconditionState & {
+	blockers: string[];
+};
+
+function runEnrollmentPreconditionChecks<T>(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+	onReady: (state: EnrollmentPreconditionState) => T,
+): T;
+function runEnrollmentPreconditionChecks(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+): EnrollmentPreconditionResult;
+function runEnrollmentPreconditionChecks<T>(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+	mode: "report" | "fail_fast",
+	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
+	onReady?: (state: EnrollmentPreconditionState) => T,
+): T | EnrollmentPreconditionResult {
+	const blockers: string[] = [];
+	let validated: EnrollmentPreconditionState["validated"] = null;
+	try {
+		validated = registry.inspect(capability, input.capability_binding);
+		if (mode === "fail_fast" && validated.task_id !== input.task_id)
+			throw new Error("enrollment capability task mismatch");
+	} catch (error) {
+		if (mode === "fail_fast") throw error;
+		blockers.push(`capability: ${error instanceof Error ? error.message : String(error)}`);
+	}
+	beforeLock(validated);
+
+	return withKernelStoreLock(root, () => {
+		let current: EnrollmentPreconditionState["current"] = null;
+		let workspace: EnrollmentPreconditionState["workspace"] = null;
+		let intent: EnrollmentPreconditionState["intent"] = null;
+		let gitBaseHead: string | null = null;
+		let claimedScopePaths: string[] = [];
+		const fail = (report: string, error: unknown) => {
+			if (mode === "fail_fast")
+				throw error instanceof Error ? error : new Error(String(error));
+			blockers.push(report);
+		};
+
+		// Terminal protection is the *local* committed run, never the audit
+		// evidence: another worktree's run of the same logical task exports its
+		// own audit directory, and that evidence must not forbid a first
+		// enrollment here. Audit files remain readable as historical evidence for
+		// tasks this worktree has no run for (see reconcileKernelAuthority).
+		const localRun = reconcileKernelAuthority(root, input.task_id);
+		const localTerminal =
+			localRun.state === "terminal_owner" &&
+			withKernelRead(root, (db) => readRunRowByTask(db, input.task_id)) !== null;
+		if (localTerminal) {
+			fail(
+				"local run is terminal; same-task re-enrollment is forbidden",
+				new Error(`task ${input.task_id} is terminal; same-task re-enrollment is forbidden`),
+			);
+		} else {
+			current = readTaskRecordRaw(root, input.task_id);
+			if (current.record)
+				fail(
+					"task record already exists",
+					new Error(`task ${input.task_id} already has a TaskRecord`),
+				);
+		}
+		workspace = readWorkspaceStateRaw(root);
+		if (workspace.state.current_working !== null)
+			fail(
+				`workspace already owned by ${workspace.state.current_working}`,
+				new Error(`workspace is already owned by ${workspace.state.current_working}`),
+			);
+		try {
+			intent = readTaskIntent(root, input.task_id);
+		} catch (error) {
+			fail(`intent: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+		// A simple Intent binds no Spec. A complex binding that names a Spec must
+		// be complete and unambiguous before any Executor turn.
+		if (intent) {
+			const binding = inspectSpecBinding(intent.intent);
+			if (!binding.ok) fail(binding.message, new Error(binding.message));
+		}
+		try {
+			gitBaseHead = readGitHead(root);
+		} catch (error) {
+			fail(`git base: ${error instanceof Error ? error.message : String(error)}`, error);
+		}
+		// Single tasks start clean apart from planning; batch children keep their
+		// confirmed Lane disclosure. Check before spending either capability.
+		if (intent && gitBaseHead) {
+			try {
+				if (!input.batch) {
+					const binding = inspectSpecBinding(intent.intent);
+					claimedScopePaths = [input.intent_path, ...(binding.ok && binding.binding ? [binding.binding.active] : [])];
+					const dirty = singleTaskEnrollmentDirt(root, input.intent_path, intent.intent);
+					if (dirty.length > 0) {
+						const message = `workspace_not_clean: ${dirty.join(", ")}`;
+						fail(message, new Error(message));
+					}
+				} else {
+					const disclosed = new Set(input.disclosed_scope_paths ?? []);
+					const dirty = dirtyScopePaths(root, intent.intent.scope_hint, input.task_id);
+					const unlisted = dirty.filter((path) => !disclosed.has(path));
+					if (unlisted.length > 0) {
+						const message = `task scope is already dirty before Enrollment: ${unlisted.join(", ")}; the confirmed Enrollment gate did not list these paths, so enroll again from the Host to review them`;
+						fail(message, new Error(message));
+					} else claimedScopePaths = dirty;
+				}
+			} catch (error) {
+				fail(`scope: ${error instanceof Error ? error.message : String(error)}`, error);
+			}
+		}
+
+		const state: EnrollmentPreconditionState = {
+			validated,
+			current,
+			workspace,
+			intent,
+			gitBaseHead,
+			claimedScopePaths,
+		};
+		return onReady ? onReady(state) : { ...state, blockers };
+	});
+}
+
+function buildTaskRecordV4(
+	input: EnrollCanaryInput,
+	intent: Awaited<ReturnType<typeof readTaskIntent>>,
+	gitBaseHead: string,
+): TaskRecordV4 {
+	return {
+		contract: "assurance_kernel/task_record/v4",
+		task_id: input.task_id,
+		intent_snapshot: intent.intent,
+		intent_ref: {
+			path: input.intent_path,
+			content_hash: intent.content_hash,
+		},
+		lifecycle: "active",
+		artifact_state: "active",
+		baseline: intent.content_hash,
+		git_base_head: gitBaseHead,
+		attestations: [],
+		findings: [],
+		history: [],
+	};
+}
+
+/**
+ * Rehearsal: validates every precondition and returns evidence, but writes
+ * nothing and never consumes the capability.
+ */
+export function runEnrollmentRehearsal(
+	root: string,
+	input: EnrollCanaryInput,
+	capability: object,
+	registry: EnrollmentAuthorityRegistry,
+): {
+	rehearsed: boolean;
+	writes_performed: boolean;
+	evidence: {
+		contract: "assurance_kernel/enrollment_rehearsal/v1";
+		task_id: string;
+		outcome: "ready" | "not_ready";
+		blockers: string[];
+		/** In-scope dirt the gate listed, which this Enrollment would claim as task work. */
+		claimed_scope_paths: string[];
+		generated_at: string;
+	};
+} {
+	const preconditions = runEnrollmentPreconditionChecks(
+		root,
+		input,
+		capability,
+		registry,
+		"report",
+		() => undefined,
+	);
+	return {
+		rehearsed: true,
+		writes_performed: false,
+		evidence: {
+			contract: "assurance_kernel/enrollment_rehearsal/v1",
+			task_id: input.task_id,
+			outcome: preconditions.blockers.length === 0 ? "ready" : "not_ready",
+			blockers: preconditions.blockers,
+			claimed_scope_paths: preconditions.claimedScopePaths,
+			generated_at: input.now,
+		},
+	};
+}
+
+function enrollmentEventId(taskId: string, now: string): string {
+	return enrollmentEventIdFor(taskId, now);
+}
+
+/**
+ * The single Enrollment entry (deepen-authority-seams D3): issues the
+ * capability for the supplied binding, runs the zero-write rehearsal, calls the
+ * optional caller checkpoint, and commits. A rehearsal that is not ready
+ * rejects with its blockers in the one shared message and writes nothing; a
+ * declined checkpoint cancels with zero writes; once commit has started,
+ * cancellation has no effect. Replay of a lost Enrollment keeps today's
+ * behavior because the commit step is the unchanged durable operation.
+ */
+/**
+ * A request that supplies no checkpoint, or one that is `undefined`. Only such
+ * a request is guaranteed to return the plain result: the entry has no caller
+ * window in which it could cancel.
+ */
+export interface EnrollmentEntryRequestWithoutCheckpoint extends EnrollmentEntryRequest {
+	checkpoint?: undefined;
+}
+
+/**
+ * The one Cancellation boundary. Between the readiness decision and the
+ * caller checkpoint the entry yields once, so a cancellation already queued by
+ * the host (a microtask, an already-resolved signal) is observed by the
+ * checkpoint instead of losing the race against the synchronous step that
+ * follows. Zero writes either way.
+ */
+const CANCELLATION_BOUNDARY = Promise.resolve();
+
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequestWithCheckpoint,
+): Promise<EnrollmentEntryOutcome>;
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequestWithoutCheckpoint,
+): Promise<EnrollCanaryResult>;
+/**
+ * The general interface shape, whose checkpoint is optional: the caller can
+ * still hold it back, so the return has to stay the full union. Without this
+ * overload a value typed `EnrollmentEntryRequest` matches neither of the two
+ * above and the call does not compile, even though the runtime answers it.
+ */
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequest,
+): Promise<EnrollCanaryResult | EnrollmentEntryOutcome>;
+export async function enrollTask(
+	root: string,
+	registry: EnrollmentAuthorityRegistry,
+	request: EnrollmentEntryRequest,
+): Promise<EnrollCanaryResult | EnrollmentEntryOutcome> {
+	const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
+	// (1) Issue the capability for the supplied binding.
+	const capability = registry.issue(binding);
+	const input: EnrollCanaryInput = {
+		task_id: binding.task_id,
+		intent_path: binding.intent_path,
+		intent_revision: binding.intent_revision,
+		preparation_digest: binding.preparation_digest,
+		capability,
+		capability_binding: binding,
+		...(batch ? { batch } : {}),
+		...(disclosed_scope_paths ? { disclosed_scope_paths } : {}),
+		now,
+	};
+	// Replay of a lost Enrollment: the exact request already committed here, so
+	// the durable operation is the only correct answer. This must precede the
+	// rehearsal, whose precondition checks would otherwise report the now-existing
+	// TaskRecord and workspace owner as blockers and make the durable replay
+	// unreachable. A request committed for a different binding throws, so the
+	// divergent-request refusal is preserved.
+	const { eventId, digest } = digestForEnrollment(input);
+	const committed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+	if (committed) {
+		const result: EnrollCanaryResult = {
+			record: committed.record,
+			backend_claim: committed.claim,
+			workspace: { revision: "", state: committed.workspace },
+		};
+		return checkpoint ? { outcome: "enrolled", result } : result;
+	}
+	// (2) Rehearse: not ready rejects with the blockers and writes nothing.
+	const rehearsal = runEnrollmentRehearsal(root, input, capability, registry);
+	if (!rehearsal.rehearsed || rehearsal.evidence.outcome !== "ready")
+		throw new EnrollmentRehearsalError(rehearsal.evidence.blockers);
+	// The boundary: a cancellation the host queued while the rehearsal ran is
+	// delivered here, before the checkpoint can start the commit.
+	await CANCELLATION_BOUNDARY;
+	// (3) Optional caller checkpoint: declining cancels before any write.
+	if (checkpoint && !checkpoint()) return { outcome: "cancelled" };
+	// (4) Commit; not cancellable from here. Without a caller checkpoint the
+	// entry is the plain durable operation the replay of a lost Enrollment
+	// already handles inside `enrollCanaryTask`.
+	const result = enrollCanaryTask(root, input, registry);
+	return checkpoint ? { outcome: "enrolled", result } : result;
+}
+
+function digestForEnrollment(input: EnrollCanaryInput): {
+	eventId: string;
+	digest: string;
+} {
+	const eventId = enrollmentEventId(input.task_id, input.now);
+	return {
+		eventId,
+		digest: enrollmentRequestDigest({
+			task_id: input.task_id,
+			intent_path: input.intent_path,
+			intent_revision: input.intent_revision,
+			intent_content_hash: input.capability_binding.intent_content_hash,
+			preparation_digest: input.preparation_digest,
+			enrollment_event_id: eventId,
+			actor_id: input.capability_binding.actor_id,
+			confirmation_ref: input.capability_binding.confirmation_ref,
+			nonce: input.capability_binding.nonce,
+		}),
+	};
+}
+
+/**
+ * Atomic canary enrollment. Runs inside the same store lock as v1/v2
+ * transactions; consumes the capability only after every precondition
+ * passes, immediately before writing the enrollment marker. A lost
+ * response of the exact same request returns the committed result
+ * without repeating those first-execution checks.
+ */
+export function enrollCanaryTask(
+	root: string,
+	input: EnrollCanaryInput,
+	registry: EnrollmentAuthorityRegistry,
+): EnrollCanaryResult {
+	const { eventId, digest } = digestForEnrollment(input);
+	// A committed enrollment answers the exact same request: the retry cannot
+	// pass the first-execution checks (the capability is consumed and the
+	// record now exists), so the durable operation is the only correct answer.
+	const replayed = readCommittedEnrollmentResult(root, input.task_id, eventId, digest);
+	if (replayed)
+		return {
+			record: replayed.record,
+			backend_claim: replayed.claim,
+			workspace: { revision: "", state: replayed.workspace },
+		};
+
+	let gitBaseHead: string | null = null;
+	// The batch child slot is consumed with the capability and handed back when
+	// the enrollment call fails. The commit happens at the outer store
+	// transaction, so any throw from this call means nothing was committed and
+	// the release has to wrap the whole call rather than only the record write.
+	let consumed = false;
+	try {
+		return runEnrollmentPreconditionChecks(
+			root,
+			input,
+		input.capability,
+		registry,
+		"fail_fast",
+		() => {
+			// v4 storage retirement: the capability is bound to the preparation
+			// digest computed from Kernel owners only. Recompute it before the
+			// locked owner reads and reject if the owner set changed.
+			const recomputed = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+			if (recomputed.digest !== input.preparation_digest)
+				throw new Error("enrollment preparation digest mismatch");
+			gitBaseHead = recomputed.git_base_head;
+			if (!gitBaseHead)
+				throw new Error(recomputed.git_error ?? "enrollment requires a committed Git HEAD");
+		},
+		(checks) => {
+			if (!checks.validated || !checks.intent || !checks.workspace || !checks.current)
+				throw new Error("enrollment precondition state incomplete");
+			// Recompute under the store lock: a confirmation bound to an older
+			// workspace revision must not commit after another enrollment and
+			// settlement raced between beforeLock and this callback.
+			const locked = preparePiCanary(root, { task_id: input.task_id, now: input.now });
+			if (locked.digest !== input.preparation_digest)
+				throw new Error("enrollment preparation digest mismatch");
+			if (checks.intent.intent.revision !== input.intent_revision)
+				throw new Error("intent revision mismatch");
+			if (checks.intent.content_hash !== checks.validated.intent_content_hash)
+				throw new Error("intent content hash mismatch");
+			// The confirmation is bound to this exact commit; a moved HEAD means the
+			// operator approved a different base than the one being recorded.
+			if (checks.gitBaseHead !== gitBaseHead)
+				throw new Error("Git HEAD moved after the enrollment confirmation");
+
+			// A batch-derived enrollment must still stand on the lineage the
+			// literal user confirmed: child N's base is the commit child N-1
+			// produced on the batch branch, and child 1's base is base_head or a
+			// fast-forward of it the runner adopted.
+			// expected_head is caller-supplied, so anchor its origin here rather
+			// than trusting the caller's own assertion: before this batch has
+			// consumed any slot it has created no commit, so the only lineage
+			// value it can hold descends from the confirmed base_head.
+			if (input.batch) {
+				const batch = input.batch.registry.inspect(
+					input.batch.capability,
+					input.batch.binding,
+				);
+				if (input.batch.registry.consumedChildren(input.batch.capability).length === 0)
+					assertBatchLineageOrigin(root, batch.base_head, input.batch.expected_head);
+				if (checks.gitBaseHead !== input.batch.expected_head)
+					throw new Error(
+						`batch_head_lineage_broken: expected ${input.batch.expected_head}, found ${checks.gitBaseHead}`,
+					);
+			}
+
+			// consume immediately before the store transaction
+			registry.consume(input.capability, input.capability_binding);
+			consumed = true;
+			if (input.batch)
+				input.batch.registry.consumeChild(
+					input.batch.capability,
+					input.batch.binding,
+					input.task_id,
+				);
+
+			// Set by beforeLock above, which throws when the repository has no
+			// committed HEAD. Re-assert it here: the compiler cannot carry a
+			// closure's narrowing across to this one.
+			if (!gitBaseHead) throw new Error("enrollment requires a committed Git HEAD");
+			const record = buildTaskRecordV4(input, checks.intent, gitBaseHead);
+			const nextWorkspace: WorkspaceStateLike = {
+				...checks.workspace.state,
+				current_working: input.task_id,
+			};
+			const claim: BackendClaim = {
+				contract: "assurance_kernel/backend_claim/v2",
+				backend: "kernel",
+				task_id: input.task_id,
+				intent_revision: input.intent_revision,
+				intent_content_hash: checks.intent.content_hash,
+				enrollment_event_id: eventId,
+				lifecycle_status: "active",
+				created_at: input.now,
+				updated_at: input.now,
+			};
+			const mutation = commitEnrollmentLocked(
+				root,
+				input.task_id,
+				{
+					contract: "assurance_kernel/workspace_transaction/v2",
+					task_id: input.task_id,
+					expected_record_hash: checks.current.revision,
+					next_record_content: `${JSON.stringify(record, null, 2)}\n`,
+					expected_workspace_hash: checks.workspace.revision,
+					next_workspace_content: `${JSON.stringify(nextWorkspace, null, 2)}\n`,
+				},
+				claim as unknown as Record<string, unknown>,
+				digest,
+			);
+			writeEnrollmentBaseline(root, checks.claimedScopePaths, !input.batch);
+			return {
+				record: mutation.record,
+				backend_claim: claim,
+				workspace: { revision: "", state: mutation.workspace },
+			};
+			},
+		);
+	} catch (error) {
+		// A child slot is released only when the enrollment provably did not
+		// commit. The envelope can also fail *after* the Kernel transaction
+		// committed — a follow-up transaction that cannot start, for example —
+		// and releasing then would leave the batch view ahead of an owner the
+		// Kernel already recorded. The committed run decides, not the throw.
+		const ownership = (() => {
+			try {
+				return {
+					known: true,
+					owned:
+						reconcileKernelAuthority(root, input.task_id).owner_task_id === input.task_id,
+				};
+			} catch {
+				return { known: false, owned: false };
+			}
+		})();
+		// Unknown is not "not committed". When the store cannot be read the slot
+		// stays consumed, so the batch view never runs ahead of a run that may
+		// exist, and the operator reconciles from the Kernel's own state.
+		if (consumed && input.batch && ownership.known && !ownership.owned)
+			input.batch.registry.releaseChild(input.batch.capability, input.task_id);
+		throw error;
+	}
+}

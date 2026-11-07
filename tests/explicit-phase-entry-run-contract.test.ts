@@ -23,7 +23,7 @@ describe("explicit phase entry: drive owns Enrollment", () => {
 		expect(entry).toContain("including a GitHub Initiative Child entry");
 		expect(entry).toContain("Its first step is `start_unattended_batch` with `task_id`");
 		expect(entry).toContain("The Parent neither enrolls the task itself nor implements it in its own conversation");
-		expect(entry).toContain("The Executor role runs inside the Lane process that the runtime spawns, never in the Parent conversation");
+		expect(entry).toContain("The Executor role runs inside the Lane process, never in the Parent conversation");
 		expect(entry).toContain("For a Parent Issue, route to");
 		expect(entry).toContain("A Child entry verifies prerequisite settlement and integration");
 		expect(entry).toContain("Planner and Brainstorm never open that gate");

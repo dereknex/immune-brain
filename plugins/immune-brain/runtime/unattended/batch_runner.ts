@@ -150,6 +150,8 @@ export interface StartBatchInput {
 	 * the recorded list in either execution mode.
 	 */
 	final_verification?: string[];
+	/** Bounds each final command; absent, the verifier's own default applies. Not a Host tool parameter. */
+	final_verification_timeout_ms?: number;
 	/**
 	 * Lane mode only: one text instruction the Parent wants to send a Lane
 	 * session. The tick records it and answers whether it may be sent; it is
