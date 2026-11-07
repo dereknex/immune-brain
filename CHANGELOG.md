@@ -1,5 +1,19 @@
 # Changelog
 
+## 7.2.1
+
+### Patch Changes
+
+- [#421](https://github.com/dereknex/immune-brain/pull/421) [`41cb417`](https://github.com/dereknex/immune-brain/commit/41cb4174aefb8cfa507c962fa3123cfe1dafda6d) Thanks [@dereknex](https://github.com/dereknex)! - Ship Antigravity as an isolated, relocatable plugin at `plugins/immune-brain-antigravity/` with a native `.antigravity-plugin/plugin.json`, five native read-only role definitions, hooks that start without `PLUGIN_ROOT`, and the complete skill, CLI, runtime and role-prompt closure inside the directory. `agy plugin validate --strict` now passes. The shared-root Antigravity manifest, hooks, MCP config and bundle are retired: reinstall Antigravity from `plugins/immune-brain-antigravity/`. Pi and Claude Code roots are unchanged.
+
+- [#421](https://github.com/dereknex/immune-brain/pull/421) [`b254c8c`](https://github.com/dereknex/immune-brain/commit/b254c8c5322399a917912da49094c6a7c8aa70cd) Thanks [@dereknex](https://github.com/dereknex)! - Repair single-task batch finalization. A verified task whose checkout is blocked now persists a readable `needs_human` batch with the real reason and the passing result nested in the final report, instead of failing on the completed-only top-level proof. A failed, timed-out or stale final verification keeps the integration but never delivers or cleans up. A replay reuses only an unchanged validated pass, reconciles an already applied delivery only when its full identity (content and modes, or ref lineage) matches, and parks any changed bytes.
+
+- [#421](https://github.com/dereknex/immune-brain/pull/421) [`73cbad8`](https://github.com/dereknex/immune-brain/commit/73cbad83987a25f7ee232911d08366204b16c305) Thanks [@dereknex](https://github.com/dereknex)! - Make single-task manual checkout delivery succeed per delivered path. A path that already sits in the coordinator checkout with identical index mode and blob, worktree bytes and executable bit (or a delivered deletion already absent) is satisfied and left untouched, so the coordinator can keep the task's own planning sidecar while the same file is part of the delivery. Every other path still blocks on a dirty overlap and is never overwritten; auto mode and whole-delivery replay semantics are unchanged.
+
+- [`297c5c9`](https://github.com/dereknex/immune-brain/commit/297c5c999bb890e71729670bab4bbda11a016354) Thanks [@dereknex](https://github.com/dereknex)! - Run new single-task Lanes inside Herdr in interactive Executor tabs, using the same Parent supervision as Initiative batches. Persist the execution mode across re-entry, preserve existing runtime-supervised tasks, and keep interactive Lanes after delivery when no trusted process exit is available. Parent decision relay no longer starts a background Executor for an interactive Lane. Frozen Lanes waiting on user decisions remain enrolled and expose the decision in their report. An approved interactive stop records the stopped reason immediately and returns the instruction to close the Executor tab.
+
+- [`297c5c9`](https://github.com/dereknex/immune-brain/commit/297c5c999bb890e71729670bab4bbda11a016354) Thanks [@dereknex](https://github.com/dereknex)! - Fix single-task Lane preflight rejecting historical consolidation records as invalid batch state. Skip records with unrelated contracts while retaining fail-closed validation for malformed JSON and invalid or unsupported batch records.
+
 ## 7.2.0
 
 ### Minor Changes
