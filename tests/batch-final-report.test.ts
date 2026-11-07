@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "../plugins/immune-brain/runtime/unattended/batch_final_report";
 import { retainedLaneAction, retainedLaneNotices } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
+import { reusableFinalVerification, runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { writeBatchLaneRunState, readBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import type { BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
@@ -174,5 +174,33 @@ describe("D24 final report and coordinator return", () => {
 		const fx = fixture();
 		fx.batch.children[0]!.task_id = "missing";
 		await expect(buildBatchFinalReport(fx.root, fx.batch)).rejects.toThrow("missing settled evidence");
+	});
+});
+
+describe("D3 final verification reuse", () => {
+	const passed = (head: string) => ({ passed: true, head, results: [{ command: "git status --short", exit_code: 0, signal: null, passed: true, duration_ms: 7 }] });
+	const input = (head: string, commands = ["git status --short"]) => ({ head, commands, declared: [] });
+	test("reuses only an unchanged, consistent pass for the same tip and ordered commands", async () => {
+		const fx = fixture();
+		expect(reusableFinalVerification(passed(fx.head), input(fx.head))).toEqual(passed(fx.head));
+		const rejected = [
+			["another tip", passed("0".repeat(40))],
+			["a changed command list", { ...passed(fx.head), results: [{ ...passed(fx.head).results[0]!, command: "git status" }] }],
+			["a contradictory pass", { ...passed(fx.head), results: [{ ...passed(fx.head).results[0]!, passed: false }] }],
+			["a failed observation", { ...passed(fx.head), passed: false }],
+			["a content-bound observation", { ...passed(fx.head), content_identity: "sha256:x" }],
+			["a malformed observation", { passed: true }],
+			["a missing observation", undefined],
+		] as const;
+		for (const [name, observed] of rejected) expect([name, reusableFinalVerification(observed, input(fx.head))]).toEqual([name, null]);
+		expect(reusableFinalVerification(passed(fx.head), input(fx.head, ["git status --short", "git log"]))).toBeNull();
+	});
+	test("a changed derived-check declaration invalidates the observation", async () => {
+		const fx = fixture();
+		const check = { executable: "bun", argv: ["--version"] };
+		const observed = { ...passed(fx.head), derived_checks: [{ id: "d", command: "d", exit_code: 0, signal: null, passed: true, duration_ms: 1, invocation: check }] };
+		expect(reusableFinalVerification(observed, { ...input(fx.head), declared: [{ id: "d", check }] })).not.toBeNull();
+		expect(reusableFinalVerification(observed, { ...input(fx.head), declared: [{ id: "d", check: { ...check, argv: ["--help"] } }] })).toBeNull();
+		expect(reusableFinalVerification(observed, input(fx.head))).toBeNull();
 	});
 });

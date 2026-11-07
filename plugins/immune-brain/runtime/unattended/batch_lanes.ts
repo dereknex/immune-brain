@@ -21,7 +21,7 @@ import {
 } from "../kernel/runtime_contracts";
 import { readFileSync } from "node:fs";
 import { readDerivedFilesAt } from "../derived_files";
-import { runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
+import { reusableFinalVerification, runFinalVerification, type FinalVerificationReport } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
 import { deliverSingleTask } from "./checkout_delivery";
 import { cleanupSingleTaskLane, retainedLaneReason } from "./lane_cleanup";
@@ -1355,22 +1355,33 @@ export async function runLaneBatch(
 		// completion report is written. A failure is reported, never rolled back.
 		// A hidden-ref batch leaves its delivery in the user's working tree, so the check is
 		// bound to the children's scoped content rather than to a clean tree at HEAD.
-		const final = record.final_verification?.length || readDerivedFilesAt(input.root, record.base_head).length
+		const declared = readDerivedFilesAt(input.root, record.base_head);
+		const singleTask = record.plan_source === "single_task" && isParentBranch(record.branch);
+		// D3: a replayed single task reuses only an unchanged, validated PASS for this exact tip.
+		const reused = singleTask ? reusableFinalVerification(record.final_report?.final_verification,
+			{ head: expectedBatchHead(record), commands: record.final_verification ?? [], declared }) : null;
+		const final = reused ?? (record.final_verification?.length || declared.length
 			? await runFinalVerification(input.root, record.final_verification ?? [],
-				{ declaration_head: record.base_head, ...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
+				{ declaration_head: record.base_head, ...(input.final_verification_timeout_ms ? { timeoutMs: input.final_verification_timeout_ms } : {}),
+				...(isParentBranch(record.branch) ? { parent_head: expectedBatchHead(record) } :
 				isBatchRef(record.branch) ? { scopes: unsettledChildScopes(input.root, input.children) } : {}) })
-			: undefined;
+			: undefined);
 		if (isParentBranch(record.branch)) {
+			// The nested observation is legal in a running record; the top-level proof waits for completion (D1).
 			record.final_report = await buildBatchFinalReport(input.root, { ...record, final_verification_result: final });
 			persist(); // Keep the report even if the return step is interrupted.
 			if (record.plan_source === "single_task") {
 				const child = record.children[0]!;
-				const delivery = deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
+				const failedChecks = final ? [...final.results, ...(final.derived_checks ?? []).map(item => ({ ...item, command: item.id }))].filter(item => !item.passed).map(item => item.command) : [];
+				// D4: delivery needs a pass bound to this exact tip; a failure keeps the integration and touches no checkout.
+				const unverified = final && (!final.passed || final.head !== record.final_report.head)
+					? `final_verification_failed: ${failedChecks.join(", ") || (final.head !== record.final_report.head ? "head_mismatch" : "workspace_changed")}` : null;
+				const delivery = unverified ? { ...record.final_report.return_to_coordinator, status: "blocked" as const, reason: unverified }
+					: deliverSingleTask(input.root, child.lane!.base_head, record.final_report.head);
 				record.final_report.return_to_coordinator = delivery;
 				if (delivery.status === "blocked") {
 					record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
 					record.batch_state = "needs_human";
-					if (final) record.final_verification_result = final;
 					persist();
 					return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...(final ? { final } : {}) });
 				}

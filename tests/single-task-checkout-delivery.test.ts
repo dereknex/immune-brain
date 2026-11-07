@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deliverSingleTask } from "../plugins/immune-brain/runtime/unattended/checkout_delivery";
+import { deliverSingleTask, deliveryAlreadyApplied } from "../plugins/immune-brain/runtime/unattended/checkout_delivery";
 
 const roots: string[] = [];
 afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
@@ -83,5 +83,92 @@ describe("single-task checkout delivery", () => {
 		const before = snapshot(f.root); const result = deliverSingleTask(f.root, f.base, f.head);
 		expect(result.reason).toBe(kind === "detached" ? "coordinator_branch_unavailable" : "coordinator_head_diverged");
 		expect(snapshot(f.root)).toEqual(before);
+	});
+	for (const mode of ["manual", "auto"] as const) {
+		test(`${mode} replay recognizes its own applied delivery without applying twice`, () => {
+			const f = fixture(mode);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
+			expect(deliverSingleTask(f.root, f.base, f.head).reason).toBeNull();
+			const applied = snapshot(f.root);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(true);
+			expect(deliverSingleTask(f.root, f.base, f.head)).toEqual({ mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null });
+			expect(snapshot(f.root)).toEqual(applied);
+		});
+	}
+	for (const change of ["bytes", "mode", "unstaged"] as const) {
+		test(`manual replay parks a delivery whose ${change} changed after apply`, () => {
+			const f = fixture("manual");
+			deliverSingleTask(f.root, f.base, f.head);
+			if (change === "bytes") { writeFileSync(join(f.root, "changed"), "user edit\n"); git(f.root, "add", "changed"); }
+			else if (change === "mode") chmodSync(join(f.root, "changed"), 0o755);
+			else writeFileSync(join(f.root, "new"), "different\n");
+			const before = snapshot(f.root);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
+			const result = deliverSingleTask(f.root, f.base, f.head);
+			expect(result.status).toBe("blocked");
+			expect(result.reason).toContain("checkout_delivery_overlap");
+			expect(snapshot(f.root)).toEqual(before);
+		});
+	}
+	describe("per-path identity (manual)", () => {
+		const satisfy = (root: string) => { writeFileSync(join(root, "new"), "new delivery\n"); git(root, "add", "new"); };
+		const delivered = (root: string) => [["changed", "delivered\n"], ["new", "new delivery\n"],
+			[".imm/audit/task/run/task-record.json", "record\n"], [".imm/audit/task/run/terminal-proof.json", "proof\n"]]
+			.every(([path, content]) => readFileSync(join(root, path!), "utf8") === content && git(root, "show", `:${path}`) === content!.trim());
+
+		test("delivers the remaining paths around one already identical staged path", () => {
+			const f = fixture("manual"); satisfy(f.root);
+			const satisfiedIndex = git(f.root, "ls-files", "--stage", "new");
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
+			expect(deliverSingleTask(f.root, f.base, f.head)).toEqual({ mode: "manual", status: "staged", reason: null });
+			expect(git(f.root, "ls-files", "--stage", "new")).toBe(satisfiedIndex);
+			expect(delivered(f.root)).toBe(true);
+			expect(git(f.root, "rev-parse", "HEAD")).toBe(f.base);
+			expect(git(f.root, "status", "--porcelain=v1", "--untracked-files=all")).not.toMatch(/^.\S|^\?\?/m);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(true);
+		});
+
+		test("a second call after a partial delivery reports the same success and changes nothing", () => {
+			const f = fixture("manual"); satisfy(f.root);
+			const first = deliverSingleTask(f.root, f.base, f.head);
+			const applied = snapshot(f.root);
+			expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(true);
+			expect(deliverSingleTask(f.root, f.base, f.head)).toEqual(first);
+			expect(snapshot(f.root)).toEqual(applied);
+		});
+
+		for (const shape of ["bytes", "mode", "deletion", "unrelated"] as const) {
+			test(`still parks with checkout_delivery_overlap when the ${shape} differs`, () => {
+				const f = shape === "deletion" ? deletionFixture() : fixture("manual");
+				satisfy(f.root);
+				if (shape === "bytes") writeFileSync(join(f.root, "new"), "different\n");
+				else if (shape === "mode") chmodSync(join(f.root, "new"), 0o755);
+				else if (shape === "deletion") { git(f.root, "rm", "-q", "--cached", "gone"); }
+				else writeFileSync(join(f.root, "changed"), "user edit\n");
+				const before = snapshot(f.root);
+				const result = deliverSingleTask(f.root, f.base, f.head);
+				expect(result.status).toBe("blocked");
+				expect(result.reason).toBe(`checkout_delivery_overlap: ${{ bytes: "new", mode: "new", deletion: "gone", unrelated: "changed" }[shape]}`);
+				expect(snapshot(f.root)).toEqual(before);
+				expect(existsSync(join(f.root, ".imm/audit/task/run/task-record.json"))).toBe(false);
+			});
+		}
+	});
+	/** The standard delivery plus a deletion of the tracked `gone` file. */
+	function deletionFixture() {
+		const f = fixture("manual");
+		git(f.root, "checkout", "-q", "main"); writeFileSync(join(f.root, "gone"), "gone\n");
+		git(f.root, "add", "gone"); git(f.root, "commit", "-qm", "base with gone");
+		const base = git(f.root, "rev-parse", "HEAD");
+		git(f.root, "checkout", "-qb", "delivery-gone"); git(f.root, "merge", "-q", "--no-edit", f.head);
+		git(f.root, "rm", "-q", "gone"); git(f.root, "commit", "-qm", "delete gone");
+		const head = git(f.root, "rev-parse", "HEAD"); git(f.root, "checkout", "-q", "main");
+		return { root: f.root, base, head };
+	}
+	test("auto replay does not treat an unrelated HEAD as the applied delivery", () => {
+		const f = fixture("auto");
+		expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
+		writeFileSync(join(f.root, "other"), "other\n"); git(f.root, "add", "other"); git(f.root, "commit", "-qm", "diverged");
+		expect(deliveryAlreadyApplied(f.root, f.base, f.head)).toBe(false);
 	});
 });

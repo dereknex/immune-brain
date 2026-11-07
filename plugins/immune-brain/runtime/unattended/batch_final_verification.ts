@@ -78,6 +78,24 @@ export function parseFinalVerificationReport(value: unknown, commands?: readonly
 	return report;
 }
 
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * D3: an earlier observation is reusable only as an unchanged, internally consistent PASS for exactly this
+ * tip, ordered command list and derived-check declaration. Anything else (failed, contradictory, malformed,
+ * another head, changed commands or declaration) returns null and the caller runs verification again.
+ */
+export function reusableFinalVerification(
+	observed: unknown, input: { head: string; commands: readonly string[]; declared: ReadonlyArray<{ id: string; check: DerivedCommand }> },
+): FinalVerificationReport | null {
+	let report: FinalVerificationReport;
+	try { report = parseFinalVerificationReport(observed, input.commands); } catch { return null; }
+	if (!report.passed || report.head !== input.head || report.content_identity !== undefined) return null;
+	const derived = report.derived_checks ?? [];
+	if (!sameJson(derived.map(item => [item.id, item.invocation]), input.declared.map(item => [item.id, item.check]))) return null;
+	return report;
+}
+
 /** One command, asynchronously, so a long suite never blocks the Host's event loop. */
 function runOne(root: string, command: string, timeoutMs: number, invocation?: DerivedCommand, dependencyRoot = root): Promise<FinalVerificationResult> {
 	const [executable, ...argv] = invocation ? [invocation.executable, ...invocation.argv] : command.split(" ");
