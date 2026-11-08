@@ -4,7 +4,9 @@ status: accepted
 
 # Git Integration Preference
 
-**Status update:** item 1 is superseded by ADR 0034.
+**Status update:** item 1 is superseded by ADR 0034; item 4 and the Enrollment
+precondition parts of items 2-3 are superseded by
+[ADR 0036](0036-unborn-head-refuses-drive.md).
 
 Accepted on 2026-10-16 by the repository owner (user decision U2 and delegated
 technical choice T3 in `docs/specs/content-delivery-authority.spec.md`), for

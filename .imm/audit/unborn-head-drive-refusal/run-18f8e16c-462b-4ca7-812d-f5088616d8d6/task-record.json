@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "unborn-head-drive-refusal",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "unborn-head-drive-refusal",
+    "goal": "Issue #401: keep refusing drive on an unborn Git HEAD and retire the Enrollment Git-base initialization and precondition-commit code, unused in production since drive-always-lanes S7 (#396). A user with no commit who enters drive is refused before any Git effect and told to create a committed HEAD; nothing creates an empty root or Enrollment precondition commit. Trace: BR-REQ-1, BR-REQ-5, BR-SCN-1 (automated) -> AC1; BR-REQ-2, BR-REQ-3 -> AC2; BR-REQ-4 -> AC3; BR-DEC-1 (widened in draw-up by the user to also supersede the Enrollment precondition parts of ADR 0024 items 2-3) -> AC4; BR-DEC-2: regenerate mirrors with scripts/build-antigravity-plugin.ts, build-claude-plugin.ts, sync-dist-docs.ts, never hand-edit; BR-DEC-3: also run bun run typecheck and those three scripts with --check; BR-OUT-1 -> AC1, AC2; BR-OUT-2: batch_reasons.ts git_head_unreadable text unchanged (AC1 pins it); BR-OUT-3: intent validate output and dist/draw-up.md:709 unchanged; BR-OUT-4: historical specs, .imm/audit and tests/fixtures not rewritten. Design: Lane Enrollment only stages TaskIntent and bound Spec in the Lane (runtime/unattended/batch_worktrees.ts:62-82) and enrollTaskForTest mirrors it; enrollment_git_base.ts keeps EnrollmentGitBase, its git helper and inspectEnrollmentGitBase (caller runtime/commands/kernel.ts:1177); ADR 0036 uses the ADR 0034 header style and ADR 0024 gains a Status update naming it. Add a patch changeset.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "In tests/single-task-lane-batch.test.ts, prepareBatchPreflight({ plan_source: \"single_task\" }) on a repository whose HEAD names an absent branch (TaskIntent staged, no commit) returns ok: false with state \"rejected\", a reason containing \"enrollment requires a committed Git HEAD\" and recovery_action \"commit working changes and ensure a committed Git HEAD exists in the current Host\"; afterwards `git rev-parse --verify HEAD` still fails, no refs/heads/imm* or imm-lane/* ref exists, and the .git/index bytes are unchanged. The same holds for a corrupt branch ref (rejected, ref bytes unchanged). The existing committed-HEAD preflight tests in that file still pass as the positive control.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts no longer defines or exports initializeEnrollmentGitBase, commitEnrollmentPreconditions, commitUnbornEnrollmentPreconditions, enrollmentGitBaseNotice, enrollmentCommittablePaths, preconditionCommitNote, enrollmentPreconditionSubject, EnrollmentPreconditionResult, and no file under plugins/immune-brain/runtime, plugins/immune-brain-antigravity/runtime or tests (excluding tests/fixtures) references them; tests/enrollment-git-base.test.ts keeps only inspectEnrollmentGitBase coverage (committed HEAD, absent branch reported unborn without writing a ref, corrupt branch ref, missing repository, detached invalid HEAD) and it passes together with tests/kernel-intent-validation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -rn -E 'initializeEnrollmentGitBase|commitEnrollmentPreconditions|commitUnbornEnrollmentPreconditions|enrollmentGitBaseNotice|enrollmentCommittablePaths|preconditionCommitNote|enrollmentPreconditionSubject|EnrollmentPreconditionResult' plugins/immune-brain/runtime plugins/immune-brain-antigravity/runtime tests --exclude-dir=fixtures && bun test tests/enrollment-git-base.test.ts tests/kernel-intent-validation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "tests/helpers/kernel-enroll.ts enrollTaskForTest no longer calls any retired function: it stages the task's TaskIntent and the Spec its binding names with git add, as copyLanePlanningInput does in a Lane, and writes no commit; every consumer (tests/claude-batch-authority.test.ts, tests/claude-host-authority.test.ts, tests/goal-driven-run-recovery.test.ts, tests/pi-canary-lifecycle-package.test.ts, tests/pi-phase-entry-gate.test.ts, tests/scope-revision-envelope.test.ts) passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-batch-authority.test.ts\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/pi-phase-entry-gate.test.ts\",\n      \"tests/scope-revision-envelope.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 600000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "docs/adr/0036-unborn-head-refuses-drive.md exists with `Status: accepted; supersedes item 4 and the Enrollment precondition parts of items 2-3 of [ADR 0024](0024-git-integration-preference.md)` and records that an unborn HEAD refuses drive with git_head_unreadable and that Enrollment makes no precondition or empty root commit; ADR 0024's Status update names ADR 0036; plugins/immune-brain/dist/drive.md no longer says the runtime commits an Enrollment precondition under `Git integration: auto` and says the runtime stages the TaskIntent and bound Spec inside the Lane; docs/reference/immune-brain-config.md no longer contains \"keeps the precondition commits of ADR 0023\" or \"The confirmed empty root commit for an unborn HEAD is made in both modes\" and states that an unborn HEAD refuses drive until the first commit, with plugins/immune-brain/dist/docs/reference/immune-brain-config.md byte-identical. tests/workflow-effect-boundaries.test.ts and tests/git-integration-preference.test.ts assert these fragments and their absence.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-effect-boundaries.test.ts\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 262144\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/unborn-head-drive-refusal.md",
+      "docs/adr/0024-git-integration-preference.md",
+      "docs/adr/0036-unborn-head-refuses-drive.md",
+      "docs/plans/unborn-head-drive-refusal.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/dist/drive.md",
+      "plugins/immune-brain-antigravity/runtime/assurance/enrollment_git_base.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/assurance/enrollment_git_base.ts",
+      "tests/enrollment-git-base.test.ts",
+      "tests/git-integration-preference.test.ts",
+      "tests/helpers/kernel-enroll.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/workflow-effect-boundaries.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/unborn-head-drive-refusal.intent.json",
+    "content_hash": "sha256:36df98b0e9c5a66945e97663c69549bbc4ca1497f2911db1a0208e726b491238"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:36df98b0e9c5a66945e97663c69549bbc4ca1497f2911db1a0208e726b491238",
+  "git_base_head": "4ecb01ed8fedc95bb94283c41f0eae844db68284",
+  "attestations": [
+    {
+      "id": "approval-qa-2f91c8af",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:36df98b0e9c5a66945e97663c69549bbc4ca1497f2911db1a0208e726b491238",
+      "diff_hash": "sha256:8002d4ce11af70b5087661993ccd7acd68f1d590d7bde6149d8ee9ae16d2f86d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:1c88f090fb860fa93f387b79376c591605a87f9c8e34a12026457c85b6489d61",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:1c88f090fb860fa93f387b79376c591605a87f9c8e34a12026457c85b6489d61"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:1c88f090fb860fa93f387b79376c591605a87f9c8e34a12026457c85b6489d61"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:1c88f090fb860fa93f387b79376c591605a87f9c8e34a12026457c85b6489d61"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:1c88f090fb860fa93f387b79376c591605a87f9c8e34a12026457c85b6489d61"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ad086f50",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:36df98b0e9c5a66945e97663c69549bbc4ca1497f2911db1a0208e726b491238",
+      "diff_hash": "sha256:8002d4ce11af70b5087661993ccd7acd68f1d590d7bde6149d8ee9ae16d2f86d",
+      "actor_id": "parent-mediated-review",
+      "summary": "Verified provenance (base/commit/tree, parent, manifest digest) and every changed path; retired Enrollment Git-base functions are fully deleted with no residual references in runtime or tests, the unborn-HEAD refusal is pinned by index-byte- and ref-byte-stable preflight tests with the committed-HEAD positive control retained, the test helper mirrors Lane staging without committing, and ADR/dist/doc mirrors are byte-identical; blast radius medium, load-bearing paths plugins/immune-brain(runtime)/runtime/assurance/enrollment_git_base.ts, runtime/kernel/enrollment.ts and tests/helpers/kernel-enroll.ts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4ecb01ed8fedc95bb94283c41f0eae844db68284",
+        "review_commit": "0ea8411593aa0379dcf61db63f1ccb8dd58fe58a",
+        "review_tree": "89d8805f050d859508fe840a59599dbb339f596e",
+        "manifest_digest": "sha256:b0b786cec0f13ba327aa67e44d888780271ec7521f8b96cb139d708548c61e58"
+      },
+      "reviewer_verdict_sha256": "sha256:eaeb7fb154550abf84bfb30ad001a38b6d3bbf835cde7136d447a3a1281e0ee7"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:unborn-head-drive-refusal:2026-11-08T12:27:31.418Z",
+      "at": "2026-11-08T12:27:31.418Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/unborn-head-drive-refusal.intent.json"
+    },
+    {
+      "id": "record_approval:unborn-head-drive-refusal:2026-11-08T12:30:27.158Z",
+      "at": "2026-11-08T12:30:27.158Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2f91c8af\naction_v2_sha256:95adb285a97067953ee83314cb1b7adcad1fdbf37ee16848ec3daf8c373a7e6d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-90ba1b6689150b52",
+        "issued_at": "2026-11-08T12:30:27.159Z"
+      }
+    },
+    {
+      "id": "record_approval:unborn-head-drive-refusal:2026-11-08T12:37:18.506Z",
+      "at": "2026-11-08T12:37:18.506Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ad086f50\naction_v2_sha256:c59b8a69be20d8938512b3030128487a62be836c9a5eba0430522d5fecdc17c1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-6f132e14c7dcf626",
+        "issued_at": "2026-11-08T12:37:18.506Z"
+      },
+      "review_started_at": "2026-11-08T12:30:29.915Z",
+      "review_submitted_at": "2026-11-08T12:37:17.917Z"
+    },
+    {
+      "id": "complete:unborn-head-drive-refusal:2026-11-08T12:37:20.466Z",
+      "at": "2026-11-08T12:37:20.466Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:bbdba5e4a8c1b73ecfbbb8d6e464df9fa1b8af3b34a98a5a9a7ed37ba9c38615"
+    }
+  ]
+}
