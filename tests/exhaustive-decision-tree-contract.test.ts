@@ -74,6 +74,36 @@ describe("Brainstorm-owned clarification contract", () => {
 		]);
 	});
 
+	test("exhaustive interrogation carries the seventh inventive catalyst lens", () => {
+		const source = "plugins/immune-brain/dist/clarify.md";
+		const antigravity = "plugins/immune-brain-antigravity/dist/clarify.md";
+		for (const path of [source, antigravity]) {
+			const text = readFileSync(join(ROOT, path), "utf8");
+			expect(text, `${path} must not keep six lenses`).not.toContain("six lenses");
+			const optIn = read(path)
+				.split("## Explicit exhaustive interrogation ")[1]
+				.split(" ## ")[0];
+			for (const phrase of [
+				"seven lenses",
+				"inventive catalyst",
+				"secondary cost",
+				"No false compromise detected",
+				"authority invariants",
+				"6a8001e",
+				"Segmentation","Extraction","Preliminary Action","Beforehand Cushioning","Inversion","Dynamics","Blessing in Disguise","Intermediary","Self-Service","Cheap Dispensables",
+			]) {
+				expect(optIn, `${path} must contain ${phrase}`).toContain(phrase);
+			}
+			const defaultSection = read(path)
+				.split("## Default clarification ")[1]
+				.split(" ## ")[0];
+			expect(defaultSection).not.toContain("inventive catalyst");
+		}
+		expect(readFileSync(join(ROOT, antigravity), "utf8")).toBe(
+			readFileSync(join(ROOT, source), "utf8"),
+		);
+	});
+
 	test("exhaustive interrogation and analysis lenses require explicit selection", () => {
 		expectAll(brainstormContracts, [
 			"goal, beneficiary and scenario, current state, desired behavior",

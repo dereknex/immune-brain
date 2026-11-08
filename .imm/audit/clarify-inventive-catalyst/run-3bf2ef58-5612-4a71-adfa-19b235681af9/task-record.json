@@ -1,0 +1,113 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "clarify-inventive-catalyst",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "clarify-inventive-catalyst",
+    "goal": "Issue #423 (Spec docs/specs/clarify-inventive-catalyst.spec.md). An explicit exhaustive clarify interrogation checks the concept against seven lenses: the six existing ones plus inventive catalyst, which asks which trade-off the design accepts as inevitable, inlines the ten EGM agents/inventive_catalyst.md@6a8001e pattern names, requires each proposed pattern to state its secondary cost, treats theoretical bounds and Immune-Brain authority invariants as bounds rather than contradictions, and records 'No false compromise detected' instead of inventing a transform. docs/reference/planning-quality-gate.md gains an advisory false-compromise check for Medium/High risk Specs before finalization, presented under the design-option presentation rule and never a Planner decision, and the draw-up Planning Quality Gate bullet points at it. Mirrors regenerated via scripts/sync-dist-docs.ts and scripts/build-antigravity-plugin.ts; patch changeset. Out: Review prompts, imm-plan validator, Default/roundtable/adversarial clarify modes, IFR and severity tiers, subagent dispatch. Instruction text and contract tests only; no runtime, Kernel, Port, schema or state change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 (BR-REQ-1..5, BR-DEC-1; D1-D5). Done looks like: a maintainer opening plugins/immune-brain/dist/clarify.md or its Antigravity copy finds seven lenses ending with inventive catalyst and its catalog. Seam: a new case in tests/exhaustive-decision-tree-contract.test.ts over the '## Explicit exhaustive interrogation' section of both files asserts it contains 'seven lenses', 'inventive catalyst', each of the ten names (Segmentation, Extraction, Preliminary Action, Beforehand Cushioning, Inversion, Dynamics, Blessing in Disguise, Intermediary, Self-Service, Cheap Dispensables), 'secondary cost', 'No false compromise detected', 'authority invariants' and '6a8001e'; that neither file contains 'six lenses'; that the '## Default clarification' section does not contain 'inventive catalyst'; and that plugins/immune-brain-antigravity/dist/clarify.md equals plugins/immune-brain/dist/clarify.md byte for byte. Existing cases in the file still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/exhaustive-decision-tree-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 (BR-REQ-2..7, BR-DEC-2, BR-DEC-3; D5-D9). Done looks like: a maintainer opening docs/reference/planning-quality-gate.md finds the false-compromise check right after design-option presentation, and plugins/immune-brain/dist/draw-up.md points to it. Seam: a new case in tests/technical-design-conformance-contract.test.ts asserts the gate contains '**false-compromise check**', 'Medium/High risk Spec', 'design-option presentation rule', 'advisory', 'never a Planner decision', 'secondary cost', 'No false compromise detected', 'authority invariants' and each of the ten names, with the false-compromise check bullet after the design-option presentation bullet; that dist/draw-up.md contains 'false-compromise check' and 'docs/reference/planning-quality-gate.md'; that plugins/immune-brain/dist/role-prompts/code-review.md and plugins/immune-brain/runtime/prompts/code-review.md contain neither 'false compromise' nor 'false-compromise'; and that plugins/immune-brain/dist/docs/reference/planning-quality-gate.md, plugins/immune-brain-antigravity/dist/docs/reference/planning-quality-gate.md and plugins/immune-brain-antigravity/dist/draw-up.md equal their sources byte for byte. Existing cases in the file still pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/technical-design-conformance-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 (BR-REQ-8). Done looks like: existing clarify, draw-up and planning-quality-gate contracts still hold. Seam: tests/dist-docs-sync-contract.test.ts, tests/direct-first-routing-contract.test.ts, tests/roadmap-plan-boundary-contract.test.ts, tests/brainstorm-decision-probing-contract.test.ts and tests/draw-up-kernel-intent-contract.test.ts pass, including their existing byte-equality assertions between docs/reference/planning-quality-gate.md and its dist copy.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/direct-first-routing-contract.test.ts\",\n      \"tests/roadmap-plan-boundary-contract.test.ts\",\n      \"tests/brainstorm-decision-probing-contract.test.ts\",\n      \"tests/draw-up-kernel-intent-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/clarify-inventive-catalyst.md",
+      "docs/plans/clarify-inventive-catalyst.intent.json",
+      "docs/reference/planning-quality-gate.md",
+      "docs/specs/clarify-inventive-catalyst.spec.md",
+      "plugins/immune-brain-antigravity/dist/clarify.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/planning-quality-gate.md",
+      "plugins/immune-brain-antigravity/dist/draw-up.md",
+      "plugins/immune-brain/dist/clarify.md",
+      "plugins/immune-brain/dist/docs/reference/planning-quality-gate.md",
+      "plugins/immune-brain/dist/draw-up.md",
+      "tests/exhaustive-decision-tree-contract.test.ts",
+      "tests/technical-design-conformance-contract.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/clarify-inventive-catalyst.intent.json",
+    "content_hash": "sha256:2e03b805c8df72a9666772cf6add3df2efeff9bd5322bb74bb5b1d595ab2aa17"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:2e03b805c8df72a9666772cf6add3df2efeff9bd5322bb74bb5b1d595ab2aa17",
+  "git_base_head": "c4a39942df693e19df9b5eab67ebe66abdd70d77",
+  "attestations": [
+    {
+      "id": "approval-qa-5955c6e7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:2e03b805c8df72a9666772cf6add3df2efeff9bd5322bb74bb5b1d595ab2aa17",
+      "diff_hash": "sha256:84178af7f1fb8a8c0dec636689e2b8a3b7c7c286a07537de70975ab75e17ba9e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:f9afccedd1ac8ade9180333fd2881b62e3497c4354a620d85d38249e3083c17d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f9afccedd1ac8ade9180333fd2881b62e3497c4354a620d85d38249e3083c17d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f9afccedd1ac8ade9180333fd2881b62e3497c4354a620d85d38249e3083c17d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f9afccedd1ac8ade9180333fd2881b62e3497c4354a620d85d38249e3083c17d"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:clarify-inventive-catalyst:2026-11-08T11:04:18.249Z",
+      "at": "2026-11-08T11:04:18.249Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/clarify-inventive-catalyst.intent.json"
+    },
+    {
+      "id": "record_approval:clarify-inventive-catalyst:2026-11-08T11:04:25.992Z",
+      "at": "2026-11-08T11:04:25.992Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5955c6e7\naction_v2_sha256:8ade11e7d733a5075970b839ec4510752834386226d88ff8d701e8ca077bbe16",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-08T11:04:25.992Z"
+      }
+    },
+    {
+      "id": "complete:clarify-inventive-catalyst:2026-11-08T11:04:27.719Z",
+      "at": "2026-11-08T11:04:27.719Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:e472fa06544b367df7bac644d5dbb2e6b9a5786681ff4d6c81e06cad2eb49aa0"
+    }
+  ]
+}

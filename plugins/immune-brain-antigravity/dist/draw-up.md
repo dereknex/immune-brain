@@ -622,7 +622,7 @@ operation that may have partially succeeded is inspected before it is retried fo
 only its unfinished part. Telemetry and tool-call counts are observational: they
 never justify dropping evidence the question requires, and they are not comparable
 to another session's numbers unless the inputs and environment match.
-- **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
+- **Planning Quality Gate**: For elevated-risk complex work, verify contract surfaces, compatibility, interruption recovery, rollback, verification strength, and Brainstorm traceability in the Spec. A Medium/High risk Spec also runs the advisory false-compromise check in `docs/reference/planning-quality-gate.md` before it is finalized. Simple TaskIntent-only work verifies those properties on the Intent. Do not invoke retired Plan mutation or State Ledger synchronization.
 - **Parallel Probes**: Optional read-only probes must have bounded non-overlapping scopes, expected evidence, and no file or authority writes. They are advisory discovery, not persisted Step annotations. Probe failure falls back to inline investigation with a recorded reason.
 
 ## Research Dispatch

@@ -210,4 +210,38 @@ describe("risk-tiered Technical Design conformance contract", () => {
       expect(QUALITY_GATE).not.toContain(obsolete)
     }
   })
+
+  it("adds an advisory false-compromise check reachable from the Planner", () => {
+    const patterns = ["Segmentation","Extraction","Preliminary Action","Beforehand Cushioning","Inversion","Dynamics","Blessing in Disguise","Intermediary","Self-Service","Cheap Dispensables"]
+    expectAll(QUALITY_GATE, [
+      "**false-compromise check**",
+      "Medium/High risk Spec",
+      "design-option presentation rule",
+      "advisory",
+      "never a Planner decision",
+      "secondary cost",
+      "No false compromise detected",
+      "authority invariants",
+      ...patterns,
+    ])
+    expect(QUALITY_GATE.indexOf("- **false-compromise check**")).toBeGreaterThan(
+      QUALITY_GATE.indexOf("- **design-option presentation**"),
+    )
+    expectAll(PLANNER, ["false-compromise check", "docs/reference/planning-quality-gate.md"])
+    for (const review of [
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+    ]) {
+      const text = read(review)
+      expect(text).not.toContain("false compromise")
+      expect(text).not.toContain("false-compromise")
+    }
+    for (const [copy, source] of [
+      ["plugins/immune-brain/dist/docs/reference/planning-quality-gate.md", "docs/reference/planning-quality-gate.md"],
+      ["plugins/immune-brain-antigravity/dist/docs/reference/planning-quality-gate.md", "docs/reference/planning-quality-gate.md"],
+      ["plugins/immune-brain-antigravity/dist/draw-up.md", "plugins/immune-brain/dist/draw-up.md"],
+    ]) {
+      expect(read(copy)).toBe(read(source))
+    }
+  })
 })
