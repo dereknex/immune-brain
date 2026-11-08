@@ -1,0 +1,136 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "runtime-layering-boundary",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "runtime-layering-boundary",
+    "goal": "Issue #415 (Spec docs/specs/runtime-layering-boundary.spec.md). A contributor who adds an import from one host adapter into another, or from a host-neutral runtime module into any host adapter, sees bun test fail with output naming the importing file and the forbidden target; the five cross-host imports on main are carried as an exact-edge ratchet baseline owned by #413/#414. Test-only: no runtime import changes, no new tooling.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 (BR-REQ-3, D2). In tests/runtime-layering-boundary.test.ts, scanning every .ts file under plugins/immune-brain/runtime/ outside runtime/claude/ and runtime/antigravity/ yields zero imports resolving into runtime/claude/, runtime/antigravity/ or .pi-extension/; a fixture non-host source importing ../claude/x is reported, while fixtures importing ../unattended/x or node:fs are not.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 (BR-REQ-4, BR-SCN-1, D1, D3, D6). In tests/runtime-layering-boundary.test.ts, the observed host-to-host edges across runtime/claude/, runtime/antigravity/ and .pi-extension/ equal exactly the five-edge baseline (antigravity/kernel_ports.ts -> claude/kernel_ports, antigravity/mcp_server.ts -> claude/mcp_server, antigravity/interaction.ts -> claude/interaction, claude/kernel_ports.ts -> antigravity/capability, .pi-extension/pi-canary-assurance-progression.ts -> runtime/claude/review_host), each tagged #413 or #414; a fixture edge outside the baseline appears in the unexpected list as a '<importing file> -> <target module>' repository-relative string; an adapter import of ../../runtime/assurance/x or an npm package is not an edge.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 (BR-REQ-5, BR-SCN-2, D8). In tests/runtime-layering-boundary.test.ts, the edge comparison function reports a baseline entry absent from the observed edges in its stale list as a '<importing file> -> <target module>' string, and identical observed and baseline lists yield empty unexpected and stale lists.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec AC4 (BR-REQ-6). In tests/runtime-layering-boundary.test.ts, the completeness guard reports nothing for the real host map (each of the three host directories exists and yields at least one scanned file), and reports a fixture host map entry whose directory is missing and one whose directory contains no .ts file.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Spec AC5 (BR-REQ-7, BR-DEC-4). In tests/runtime-layering-boundary.test.ts, the shared collector in tests/helpers/import_specifiers.ts reports the specifier of each form: import-from (including a multi-line named list), import type, export-from, side-effect import, import() call, type-position import('x').T, and require('x'), including the ../../runtime/claude/x path form; a non-import string literal such as const s = '../claude/x' is not reported.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "Spec AC6 (BR-REQ-8, D9). tests/pi-canary-package-boundary.test.ts obtains import specifiers from tests/helpers/import_specifiers.ts and all of its existing assertions pass unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-package-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/runtime-layering-boundary.intent.json",
+      "docs/specs/runtime-layering-boundary.spec.md",
+      "tests/helpers/import_specifiers.ts",
+      "tests/pi-canary-package-boundary.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/runtime-layering-boundary.intent.json",
+    "content_hash": "sha256:559ad372088e43a0761b9d86a5d9870b7e833bd1498d07588232506f090da7d2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:559ad372088e43a0761b9d86a5d9870b7e833bd1498d07588232506f090da7d2",
+  "git_base_head": "720a5131f68382b2f23aafbd88ee80355b9a7dbf",
+  "attestations": [
+    {
+      "id": "approval-qa-05c2b494",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:559ad372088e43a0761b9d86a5d9870b7e833bd1498d07588232506f090da7d2",
+      "diff_hash": "sha256:0deb114f9a4f305218fc1aa1610c8b4d3791eb6f115b26826eec1c3aeefb2ff4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:df4c5596f3adf64d3d3c5490362d4948863dd1ef41df3168d844adb7fe540fcd"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:runtime-layering-boundary:2026-11-07T16:14:57.659Z",
+      "at": "2026-11-07T16:14:57.659Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/runtime-layering-boundary.intent.json"
+    },
+    {
+      "id": "record_approval:runtime-layering-boundary:2026-11-07T16:15:04.790Z",
+      "at": "2026-11-07T16:15:04.790Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-05c2b494\naction_v2_sha256:8acb550829e87c4328ee8be1c919bcae9e2e2911b195409de24923bfd9e14526",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "claude:deterministic-qa",
+        "issued_at": "2026-11-07T16:15:04.790Z"
+      }
+    },
+    {
+      "id": "complete:runtime-layering-boundary:2026-11-07T16:15:05.826Z",
+      "at": "2026-11-07T16:15:05.826Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9c8b5cea4a4569de9b93807460c65138a6cf8616711365fd9b256f06887f9c9d"
+    }
+  ]
+}
