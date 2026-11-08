@@ -595,6 +595,13 @@ states principles; enumeration of cases belongs in tests.
   table when one exists, without any added confirmation. Tests the Executor adds
   exercise the agreed seams, and replacing a seam is an acceptance change and
   follows Enrolled Intent Revision.
+  **Done-looks-like.** Each behavior acceptance states an observable
+  done-looks-like beside its agreed seam: what a user or maintainer sees when the
+  behavior is delivered. An `automated` scenario's `Then` must be observable at
+  the named seam of the acceptance it maps to, and writing that mapping is
+  mandatory. Candidates authored before this rule carry no defect for lacking
+  one.
+- **Layering rules**: When the target repository declares layers, follow `docs/reference/layering-rules.md`. Slice Port work by Port method group, each with its conformance test; state the dependency direction in the slice's acceptance; require an ADR first for a new layer, shared location, or cross-layer dependency; converge mapping to one canonical form plus one projection per host, by subtraction or pointer. For new-host work sequence seams before state machines before packaging. A repository that declares no layers incurs no finding.
 - **Review Mapping**: In-scope rework stays with the enrolled TaskIntent and explicit `drive` entry. Cross-scope findings become a Planner decision delta with concrete missing paths and verification evidence; do not create a successor prose Plan.
 - **Decision Provenance**: Every Spec decision and every acceptance names exactly one source: an upstream `BR-*` ID, repository evidence with a concrete path, or a delegated technical choice as defined by Clarification supplement. The rule applies with or without an upstream Brainstorm manifest, and the source does not have to be a `BR-DEC` item: Direct Planner entry and delegated technical choices stay legitimate sources. A user-owned decision — goal, user, scope, observable behavior, compatibility preference, risk acceptance, or success criterion — that names no source is a defect the Planner removes or returns for clarification under the existing Clarification supplement routes. Simple TaskIntent-only work satisfies the rule when each acceptance traces to the request text and adds no table.
 - **Brainstorm Manifest Mapping**: Record every upstream `BR-*` item in a Spec `Brainstorm Trace` when the work is complex, otherwise on the TaskIntent, mapped to acceptance, a captured decision, or an explicit reason for deferral or exclusion. Resolve every `BR-Q-*` item before handoff. Do not silently narrow confirmed framing. A Spec for work with a user-observable change has a `User scenarios` section. Each scenario keeps its upstream `BR-SCN-<n>` ID; on direct entry each scenario is confirmed in clarification and recorded as Spec-local `SCN-<n>` sourced to that confirmation, and a scenario with no source is a defect the Planner removes or returns for clarification. Each scenario is tagged `automated` with at least one acceptance ID, or `manual` with the reason it cannot be automated; a `manual` scenario may name no acceptance, and the mapping is one-way — an acceptance need not serve a scenario. In a multi-TaskIntent Initiative a scenario belongs to exactly one Slice, the one that first makes it observable, and an `automated` scenario maps only to that Slice's acceptance. `BR-SCN-*` items fall under the existing handoff completeness check like every other `BR-*` item. When the work has no user-observable change, record `no user-visible change` with a one-line reason — in the Spec for complex work, on the TaskIntent goal for simple work — write no scenario section, and `no user-visible change` requires a recorded reason.
@@ -693,6 +700,9 @@ a State Ledger. Keep historical Plan validation strictly read-only.
 - A Medium/High risk Spec lacks a `Devil's Advocate Audit` covering rollback resilience, verification vanity, and spec dilution detection.
 - New Spec prose ignores the document-language policy.
 - Candidate artifacts escape the approved planning scope.
+- A cross-adapter import, or forked or inherited adapter machinery instead of composition.
+- A new layer without an ADR: a new layer, shared location, or cross-layer dependency planned with no ADR first.
+- Mapping in more than one place: a concept mapped to a host form outside one canonical form plus one projection per host.
 
 ## Verification
 

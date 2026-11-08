@@ -65,6 +65,7 @@
         "plugins/immune-brain-antigravity/dist/docs/reference/design-contract-review-checklist.md",
         "plugins/immune-brain-antigravity/dist/docs/reference/i18n-review-checklist.md",
         "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+        "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
         "plugins/immune-brain-antigravity/dist/docs/reference/planning-artifact-retention.md",
         "plugins/immune-brain-antigravity/dist/docs/reference/planning-quality-gate.md",
         "plugins/immune-brain-antigravity/dist/docs/reference/subagent-dispatch-protocol.md",

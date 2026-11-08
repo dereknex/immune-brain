@@ -60,3 +60,7 @@ Issue #397 introduces Google Antigravity (CLI `agy` and Antigravity 2.0 Desktop/
    - Read-only Reviewer subagents are dispatched natively via `define_subagent` (disabling write tools) and `invoke_subagent`.
    - `Stop` lifecycle hook drives run continuation for active claims and unattended lanes.
 4. Conformance verification expands from dual-host parity to tri-host assurance parity across Pi, Claude Code, and Antigravity.
+
+## Amendment: Layering doctrine (2026-11-08)
+
+The Dependency Rule, Port slicing, mapping convergence and module-documentation norms that keep the adapter boundary of this ADR are recorded in [ADR 0035](0035-layering-doctrine.md). The decisions above are unchanged.

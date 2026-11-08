@@ -265,7 +265,7 @@ The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). D
 - Decision models: `plugins/immune-brain/runtime/decision_model/` holds the offline `decide()` component, its provider adapters and the code-owned application-point registry; `.imm/decision-bindings.json` (tracked) binds points to profiles and lists sensitive egress, `.imm/decision-models.local.json` (ignored) names the local profiles. `scripts/decision-eval/` holds the offline evals that consume it. No authority path imports the component, and the plugin does not import `scripts/`.
 - Packaging: root `package.json` is the Pi package manifest; `plugins/immune-brain/dist/` is checked-in generated output guarded by `bun scripts/sync-dist-docs.ts --check`.
 - Durable knowledge: `docs/solutions/` stores Learnings and `docs/adr/` stores qualifying architecture decisions. `CONTEXT.md` is vocabulary and navigation only, never runtime state.
-- Module documentation: when a module gains its own documentation, structure it as Interface / Invariants / Side Effects / Verification (the test command that proves it). Interface names what the module exposes, Invariants state what always holds, Side Effects name what it changes outside itself, Verification names the command — a module document without a Verification command is incomplete.
+- Module documentation: structure and rules live in [the layering reference](docs/reference/layering-rules.md#module-documentation); the layering doctrine is [ADR 0035](docs/adr/0035-layering-doctrine.md).
 
 ## Legacy Boundary
 

@@ -121,3 +121,12 @@ bound Spec design, or an accepted user-visible commitment, stop and route the
 concrete reason to `draw-up`. An unavailable or still-failing required
 check is an explicit blocker: report it to the Parent; never present failed
 verification as completion.
+
+## Layering Rules
+
+When the repository declares layers (an architecture map, an ADR, or a
+Port/adapter structure), implement in this order: seam first, state machine
+second, packaging last. Share code through composition and neutral modules,
+never inheritance. Adapters neither import nor extend each other. A repository
+that declares no layers incurs no finding. The full rules live in
+`docs/reference/layering-rules.md`.

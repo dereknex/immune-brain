@@ -129,7 +129,8 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
 1. For an active in-place record (enrolled before the Lane default; a new
    single-task entry runs this step inside its Lane's Executor instead),
    implement the enrolled acceptance in the current
-   conversation. On a fresh enrollment, `submit_assurance` means implement first,
+   conversation, applying `docs/reference/layering-rules.md` when the repository
+   declares layers. On a fresh enrollment, `submit_assurance` means implement first,
    not call `advance_assurance` immediately: implement, run focused checks, stage,
    then advance. `implementation_pending` names this no-changed-path case. Lane
    plugin skew (`loaded_plugin_differs_from_workspace`) is expected and

@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "layering-rules",
+  "owner": "user",
+  "goal": "Issue #418 (Spec docs/specs/layering-rules.spec.md), absorbing #408 in full and the general rule of #416. The Dependency Rule, Port slicing, mapping convergence and module-documentation norms get one canonical packaged reference, docs/reference/layering-rules.md, and new ADR 0035; the Planner contract, Executor role prompt and drive Execution Loop apply them, and every behavior acceptance carries an observable done-looks-like beside its agreed seam. Docs and prompts only: no new skill, no new enforcement tool, no runtime, Kernel, Port or verdict change; enforcement stays with tests/runtime-layering-boundary.test.ts. No user-visible change: instruction text, a reference, an ADR and a contract test only.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (BR-REQ-1, BR-REQ-2, BR-REQ-3, BR-DEC-5; D1, D3, D13). Done looks like: a maintainer opens docs/reference/layering-rules.md, or its packaged copy in any Host package, and finds the four norms with their enforcement. Seam: tests/layering-rules-contract.test.ts describe 'layering reference' reading the real files. The reference has sections Dependency Rule, Port Slicing, Mapping Convergence, Module Documentation, Execution Order and Enforcement; Module Documentation states a module document without a Verification command is incomplete; Enforcement names tests/runtime-layering-boundary.test.ts; plugins/immune-brain/dist/docs/reference/layering-rules.md and plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md are byte-equal to the source; DIST_DOC_ENTRIES contains {rel: 'reference/layering-rules.md', mode: 'mirror'}. The test's relative-link resolver reports a fixture link to a missing file and does not resolve http(s) URLs or same-file #anchor links.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering reference\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (BR-REQ-4, BR-REQ-5, BR-DEC-1, BR-DEC-2; D5-D8). Done looks like: a Planner reading plugins/immune-brain/dist/draw-up.md is told to slice by Port method group, state dependency direction, require an ADR first for a new layer, shared location or cross-layer dependency, converge mapping, and give each behavior acceptance an observable done-looks-like beside its agreed seam. Seam: tests/layering-rules-contract.test.ts describe 'layering planner contract' reading the real contract. Planning Rules contains a Layering rules bullet naming docs/reference/layering-rules.md, Port method group, dependency direction, ADR, projection, and seams before state machines before packaging; the paragraph after 'Agreed seam recording' states the done-looks-like rule, the mandatory automated-scenario Then mapping at the named seam, and that candidates authored before the rule carry no defect; Red Flags names a cross-adapter import, forked or inherited adapter machinery, a new layer without an ADR, and mapping in more than one place. The Verification Descriptor Discipline section does not contain 'done-looks-like'; plugins/immune-brain-antigravity/dist/draw-up.md is byte-equal to the source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering planner contract\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (BR-REQ-6, BR-REQ-7, BR-DEC-3; D9, D10). Done looks like: a Lane Executor's role prompt carries the execution norms, and the in-place drive path points to the same reference. Seam: tests/layering-rules-contract.test.ts describe 'layering executor contract' reading the real prompts. plugins/immune-brain/runtime/prompts/executor.md has a '## Layering Rules' section directly after '## Code Quality Guard' stating seam first, state machine second, packaging last; composition and neutral modules, never inheritance; adapters neither import nor extend each other; and docs/reference/layering-rules.md. The dist/drive.md Execution Loop section names docs/reference/layering-rules.md and does not contain 'never inheritance'; the qa.md and ui-review.md prompts do not contain 'Layering Rules'. dist/role-prompts/executor.md, Antigravity dist/role-prompts/executor.md, Antigravity runtime/prompts/executor.md and Antigravity dist/drive.md are byte-equal to their sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering executor contract\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (BR-REQ-8, BR-REQ-9, BR-DEC-4, BR-DEFER-1; D11, D12, D14). Done looks like: the layering norms are recorded doctrine in an accepted ADR that ADR 0004 cross-references, and CONTEXT.md and the skills guide navigate to the reference instead of restating it. Seam: tests/layering-rules-contract.test.ts describe 'layering doctrine' reading the real files. docs/adr/0035-layering-doctrine.md is accepted, names the Dependency Rule, Port slicing, mapping convergence and module documentation, and links the reference and ADR 0004; docs/adr/0004-dual-host-assurance-adapters.md has an amendment linking ADR 0035; CONTEXT.md links docs/reference/layering-rules.md and no longer contains 'without a Verification command is incomplete'; docs/reference/immune-brain-skills-guide.md names the reference. ADR 0035 and the reference contain no runtime/core or runtime/neutral path, and every relative link in ADR 0035 and the ADR 0004 amendment resolves.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering doctrine\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/layering-rules.md",
+    "CONTEXT.md",
+    "docs/adr/0004-dual-host-assurance-adapters.md",
+    "docs/adr/0035-layering-doctrine.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/layering-rules.intent.json",
+    "docs/reference/immune-brain-skills-guide.md",
+    "docs/reference/layering-rules.md",
+    "docs/specs/layering-rules.spec.md",
+    "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+    "plugins/immune-brain-antigravity/dist/draw-up.md",
+    "plugins/immune-brain-antigravity/dist/drive.md",
+    "plugins/immune-brain-antigravity/dist/role-prompts/executor.md",
+    "plugins/immune-brain-antigravity/runtime/prompts/executor.md",
+    "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+    "plugins/immune-brain/dist/draw-up.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "scripts/dist-sync-manifest.ts",
+    "tests/layering-rules-contract.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

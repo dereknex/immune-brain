@@ -71,6 +71,8 @@ packaged bytes 位于 `plugins/immune-brain/dist/role-prompts/`。Role bridge �
 Code Quality Guard 的详细维护者规范位于
 `docs/reference/code-quality-guard.md`，并同步到 packaged `dist/docs/reference/`；
 它约束 Executor、Review 和 repair 的正确性判断，不改变 QA authority，也不把风格偏好变成自动 rework。
+分层规则（Dependency Rule、Port 切片、mapping 收敛、模块文档格式）位于
+`docs/reference/layering-rules.md`，同样同步到 packaged `dist/docs/reference/`；它约束 Planner 的切片与依赖方向声明和 Executor 的实现顺序，仅在目标仓库声明了分层时适用，执行强制仍由 `tests/runtime-layering-boundary.test.ts` 负责。
 
 ## Project integration
 
