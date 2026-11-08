@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-host-sync-agent-transcript",
+  "owner": "user",
+  "goal": "Make a reviewer or verifier verdict returned synchronously by the Claude Agent tool (claude --print, entrypoint sdk-cli) settle Review exactly as the async path does, per docs/specs/review-host-sync-agent-transcript.spec.md (Issue #425). In the non-envelope branch of inspectReview, take the receipt only from the reviewer's own transcript (SubagentStop agent_transcript_path, else derived from the PostToolUse transcript_path and the correlated agentId), read with the async path's realpath/readPrivate checks and readAgentTranscriptResult; never return the pointer notice, tool_response.content or handbackReport, and fail closed with 'sync Agent transcript is not readable' or 'sync Agent transcript carries no reviewer result'. Keep the async branch and correlation rules unchanged. Do not migrate existing --print batch records to interactive and do not touch Pi or the Antigravity adapter source.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (BR-REQ-1, BR-SCN-1): with the recorded sdk-cli PostToolUse shape (pointer-notice content, handbackReport, resolvedModel, transcript_path) plus SubagentStart/Stop and a 0600 reviewer transcript at <dirname(T)>/<basename(T,.jsonl)>/subagents/agent-<agentId>.jsonl ending in a SubagentHandback pass, inspectReview returns that report as the receipt and the coordinator submit returns completed; the same holds when SubagentStop carries agent_transcript_path to a non-derived location.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (BR-REQ-2, BR-SCN-2): each case is non-settling with the named reason, and a coordinator submit reports that reason rather than 'reviewer receipt is not a valid verdict': (a) derived transcript absent, (b) no transcript_path and no agent_transcript_path, (c) transcript mode 0644, (d) agent_transcript_path missing while a readable derived file exists (no fallback), (e) derived agentId containing '/', (g) handbackReport with a valid pass and no readable transcript, (h) tool_response.content with a valid pass and no readable transcript -> 'sync Agent transcript is not readable'; (f) transcript holding only another agentId's records -> 'sync Agent transcript carries no reviewer result'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-review-host-async-agent.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (BR-REQ-3): the Claude verifier receipt binds through the sync branch; with a verifier transcript consumeReviewVerification completes with verifier_actor 'claude:agent' and the existing model relation, and without a readable transcript it does not complete a valid attestation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (BR-DEC-1): the Claude settlement tests listed in Spec E7 pass using transcript-backed reviewer fixtures with unchanged correlation, replay and duplicate guards, and the native hook payload shape test asserts that a tool_response.content verdict with no reviewer transcript does not settle.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/goal-driven-run-recovery.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Spec AC5 (BR-REQ-5): the checked-in Claude MCP bundle matches a fresh generate and the Antigravity artifact (including its runtime/claude/review_host.ts mirror and bundle) reports no drift.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/claude-host-package.test.ts && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-host-sync-agent-transcript.md",
+    "docs/plans/review-host-sync-agent-transcript.intent.json",
+    "docs/specs/review-host-sync-agent-transcript.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/claude/review_host.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/claude-review-host-async-agent.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/goal-driven-run-recovery.test.ts",
+    "tests/helpers/claude-reviewer-transcript.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

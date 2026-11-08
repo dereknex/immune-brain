@@ -1,5 +1,6 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
-import { describe, expect, test } from "bun:test";
+import { derivedAgentTranscriptPath, reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
+import { describe, expect, test, afterAll } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { parseReviewPacketHandle, packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
 } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { ReviewRequest, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
+import { snapshotDigest, type SnapshotDescriptor } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { reviewIncompleteFixture } from "./fixtures/review-incomplete-fixture";
 
 /**
@@ -49,6 +51,11 @@ const RECORDED_LAUNCH_ENVELOPE = {
 const TASK = "2026-09-05-001-batch-authorization-kernel";
 const OPERATION = "897b3687-a2f4-451f-939a-035d251ea4e0";
 const VERDICT = JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", decision: "pass" });
+
+// Reviewer transcripts are local 0600 files under the system temp directory;
+// they are the only bytes a synchronous `Agent` result can settle from.
+const transcripts = reviewerTranscripts();
+afterAll(() => transcripts.cleanup());
 
 function transcriptLine(agentId: string, text: string, type = "assistant"): string {
 	return `${JSON.stringify({
@@ -384,7 +391,7 @@ describe("claude review host: exact reserved prompt binding", () => {
 			// No Parent-authored text anywhere: the identifiers come from the hook,
 			// so exactness has nothing to compare and this keeps binding.
 			host.observe({ type: "SubagentStart", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK });
-			host.observe({ type: "PostToolUse", sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID, toolName: "Agent", result: VERDICT, operationId: OPERATION, taskId: TASK });
+			host.observe({ type: "PostToolUse", sessionId: RECORDED_SESSION, agentId: RECORDED_AGENT_ID, toolName: "Agent", result: VERDICT, transcriptPath: transcripts.sessionTranscriptPath(RECORDED_AGENT_ID, VERDICT), operationId: OPERATION, taskId: TASK });
 			host.observe({ type: "SubagentStop", sessionId: RECORDED_SESSION, agent: CLAUDE_REVIEWER_AGENT, agentId: RECORDED_AGENT_ID, operationId: OPERATION, taskId: TASK });
 
 			expect(host.consumeReview(reservation)).toEqual({
@@ -629,4 +636,169 @@ describe("claude review host: resumed session log", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+});
+
+/**
+ * A Claude Code Executor that runs under `claude --print` gets a synchronous
+ * `Agent` result: the tool returns the pointer notice below and the reviewer
+ * hands its report back through `SubagentHandback` in its own transcript. The
+ * receipt is that transcript record, bound to the correlated `agentId`; the
+ * tool result text and any `handbackReport` are bytes the Parent can see or
+ * forge, so neither is ever a receipt.
+ */
+describe("claude review host: synchronous Agent result", () => {
+	const AGENT_ID = "sync-reviewer-1";
+	const SEED_SESSION = "a53c58a2-3fda-451c-848c-b557ece87f41";
+	const POINTER_NOTICE = `This agent's report was delivered to you as a message from "${AGENT_ID}" (its SubagentHandback call). Read it there; it is not repeated here.`;
+	const UNREADABLE = "sync Agent transcript is not readable";
+	const NO_RESULT = "sync Agent transcript carries no reviewer result";
+
+	type SyncDispatch = {
+		sessionId: string;
+		agentId: string;
+		prompt: string;
+		transcriptPath?: string;
+		agentTranscriptPath?: string;
+		/** `tool_response.content[0].text`; the recorded pointer notice by default. */
+		content?: string;
+		handbackReport?: string;
+	};
+
+	/** The three hook payloads of one synchronous dispatch, through `parseHookStdin`. */
+	function observeSyncDispatch(host: ClaudeReviewHost, dispatch: SyncDispatch): void {
+		const toolInput = { subagent_type: CLAUDE_REVIEWER_AGENT, prompt: dispatch.prompt };
+		const start = parseHookStdin(JSON.stringify({
+			hook_event_name: "SubagentStart",
+			session_id: dispatch.sessionId,
+			agent_id: dispatch.agentId,
+			agent_type: CLAUDE_REVIEWER_AGENT,
+		}));
+		const post = parseHookStdin(JSON.stringify({
+			hook_event_name: "PostToolUse",
+			session_id: dispatch.sessionId,
+			agent_id: dispatch.agentId,
+			tool_name: "Agent",
+			tool_input: toolInput,
+			...(dispatch.transcriptPath ? { transcript_path: dispatch.transcriptPath } : {}),
+			tool_response: {
+				status: "completed",
+				agentId: dispatch.agentId,
+				agentType: CLAUDE_REVIEWER_AGENT,
+				resolvedModel: "claude-opus-5",
+				prompt: dispatch.prompt,
+				content: [{ type: "text", text: dispatch.content ?? POINTER_NOTICE }],
+				...(dispatch.handbackReport ? { handbackReport: dispatch.handbackReport } : {}),
+			},
+		}));
+		const stop = parseHookStdin(JSON.stringify({
+			hook_event_name: "SubagentStop",
+			session_id: dispatch.sessionId,
+			agent_id: dispatch.agentId,
+			agent_type: CLAUDE_REVIEWER_AGENT,
+			...(dispatch.transcriptPath ? { transcript_path: dispatch.transcriptPath } : {}),
+			...(dispatch.agentTranscriptPath ? { agent_transcript_path: dispatch.agentTranscriptPath } : {}),
+		}));
+		expect({ start: start?.type, post: post?.type, stop: stop?.type }).toEqual({ start: "SubagentStart", post: "PostToolUse", stop: "SubagentStop" });
+		host.observe(start!);
+		host.observe(post!);
+		host.observe(stop!);
+	}
+
+	function reviewPass(snapshot: SnapshotDescriptor, taskId: string, inspected: string[]): string {
+		return JSON.stringify({
+			contract: "assurance_kernel/assurance_verdict/v2",
+			role: "review",
+			task_id: taskId,
+			snapshot_digest: snapshotDigest(snapshot),
+			decision: "pass",
+			approval: { kind: "review", authority_role: "reviewer", summary: "reviewed the change", inspected_paths: inspected },
+		});
+	}
+
+	test("the recorded sdk-cli result settles from the reviewer's derived transcript", async () => {
+		const f = reviewIncompleteFixture();
+		const host = new ClaudeReviewHost();
+		f.ports.host = host;
+		try {
+			const c = f.create();
+			const ready = await c.advance(f.taskId, f.ctx) as { state: string; agent_params: { prompt: string } };
+			expect(ready.state).toBe("review_ready");
+			const report = reviewPass(await f.snapshot(c), f.taskId, f.paths);
+			const transcriptPath = transcripts.sessionTranscriptPath(AGENT_ID, report);
+			// The envelope also carries a handbackReport: it is never read, so it
+			// cannot outrank the report the reviewer itself wrote.
+			observeSyncDispatch(host, { sessionId: SEED_SESSION, agentId: AGENT_ID, prompt: ready.agent_params.prompt,
+				transcriptPath, handbackReport: JSON.stringify({ contract: "assurance_kernel/assurance_verdict/v2", decision: "rework" }) });
+			expect(host.inspectReviewForTask(f.taskId)).toEqual({
+				ok: true,
+				receipt: { actorId: `claude:${AGENT_ID}`, result: report },
+			});
+			expect(await submitMediatedReview(c, f.ctx, f.taskId, undefined, () => host.inspectReviewForTask(f.taskId))).toMatchObject({ state: "completed" });
+		} finally { f.cleanup(); }
+	}, 60_000);
+
+	test("a SubagentStop agent_transcript_path settles from its own location", async () => {
+		const f = reviewIncompleteFixture();
+		const host = new ClaudeReviewHost();
+		f.ports.host = host;
+		try {
+			const c = f.create();
+			const ready = await c.advance(f.taskId, f.ctx) as { state: string; agent_params: { prompt: string } };
+			expect(ready.state).toBe("review_ready");
+			const report = reviewPass(await f.snapshot(c), f.taskId, f.paths);
+			// No `transcript_path`: the derived locator cannot be computed, so the
+			// report can only come from the location the Host named itself.
+			observeSyncDispatch(host, { sessionId: SEED_SESSION, agentId: AGENT_ID, prompt: ready.agent_params.prompt,
+				agentTranscriptPath: transcripts.agentTranscriptPath(AGENT_ID, report) });
+			expect(host.inspectReviewForTask(f.taskId)).toEqual({ ok: true, receipt: { actorId: `claude:${AGENT_ID}`, result: report } });
+			expect(await submitMediatedReview(c, f.ctx, f.taskId, undefined, () => host.inspectReviewForTask(f.taskId))).toMatchObject({ state: "completed" });
+		} finally { f.cleanup(); }
+	}, 60_000);
+
+	/** One dispatch shape, one real coordinator submission. */
+	async function submit(shape: (agentId: string) => Partial<SyncDispatch>) {
+		const f = reviewIncompleteFixture();
+		const host = new ClaudeReviewHost();
+		f.ports.host = host;
+		try {
+			const c = f.create();
+			const ready = await c.advance(f.taskId, f.ctx) as { state: string; agent_params: { prompt: string } };
+			if (ready.state !== "review_ready") throw new Error("expected review_ready");
+			observeSyncDispatch(host, { sessionId: SEED_SESSION, agentId: AGENT_ID, prompt: ready.agent_params.prompt, ...shape(AGENT_ID) });
+			const observed = host.inspectReviewForTask(f.taskId);
+			const submitted = await submitMediatedReview(c, f.ctx, f.taskId, undefined, () => host.inspectReviewForTask(f.taskId));
+			return { observed, submitted };
+		} finally { f.cleanup(); }
+	}
+
+	const blockedCases: Array<[string, (agentId: string) => Partial<SyncDispatch>, string]> = [
+		["the derived transcript is absent", () => ({ transcriptPath: transcripts.sessionPath() }), UNREADABLE],
+		["neither transcript locator was observed", () => ({}), UNREADABLE],
+		["the derived transcript is world readable", agentId => {
+			const session = transcripts.sessionTranscriptPath(agentId, VERDICT);
+			chmodSync(derivedAgentTranscriptPath(session, agentId), 0o644);
+			return { transcriptPath: session };
+		}, UNREADABLE],
+		["agent_transcript_path is missing while the derived transcript is readable", agentId => ({
+			transcriptPath: transcripts.sessionTranscriptPath(agentId, VERDICT),
+			agentTranscriptPath: join(transcripts.root, "absent", `agent-${agentId}.jsonl`),
+		}), UNREADABLE],
+		["the derived agentId leaves the flat id space", () => ({ agentId: "nested/agent", transcriptPath: transcripts.sessionPath() }), UNREADABLE],
+		["the transcript holds only another agent's records", agentId => {
+			const session = transcripts.sessionTranscriptPath(agentId, VERDICT);
+			// Same file the locator names, but every record belongs to another agent.
+			writeFileSync(derivedAgentTranscriptPath(session, agentId), transcriptLine("other-agent", VERDICT), { mode: 0o600 });
+			return { transcriptPath: session };
+		}, NO_RESULT],
+		["handbackReport holds a valid pass and there is no transcript", () => ({ handbackReport: VERDICT }), UNREADABLE],
+		["tool_response.content holds a valid pass and there is no transcript", () => ({ content: VERDICT }), UNREADABLE],
+	];
+
+	test.each(blockedCases)("%s never settles and names why", async (_name, shape, reason) => {
+		const { observed, submitted } = await submit(shape);
+		expect(observed).toEqual({ ok: false, reason, release: false });
+		// The mediated submission reports the host's reason, never a generic
+		// "reviewer receipt is not a valid verdict" for a receipt that never existed.
+		expect(submitted).toMatchObject({ state: "blocked", reason });
+	}, 60_000);
 });

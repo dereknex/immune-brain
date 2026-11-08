@@ -17602,7 +17602,7 @@ function enrollmentNonce() {
 init_review_packet();
 import { createHash as createHash23 } from "node:crypto";
 import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
-import { dirname as dirname15, join as join24 } from "node:path";
+import { basename as basename3, dirname as dirname15, isAbsolute as isAbsolute10, join as join24 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 var REVIEWER_AGENT = "immune-brain-reviewer";
 var CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
@@ -17774,6 +17774,16 @@ function readAgentTranscript(path) {
     return;
   }
   return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
+}
+var AGENT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+function readSyncAgentTranscript(post, stop) {
+  if (stop.agentTranscriptPath)
+    return readAgentTranscript(stop.agentTranscriptPath);
+  const session = post.transcriptPath;
+  if (!session || !isAbsolute10(session) || !AGENT_ID_PATTERN.test(post.agentId))
+    return;
+  const derived = join24(dirname15(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  return readAgentTranscript(derived);
 }
 function hookEventPath(sessionId, root = tmpdir5()) {
   return join24(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
@@ -18112,7 +18122,16 @@ class ClaudeReviewHost {
     const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
     const launch = parseAsyncAgentLaunch(state.postEvent.result);
     if (!launch) {
-      return { ok: true, receipt: { actorId, result: state.postEvent.result, ...state.postEvent.model ? { model: state.postEvent.model } : {} } };
+      const transcript = readSyncAgentTranscript(state.postEvent, state.stopEvent);
+      if (transcript === undefined) {
+        return { ok: false, reason: "sync Agent transcript is not readable", release: false };
+      }
+      const report = readAgentTranscriptResult(transcript, state.postEvent.agentId);
+      if (!report?.trim()) {
+        return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
+      }
+      const syncModel = state.postEvent.model;
+      return { ok: true, receipt: { actorId, result: report, ...syncModel ? { model: syncModel } : {} } };
     }
     if (launch.agentId !== state.postEvent.agentId) {
       return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
@@ -18148,6 +18167,9 @@ class ClaudeReviewHost {
     this.pending.delete(reservation.id);
   }
 }
+function hookPath(value) {
+  return typeof value === "string" && value.trim() && isAbsolute10(value) ? value : undefined;
+}
 function parseHookStdin(raw) {
   let payload;
   try {
@@ -18162,6 +18184,8 @@ function parseHookStdin(raw) {
   const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
   const agentId = String(payload.agent_id ?? payload.agentId ?? "");
   const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
+  const transcriptPath = hookPath(payload.transcript_path);
+  const agentTranscriptPath = hookPath(payload.agent_transcript_path);
   const operationId = typeof payload.operation_id === "string" ? payload.operation_id : undefined;
   let prompt = typeof payload.prompt === "string" ? payload.prompt : undefined;
   if (!prompt && typeof payload.input === "object" && payload.input !== null) {
@@ -18217,7 +18241,11 @@ function parseHookStdin(raw) {
       agentId,
       taskId: extractedTaskId,
       operationId: extractedOpId,
-      ...hookType === "SubagentStart" ? { prompt } : {}
+      ...hookType === "SubagentStart" ? { prompt } : {},
+      ...hookType === "SubagentStop" ? {
+        ...transcriptPath ? { transcriptPath } : {},
+        ...agentTranscriptPath ? { agentTranscriptPath } : {}
+      } : {}
     };
   }
   if (hookType === "PostToolUse") {
@@ -18245,6 +18273,7 @@ function parseHookStdin(raw) {
       agentId: extractedAgentId,
       toolName,
       result,
+      ...transcriptPath ? { transcriptPath } : {},
       model: typeof payload.tool_input?.model === "string" ? payload.tool_input.model : undefined,
       taskId: extractedTaskId,
       operationId: extractedOpId,
@@ -19709,7 +19738,7 @@ init_batch_final_report();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute10, join as join31 } from "node:path";
+import { isAbsolute as isAbsolute11, join as join31 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
@@ -20069,7 +20098,7 @@ function parseLaneOffers(value) {
       throw new Error("invalid lane_offers: unknown offer field");
     if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
       throw new Error("invalid lane_offers: task_id is not a valid task id");
-    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute10(path))
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute11(path))
       throw new Error("invalid lane_offers: path must be an absolute path");
     if (seen.has(taskId))
       throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);

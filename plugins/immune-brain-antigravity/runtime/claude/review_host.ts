@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { reviewPacketHandle, reviewPacketError, verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
 import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
 	AssuranceHostPort,
@@ -39,6 +39,8 @@ export type ClaudeHookEvent =
 		taskId?: string;
 		operationId?: string;
 		prompt?: string;
+		/** Session transcript the Host reported for this hook. */
+		transcriptPath?: string;
 	}
 	| {
 		type: "SubagentStop";
@@ -47,6 +49,8 @@ export type ClaudeHookEvent =
 		agentId: string;
 		taskId?: string;
 		operationId?: string;
+		transcriptPath?: string;
+		agentTranscriptPath?: string;
 	}
 	| { type: "SessionEnd"; sessionId: string };
 
@@ -226,6 +230,28 @@ function readAgentTranscript(path: string): string | undefined {
 	let resolved: string;
 	try { resolved = realpathSync(path); } catch { return; }
 	return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
+}
+
+const AGENT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Read the transcript a synchronous `Agent` result is settled from.
+ *
+ * A synchronous result carries no pointer, so the only locator the Host wrote
+ * is a hook field: the subagent's own transcript when `SubagentStop` reported it,
+ * otherwise the path the session store derives for the correlated `agentId`. A
+ * locator that is present but unusable never falls back to the other one — a
+ * fallback is a second way to settle, and the Parent can force the weaker one.
+ */
+function readSyncAgentTranscript(
+	post: Extract<ClaudeHookEvent, { type: "PostToolUse" }>,
+	stop: Extract<ClaudeHookEvent, { type: "SubagentStop" }>,
+): string | undefined {
+	if (stop.agentTranscriptPath) return readAgentTranscript(stop.agentTranscriptPath);
+	const session = post.transcriptPath;
+	if (!session || !isAbsolute(session) || !AGENT_ID_PATTERN.test(post.agentId)) return;
+	const derived = join(dirname(session), basename(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+	return readAgentTranscript(derived);
 }
 
 export function hookEventPath(sessionId: string, root = tmpdir()): string {
@@ -556,7 +582,20 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
 		const launch = parseAsyncAgentLaunch(state.postEvent.result);
 		if (!launch) {
-			return { ok: true, receipt: { actorId, result: state.postEvent.result, ...(state.postEvent.model ? { model: state.postEvent.model } : {}) } };
+			// A synchronous result is a pointer notice, not the report, so the
+			// receipt still comes from the reviewer's own transcript. The tool
+			// result text and any `handbackReport` field are bytes the Parent can
+			// see or forge, and are never a receipt.
+			const transcript = readSyncAgentTranscript(state.postEvent, state.stopEvent);
+			if (transcript === undefined) {
+				return { ok: false, reason: "sync Agent transcript is not readable", release: false };
+			}
+			const report = readAgentTranscriptResult(transcript, state.postEvent.agentId);
+			if (!report?.trim()) {
+				return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
+			}
+			const syncModel = state.postEvent.model;
+			return { ok: true, receipt: { actorId, result: report, ...(syncModel ? { model: syncModel } : {}) } };
 		}
 		// Invariant guard. Correlation already binds the PostToolUse through the
 		// same `agentId` this envelope carries, so a foreign id normally never
@@ -600,6 +639,11 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	}
 }
 
+/** A hook-reported path is usable only when the Host wrote a non-empty absolute string. */
+function hookPath(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() && isAbsolute(value) ? value : undefined;
+}
+
 export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 	let payload: Record<string, unknown>;
 	try { payload = JSON.parse(raw) as Record<string, unknown>; }
@@ -610,6 +654,8 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 	const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
 	const agentId = String(payload.agent_id ?? payload.agentId ?? "");
 	const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
+	const transcriptPath = hookPath(payload.transcript_path);
+	const agentTranscriptPath = hookPath(payload.agent_transcript_path);
 	const operationId = typeof payload.operation_id === "string" ? payload.operation_id : undefined;
 	let prompt = typeof payload.prompt === "string" ? payload.prompt : undefined;
 	if (!prompt && typeof payload.input === "object" && payload.input !== null) {
@@ -664,6 +710,10 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 			taskId: extractedTaskId,
 			operationId: extractedOpId,
 			...(hookType === "SubagentStart" ? { prompt } : {}),
+			...(hookType === "SubagentStop" ? {
+				...(transcriptPath ? { transcriptPath } : {}),
+				...(agentTranscriptPath ? { agentTranscriptPath } : {}),
+			} : {}),
 		};
 	}
 	if (hookType === "PostToolUse") {
@@ -690,6 +740,7 @@ export function parseHookStdin(raw: string): ClaudeHookEvent | null {
 			agentId: extractedAgentId,
 			toolName,
 			result,
+			...(transcriptPath ? { transcriptPath } : {}),
 			model: typeof (payload.tool_input as Record<string, unknown> | undefined)?.model === "string" ? (payload.tool_input as Record<string, string>).model : undefined,
 			taskId: extractedTaskId,
 			operationId: extractedOpId,
