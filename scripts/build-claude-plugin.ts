@@ -8,6 +8,7 @@ import { stampPluginManifest, validateManifests } from "./plugin_versioning";
 import {
 	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
+	currentReviewContractHash,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import {
 	CLAUDE_READONLY_ROLE_AGENTS,
@@ -31,6 +32,7 @@ const REVIEWER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/code-review.md
 const REVIEWER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-reviewer.md";
 const VERIFIER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/review-verifier.md";
 const VERIFIER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-review-verifier.md";
+const AUTHORITY_REVIEW_SKILL_OUT = "plugins/immune-brain/skills/authority-review/SKILL.md";
 
 const REVIEWER_FRONTMATTER = `---
 name: immune-brain-reviewer
@@ -57,6 +59,38 @@ export function generateVerifierDefinition(root: string): string {
 }
 
 /**
+ * The packaged `authority-review` skill a CLI reviewer loads (D12).
+ *
+ * Its body is the `code-review` role prompt and the static review rules — the
+ * same inputs `currentReviewContractHash()` hashes — so a reviewer reading the
+ * skill carries exactly the contract the Kernel bound. The stamp is how a
+ * reviewer whose install differs notices: it compares the packet's line with
+ * its own and answers with the mismatch line instead of reviewing.
+ */
+export function generateAuthorityReviewSkill(root: string): string {
+	const rolePrompt = readFileSync(resolve(root, REVIEWER_PROMPT_SRC), "utf8").trim();
+	const hash = currentReviewContractHash();
+	return [
+		[
+			"---",
+			"name: authority-review",
+			"description: Invoked by the drive Review stage with one per-task review packet path. Read that packet and return its structured verdict.",
+			"---",
+		].join("\n"),
+		rolePrompt,
+		...STATIC_REVIEW_RULES,
+		`Review contract hash: ${hash}`,
+		`The packet's first line reads \`review_contract_hash: <hash>\`. Compare it with ${hash} before reading any other line. If it differs, reply with exactly \`REVIEW_CONTRACT_MISMATCH ${hash}\` and stop; your install carries different review instructions than the Host that bound this Review.`,
+		"The packet states the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.",
+		"",
+	].join("\n\n");
+}
+
+export function authorityReviewSkillDrift(root: string): string | null {
+	return definitionDrift(root, generateAuthorityReviewSkill(root), AUTHORITY_REVIEW_SKILL_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`);
+}
+
+/**
  * Compare one committed agent definition against a fresh generate.
  *
  * Returned as a message rather than thrown so a caller can check it without a
@@ -70,7 +104,8 @@ function definitionDrift(root: string, generated: string, out: string, sources: 
 
 export function reviewerDefinitionDrift(root: string): string | null {
 	return definitionDrift(root, generateReviewerDefinition(root), REVIEWER_DEFINITION_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`)
-		?? definitionDrift(root, generateVerifierDefinition(root), VERIFIER_DEFINITION_OUT, VERIFIER_PROMPT_SRC);
+		?? definitionDrift(root, generateVerifierDefinition(root), VERIFIER_DEFINITION_OUT, VERIFIER_PROMPT_SRC)
+		?? authorityReviewSkillDrift(root);
 }
 
 /**
@@ -132,6 +167,8 @@ export function buildClaudePlugin(root = resolve(import.meta.dir, "..")): { out:
 		mkdirSync(dirname(resolve(root, generated.out)), { recursive: true });
 		writeFileSync(resolve(root, generated.out), generated.content);
 	}
+	mkdirSync(dirname(resolve(root, AUTHORITY_REVIEW_SKILL_OUT)), { recursive: true });
+	writeFileSync(resolve(root, AUTHORITY_REVIEW_SKILL_OUT), generateAuthorityReviewSkill(root));
 	return { out, version };
 }
 

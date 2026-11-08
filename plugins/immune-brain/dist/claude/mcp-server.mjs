@@ -8056,6 +8056,13 @@ import { execFileSync as execFileSync6 } from "node:child_process";
 import { existsSync as existsSync7, readFileSync as readFileSync12 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute as isAbsolute5, join as join13 } from "node:path";
+function chooseReviewer(lanes) {
+  const host = lanes.review_host.value;
+  if (!host)
+    return null;
+  const model = lanes.review_model.value, effort = lanes.review_effort.value;
+  return { host, ...model ? { model } : {}, ...effort ? { effort } : {} };
+}
 function resolveConfig(root, options = {}) {
   const registry = options.registry ?? POINT_REGISTRY;
   const diagnostics = [];
@@ -10928,6 +10935,21 @@ var init_plugin_source_skew = __esm(() => {
   BUILD_PROXY = join18("dist", "claude", "mcp-server.mjs");
 });
 
+// plugins/immune-brain/runtime/assurance/host_port.ts
+var ReviewPreparationError;
+var init_host_port = __esm(() => {
+  ReviewPreparationError = class ReviewPreparationError extends Error {
+    code;
+    recovery_action;
+    constructor(code, message, recovery_action) {
+      super(message);
+      this.code = code;
+      this.recovery_action = recovery_action;
+      this.name = "ReviewPreparationError";
+    }
+  };
+});
+
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { realpathSync as realpathSync14 } from "node:fs";
@@ -11151,6 +11173,14 @@ function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
     acceptance_ids: [...new Set(affected.length ? affected : result.diagnostics?.length ? result.diagnostics.map((d) => d.acceptance_id) : reviewPreparation ? p.fresh_acceptance_ids : p.missing_acceptance_ids)],
     next_action: scope ? "Reconcile the listed paths with the TaskIntent scope: unstage unrelated changes or submit the required native Intent revision." : migration ? "route Planner for the verification descriptor v2 Intent revision and native gate" : category === "authorization" ? p.authorization.blocked ? "inspect authority state" : p.next_obligation === "revise_intent" ? "route Planner for the required Intent revision and native gate" : "request_authorization" : unstaged ? "Stage only the scoped implementation changes, then call advance_assurance." : category === "repair" ? "Route foreground Executor to repair and verify the identified findings; dispose each by resolve_finding or evidence-bound refute_finding, then run fresh advance_assurance." : reviewPreparation ? "Repair the Review evidence environment, then call advance_assurance to resume run_review; retain fresh QA and do not re-confirm the batch." : "Repair the identified verification environment, then call advance_assurance; a local check is non-attesting."
   };
+}
+function reviewReadyDispatch(reservation) {
+  if (!reservation.review_command)
+    return { agent_params: reservation.dispatch };
+  return { review_command: reservation.review_command, review_profile: reservation.review_profile };
+}
+function reviewDispatchFailure(error) {
+  return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
 }
 function deliveryOf(diffHash, settleCommit) {
   return {
@@ -12169,6 +12199,7 @@ class AssuranceCoordinator {
         hostReservation = this.ports.host.prepareReview({
           taskId,
           operationId,
+          root: review.snapshot.root,
           prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           evidencePath: evidence.path,
@@ -12180,7 +12211,7 @@ class AssuranceCoordinator {
         try {
           evidence.remove();
         } catch {}
-        return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
+        return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error), reviewDispatchFailure(error));
       }
       const reservation = {
         taskId,
@@ -12196,8 +12227,8 @@ class AssuranceCoordinator {
         evidence
       };
       this.reviewReservations.set(taskId, reservation);
-      progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch });
-      return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch };
+      progress("review_ready", hostReservation.review_command ? `QA passed; run ${hostReservation.review_command} in your shell, then call submit_review` : "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
+      return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) };
     } catch (error) {
       if (!initialProjectionAvailable && !aborted() && !(error instanceof VerificationAbortedError))
         return {
@@ -12309,7 +12340,7 @@ class AssuranceCoordinator {
       try {
         await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
           op: "record_review_incomplete",
-          actor_id: "parent-mediated-review",
+          actor_id: this.reviewActor(reservation),
           snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
           turn_budget: reservation.turnBudget,
           review_contract_hash: reservation.reviewContractHash,
@@ -12348,7 +12379,7 @@ class AssuranceCoordinator {
         snapshot: reservation.snapshot,
         verdict,
         invocation,
-        actorId: "parent-mediated-review",
+        actorId: this.reviewActor(reservation),
         ...options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {},
         ...reviewObservation ? { review_observation: reviewObservation } : {}
       });
@@ -12386,6 +12417,9 @@ class AssuranceCoordinator {
     }
     return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
   }
+  reviewActor(reservation) {
+    return reservation.hostReservation.review_actor_id ?? "parent-mediated-review";
+  }
   async detectRepeatedRefutation(taskId, ctx, review, verdict, options) {
     const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
     if (!stored.record || stored.revision !== review.snapshot.record_revision)
@@ -12412,7 +12446,7 @@ class AssuranceCoordinator {
         snapshot: review.snapshot,
         verdict,
         invocation,
-        actorId: "parent-mediated-review",
+        actorId: this.reviewActor(review),
         reviewer_verdict_sha256: options.reviewer_verdict_sha256,
         dispute: {
           decision_id: decisionId,
@@ -12604,7 +12638,7 @@ Counter-path: ${counterPath}`
         snapshot: review.snapshot,
         verdict,
         invocation,
-        actorId: "parent-mediated-review",
+        actorId: this.reviewActor(review),
         reviewer_verdict_sha256: verdictSha256,
         verification: { facts, kept_finding_ids: kept }
       };
@@ -12695,7 +12729,7 @@ Counter-path: ${exhaustedDispute.counter_path}`
       return { state: "blocked", reason: "Review reservation disappeared" };
     if (reservation.verdictCorrectionRequired)
       return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
-    return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
+    return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(reservation.hostReservation) };
   }
   releaseStoppedReview(taskId) {
     const reservation = this.reviewReservations.get(taskId);
@@ -12725,12 +12759,12 @@ Counter-path: ${exhaustedDispute.counter_path}`
   cancelled(operation, operationId, reason) {
     return { state: "cancelled", operation, operation_id: operationId, reason };
   }
-  reviewPreparationFailed(taskId, operationId, reason) {
+  reviewPreparationFailed(taskId, operationId, reason, failure) {
     const reservation = this.reviewReservations.get(taskId);
     if (reservation)
       this.releaseReviewReservation(taskId, reservation);
     this.rejectedReviewOperations.delete(taskId);
-    return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason };
+    return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason, ...failure };
   }
   async mutationProvablyRejected(ctx, taskId, baselineRevision) {
     try {
@@ -12762,6 +12796,7 @@ var init_coordinator = __esm(() => {
   init_assurance_projection();
   init_workspace_scope();
   init_plugin_source_skew();
+  init_host_port();
   init_lane_workspace();
   init_batch_preflight();
   init_batch_state();
@@ -17357,8 +17392,8 @@ init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
-import { join as join34 } from "node:path";
+import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
+import { join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -19364,9 +19399,9 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
 init_verdict_authority();
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync18, readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
-import { execFileSync as execFileSync14 } from "node:child_process";
-import { dirname as dirname16, join as join33, resolve as resolve16 } from "node:path";
+import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
+import { execFileSync as execFileSync15 } from "node:child_process";
+import { dirname as dirname16, join as join34, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
@@ -22043,6 +22078,221 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
+
+// plugins/immune-brain/runtime/assurance/cli_review.ts
+init_layered_config();
+init_role_prompt_bridge();
+init_host_port();
+import { execFileSync as execFileSync14 } from "node:child_process";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
+import { createHash as createHash27 } from "node:crypto";
+import { tmpdir as tmpdir8 } from "node:os";
+import { delimiter as delimiter5, join as join33 } from "node:path";
+function reviewDispatchMode(env = process.env) {
+  return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "cli" ? "cli" : "subagent";
+}
+var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
+var REVIEW_BINARY = {
+  "claude-code": "claude",
+  pi: "pi",
+  antigravity: "agy"
+};
+function reviewArguments(profile, packetPath, turnBudget) {
+  const model = profile.model ? ["--model", profile.model] : [];
+  if (profile.host === "claude-code") {
+    return [
+      "--print",
+      "--no-session-persistence",
+      "--max-turns",
+      String(turnBudget),
+      "--tools",
+      "Read,Grep,Glob,Bash",
+      "--allowedTools",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-tree:*)",
+      "--permission-mode",
+      "dontAsk",
+      ...model,
+      ...profile.effort ? ["--effort", profile.effort] : [],
+      `/immune-brain:authority-review ${packetPath}`
+    ];
+  }
+  if (profile.host === "pi") {
+    return [
+      "--print",
+      "--no-session",
+      ...model,
+      ...profile.effort ? ["--thinking", profile.effort] : [],
+      `/skill:authority-review ${packetPath}`
+    ];
+  }
+  return [
+    "--print",
+    ...model,
+    ...profile.effort ? ["--effort", profile.effort] : [],
+    `/authority-review ${packetPath}`
+  ];
+}
+function reviewBinary(host) {
+  const name = REVIEW_BINARY[host];
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
+    try {
+      accessSync4(path, constants10.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+function git10(root, argv) {
+  return execFileSync14("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+}
+function digest2(bytes) {
+  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+}
+function reviewTreeState(root) {
+  return {
+    head: git10(root, ["rev-parse", "HEAD"]).trim(),
+    index: digest2(git10(root, ["ls-files", "-s"])),
+    worktree: digest2(git10(root, ["diff", "--binary", "HEAD"]))
+  };
+}
+function treeChanged(root, recorded) {
+  const current = reviewTreeState(root);
+  if (current.head === recorded.head && current.index === recorded.index && current.worktree === recorded.worktree)
+    return [];
+  const listed = (argv) => git10(root, argv).split(`
+`).filter(Boolean);
+  return [...new Set([
+    ...listed(["diff", "--name-only", recorded.head]),
+    ...listed(["diff", "--cached", "--name-only", recorded.head])
+  ])];
+}
+function shellQuote(value) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+class CliReviewHost {
+  wrapped;
+  host;
+  prepareVerification;
+  inspectVerification;
+  reservations = new Map;
+  constructor(wrapped) {
+    this.wrapped = wrapped;
+    this.host = wrapped.host;
+    if (wrapped.prepareVerification)
+      this.prepareVerification = (request) => wrapped.prepareVerification(request);
+    if (wrapped.inspectVerification)
+      this.inspectVerification = (reservation) => wrapped.inspectVerification(reservation);
+  }
+  prepareReview(request) {
+    if (!request.root)
+      throw new Error("CLI Review requires the task's working directory");
+    const root = request.root;
+    const profile = chooseReviewer(resolveConfig(root).lanes);
+    if (!profile)
+      throw new ReviewPreparationError("review_profile_required", "Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
+    const executable = reviewBinary(profile.host);
+    if (!executable)
+      throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+    const tree = reviewTreeState(root);
+    const directory = mkdtempSync6(join33(tmpdir8(), "imm-cli-review-"));
+    chmodSync5(directory, 493);
+    const packet = join33(directory, "packet.md");
+    const script = join33(directory, "review.sh");
+    const output = join33(directory, `review-output-${request.operationId}.txt`);
+    const exitFile = join33(directory, `review-exit-${request.operationId}`);
+    const contractHash = currentReviewContractHash();
+    writeFileSync12(packet, `review_contract_hash: ${contractHash}
+
+${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
+    const argv = reviewArguments(profile, packet, request.maxTurns);
+    writeFileSync12(script, [
+      "#!/bin/sh",
+      `cd ${shellQuote(root)} || exit 1`,
+      `out=${shellQuote(output)}`,
+      `tmp="$out.part"`,
+      `${[executable, ...argv].map(shellQuote).join(" ")} >"$tmp" 2>&1`,
+      "status=$?",
+      `mv -f "$tmp" "$out"`,
+      `printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
+      `exit "$status"`,
+      ""
+    ].join(`
+`), { encoding: "utf8", mode: 493 });
+    chmodSync5(script, 493);
+    const actorId = `cli:${profile.host}:${request.operationId}`;
+    this.reservations.set(request.operationId, {
+      taskId: request.taskId,
+      operationId: request.operationId,
+      root,
+      profile,
+      actorId,
+      directory,
+      output,
+      exitFile,
+      tree
+    });
+    return {
+      id: request.operationId,
+      dispatch: { review_command: `sh ${script}`, review_profile: profile },
+      review_command: `sh ${script}`,
+      review_profile: profile,
+      review_actor_id: actorId
+    };
+  }
+  inspectReview(taskId) {
+    const reservation = [...this.reservations.values()].reverse().find((item) => item.taskId === taskId);
+    if (!reservation)
+      return { ok: false, release: true, reason: "no CLI Review reservation for this task" };
+    if (!existsSync18(reservation.exitFile))
+      return { ok: false, release: false, reason: "review process still running; wait for it to exit, then call submit_review again" };
+    let changed;
+    try {
+      changed = treeChanged(reservation.root, reservation.tree);
+    } catch (error) {
+      return { ok: false, release: true, reason: `review_tree_changed: the reviewed tree is unreadable (${error.message})` };
+    }
+    if (changed.length)
+      return {
+        ok: false,
+        release: true,
+        reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
+      };
+    const status = Number.parseInt(readFileSync23(reservation.exitFile, "utf8").trim(), 10);
+    if (status !== 0)
+      return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
+    const bytes = existsSync18(reservation.output) ? readFileSync23(reservation.output, "utf8") : "";
+    if (!bytes.trim())
+      return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
+    const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
+    if (mismatch)
+      return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
+    return {
+      ok: true,
+      receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? "host-default" }
+    };
+  }
+  inspectReviewForTask(taskId) {
+    return this.inspectReview(taskId);
+  }
+  releaseReview(reservation) {
+    const owned = this.reservations.get(reservation.id);
+    if (!owned) {
+      this.wrapped.releaseReview(reservation);
+      return;
+    }
+    this.reservations.delete(reservation.id);
+    rmSync12(owned.directory, { recursive: true, force: true });
+  }
+}
+
+// plugins/immune-brain/runtime/claude/kernel_ports.ts
 var CLAUDE_LANE_WAIT_MS = 500;
 function claudeLaneWaitMs(env) {
   const limit = Number(env.MCP_TOOL_TIMEOUT);
@@ -22119,6 +22369,7 @@ class ClaudeRuntime {
   laneSupervisor = new LaneSupervisor;
   parentHost;
   host;
+  reviewHost;
   coordinator;
   cwd;
   options;
@@ -22146,10 +22397,11 @@ class ClaudeRuntime {
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
     this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
+    this.reviewHost = reviewDispatchMode(this.env) === "cli" ? new CliReviewHost(this.host) : this.host;
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
       ...options.ports,
-      host: this.host,
+      host: this.reviewHost,
       confirmationReference: ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`
     }, options.authorityOverrides);
   }
@@ -22173,7 +22425,7 @@ class ClaudeRuntime {
   }
   createKernelPorts() {
     return {
-      host: this.host,
+      host: this.reviewHost,
       confirmationReference: ({ actorId }) => `claude:${actorId}`,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
@@ -22234,7 +22486,7 @@ class ClaudeRuntime {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
   async submitReview(taskId, verdictInput, meta) {
-    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
+    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
   }
   async submitVerification(taskId, result, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
@@ -22256,8 +22508,8 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync18(join33(this.cwd, ".imm", "audit", taskId)))
-        execFileSync14("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+      if (existsSync19(join34(this.cwd, ".imm", "audit", taskId)))
+        execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
     } catch (error) {
@@ -22409,7 +22661,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join33(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join34(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22422,9 +22674,9 @@ class ClaudeRuntime {
       if (sidecar && nextIntent) {
         if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
-        writeFileSync12(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync13(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
-        execFileSync14("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
         if (!preparedRecord.record) {
           throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
@@ -22550,14 +22802,14 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join33(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync23(sidecar) : null;
+    const sidecar = join34(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync12(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
-        execFileSync14("git", ["add", "--", priorIntent.intent_ref.path], {
+        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
           stdio: ["ignore", "pipe", "pipe"]
         });
@@ -23875,8 +24127,8 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join34(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync19(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const batchesDir = join35(cwd, ".imm", "state", "batches");
+    const activeBatch = existsSync20(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       try {

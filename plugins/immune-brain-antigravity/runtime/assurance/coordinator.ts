@@ -29,6 +29,8 @@ import { taskStatusIdentity } from "../workspace_scope";
 import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
 import type { AssuranceHostPort, HostReviewReservation, ReviewEvidence } from "./host_port";
+import { ReviewPreparationError } from "./host_port";
+import type { ReviewProfile } from "../config/layered_config";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
 import { isLaneWorkspaceForTask } from "../unattended/lane_workspace";
 import { findExistingActiveBatch, findSettledBatchRecord, type BatchRecordLookup } from "../unattended/batch_preflight";
@@ -487,6 +489,18 @@ export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjecti
 	};
 }
 
+/** The dispatch a Host reserved: an in-process agent's parameters, or one CLI command (D3/D8). */
+function reviewReadyDispatch(reservation: HostReviewReservation): {
+	agent_params?: unknown; review_command?: string; review_profile?: ReviewProfile;
+} {
+	if (!reservation.review_command) return { agent_params: reservation.dispatch };
+	return { review_command: reservation.review_command, review_profile: reservation.review_profile };
+}
+
+function reviewDispatchFailure(error: unknown): { code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string } | undefined {
+	return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
+}
+
 export interface ForegroundToolUpdate {
 	content: Array<{ type: "text"; text: string }>;
 	details: Record<string, unknown>;
@@ -505,7 +519,7 @@ type AssuranceRecoveryFields = {
 };
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
-	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params: unknown }
+	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_command?: string; review_profile?: ReviewProfile }
 	| VerificationReadyResult
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -515,7 +529,7 @@ export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	 * The Kernel obligation stays `run_review`, nothing was lost, and the same
 	 * deterministic revision can be rebuilt on the next advance.
 	 */
-	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string }
 	| { state: "completed" }
@@ -563,7 +577,7 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "awaiting_user"; operation: "review"; operation_id: string; decision_id: string; reason: string }
 	| ReviewIncompleteResult
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string; convergence?: ReworkConvergence[] }
-	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string });
@@ -1737,6 +1751,7 @@ export class AssuranceCoordinator {
 				hostReservation = this.ports.host.prepareReview({
 					taskId,
 					operationId,
+					root: review.snapshot.root,
 					prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
 					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
 					evidencePath: evidence.path,
@@ -1746,7 +1761,7 @@ export class AssuranceCoordinator {
 				ensureOperationLive();
 			} catch (error) {
 				try { evidence.remove(); } catch { /* cleanup cannot create authority */ }
-				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error));
+				return this.reviewPreparationFailed(taskId, operationId, boundedAssuranceError(error), reviewDispatchFailure(error));
 			}
 			const reservation: ReviewReservation = {
 				taskId,
@@ -1762,8 +1777,11 @@ export class AssuranceCoordinator {
 				evidence,
 			};
 			this.reviewReservations.set(taskId, reservation);
-			progress("review_ready", "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch });
-			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", agent_params: hostReservation.dispatch };
+			progress("review_ready", hostReservation.review_command
+				? `QA passed; run ${hostReservation.review_command} in your shell, then call submit_review`
+				: "QA passed; invoke the reserved foreground Agent, then call submit_review",
+				{ snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
+			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) };
 		} catch (error) {
 			// Recovery decoration must not bypass the initial read retry policy.
 			if (!initialProjectionAvailable && !aborted() && !(error instanceof VerificationAbortedError))
@@ -1862,7 +1880,7 @@ export class AssuranceCoordinator {
 		if (verdict.decision === "incomplete") {
 			try {
 				await this.ports.applyOrdinaryOperation(ctx, { taskId, operation: {
-					op: "record_review_incomplete", actor_id: "parent-mediated-review", snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
+					op: "record_review_incomplete", actor_id: this.reviewActor(reservation), snapshot: { ...reservation.correlation, workspace_revision: reservation.snapshot.workspace_revision },
 					turn_budget: reservation.turnBudget, review_contract_hash: reservation.reviewContractHash, inspected_paths: verdict.inspected_paths, reason: verdict.reason,
 					...(reviewObservation ? { review_observation: reviewObservation } : {}),
 				} });
@@ -1895,7 +1913,7 @@ export class AssuranceCoordinator {
 				snapshot: reservation.snapshot,
 				verdict,
 				invocation,
-				actorId: "parent-mediated-review",
+				actorId: this.reviewActor(reservation),
 				...(options?.reviewer_verdict_sha256 ? { reviewer_verdict_sha256: options.reviewer_verdict_sha256 } : {}),
 				...(reviewObservation ? { review_observation: reviewObservation } : {}),
 			});
@@ -1936,6 +1954,10 @@ export class AssuranceCoordinator {
 		return { state: "blocked", reason: `Kernel requires ${settled.projection.next_obligation} after Review` };
 	}
 
+	private reviewActor(reservation: ReviewReservation): string {
+		return reservation.hostReservation.review_actor_id ?? "parent-mediated-review";
+	}
+
 	private async detectRepeatedRefutation(taskId: string, ctx: HostContext, review: ReviewReservation, verdict: AssuranceVerdict,
 		options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult | null> {
 		const stored = await this.ports.readTaskRecord(ctx.cwd, taskId);
@@ -1959,7 +1981,7 @@ export class AssuranceCoordinator {
 		this.releaseReviewReservation(taskId, review);
 		try {
 			await this.authority.recordReviewDispute(ctx, { taskId, snapshot: review.snapshot, verdict, invocation,
-				actorId: "parent-mediated-review", reviewer_verdict_sha256: options.reviewer_verdict_sha256,
+				actorId: this.reviewActor(review), reviewer_verdict_sha256: options.reviewer_verdict_sha256,
 				dispute: { decision_id: decisionId, finding: { id: finding.id, acceptance_id: finding.acceptance_id,
 					summary: finding.summary, anchor: finding.anchor, evidence: finding.evidence }, counter_path: counterPath,
 					verdict_sha256: options.reviewer_verdict_sha256, intent_content_hash: review.snapshot.intent_content_hash, diff_hash: review.snapshot.diff_hash } });
@@ -2069,7 +2091,7 @@ export class AssuranceCoordinator {
 		}
 		const invocation = this.openInvocation(taskId);
 		try {
-			const input = { taskId, snapshot: review.snapshot, verdict, invocation, actorId: "parent-mediated-review",
+			const input = { taskId, snapshot: review.snapshot, verdict, invocation, actorId: this.reviewActor(review),
 				reviewer_verdict_sha256: verdictSha256, verification: { facts, kept_finding_ids: kept } };
 			if (exhaustedDispute) await this.authority.recordReviewDispute(ctx, { ...input, dispute: exhaustedDispute });
 			else if (kept.length === 0) await this.authority.recordVerification(ctx, input);
@@ -2145,7 +2167,7 @@ export class AssuranceCoordinator {
 		const reservation = this.reviewReservations.get(taskId);
 		if (!reservation) return { state: "blocked", reason: "Review reservation disappeared" };
 		if (reservation.verdictCorrectionRequired) return { state: "blocked", code: "verdict_invalid", reason: "Review verdict correction is required before advancing" };
-		return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", agent_params: reservation.hostReservation.dispatch };
+		return { state: "review_ready", operation: "review", operation_id: reservation.operationId, snapshot_digest: snapshotDigest(reservation.snapshot), review_bundle_digest: reservation.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(reservation.hostReservation) };
 	}
 
 	releaseStoppedReview(taskId: string): void {
@@ -2176,11 +2198,12 @@ export class AssuranceCoordinator {
 		taskId: string,
 		operationId: string,
 		reason: string,
+		failure?: { code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string },
 	): Extract<AssuranceAdvanceResult, { state: "review_preparation_failed" }> {
 		const reservation = this.reviewReservations.get(taskId);
 		if (reservation) this.releaseReviewReservation(taskId, reservation);
 		this.rejectedReviewOperations.delete(taskId);
-		return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason };
+		return { state: "review_preparation_failed", operation: "review", operation_id: operationId, reason, ...failure };
 	}
 
 	/**

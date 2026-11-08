@@ -41,7 +41,7 @@ const ROLES = [
 	"immune-brain-reviewer",
 	"immune-brain-ui-review",
 ];
-const SKILLS = ["clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
 
 const scratch: string[] = [];
 function scratchDir(label: string): string {
@@ -449,5 +449,12 @@ describe("Antigravity distribution, version and generated outputs (AC4)", () => 
 				writeFileSync(prompt, promptBytes);
 			}
 		}, 60_000);
+	});
+});
+
+describe("authority-review skill", () => {
+	it("ships byte-equal to the shared plugin skill", () => {
+		const shared = resolve(ROOT, "plugins/immune-brain/skills/authority-review/SKILL.md");
+		expect(readFileSync(join(ARTIFACT, "skills/authority-review/SKILL.md"), "utf8")).toBe(readFileSync(shared, "utf8"));
 	});
 });

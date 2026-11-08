@@ -4,11 +4,12 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { buildClaudePlugin, checkClaudePlugin, readonlyRoleDefinitionDrift, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
+import { authorityReviewSkillDrift, buildClaudePlugin, checkClaudePlugin, generateAuthorityReviewSkill, readonlyRoleDefinitionDrift, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
 import {
 	INTERNAL_ROLE_PROMPTS,
 	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
+	currentReviewContractHash,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import {
 	CLAUDE_READONLY_ROLE_AGENTS,
@@ -536,4 +537,24 @@ describe("claude host package", () => {
     const runSkill = readFileSync(resolve(PLUGIN_ROOT, "skills/drive/SKILL.md"), "utf8");
     for (const name of companions) expect(runSkill).toContain(`dist/${name}`);
   });
+});
+
+describe("authority-review skill", () => {
+	it("ships the generated body, its contract stamp and the mismatch line", () => {
+		const generated = generateAuthorityReviewSkill(ROOT);
+		expect(readFileSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"), "utf8")).toBe(generated);
+		expect(generated).toContain(currentReviewContractHash());
+		expect(generated).toContain("REVIEW_CONTRACT_MISMATCH");
+		expect(authorityReviewSkillDrift(ROOT)).toBeNull();
+	});
+
+	it("a packaged copy that dropped one static rule fails the generated comparison", () => {
+		withPackageFixture((root) => {
+			const skill = resolve(root, "plugins/immune-brain/skills/authority-review/SKILL.md");
+			const committed = readFileSync(skill, "utf8");
+			expect(committed).toContain(STATIC_REVIEW_RULES[0]);
+			writeFileSync(skill, committed.replace(STATIC_REVIEW_RULES[0], ""));
+			expect(authorityReviewSkillDrift(root)).toContain("drifted from a fresh generate");
+		});
+	});
 });

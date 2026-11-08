@@ -111,6 +111,7 @@ import {
 } from "./interaction";
 import { selectedClaudeParent } from "./run_continuation";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
+import { CliReviewHost, reviewDispatchMode } from "../assurance/cli_review";
 import { probeHost, type PermissionMode, type HostProbe } from "./capability";
 
 export function diffSnapshotOf(root: string, record: TaskRecord): {
@@ -324,6 +325,8 @@ export class ClaudeRuntime {
 		inspectReview?(res: any): any;
 		inspectReviewForTask?(taskId: string): any;
 	};
+	/** The Review port the coordinator and `submit_review` use: the in-process Host or its CLI wrapper (D8). */
+	private readonly reviewHost: AssuranceHostPort & { inspectReviewForTask?(taskId: string): any };
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
 	private readonly options: ClaudeRuntimeOptions;
@@ -352,10 +355,11 @@ export class ClaudeRuntime {
 		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
+		this.reviewHost = reviewDispatchMode(this.env) === "cli" ? new CliReviewHost(this.host) : this.host;
 		this.coordinator = new AssuranceCoordinator({
 			...this.createKernelPorts(),
 			...options.ports,
-			host: this.host,
+			host: this.reviewHost,
 			confirmationReference: ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`,
 		}, options.authorityOverrides);
 	}
@@ -393,7 +397,7 @@ export class ClaudeRuntime {
 
 	private createKernelPorts(): AssuranceCoordinatorPorts {
 		return {
-			host: this.host,
+			host: this.reviewHost,
 			confirmationReference: ({ actorId }) => `claude:${actorId}`,
 			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
 			readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
@@ -483,7 +487,7 @@ export class ClaudeRuntime {
 			taskId,
 			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
 				taskId,
-				await submitClaudeReview(this.host, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+				await submitClaudeReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
 			), meta?.signal),
 			meta,
 		);

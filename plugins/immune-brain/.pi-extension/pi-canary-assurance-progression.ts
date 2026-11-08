@@ -54,6 +54,7 @@ import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../runtime/assurance/host_port";
 import { verificationPacketHandle, verificationPacketError } from "../runtime/assurance/review_packet";
 import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
+import { CliReviewHost, reviewDispatchMode } from "../runtime/assurance/cli_review";
 import { reservedAgentParams, promptDigest, type ReservedAgentParams } from "./pi-canary-native-review";
 import { parseReviewMarker } from "../runtime/claude/review_host";
 import { reviewPacketError } from "../runtime/assurance/review_packet";
@@ -200,12 +201,16 @@ class PiReviewHost implements AssuranceHostPort {
 
 export class AssuranceProgression extends AssuranceCoordinator {
 	readonly piReviewHost: PiReviewHost;
+	/** The Review port this composition root reserved: the in-process Host or its CLI wrapper (D8). */
+	private readonly reviewHost: PiReviewHost | CliReviewHost;
 
 	constructor(ports: AssuranceProgressionPorts) {
 		const host = new PiReviewHost();
-		(ports as AssuranceCoordinatorPorts).host = host;
+		const cli = reviewDispatchMode() === "cli" ? new CliReviewHost(host) : undefined;
+		(ports as AssuranceCoordinatorPorts).host = cli ?? host;
 		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
 		this.piReviewHost = host;
+		this.reviewHost = cli ?? host;
 	}
 
 	/** Under `Git integration: auto` a settlement reached here also carries its settle commit (ADR 0024). */
@@ -219,6 +224,6 @@ export class AssuranceProgression extends AssuranceCoordinator {
 
 	/** ADR 0017: verdict-source resolution happens here, before the shared submit path. */
 	submitMediated(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
-		return submitMediatedReview(this, ctx, taskId, verdictInput, () => this.piReviewHost.inspectReview(taskId));
+		return submitMediatedReview(this, ctx, taskId, verdictInput, () => this.reviewHost.inspectReview(taskId));
 	}
 }

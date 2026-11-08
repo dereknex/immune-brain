@@ -2741,3 +2741,106 @@ describe("status stays readable with unstaged scope paths on both Hosts", () => 
 		}
 	});
 });
+
+/**
+ * S2 AC2: the CLI switch is read at each composition root. The Host wiring is
+ * real — Pi's `AssuranceProgression`, `ClaudeRuntime` and `AntigravityRuntime` —
+ * and only the Kernel ports are the same synthetic fixtures the conformance
+ * drives above, because the reservation shape is what the switch changes.
+ */
+const { AntigravityRuntime } = await import("../plugins/immune-brain/runtime/antigravity/kernel_ports.ts");
+
+function cliReviewRoot(): string {
+	const root = mkdtempSync(join(tmpdir(), "imm-cli-dispatch-root-"));
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: root });
+	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+	mkdirSync(join(root, ".imm"), { recursive: true });
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } }) + "\n");
+	writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
+	return root;
+}
+
+function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; applied: string[] } {
+	let obligation: "run_qa" | "run_review" = "run_qa";
+	const applied: string[] = [];
+	const snapshotFor = (role: "qa" | "review"): SnapshotDescriptor => ({
+		...snapshot(role, "material"), dirty_files: ["src.ts"], root,
+	} as SnapshotDescriptor);
+	const ports: AssuranceCoordinatorPorts = {
+		host: { host: "pi", prepareReview: () => { throw new Error("the composition root owns the Host"); }, releaseReview: () => undefined },
+		reviewVerifierMode: () => "off",
+		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
+		projectTask: async () => projection({ lifecycle: "active", artifactState: "frozen", nextObligation: obligation, risk: "material" }),
+		readTaskRecord: async () => ({ revision: "record-1", record: { findings: [], history: [] } }),
+		readTaskIntent: async () => ({ token: "intent-token" }),
+		buildAssurance: async (_root: string, _task: string, role: "qa" | "review") => ({
+			snapshot: snapshotFor(role),
+			descriptors: new Map([["A1", {
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				environment: { prepare: null, writable_paths: [] },
+			}]] as never),
+			reviewBundle: role === "review" ? { ...reviewBundle(), root } : null,
+		}),
+		runQa: async (s: SnapshotDescriptor) => passVerdict(s),
+		writeReviewEvidence: () => ({ path: join(root, "review-evidence.json"), writePacket: writeTestReviewPacket, remove: () => undefined }),
+		applyVerdict: async (_ctx: HostContext, input: { snapshot: { role: string } }) => {
+			applied.push(input.snapshot.role);
+			if (input.snapshot.role === "qa") obligation = "run_review";
+		},
+		applyOrdinaryOperation: async () => undefined,
+	} as unknown as AssuranceCoordinatorPorts;
+	return { ports, applied };
+}
+
+describe("cli review dispatch", () => {
+	test.each(["pi", "claude", "antigravity"] as const)("%s reserves the CLI reviewer under the switch", async (host) => {
+		const root = cliReviewRoot();
+		process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "cli";
+		try {
+			const { ports, applied } = cliReviewPorts(root);
+			const env = { ...HOST_ENV, IMMUNE_BRAIN_REVIEW_DISPATCH: "cli" };
+			const runtime = host === "pi"
+				? new AssuranceProgression({ ...ports, authorityOverrides: ports } as never)
+				: host === "claude"
+					? new ClaudeRuntime({ cwd: root, env, ports, authorityOverrides: ports as never })
+					: new AntigravityRuntime({ cwd: root, env, ports, authorityOverrides: ports as never });
+			const ready = await (host === "pi" ? runtime.advance(TASK, { cwd: root } as never) : runtime.advance(TASK)) as { state: string; review_command?: string; review_profile?: { host: string }; agent_params?: unknown };
+			expect(ready).toMatchObject({ state: "review_ready" });
+			expect(applied).toEqual(["qa"]);
+			expect(ready.review_command?.startsWith("sh ")).toBe(true);
+			expect(ready.review_profile).toMatchObject({ host: "pi" });
+			expect(ready).not.toHaveProperty("agent_params");
+		} finally {
+			delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test.each(["pi", "claude", "antigravity"] as const)("%s keeps the subagent reservation without the switch", async (host) => {
+		const root = cliReviewRoot();
+		try {
+			const { ports } = cliReviewPorts(root);
+			for (const value of [undefined, "subagent"]) {
+				if (value) process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = value;
+				else delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+				const env = { ...HOST_ENV, ...(value ? { IMMUNE_BRAIN_REVIEW_DISPATCH: value } : {}) };
+				const runtime = host === "pi"
+					? new AssuranceProgression({ ...ports, authorityOverrides: ports } as never)
+					: host === "claude"
+						? new ClaudeRuntime({ cwd: root, env, ports, authorityOverrides: ports as never })
+						: new AntigravityRuntime({ cwd: root, env, ports, authorityOverrides: ports as never });
+				const ready = await (host === "pi" ? runtime.advance(TASK, { cwd: root } as never) : runtime.advance(TASK)) as { state: string; review_command?: string; agent_params?: unknown };
+				expect(ready.state).toBe("review_ready");
+				expect(ready.agent_params).toBeDefined();
+				expect(ready).not.toHaveProperty("review_command");
+			}
+		} finally {
+			delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
