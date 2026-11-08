@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
+import { chooseReviewer, resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import { POINT_REGISTRY } from "../plugins/immune-brain/runtime/decision_model/thresholds.ts";
 
 const temp = mkdtempSync(join(tmpdir(), "layered-config-"));
@@ -235,6 +235,93 @@ test("CLI exits based on diagnostics and checks env without disclosing values", 
 	write(f.root, ".imm/lanes.local.json", { active: "local", profiles: { local: { max_parallel: 3, token_env: "sk-live-123" } } });
 	result = run(); expect(result.status).toBe(1); expect(result.stdout).not.toContain("sk-live-123");
 	writeFileSync(userPath, "{"); result = run(); expect(result.status).toBe(1);
+});
+
+test("review profile keys: project values resolve with the project source", () => {
+	const f = fixture();
+	f.project({ lanes: { review_host: "pi", review_model: "m", review_effort: "high" } });
+	const c = f.read();
+	expect(c.lanes.valid).toBe(true);
+	expect(c.lanes.review_host).toEqual({ value: "pi", source: "project" });
+	expect(c.lanes.review_model).toEqual({ value: "m", source: "project" });
+	expect(c.lanes.review_effort).toEqual({ value: "high", source: "project" });
+});
+
+test("review profile keys: the active user profile overrides the project review values", () => {
+	const f = fixture();
+	f.project({ lanes: { review_model: "p" } });
+	f.user({ lanes: { active: "reviewer", profiles: { reviewer: { review_host: "claude-code", review_model: "u" } } } });
+	const c = f.read();
+	expect(c.lanes.review_host).toEqual({ value: "claude-code", source: "user" });
+	expect(c.lanes.review_model).toEqual({ value: "u", source: "user" });
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "not_applied", severity: "warning", file: ".imm/config.json", key_path: "lanes.review_model" }));
+});
+
+test("review profile keys: an invalid host or an empty model fails the lanes section", () => {
+	const f = fixture();
+	f.project({ lanes: { review_host: "codex" } });
+	let c = f.read();
+	expect(c.lanes.valid).toBe(false);
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", file: ".imm/config.json", key_path: "lanes.review_host" }));
+	f.project({ lanes: { review_model: "" } });
+	c = f.read();
+	expect(c.lanes.valid).toBe(false);
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", file: ".imm/config.json", key_path: "lanes.review_model" }));
+});
+
+test("review profile keys: a user review_model without review_host is not applied", () => {
+	const f = fixture();
+	f.user({ lanes: { active: "reviewer", profiles: { reviewer: { review_model: "u" } } } });
+	const c = f.read();
+	expect(c.lanes.review_model.value).toBeNull();
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "not_applied", severity: "warning", file: f.userPath, key_path: "lanes.review_model" }));
+});
+
+test("review profile keys: a project review_model without review_host is not applied", () => {
+	const f = fixture();
+	f.project({ lanes: { review_model: "p" } });
+	const c = f.read();
+	expect(c.lanes.review_model.value).toBeNull();
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "not_applied", severity: "warning", file: ".imm/config.json", key_path: "lanes.review_model" }));
+});
+
+test("review profile keys: absent keys default to null and the executor keys are unchanged", () => {
+	const f = fixture();
+	f.project({ lanes: { max_parallel: 2, executor_host: "pi", executor_model: "project-model" } });
+	const c = f.read();
+	expect(c.lanes.review_host).toEqual({ value: null, source: "default" });
+	expect(c.lanes.review_model).toEqual({ value: null, source: "default" });
+	expect(c.lanes.review_effort).toEqual({ value: null, source: "default" });
+	expect(c.lanes.max_parallel).toEqual({ value: 2, source: "project" });
+	expect(c.lanes.executor_host).toEqual({ value: "pi", source: "project" });
+	expect(c.lanes.executor_model).toEqual({ value: "project-model", source: "project" });
+	expect(c.diagnostics.filter(d => d.key_path.startsWith("lanes.review"))).toEqual([]);
+});
+
+test("chooseReviewer returns the resolved review profile", () => {
+	const f = fixture();
+	f.project({ lanes: { review_host: "pi", review_model: "m", review_effort: "high" } });
+	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", model: "m", effort: "high" });
+	f.project({ lanes: { review_host: "antigravity" } });
+	const bare = chooseReviewer(f.read().lanes);
+	expect(bare).toEqual({ host: "antigravity" });
+	expect("model" in bare!).toBe(false);
+	expect("effort" in bare!).toBe(false);
+});
+
+test("chooseReviewer ignores the executor values and allows the same model", () => {
+	const f = fixture();
+	f.project({ lanes: { executor_host: "pi", executor_model: "x", review_host: "pi", review_model: "x" } });
+	const c = f.read();
+	expect(chooseReviewer(c.lanes)).toEqual({ host: "pi", model: "x" });
+	expect(c.diagnostics.filter(d => d.code === "not_applied")).toEqual([]);
+});
+
+test("chooseReviewer returns null without a review_host", () => {
+	const f = fixture();
+	expect(chooseReviewer(f.read().lanes)).toBeNull();
+	f.project({ lanes: { review_model: "m" } });
+	expect(chooseReviewer(f.read().lanes)).toBeNull();
 });
 
 test("preload isolates configuration and required ADRs and tracked project config exist", () => {

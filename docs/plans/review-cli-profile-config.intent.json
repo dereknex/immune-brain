@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-cli-profile-config",
+  "owner": "user",
+  "goal": "Issue #386 slice S1 (Spec docs/specs/review-cli-stage.spec.md, D1, D2). The layered configuration accepts lanes.review_host (pi | claude-code | antigravity), lanes.review_model and lanes.review_effort in user lane profiles and in project .imm/config.json lanes, resolved with the existing active-profile over project precedence and the executor keys' same-layer rule, and `imm-kernel config --json` reports each with its source. A Host-neutral resolver chooseReviewer in runtime/config returns the resolved review profile or null. No model-distinctness check (BR-DEC-2). No Review dispatch change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S1 AC1 (BR-REQ-3; D1). Done looks like: review profile keys resolve with sources and diagnostics exactly like the executor keys. Seam: tests/layered-config.test.ts describe 'review profile keys', calling resolveConfig over isolated user and project files. Positive: project lanes {review_host: 'pi', review_model: 'm', review_effort: 'high'} yields lanes.review_host {value: 'pi', source: 'project'}, review_model {value: 'm', source: 'project'} and review_effort {value: 'high', source: 'project'}; an active user profile with review_host 'claude-code' and review_model 'u' yields review_host and review_model from that profile's source and a not_applied warning on the project lanes.review_model. Negative: project review_host 'codex' and project review_model '' each produce an invalid value diagnostic and lanes.valid false; a user profile setting review_model without review_host produces a not_applied warning at that profile path and its review_model is not used; a project review_model without project review_host produces not_applied and resolves review_model to null. Bound: with no review key anywhere, review_host, review_model and review_effort are {value: null, source: 'default'} and the executor_* and max_parallel results are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"-t\",\n      \"review profile keys\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S1 AC2 (BR-REQ-3, BR-DEC-2; D1, D2). Done looks like: chooseReviewer turns resolved lanes into one review profile or null. Seam: tests/layered-config.test.ts describe 'chooseReviewer', calling the exported function on resolveConfig output. Positive: review_host 'pi' with review_model 'm' and review_effort 'high' returns {host: 'pi', model: 'm', effort: 'high'}; review_host 'antigravity' alone returns {host: 'antigravity'} with no model or effort property. Bound (BR-DEC-2): executor_host 'pi', executor_model 'x', review_host 'pi', review_model 'x' returns {host: 'pi', model: 'x'} without a diagnostic. Negative: no review_host returns null; review_model 'm' without any review_host returns null.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\",\n      \"-t\",\n      \"chooseReviewer\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec S1 AC3 (BR-REQ-3; D1). Done looks like: a maintainer reading the configuration reference finds the three review keys, their allowed values and the same-layer rule. Seam: the real files. docs/reference/immune-brain-config.md contains 'review_host', 'review_model' and 'review_effort', and its packaged mirrors under plugins/immune-brain/dist/docs/reference/ and plugins/immune-brain-antigravity/dist/docs/reference/ are byte-equal to it as checked by tests/dist-docs-sync-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q review_host docs/reference/immune-brain-config.md && grep -q review_model docs/reference/immune-brain-config.md && grep -q review_effort docs/reference/immune-brain-config.md && bun test tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-cli-profile-config.md",
+    "docs/plans/review-cli-profile-config.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/review-cli-stage.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "tests/layered-config.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

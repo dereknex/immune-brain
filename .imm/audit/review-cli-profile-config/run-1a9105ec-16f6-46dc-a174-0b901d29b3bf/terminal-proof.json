@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "review-cli-profile-config",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:review-cli-profile-config:2026-11-08T15:22:06.591Z",
+  "final_record_hash": "sha256:52e911df953b4a0f1f2d180005f9ed1a0e96e8b42d03f796f238c1a72561d90e",
+  "terminalized_at": "2026-11-08T15:22:06.591Z"
+}
