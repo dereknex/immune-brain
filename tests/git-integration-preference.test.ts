@@ -118,6 +118,17 @@ describe("ADR 0024 and its contract text", () => {
 		expect(readFileSync("plugins/immune-brain/dist/docs/reference/immune-brain-config.md", "utf8")).toBe(reference);
 	});
 
+	test("an unborn HEAD refuses drive and Enrollment commits nothing (ADR 0036)", () => {
+		const reference = readFileSync("docs/reference/immune-brain-config.md", "utf8");
+		expect(reference).toContain("An unborn HEAD refuses `drive` until the first commit exists");
+		expect(reference).toContain("Enrollment writes no commit in either");
+		expect(reference).toContain("the repository HEAD stays the task's Git base");
+		expect(reference).not.toContain("keeps the precondition commits of ADR 0023");
+		expect(reference).not.toContain("The confirmed empty root commit for an unborn HEAD is made in both modes");
+		const adr = readFileSync("docs/adr/0024-git-integration-preference.md", "utf8");
+		expect(adr).toContain("[ADR 0036](0036-unborn-head-refuses-drive.md)");
+	});
+
 	test("every BASELINE copy describes the preference instead of a silent commit", () => {
 		const copies = ["plugins/immune-brain/BASELINE.md", "plugins/immune-brain/skills/BASELINE.md", "plugins/immune-brain/dist/BASELINE.md"]
 			.map((path) => readFileSync(path, "utf8"));

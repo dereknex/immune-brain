@@ -153,7 +153,7 @@ type EnrollmentPreconditionState = {
 	claimedScopePaths: string[];
 };
 
-type EnrollmentPreconditionResult = EnrollmentPreconditionState & {
+type EnrollmentPreconditionReport = EnrollmentPreconditionState & {
 	blockers: string[];
 };
 
@@ -173,7 +173,7 @@ function runEnrollmentPreconditionChecks(
 	registry: EnrollmentAuthorityRegistry,
 	mode: "report" | "fail_fast",
 	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
-): EnrollmentPreconditionResult;
+): EnrollmentPreconditionReport;
 function runEnrollmentPreconditionChecks<T>(
 	root: string,
 	input: EnrollCanaryInput,
@@ -182,7 +182,7 @@ function runEnrollmentPreconditionChecks<T>(
 	mode: "report" | "fail_fast",
 	beforeLock: (validated: EnrollmentPreconditionState["validated"]) => void,
 	onReady?: (state: EnrollmentPreconditionState) => T,
-): T | EnrollmentPreconditionResult {
+): T | EnrollmentPreconditionReport {
 	const blockers: string[] = [];
 	let validated: EnrollmentPreconditionState["validated"] = null;
 	try {

@@ -55,15 +55,9 @@ afterAll(() => { for (const root of roots) rmSync(root, { recursive: true, force
 function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean } = {}) {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-single-task-")));
 	roots.push(dir);
-	mkdirSync(join(dir, "docs/plans"), { recursive: true });
 	writeFileSync(join(dir, ".gitignore"), ".imm/state/\n");
 	writeFileSync(join(dir, "base.txt"), "base\n");
-	const verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
-		command: { executable: "bun", argv: ["-e", "process.exit(0)"], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
-		environment: { prepare: null, writable_paths: [] } });
-	writeFileSync(join(dir, `docs/plans/${TASK}.intent.json`), `${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id: TASK,
-		owner: "user", goal: "Deliver the single task", acceptance: [{ id: "A1", assertion: "A1 holds", verification }],
-		scope_hint: ["delivery.txt"], risk: "material", revision: 1 })}\n`);
+	writeIntent(dir);
 	if (options.mode) {
 		mkdirSync(join(dir, ".imm"), { recursive: true });
 		writeFileSync(join(dir, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: options.mode }));
@@ -75,6 +69,16 @@ function fixture(options: { mode?: "manual" | "auto"; untrackedIntent?: boolean 
 	// The canonical planning input is staged in the coordinator checkout but absent from HEAD.
 	if (options.untrackedIntent) git(dir, "add", `docs/plans/${TASK}.intent.json`);
 	return { repo: dir, base: git(dir, "rev-parse", "HEAD") };
+}
+
+function writeIntent(dir: string) {
+	const verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2",
+		command: { executable: "bun", argv: ["-e", "process.exit(0)"], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 },
+		environment: { prepare: null, writable_paths: [] } });
+	mkdirSync(join(dir, "docs/plans"), { recursive: true });
+	writeFileSync(join(dir, `docs/plans/${TASK}.intent.json`), `${JSON.stringify({ contract: "assurance_kernel/task_intent/v1", task_id: TASK,
+		owner: "user", goal: "Deliver the single task", acceptance: [{ id: "A1", assertion: "A1 holds", verification }],
+		scope_hint: ["delivery.txt"], risk: "material", revision: 1 })}\n`);
 }
 
 function projectionBody(overrides: Partial<AssuranceProjectionResult["projection"]> = {}): AssuranceProjectionResult["projection"] {
@@ -163,6 +167,42 @@ function request(repo: string, base: string, fx: { kernel: ReturnType<typeof ker
 const laneReport = (report: unknown) => report as BatchLaneRunReport;
 
 describe("single-task entry refusals", () => {
+	/** A first entry: HEAD names an absent branch and only planning input is staged. */
+	function unbornRepo() {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-unborn-task-")));
+		roots.push(dir);
+		writeIntent(dir);
+		git(dir, "init", "-q", "-b", "main");
+		git(dir, "add", "-A");
+		return dir;
+	}
+
+	/** ADR 0036: a fresh repository is refused before any Git effect, not bootstrapped. */
+	it("refuses an unborn HEAD before reading, staging or writing anything", async () => {
+		const repo = unbornRepo();
+		const index = readFileSync(join(repo, ".git/index"));
+		const result = await prepareBatchPreflight({ root: repo, initiative_slug: TASK, plan_source: "single_task", now });
+		expect(result).toMatchObject({ ok: false, state: "rejected",
+			reason: expect.stringContaining("enrollment requires a committed Git HEAD"),
+			recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host" });
+		expect(git(repo, "for-each-ref", "--format=%(refname)", "refs/heads")).toBe("");
+		expect(git(repo, "ls-files", "--cached")).toBe(`docs/plans/${TASK}.intent.json`);
+		expect(readFileSync(join(repo, ".git/index"))).toEqual(index);
+	});
+
+	it("refuses a corrupt branch ref and leaves its bytes alone", async () => {
+		const repo = unbornRepo();
+		const bytes = `${"a".repeat(40)}\n`;
+		writeFileSync(join(repo, ".git/refs/heads/main"), bytes);
+		const index = readFileSync(join(repo, ".git/index"));
+		const result = await prepareBatchPreflight({ root: repo, initiative_slug: TASK, plan_source: "single_task", now });
+		expect(result).toMatchObject({ ok: false, state: "rejected",
+			reason: expect.stringContaining("enrollment requires a committed Git HEAD"),
+			recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host" });
+		expect(readFileSync(join(repo, ".git/refs/heads/main"), "utf8")).toBe(bytes);
+		expect(readFileSync(join(repo, ".git/index"))).toEqual(index);
+	});
+
 	it.each([
 		["consolidation", JSON.stringify({ contract: "assurance_kernel/parent_delivery_consolidation/v1", envelope: {} }), true],
 		["malformed-json", "{", false],

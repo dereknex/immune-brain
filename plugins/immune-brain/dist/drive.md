@@ -143,9 +143,9 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    to the user. If a file mixes pre-existing user changes with task changes and
    the task-owned hunks cannot be isolated reliably, stop with that ownership
    conflict instead of staging the whole file. Staging grants no commit or push
-   authority. The runtime satisfies an Enrollment precondition itself, staging
-   or, under `Git integration: auto`, committing its set; never commit those
-   paths by hand and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
+   authority. Inside the Lane the runtime stages only the task's TaskIntent and
+   bound Spec; nothing commits them, so never stage or commit those paths by hand
+   and never ask the user to. Complete the [Executor Delivery Evidence](role-prompts/executor.md#delivery-evidence)
    table for rework only; a first delivery needs no table.
    Executor checks are diagnostic evidence, not a QA or Review approval.
 2. Call `advance_assurance` in the foreground and consume its direct terminal

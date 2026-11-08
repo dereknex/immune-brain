@@ -238,21 +238,24 @@ writes commits to your branch on its own:
 ```
 
 - `manual` is the default. The runtime writes no commit outside batches.
-  Enrollment stages its TaskIntent and Spec instead of committing them; with an
-  unborn HEAD, in-scope changes are claimed as task work; storage-layout
-  migration leaves its diff in the working tree and lists the paths. A settled
-  task is delivered without any commit: commit however you prefer.
-- `auto` keeps the precondition commits of ADR 0023 and, when a task settles
-  `done`, commits exactly its settled scoped paths as
-  `imm(<task-id>): settled delivery`.
+  Enrollment stages its TaskIntent and Spec inside the Lane instead of
+  committing them; storage-layout migration leaves its diff in the working tree
+  and lists the paths. A settled task is delivered without any commit: commit
+  however you prefer.
+- `auto` commits exactly a task's settled scoped paths when it settles `done`,
+  as `imm(<task-id>): settled delivery`. Enrollment writes no commit in either
+  mode: the repository HEAD stays the task's Git base.
 - An invalid value behaves as `manual` and is reported as a diagnostic.
 - The status Tool reports the resolved preference as `git_integration`.
-- The confirmed empty root commit for an unborn HEAD is made in both modes.
+- An unborn HEAD refuses `drive` until the first commit exists: the Lane starts
+  at the user's HEAD, so nothing creates an empty root commit or stages in the
+  user's stead.
 
 The legacy line `- Git integration: manual` (or `auto`) in the tracked root
 `AGENTS.md`, else `CLAUDE.md`, is still read when `.imm/config.json` sets no
 value, with a `deprecated_config_source` warning. ADR 0024 records the decision;
-ADR 0034 moves it to the project file.
+ADR 0034 moves it to the project file and ADR 0036 retires the
+Enrollment commits it described.
 
 ## Other Preferences
 

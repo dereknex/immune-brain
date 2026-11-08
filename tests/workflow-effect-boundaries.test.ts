@@ -228,8 +228,9 @@ describe("S2 exact effects and outbound research", () => {
 		expect(enrollmentRule).toBeGreaterThan(contract.indexOf("### Host Confirmation Boundary"));
 		expect(enrollmentRule).toBeLessThan(contract.indexOf("## Parallel Read-Only Dispatch"));
 		expect(flat(LOOP)).toContain(
-			"Staging grants no commit or push authority. The runtime satisfies an Enrollment precondition itself, staging or, under `Git integration: auto`, committing its set; never commit those paths by hand and never ask the user to",
+			"Staging grants no commit or push authority. Inside the Lane the runtime stages only the task's TaskIntent and bound Spec; nothing commits them, so never stage or commit those paths by hand and never ask the user to",
 		);
+		expect(flat(LOOP)).not.toContain("under `Git integration: auto`, committing its set");
 
 		const superseded = flat(read("docs/adr/0023-silent-precondition-commit.md"));
 		expect(superseded).toContain("status: superseded");
@@ -242,9 +243,20 @@ describe("S2 exact effects and outbound research", () => {
 			"`manual` (the default) writes no runtime commit outside batches",
 			"`auto` keeps ADR 0023's commits and adds a settle commit",
 			"both Hosts commit exactly its settled scoped paths, and nothing else",
-			"the confirmed empty root commit for an unborn HEAD (ADR 0019)",
+			"[ADR 0036](0036-unborn-head-refuses-drive.md)",
 		]) {
 			expect(adr).toContain(fragment);
+		}
+		const unborn = flat(read("docs/adr/0036-unborn-head-refuses-drive.md"));
+		for (const fragment of [
+			"Status: accepted; supersedes item 4 and the Enrollment precondition parts of items 2-3 of [ADR 0024](0024-git-integration-preference.md)",
+			"An unborn HEAD refuses `drive`",
+			"rejects with the stable reason `enrollment requires a committed Git HEAD`",
+			"Nothing creates an empty root commit",
+			"Enrollment makes no commit in either Git integration mode",
+			"stages the task's TaskIntent and the Spec its binding names",
+		]) {
+			expect(unborn).toContain(fragment);
 		}
 	});
 
