@@ -56,6 +56,6 @@ Share code between adapters through composition and neutral modules, never inher
 
 ## Enforcement
 
-The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It locks host-to-host import edges to a five-edge baseline, including `.pi-extension` to `runtime/claude/review_host`. The host-selection edge at `runtime/claude/kernel_ports.ts:115` is one of those baselined edges and stays baselined under issue #413 until that issue removes it.
+The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It locks host-to-host import edges to a four-edge baseline owned by #414, including `.pi-extension` to `runtime/claude/review_host`.
 
 The Planner and Executor rules in this reference are instruction text. They are checked by Review and by `tests/layering-rules-contract.test.ts`, which proves the contracts say the rule and that every packaged copy matches this file; they do not prove a model obeys it. No new enforcement tool is introduced.

@@ -22041,40 +22041,6 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
-
-// plugins/immune-brain/runtime/antigravity/capability.ts
-var MIN_ANTIGRAVITY_VERSION = "0.1.0";
-var HOST_ID2 = "antigravity";
-var SUPPORTED_PLATFORMS = ["darwin", "linux"];
-function parseSemver2(value) {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
-  if (!match)
-    return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function compareSemver2(left, right) {
-  const a = parseSemver2(left);
-  const b = parseSemver2(right);
-  if (!a || !b)
-    throw new Error(`invalid semver: ${!a ? left : right}`);
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function probeHost2(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
-  if (!version)
-    return { ok: false, reason: "Antigravity version is unavailable" };
-  if (!parseSemver2(version))
-    return { ok: false, reason: `Antigravity version is invalid: ${version}` };
-  if (compareSemver2(version, MIN_ANTIGRAVITY_VERSION) < 0) {
-    return { ok: false, reason: `Antigravity version ${version} is older than minimum supported ${MIN_ANTIGRAVITY_VERSION}` };
-  }
-  if (!SUPPORTED_PLATFORMS.includes(platform)) {
-    return { ok: false, reason: `platform ${platform} is unsupported` };
-  }
-  return { ok: true, host: HOST_ID2, version, platform };
-}
-
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
 var CLAUDE_LANE_WAIT_MS = 500;
 function claudeLaneWaitMs(env) {
   const limit = Number(env.MCP_TOOL_TIMEOUT);
@@ -22192,10 +22158,7 @@ class ClaudeRuntime {
     this.hostVersion = version || undefined;
   }
   probeHost() {
-    if (this.parentHost === "antigravity") {
-      return probeHost2(this.env, process.platform, this.hostVersion);
-    }
-    return probeHost(this.env, process.platform, this.hostVersion);
+    return (this.options.probeHost ?? probeHost)(this.env, process.platform, this.hostVersion);
   }
   bindNativeConfirmation(port) {
     this.requestConfirmation = port;
@@ -23124,6 +23087,7 @@ function createMcpRuntime(options = {}) {
     cwd: options.cwd ?? process.cwd(),
     env: options.env ?? process.env,
     parentHost: options.parentHost,
+    probeHost: options.probeHost,
     host,
     ports: options.ports,
     authorityOverrides: options.authorityOverrides,
@@ -23139,6 +23103,12 @@ function createMcpRuntime(options = {}) {
   const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
   const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
+  const sessionProbe = options.probeHost ?? probeHost;
+  const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
+  const unversionedHostReason = () => {
+    const probe = probeNegotiatedHost(undefined);
+    return probe.ok ? "host version is unavailable" : probe.reason;
+  };
   let hookSessionId = null;
   const requireRunEntry = (operation, toolCallId) => {
     const workspace = options.cwd ?? process.cwd();
@@ -23202,11 +23172,11 @@ function createMcpRuntime(options = {}) {
         const initiativeSlug = task || initiative;
         refuseSuppliedAuthority(args);
         if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
         if (!negotiatedInteractive) {
           throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
         }
-        const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+        const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
         const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
@@ -23243,11 +23213,11 @@ function createMcpRuntime(options = {}) {
           throw new Error("initiative_slug is required");
         refuseSuppliedAuthority(args);
         if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
         if (!negotiatedInteractive) {
           throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
         }
-        const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+        const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
         const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
@@ -23274,11 +23244,11 @@ function createMcpRuntime(options = {}) {
         return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
       }
       if (!negotiatedVersion)
-        throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+        throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
       if (!negotiatedInteractive && name !== "repair_authority_state") {
         throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
       }
-      const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+      const probe = probeNegotiatedHost();
       if (!probe.ok)
         throw new NativeAuthorityError("unsupported_host", probe.reason);
       const toolMeta = {

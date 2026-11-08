@@ -1,0 +1,165 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-probe-injection",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-probe-injection",
+    "goal": "Issue #413 (Spec docs/specs/host-probe-injection.spec.md). The Claude adapter stops importing runtime/antigravity/capability and stops choosing a host probe by parentHost: ClaudeRuntimeOptions and McpRuntimeOptions take an optional host probe defaulting to the Claude probe, and AntigravityRuntime and createAntigravityMcpRuntime supply the Antigravity probe. The shared MCP runtime's three authority gates (start_unattended_batch, retire_stale_batch, and the remaining authority-mutating tools) use the injected probe, keep the environment fallback disabled, and name the actual host in refusals. The host-to-host baseline shrinks to four edges owned by #414 and docs/reference/layering-rules.md says so. No Kernel, Port, verdict, registry or Pi change; the other cross-adapter edges and the initialize client trust stay with #414.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 (BR-REQ-1, BR-DEC-1; D6). Done looks like: the boundary test reports no host-to-host import from plugins/immune-brain/runtime/claude/kernel_ports.ts to runtime/antigravity/. Seam: tests/runtime-layering-boundary.test.ts scanning the real plugins/immune-brain/ tree. BASELINE has exactly four entries, every owner is '#414' (the three runtime/antigravity -> runtime/claude edges and .pi-extension/pi-canary-assurance-progression.ts -> runtime/claude/review_host), and comparing observed edges with it yields no unexpected and no stale edge; the existing fixture test still reports a new edge as unexpected and the stale-entry test still reports a baseline entry without an observed edge.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 (BR-REQ-2, BR-DEC-2; D1, D2, D4, D5). Done looks like: each runtime probes with the probe its composition root supplied, and parentHost alone selects nothing. Seam: tests/antigravity-assurance-conformance.test.ts describe 'runtime host probe', calling retireStaleBatch on a real AntigravityRuntime or ClaudeRuntime in a temp directory with no confirmation port and no entry token, so a passing probe surfaces interaction_not_opened. Positive: AntigravityRuntime with env ANTIGRAVITY_VERSION=0.2.0, and ClaudeRuntime with env CLAUDE_CODE_VERSION=2.1.236, each reject with interaction_not_opened. Negative: AntigravityRuntime with ANTIGRAVITY_VERSION=0.0.9 rejects unsupported_host with a reason naming 0.1.0; AntigravityRuntime with only CLAUDE_CODE_VERSION=2.1.236 rejects unsupported_host 'Antigravity version is unavailable'. Bound: a ClaudeRuntime constructed with parentHost 'antigravity', no probe option and only ANTIGRAVITY_VERSION=0.2.0 rejects unsupported_host 'Claude Code version is unavailable'.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"runtime host probe\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 and SCN-1 (BR-REQ-3, BR-REQ-4, BR-DEC-3; D3). Done looks like: an Antigravity MCP session is judged against Antigravity's minimum and its refusals name Antigravity, while Claude sessions behave as before. Seam: tests/antigravity-assurance-conformance.test.ts describe 'MCP host probe gates', driving createAntigravityMcpRuntime and createMcpRuntime from plugins/immune-brain/runtime with bindClientHandshake (protocolVersion 2025-06-18) and a consumePhaseAdmission that admits nothing, plus one real handleJsonRpc initialize. Positive: an Antigravity handshake version 1.0.0, interactive, makes start_unattended_batch and retire_stale_batch (with initiative_slug) fail run_entry_required, and advance_assurance is not refused unsupported_host. Negative: an Antigravity handshake 0.0.9 makes all three tools fail unsupported_host with a reason naming 0.1.0; an Antigravity MCP runtime initialized through handleJsonRpc with clientInfo name 'antigravity' version 1.0.0 and env ANTIGRAVITY_VERSION=1.0.0 makes start_unattended_batch fail unsupported_host with reason 'Antigravity version is unavailable'. Bound: a Claude handshake 2.1.100 makes start_unattended_batch fail with 'Claude Code 2.1.100 is below the minimum supported 2.1.236', and an unversioned Claude session makes it fail with 'Claude Code version is unavailable'.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP host probe gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec AC4 (BR-REQ-5; D7). Done looks like: a maintainer reading the layering reference sees that #413's edge is gone and the remaining baseline belongs to #414. Seam: tests/layering-rules-contract.test.ts describe 'layering reference' reading the real files. The Enforcement section of docs/reference/layering-rules.md names tests/runtime-layering-boundary.test.ts, a four-edge baseline and #414, and does not contain 'kernel_ports.ts:115', 'five-edge' or '#413'; plugins/immune-brain/dist/docs/reference/layering-rules.md and plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md are byte-equal to the source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering reference\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-probe-injection.md",
+      "docs/plans/host-probe-injection.intent.json",
+      "docs/reference/layering-rules.md",
+      "docs/specs/host-probe-injection.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/layering-rules-contract.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-probe-injection.intent.json",
+    "content_hash": "sha256:fb7399eaa201296fefa255a2667962fac6d31c545d490800a7f49f05deac0002"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:fb7399eaa201296fefa255a2667962fac6d31c545d490800a7f49f05deac0002",
+  "git_base_head": "4ecb01ed8fedc95bb94283c41f0eae844db68284",
+  "attestations": [
+    {
+      "id": "approval-qa-320d84a9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fb7399eaa201296fefa255a2667962fac6d31c545d490800a7f49f05deac0002",
+      "diff_hash": "sha256:9e73524a76af1b81b222f609dcc5caffce307b2518b992077ae30b11b90c6701",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:082a8f24ea333b5d60a457cccfdfdc6f4c377368e3c18fb04107daa39bcf3baf",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:082a8f24ea333b5d60a457cccfdfdc6f4c377368e3c18fb04107daa39bcf3baf"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:082a8f24ea333b5d60a457cccfdfdc6f4c377368e3c18fb04107daa39bcf3baf"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:082a8f24ea333b5d60a457cccfdfdc6f4c377368e3c18fb04107daa39bcf3baf"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:082a8f24ea333b5d60a457cccfdfdc6f4c377368e3c18fb04107daa39bcf3baf"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-887f97c0",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:fb7399eaa201296fefa255a2667962fac6d31c545d490800a7f49f05deac0002",
+      "diff_hash": "sha256:9e73524a76af1b81b222f609dcc5caffce307b2518b992077ae30b11b90c6701",
+      "actor_id": "parent-mediated-review",
+      "summary": "Probe injection at composition roots verified across all 19 changed paths: the claude→antigravity edge and parentHost dispatch are gone, all three MCP authority gates judge with the injected probe (env fallback stays disabled, {} passed so process.env is never read), Claude refusal texts and check order unchanged, four-edge #414 baseline and byte-equal doc mirrors confirmed by blob identity, Antigravity package runtime files and both dist bundles regenerated consistently (claude dist contains no Antigravity probe residue; antigravity dist injects probeHost2); blast radius medium, load-bearing paths runtime/claude/mcp_server.ts, runtime/claude/kernel_ports.ts and the two dist bundles.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4ecb01ed8fedc95bb94283c41f0eae844db68284",
+        "review_commit": "b1fbeb47dfa8b9be8a7a47a59b1270b8f5101eaa",
+        "review_tree": "706c71d7da656ab3b044a179c04f10f41dfacaa1",
+        "manifest_digest": "sha256:c17a96c3cb83c8b439a1b513b4689b8e5ed5fd0d1b41da1ad4607588675046b7"
+      },
+      "reviewer_verdict_sha256": "sha256:b63d0047e12ff3b59d23401307902fd3f6c77a04848817ac09619664fdff7128"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-probe-injection:2026-11-08T11:55:18.218Z",
+      "at": "2026-11-08T11:55:18.218Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-probe-injection.intent.json"
+    },
+    {
+      "id": "record_approval:host-probe-injection:2026-11-08T11:55:27.713Z",
+      "at": "2026-11-08T11:55:27.713Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-320d84a9\naction_v2_sha256:4eaa08357b9dc77329455dedbbcff9abf1bc80e4d0f960b52c7144e74a213fea",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-39e4ee1777a37c5e",
+        "issued_at": "2026-11-08T11:55:27.713Z"
+      }
+    },
+    {
+      "id": "record_approval:host-probe-injection:2026-11-08T12:09:09.976Z",
+      "at": "2026-11-08T12:09:09.976Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-887f97c0\naction_v2_sha256:4406ddecf5a293dbf5b02db741d40b0a325d117a4cb3a678b728d375e33fd99e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d646075dd9ae9989",
+        "issued_at": "2026-11-08T12:09:09.976Z"
+      },
+      "review_started_at": "2026-11-08T12:03:44.823Z",
+      "review_submitted_at": "2026-11-08T12:09:09.230Z"
+    },
+    {
+      "id": "complete:host-probe-injection:2026-11-08T12:09:12.178Z",
+      "at": "2026-11-08T12:09:12.178Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:982b2b8ebd61f602654f0adbce8c6ff2ff22cdc82b52ea1d035c9506494896d2"
+    }
+  ]
+}

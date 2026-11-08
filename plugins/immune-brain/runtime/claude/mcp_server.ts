@@ -123,6 +123,8 @@ export interface McpRuntimeOptions {
 	cwd?: string;
 	env?: Record<string, string | undefined>;
 	parentHost?: import("../unattended/lane_supervisor").ExecutorHost;
+	/** The Host probe this adapter's composition root chose; defaults to the Claude probe. */
+	probeHost?: typeof probeHost;
 	ports?: AssuranceCoordinatorPorts;
 	authorityOverrides?: Partial<import("../assurance/verdict_authority").VerdictAuthority>;
 	host?: AssuranceHostPort & { observe(event: any): void; consumeReview?(res: any): any; inspectReview?(res: any): any };
@@ -164,6 +166,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		cwd: options.cwd ?? process.cwd(),
 		env: options.env ?? process.env,
 		parentHost: options.parentHost,
+		probeHost: options.probeHost,
 		host,
 		ports: options.ports,
 		authorityOverrides: options.authorityOverrides,
@@ -185,6 +188,16 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath(import.meta.url));
 	const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
 	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
+	// The environment version fallback stays disabled on this connection: these
+	// gates judge only a version bound from the trusted handshake, so the probe
+	// never reads the environment here. A session without one is refused with
+	// the injected probe's own reason.
+	const sessionProbe = options.probeHost ?? probeHost;
+	const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
+	const unversionedHostReason = (): string => {
+		const probe = probeNegotiatedHost(undefined);
+		return probe.ok ? "host version is unavailable" : probe.reason;
+	};
 	// The phase entry gate, before any preparation or native dialog. The hook
 	// decided on the session's literal entry; no admission for this exact call
 	// means no hook saw it, which refuses. ADR 0025: the admission carries the
@@ -238,11 +251,11 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
-				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
 				if (!negotiatedInteractive) {
 					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 				}
-				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
@@ -277,11 +290,11 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const initiativeSlug = String(args.initiative_slug ?? "");
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
 				refuseSuppliedAuthority(args);
-				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
 				if (!negotiatedInteractive) {
 					throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 				}
-				const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
 				const toolMeta: ToolMeta = {
@@ -309,13 +322,13 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 			// The environment version fallback is disabled on this connection:
 			// only a version bound from the trusted initialize handshake may
 			// reach authority-mutating tools.
-			if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", "Claude Code version is unavailable");
+			if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
 			// Automatic stale-claim repair is deterministic and needs no native
 			// interaction; other mutations retain the Host capability requirement.
 			if (!negotiatedInteractive && name !== "repair_authority_state") {
 				throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 			}
-			const probe = probeHost(options.env ?? process.env, process.platform, negotiatedVersion);
+			const probe = probeNegotiatedHost();
 			if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
 			const toolMeta: ToolMeta = {
 				sessionId: hookSessionId ?? meta.sessionId ?? connectionId,

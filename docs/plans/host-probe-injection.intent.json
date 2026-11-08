@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-probe-injection",
+  "owner": "user",
+  "goal": "Issue #413 (Spec docs/specs/host-probe-injection.spec.md). The Claude adapter stops importing runtime/antigravity/capability and stops choosing a host probe by parentHost: ClaudeRuntimeOptions and McpRuntimeOptions take an optional host probe defaulting to the Claude probe, and AntigravityRuntime and createAntigravityMcpRuntime supply the Antigravity probe. The shared MCP runtime's three authority gates (start_unattended_batch, retire_stale_batch, and the remaining authority-mutating tools) use the injected probe, keep the environment fallback disabled, and name the actual host in refusals. The host-to-host baseline shrinks to four edges owned by #414 and docs/reference/layering-rules.md says so. No Kernel, Port, verdict, registry or Pi change; the other cross-adapter edges and the initialize client trust stay with #414.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (BR-REQ-1, BR-DEC-1; D6). Done looks like: the boundary test reports no host-to-host import from plugins/immune-brain/runtime/claude/kernel_ports.ts to runtime/antigravity/. Seam: tests/runtime-layering-boundary.test.ts scanning the real plugins/immune-brain/ tree. BASELINE has exactly four entries, every owner is '#414' (the three runtime/antigravity -> runtime/claude edges and .pi-extension/pi-canary-assurance-progression.ts -> runtime/claude/review_host), and comparing observed edges with it yields no unexpected and no stale edge; the existing fixture test still reports a new edge as unexpected and the stale-entry test still reports a baseline entry without an observed edge.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (BR-REQ-2, BR-DEC-2; D1, D2, D4, D5). Done looks like: each runtime probes with the probe its composition root supplied, and parentHost alone selects nothing. Seam: tests/antigravity-assurance-conformance.test.ts describe 'runtime host probe', calling retireStaleBatch on a real AntigravityRuntime or ClaudeRuntime in a temp directory with no confirmation port and no entry token, so a passing probe surfaces interaction_not_opened. Positive: AntigravityRuntime with env ANTIGRAVITY_VERSION=0.2.0, and ClaudeRuntime with env CLAUDE_CODE_VERSION=2.1.236, each reject with interaction_not_opened. Negative: AntigravityRuntime with ANTIGRAVITY_VERSION=0.0.9 rejects unsupported_host with a reason naming 0.1.0; AntigravityRuntime with only CLAUDE_CODE_VERSION=2.1.236 rejects unsupported_host 'Antigravity version is unavailable'. Bound: a ClaudeRuntime constructed with parentHost 'antigravity', no probe option and only ANTIGRAVITY_VERSION=0.2.0 rejects unsupported_host 'Claude Code version is unavailable'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"runtime host probe\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 and SCN-1 (BR-REQ-3, BR-REQ-4, BR-DEC-3; D3). Done looks like: an Antigravity MCP session is judged against Antigravity's minimum and its refusals name Antigravity, while Claude sessions behave as before. Seam: tests/antigravity-assurance-conformance.test.ts describe 'MCP host probe gates', driving createAntigravityMcpRuntime and createMcpRuntime from plugins/immune-brain/runtime with bindClientHandshake (protocolVersion 2025-06-18) and a consumePhaseAdmission that admits nothing, plus one real handleJsonRpc initialize. Positive: an Antigravity handshake version 1.0.0, interactive, makes start_unattended_batch and retire_stale_batch (with initiative_slug) fail run_entry_required, and advance_assurance is not refused unsupported_host. Negative: an Antigravity handshake 0.0.9 makes all three tools fail unsupported_host with a reason naming 0.1.0; an Antigravity MCP runtime initialized through handleJsonRpc with clientInfo name 'antigravity' version 1.0.0 and env ANTIGRAVITY_VERSION=1.0.0 makes start_unattended_batch fail unsupported_host with reason 'Antigravity version is unavailable'. Bound: a Claude handshake 2.1.100 makes start_unattended_batch fail with 'Claude Code 2.1.100 is below the minimum supported 2.1.236', and an unversioned Claude session makes it fail with 'Claude Code version is unavailable'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP host probe gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (BR-REQ-5; D7). Done looks like: a maintainer reading the layering reference sees that #413's edge is gone and the remaining baseline belongs to #414. Seam: tests/layering-rules-contract.test.ts describe 'layering reference' reading the real files. The Enforcement section of docs/reference/layering-rules.md names tests/runtime-layering-boundary.test.ts, a four-edge baseline and #414, and does not contain 'kernel_ports.ts:115', 'five-edge' or '#413'; plugins/immune-brain/dist/docs/reference/layering-rules.md and plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md are byte-equal to the source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layering-rules-contract.test.ts\",\n      \"-t\",\n      \"layering reference\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-probe-injection.md",
+    "docs/plans/host-probe-injection.intent.json",
+    "docs/reference/layering-rules.md",
+    "docs/specs/host-probe-injection.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+    "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+    "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/layering-rules-contract.test.ts",
+    "tests/runtime-layering-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

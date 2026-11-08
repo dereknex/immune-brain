@@ -47,6 +47,16 @@ describe("layering reference", () => {
 		expect(between(reference, "## Enforcement", "\n## ")).toContain("tests/runtime-layering-boundary.test.ts");
 	});
 
+	it("states the four-edge baseline owned by #414 and drops the retired edge", () => {
+		const enforcement = between(reference, "## Enforcement", "\n## ");
+		expect(enforcement).toContain("tests/runtime-layering-boundary.test.ts");
+		expect(enforcement).toContain("four-edge");
+		expect(enforcement).toContain("#414");
+		expect(reference).not.toContain("kernel_ports.ts:115");
+		expect(reference).not.toContain("five-edge");
+		expect(reference).not.toContain("#413");
+	});
+
 	it("keeps the packaged copies byte-equal and in the mirror manifest", () => {
 		expect(read(`${PLUGIN}/dist/docs/reference/layering-rules.md`)).toBe(reference);
 		expect(read(`${ANTIGRAVITY}/dist/docs/reference/layering-rules.md`)).toBe(reference);
