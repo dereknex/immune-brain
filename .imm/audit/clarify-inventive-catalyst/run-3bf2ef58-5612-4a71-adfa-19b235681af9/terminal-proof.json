@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "clarify-inventive-catalyst",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:clarify-inventive-catalyst:2026-11-08T11:04:27.719Z",
+  "final_record_hash": "sha256:50330a396581ff09f3091fdd4094919d6f5b58459e7baf07fd19ce67699be0d1",
+  "terminalized_at": "2026-11-08T11:04:27.719Z"
+}

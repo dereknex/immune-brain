@@ -105,13 +105,19 @@ interrogation. Exhaustive means every sourced current-goal branch, not a fixed
 question count. Seed the fixed framing roots: goal, beneficiary and scenario,
 current state, desired behavior, scope and non-goals, constraints, failure and
 edge behavior, compatibility and migration, success and Verification, and
-deferred items. Before closing, check the concept against six lenses: contrarian
+deferred items. Before closing, check the concept against seven lenses: contrarian
 / YAGNI (should this exist; can a library solve 90% of it), cost and token
 economics (peak load, memory, token budget, quota ceiling — the lens with no
 existing root; estimate the cost of executing the work, not only of running
 it), UX and developer ergonomics, migration and backward compatibility,
 observability and debuggability (how does on-call diagnose this at 3 AM), and
-long-term tech debt and maintenance (is this still maintainable in two years).
+long-term tech debt and maintenance (is this still maintainable in two years), and
+inventive catalyst (which trade-off does the design accept as inevitable; propose a
+pattern from the inlined catalog — Segmentation, Extraction, Preliminary Action, Beforehand Cushioning, Inversion, Dynamics, Blessing in Disguise, Intermediary, Self-Service, Cheap Dispensables, after EGM
+`agents/inventive_catalyst.md` at `6a8001e` — that removes it, and state each
+proposed pattern's secondary cost). Theoretical bounds and Immune-Brain authority
+invariants are system bounds, not contradictions. When no genuine contradiction
+exists, record `No false compromise detected` instead of inventing a transform.
 A lens that finds nothing is recorded as checked, not skipped. Recompute the tree after every response and traverse newly
 unlocked downstream branches. Adoption closes current nodes, not unexplored
 branches. Resolve facts and delegated choices locally; ask material user-owned
