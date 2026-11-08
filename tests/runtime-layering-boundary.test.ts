@@ -3,8 +3,8 @@
 //
 // 1. Host-neutral runtime modules never import a host adapter.
 // 2. Host adapters never import each other, except the exact-edge ratchet
-//    baseline below, owned by #413/#414. Deleting an edge there is forced when
-//    the import is removed (stale entry), and adding one fails (unexpected).
+//    baseline below, owned by #414. Deleting an edge there is forced when the
+//    import is removed (stale entry), and adding one fails (unexpected).
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -21,12 +21,11 @@ const HOSTS: Record<string, string> = {
 	pi: "plugins/immune-brain/.pi-extension",
 };
 
-/** D1: the five host-to-host edges on main, each owned by an open issue. */
-const BASELINE: Array<{ edge: string; owner: "#413" | "#414" }> = [
+/** D1: the four host-to-host edges on main, each owned by #414. */
+const BASELINE: Array<{ edge: string; owner: "#414" }> = [
 	{ edge: "plugins/immune-brain/runtime/antigravity/kernel_ports.ts -> plugins/immune-brain/runtime/claude/kernel_ports", owner: "#414" },
 	{ edge: "plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server", owner: "#414" },
 	{ edge: "plugins/immune-brain/runtime/antigravity/interaction.ts -> plugins/immune-brain/runtime/claude/interaction", owner: "#414" },
-	{ edge: "plugins/immune-brain/runtime/claude/kernel_ports.ts -> plugins/immune-brain/runtime/antigravity/capability", owner: "#413" },
 	{ edge: "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts -> plugins/immune-brain/runtime/claude/review_host", owner: "#414" },
 ];
 
@@ -135,9 +134,9 @@ describe("runtime layering boundary", () => {
 		expect(innerLayerViolations(fixture.slice(1, 2), HOSTS)).toEqual([]);
 	});
 
-	test("AC2: observed host-to-host edges equal the five-edge baseline", () => {
-		expect(BASELINE).toHaveLength(5);
-		expect(BASELINE.every(({ owner }) => owner === "#413" || owner === "#414")).toBe(true);
+	test("AC2: observed host-to-host edges equal the four-edge baseline", () => {
+		expect(BASELINE).toHaveLength(4);
+		expect(BASELINE.every(({ owner }) => owner === "#414")).toBe(true);
 		const { unexpected, stale } = compareEdges(
 			hostToHostEdges(real, HOSTS),
 			BASELINE.map(({ edge }) => edge),

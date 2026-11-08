@@ -10,12 +10,14 @@ import {
 	type AntigravityStopPayload,
 } from "./lane_guard";
 import { antigravityRunContinuationHook } from "./run_continuation";
+import { probeHost } from "./capability";
 
 export function createAntigravityMcpRuntime(options: McpRuntimeOptions = {}) {
 	const host = options.host ?? new AntigravityReviewHost(new FileHookEventLog());
 	return createMcpRuntime({
 		...options,
 		parentHost: "antigravity",
+		probeHost: options.probeHost ?? probeHost,
 		host,
 	});
 }

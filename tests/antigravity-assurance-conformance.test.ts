@@ -18,6 +18,9 @@ import {
 import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/antigravity/interaction";
 import { antigravityRunContinuationHook } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
+import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
+import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { NativeAuthorityError } from "../plugins/immune-brain/runtime/antigravity/interaction";
 import { probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
 import type { ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
@@ -345,6 +348,158 @@ describe("Antigravity Harness Conformance", () => {
 			} finally {
 				rmSync(tempDir, { recursive: true, force: true });
 			}
+		});
+	});
+
+	/** Runs `body` against one value built in a throwaway directory. */
+	async function withTemp<T>(create: (cwd: string) => T, body: (value: T) => Promise<void>): Promise<void> {
+		const cwd = mkdtempSync(join(tmpdir(), "imm-host-probe-"));
+		try {
+			await body(create(cwd));
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	}
+
+	/** The reason code of a refusal, so a case can prove the probe is not what refused. */
+	async function refusalCode(promise: Promise<unknown>): Promise<string> {
+		try {
+			await promise;
+			return "resolved";
+		} catch (error) {
+			return error instanceof NativeAuthorityError ? error.reasonCode : String((error as Error | undefined)?.message ?? error);
+		}
+	}
+
+	/** No confirmation port and no entry token: a passing probe surfaces the interaction gate. */
+	function retireProbe(runtime: ClaudeRuntime) {
+		return runtime.retireStaleBatch("probe-initiative", {
+			sessionId: "probe-session",
+			toolCallId: "probe-call",
+			taskId: "probe-initiative",
+			initiativeSlug: "probe-initiative",
+		});
+	}
+
+	describe("runtime host probe", () => {
+		it("judges an Antigravity runtime with the Antigravity probe", async () => {
+			await withTemp(
+				(cwd) => new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true }),
+				async (runtime) => {
+					await expect(retireProbe(runtime)).rejects.toThrow("interaction_not_opened");
+				},
+			);
+		});
+
+		it("judges a Claude runtime with the Claude probe", async () => {
+			await withTemp(
+				(cwd) => new ClaudeRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true }),
+				async (runtime) => {
+					await expect(retireProbe(runtime)).rejects.toThrow("interaction_not_opened");
+				},
+			);
+		});
+
+		it("refuses an Antigravity runtime below the Antigravity minimum", async () => {
+			await withTemp(
+				(cwd) => new AntigravityRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "0.0.9" }, interactive: true }),
+				async (runtime) => {
+					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+				},
+			);
+		});
+
+		it("refuses an Antigravity runtime that announces only a Claude Code version", async () => {
+			await withTemp(
+				(cwd) => new AntigravityRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true }),
+				async (runtime) => {
+					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+				},
+			);
+		});
+
+		it("does not pick a probe from parentHost alone", async () => {
+			await withTemp(
+				(cwd) => new ClaudeRuntime({ cwd, parentHost: "antigravity", env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true }),
+				async (runtime) => {
+					await expect(retireProbe(runtime)).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+				},
+			);
+		});
+	});
+
+	describe("MCP host probe gates", () => {
+		const handshake = (version: string, interactive = true) => ({ version, interactive, protocolVersion: "2025-06-18" });
+
+		it("admits an Antigravity session at the Antigravity minimum", async () => {
+			await withTemp(
+				(cwd) => {
+					const mcp = createAntigravityMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false });
+					mcp.bindClientHandshake(handshake("1.0.0"));
+					return mcp;
+				},
+				async (mcp) => {
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+					expect(await refusalCode(mcp.callTool("advance_assurance", { task_id: "probe-task" }))).not.toBe("unsupported_host");
+				},
+			);
+		});
+
+		it("refuses every authority gate below the Antigravity minimum", async () => {
+			await withTemp(
+				(cwd) => {
+					const mcp = createAntigravityMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false });
+					mcp.bindClientHandshake(handshake("0.0.9"));
+					return mcp;
+				},
+				async (mcp) => {
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+					await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version 0.0.9 is older than minimum supported 0.1.0");
+				},
+			);
+		});
+
+		it("names Antigravity for a client whose initialize binds no trusted version", async () => {
+			await withTemp(
+				(cwd) => createAntigravityMcpRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "1.0.0" }, interactive: true, consumePhaseAdmission: () => false }),
+				async (mcp) => {
+					await handleJsonRpc({
+						jsonrpc: "2.0",
+						id: "probe-initialize",
+						method: "initialize",
+						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity", version: "1.0.0" }, capabilities: { elicitation: {} } },
+					}, mcp);
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+				},
+			);
+		});
+
+		it("keeps the Claude minimum for a Claude session", async () => {
+			await withTemp(
+				(cwd) => {
+					const mcp = createMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false });
+					mcp.bindClientHandshake(handshake("2.1.100"));
+					return mcp;
+				},
+				async (mcp) => {
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code 2.1.100 is below the minimum supported 2.1.236");
+				},
+			);
+		});
+
+		it("never falls back to the environment version for an unversioned Claude session", async () => {
+			await withTemp(
+				(cwd) => {
+					const mcp = createMcpRuntime({ cwd, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true, consumePhaseAdmission: () => false });
+					mcp.bindClientHandshake({ version: "", interactive: true, protocolVersion: "2025-06-18" });
+					return mcp;
+				},
+				async (mcp) => {
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+				},
+			);
 		});
 	});
 });

@@ -112,7 +112,6 @@ import {
 import { selectedClaudeParent } from "./run_continuation";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { probeHost, type PermissionMode, type HostProbe } from "./capability";
-import { probeHost as probeAntigravityHost } from "../antigravity/capability";
 
 export function diffSnapshotOf(root: string, record: TaskRecord): {
 	diff_hash: string;
@@ -260,6 +259,11 @@ export interface ClaudeRuntimeOptions {
 	cwd: string;
 	env?: Record<string, string | undefined>;
 	parentHost?: ExecutorHost;
+	/**
+	 * The Host probe this adapter's composition root chose; defaults to the
+	 * Claude probe. The shared runtime never selects a Host's probe itself.
+	 */
+	probeHost?: typeof probeHost;
 	host?: AssuranceHostPort & {
 		observe(event: any): void;
 		consumeReview?(res: any): any;
@@ -366,10 +370,7 @@ export class ClaudeRuntime {
 	}
 
 	private probeHost(): HostProbe {
-		if (this.parentHost === "antigravity") {
-			return probeAntigravityHost(this.env, process.platform, this.hostVersion);
-		}
-		return probeHost(this.env, process.platform, this.hostVersion);
+		return (this.options.probeHost ?? probeHost)(this.env, process.platform, this.hostVersion);
 	}
 
 	bindNativeConfirmation(port: NativeConfirmationPort): void {
