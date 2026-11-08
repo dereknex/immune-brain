@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
+import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +25,7 @@ function input() {
 describe("native repair recovery round trip", () => {
  it("requires a fresh gate, preserves original delivery, settles the repair before Parent success", async () => {
   const root = mkdtempSync(join(tmpdir(), "gdr-repair-roundtrip-"));
+  const transcripts = reviewerTranscripts();
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
   const host = new ClaudeReviewHost(new MemoryHookEventLog());
   let decision: "accept" | "decline" = "accept", gates = 0;
@@ -79,8 +81,9 @@ describe("native repair recovery round trip", () => {
    const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: task, snapshot_digest: ready.snapshot_digest,
     decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "repair fixture verified", inspected_paths: ["integration.txt"] } };
    const context = { sessionId: "repair-review", agentId: "repair-reviewer", taskId: task, operationId: ready.operation_id };
+   const transcriptPath = transcripts.sessionTranscriptPath("repair-reviewer", JSON.stringify(verdict));
    host.observe({ ...context, type: "SubagentStart", agent: REVIEWER_AGENT });
-   host.observe({ ...context, type: "PostToolUse", toolName: AGENT_TOOL, result: JSON.stringify(verdict) });
+   host.observe({ ...context, type: "PostToolUse", toolName: AGENT_TOOL, result: JSON.stringify(verdict), transcriptPath });
    host.observe({ ...context, type: "SubagentStop", agent: REVIEWER_AGENT });
    expect((await runtime.submitReview(task, verdict) as any).state).toBe("completed");
    // A settled repair is delivered with no integrate gate or commit; recorded final commands replay without a new gate.
@@ -94,7 +97,7 @@ describe("native repair recovery round trip", () => {
    expect(JSON.stringify(readAuditTaskPair(root, "original"))).toBe(originalBytes);
    expect(readFileSync(join(root, "delivered.txt"), "utf8")).toBe("done\n");
    expect(gates).toBe(2); // final verification decline/accept; enrollment has no in-place gate (S7)
-  } finally { await runtime.shutdown(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await runtime.shutdown(); transcripts.cleanup(); rmSync(root, { recursive: true, force: true }); }
  }, 60000);
 });
 

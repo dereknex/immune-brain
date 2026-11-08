@@ -1,4 +1,5 @@
 import { reviewIncompleteFixture, exhaustReviewForRetry } from "./fixtures/review-incomplete-fixture";
+import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewPacketHandle, parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
@@ -107,6 +108,11 @@ setDefaultTimeout(60_000);
 
 const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
+// Reviewer transcripts are local 0600 files under the system temp directory;
+// they stand in for the bytes a synchronous `Agent` result points at.
+const transcripts = reviewerTranscripts();
+afterAll(() => transcripts.cleanup());
+
 function projection(
 	lifecycle: "active" | "done" | "stopped" = "active",
 	nextObligation: "run_qa" | "run_review" | "complete" | "none" = "run_qa",
@@ -193,8 +199,11 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 
 function completeReview(host: ClaudeReviewHost, operationId: string, result: string, sessionId = "s1") {
 	const agentId = `agent-${operationId}`;
+	// A synchronous `Agent` result is a pointer notice; the receipt is the
+	// reviewer's own transcript, correlated through the same `agentId`.
+	const transcriptPath = transcripts.sessionTranscriptPath(agentId, result, `review-${operationId}`);
 	host.observe({ type: "SubagentStart", sessionId, agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
-	host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result, taskId: TASK, operationId });
+	host.observe({ type: "PostToolUse", sessionId, agentId, toolName: AGENT_TOOL, result, transcriptPath, taskId: TASK, operationId });
 	host.observe({ type: "SubagentStop", sessionId, agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 }
 
@@ -311,8 +320,9 @@ async function runWireGate(response: Record<string, unknown>, options: { cancelO
 
 function reviewLifecycle(host: ClaudeReviewHost, input: { sessionId?: string; agentId: string; operationId?: string; taskId?: string; prompt?: string; result: string }) {
 	const sessionId = input.sessionId ?? "s";
+	const transcriptPath = transcripts.sessionTranscriptPath(input.agentId, input.result);
 	host.observe({ type: "SubagentStart", sessionId, agent: REVIEWER_AGENT, agentId: input.agentId, taskId: input.taskId, operationId: input.operationId, prompt: input.prompt });
-	host.observe({ type: "PostToolUse", sessionId, agentId: input.agentId, toolName: AGENT_TOOL, result: input.result, taskId: input.taskId, operationId: input.operationId });
+	host.observe({ type: "PostToolUse", sessionId, agentId: input.agentId, toolName: AGENT_TOOL, result: input.result, transcriptPath, taskId: input.taskId, operationId: input.operationId });
 	host.observe({ type: "SubagentStop", sessionId, agent: REVIEWER_AGENT, agentId: input.agentId, taskId: input.taskId, operationId: input.operationId });
 }
 
@@ -628,17 +638,19 @@ describe("claude host authority", () => {
 		expect(ready.state).toBe("review_ready");
 		const op = (ready as { operation_id: string }).operation_id;
 		const result = JSON.stringify(passVerdict(snapshot("review")));
+		const transcriptPath = transcripts.sessionTranscriptPath("a", result);
 		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: op });
 		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: op });
-		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result, taskId: TASK, operationId: op });
+		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result, transcriptPath, taskId: TASK, operationId: op });
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
 	test("all 6 permutations of Start, result, Stop in one session settle Review", () => {
+		const transcriptPath = transcripts.sessionTranscriptPath("p-agent", "pass");
 		const events = (op: string) => [
 			{ type: "SubagentStart" as const, sessionId: "perm-s", agent: REVIEWER_AGENT, agentId: "p-agent", taskId: TASK, operationId: op },
-			{ type: "PostToolUse" as const, sessionId: "perm-s", agentId: "p-agent", toolName: AGENT_TOOL, result: "pass", taskId: TASK, operationId: op },
+			{ type: "PostToolUse" as const, sessionId: "perm-s", agentId: "p-agent", toolName: AGENT_TOOL, result: "pass", transcriptPath, taskId: TASK, operationId: op },
 			{ type: "SubagentStop" as const, sessionId: "perm-s", agent: REVIEWER_AGENT, agentId: "p-agent", taskId: TASK, operationId: op },
 		];
 		const perms = [
@@ -1148,6 +1160,7 @@ describe("claude host authority", () => {
 		const h = makeCoordinator({ host });
 		const ready = await h.coordinator.advance(TASK, ctx);
 		const operationId = (ready as { operation_id: string }).operation_id;
+		const transcriptPath = transcripts.sessionTranscriptPath("agt_1", JSON.stringify(passVerdict(snapshot("review"))));
 		const start = parseHookStdin(JSON.stringify({
 			hook_event_name: "SubagentStart",
 			session_id: "claude-session",
@@ -1162,7 +1175,8 @@ describe("claude host authority", () => {
 			agent_id: "agt_1",
 			tool_name: AGENT_TOOL,
 			tool_use_id: "toolu_1",
-			tool_response: JSON.stringify(passVerdict(snapshot("review"))),
+			transcript_path: transcriptPath,
+			tool_response: JSON.stringify({ status: "completed", agentId: "agt_1", content: [{ type: "text", text: "This agent's report was delivered to you as a message from \"agt_1\" (its SubagentHandback call). Read it there; it is not repeated here." }] }),
 			operation_id: operationId,
 			task_id: TASK,
 		}));
@@ -1183,13 +1197,10 @@ describe("claude host authority", () => {
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 	});
 
-	// The payloads below were written from the documented hook shapes, not
-	// recorded from a Host: no Claude Code build returns the reviewer's verdict in
-	// `tool_response.content`, and `SubagentStop` carries no `last_assistant_message`.
-	// They cover the synchronous branch that survives for a Host that would behave
-	// this way. Conformance against what Claude Code actually emits lives in
-	// tests/claude-review-host-async-agent.test.ts.
-	test("native Host hook payload shapes (prompt in tool_input, verdict in tool_response.content) correlate and settle Review", async () => {
+	// A Host that returns the reviewer's verdict in `tool_response.content` hands
+	// the Parent those bytes; the receipt is the reviewer's own transcript, so a
+	// content verdict with no readable transcript does not settle Review.
+	test("native Host hook payload shapes (prompt in tool_input, verdict in tool_response.content) do not settle Review", async () => {
 		const host = new ClaudeReviewHost();
 		const h = makeCoordinator({ host });
 		const ready = await h.coordinator.advance(TASK, ctx) as { operation_id: string; agent_params: { name: string; prompt: string } };
@@ -1236,7 +1247,8 @@ describe("claude host authority", () => {
 		host.observe(start!);
 		host.observe(stop!);
 		host.observe(post!);
-		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
+		expect(await submitObservedReview(h)).toEqual({ state: "blocked", reason: "sync Agent transcript is not readable" });
+		expect(h.counts().applyCount).toBe(1);
 	});
 
 	test("PostToolUse with nested operation_id/task_id in tool_input or tool_response correlates and rejects conflicts", async () => {
@@ -1303,8 +1315,10 @@ describe("claude host authority", () => {
 		const operationId = (ready as { operation_id: string }).operation_id;
 		const writer = new FileHookEventLog(dir);
 		const agentId = `agent-${operationId}`;
+		const result = JSON.stringify(passVerdict(snapshot("review")));
+		const transcriptPath = transcripts.sessionTranscriptPath(agentId, result);
 		writer.append({ type: "SubagentStart", sessionId: "hook", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
-		writer.append({ type: "PostToolUse", sessionId: "hook", agentId, toolName: AGENT_TOOL, result: JSON.stringify(passVerdict(snapshot("review"))), taskId: TASK, operationId });
+		writer.append({ type: "PostToolUse", sessionId: "hook", agentId, toolName: AGENT_TOOL, result, transcriptPath, taskId: TASK, operationId });
 		writer.append({ type: "SubagentStop", sessionId: "hook", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 		expect(await submitObservedReview(h)).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
@@ -1461,8 +1475,9 @@ describe("claude host authority", () => {
 	test("same-operation PostToolUse without the reserved agent cannot replace the result", () => {
 		const host = new ClaudeReviewHost();
 		const reservation = host.prepareReview(reviewRequest("op-result"));
+		const transcriptPath = transcripts.sessionTranscriptPath("bound", "valid");
 		host.observe({ type: "SubagentStart", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId: "op-result" });
-		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "valid", operationId: "op-result" });
+		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "bound", toolName: AGENT_TOOL, result: "valid", transcriptPath, operationId: "op-result" });
 		host.observe({ type: "PostToolUse", sessionId: "s", agentId: "", toolName: AGENT_TOOL, result: "spoofed", operationId: "op-result" });
 		host.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "bound", operationId: "op-result" });
 		expect(host.consumeReview(reservation)).toMatchObject({ ok: true, receipt: { result: "valid" } });
@@ -2060,8 +2075,9 @@ describe("claude host resolve_finding", () => {
 		const mismatchHarness = makeCoordinator({ host: mismatchHost });
 		const mismatchReady = await mismatchHarness.coordinator.advance(TASK, ctx) as { operation_id: string };
 		const start = { type: "SubagentStart" as const, sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: mismatchReady.operation_id };
+		const mismatchTranscript = transcripts.sessionTranscriptPath("a", JSON.stringify(verdict()));
 		mismatchHost.observe(start);
-		mismatchHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(verdict()), taskId: TASK, operationId: mismatchReady.operation_id });
+		mismatchHost.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, result: JSON.stringify(verdict()), transcriptPath: mismatchTranscript, taskId: TASK, operationId: mismatchReady.operation_id });
 		mismatchHost.observe({ type: "SubagentStop", sessionId: "s", agent: REVIEWER_AGENT, agentId: "a", taskId: TASK, operationId: mismatchReady.operation_id });
 		expect(mismatchHost.inspectReviewForTask(TASK).ok).toBe(true);
 		start.sessionId = "diverged";

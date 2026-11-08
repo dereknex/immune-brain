@@ -1,4 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
@@ -408,6 +409,11 @@ setDefaultTimeout(120_000);
 
 const TASK = "dual-host-task";
 const ROOT = "/tmp/dual-host-assurance";
+
+// Reviewer transcripts are local 0600 files under the system temp directory;
+// they stand in for the bytes a synchronous `Agent` result points at.
+const transcripts = reviewerTranscripts();
+afterAll(() => transcripts.cleanup());
 const ctx = { cwd: ROOT };
 
 type Risk = "routine" | "material" | "critical";
@@ -507,6 +513,8 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 
 function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk: Risk, verdict = passVerdict(snapshot("review", risk))) {
 	const agentId = `claude-agent-${operationId}`;
+	// The Claude receipt is the reviewer's own transcript, never the tool result.
+	const transcriptPath = transcripts.sessionTranscriptPath(agentId, JSON.stringify(verdict));
 	host.observe({ type: "SubagentStart", sessionId: "claude", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
 	host.observe({
 		type: "PostToolUse",
@@ -514,6 +522,7 @@ function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk:
 		agentId,
 		toolName: AGENT_TOOL,
 		result: JSON.stringify(verdict),
+		transcriptPath,
 		taskId: TASK,
 		operationId,
 	});

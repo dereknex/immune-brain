@@ -1,4 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { buildAssuranceSnapshot, createVerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
@@ -224,6 +225,7 @@ function makeCoordinator(overrides: {
 
 describe("review verification packet", () => {
 	const root = mkdtempSync(join(tmpdir(), "review-verification-"));
+	const transcripts = reviewerTranscripts();
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 	git("init", "-q");
 	mkdirSync(join(root, "src"));
@@ -236,7 +238,7 @@ describe("review verification packet", () => {
 	const tree = git("rev-parse", "HEAD^{tree}");
 	// Deliberately remove the worktree file: citation checks must use Git objects.
 	rmSync(join(root, "src/change.ts"));
-	afterAll(() => rmSync(root, { recursive: true, force: true }));
+	afterAll(() => { transcripts.cleanup(); rmSync(root, { recursive: true, force: true }); });
 	const s: SnapshotDescriptor = { ...snapshot("review"), root, review_revision: {
 		contract: "assurance_kernel/review_revision_identity/v1", base_head: commit, review_commit: commit,
 		review_tree: tree, manifest_digest: `sha256:${"d".repeat(64)}`,
@@ -244,8 +246,7 @@ describe("review verification packet", () => {
 	const verdict = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 		snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "f1", kind: "blocking", acceptance_id: "A1",
 			summary: "claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] }, s);
-	const packet = buildReviewVerificationPacket(s, verdict, `sha256:${"e".repeat(64)}`);
-	const finding = packet.findings[0]!;
+	const packet = buildReviewVerificationPacket(s, verdict, `sha256:${"e".repeat(64)}`);	const finding = packet.findings[0]!;
 	const valid = { contract: "assurance_kernel/review_verification/v1", task_id: TASK, snapshot_digest: packet.snapshot_digest,
 		verdict_sha256: packet.verdict_sha256, results: [{ finding_id: finding.id, anchor: finding.anchor,
 			verdict: "refuted", counter_path: "For input X, src/change.ts rejects it before the wrong result." }] };
@@ -302,11 +303,24 @@ describe("review verification packet", () => {
 			reviewerModel: "reviewer", offeredModels: ["other"], operationId: "claude-verifier", writePacket: writeTestReviewPacket });
 		const params = dispatch.reservation.dispatch as { prompt: string };
 		const event = { sessionId: "session", agentId: "agent", taskId: TASK, operationId: "claude-verifier" };
+		const transcriptPath = transcripts.sessionTranscriptPath("agent", JSON.stringify(valid));
 		host.observe({ ...event, type: "SubagentStart", agent: "immune-brain-review-verifier", prompt: params.prompt });
-		host.observe({ ...event, type: "PostToolUse", toolName: "Agent", model: "other", prompt: params.prompt, result: JSON.stringify(valid) });
+		host.observe({ ...event, type: "PostToolUse", toolName: "Agent", model: "other", prompt: params.prompt, result: JSON.stringify(valid), transcriptPath });
 		host.observe({ ...event, type: "SubagentStop", agent: "immune-brain-review-verifier" });
 		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toMatchObject({ state: "complete",
 			attestation: { valid: true, reviewer_model: "reviewer", verifier_model: "other", model_relation: "different", verifier_actor: "claude:agent" } });
+	});
+	test("a Claude verifier receipt without a readable transcript never attests", () => {
+		const host = new ClaudeReviewHost();
+		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
+			reviewerModel: "reviewer", offeredModels: ["other"], operationId: "claude-verifier-unreadable", writePacket: writeTestReviewPacket });
+		const params = dispatch.reservation.dispatch as { prompt: string };
+		const event = { sessionId: "session", agentId: "agent", taskId: TASK, operationId: "claude-verifier-unreadable" };
+		host.observe({ ...event, type: "SubagentStart", agent: "immune-brain-review-verifier", prompt: params.prompt });
+		host.observe({ ...event, type: "PostToolUse", toolName: "Agent", model: "other", prompt: params.prompt, result: JSON.stringify(valid) });
+		host.observe({ ...event, type: "SubagentStop", agent: "immune-brain-review-verifier" });
+		expect(host.inspectVerification(dispatch.reservation)).toEqual({ ok: false, reason: "sync Agent transcript is not readable", release: false });
+		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toEqual({ state: "pending" });
 	});
 	test("records same-model fallback and rejects a substituted verifier result", () => {
 		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
