@@ -325,7 +325,7 @@ export class ClaudeRuntime {
 		inspectReviewForTask?(taskId: string): any;
 	};
 	readonly coordinator: AssuranceCoordinator;
-	private readonly cwd: string;
+	private cwd: string;
 	private readonly options: ClaudeRuntimeOptions;
 	private readonly env: Record<string, string | undefined>;
 	private readonly interactive: boolean;
@@ -365,6 +365,15 @@ export class ClaudeRuntime {
 	}
 
 	/** Bind the version announced by the connected Host during the MCP handshake. */
+	/**
+	 * Bind the workspace this connection's next call runs in. The MCP server
+	 * resolves it per tool call, so a long-lived server started from the plugin
+	 * root follows the session workspace instead of its own `cwd`.
+	 */
+	bindWorkspace(cwd: string): void {
+		this.cwd = cwd;
+	}
+
 	bindHostVersion(version: string | undefined): void {
 		this.hostVersion = version || undefined;
 	}
@@ -1327,4 +1336,6 @@ export interface ToolMeta {
 	permissionMode?: PermissionMode;
 	interactive?: boolean;
 	signal?: AbortSignal;
+	/** Absolute workspace resolved for this call from Host metadata or MCP roots. */
+	workspace?: string;
 }

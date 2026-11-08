@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { batchReason } from "../unattended/batch_reasons";
@@ -141,6 +141,12 @@ export interface McpRuntimeOptions {
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant;
 	/** The startup identity of this server's own bundle; defaults to this module file. */
 	bundleIdentity?: BundleIdentityWatch;
+	/** Client names whose `initialize` handshake may bind a trusted host version; defaults to `[HOST_ID]`. */
+	trustedClientNames?: ReadonlyArray<string>;
+	/** The `serverInfo` this server answers `initialize` with; defaults to the Claude Code identity. */
+	serverInfo?: { name: string; minimumHostVersion: string };
+	/** Queries `roots/list` on a client that advertised the roots capability. */
+	rootsProvider?: (signal?: AbortSignal) => Promise<ReadonlyArray<{ uri?: unknown }> | undefined>;
 }
 
 /**
@@ -162,8 +168,11 @@ export function withCompletionDelivery<T>(taskId: string, result: T, root = proc
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
+	const defaultWorkspace = options.cwd ?? process.cwd();
+	const trustedClientNames = options.trustedClientNames ?? [HOST_ID];
+	const serverInfo = options.serverInfo ?? { name: HOST_ID, minimumHostVersion: MIN_CLAUDE_CODE_VERSION };
 	const runtime = new ClaudeRuntime({
-		cwd: options.cwd ?? process.cwd(),
+		cwd: defaultWorkspace,
 		env: options.env ?? process.env,
 		parentHost: options.parentHost,
 		probeHost: options.probeHost,
@@ -180,7 +189,36 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	// handshake evidence means unversioned and non-interactive: fail closed.
 	let negotiatedVersion: string | undefined;
 	let negotiatedInteractive = false;
+	let negotiatedRoots = false;
+	// One `roots/list` answer per initialized connection: `undefined` means it
+	// was never queried, `null` means it was queried with no usable file root.
+	let rootsWorkspace: string | null | undefined;
+	let rootsProvider = options.rootsProvider;
 	const connectionId = randomUUID();
+	/**
+	 * Resolve and bind this call's workspace (Spec antigravity-mcp-workspace-resolution
+	 * D1): explicit Host `_meta` path, then the MCP roots answer, then this
+	 * server's own workspace. Every workspace-scoped helper below reads the
+	 * binding, never a value cached from a previous call.
+	 */
+	const resolveWorkspace = async (meta: Partial<ToolMeta>, signal?: AbortSignal): Promise<string> => {
+		let workspace = typeof meta.workspace === "string" && isAbsolute(meta.workspace) ? meta.workspace : undefined;
+		if (!workspace && rootsProvider && (negotiatedRoots || options.rootsProvider)) {
+			if (rootsWorkspace === undefined) {
+				let roots: ReadonlyArray<{ uri?: unknown }> | undefined;
+				try {
+					roots = await rootsProvider(signal);
+				} catch {
+					roots = undefined;
+				}
+				rootsWorkspace = firstFileRootPath(roots) ?? null;
+			}
+			workspace = rootsWorkspace ?? undefined;
+		}
+		if (!workspace) workspace = defaultWorkspace;
+		runtime.bindWorkspace(workspace);
+		return workspace;
+	};
 	// Spec branch-boundary D3: hooks run every new build in a fresh process, but
 	// this long-lived server keeps the bundle it started with. Once that file
 	// changes, authority calls refuse with a reconnect action instead of failing
@@ -204,8 +242,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	// session's entry token, which stands in for the native gate only in the
 	// workspace the token was minted for.
 	let hookSessionId: string | null = null;
-	const requireRunEntry = (operation: GatedTool, toolCallId: string): string | undefined => {
-		const workspace = options.cwd ?? process.cwd();
+	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string): string | undefined => {
 		const correlated = readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
 			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
@@ -228,18 +265,31 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		host,
 		connectionId,
 		listTools: listMcpTools,
-		bindClientHandshake(identity: { version: string; interactive: boolean; protocolVersion?: string }) {
+		trustedClientNames,
+		serverInfo,
+		bindClientHandshake(identity: { version: string; interactive: boolean; protocolVersion?: string; roots?: boolean }) {
 			negotiatedVersion = identity.version || undefined;
 			negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
+			negotiatedRoots = identity.roots === true;
+			// A re-initialize re-negotiates the connection: a cached root answer no longer applies.
+			rootsWorkspace = undefined;
 			runtime.bindHostVersion(negotiatedVersion);
+		},
+		bindRootsProvider(provider: NonNullable<McpRuntimeOptions["rootsProvider"]>) {
+			rootsProvider = provider;
+		},
+		/** `notifications/roots/list_changed`: the next call queries `roots/list` again. */
+		clearRootsWorkspace() {
+			rootsWorkspace = undefined;
 		},
 		bindNativeConfirmation(port: NativeConfirmationPort) {
 			runtime.bindNativeConfirmation(port);
 		},
 		sessionInteractive: () => negotiatedInteractive,
 		async callTool(name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) {
+			const workspace = await resolveWorkspace(meta, meta.signal);
 			if (name !== "status" && bundle.stale()) throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-			const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, options.cwd ?? process.cwd());
+			const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
 			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
 				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");
@@ -257,7 +307,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -270,7 +320,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
-				const maxParallel = task ? 1 : resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+				const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(task ? { plan_source: "single_task" as const } : {}),
@@ -296,7 +346,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 					toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -337,14 +387,14 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
 				signal: meta.signal,
 			};
-			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
+			if (name === "advance_assurance") return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), workspace);
 			if (name === "submit_review") {
 				// ADR 0017: an absent verdict is the receipt-bound submission.
-				return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), options.cwd);
+				return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), workspace);
 			}
 			if (name === "submit_verification") {
 				if (args.result !== undefined && typeof args.result !== "string") throw new Error("result must be a string");
-				return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result as string | undefined, toolMeta), options.cwd);
+				return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result as string | undefined, toolMeta), workspace);
 			}
 			if (name === "revise_intent") {
 				if (!Object.hasOwn(args, "next_intent")) throw new Error("next_intent is required");
@@ -390,6 +440,32 @@ function hostCallIdentity(meta: Record<string, unknown> | undefined): { toolCall
 	return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
 }
 
+/**
+ * The workspace Antigravity names on every `tools/call` (E2). A relative, empty
+ * or non-string entry is not a workspace and never binds.
+ */
+function metaWorkspacePath(meta: Record<string, unknown> | undefined): string | undefined {
+	const paths = meta?.["antigravity.google/workspace_paths"];
+	if (!Array.isArray(paths) || typeof paths[0] !== "string") return undefined;
+	const first = paths[0].trim();
+	return first && isAbsolute(first) ? first : undefined;
+}
+
+/** The first `roots/list` root that is a usable local directory URI. */
+function firstFileRootPath(roots: ReadonlyArray<{ uri?: unknown }> | undefined): string | undefined {
+	for (const root of roots ?? []) {
+		const uri = root?.uri;
+		if (typeof uri !== "string" || !uri.startsWith("file://")) continue;
+		try {
+			const path = fileURLToPath(uri);
+			if (isAbsolute(path)) return path;
+		} catch {
+			// A URI that is not a local file path is not a workspace.
+		}
+	}
+	return undefined;
+}
+
 function rpcError(error: unknown): { code: number; message: string; data?: Record<string, unknown> } {
 	if (error instanceof NativeAuthorityError) {
 		return {
@@ -412,15 +488,18 @@ export async function handleJsonRpc(message: JsonRpc, mcp = createMcpRuntime()):
 			clientInfo?: { name?: unknown; version?: unknown };
 			capabilities?: Record<string, unknown>;
 		};
-		// Trust binds to the exact Claude Code client identity: name, parseable
-		// version at the floor, and elicitation capability. Any other client
-		// name stays unversioned and non-interactive; read-only status remains usable.
-		const trustedClient = params.clientInfo?.name === HOST_ID;
+		// Trust binds to the trusted client identity for this server: name,
+		// parseable version at the floor, plus the negotiated capabilities. Any
+		// other client name stays unversioned and non-interactive; read-only status
+		// remains usable.
+		const trustedClient = mcp.trustedClientNames.includes(String(params.clientInfo?.name ?? ""));
 		const elicitation = params.capabilities?.elicitation;
+		const roots = params.capabilities?.roots;
 		mcp.bindClientHandshake({
 			version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
 			protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
 			interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
+			roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots),
 		});
 		return {
 			jsonrpc: "2.0",
@@ -428,16 +507,21 @@ export async function handleJsonRpc(message: JsonRpc, mcp = createMcpRuntime()):
 			result: {
 				protocolVersion: MCP_PROTOCOL_VERSION,
 				serverInfo: {
-					name: HOST_ID,
+					name: mcp.serverInfo.name,
 					version: PLUGIN_VERSION,
 					contract: CORE_CONTRACT,
-					minimumHostVersion: MIN_CLAUDE_CODE_VERSION,
+					minimumHostVersion: mcp.serverInfo.minimumHostVersion,
 				},
 				capabilities: { tools: {} },
 			},
 		};
 	}
 	if (message.method === "notifications/initialized") return null;
+	// The client's root list moved: the next call queries `roots/list` again.
+	if (message.method === "notifications/roots/list_changed") {
+		mcp.clearRootsWorkspace();
+		return null;
+	}
 	if (message.method === "notifications/cancelled") {
 		const requestId = (message.params as { requestId?: string | number } | undefined)?.requestId;
 		if (requestId !== undefined) mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
@@ -466,6 +550,7 @@ export async function handleJsonRpc(message: JsonRpc, mcp = createMcpRuntime()):
 			const result = await mcp.callTool(name, params.arguments ?? {}, {
 				sessionId,
 				toolCallId,
+				workspace: metaWorkspacePath(params._meta),
 				interactive,
 				requiresUserInteraction: isPrivilegedOperation(name),
 				signal: ac.signal,
@@ -683,6 +768,11 @@ export async function serveStdio(options: {
 		reject: (error: Error) => void;
 	}>();
 	let chain = Promise.resolve();
+	// One `tools/call` at a time: `callTool` binds the workspace it resolved on the
+	// shared runtime, so an interleaved call would move that binding mid-call.
+	// Native interactions still settle through `pending` on the input stream, which
+	// is why a call is not awaited inline here.
+	let callChain: Promise<void> = Promise.resolve();
 
 	const rejectPending = (error: Error): void => {
 		for (const item of pending.values()) item.reject(error);
@@ -757,12 +847,41 @@ export async function serveStdio(options: {
 		}
 	});
 
+	// The shared transport is bidirectional, so `roots/list` uses the same
+	// pending-request map as `elicitation/create`. A client that answers with an
+	// error or without usable roots leaves the workspace to the next fallback.
+	mcp.bindRootsProvider(async (signal) => {
+		if (!accepting) return undefined;
+		const requestId = `immune-brain:roots:${mcp.connectionId}:${++requestSequence}`;
+		let abortListener: (() => void) | undefined;
+		const response = new Promise<JsonRpc>((resolve, reject) => {
+			pending.set(requestId, { resolve, reject });
+			abortListener = () => {
+				pending.delete(requestId);
+				reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+			};
+			signal?.addEventListener("abort", abortListener, { once: true });
+		});
+		try {
+			await writeReply(output, { jsonrpc: "2.0", id: requestId, method: "roots/list", params: {} });
+			const reply = await response;
+			const roots = reply.error ? undefined : (reply.result as { roots?: unknown } | undefined)?.roots;
+			return Array.isArray(roots) ? (roots as Array<{ uri?: unknown }>) : undefined;
+		} catch {
+			return undefined;
+		} finally {
+			pending.delete(requestId);
+			if (abortListener) signal?.removeEventListener("abort", abortListener);
+		}
+	});
+
 	const runCall = (parsed: JsonRpc): void => {
-		const task = handleJsonRpc(parsed, mcp).then(async (reply) => {
+		const task = callChain.then(() => handleJsonRpc(parsed, mcp)).then(async (reply) => {
 			if (reply) await writeReply(output, reply);
 		}).catch(() => {
 			void executeShutdown(1);
 		});
+		callChain = task;
 		inFlight.add(task);
 		void task.finally(() => inFlight.delete(task));
 	};
@@ -943,7 +1062,9 @@ async function runHook(): Promise<void> {
 }
 
 const entry = process.argv[1] ?? "";
-if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
+// Only this module's own entrypoint starts the server: the Antigravity bundle
+// includes this module and must not start a second stdio server.
+if (entry.endsWith("/claude/mcp_server.ts") || entry.endsWith("/claude/mcp-server.mjs")) {
 	if (process.argv.includes("--hook")) void runHook();
 	else void serveStdio();
 }

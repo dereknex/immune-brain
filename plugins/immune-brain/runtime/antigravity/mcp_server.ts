@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
-import { createMcpRuntime, handleJsonRpc, type McpRuntimeOptions, type JsonRpc } from "../claude/mcp_server";
+import type { Readable, Writable } from "node:stream";
+import { createMcpRuntime, serveStdio as serveSharedStdio, type McpRuntimeOptions } from "../claude/mcp_server";
 import { AntigravityReviewHost, FileHookEventLog, type AntigravityHookEvent } from "./review_host";
 import {
 	antigravityPreInvocationHook,
@@ -10,7 +11,7 @@ import {
 	type AntigravityStopPayload,
 } from "./lane_guard";
 import { antigravityRunContinuationHook } from "./run_continuation";
-import { probeHost } from "./capability";
+import { MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
 
 export function createAntigravityMcpRuntime(options: McpRuntimeOptions = {}) {
 	const host = options.host ?? new AntigravityReviewHost(new FileHookEventLog());
@@ -19,28 +20,20 @@ export function createAntigravityMcpRuntime(options: McpRuntimeOptions = {}) {
 		parentHost: "antigravity",
 		probeHost: options.probeHost ?? probeHost,
 		host,
+		// Antigravity reports itself as `antigravity-client` (CLI 1.5.3)
+		// and `antigravity`, with a `v`-prefixed version.
+		trustedClientNames: options.trustedClientNames ?? ["antigravity-client", "antigravity"],
+		serverInfo: options.serverInfo ?? { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION },
 	});
 }
 
-export async function serveStdio(options: McpRuntimeOptions = {}): Promise<void> {
-	const runtime = createAntigravityMcpRuntime(options);
-	const rl = createInterface({ input: stdin, terminal: false });
-	for await (const line of rl) {
-		const trimmed = line.trim();
-		if (!trimmed) continue;
-		try {
-			const message = JSON.parse(trimmed) as JsonRpc;
-			const response = await handleJsonRpc(message, runtime);
-			if (response) stdout.write(JSON.stringify(response) + "\n");
-		} catch (err: unknown) {
-			const errorResponse = {
-				jsonrpc: "2.0",
-				id: null,
-				error: { code: -32700, message: "Parse error" },
-			};
-			stdout.write(JSON.stringify(errorResponse) + "\n");
-		}
-	}
+export async function serveStdio(
+	options: McpRuntimeOptions & { input?: Readable; output?: Writable; exit?: (code: number) => void } = {},
+): Promise<void> {
+	const { input, output, exit, ...runtimeOptions } = options;
+	// The shared bidirectional transport can serve `roots/list`; the readline
+	// loop this replaced could not issue server-to-client requests.
+	await serveSharedStdio({ input, output, exit, runtime: createAntigravityMcpRuntime(runtimeOptions) });
 }
 
 export async function runHook(): Promise<void> {
@@ -109,7 +102,9 @@ export async function runHook(): Promise<void> {
 }
 
 const entry = process.argv[1] ?? "";
-if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs") || entry.endsWith("antigravity/mcp-server.mjs")) {
+// Only this module's own entrypoint starts the Antigravity server: the bundle
+// also contains the Claude module entrypoint, which must not start here.
+if (entry.endsWith("/antigravity/mcp_server.ts") || entry.endsWith("/antigravity/mcp-server.mjs")) {
 	if (process.argv.includes("--hook")) void runHook();
 	else void serveStdio();
 }

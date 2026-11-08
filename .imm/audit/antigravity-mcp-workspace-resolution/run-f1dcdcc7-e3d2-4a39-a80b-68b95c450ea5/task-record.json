@@ -1,0 +1,387 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-mcp-workspace-resolution",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-mcp-workspace-resolution",
+    "goal": "Issue #429 (Spec docs/specs/antigravity-mcp-workspace-resolution.spec.md). Resolve the active session workspace per MCP tool call in priority order: (1) tools/call params._meta[\"antigravity.google/workspace_paths\"][0], (2) the first valid file:// root URI from MCP roots/list, (3) options.cwd ?? process.cwd(), binding that workspace on ClaudeRuntime and workspace-scoped MCP helpers before dispatching status or execution tools. In createAntigravityMcpRuntime and capability.ts, trust Antigravity initialize client names (\"antigravity-client\" and \"antigravity\"), normalize an optional leading \"v\" in parseSemver (such as \"v1.0.0\"), delegate Antigravity serveStdio to the shared bidirectional stdio server with roots/list support, and narrow the module-level CLI entrypoint guards so dist/antigravity/mcp-server.mjs starts only the Antigravity server. Regenerate the Claude and Antigravity plugin bundles with no new host-to-host import edge.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 and BR-SCN-1 (BR-REQ-1, BR-DEC-2; D1, D2, D3, D6). Done looks like: an Antigravity MCP server started outside the Lane worktree resolves and binds the session workspace per call in priority order (_meta[\"antigravity.google/workspace_paths\"][0] -> MCP roots/list first file:// URI -> options.cwd ?? process.cwd()). Seam: tests/antigravity-assurance-conformance.test.ts describe \"MCP workspace resolution\". Positive: (1) with createAntigravityMcpRuntime({ cwd: pluginDir }) and an enrolled task in laneDir, handleJsonRpc tools/call for status and advance_assurance with params._meta[\"antigravity.google/workspace_paths\"] = [laneDir] returns the enrolled Lane claim, run_id, and config.project_key for laneDir (not pluginDir) and advances the task in laneDir; (2) over serveStdio with cwd: pluginDir, when _meta is absent and the client advertises capabilities.roots and answers roots/list with [{ uri: pathToFileURL(laneDir).href }], status projects laneDir, and notifications/roots/list_changed invalidates the cached root so the next call re-queries roots/list. Negative: (1) _meta[\"antigravity.google/workspace_paths\"] set to [], [\"\"], or [\"relative/path\"] and roots/list returning [{ uri: \"https://example.com/repo\" }] fall back to pluginDir (claim: null); (2) roots/list returning a JSON-RPC error falls back to pluginDir. Bound: (1) when _meta names laneDir and roots/list names otherDir, status projects laneDir; (2) a call with _meta: [laneDir] followed by a call with no _meta and no roots capability re-binds pluginDir (claim: null).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP workspace resolution\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 and BR-SCN-1 (BR-REQ-2, BR-DEC-1; D4, D5). Done looks like: Antigravity initialize handshakes with clientInfo.name \"antigravity-client\" or \"antigravity\" and v-prefixed semver (\"v1.0.0\") bind a trusted host version and admit Lane Executor tools, while untrusted, unversioned, or below-minimum sessions fail closed with Antigravity reasons. Seam: tests/antigravity-assurance-conformance.test.ts describe \"MCP host probe gates\". Positive: (1) parseSemver(\"v1.0.0\") returns [1, 0, 0] and probeHost({}, \"darwin\", \"v1.0.0\") returns ok: true; (2) handleJsonRpc initialize on createAntigravityMcpRuntime with clientInfo { name: \"antigravity-client\", version: \"v1.0.0\" } (and { name: \"antigravity\", version: \"1.0.0\" }) and capabilities { elicitation: {} } returns serverInfo.name \"antigravity\" and minimumHostVersion \"0.1.0\", admits advance_assurance past unsupported_host, and reaches run_entry_required on start_unattended_batch and retire_stale_batch. Negative: (1) parseSemver(\"vv1.0.0\"), parseSemver(\"v1.0\"), and parseSemver(\"1.0.0-beta\") return null; (2) initialize with clientInfo { name: \"untrusted-client\", version: \"v1.0.0\" } or { name: \"antigravity-client\", version: \"\" } (with env ANTIGRAVITY_VERSION=1.0.0) refuses start_unattended_batch and advance_assurance with \"unsupported_host: Antigravity version is unavailable\"; (3) initialize with { name: \"antigravity-client\", version: \"v0.0.9\" } refuses start_unattended_batch, retire_stale_batch, and advance_assurance with \"unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0\". Bound: createMcpRuntime (Claude default) initialized with { name: \"antigravity-client\", version: \"v1.0.0\" } refuses start_unattended_batch with \"unsupported_host: Claude Code version is unavailable\".",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP host probe gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 (BR-REQ-3; D7, D8). Done looks like: the packaged Antigravity bundle dist/antigravity/mcp-server.mjs runs only the Antigravity entrypoint (writing one reply per request with serverInfo.name \"antigravity\"), both plugin bundles match fresh builds with zero drift, and the 4-edge host-to-host import baseline is unchanged. Seam: tests/antigravity-host-package.test.ts and tests/runtime-layering-boundary.test.ts plus the two build --check scripts. Positive: (1) spawning node dist/antigravity/mcp-server.mjs with initialize (id: 1) and tools/list (id: 2) produces exactly 2 reply lines with replies[0].result.serverInfo.name === \"antigravity\" and minimumHostVersion === \"0.1.0\"; (2) bun scripts/build-antigravity-plugin.ts --check and bun scripts/build-claude-plugin.ts --check exit 0, and tests/runtime-layering-boundary.test.ts passes with its 4-edge #414 baseline. Negative: removing dist/antigravity/mcp-server.mjs in a relocated copy fails launch and reports \"hook command: missing dist/antigravity/mcp-server.mjs\". Bound: spawning node plugins/immune-brain/dist/claude/mcp-server.mjs with initialize (id: 1) produces serverInfo.name === \"claude-code\" and minimumHostVersion === \"2.1.236\".",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-host-package.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-mcp-workspace-resolution.md",
+      "docs/plans/antigravity-mcp-workspace-resolution.intent.json",
+      "docs/specs/antigravity-mcp-workspace-resolution.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/capability.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/antigravity-host-package.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-mcp-workspace-resolution.intent.json",
+    "content_hash": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7",
+  "git_base_head": "484e660eb7c977407727da376c5533400682be32",
+  "attestations": [
+    {
+      "id": "approval-qa-52d2730a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7",
+      "diff_hash": "sha256:140000a9abf29cbf23e07284744f0160852220d86476bf19f76792d327247e34",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:95f74ed98124832fecf81b250a93f568a01db38e771aa463372240dfea84c578",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:95f74ed98124832fecf81b250a93f568a01db38e771aa463372240dfea84c578"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:95f74ed98124832fecf81b250a93f568a01db38e771aa463372240dfea84c578"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:95f74ed98124832fecf81b250a93f568a01db38e771aa463372240dfea84c578"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-94848cc0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7",
+      "diff_hash": "sha256:a00aff78142979327ce3568d80d0767b246109b9006bf771706025d1e17dbca0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:727a52c65e9f2831bd291daf00746b3b710971fd63226d481f5013bc19b326f0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:727a52c65e9f2831bd291daf00746b3b710971fd63226d481f5013bc19b326f0"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:727a52c65e9f2831bd291daf00746b3b710971fd63226d481f5013bc19b326f0"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:727a52c65e9f2831bd291daf00746b3b710971fd63226d481f5013bc19b326f0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ad2c0229",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7",
+      "diff_hash": "sha256:b1c465b7d82540895ef4d59fc3077a1102cece59892bf7e2f376cf186fe9195b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6c34ab2fa1bdb676f0fac69759a3a035d5f45603db8f6535c4ed9efda3f75534",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c34ab2fa1bdb676f0fac69759a3a035d5f45603db8f6535c4ed9efda3f75534"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c34ab2fa1bdb676f0fac69759a3a035d5f45603db8f6535c4ed9efda3f75534"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6c34ab2fa1bdb676f0fac69759a3a035d5f45603db8f6535c4ed9efda3f75534"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-1b89040d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:635564a2b3833c24a6b4c54440984361d1c43002a6b3421118fb3a70a1e46fb7",
+      "diff_hash": "sha256:b1c465b7d82540895ef4d59fc3077a1102cece59892bf7e2f376cf186fe9195b",
+      "actor_id": "parent-mediated-review",
+      "summary": "Round-3 delta replaces the startup options.cwd argument to withCompletionDelivery with the per-call resolved workspace for advance_assurance, submit_review and submit_verification; mirrored runtime files are byte-identical, both dist bundles match, and the conformance test pins delivery evidence plus a source guard. Blast radius: low, confined to completion-delivery lookup in the MCP dispatch path; no persisted shape or migration changes. Non-delta paths carried forward from round 2 at 8e73743b.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "484e660eb7c977407727da376c5533400682be32",
+        "review_commit": "64e03fb442bb72b61038b0e941e5f29a134996f4",
+        "review_tree": "6fc375074b2b3e1e414a010f477401becc7cef71",
+        "manifest_digest": "sha256:cfb270e164a1bf2477a18f6e97e0da1b2a6534c450ed4817e6b18b0d528fad64"
+      },
+      "reviewer_verdict_sha256": "sha256:ad6118fd7ebf8eb93ebcea8e53a31df0f6a3fc8fdc051c2ff663e2e5a44b044c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-13f0574e20ef-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The shared mutable workspace binding races across concurrent tools/call requests, allowing authority operations and run-entry checks to execute in another call's workspace.",
+      "anchor": "sha256:6759a0259cc8d02a160fa47c9cb7663d18d556966c0aecbd2281dfed7c5e25a6",
+      "evidence": {
+        "trigger": "Two tools/call requests arrive concurrently: call A supplies _meta[\"antigravity.google/workspace_paths\"] for lane A and waits in an async runtime operation; call B resolves lane B and invokes runtime.bindWorkspace(lane B) before call A resumes → call A's subsequent runtime methods read lane B, so status can project the wrong Lane or an authority mutation and its requireRunEntry correlation can be applied in the wrong workspace.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:873-881 (runCall starts handleJsonRpc without awaiting or serializing it)",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:204-220 (resolveWorkspace calls the shared runtime.bindWorkspace)",
+          "plugins/immune-brain/runtime/claude/kernel_ports.ts:325,368-375 (one mutable ClaudeRuntime.cwd shared by all calls)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-13f0574e20ef-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "start_unattended_batch still reads the process startup cwd for lane-parallel configuration instead of the workspace resolved for that call.",
+      "anchor": "sha256:eef359d7f35125c4593caa1f0085892d35a038a9bd059618d497dcfc6c51df30",
+      "evidence": {
+        "trigger": "An Antigravity server starts with options.cwd = pluginDir; a tools/call start_unattended_batch for an initiative (no task_id) names laneDir in workspace_paths, with a valid lane configuration only in laneDir → resolveLaneParallel(pluginDir, ...) reads the wrong workspace while the batch preflight and execution use laneDir, producing inconsistent max_parallel/lane admission behavior.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:289-323 (callTool resolves workspace but resolveLaneParallel still receives options.cwd ?? process.cwd())",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:325 (runtime.startUnattendedBatch consumes the resulting max_parallel)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-45bfb3414017-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "withCompletionDelivery still reads options.cwd (plugin root) instead of the per-call bound workspace, so a completed advance_assurance/submit_review/submit_verification against a Lane worktree silently loses its delivery metadata.",
+      "anchor": "sha256:17efba6f355acc69eb9c92ed6d49d991c9e4db1262315d53a3606f4a3984eddb",
+      "evidence": {
+        "trigger": "createAntigravityMcpRuntime({ cwd: pluginDir }) followed by handleJsonRpc tools/call advance_assurance with params._meta[\"antigravity.google/workspace_paths\"] = [laneDir] where the advance reaches state \"completed\" → mcp_server.ts:390,393,397 call withCompletionDelivery(taskId, result, options.cwd); readSettledTaskEvidence(pluginDir, taskId) finds no record in the plugin root and returns undefined, so the reply omits result.delivery even though the Lane record has a diff_hash. Spec D2 explicitly requires withCompletionDelivery to use the bound workspace; the new AC1 advance test asserts only state/diagnostics, so this regression is unpinned. Smallest fix: pass the resolved `workspace` (already in scope in callTool) instead of `options.cwd` at those three call sites and extend the AC1 advance assertion to check delivery is present.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:callTool",
+          "plugins/immune-brain/runtime/claude/mcp_server.ts:withCompletionDelivery"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:antigravity-mcp-workspace-resolution:2026-11-08T16:03:47.362Z",
+      "at": "2026-11-08T16:03:47.362Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-mcp-workspace-resolution.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-mcp-workspace-resolution:2026-11-08T16:04:03.118Z",
+      "at": "2026-11-08T16:04:03.118Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-52d2730a\naction_v2_sha256:4c9c2fafe94a0efc1d7a0ef368a034a29d8b3f5ac1ceec25e316615001f2db4f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-097708cdf5de32de",
+        "issued_at": "2026-11-08T16:04:03.118Z"
+      }
+    },
+    {
+      "id": "request_rework:antigravity-mcp-workspace-resolution:2026-11-08T16:06:56.693Z",
+      "at": "2026-11-08T16:06:56.693Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:57ef3c025e44422f77614596fcfc144a658d1d34645a2839cd43f5dfbe9de7d6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d747674e5a3ddc54",
+        "issued_at": "2026-11-08T16:06:56.693Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "484e660eb7c977407727da376c5533400682be32",
+        "review_commit": "cc4004372d237f9fb10546dfeb3745eadbc6fbc7",
+        "review_tree": "cf442c9500c158a7a2a0bf13b2ffadd941c99f30",
+        "manifest_digest": "sha256:a8d1c3ff47455568d5dd2c94faf6d9612a4ce253236142fdbd4865f9ab5e3b08"
+      },
+      "review_started_at": "2026-11-08T16:04:05.830Z",
+      "review_submitted_at": "2026-11-08T16:06:56.033Z"
+    },
+    {
+      "id": "resolve_finding:antigravity-mcp-workspace-resolution:2026-11-08T16:11:50.599Z",
+      "at": "2026-11-08T16:11:50.599Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-13f0574e20ef-1-review-1\naction_v2_sha256:d9dea26a6c3e5b855a416eee7c43911098ed50823d7a2831c1c79d9013064b8d"
+    },
+    {
+      "id": "resolve_finding:antigravity-mcp-workspace-resolution:2026-11-08T16:12:00.271Z",
+      "at": "2026-11-08T16:12:00.271Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-13f0574e20ef-2-review-2\naction_v2_sha256:143bff67ea743aeb92a0b062229e431d8e1629a884e5eb3f583d4d3e50b500c4"
+    },
+    {
+      "id": "freeze_artifacts:antigravity-mcp-workspace-resolution:2026-11-08T16:12:08.222Z",
+      "at": "2026-11-08T16:12:08.222Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-mcp-workspace-resolution.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-mcp-workspace-resolution:2026-11-08T16:12:25.053Z",
+      "at": "2026-11-08T16:12:25.053Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-94848cc0\naction_v2_sha256:8347f2534fb2deb913686738d2a9b7d07dcb34dc8b21002a799e13aa1eccfc34",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1157587f0bd95bf6",
+        "issued_at": "2026-11-08T16:12:25.053Z"
+      }
+    },
+    {
+      "id": "request_rework:antigravity-mcp-workspace-resolution:2026-11-08T16:14:57.350Z",
+      "at": "2026-11-08T16:14:57.350Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:fe0a134d27b5ca13b08b4c7b615e9f24b99bd379f62779b6d0128e4138512596",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-d0ff2c5e243e5ca0",
+        "issued_at": "2026-11-08T16:14:57.350Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "484e660eb7c977407727da376c5533400682be32",
+        "review_commit": "8e73743b4cd385066fdb7a11f7370fbc51ba1b13",
+        "review_tree": "80ac83170c3e0b25072263c98dff133edc9e8054",
+        "manifest_digest": "sha256:73d0cb9f33a43eaa0fe38e9d7d640f11500db703fd198d3a290f54b10c2bda15"
+      },
+      "review_started_at": "2026-11-08T16:12:27.823Z",
+      "review_submitted_at": "2026-11-08T16:14:56.698Z"
+    },
+    {
+      "id": "resolve_finding:antigravity-mcp-workspace-resolution:2026-11-08T16:18:10.098Z",
+      "at": "2026-11-08T16:18:10.098Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-45bfb3414017-1-review-1\naction_v2_sha256:e0710df86bc655f02596fead95516befd63204df2463dca9404041fbab522224"
+    },
+    {
+      "id": "freeze_artifacts:antigravity-mcp-workspace-resolution:2026-11-08T16:18:16.964Z",
+      "at": "2026-11-08T16:18:16.964Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-mcp-workspace-resolution.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-mcp-workspace-resolution:2026-11-08T16:18:33.520Z",
+      "at": "2026-11-08T16:18:33.520Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ad2c0229\naction_v2_sha256:de853862e4b3d5d8b45d80de790724d99408aa242a48a7afdecfae0d4ae6289b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-d9f4225a33ebad62",
+        "issued_at": "2026-11-08T16:18:33.520Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-mcp-workspace-resolution:2026-11-08T16:20:46.001Z",
+      "at": "2026-11-08T16:20:46.001Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-1b89040d\naction_v2_sha256:94f7de95b7ad68ccfb403df2cad65ef2316a5a805df34497c9171bb53b37716f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-dcbac703d66402bb",
+        "issued_at": "2026-11-08T16:20:46.002Z"
+      },
+      "review_started_at": "2026-11-08T16:18:36.143Z",
+      "review_submitted_at": "2026-11-08T16:20:45.349Z"
+    },
+    {
+      "id": "complete:antigravity-mcp-workspace-resolution:2026-11-08T16:20:47.924Z",
+      "at": "2026-11-08T16:20:47.924Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b301c385896fef9bc67024db75595ea8c807ee74b91d5775fef0cec7bc03beb1"
+    }
+  ]
+}
