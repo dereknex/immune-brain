@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { collectImportSpecifiers } from "./helpers/import_specifiers";
 
 const ROOT = resolve(__dirname, "..");
 const PI_EXTENSION_DIR = join(ROOT, "plugins/immune-brain/.pi-extension");
@@ -23,21 +24,19 @@ function extensionSourceFiles(): Array<[string, string]> {
  */
 function dynamicRuntimeImports(source: string): string[] {
 	const hits: string[] = [];
-	for (const match of source.matchAll(/\bimport\s*\(\s*(?:\/\*[\s\S]*?\*\/\s*)?([^)]*?)\s*\)/g)) {
-		const arg = match[1].trim();
-		const literal = /^["']([^"']+)["']$/.exec(arg)?.[1];
-		if (literal) {
-			if (literal.includes("runtime/")) hits.push(literal);
-			continue;
-		}
-		hits.push(arg);
+	for (const entry of collectImportSpecifiers(source)) {
+		if (entry.form !== "import-call") continue;
+		if (entry.specifier === null) hits.push(entry.argument);
+		else if (entry.specifier.includes("runtime/")) hits.push(entry.specifier);
 	}
 	return hits;
 }
 
 function staticRuntimeImports(source: string): string[] {
-	return [...source.matchAll(/(?:^|\n)\s*(?:import|export)\s[^;'"]*?from\s*["'](\.\.\/runtime\/[^"']+)["']/g)]
-		.map((match) => match[1]);
+	return collectImportSpecifiers(source)
+		.filter((entry) => ["import-from", "import-type", "export-from"].includes(entry.form))
+		.map((entry) => entry.specifier as string)
+		.filter((specifier) => specifier.startsWith("../runtime/"));
 }
 
 describe("pi canary package boundary", () => {
