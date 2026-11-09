@@ -1,8 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { PassThrough } from "node:stream";
+import { pathToFileURL } from "node:url";
 import {
 	AntigravityReviewHost,
 	MemoryHookEventLog,
@@ -18,10 +20,11 @@ import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/antigravi
 import { antigravityRunContinuationHook } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
+import { createAntigravityMcpRuntime, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { NativeAuthorityError } from "../plugins/immune-brain/runtime/antigravity/interaction";
-import { probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
+import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 
@@ -439,7 +442,7 @@ describe("Antigravity Harness Conformance", () => {
 						jsonrpc: "2.0",
 						id: "probe-initialize",
 						method: "initialize",
-						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity", version: "1.0.0" }, capabilities: { elicitation: {} } },
+						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity", version: "" }, capabilities: { elicitation: {} } },
 					}, mcp);
 					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
 				},
@@ -471,5 +474,304 @@ describe("Antigravity Harness Conformance", () => {
 				},
 			);
 		});
+
+		it("normalizes one optional v in Antigravity semver", () => {
+			expect(parseSemver("v1.0.0")).toEqual([1, 0, 0]);
+			expect(parseSemver("vv1.0.0")).toBeNull();
+			expect(parseSemver("v1.0")).toBeNull();
+			expect(parseSemver("1.0.0-beta")).toBeNull();
+			expect(probeHost({}, "darwin", "v1.0.0").ok).toBe(true);
+		});
+
+		it("admits the Antigravity client identity with a v-prefixed version", async () => {
+			for (const clientInfo of [{ name: "antigravity-client", version: "v1.0.0" }, { name: "antigravity", version: "1.0.0" }]) {
+				await withTemp(
+					(cwd) => createAntigravityMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false }),
+					async (mcp) => {
+						const reply = await handleJsonRpc({
+							jsonrpc: "2.0",
+							id: "probe-initialize",
+							method: "initialize",
+							params: { protocolVersion: "2025-06-18", clientInfo, capabilities: { elicitation: {} } },
+						}, mcp);
+						expect((reply?.result as { serverInfo: unknown }).serverInfo).toMatchObject({ name: "antigravity", minimumHostVersion: "0.1.0" });
+						expect(await refusalCode(mcp.callTool("advance_assurance", { task_id: "probe-task" }))).not.toBe("unsupported_host");
+						await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+						await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("run_entry_required");
+					},
+				);
+			}
+		});
+
+		it("refuses an untrusted Antigravity client name and an empty version", async () => {
+			for (const clientInfo of [{ name: "untrusted-client", version: "v1.0.0" }, { name: "antigravity-client", version: "" }]) {
+				await withTemp(
+					(cwd) => createAntigravityMcpRuntime({ cwd, env: { ANTIGRAVITY_VERSION: "1.0.0" }, interactive: true, consumePhaseAdmission: () => false }),
+					async (mcp) => {
+						await handleJsonRpc({
+							jsonrpc: "2.0",
+							id: "probe-initialize",
+							method: "initialize",
+							params: { protocolVersion: "2025-06-18", clientInfo, capabilities: { elicitation: {} } },
+						}, mcp);
+						await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+						await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow("unsupported_host: Antigravity version is unavailable");
+					},
+				);
+			}
+		});
+
+		it("refuses a v-prefixed Antigravity version below the minimum", async () => {
+			await withTemp(
+				(cwd) => createAntigravityMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false }),
+				async (mcp) => {
+					await handleJsonRpc({
+						jsonrpc: "2.0",
+						id: "probe-initialize",
+						method: "initialize",
+						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v0.0.9" }, capabilities: { elicitation: {} } },
+					}, mcp);
+					const below = "unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0";
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow(below);
+					await expect(mcp.callTool("retire_stale_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow(below);
+					await expect(mcp.callTool("advance_assurance", { task_id: "probe-task" })).rejects.toThrow(below);
+				},
+			);
+		});
+
+		it("keeps the Claude identity for the default runtime", async () => {
+			await withTemp(
+				(cwd) => createMcpRuntime({ cwd, env: {}, interactive: true, consumePhaseAdmission: () => false }),
+				async (mcp) => {
+					await handleJsonRpc({
+						jsonrpc: "2.0",
+						id: "probe-initialize",
+						method: "initialize",
+						params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {} } },
+					}, mcp);
+					await expect(mcp.callTool("start_unattended_batch", { initiative_slug: "probe-initiative" })).rejects.toThrow("unsupported_host: Claude Code version is unavailable");
+				},
+			);
+		});
+	});
+
+	// Spec antigravity-mcp-workspace-resolution AC1: the packaged server starts in
+	// the plugin root, so the workspace of a call — never its own `cwd` — decides
+	// which Kernel record it reads and mutates.
+	describe("MCP workspace resolution", () => {
+		const TASK = "workspace-resolution";
+		const scratch: string[] = [];
+		afterAll(() => {
+			for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
+		});
+
+		function workspace(label: string): string {
+			const dir = mkdtempSync(join(tmpdir(), `imm-agy-${label}-`));
+			scratch.push(dir);
+			return dir;
+		}
+
+		/** One Lane worktree with an enrolled task; `pluginDir` stays unowned. */
+		async function enrolledLane(): Promise<string> {
+			const laneDir = workspace("lane");
+			mkdirSync(join(laneDir, ".imm", "state"), { recursive: true });
+			mkdirSync(join(laneDir, "docs", "plans"), { recursive: true });
+			mkdirSync(join(laneDir, "src"), { recursive: true });
+			writeFileSync(join(laneDir, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(laneDir, "src", "worked.ts"), "export const value = 0;\n");
+			const intent = {
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: TASK,
+				owner: "user",
+				goal: "resolve the active session workspace per MCP tool call",
+				acceptance: [{
+					id: "AC1",
+					assertion: "the workspace binds per call",
+					verification: JSON.stringify({
+						contract: "assurance_kernel/verification_descriptor/v2",
+						command: { executable: "sh", argv: ["-c", "exit 0"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 4_096 },
+						environment: { prepare: null, writable_paths: [] },
+					}),
+				}],
+				scope_hint: [`docs/plans/${TASK}.intent.json`, "src/worked.ts"],
+				risk: "routine",
+				revision: 1,
+			};
+			writeFileSync(join(laneDir, "docs", "plans", `${TASK}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+			execFileSync("git", ["init", "-q"], { cwd: laneDir });
+			execFileSync("git", ["add", "-A"], { cwd: laneDir });
+			execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: laneDir });
+			await enrollTaskForTest(laneDir, TASK);
+			return laneDir;
+		}
+
+		type Reply = { result?: unknown; error?: { message: string } } | null;
+		const resultOf = (reply: Reply): Record<string, any> => {
+			if (!reply) throw new Error("MCP call returned no reply");
+			if (reply.error) throw new Error(reply.error.message);
+			const content = (reply.result as { content: Array<{ text: string }> }).content;
+			return JSON.parse(content[0].text);
+		};
+		const toolCall = (
+			mcp: ReturnType<typeof createAntigravityMcpRuntime>,
+			name: string,
+			args: Record<string, unknown>,
+			workspacePaths?: readonly string[],
+			id = `${name}-${Math.random().toString(16).slice(2)}`,
+		): Promise<Reply> => handleJsonRpc({
+			jsonrpc: "2.0",
+			id,
+			method: "tools/call",
+			params: { name, arguments: args, ...(workspacePaths ? { _meta: { "antigravity.google/workspace_paths": workspacePaths } } : {}) },
+		}, mcp);
+
+		it("projects and advances the workspace named in tools/call _meta", async () => {
+			const pluginDir = workspace("plugin");
+			const laneDir = await enrolledLane();
+			const mcp = createAntigravityMcpRuntime({ cwd: pluginDir, env: {}, interactive: true, consumePhaseAdmission: () => false });
+
+			const status = resultOf(await toolCall(mcp, "status", { task_id: TASK }, [laneDir]));
+			expect(status.claim).toMatchObject({ task_id: TASK, lifecycle_status: "active" });
+			expect(status.projection.run_id).toMatch(/^run-/);
+			expect(status.config.project_key).toBeTruthy();
+			// The plugin root owns no claim: projecting it is the observable difference.
+			const outside = resultOf(await toolCall(mcp, "status", { task_id: TASK }));
+			expect(outside.claim).toBeNull();
+			expect(outside.config.project_key).not.toBe(status.config.project_key);
+
+			await handleJsonRpc({
+				jsonrpc: "2.0",
+				id: "init",
+				method: "initialize",
+				params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {} } },
+			}, mcp);
+			writeFileSync(join(laneDir, "src", "worked.ts"), "export const value = 1;\n");
+			execFileSync("git", ["add", "--", "src/worked.ts"], { cwd: laneDir });
+			const advanced = resultOf(await toolCall(mcp, "advance_assurance", { task_id: TASK }, [laneDir]));
+			// The advance settled the Lane record: its QA descriptor ran there and passed.
+			expect(advanced.state).toBe("completed");
+			expect(advanced.diagnostics[0]).toMatchObject({ acceptance_id: "AC1", stage: "check", outcome: "passed" });
+			// Delivery is read from the settled record in the bound workspace, not the plugin root.
+			expect(advanced.delivery.content_hash).toMatch(/^sha256:/);
+		}, 60_000);
+
+		it("reads no startup workspace inside the tool dispatch path", () => {
+			// The shared guard for AC1: every workspace-scoped read in `callTool`
+			// after the reported call sites uses the workspace resolved for that
+			// call, never the server's startup directory.
+			const source = readFileSync(join(import.meta.dir, "../plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8");
+			const from = source.indexOf("\t\tasync callTool(");
+			const body = source.slice(from, source.indexOf("\n\t\tobserve:", from));
+			expect(body.length).toBeGreaterThan(0);
+			expect(body).not.toContain("options.cwd");
+			expect(body).not.toContain("process.cwd()");
+		});
+
+		it("rejects an empty, relative or non-file workspace and falls back to its own", async () => {
+			const pluginDir = workspace("plugin");
+			await enrolledLane();
+			const mcp = createAntigravityMcpRuntime({ cwd: pluginDir, env: {}, interactive: true });
+			for (const paths of [[], [""], ["relative/path"]])
+				expect(resultOf(await toolCall(mcp, "status", { task_id: TASK }, paths)).claim).toBeNull();
+
+			const withRoots = createAntigravityMcpRuntime({ cwd: pluginDir, env: {}, interactive: true, rootsProvider: async () => [{ uri: "https://example.com/repo" }] });
+			expect(resultOf(await toolCall(withRoots, "status", { task_id: TASK })).claim).toBeNull();
+		});
+
+		it("prefers the _meta workspace over a roots/list answer and never reuses it", async () => {
+			const pluginDir = workspace("plugin");
+			const otherDir = workspace("other");
+			const laneDir = await enrolledLane();
+			const mcp = createAntigravityMcpRuntime({ cwd: pluginDir, env: {}, interactive: true, rootsProvider: async () => [{ uri: pathToFileURL(otherDir).href }] });
+
+			expect(resultOf(await toolCall(mcp, "status", { task_id: TASK }, [laneDir])).claim).toMatchObject({ task_id: TASK });
+			// The roots answer alone binds the other directory, which owns no claim.
+			expect(resultOf(await toolCall(mcp, "status", { task_id: TASK })).claim).toBeNull();
+
+			const unrooted = createAntigravityMcpRuntime({ cwd: pluginDir, env: {}, interactive: true });
+			expect(resultOf(await toolCall(unrooted, "status", { task_id: TASK }, [laneDir])).claim).toMatchObject({ task_id: TASK });
+			expect(resultOf(await toolCall(unrooted, "status", { task_id: TASK })).claim).toBeNull();
+		});
+
+		/** One Antigravity stdio connection started in `pluginDir`, with a line reader. */
+		function stdioServer(pluginDir: string) {
+			const input = new PassThrough();
+			const output = new PassThrough();
+			const replies: Record<string, any>[] = [];
+			const waiters: Array<(value: Record<string, any>) => void> = [];
+			let buffer = "";
+			output.on("data", (chunk: Buffer) => {
+				buffer += chunk.toString();
+				for (let index = buffer.indexOf("\n"); index >= 0; index = buffer.indexOf("\n")) {
+					const line = buffer.slice(0, index);
+					buffer = buffer.slice(index + 1);
+					if (!line.trim()) continue;
+					const value = JSON.parse(line) as Record<string, any>;
+					const waiter = waiters.shift();
+					if (waiter) waiter(value);
+					else replies.push(value);
+				}
+			});
+			const next = () => replies.length ? Promise.resolve(replies.shift()!) : new Promise<Record<string, any>>((resolve) => waiters.push(resolve));
+			const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
+			void serveAntigravityStdio({ input, output, cwd: pluginDir, env: {}, interactive: true, consumePhaseAdmission: () => false, exit: () => undefined });
+			return { input, send, next };
+		}
+
+		it("binds the roots/list workspace over stdio and re-queries after roots/list_changed", async () => {
+			const pluginDir = workspace("plugin");
+			const otherDir = workspace("other");
+			const laneDir = await enrolledLane();
+			const { input, send, next } = stdioServer(pluginDir);
+
+			send({ jsonrpc: "2.0", id: "init", method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {}, roots: { listChanged: true } } } });
+			expect((await next()).result.serverInfo).toMatchObject({ name: "antigravity", minimumHostVersion: "0.1.0" });
+
+			send({ jsonrpc: "2.0", id: "status-1", method: "tools/call", params: { name: "status", arguments: { task_id: TASK } } });
+			const rootsRequest = await next();
+			expect(rootsRequest).toMatchObject({ method: "roots/list" });
+			send({ jsonrpc: "2.0", id: rootsRequest.id, result: { roots: [{ uri: pathToFileURL(laneDir).href }] } });
+			expect(resultOf((await next()) as Reply).claim).toMatchObject({ task_id: TASK });
+
+			send({ jsonrpc: "2.0", method: "notifications/roots/list_changed" });
+			send({ jsonrpc: "2.0", id: "status-2", method: "tools/call", params: { name: "status", arguments: { task_id: TASK } } });
+			const second = await next();
+			expect(second).toMatchObject({ method: "roots/list" });
+			send({ jsonrpc: "2.0", id: second.id, result: { roots: [{ uri: pathToFileURL(otherDir).href }] } });
+			// The cache was invalidated: the answer that moved projects the other directory.
+			expect(resultOf((await next()) as Reply).claim).toBeNull();
+			input.end();
+		}, 30_000);
+
+		it("runs one tools/call at a time so a bound workspace cannot move mid-call", async () => {
+			const pluginDir = workspace("plugin");
+			const laneDir = await enrolledLane();
+			const { input, send, next } = stdioServer(pluginDir);
+			send({ jsonrpc: "2.0", id: "init", method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {} } } });
+			await next();
+
+			writeFileSync(join(laneDir, "src", "worked.ts"), "export const value = 1;\n");
+			execFileSync("git", ["add", "--", "src/worked.ts"], { cwd: laneDir });
+			send({ jsonrpc: "2.0", id: "advance", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: TASK }, _meta: { "antigravity.google/workspace_paths": [laneDir] } } });
+			send({ jsonrpc: "2.0", id: "status", method: "tools/call", params: { name: "status", arguments: { task_id: TASK } } });
+			// The slower first call owns the shared binding until it settles.
+			expect(resultOf((await next()) as Reply)).toMatchObject({ state: "completed" });
+			expect(resultOf((await next()) as Reply).claim).toBeNull();
+			input.end();
+		}, 60_000);
+
+		it("falls back to its own workspace when roots/list answers with an error", async () => {
+			const pluginDir = workspace("plugin");
+			await enrolledLane();
+			const { input, send, next } = stdioServer(pluginDir);
+			send({ jsonrpc: "2.0", id: "init", method: "initialize", params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {}, roots: {} } } });
+			await next();
+			send({ jsonrpc: "2.0", id: "status", method: "tools/call", params: { name: "status", arguments: { task_id: TASK } } });
+			const rootsRequest = await next();
+			expect(rootsRequest).toMatchObject({ method: "roots/list" });
+			send({ jsonrpc: "2.0", id: rootsRequest.id, error: { code: -32601, message: "Method not found" } });
+			expect(resultOf((await next()) as Reply).claim).toBeNull();
+			input.end();
+		}, 30_000);
 	});
 });

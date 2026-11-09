@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-mcp-workspace-resolution",
+  "owner": "user",
+  "goal": "Issue #429 (Spec docs/specs/antigravity-mcp-workspace-resolution.spec.md). Resolve the active session workspace per MCP tool call in priority order: (1) tools/call params._meta[\"antigravity.google/workspace_paths\"][0], (2) the first valid file:// root URI from MCP roots/list, (3) options.cwd ?? process.cwd(), binding that workspace on ClaudeRuntime and workspace-scoped MCP helpers before dispatching status or execution tools. In createAntigravityMcpRuntime and capability.ts, trust Antigravity initialize client names (\"antigravity-client\" and \"antigravity\"), normalize an optional leading \"v\" in parseSemver (such as \"v1.0.0\"), delegate Antigravity serveStdio to the shared bidirectional stdio server with roots/list support, and narrow the module-level CLI entrypoint guards so dist/antigravity/mcp-server.mjs starts only the Antigravity server. Regenerate the Claude and Antigravity plugin bundles with no new host-to-host import edge.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 and BR-SCN-1 (BR-REQ-1, BR-DEC-2; D1, D2, D3, D6). Done looks like: an Antigravity MCP server started outside the Lane worktree resolves and binds the session workspace per call in priority order (_meta[\"antigravity.google/workspace_paths\"][0] -> MCP roots/list first file:// URI -> options.cwd ?? process.cwd()). Seam: tests/antigravity-assurance-conformance.test.ts describe \"MCP workspace resolution\". Positive: (1) with createAntigravityMcpRuntime({ cwd: pluginDir }) and an enrolled task in laneDir, handleJsonRpc tools/call for status and advance_assurance with params._meta[\"antigravity.google/workspace_paths\"] = [laneDir] returns the enrolled Lane claim, run_id, and config.project_key for laneDir (not pluginDir) and advances the task in laneDir; (2) over serveStdio with cwd: pluginDir, when _meta is absent and the client advertises capabilities.roots and answers roots/list with [{ uri: pathToFileURL(laneDir).href }], status projects laneDir, and notifications/roots/list_changed invalidates the cached root so the next call re-queries roots/list. Negative: (1) _meta[\"antigravity.google/workspace_paths\"] set to [], [\"\"], or [\"relative/path\"] and roots/list returning [{ uri: \"https://example.com/repo\" }] fall back to pluginDir (claim: null); (2) roots/list returning a JSON-RPC error falls back to pluginDir. Bound: (1) when _meta names laneDir and roots/list names otherDir, status projects laneDir; (2) a call with _meta: [laneDir] followed by a call with no _meta and no roots capability re-binds pluginDir (claim: null).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP workspace resolution\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 and BR-SCN-1 (BR-REQ-2, BR-DEC-1; D4, D5). Done looks like: Antigravity initialize handshakes with clientInfo.name \"antigravity-client\" or \"antigravity\" and v-prefixed semver (\"v1.0.0\") bind a trusted host version and admit Lane Executor tools, while untrusted, unversioned, or below-minimum sessions fail closed with Antigravity reasons. Seam: tests/antigravity-assurance-conformance.test.ts describe \"MCP host probe gates\". Positive: (1) parseSemver(\"v1.0.0\") returns [1, 0, 0] and probeHost({}, \"darwin\", \"v1.0.0\") returns ok: true; (2) handleJsonRpc initialize on createAntigravityMcpRuntime with clientInfo { name: \"antigravity-client\", version: \"v1.0.0\" } (and { name: \"antigravity\", version: \"1.0.0\" }) and capabilities { elicitation: {} } returns serverInfo.name \"antigravity\" and minimumHostVersion \"0.1.0\", admits advance_assurance past unsupported_host, and reaches run_entry_required on start_unattended_batch and retire_stale_batch. Negative: (1) parseSemver(\"vv1.0.0\"), parseSemver(\"v1.0\"), and parseSemver(\"1.0.0-beta\") return null; (2) initialize with clientInfo { name: \"untrusted-client\", version: \"v1.0.0\" } or { name: \"antigravity-client\", version: \"\" } (with env ANTIGRAVITY_VERSION=1.0.0) refuses start_unattended_batch and advance_assurance with \"unsupported_host: Antigravity version is unavailable\"; (3) initialize with { name: \"antigravity-client\", version: \"v0.0.9\" } refuses start_unattended_batch, retire_stale_batch, and advance_assurance with \"unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0\". Bound: createMcpRuntime (Claude default) initialized with { name: \"antigravity-client\", version: \"v1.0.0\" } refuses start_unattended_batch with \"unsupported_host: Claude Code version is unavailable\".",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"MCP host probe gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (BR-REQ-3; D7, D8). Done looks like: the packaged Antigravity bundle dist/antigravity/mcp-server.mjs runs only the Antigravity entrypoint (writing one reply per request with serverInfo.name \"antigravity\"), both plugin bundles match fresh builds with zero drift, and the 4-edge host-to-host import baseline is unchanged. Seam: tests/antigravity-host-package.test.ts and tests/runtime-layering-boundary.test.ts plus the two build --check scripts. Positive: (1) spawning node dist/antigravity/mcp-server.mjs with initialize (id: 1) and tools/list (id: 2) produces exactly 2 reply lines with replies[0].result.serverInfo.name === \"antigravity\" and minimumHostVersion === \"0.1.0\"; (2) bun scripts/build-antigravity-plugin.ts --check and bun scripts/build-claude-plugin.ts --check exit 0, and tests/runtime-layering-boundary.test.ts passes with its 4-edge #414 baseline. Negative: removing dist/antigravity/mcp-server.mjs in a relocated copy fails launch and reports \"hook command: missing dist/antigravity/mcp-server.mjs\". Bound: spawning node plugins/immune-brain/dist/claude/mcp-server.mjs with initialize (id: 1) produces serverInfo.name === \"claude-code\" and minimumHostVersion === \"2.1.236\".",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-host-package.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-mcp-workspace-resolution.md",
+    "docs/plans/antigravity-mcp-workspace-resolution.intent.json",
+    "docs/specs/antigravity-mcp-workspace-resolution.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/antigravity-host-package.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

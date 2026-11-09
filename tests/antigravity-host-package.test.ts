@@ -242,7 +242,10 @@ describe("Antigravity relocatable closure (AC3)", () => {
 		});
 		expect(mcp.status).toBe(0);
 		const replies = mcp.stdout.trim().split("\n").map((line) => JSON.parse(line));
-		expect(replies.some((reply) => reply.id === 1 && reply.result)).toBe(true);
+		// Exactly one entrypoint served both requests: the bundled Claude module
+		// entrypoint must not start a second stdio server on the same streams.
+		expect(replies).toHaveLength(2);
+		expect(replies[0].result.serverInfo).toMatchObject({ name: "antigravity", minimumHostVersion: "0.1.0" });
 		const tools = replies.find((reply) => reply.id === 2).result.tools.map((tool: { name: string }) => tool.name);
 		expect(tools).toContain("status");
 
@@ -257,6 +260,21 @@ describe("Antigravity relocatable closure (AC3)", () => {
 		expect(kernel.status).toBe(0);
 		expect(JSON.parse(kernel.stdout)).toMatchObject({ contract: "assurance_kernel/inspect/v1" });
 		expect(readdirSync(workspace).sort()).toEqual(before);
+	});
+
+	it("answers initialize from each bundled host with its own identity", () => {
+		const served = (entry: string) => spawnSync("node", [entry], {
+			cwd: ROOT,
+			env: isolatedEnv(),
+			input: `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`,
+			encoding: "utf8",
+		});
+		const antigravity = served("plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs");
+		expect(antigravity.status).toBe(0);
+		expect(JSON.parse(antigravity.stdout.trim())).toMatchObject({ id: 1, result: { serverInfo: { name: "antigravity", minimumHostVersion: "0.1.0" } } });
+		const claude = served("plugins/immune-brain/dist/claude/mcp-server.mjs");
+		expect(claude.status).toBe(0);
+		expect(JSON.parse(claude.stdout.trim())).toMatchObject({ id: 1, result: { serverInfo: { name: "claude-code", minimumHostVersion: "2.1.236" } } });
 	});
 
 	it("fails closure when a referenced contract, runtime dependency or role prompt is removed", () => {
