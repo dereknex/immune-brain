@@ -1,0 +1,59 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-core-verifier-observation",
+  "owner": "user",
+  "goal": "Issue #414 slice S2 (Spec docs/specs/host-neutral-adapter-core.spec.md, D4, D5, D6), folding #417 (a) and (b). One verifier observation state machine in plugins/immune-brain/runtime/host-core/verifier_observation.ts, bound directly to VerificationRequest, serves ClaudeReviewHost and AntigravityReviewHost; each adapter keeps only its typed event mapping and result resolution (Claude Agent transcripts). Antigravity treats PostToolUse as terminal, so a review-verifier dispatched through invoke_subagent settles through submit_verification (BR-SCN-1). ReviewRequest.prompt and its coordinator assignment are removed. Authority Review through assurance/cli_review.ts is unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S2 AC1 (BR-REQ-2, BR-REQ-6; D5). Done looks like: both Hosts settle verifier receipts through one state machine with the same outcomes. Seam: tests/dual-host-assurance-conformance.test.ts describe 'verifier observation', run against ClaudeReviewHost and AntigravityReviewHost over a memory log, driving prepareVerification and each Host's own hook events. Positive: a start event naming the verifier agent with the handed-out dispatch prompt, then the Host's terminal events (Claude: PostToolUse and SubagentStop with a readable Agent transcript; Antigravity: PostToolUse), make inspectVerification return ok with actorId '<host prefix>:<agentId>' and the reserved verifier model. Negative: no start event returns 'reserved foreground Agent was not observed' with release true; a start naming another agent returns the same; a terminal event whose model differs from the reservation returns 'verifier model differs from reservation' with release true; a second distinct result for the same reservation returns a reason containing 'duplicate' with release true; a SessionEnd for the bound session before inspection returns 'reserved foreground Agent was not observed'. Bound: a start without its terminal returns 'foreground Agent terminal event order is incomplete' with release false, and the terminal arriving afterwards makes the next inspection ok. Structural: neither runtime/claude/review_host.ts nor runtime/antigravity/review_host.ts mentions ReviewRequest.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n 'ReviewRequest' plugins/immune-brain/runtime/claude/review_host.ts plugins/immune-brain/runtime/antigravity/review_host.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'verifier observation'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S2 AC2 (BR-REQ-7; D6). Done looks like: the Review request the coordinator hands a Host carries no unused full prompt. Seam: tests/host-neutral-assurance-coordinator.test.ts, the tests that capture the request passed to prepareReview. Positive: the captured request's snapshotPrompt equals the per-dispatch facts the coordinator built. Negative: the captured request has no own property 'prompt', and runtime/assurance/coordinator.ts assigns no prompt to it. Bound: the VerificationRequest passed to prepareVerification still carries its non-empty prompt, so the verifier packet is unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec S2 AC3 (BR-SCN-1, BR-REQ-8, BR-DEC-3; D4, D5). Done looks like: an Antigravity developer's submit_verification accepts the verifier receipt instead of reporting 'reserved foreground Agent was not observed'. Seam: tests/antigravity-assurance-conformance.test.ts describe 'verifier via real hook dispatch': an AntigravityRuntime over a temp repository with TMPDIR set to a temp directory drives a task to verification_ready with blocking findings; the test spawns the real `--hook` entry with a PreToolUse carrying the handed-out dispatch (TypeName, Prompt, Model) and then a PostToolUse with the verifier's result for the same stepIdx, and calls submit_verification. Positive: the verification receipt is accepted and the projection records the verification. Negative: with only the PostToolUse dispatched, submit_verification reports 'reserved foreground Agent was not observed'; with a PreToolUse whose TypeName is 'immune-brain-reviewer', it reports the same. Bound: with only the PreToolUse dispatched, it reports 'foreground Agent terminal event order is incomplete' and keeps the reservation; dispatching the PostToolUse afterwards and submitting again is accepted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"verifier via real hook dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec S2 AC4 (BR-REQ-2; D5). Done looks like: Claude Code verifier settlement behaves as before the move. Seam: tests/claude-host-authority.test.ts, its verifier tests over ClaudeRuntime. Positive: a sync Agent verifier whose transcript carries the result, and an async Agent launch whose transcript carries the result, are each accepted. Negative: an async launch envelope naming another agent returns 'async Agent launch envelope names a different agent'; PostToolUse and SubagentStop with different agent ids return 'foreground Agent terminal event correlation mismatch'. Bound: an unreadable sync transcript returns 'sync Agent transcript is not readable' with release false.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-core-verifier-observation.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/host-core-verifier-observation.intent.json",
+    "docs/specs/host-neutral-adapter-core.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/host_port.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/review_host.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/verifier_observation.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/antigravity/review_host.ts",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/review_host.ts",
+    "plugins/immune-brain/runtime/host-core/verifier_observation.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/fixtures/review-incomplete-fixture.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
