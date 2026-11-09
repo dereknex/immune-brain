@@ -17,7 +17,6 @@ import { spawnSync } from "node:child_process";
 import { stampPluginManifest, validateManifests } from "./plugin_versioning";
 import {
 	generateReadonlyRoleDefinitions,
-	generateReviewerDefinition,
 	generateVerifierDefinition,
 } from "./build-claude-plugin";
 import { INTERNAL_ROLE_PROMPTS } from "../plugins/immune-brain/runtime/role_prompt_bridge";
@@ -170,7 +169,6 @@ function expectedArtifact(root: string): OwnedFiles {
 	addFile(files, "BASELINE.md", resolve(shared, "BASELINE.md"));
 
 	for (const definition of [
-		generateReviewerDefinition(root),
 		generateVerifierDefinition(root),
 		...generateReadonlyRoleDefinitions(root).map((generated) => generated.content),
 	]) {

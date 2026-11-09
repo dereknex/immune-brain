@@ -12,6 +12,8 @@ import {
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
+import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
 import { CliReviewHost, reviewArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -87,7 +89,7 @@ function heredoc(text: string): string {
 }
 
 function reviewReadyCommand(result: { state: string; review_command?: string }): string {
-	if (result.state !== "review_ready" || !result.review_command) throw new Error(`expected a CLI review_ready, got ${result.state}`);
+	if (result.state !== "review_ready" || !result.review_command) throw new Error(`expected a CLI review_ready, got ${JSON.stringify(result)}`);
 	return result.review_command;
 }
 
@@ -224,21 +226,16 @@ interface Applied {
 }
 
 interface WrappedCalls {
-	prepareReview: number;
 	prepareVerification: number;
 	inspectVerification: number;
 	released: number;
 }
 
-/** The wrapped Host: only findings verification may reach it under the CLI switch (BR-DEC-4). */
+/** The wrapped Host: only findings verification may reach it (BR-DEC-4). */
 function wrappedHost(verifier: boolean): { host: AssuranceHostPort; calls: WrappedCalls } {
-	const calls: WrappedCalls = { prepareReview: 0, prepareVerification: 0, inspectVerification: 0, released: 0 };
+	const calls: WrappedCalls = { prepareVerification: 0, inspectVerification: 0, released: 0 };
 	const host: AssuranceHostPort = {
 		host: "pi",
-		prepareReview: () => {
-			calls.prepareReview += 1;
-			throw new Error("the in-process Review path must not run under the CLI switch");
-		},
 		releaseReview: () => { calls.released += 1; },
 		...(verifier ? {
 			prepareVerification: (request: VerificationRequest): HostReviewReservation => {
@@ -582,7 +579,7 @@ async function claudeAdvance(
 }
 
 describe("default cli dispatch", () => {
-	test("an unset switch reserves the project's CLI reviewer and names its profile", async () => {
+	test("an unset environment reserves the project's CLI reviewer and names its profile", async () => {
 		const root = reviewRepo("pi", { review_model: "model-x" });
 		onPath(fakeReviewer("exit 0"));
 		const ready = await claudeAdvance(root, ROOT_ENV);
@@ -595,20 +592,43 @@ describe("default cli dispatch", () => {
 		expect(readFileSync(script, "utf8").match(/authority-review/g)).toHaveLength(1);
 		expect(ready).not.toHaveProperty("agent_params");
 	});
+});
 
-	test("the rollback value keeps the in-process reviewer", async () => {
+// --- S4 AC4: the CLI is the only authority Review path (D11) --------------
+
+/**
+ * The retired switch, spelled so no live source names it: S4 deletes it, and a
+ * value an operator still has exported must not re-enable an Agent dispatch.
+ */
+const RETIRED_SWITCH = ["IMMUNE_BRAIN", "REVIEW", "DISPATCH"].join("_");
+
+const piAdvance = async (root: string, risk: Risk = "material") => {
+	const fixture = fixtureFor(root, { risk });
+	const progression = new AssuranceProgression({ ...fixture.ports, authorityOverrides: fixture.ports as never });
+	return await progression.advance(TASK, ctx(root)) as never;
+};
+
+const antigravityAdvance = async (root: string, env: Record<string, string | undefined>, risk: Risk = "material") => {
+	const fixture = fixtureFor(root, { risk });
+	const runtime = new AntigravityRuntime({ cwd: root, env, ports: fixture.ports, authorityOverrides: fixture.ports as never });
+	return await runtime.advance(TASK) as never;
+};
+
+describe("cli only dispatch", () => {
+	test("the retired switch value leaves the CLI dispatch and no Agent parameters on every composition root", async () => {
 		const root = reviewRepo("pi", { review_model: "model-x" });
 		onPath(fakeReviewer("exit 0"));
-		const ready = await claudeAdvance(root, { ...ROOT_ENV, IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" });
-
-		expect(ready.state).toBe("review_ready");
-		expect(ready.agent_params).toBeDefined();
-		expect(ready).not.toHaveProperty("review_command");
+		const env = { ...ROOT_ENV, [RETIRED_SWITCH]: "subagent" };
+		for (const ready of [await piAdvance(root), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
+			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
+			expect(typeof ready.review_command).toBe("string");
+			expect(ready).not.toHaveProperty("agent_params");
+		}
 	});
 });
 
 describe("default profile required", () => {
-	test("an unset switch without lanes.review_host stops with one recovery action", async () => {
+	test("an unset environment without lanes.review_host stops with one recovery action", async () => {
 		const root = reviewRepo(null);
 		onPath(fakeReviewer("exit 0"));
 		const ready = await claudeAdvance(root, ROOT_ENV);

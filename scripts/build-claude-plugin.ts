@@ -6,7 +6,6 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { stampPluginManifest, validateManifests } from "./plugin_versioning";
 import {
-	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
 	currentReviewContractHash,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
@@ -19,37 +18,17 @@ const SRC = "plugins/immune-brain/runtime/claude/mcp_server.ts";
 const OUT = "plugins/immune-brain/dist/claude/mcp-server.mjs";
 
 /**
- * The one place the packaged reviewer definition is generated from.
+ * The `code-review` role prompt the `authority-review` skill is generated from.
  *
- * The body is the `code-review` role prompt (the same bytes the Pi Host
- * dispatches), then the static review rules the runtime composes into every
- * Review prompt — which include the `inspected_paths` statement — then the
- * dispatch rules. Nothing is restated by hand, so the
- * definition cannot drift from the instructions a dispatched reviewer is meant
- * to carry.
+ * The CLI reviewer loads that skill; its body is this prompt plus the static
+ * review rules the runtime composes into every Review prompt — which include the
+ * `inspected_paths` statement. Nothing is restated by hand, so the skill cannot
+ * drift from the instructions a dispatched reviewer is meant to carry.
  */
 const REVIEWER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/code-review.md";
-const REVIEWER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-reviewer.md";
 const VERIFIER_PROMPT_SRC = "plugins/immune-brain/runtime/prompts/review-verifier.md";
 const VERIFIER_DEFINITION_OUT = "plugins/immune-brain/agents/immune-brain-review-verifier.md";
 const AUTHORITY_REVIEW_SKILL_OUT = "plugins/immune-brain/skills/authority-review/SKILL.md";
-
-const REVIEWER_FRONTMATTER = `---
-name: immune-brain-reviewer
-description: Independent Immune-Brain Review authority. Read-only evidence review against an immutable snapshot.
-tools: Read, Grep, Glob, Bash
----`;
-
-export function generateReviewerDefinition(root: string): string {
-	const rolePrompt = readFileSync(resolve(root, REVIEWER_PROMPT_SRC), "utf8").trim();
-	return [
-		REVIEWER_FRONTMATTER,
-		rolePrompt,
-		...STATIC_REVIEW_RULES,
-		...REVIEWER_DISPATCH_RULES,
-		"",
-	].join("\n\n");
-}
 
 export function generateVerifierDefinition(root: string): string {
 	return [
@@ -103,8 +82,7 @@ function definitionDrift(root: string, generated: string, out: string, sources: 
 }
 
 export function reviewerDefinitionDrift(root: string): string | null {
-	return definitionDrift(root, generateReviewerDefinition(root), REVIEWER_DEFINITION_OUT, `${REVIEWER_PROMPT_SRC} plus the static review rules`)
-		?? definitionDrift(root, generateVerifierDefinition(root), VERIFIER_DEFINITION_OUT, VERIFIER_PROMPT_SRC)
+	return definitionDrift(root, generateVerifierDefinition(root), VERIFIER_DEFINITION_OUT, VERIFIER_PROMPT_SRC)
 		?? authorityReviewSkillDrift(root);
 }
 
@@ -161,7 +139,6 @@ export function buildClaudePlugin(root = resolve(import.meta.dir, "..")): { out:
 	const { version } = stampPluginManifest(root);
 	const out = resolve(root, OUT);
 	compile(root, out);
-	writeFileSync(resolve(root, REVIEWER_DEFINITION_OUT), generateReviewerDefinition(root));
 	writeFileSync(resolve(root, VERIFIER_DEFINITION_OUT), generateVerifierDefinition(root));
 	for (const generated of generateReadonlyRoleDefinitions(root)) {
 		mkdirSync(dirname(resolve(root, generated.out)), { recursive: true });

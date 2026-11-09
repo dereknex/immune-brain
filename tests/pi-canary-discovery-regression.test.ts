@@ -31,7 +31,6 @@ const RETIRED_PROGRESS_FILES = [
 const HELPER_FILES = [
 	"plugins/immune-brain/.pi-extension/pi-canary-invocations.ts",
 	"plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
-	"plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
 	"plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts",
 	"plugins/immune-brain/.pi-extension/pi-canary-verification.ts",
 ];

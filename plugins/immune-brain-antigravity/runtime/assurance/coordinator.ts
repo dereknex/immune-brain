@@ -1748,7 +1748,9 @@ export class AssuranceCoordinator {
 					&& entry.verification.diff_hash === review.snapshot.diff_hash && !entry.verification.failure
 					&& entry.verification.checked === entry.verification.verifier_refutations.length)?.verification?.verifier_refutations
 					.map(({ anchor, counter_path }) => ({ anchor, counter_path }));
-				hostReservation = this.ports.host.prepareReview({
+				const host = this.ports.host;
+				if (!host.prepareReview) throw new Error("the Review host reserves no reviewer");
+				hostReservation = host.prepareReview({
 					taskId,
 					operationId,
 					root: review.snapshot.root,

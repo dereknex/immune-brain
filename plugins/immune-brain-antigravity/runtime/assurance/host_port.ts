@@ -77,7 +77,8 @@ export type VerificationReceipt =
 
 export interface AssuranceHostPort {
 	readonly host: "pi" | "claude-code" | "antigravity" | "fake";
-	prepareReview(request: ReviewRequest): HostReviewReservation;
+	/** Present only on a Host that dispatches Review itself; the CLI dispatcher supplies it. */
+	prepareReview?(request: ReviewRequest): HostReviewReservation;
 	prepareVerification?(request: VerificationRequest): HostReviewReservation;
 	inspectVerification?(reservation: HostReviewReservation): VerificationReceipt;
 	releaseReview(reservation: HostReviewReservation): void;

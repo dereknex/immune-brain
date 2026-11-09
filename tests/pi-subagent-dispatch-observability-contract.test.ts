@@ -68,7 +68,6 @@ test("dispatch contracts name the native Claude route and keep the Pi boundary a
 test("interactive dispatch contracts are foreground-only and do not poll", () => {
 	for (const path of [
 		"plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
-		"plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
 	]) {
 		const source = read(path);
 		for (const forbidden of ["get_subagent_result", "setTimeout(", "setInterval(", "setStatus(", "setWidget(", "deliverFollowUp"]) expect(source).not.toContain(forbidden);
@@ -114,7 +113,6 @@ describe("authority review cli contract", () => {
 
 	test("the drive contract dispatches no reviewer Agent for authority Review", () => {
 		const contract = read("plugins/immune-brain/dist/drive.md");
-		expect(contract).not.toContain("immune-brain-reviewer");
 		expect(contract).not.toContain('subagent_type: "Review"');
 	});
 

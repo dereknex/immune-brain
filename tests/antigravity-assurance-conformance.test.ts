@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import {
 	AntigravityReviewHost,
 	MemoryHookEventLog,
-	REVIEWER_AGENT,
 	VERIFIER_AGENT,
 	SUBAGENT_TOOL,
 } from "../plugins/immune-brain/runtime/antigravity/review_host";
@@ -53,35 +52,6 @@ describe("Antigravity Harness Conformance", () => {
 	});
 
 	describe("AntigravityReviewHost", () => {
-		it("prepares a review reservation with native subagent dispatch parameters", () => {
-			const eventLog = new MemoryHookEventLog();
-			const host = new AntigravityReviewHost(eventLog);
-
-			const request: ReviewRequest = {
-				taskId: "task-test-01",
-				operationId: "op-test-01",
-				prompt: "Full review prompt",
-				snapshotPrompt: "Snapshot facts",
-				evidencePath: "/tmp/review.json",
-				writePacket: writeTestReviewPacket,
-				maxTurns: 5,
-			};
-
-			const reservation = host.prepareReview(request);
-			expect(reservation.id).toBe("op-test-01");
-
-			const dispatch = reservation.dispatch as {
-				TypeName: string;
-				Role: string;
-				Prompt: string;
-				Model: string;
-			};
-			expect(dispatch.TypeName).toBe(REVIEWER_AGENT);
-			expect(dispatch.Role).toBe("Code Reviewer");
-			expect(dispatch.Model).toBe("inherit");
-			expect(dispatch.Prompt).toContain("operation_id=op-test-01");
-		});
-
 		it("prepares a verification reservation with requested verifier model", () => {
 			const eventLog = new MemoryHookEventLog();
 			const host = new AntigravityReviewHost(eventLog);

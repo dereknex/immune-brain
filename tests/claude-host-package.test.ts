@@ -7,7 +7,6 @@ import { spawnSync } from "node:child_process";
 import { authorityReviewSkillDrift, buildClaudePlugin, checkClaudePlugin, generateAuthorityReviewSkill, readonlyRoleDefinitionDrift, reviewerDefinitionDrift } from "../scripts/build-claude-plugin";
 import {
 	INTERNAL_ROLE_PROMPTS,
-	REVIEWER_DISPATCH_RULES,
 	STATIC_REVIEW_RULES,
 	currentReviewContractHash,
 } from "../plugins/immune-brain/runtime/role_prompt_bridge";
@@ -31,7 +30,7 @@ const REQUIRED = [
   "plugins/immune-brain/.claude-plugin/plugin.json",
   "plugins/immune-brain/.mcp.json",
   "plugins/immune-brain/hooks/hooks.json",
-  "plugins/immune-brain/agents/immune-brain-reviewer.md",
+  "plugins/immune-brain/agents/immune-brain-review-verifier.md",
 ];
 const REJECTED = [
   ".cursor-plugin",
@@ -203,7 +202,7 @@ describe("claude host package", () => {
     expect(packageInputs()).toEqual(before);
   });
   it.each([
-    "plugins/immune-brain/agents/immune-brain-reviewer.md",
+    "plugins/immune-brain/agents/immune-brain-review-verifier.md",
     "plugins/immune-brain/dist/claude/mcp-server.mjs",
   ])("preserves %s drift before and after an independent build", output => {
     const before = packageInputs();
@@ -317,15 +316,8 @@ describe("claude host package", () => {
     expect(files.some((path: string) => path.startsWith(".cursor-plugin/"))).toBe(false);
   });
 
-  it("reviewer definition forbids continuation and recovers only through recovery_action", () => {
-    const reviewer = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8").replace(/\s+/g, " ");
-    expect(reviewer).toContain("A dispatched reviewer is never continued or re-prompted, including through SendMessage");
-    expect(reviewer).toContain("The reserved prompt is dispatched verbatim");
-    expect(reviewer).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
-  });
-
-  it("reviewer definition states the inspected_paths requirement and its read-before-claim rule", () => {
-    const reviewer = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8").replace(/\s+/g, " ");
+  it("the authority-review skill states the inspected_paths requirement and its read-before-claim rule", () => {
+    const reviewer = readFileSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"), "utf8").replace(/\s+/g, " ");
     expect(reviewer).toContain("A pass verdict's approval must carry `inspected_paths`");
     expect(reviewer).toContain("A path may be listed only after its diff was read");
     expect(reviewer).toContain("deleted paths included");
@@ -333,70 +325,19 @@ describe("claude host package", () => {
     expect(reviewer).toContain("duplicates a path");
   });
 
-  it("reviewer definition declares exactly the native read-only tool boundary", () => {
-    const source = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
-    const match = /^---\n([\s\S]*?)\n---\n/.exec(source);
-    expect(match).not.toBeNull();
-    const frontmatter = match![1];
-
-    // The allowlist is read from the shipped frontmatter, not from a runtime
-    // string, so a definition that stops asking for the boundary fails here.
-    const toolsLine = /^tools:[^\n]*$/m.exec(frontmatter);
-    expect(toolsLine).not.toBeNull();
-    const tools = toolsLine![0]
-      .slice("tools:".length)
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .sort();
-    expect(tools).toEqual(["Bash", "Glob", "Grep", "Read"]);
-
-    // Adding any of these would let the reviewer write, dispatch or escape its
-    // read-only boundary; removing one narrows the evidence it can gather.
-    for (const denied of ["Agent", "Edit", "Write", "NotebookEdit"]) expect(tools).not.toContain(denied);
-
-    // Plugin agents ignore these keys, so declaring one would read as an
-    // enforced boundary that the Host never applies.
-    for (const ignored of ["hooks", "mcpServers", "permissionMode"]) {
-      expect(new RegExp(`^${ignored}:`, "m").test(frontmatter)).toBe(false);
-    }
-    expect(source).not.toContain("hooks:");
-    expect(source).not.toContain("mcpServers:");
-    expect(source).not.toContain("permissionMode:");
-  });
-
-  it("the reviewer definition body is generated from the role prompt and the exported static rules", () => {
-    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
-    const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8").trim();
-
-    // One source: the definition carries the same role prompt bytes the Pi Host
-    // dispatches, followed by the same static sentences the runtime composes
-    // into a complete Review prompt. Neither is restated by hand.
-    expect(definition).toContain(rolePrompt);
-    for (const rule of [...STATIC_REVIEW_RULES, ...REVIEWER_DISPATCH_RULES]) expect(definition).toContain(rule);
-
-    // Nothing is invented by the generator: every non-empty paragraph after the
-    // frontmatter and the role prompt comes from those exported rules.
-    const body = definition.slice(definition.indexOf(rolePrompt) + rolePrompt.length);
-    const extra = body.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
-    const sources = [...STATIC_REVIEW_RULES, ...REVIEWER_DISPATCH_RULES] as unknown as string[];
-    expect(extra.filter((line) => !sources.some((rule) => line === rule.trim()))).toEqual([]);
-  });
-
-  it("carries the agreed-seam coverage rule into the generated reviewer definition", () => {
-    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+  it("carries the agreed-seam coverage rule into the packaged authority-review skill", () => {
+    const definition = readFileSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"), "utf8");
     const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8").trim();
     const flat = (text: string) => text.replace(/\s+/g, " ");
 
     expect(flat(rolePrompt)).toContain("names an agreed seam");
-    // The generated definition is one composition of the role prompt, so the seam
-    // rule reaches the Claude-native reviewer without being restated by hand.
+    // The skill is one composition of the role prompt, so the seam rule reaches
+    // the CLI reviewer without being restated by hand.
     expect(flat(definition)).toContain("names an agreed seam");
-    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
   });
 
-  it("carries the automated-scenario Then coverage rule into the generated reviewer definition", () => {
-    const definition = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
+  it("carries the automated-scenario Then coverage rule into the packaged authority-review skill", () => {
+    const definition = readFileSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"), "utf8");
     const flat = (text: string) => text.replace(/\s+/g, " ");
 
     expect(flat(definition)).toContain(
@@ -405,35 +346,8 @@ describe("claude host package", () => {
     expect(flat(definition)).toContain(
       "A `manual` scenario, and an acceptance with no mapped scenario, produce no such finding",
     );
-    // The generated definition is one composition of the role prompt, so this rule
-    // reaches the Claude-native reviewer without being restated by hand.
-    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
-  });
-
-  it("the build check fails when the committed reviewer definition differs from the generated one", () => {
-    expect(reviewerDefinitionDrift(ROOT)).toBeNull();
-
-    const root = mkdtempSync(join(tmpdir(), "reviewer-drift-"));
-    try {
-      const promptDir = join(root, "plugins/immune-brain/runtime/prompts");
-      const agentDir = join(root, "plugins/immune-brain/agents");
-      mkdirSync(promptDir, { recursive: true });
-      mkdirSync(agentDir, { recursive: true });
-      const rolePrompt = readFileSync(resolve(PLUGIN_ROOT, "runtime/prompts/code-review.md"), "utf8");
-      writeFileSync(join(promptDir, "code-review.md"), rolePrompt);
-
-      // A hand-edited definition: correct tool boundary, one lost rule.
-      const committed = readFileSync(resolve(PLUGIN_ROOT, "agents/immune-brain-reviewer.md"), "utf8");
-      writeFileSync(join(agentDir, "immune-brain-reviewer.md"), committed.replace(STATIC_REVIEW_RULES[0], ""));
-      expect(reviewerDefinitionDrift(root)).toContain("drifted from a fresh generate");
-
-      // And the reverse: a role prompt whose bytes no longer match.
-      writeFileSync(join(agentDir, "immune-brain-reviewer.md"), committed);
-      writeFileSync(join(promptDir, "code-review.md"), `${rolePrompt}\nHand-added instruction.`);
-      expect(reviewerDefinitionDrift(root)).toContain("drifted from a fresh generate");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    // The skill is one composition of the role prompt, so this rule reaches the
+    // CLI reviewer without being restated by hand.
   });
 
   it("ships one generated native definition per read-only Claude role", () => {
@@ -556,5 +470,32 @@ describe("authority-review skill", () => {
 			writeFileSync(skill, committed.replace(STATIC_REVIEW_RULES[0], ""));
 			expect(authorityReviewSkillDrift(root)).toContain("drifted from a fresh generate");
 		});
+	});
+});
+
+// Spec review-cli-stage D11: the packaged plugin ships the CLI reviewer's skill
+// and the verifier agent. A set equality proves the retired agent definition is
+// gone without naming it, so the assertion cannot outlive the retirement.
+describe("retired reviewer agent", () => {
+	const SHIPPED_AGENTS = [
+		"immune-brain-advisory-reviewer.md",
+		"immune-brain-qa.md",
+		"immune-brain-review-verifier.md",
+		"immune-brain-ui-review.md",
+	];
+
+	it("ships the authority-review skill and only the shipped agent definitions", () => {
+		expect(existsSync(resolve(PLUGIN_ROOT, "skills/authority-review/SKILL.md"))).toBe(true);
+		expect(existsSync(resolve(PLUGIN_ROOT, "agents/immune-brain-review-verifier.md"))).toBe(true);
+		expect(readdirSync(resolve(PLUGIN_ROOT, "agents")).sort()).toEqual(SHIPPED_AGENTS);
+		expect(reviewerDefinitionDrift(ROOT)).toBeNull();
+	});
+
+	it("derived-files lists the packaged skill and only the shipped agent definitions", () => {
+		const derived = JSON.parse(readFileSync(resolve(ROOT, "docs/agents/derived-files.json"), "utf8")) as { entries: Array<{ outputs: string[] }> };
+		const outputs = derived.entries.flatMap((entry) => entry.outputs);
+		expect(outputs).toContain("plugins/immune-brain-antigravity/skills/authority-review/SKILL.md");
+		expect(outputs.filter((path) => path.includes("/agents/")).sort())
+			.toEqual(SHIPPED_AGENTS.map((name) => `plugins/immune-brain-antigravity/agents/${name}`));
 	});
 });

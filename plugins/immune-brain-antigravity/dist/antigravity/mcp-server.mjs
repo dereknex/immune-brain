@@ -12196,7 +12196,10 @@ class AssuranceCoordinator {
         verificationTimeoutMs = this.ports.reviewVerificationTimeoutMs ?? REVIEW_TIMING_PROFILES[workload].stopThresholdSeconds * 1000;
         turnBudget = reviewTurnBudget(workload, reviewChangedPathCount(reviewEvidence), rounds.previous_budget);
         const counterEvidence = [...stored.record?.history ?? []].reverse().find((entry) => entry.type === "verification" && entry.verification?.intent_content_hash === review.snapshot.intent_content_hash && entry.verification.diff_hash === review.snapshot.diff_hash && !entry.verification.failure && entry.verification.checked === entry.verification.verifier_refutations.length)?.verification?.verifier_refutations.map(({ anchor, counter_path }) => ({ anchor, counter_path }));
-        hostReservation = this.ports.host.prepareReview({
+        const host = this.ports.host;
+        if (!host.prepareReview)
+          throw new Error("the Review host reserves no reviewer");
+        hostReservation = host.prepareReview({
           taskId,
           operationId,
           root: review.snapshot.root,
@@ -17645,9 +17648,8 @@ import { createHash as createHash23 } from "node:crypto";
 import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
 import { basename as basename3, dirname as dirname15, isAbsolute as isAbsolute10, join as join24 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
-var REVIEWER_AGENT = "immune-brain-reviewer";
-var CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
 var AGENT_TOOL = "Agent";
+var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
 
 class MemoryHookEventLog {
   events = [];
@@ -17894,21 +17896,6 @@ function parseReviewMarker(prompt) {
   if (match)
     return { operationId: match[1], taskId: match[2] };
 }
-function reviewDispatchHookOutput(payload) {
-  if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL)
-    return;
-  const input = payload.tool_input;
-  if (!parseReviewMarker(input?.prompt))
-    return;
-  const reason = input?.subagent_type !== REVIEWER_AGENT && input?.subagent_type !== CLAUDE_REVIEWER_AGENT ? "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer." : reviewPacketError(input.prompt);
-  if (!reason)
-    return;
-  return JSON.stringify({ hookSpecificOutput: {
-    hookEventName: "PreToolUse",
-    permissionDecision: "deny",
-    permissionDecisionReason: reason
-  } });
-}
 function bindsPrompt(prompt, pending) {
   return prompt === undefined || prompt === pending.dispatchPrompt;
 }
@@ -17961,37 +17948,8 @@ class ClaudeReviewHost {
     const state = this.pending.get(reservation.id);
     if (!state?.verifierModel)
       return { ok: false, reason: "verifier reservation not found", release: true };
-    const result = this.inspectReview(reservation);
+    const result = this.inspectVerifier(reservation);
     return result.ok ? { ok: true, receipt: { ...result.receipt, model: state.verifierModel } } : result;
-  }
-  prepareReview(request) {
-    this.drain();
-    const initialCursors = new Map;
-    const sessionCursors = new Map;
-    for (const sessionId of this.log.sessions()) {
-      const len = this.log.list(sessionId).length;
-      initialCursors.set(sessionId, len);
-      sessionCursors.set(sessionId, len);
-    }
-    const dispatchPrompt = reviewPacketHandle({
-      taskId: request.taskId,
-      operationId: request.operationId,
-      packet: request.writePacket(request.operationId, request.snapshotPrompt)
-    });
-    this.pending.set(request.operationId, {
-      request,
-      dispatchPrompt,
-      initialCursors,
-      sessionCursors,
-      consumed: false
-    });
-    return {
-      id: request.operationId,
-      dispatch: {
-        subagent_type: CLAUDE_REVIEWER_AGENT,
-        prompt: dispatchPrompt
-      }
-    };
   }
   observe(event) {
     this.log.append(event);
@@ -18057,8 +18015,7 @@ class ClaudeReviewHost {
     if (state.error)
       return;
     if (event.type === "SubagentStart") {
-      const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
-      if (!expectedAgents.includes(event.agent))
+      if (!VERIFIER_AGENTS.includes(event.agent))
         return;
       if (event.operationId || event.prompt !== undefined) {
         if (!bindsStart(event, state))
@@ -18115,8 +18072,7 @@ class ClaudeReviewHost {
       return;
     }
     if (event.type === "SubagentStop") {
-      const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
-      if (!expectedAgents.includes(event.agent))
+      if (!VERIFIER_AGENTS.includes(event.agent))
         return;
       if (!event.agentId)
         return;
@@ -18140,12 +18096,12 @@ class ClaudeReviewHost {
       state.stopEvent = event;
     }
   }
-  inspectReview(reservation) {
+  inspectVerifier(reservation) {
     this.drain();
     const state = this.pending.get(reservation.id);
     if (!state)
       return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
+    const packetError = verificationPacketError(state.dispatchPrompt);
     if (packetError)
       return { ok: false, reason: packetError, release: true };
     if (state.consumed)
@@ -18187,22 +18143,6 @@ class ClaudeReviewHost {
     }
     const model = launch.resolvedModel ?? state.postEvent.model;
     return { ok: true, receipt: { actorId, result: verdict, ...model ? { model } : {} } };
-  }
-  consumeReview(reservation) {
-    const result = this.inspectReview(reservation);
-    if (result.ok) {
-      const pending = this.pending.get(reservation.id);
-      if (pending)
-        pending.consumed = true;
-    }
-    return result;
-  }
-  inspectReviewForTask(taskId) {
-    this.drain();
-    const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-    if (!entry)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
   }
   releaseReview(reservation) {
     this.pending.delete(reservation.id);
@@ -22092,9 +22032,6 @@ import { accessSync as accessSync4, chmodSync as chmodSync5, constants as consta
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
 import { delimiter as delimiter5, join as join33 } from "node:path";
-function reviewDispatchMode(env = process.env) {
-  return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "subagent" ? "subagent" : "cli";
-}
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -22314,7 +22251,7 @@ function readTaskIntentForRecord(root, taskId) {
   return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
 async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
-  return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask ? host.inspectReviewForTask(taskId) : { ok: false, reason: "review inspection not supported", release: true });
+  return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 function settledKernelResult(result) {
   const state = result.state;
@@ -22401,7 +22338,7 @@ class ClaudeRuntime {
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
     this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
-    this.reviewHost = reviewDispatchMode(this.env) === "cli" ? new CliReviewHost(this.host) : this.host;
+    this.reviewHost = new CliReviewHost(this.host);
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
       ...options.ports,
@@ -24105,7 +24042,7 @@ async function runHook() {
     payload = null;
   }
   if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? reviewDispatchHookOutput(payload) ?? await runContinuationHookOutput(payload);
+    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
     if (decision)
       process.stdout.write(`${decision}
 `);
@@ -24163,7 +24100,6 @@ import { createHash as createHash28 } from "node:crypto";
 import { mkdirSync as mkdirSync12, readdirSync as readdirSync11, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
 import { join as join36 } from "node:path";
 import { tmpdir as tmpdir9 } from "node:os";
-var REVIEWER_AGENT2 = "immune-brain-reviewer";
 var VERIFIER_AGENT = "immune-brain-review-verifier";
 var SUBAGENT_TOOL = "invoke_subagent";
 
@@ -24317,7 +24253,7 @@ class AntigravityReviewHost {
     const state = this.pending.get(reservation.id);
     if (!state?.verifierModel)
       return { ok: false, reason: "verifier reservation not found", release: true };
-    const result = this.inspectReview(reservation);
+    const result = this.inspectVerifier(reservation);
     if (!result.ok)
       return result;
     return {
@@ -24326,37 +24262,6 @@ class AntigravityReviewHost {
         actorId: result.receipt.actorId,
         result: result.receipt.result,
         model: state.verifierModel
-      }
-    };
-  }
-  prepareReview(request) {
-    this.drain();
-    const initialCursors = new Map;
-    const sessionCursors = new Map;
-    for (const sessionId of this.log.sessions()) {
-      const len = this.log.list(sessionId).length;
-      initialCursors.set(sessionId, len);
-      sessionCursors.set(sessionId, len);
-    }
-    const dispatchPrompt = reviewPacketHandle({
-      taskId: request.taskId,
-      operationId: request.operationId,
-      packet: request.writePacket(request.operationId, request.snapshotPrompt)
-    });
-    this.pending.set(request.operationId, {
-      request,
-      dispatchPrompt,
-      initialCursors,
-      sessionCursors,
-      consumed: false
-    });
-    return {
-      id: request.operationId,
-      dispatch: {
-        TypeName: REVIEWER_AGENT2,
-        Role: "Code Reviewer",
-        Prompt: dispatchPrompt,
-        Model: "inherit"
       }
     };
   }
@@ -24412,8 +24317,7 @@ class AntigravityReviewHost {
     if (state.error)
       return;
     if (event.type === "SubagentStart") {
-      const expectedAgents = state.verifierModel ? [VERIFIER_AGENT] : [REVIEWER_AGENT2];
-      if (!expectedAgents.includes(event.agent))
+      if (event.agent !== VERIFIER_AGENT)
         return;
       if (event.operationId && event.operationId !== state.request.operationId)
         return;
@@ -24447,8 +24351,7 @@ class AntigravityReviewHost {
       return;
     }
     if (event.type === "SubagentStop") {
-      const expectedAgents = state.verifierModel ? [VERIFIER_AGENT] : [REVIEWER_AGENT2];
-      if (!expectedAgents.includes(event.agent))
+      if (event.agent !== VERIFIER_AGENT)
         return;
       if (event.operationId && event.operationId !== state.request.operationId)
         return;
@@ -24459,12 +24362,12 @@ class AntigravityReviewHost {
       state.stopEvent = event;
     }
   }
-  inspectReview(reservation) {
+  inspectVerifier(reservation) {
     this.drain();
     const state = this.pending.get(reservation.id);
     if (!state)
       return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
+    const packetError = verificationPacketError(state.dispatchPrompt);
     if (packetError)
       return { ok: false, reason: packetError, release: true };
     if (state.consumed)
@@ -24485,22 +24388,6 @@ class AntigravityReviewHost {
         ...state.postEvent.model ? { model: state.postEvent.model } : {}
       }
     };
-  }
-  consumeReview(reservation) {
-    const result = this.inspectReview(reservation);
-    if (result.ok) {
-      const pending = this.pending.get(reservation.id);
-      if (pending)
-        pending.consumed = true;
-    }
-    return result;
-  }
-  inspectReviewForTask(taskId) {
-    this.drain();
-    const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-    if (!entry)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
   }
   releaseReview(reservation) {
     this.pending.delete(reservation.id);

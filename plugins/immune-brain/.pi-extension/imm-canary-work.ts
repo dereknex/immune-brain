@@ -501,22 +501,19 @@ export default function (
 		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
 		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
-			// ADR 0030: validate marker-targeted dispatch before binding the reviewer.
-			return progression.piReviewHost.observeReviewDispatch(event.input as Parameters<typeof progression.piReviewHost.observeReviewDispatch>[0], event.toolCallId);
+			// ADR 0017: validate a marker-targeted dispatch before binding the verifier.
+			return progression.piReviewHost.observeVerifierDispatch(event.input as Record<string, unknown> | undefined, event.toolCallId);
 		}
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
 		const result = event as { toolName?: string; details?: Record<string, unknown>; toolCallId?: string; content?: Array<{ type?: string; text?: string }> };
 		if (result.toolName === "Agent" && result.toolCallId) {
-			// ADR 0017: record the reviewer's own result bytes for receipt-bound submission.
+			// ADR 0017: record the verifier's own result bytes for receipt-bound submission.
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			const model = typeof result.details?.model === "string" ? result.details.model : undefined;
-			const offeredModels = Array.isArray(result.details?.offered_models) && result.details.offered_models.every(item => typeof item === "string")
-				? result.details.offered_models as string[] : undefined;
-			progression.piReviewHost.observeReviewResult(result.toolCallId, text, model, offeredModels);
+			progression.piReviewHost.observeVerifierResult(result.toolCallId, text);
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {

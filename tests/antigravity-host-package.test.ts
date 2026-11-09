@@ -27,7 +27,6 @@ import {
 } from "../scripts/build-antigravity-plugin";
 import {
 	generateReadonlyRoleDefinitions,
-	generateReviewerDefinition,
 	generateVerifierDefinition,
 } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
@@ -38,7 +37,6 @@ const ROLES = [
 	"immune-brain-advisory-reviewer",
 	"immune-brain-qa",
 	"immune-brain-review-verifier",
-	"immune-brain-reviewer",
 	"immune-brain-ui-review",
 ];
 const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
@@ -117,7 +115,6 @@ describe("Antigravity artifact boundary (AC1)", () => {
 
 	it("ships native read-only role definitions that keep the shared prompt bodies", () => {
 		const sharedBodies = [
-			generateReviewerDefinition(ROOT),
 			generateVerifierDefinition(ROOT),
 			...generateReadonlyRoleDefinitions(ROOT).map((generated) => generated.content),
 		].map((definition) => /^---\n[\s\S]*?\n---\n\n([\s\S]*)$/.exec(definition)![1]);
@@ -456,5 +453,31 @@ describe("authority-review skill", () => {
 	it("ships byte-equal to the shared plugin skill", () => {
 		const shared = resolve(ROOT, "plugins/immune-brain/skills/authority-review/SKILL.md");
 		expect(readFileSync(join(ARTIFACT, "skills/authority-review/SKILL.md"), "utf8")).toBe(readFileSync(shared, "utf8"));
+	});
+});
+
+// Spec review-cli-stage D11: the Antigravity package ships the CLI reviewer's
+// skill and the verifier agent. The agent allowlist is the set equality above;
+// this suite adds the retired agent's absence as a package-level statement.
+describe("retired reviewer agent", () => {
+	const SHIPPED_AGENTS = [
+		"immune-brain-advisory-reviewer.md",
+		"immune-brain-qa.md",
+		"immune-brain-review-verifier.md",
+		"immune-brain-ui-review.md",
+	];
+
+	it("ships the authority-review skill and only the shipped agent definitions", () => {
+		expect(existsSync(join(ARTIFACT, "skills/authority-review/SKILL.md"))).toBe(true);
+		expect(existsSync(join(ARTIFACT, "agents/immune-brain-review-verifier.md"))).toBe(true);
+		expect(readdirSync(join(ARTIFACT, "agents")).sort()).toEqual(SHIPPED_AGENTS);
+	});
+
+	it("derived-files lists the packaged skill and only the shipped agent definitions", () => {
+		const derived = JSON.parse(readFileSync(join(ROOT, "docs/agents/derived-files.json"), "utf8")) as { entries: Array<{ outputs: string[] }> };
+		const outputs = derived.entries.flatMap((entry) => entry.outputs);
+		expect(outputs).toContain("plugins/immune-brain-antigravity/skills/authority-review/SKILL.md");
+		expect(outputs.filter((path) => path.includes("/agents/")).sort())
+			.toEqual(SHIPPED_AGENTS.map((name) => `plugins/immune-brain-antigravity/agents/${name}`));
 	});
 });

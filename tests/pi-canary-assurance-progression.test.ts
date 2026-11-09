@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
+import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { resolve } from "node:path";
 import {
 	buildReviewPrompt,
@@ -17,42 +17,19 @@ import {
 	resultText,
 	snapshot,
 } from "./helpers/pi-canary-assurance-harness.ts";
+import { runReservedReview } from "./helpers/cli-reviewer";
 
 
-/** ADR 0017: record the reserved dispatch and its result, then submit the relayed verdict. */
+/** Advance, run the reserved reviewer with these bytes, then submit the relayed verdict. */
 async function submitObserved(progression: ReturnType<typeof makeHarness>["progression"], taskId: string, verdict: unknown) {
 	const ready = await progression.advance(taskId, ctx);
-	const params = (ready as { agent_params?: { prompt?: string; description?: string } }).agent_params;
-	if (params?.prompt) {
-		progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
-		progression.piReviewHost.observeReviewResult("call-1", typeof verdict === "string" ? verdict : JSON.stringify(verdict));
-	}
+	if (ready.state !== "review_ready") return ready;
+	runReservedReview(ready, verdict);
 	return progression.submitMediated(taskId, ctx, verdict);
 }
 
 describe("foreground assurance progression", () => {
-	test.each([true, false])("conflict during awaited submission releases reservation (relayed=%s)", async (relayed) => {
-		const h = makeHarness();
-		const ready = await h.progression.advance(TASK, ctx);
-		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
-		const verdict = passVerdict(snapshot("review"));
-		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "interleaved");
-		h.progression.piReviewHost.observeReviewResult("interleaved", JSON.stringify(verdict));
-		const original = h.ports.projectTask;
-		let entered!: () => void;
-		let release!: () => void;
-		const entry = new Promise<void>((resolve) => { entered = resolve; });
-		const gate = new Promise<void>((resolve) => { release = resolve; });
-		h.ports.projectTask = async (root, task) => { entered(); await gate; return original(root, task); };
-		const submitting = h.progression.submitMediated(TASK, ctx, relayed ? verdict : undefined);
-		await entry;
-		h.progression.piReviewHost.observeReviewResult("interleaved", "");
-		release();
-		expect(await submitting).toMatchObject({ state: "blocked", reason: expect.stringContaining("conflicting result bytes"), recovery_action: "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged" });
-		expect(h.counts().applyCount).toBe(1);
-		expect(h.progression.active(TASK)).toBeNull();
-	});
-	test("runs QA synchronously and returns one foreground Review reservation", async () => {
+	test("runs QA synchronously and returns one foreground Review command", async () => {
 		let released!: () => void;
 		const gate = new Promise<void>((resolve) => { released = resolve; });
 		let qaFinished = false;
@@ -64,15 +41,22 @@ describe("foreground assurance progression", () => {
 		released();
 		const result = await advancing;
 		expect(result.state).toBe("review_ready");
-		expect((result as { agent_params: { run_in_background: boolean } }).agent_params.run_in_background).toBe(false);
-		// Pi packets carry the complete prompt: role contract plus every static rule.
-		const params = (result as { agent_params: { prompt: string } }).agent_params;
-		const packet = parseReviewPacketHandle(params.prompt)!.packet;
-		const prompt = readFileSync(packet.path, "utf8");
-		expect(prompt).toContain("internal role: code-review");
-		expect(prompt).toContain("Do not edit files, create files, run mutating commands, or change Git state");
-		expect(prompt).toContain("Reserve the final turn for exactly one strict JSON verdict");
+		// One command the Parent runs in its own shell, never an Agent envelope.
+		const command = (result as { review_command?: string }).review_command;
+		expect(typeof command).toBe("string");
+		expect(result).not.toHaveProperty("agent_params");
+		// The packet carries the complete prompt: role contract plus every static rule.
+		const script = readFileSync(command!.slice(3), "utf8");
+		const packetPath = /authority-review ([^']*\/packet\.md)/.exec(script)![1];
+		const prompt = readFileSync(packetPath, "utf8");
+		// The skill carries the role contract and the static rules; the packet
+		// carries the contract stamp and this dispatch's snapshot facts (D12).
+		expect(prompt).toContain(`review_contract_hash: ${currentReviewContractHash()}`);
 		expect(prompt).toContain("A1: the contract holds");
+		const skill = readFileSync("plugins/immune-brain/skills/authority-review/SKILL.md", "utf8");
+		expect(skill).toContain("imm-code-review");
+		expect(skill).toContain("Do not edit files, create files, run mutating commands, or change Git state");
+		expect(skill).toContain("Reserve the final turn for exactly one strict JSON verdict");
 		expect(updates.some((item) => JSON.stringify(item).includes("verifying"))).toBe(true);
 		expect(h.counts().applyCount).toBe(1);
 	});
@@ -202,7 +186,7 @@ describe("foreground assurance progression", () => {
 		expect(advanced.state).toBe("settlement_unknown");
 		h.ports.projectTask = async () => ({ ...projection(), error: "authority unavailable" });
 		expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "blocked", reason: "authority unavailable" });
-		expect(await submitObserved(h.progression, TASK, {})).toMatchObject({
+		expect(await h.progression.submitMediated(TASK, ctx, {})).toMatchObject({
 			state: "settlement_unknown",
 			operation_id: (advanced as { operation_id: string }).operation_id,
 			reason: (advanced as { reason: string }).reason,
@@ -322,7 +306,7 @@ describe("foreground assurance progression", () => {
 		const submitted = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
 		expect(submitted).toEqual({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
-		const duplicate = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
+		const duplicate = await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")));
 		expect(duplicate).toMatchObject({ state: "blocked" });
 	});
 
@@ -342,9 +326,7 @@ describe("foreground assurance progression", () => {
 			...passVerdict(snapshot("review")),
 			approval: { ...passVerdict(snapshot("review")).approval, inspected_paths: paths },
 		});
-		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
-		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
-		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(claim(["src/change.ts"])));
+		runReservedReview(ready, claim(["src/change.ts"]));
 		// Missing-path control: rejected as a correctable invalid verdict, the
 		// reservation survives, and nothing is applied.
 		const omitted = await h.progression.submitMediated(TASK, ctx, claim([]));
@@ -356,25 +338,11 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(2);
 	});
 
-	test("review model metadata is tied to the observed Pi receipt", async () => {
-		const h = makeHarness();
-		const ready = await h.progression.advance(TASK, ctx);
-		if (ready.state !== "review_ready") throw new Error(`expected review_ready, got ${ready.state}`);
-		h.progression.piReviewHost.observeReviewDispatch(ready.agent_params as never, "model-call");
-		const bytes = JSON.stringify(passVerdict(snapshot("review")));
-		h.progression.piReviewHost.observeReviewResult("model-call", bytes, "provider/reviewer", ["provider/verifier"]);
-		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: true, receipt: { model: "provider/reviewer", offered_models: ["provider/verifier"] } });
-		h.progression.piReviewHost.observeReviewResult("model-call", bytes, "provider/substituted", ["provider/verifier"]);
-		expect(h.progression.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: false, release: true });
-	});
-
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
-		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
-		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		runReservedReview(ready, passVerdict(snapshot("review")));
 		const invalid = await h.progression.submitMediated(TASK, ctx, { decision: "pass" });
 		expect(invalid).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect(h.counts().applyCount).toBe(1);
@@ -432,9 +400,7 @@ describe("foreground assurance progression", () => {
 		} });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		const params = (ready as { agent_params: { prompt: string; description: string } }).agent_params;
-		h.progression.piReviewHost.observeReviewDispatch({ ...params, subagent_type: "Review" }, "call-1");
-		h.progression.piReviewHost.observeReviewResult("call-1", JSON.stringify(passVerdict(snapshot("review"))));
+		runReservedReview(ready, passVerdict(snapshot("review")));
 		stale = true;
 		expect((await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).state).toBe("blocked");
 		expect(h.counts().removeCount).toBe(1);

@@ -1,4 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 // Phase 3 foreground Tool and native Review bridge contract.
 
 import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
@@ -49,9 +50,8 @@ const {
 
 afterAll(() => mock.restore());
 
-// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
-// as the rollback value; the CLI default is covered in cli-review-dispatch.
-process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+// Authority Review runs as the reserved CLI process (Spec review-cli-stage D11).
+installCliReviewer();
 
 // This repository's risk-floor declaration, committed into each fixture
 // repository so its Kernel and Pi extension paths are floored there too.
@@ -161,6 +161,10 @@ function makeEnrolledRoot(intent: typeof INTENT = INTENT): string {
 	mkdirSync(join(root, "docs", "specs"), { recursive: true });
 	mkdirSync(join(root, "plugins", "immune-brain", ".pi-extension"), { recursive: true });
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	writeFileSync(join(root, ".imm", "config.json"), JSON.stringify({
+		contract: "immune_brain/project_config/v1",
+		lanes: { review_host: "pi" },
+	}) + "\n");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	writeFileSync(join(root, "docs", "plans", `${TASK}.intent.json`), JSON.stringify(intent, null, 2) + "\n");
 	writeFileSync(join(root, "docs", "specs", "canary-ext-task.spec.md"), "# Canary extension task\n");
@@ -430,7 +434,8 @@ describe("registered request_stop settlement and UI", () => {
 			const root = makeEnrolledRoot();
 			let evidenceRemoved = 0;
 			try {
-				const { tools } = loadSurface({
+				let latestReviewSnapshot!: SnapshotDescriptor;
+		const { tools } = loadSurface({
 					buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
 						snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(),
 						reviewBundle: role === "review" ? { dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } : null,
@@ -1260,7 +1265,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			);
 			expect(JSON.parse(ready.content[0].text)).toMatchObject({
 				state: "review_ready",
-				next_action: "invoke the foreground reviewer and submit its verdict",
+				next_action: "run review_command in your shell, then submit_review",
 			});
 
 			// Spec branch-boundary-r2 D23: another task's sidecar is not this task's
@@ -1401,12 +1406,12 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
-	test("advance emits bounded foreground updates and returns exact Agent params", { timeout: 15000 }, async () => {
+	test("advance emits bounded foreground updates and returns one CLI Review command", { timeout: 15000 }, async () => {
 	const root = makeEnrolledRoot();
 	try {
 		const updates: unknown[] = [];
 		let latestReviewSnapshot!: SnapshotDescriptor;
-		const { tools, emit: emitEvent } = loadSurface({
+		const { tools } = loadSurface({
 			buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
 				const built = {
 					snapshot: minimalSnapshot(role, rootPath, current),
@@ -1427,9 +1432,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const result = await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, (update: unknown) => updates.push(update), makeCtx(root, makeUI()));
 		const parsed = JSON.parse(result.content[0].text);
 		expect(parsed.state).toBe("review_ready");
-		expect(parsed.next_action).toBe("invoke the foreground reviewer and submit its verdict");
+		expect(parsed.next_action).toBe("run review_command in your shell, then submit_review");
 		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
-		expect(parsed.agent_params.run_in_background).toBe(false);
+		expect(typeof parsed.review_command).toBe("string");
+		expect(parsed).not.toHaveProperty("agent_params");
 		const progressUpdate = updates.find((item) =>
 			(item as { details?: { acceptance_id?: string } }).details?.acceptance_id === "A1"
 		) as { details: Record<string, unknown> } | undefined;
@@ -1441,11 +1447,10 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			acceptance_phase: "passed",
 			elapsed_ms: 1,
 		});
-		// ADR 0017: submission mediates against the observed reviewer receipt, so
-		// simulate the reserved dispatch and its result through the event seam.
-		const receipt = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } };
-		emitEvent("tool_call", { toolName: "Agent", input: parsed.agent_params, toolCallId: "call-1" });
-		emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(receipt) }] });
+		// The reserved reviewer runs first: the receipt is the submitted authority.
+		runReservedReview(parsed, { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass",
+			approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } });
 		const invalid = await capturedToolFailure(tool.execute("submit-invalid", { task_id: TASK, action: { op: "submit_review", verdict: { decision: "pass" } } }, undefined, undefined, makeCtx(root, makeUI())));
 		expect(invalid).toMatchObject({ code: "verdict_invalid", next_action: "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer" });
 		const repeatedAdvance = await capturedToolFailure(tool.execute("advance-again", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI())));
@@ -1457,7 +1462,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const root = makeEnrolledRoot();
 		const controller = new AbortController();
 		try {
-			const { tools } = loadSurface({
+			let latestReviewSnapshot!: SnapshotDescriptor;
+		const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
 					snapshot: minimalSnapshot(role, rootPath, current),
 					descriptors: new Map(),
@@ -1493,7 +1499,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const evidencePath = join(root, "review-construction.json");
 		let removed = false;
 		try {
-			const { tools } = loadSurface({
+			let latestReviewSnapshot!: SnapshotDescriptor;
+		const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({
 					snapshot: minimalSnapshot(role, rootPath, current),
 					descriptors: new Map(),
@@ -1525,106 +1532,6 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
-	test.each(["different", "empty-array", "empty-text"])("conflicting tool_result (%s) releases reservation and evidence without authority writes", { timeout: 15000 }, async (variant) => {
-		const root = makeEnrolledRoot();
-		try {
-			let review!: SnapshotDescriptor;
-			let removed = false;
-			const surface = loadSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
-					const snapshot = minimalSnapshot(role, rootPath, current);
-					if (role === "review") review = snapshot;
-					return { snapshot, descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
-				},
-				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
-			});
-			const tool = surface.tools[0];
-			const ctx = makeCtx(root, makeUI());
-			const ready = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(review), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...review.dirty_files] } };
-			expect(surface.emit("tool_call", { toolName: "Agent", input: { ...ready.agent_params, prompt: `${ready.agent_params.prompt}\nrewritten` }, toolCallId: "rewritten-call" })).toMatchObject({ block: true, reason: expect.stringContaining("reserved prompt verbatim") });
-			surface.emit("tool_result", { toolName: "Agent", toolCallId: "rewritten-call", content: [{ type: "text", text: JSON.stringify(verdict) }] });
-			const beforeRewrite = JSON.stringify(readTaskRecordRaw(root, TASK));
-			const rewritten = await capturedToolFailure(tool.execute("rewritten", { task_id: TASK, action: { op: "submit_review", verdict } }, undefined, undefined, ctx));
-			expect(rewritten.message).toContain("reserved foreground Agent was not observed");
-			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(beforeRewrite);
-			expect(removed).toBe(true);
-			const unchanged = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(unchanged.operation_id).not.toBe(ready.operation_id);
-			removed = false;
-			surface.emit("tool_call", { toolName: "Agent", input: unchanged.agent_params, toolCallId: "conflict-call" });
-			const first = [{ type: "text", text: JSON.stringify(verdict) }];
-			const second = variant === "empty-array" ? [] : [{ type: "text", text: variant === "empty-text" ? "" : JSON.stringify({ ...verdict, approval: { ...verdict.approval, summary: "different" } }) }];
-			for (const content of [first, first, second]) {
-				// Identical repeats are idempotent; every distinct result conflicts.
-				surface.emit("tool_result", { toolName: "Agent", toolCallId: "conflict-call", content });
-			}
-			const before = JSON.stringify(readTaskRecordRaw(root, TASK));
-			const failure = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action: { op: "submit_review" } }, undefined, undefined, ctx));
-			expect(failure.message).toContain("conflicting result bytes");
-			expect(failure.next_action).toContain("Call advance_assurance");
-			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(before);
-			expect(removed).toBe(true);
-			const retry = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, ctx)).content[0].text);
-			expect(retry.operation_id).not.toBe(unchanged.operation_id);
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
-	test.each([true, false])("receipt-bound Review auto-completes (relayed=%s)", { timeout: 15000 }, async (relayed) => {
-		const root = makeEnrolledRoot();
-		try {
-			let latestReviewSnapshot!: SnapshotDescriptor;
-			let removed = false;
-			const { tools, emit: emitEvent } = loadSurface({
-				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => {
-					const built = { snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null };
-					if (role === "review") latestReviewSnapshot = built.snapshot;
-					return built;
-				},
-				runQa: async (snapshot: SnapshotDescriptor) => ({ contract: "assurance_kernel/assurance_verdict/v2", role: "qa", task_id: TASK, snapshot_digest: snapshotDigest(snapshot), decision: "pass", approval: { kind: "qa", authority_role: "qa", summary: "passed" } }),
-				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => { removed = true; } }),
-			});
-			const tool = tools[0];
-			const advanceResult = JSON.parse((await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, undefined, makeCtx(root, makeUI()))).content[0].text);
-			// A review pass claims the reviewed change set, so the fixture lists
-			// the snapshot's own dirty_files (BR-DEC-3).
-			const verdict = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK, snapshot_digest: snapshotDigest(latestReviewSnapshot), decision: "pass", approval: { kind: "review", authority_role: "reviewer", summary: "passed", inspected_paths: [...latestReviewSnapshot.dirty_files] } };
-			const context = makeCtx(root, makeUI());
-			// ADR 0017: the relayed verdict must fingerprint-match the observed
-			// receipt, so record the dispatch and result through the event seam.
-			const params = advanceResult.agent_params;
-			for (const input of [{ ...params, prompt: `${params.prompt}!` }, { ...params, subagent_type: "general-purpose" }, { ...params, run_in_background: undefined }, { ...params, isolated: false }]) {
-				const blocked = emitEvent("tool_call", { toolName: "Agent", input, toolCallId: "blocked-call" });
-				expect((blocked as { reason: string }).reason).toContain("reserved prompt verbatim");
-				expect(blocked).toMatchObject({ block: true });
-			}
-			expect(emitEvent("tool_call", { toolName: "Agent", input: { prompt: "unrelated", subagent_type: "general-purpose" }, toolCallId: "explore" })).toBeUndefined();
-			expect(emitEvent("tool_call", { toolName: "Agent", input: { ...params, description: "unreserved" }, toolCallId: "call-1" })).toBeUndefined();
-			emitEvent("tool_result", { toolName: "Agent", toolCallId: "call-1", content: [{ type: "text", text: JSON.stringify(verdict) }] });
-			// Missing-path control through the real extension surface: dropping a
-			// claimed path is a correctable invalid verdict that applies nothing.
-			const partial = { ...verdict, approval: { ...verdict.approval, inspected_paths: [] } };
-			const invalid = await capturedToolFailure(tool.execute("submit", { task_id: TASK, action: { op: "submit_review", verdict: partial } }, undefined, undefined, makeCtx(root, makeUI())));
-			expect(invalid).toMatchObject({ operation: "submit_review", state: "blocked", code: "verdict_invalid" });
-			expect(invalid.message).toContain("omits reviewed changed paths");
-			const beforeMismatch = JSON.stringify(readTaskRecordRaw(root, TASK));
-			const mismatch = await capturedToolFailure(tool.execute("mismatch", { task_id: TASK, action: { op: "submit_review", verdict: { ...verdict, approval: { ...verdict.approval, summary: "rewritten" } } } }, undefined, undefined, context));
-			expect(mismatch.next_action).toBe("Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it");
-			expect(JSON.stringify(readTaskRecordRaw(root, TASK))).toBe(beforeMismatch);
-			expect(removed).toBe(false);
-			const submitted = await tool.execute("submit", { task_id: TASK, action: relayed ? { op: "submit_review", verdict } : { op: "submit_review" } }, undefined, undefined, context);
-			const record = JSON.parse(withKernelRead(root, (db) => readRunRowByTask(db, TASK))!.record_json);
-			expect(record.attestations.find((item) => item.kind === "review")?.reviewer_verdict_sha256).toBe(`sha256:${createHash("sha256").update(JSON.stringify(verdict)).digest("hex")}`);
-			expect(removed).toBe(true);
-			expect(JSON.parse(submitted.content[0].text)).toMatchObject({
-				state: "completed",
-				next_action: "none",
-				task_state: { lifecycle: "done", artifact_state: "frozen" },
-			});
-		} finally { rmSync(root, { recursive: true, force: true }); }
-	});
-
 
 	test("host cancellation reaches the foreground QA Tool and performs no QA authority write", { timeout: 15000 }, async () => {
 		const root = makeEnrolledRoot();
@@ -1633,7 +1540,8 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			const gate = new Promise<void>((resolve) => { release = resolve; });
 			let applyCount = 0;
 			const controller = new AbortController();
-			const { tools } = loadSurface({
+			let latestReviewSnapshot!: SnapshotDescriptor;
+		const { tools } = loadSurface({
 				buildAssurance: async (rootPath: string, _task: string, role: "qa" | "review", current: { projection?: Record<string, any> }) => ({ snapshot: minimalSnapshot(role, rootPath, current), descriptors: new Map(), reviewBundle: role === "review" ? ({ dirty_files: {}, outcomes: {}, bundle_digest: "sha256:bundle" } as never) : null }),
 				runQa: async () => { await gate; throw new DOMException("aborted", "AbortError"); },
 				writeReviewEvidence: () => ({ writePacket: writeTestReviewPacket, path: join(root, "review.json"), remove: () => {} }),

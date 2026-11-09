@@ -128,11 +128,11 @@ describe("Managed native authority failure contract", () => {
 		for (const text of ["review-packet-<operation>.md", "REVIEW_CONTRACT_MISMATCH", "review_tree_changed"])
 			expect(read("docs/reference/subagent-dispatch-protocol.md")).toContain(text);
 		expect(read("docs/reference/subagent-dispatch-protocol.md")).not.toContain("four-line handle");
-		// The marker-keyed binding survives in the retained subagent reviewer definition.
-		const reviewer = read("plugins/immune-brain/agents/immune-brain-reviewer.md");
-		expect(reviewer).toContain("The reserved prompt is dispatched verbatim");
-		expect(reviewer).toContain("Read the packet for the per-dispatch snapshot facts");
-		expect(reviewer).toContain("Verify the named packet digest");
+		// The retired Agent definition is gone; the skill carries the packet protocol
+		// the CLI reviewer follows (D11).
+		const reviewer = read("plugins/immune-brain/skills/authority-review/SKILL.md");
+		expect(reviewer).toContain("review_contract_hash");
+		expect(reviewer).toContain("REVIEW_CONTRACT_MISMATCH");
 		const adr = read("docs/adr/0030-marker-keyed-review-dispatch.md");
 		expect(adr).toContain("branch-boundary-r2-followups");
 		expect(adr).toContain("D2");

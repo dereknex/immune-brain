@@ -2,7 +2,7 @@
 //
 // The runtime prepares one packet, one POSIX sh script and one output pair; the
 // Parent runs the script from its own shell and submits the result through the
-// existing mediation path. The reviewer process is trusted to return a verdict,
+// existing mediation path. This is the only authority Review path (D11). The reviewer process is trusted to return a verdict,
 // not to stay read-only, so a tree guard over HEAD, the index and tracked
 // content releases any round that changed the reviewed state (D6).
 //
@@ -23,11 +23,6 @@ import {
 	type ReviewRequest,
 } from "./host_port";
 import type { ReviewObservation } from "./review_mediation";
-
-/** `cli` reserves a reviewer process and is the default; `subagent` is the rollback value (D8). */
-export function reviewDispatchMode(env: NodeJS.ProcessEnv = process.env): "subagent" | "cli" {
-	return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "subagent" ? "subagent" : "cli";
-}
 
 const REVIEW_PROFILE_RECOVERY =
 	"Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";

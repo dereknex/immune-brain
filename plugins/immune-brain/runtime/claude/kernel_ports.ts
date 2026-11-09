@@ -111,7 +111,7 @@ import {
 } from "./interaction";
 import { selectedClaudeParent } from "./run_continuation";
 import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
-import { CliReviewHost, reviewDispatchMode } from "../assurance/cli_review";
+import { CliReviewHost } from "../assurance/cli_review";
 import { probeHost, type PermissionMode, type HostProbe } from "./capability";
 
 export function diffSnapshotOf(root: string, record: TaskRecord): {
@@ -155,14 +155,14 @@ import {
 export { extractVerdictJson };
 
 export async function submitClaudeReview(
-	host: { inspectReviewForTask?(taskId: string): any },
+	host: { inspectReviewForTask(taskId: string): any },
 	coordinator: AssuranceCoordinator,
 	ctx: HostContext,
 	taskId: string,
 	verdictInput: unknown,
 ): Promise<AssuranceSubmitReviewResult> {
 	// ADR 0017: an omitted verdict applies the hook-observed reviewer receipt.
-	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask ? host.inspectReviewForTask(taskId) : { ok: false, reason: "review inspection not supported", release: true });
+	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 
 /**
@@ -267,9 +267,6 @@ export interface ClaudeRuntimeOptions {
 	probeHost?: typeof probeHost;
 	host?: AssuranceHostPort & {
 		observe(event: any): void;
-		consumeReview?(res: any): any;
-		inspectReview?(res: any): any;
-		inspectReviewForTask?(taskId: string): any;
 	};
 	/**
 	 * Overrides layered on top of the real production ports, never a
@@ -321,12 +318,9 @@ export class ClaudeRuntime {
 	private readonly parentHost: ExecutorHost;
 	readonly host: AssuranceHostPort & {
 		observe(event: any): void;
-		consumeReview?(res: any): any;
-		inspectReview?(res: any): any;
-		inspectReviewForTask?(taskId: string): any;
 	};
-	/** The Review port the coordinator and `submit_review` use: the in-process Host or its CLI wrapper (D8). */
-	private readonly reviewHost: AssuranceHostPort & { inspectReviewForTask?(taskId: string): any };
+	/** The Review port the coordinator and `submit_review` use: the CLI dispatcher (D11). */
+	private readonly reviewHost: CliReviewHost;
 	readonly coordinator: AssuranceCoordinator;
 	private readonly cwd: string;
 	private readonly options: ClaudeRuntimeOptions;
@@ -355,7 +349,7 @@ export class ClaudeRuntime {
 		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
-		this.reviewHost = reviewDispatchMode(this.env) === "cli" ? new CliReviewHost(this.host) : this.host;
+		this.reviewHost = new CliReviewHost(this.host);
 		this.coordinator = new AssuranceCoordinator({
 			...this.createKernelPorts(),
 			...options.ports,

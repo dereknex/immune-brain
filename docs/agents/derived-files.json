@@ -50,7 +50,6 @@
         "plugins/immune-brain-antigravity/agents/immune-brain-advisory-reviewer.md",
         "plugins/immune-brain-antigravity/agents/immune-brain-qa.md",
         "plugins/immune-brain-antigravity/agents/immune-brain-review-verifier.md",
-        "plugins/immune-brain-antigravity/agents/immune-brain-reviewer.md",
         "plugins/immune-brain-antigravity/agents/immune-brain-ui-review.md",
         "plugins/immune-brain-antigravity/bin/imm-kernel",
         "plugins/immune-brain-antigravity/bin/imm-plan",

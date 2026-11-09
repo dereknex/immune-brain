@@ -33,7 +33,7 @@ const snapshot: SnapshotDescriptor = {
 describe("generated snapshot Review coverage contract", () => {
 	test("both Hosts receive the same narrowly scoped, fail-closed proof rules", () => {
 		const pi = buildReviewPrompt(snapshot);
-		const claude = read("plugins/immune-brain/agents/immune-brain-reviewer.md");
+		const claude = read("plugins/immune-brain/skills/authority-review/SKILL.md");
 		for (const prompt of [pi, claude]) {
 			expect(prompt).toContain(role);
 			for (const rule of STATIC_REVIEW_RULES) expect(prompt).toContain(rule);

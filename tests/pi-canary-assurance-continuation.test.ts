@@ -1,6 +1,5 @@
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { expect, test } from "bun:test";
-import { reservedAgentParams } from "../plugins/immune-brain/.pi-extension/pi-canary-native-review.ts";
 import {
 	TASK,
 	ctx,
@@ -114,11 +113,12 @@ for (const operation of ["advance", "submitReview"] as const) {
 	}
 }
 
-test("QA continuation hands one foreground Review envelope to the Parent turn", () => {
-	const params = reservedAgentParams({ taskId: "continuation-task", operationId: "operation-1", writePacket: writeTestReviewPacket, prompt: "review immutable bundle" });
-	expect(params.run_in_background).toBe(false);
-	expect(params.isolated).toBe(true);
-	expect(params.isolation).toBe("off");
+test("QA continuation hands one CLI Review command to the Parent turn", async () => {
+	const h = makeAssuranceHarness();
+	const ready = await h.progression.advance(TASK, ctx);
+	expect(ready.state).toBe("review_ready");
+	expect(typeof (ready as { review_command?: string }).review_command).toBe("string");
+	expect(ready).not.toHaveProperty("agent_params");
 });
 
 test("Parent submits a structured reviewer verdict without host event receipts", async () => {

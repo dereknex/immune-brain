@@ -8,7 +8,7 @@ import {
 	verifyReviewBundle,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { buildReviewPrompt, reviewTurnBudget, type SnapshotDescriptor } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { reviewIncompleteFixture } from "./fixtures/review-incomplete-fixture";
 import { classifyReviewWorkload, reviewChangedPathCount } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
@@ -47,24 +47,19 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 	};
 }
 
-// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
-// as the rollback value; the CLI default is covered in cli-review-dispatch.
-process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
-
 describe("review contract outcome evidence", () => {
-	test("Pi observed incomplete receipt reaches the non-verdict path and is bound to reason and paths", async () => {
+	test("an observed incomplete receipt reaches the non-verdict path and is bound to reason and paths", async () => {
 		const f = reviewIncompleteFixture();
 		try {
-			const c = new AssuranceProgression(f.ports);
+			const c = f.create();
 			const ready = await c.advance(f.taskId, f.ctx);
 			expect(ready.state).toBe("review_ready");
-			const params = (ready as { agent_params: { prompt: string; subagent_type: string } }).agent_params;
-			c.piReviewHost.observeReviewDispatch(params, "pi-review-incomplete");
 			const s = await f.snapshot(c), outcome = f.incomplete(s);
-			c.piReviewHost.observeReviewResult("pi-review-incomplete", JSON.stringify(outcome));
+			const receiptBytes = JSON.stringify(outcome);
+			const observed = () => ({ ok: true as const, receipt: { actorId: "reviewer-observed", result: receiptBytes } });
 			for (const override of [{ reason: "different reason" }, { inspected_paths: [f.paths[0]] }])
-				expect(await c.submitMediated(f.taskId, f.ctx, { ...outcome, ...override })).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
-			expect(await c.submitMediated(f.taskId, f.ctx, undefined)).toEqual({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
+				expect(await submitMediatedReview(c, f.ctx, f.taskId, { ...outcome, ...override }, observed)).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
+			expect(await submitMediatedReview(c, f.ctx, f.taskId, undefined, observed)).toEqual({ state: "blocked", reason: "review_incomplete_retry", recovery_action: "advance_assurance" });
 			expect(f.record().record!.findings).toEqual([]);
 			expect(f.record().record!.history.filter(e => e.type === "record_review_incomplete")).toHaveLength(1);
 			expect(c.active(f.taskId)).toBeNull();

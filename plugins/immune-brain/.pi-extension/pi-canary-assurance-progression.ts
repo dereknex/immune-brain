@@ -51,13 +51,10 @@ export type {
 
 import { AssuranceCoordinator, type AssuranceAdvanceResult, type AssuranceCoordinatorPorts, type ForegroundToolUpdate, type HostContext, type AssuranceSubmitReviewResult, type ReviewSubmissionOptions } from "../runtime/assurance/coordinator";
 import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
-import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../runtime/assurance/host_port";
+import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../runtime/assurance/host_port";
 import { verificationPacketHandle, verificationPacketError } from "../runtime/assurance/review_packet";
-import { submitMediatedReview, type ReviewObservation } from "../runtime/assurance/review_mediation";
-import { CliReviewHost, reviewDispatchMode } from "../runtime/assurance/cli_review";
-import { reservedAgentParams, promptDigest, type ReservedAgentParams } from "./pi-canary-native-review";
-import { parseReviewMarker } from "../runtime/claude/review_host";
-import { reviewPacketError } from "../runtime/assurance/review_packet";
+import { submitMediatedReview } from "../runtime/assurance/review_mediation";
+import { CliReviewHost } from "../runtime/assurance/cli_review";
 
 import type { VerdictAuthority } from "../runtime/assurance/verdict_authority";
 
@@ -66,35 +63,17 @@ export type AssuranceProgressionPorts = Omit<AssuranceCoordinatorPorts, "host"> 
 	authorityOverrides?: Partial<VerdictAuthority>;
 };
 
-interface RecordedReviewReceipt {
+interface RecordedVerificationReceipt {
 	taskId: string;
-	params: ReservedAgentParams;
-	promptDigest: string;
-	toolCallId?: string;
+	params: Record<string, unknown>;
+	callId?: string;
 	result?: string;
-	model?: string;
-	offeredModels?: string[];
 	error?: string;
 }
 
 class PiReviewHost implements AssuranceHostPort {
 	readonly host = "pi" as const;
-	private readonly pending = new Set<string>();
-	private readonly receipts = new Map<string, RecordedReviewReceipt>();
-	private readonly verifiers = new Map<string, { taskId: string; params: Record<string, unknown>; callId?: string; result?: string; error?: string }>();
-
-	prepareReview(request: ReviewRequest): HostReviewReservation {
-		const params = reservedAgentParams({
-			taskId: request.taskId,
-			operationId: request.operationId,
-			prompt: request.prompt,
-			writePacket: request.writePacket,
-			max_turns: request.maxTurns,
-		});
-		this.pending.add(request.operationId);
-		this.receipts.set(request.operationId, { taskId: request.taskId, params, promptDigest: promptDigest(params.prompt) });
-		return { id: request.operationId, dispatch: params };
-	}
+	private readonly verifiers = new Map<string, RecordedVerificationReceipt>();
 
 	prepareVerification(request: VerificationRequest): HostReviewReservation {
 		if (this.verifiers.has(request.operationId)) throw new Error("duplicate verifier reservation");
@@ -120,97 +99,45 @@ class PiReviewHost implements AssuranceHostPort {
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {
-		this.pending.delete(reservation.id);
-		this.receipts.delete(reservation.id);
 		this.verifiers.delete(reservation.id);
 	}
 
-	/** Extension event seam: correlate one observed `Agent` dispatch to its reservation (ADR 0017). */
-	observeReviewDispatch(input: Partial<Record<keyof ReservedAgentParams, unknown>> | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
+	/* Extension event seam: correlate one observed `Agent` dispatch to its verifier reservation (ADR 0017). */
+	observeVerifierDispatch(input: Record<string, unknown> | undefined, toolCallId: string | undefined): { block: true; reason: string } | undefined {
 		const verifierMarker = typeof input?.prompt === "string" ? /^<!-- immune-brain-verifier:operation_id=([A-Za-z0-9._-]+) task_id=([A-Za-z0-9._-]+) -->/.exec(input.prompt) : null;
-		if (verifierMarker) {
-			const state = this.verifiers.get(verifierMarker[1]);
-			if (!state || state.taskId !== verifierMarker[2]) return { block: true, reason: "unknown verifier reservation" };
-			if (Object.keys(state.params).some(key => input?.[key as keyof ReservedAgentParams] !== state.params[key])
-				|| verificationPacketError(input!.prompt as string)) return { block: true, reason: "verifier dispatch differs from reservation" };
-			if (state.callId || !toolCallId) return { block: true, reason: "verifier dispatch already observed or missing call id" };
-			state.callId = toolCallId;
-			return;
-		}
-		const marker = parseReviewMarker(input?.prompt);
-		if (!marker) {
-			if (input?.subagent_type === "Review" && this.pending.size > 0)
-				return { block: true, reason: "Review dispatch requires the reserved prompt verbatim, including its operation marker." };
-			return;
-		}
-		const record = this.receipts.get(marker.operationId);
-		if (!record || record.taskId !== marker.taskId)
-			return { block: true, reason: "Unknown or released Review operation; call advance_assurance for a fresh reservation." };
-		const differing: string[] = [];
-		for (const field of ["subagent_type", "run_in_background", "isolated", "max_turns"] as const) {
-			if (input?.[field] !== record.params[field]) differing.push(field);
-		}
-		if (input?.inherit_context !== undefined && input.inherit_context !== false) differing.push("inherit_context");
-		if (typeof input?.prompt !== "string" || record.promptDigest !== promptDigest(input.prompt)) differing.push("prompt");
-		if (differing.length)
-			return { block: true, reason: `Review dispatch differs in ${differing.join(", ")}; dispatch the reserved prompt verbatim and reserved Agent parameters.` };
-		const packetError = reviewPacketError(record.params.prompt);
-		if (packetError) return { block: true, reason: packetError };
-		if (record.toolCallId !== undefined)
-			return { block: true, reason: "the reserved reviewer was dispatched more than once" };
-		if (!toolCallId) return { block: true, reason: "Review reservation requires an observable tool call id." };
-		record.toolCallId = toolCallId;
+		if (!verifierMarker) return;
+		const state = this.verifiers.get(verifierMarker[1]);
+		if (!state || state.taskId !== verifierMarker[2]) return { block: true, reason: "unknown verifier reservation" };
+		if (Object.keys(state.params).some(key => input?.[key] !== state.params[key])
+			|| verificationPacketError(input!.prompt as string)) return { block: true, reason: "verifier dispatch differs from reservation" };
+		if (state.callId || !toolCallId) return { block: true, reason: "verifier dispatch already observed or missing call id" };
+		state.callId = toolCallId;
+		return;
 	}
 
-	/** Extension event seam: store the observed reviewer result bytes (ADR 0017). */
-	observeReviewResult(toolCallId: string | undefined, bytes: string, model?: string, offeredModels?: string[]): void {
+	/* Extension event seam: store the observed verifier result bytes (ADR 0017). */
+	observeVerifierResult(toolCallId: string | undefined, bytes: string): void {
 		if (!toolCallId) return;
 		for (const state of this.verifiers.values()) {
 			if (state.callId !== toolCallId) continue;
 			if (state.result === undefined) state.result = bytes;
 			else if (state.result !== bytes) state.error = "conflicting verifier result bytes";
 		}
-		for (const record of this.receipts.values()) {
-			if (record.toolCallId !== toolCallId) continue;
-			if (record.result === undefined) {
-				record.result = bytes;
-				if (model?.trim()) record.model = model;
-				if (offeredModels?.every(item => typeof item === "string" && item.trim())) record.offeredModels = [...offeredModels];
-			} else if (record.result !== bytes || record.model !== (model?.trim() ? model : undefined)
-				|| JSON.stringify(record.offeredModels ?? []) !== JSON.stringify(offeredModels ?? [])) record.error = "the reserved reviewer returned conflicting result bytes or model metadata";
-			return;
-		}
-	}
-
-	inspectReview(taskId: string): ReviewObservation {
-		for (const record of this.receipts.values()) {
-			if (record.taskId !== taskId) continue;
-			const packetError = reviewPacketError(record.params.prompt);
-			if (packetError) return { ok: false, release: true, reason: packetError };
-			if (record.error) return { ok: false, release: true, reason: record.error };
-			if (record.toolCallId === undefined)
-				return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
-			if (record.result === undefined)
-				return { ok: false, release: false, reason: "the reserved foreground reviewer has not returned its result yet; wait for it, then call submit_review again" };
-			return { ok: true, receipt: { actorId: "pi-review-agent", result: record.result,
-				...(record.model ? { model: record.model } : {}), ...(record.offeredModels ? { offered_models: record.offeredModels } : {}) } };
-		}
-		return { ok: false, release: true, reason: "the reserved foreground Agent was not observed in this session" };
 	}
 }
 
 export class AssuranceProgression extends AssuranceCoordinator {
 	readonly piReviewHost: PiReviewHost;
-	/** The Review port this composition root reserved: the in-process Host or its CLI wrapper (D8). */
-	private readonly reviewHost: PiReviewHost | CliReviewHost;
+	/** The Review port this composition root reserves: the CLI dispatcher (D11). */
+	private readonly reviewHost: CliReviewHost;
 
 	constructor(ports: AssuranceProgressionPorts) {
 		const host = new PiReviewHost();
-		const cli = reviewDispatchMode() === "cli" ? new CliReviewHost(host) : undefined;
-		(ports as AssuranceCoordinatorPorts).host = cli ?? host;
+		const reviewHost = new CliReviewHost(host);
+		(ports as AssuranceCoordinatorPorts).host = reviewHost;
 		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
 		this.piReviewHost = host;
-		this.reviewHost = cli ?? host;
+		this.reviewHost = reviewHost;
 	}
 
 	/** Under `Git integration: auto` a settlement reached here also carries its settle commit (ADR 0024). */
