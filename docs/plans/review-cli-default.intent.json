@@ -1,0 +1,65 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-cli-default",
+  "owner": "user",
+  "goal": "Issue #386 slice S3 (Spec docs/specs/review-cli-stage.spec.md, D7, D8, D10). CLI dispatch becomes the default at all three composition roots; IMMUNE_BRAIN_REVIEW_DISPATCH=subagent remains as the rollback value until S4. drive.md, drive-batch.md, docs/reference/subagent-dispatch-protocol.md and the authority-review skill describe running review_command, review_profile_required and the release reasons; advisory, ui-review, QA and verifier sections are unchanged. New ADR 0037 partially supersedes ADR 0006, 0017 and 0030, which gain status notes.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S3 AC1 and BR-SCN-1 (BR-REQ-1, BR-REQ-6; D8). Done looks like: with no switch, a configured project reviews through the CLI and names its profile. Seam: tests/cli-review-dispatch.test.ts describe 'default cli dispatch', driving the Claude composition root with IMMUNE_BRAIN_REVIEW_DISPATCH unset on a material task with project lanes {review_host: 'pi', review_model: 'model-x'}. Positive: review_ready carries review_profile {host: 'pi', model: 'model-x'} and exactly one review_command. Bound: with IMMUNE_BRAIN_REVIEW_DISPATCH=subagent the same task returns agent_params and no review_command.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"default cli dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S3 AC2 and BR-SCN-2 (BR-REQ-5, BR-DEC-3; D7). Done looks like: with no switch and no profile, the drive stops with one recovery action. Seam: tests/cli-review-dispatch.test.ts describe 'default profile required', IMMUNE_BRAIN_REVIEW_DISPATCH unset, material task, no review_host. Negative: review_preparation_failed with code 'review_profile_required' and a single recovery_action containing 'lanes.review_host'. Bound: a routine task under the same configuration completes after QA.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"default profile required\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec S3 AC3 (BR-REQ-1, BR-OUT-1, BR-OUT-5; D10). Done looks like: the drive contracts tell the Parent to run review_command instead of dispatching a reviewer subagent. Seam: tests/pi-subagent-dispatch-observability-contract.test.ts describe 'authority review cli contract' reading the real files, plus tests/dist-docs-sync-contract.test.ts. Positive: plugins/immune-brain/dist/drive.md and plugins/immune-brain/dist/drive-batch.md each contain 'review_command' and 'review_profile_required'; docs/reference/subagent-dispatch-protocol.md contains 'authority-review'. Negative: the authority Review parts of drive.md no longer contain 'immune-brain-reviewer' or 'subagent_type: \"Review\"'. Bound: the advisory and verifier sections of subagent-dispatch-protocol.md still name their subagent dispatch; packaged mirrors are byte-equal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec S3 AC4 (BR-REQ-7; D10). Done looks like: the decision record exists and superseded ADRs point at it. Seam: the real files. docs/adr/0037-authority-review-cli-stage.md exists and names ADR 0006, 0017 and 0030; each of docs/adr/0006-unattended-review-dispatch-authority.md and the ADR 0017 and 0030 files contains '0037'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=docs/adr/0037-authority-review-cli-stage.md; test -f $f && grep -q 0006 $f && grep -q 0017 $f && grep -q 0030 $f && grep -q 0037 docs/adr/0006-*.md && grep -q 0037 docs/adr/0017-*.md && grep -q 0037 docs/adr/0030-*.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-cli-default.md",
+    "docs/adr/0006-unattended-review-dispatch-authority.md",
+    "docs/adr/0017-receipt-bound-review-verdict-submission.md",
+    "docs/adr/0030-marker-keyed-review-dispatch.md",
+    "docs/adr/0037-authority-review-cli-stage.md",
+    "docs/plans/review-cli-default.intent.json",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/review-cli-stage.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain-antigravity/dist/drive-batch.md",
+    "plugins/immune-brain-antigravity/dist/drive.md",
+    "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md",
+    "plugins/immune-brain-antigravity/skills/drive/SKILL.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "plugins/immune-brain/skills/drive/SKILL.md",
+    "scripts/build-claude-plugin.ts",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/dist-docs-sync-contract.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts"
+  ],
+  "scope_size_reason": "Flipping the default changes the Review instructions every Host reads, so drive.md, drive-batch.md, the dispatch protocol reference, the skill and the ADR set must move together with the composition roots; about half of the paths are packaged doc mirrors, Antigravity runtime mirrors and the two generated MCP bundles.",
+  "risk": "material",
+  "revision": 1
+}

@@ -5,6 +5,14 @@ import { resolve } from "node:path"
 const PLUGIN_ROOT = resolve(import.meta.dir, "..")
 const REGISTRY_PATH = resolve(PLUGIN_ROOT, "skills/registry.yaml")
 
+/**
+ * Role-internal skills ship in `skills/` because the Host loads that root, but
+ * they are dispatched by name from a role prompt and are not user entries, so
+ * they carry no registry entry. Kept in step with tests/helpers/public-skills.ts;
+ * this package's tests must not import from outside the plugin root.
+ */
+const INTERNAL_SKILL_NAMES = ["authority-review"]
+
 interface RegistryEntry {
   name: string
   path: string
@@ -115,6 +123,7 @@ describe("skill registry consistency", () => {
       .filter((d) => d.isDirectory())
       .map((d) => d.name)
       .filter((name) => existsSync(resolve(skillsDir, name, "SKILL.md")))
+      .filter((name) => !INTERNAL_SKILL_NAMES.includes(name))
       .sort()
     const registered = registry.map((e) => e.name).sort()
     expect(onDisk).toEqual(registered)

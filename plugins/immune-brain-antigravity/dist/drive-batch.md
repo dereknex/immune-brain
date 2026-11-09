@@ -113,9 +113,13 @@ those exact commands; a decline, cancellation or missing gate leaves no command
 effect. A Parent whose final commands are already recorded needs no gate. Recorded commands rerun under that earlier
 confirmation, and changed commands need a fresh explicit Parent entry.
 
-After diagnostics pass, the Lane Executor advances Kernel QA and dispatches any
-reserved foreground Review once using the exact returned `agent_params`, then
-submits its structured verdict. An open Review reservation stays with that Host
+After diagnostics pass, the Lane Executor advances Kernel QA and runs any
+returned `review_command` once in the Lane's own tree, then submits the result
+through `submit_review`. Review runs before integration: a PASS gates the
+integration, and a REVISE returns the child to the Lane Executor. A missing
+review profile fails that child closed with `review_profile_required` and one
+recovery action; its QA settlement stays. The Parent never runs the Review in
+its own conversation. An open Review reservation stays with that Host
 invocation. A Lane settlement changes only its local Kernel state and does not
 re-enter the coordinator. The Parent observes settlement, then calls
 `start_unattended_batch` with the same slug under the still-valid authorization.
@@ -436,8 +440,9 @@ does the Parent submit it with `herdr agent prompt <pane_id> "<text>" --wait
 --until working --until blocked --timeout 30000` and re-arm step 5. A `blocked`
 or `working` session is refused and receives nothing. Every instruction the
 coordinator sent is therefore in the report, so Executor-initiated behavior and
-coordinator intervention can be told apart afterwards. This never applies to a
-Review agent: a dispatched reviewer is still never continued or re-prompted.
+coordinator intervention can be told apart afterwards. This never applies to the
+authority Review: it runs as a separate CLI process the Lane Executor starts and
+submits, so no Lane instruction reaches it.
 
 When a Lane child exhausts its rework budget (the per-child `qa_failure_limit`)
 it does not park for the user at once: the report carries a

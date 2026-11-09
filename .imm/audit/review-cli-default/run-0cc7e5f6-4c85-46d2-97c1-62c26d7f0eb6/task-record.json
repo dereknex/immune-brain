@@ -1,0 +1,179 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-cli-default",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-cli-default",
+    "goal": "Issue #386 slice S3 (Spec docs/specs/review-cli-stage.spec.md, D7, D8, D10). CLI dispatch becomes the default at all three composition roots; IMMUNE_BRAIN_REVIEW_DISPATCH=subagent remains as the rollback value until S4. drive.md, drive-batch.md, docs/reference/subagent-dispatch-protocol.md and the authority-review skill describe running review_command, review_profile_required and the release reasons; advisory, ui-review, QA and verifier sections are unchanged. New ADR 0037 partially supersedes ADR 0006, 0017 and 0030, which gain status notes.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S3 AC1 and BR-SCN-1 (BR-REQ-1, BR-REQ-6; D8). Done looks like: with no switch, a configured project reviews through the CLI and names its profile. Seam: tests/cli-review-dispatch.test.ts describe 'default cli dispatch', driving the Claude composition root with IMMUNE_BRAIN_REVIEW_DISPATCH unset on a material task with project lanes {review_host: 'pi', review_model: 'model-x'}. Positive: review_ready carries review_profile {host: 'pi', model: 'model-x'} and exactly one review_command. Bound: with IMMUNE_BRAIN_REVIEW_DISPATCH=subagent the same task returns agent_params and no review_command.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"default cli dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S3 AC2 and BR-SCN-2 (BR-REQ-5, BR-DEC-3; D7). Done looks like: with no switch and no profile, the drive stops with one recovery action. Seam: tests/cli-review-dispatch.test.ts describe 'default profile required', IMMUNE_BRAIN_REVIEW_DISPATCH unset, material task, no review_host. Negative: review_preparation_failed with code 'review_profile_required' and a single recovery_action containing 'lanes.review_host'. Bound: a routine task under the same configuration completes after QA.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"default profile required\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec S3 AC3 (BR-REQ-1, BR-OUT-1, BR-OUT-5; D10). Done looks like: the drive contracts tell the Parent to run review_command instead of dispatching a reviewer subagent. Seam: tests/pi-subagent-dispatch-observability-contract.test.ts describe 'authority review cli contract' reading the real files, plus tests/dist-docs-sync-contract.test.ts. Positive: plugins/immune-brain/dist/drive.md and plugins/immune-brain/dist/drive-batch.md each contain 'review_command' and 'review_profile_required'; docs/reference/subagent-dispatch-protocol.md contains 'authority-review'. Negative: the authority Review parts of drive.md no longer contain 'immune-brain-reviewer' or 'subagent_type: \"Review\"'. Bound: the advisory and verifier sections of subagent-dispatch-protocol.md still name their subagent dispatch; packaged mirrors are byte-equal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\",\n      \"tests/dist-docs-sync-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec S3 AC4 (BR-REQ-7; D10). Done looks like: the decision record exists and superseded ADRs point at it. Seam: the real files. docs/adr/0037-authority-review-cli-stage.md exists and names ADR 0006, 0017 and 0030; each of docs/adr/0006-unattended-review-dispatch-authority.md and the ADR 0017 and 0030 files contains '0037'.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"f=docs/adr/0037-authority-review-cli-stage.md; test -f $f && grep -q 0006 $f && grep -q 0017 $f && grep -q 0030 $f && grep -q 0037 docs/adr/0006-*.md && grep -q 0037 docs/adr/0017-*.md && grep -q 0037 docs/adr/0030-*.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-cli-default.md",
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/adr/0017-receipt-bound-review-verdict-submission.md",
+      "docs/adr/0030-marker-keyed-review-dispatch.md",
+      "docs/adr/0037-authority-review-cli-stage.md",
+      "docs/plans/review-cli-default.intent.json",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/review-cli-stage.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain-antigravity/dist/drive-batch.md",
+      "plugins/immune-brain-antigravity/dist/drive.md",
+      "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md",
+      "plugins/immune-brain-antigravity/skills/drive/SKILL.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "plugins/immune-brain/skills/drive/SKILL.md",
+      "scripts/build-claude-plugin.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/dist-docs-sync-contract.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "scope_size_reason": "Flipping the default changes the Review instructions every Host reads, so drive.md, drive-batch.md, the dispatch protocol reference, the skill and the ADR set must move together with the composition roots; about half of the paths are packaged doc mirrors, Antigravity runtime mirrors and the two generated MCP bundles.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-cli-default.intent.json",
+    "content_hash": "sha256:27144fb0c27beeabdafaecf3c29de86f9c15f4aaa73c079383d493b5f2cce375"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:27144fb0c27beeabdafaecf3c29de86f9c15f4aaa73c079383d493b5f2cce375",
+  "git_base_head": "6d1a132b0d830dcfc32afb0b9d431a2b10ce1e57",
+  "attestations": [
+    {
+      "id": "approval-qa-cfbb31d0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:27144fb0c27beeabdafaecf3c29de86f9c15f4aaa73c079383d493b5f2cce375",
+      "diff_hash": "sha256:83c5cbcf83e2e04a09ac691b6d405715a1ec95beb14e05be85633614b1d7253c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:ba32b38c7fd220ade84f5fc7e9c715080fc6919faf5f9a4ea9102d1ba582cd6e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ba32b38c7fd220ade84f5fc7e9c715080fc6919faf5f9a4ea9102d1ba582cd6e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ba32b38c7fd220ade84f5fc7e9c715080fc6919faf5f9a4ea9102d1ba582cd6e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ba32b38c7fd220ade84f5fc7e9c715080fc6919faf5f9a4ea9102d1ba582cd6e"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:ba32b38c7fd220ade84f5fc7e9c715080fc6919faf5f9a4ea9102d1ba582cd6e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-93e7e864",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:27144fb0c27beeabdafaecf3c29de86f9c15f4aaa73c079383d493b5f2cce375",
+      "diff_hash": "sha256:83c5cbcf83e2e04a09ac691b6d405715a1ec95beb14e05be85633614b1d7253c",
+      "actor_id": "parent-mediated-review",
+      "summary": "Blast radius low: the switch flip in cli_review.ts (both runtime mirrors and both generated MCP bundles) makes CLI the default with subagent as rollback, covered by new composition-root tests at the named seams; doc contracts, ADR 0037 and superseded-ADR notes match AC3/AC4; no correctness, security or test gaps found on the frozen revision.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6d1a132b0d830dcfc32afb0b9d431a2b10ce1e57",
+        "review_commit": "b0ca79ac7b0e039bead02513c9200c160aa7acf1",
+        "review_tree": "8ef4333fc0ca4b519cc114fed5fb879c847b5228",
+        "manifest_digest": "sha256:f7a30b93db8a462d3c1a922a0ad9079813e4ace899696765bdfcab3fbd4b9f4e"
+      },
+      "reviewer_verdict_sha256": "sha256:b502ecd7aba3a9b038298125b8e3067657d893b7e6a33a8533d1294b91e3ae21"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-cli-default:2026-11-09T00:52:02.379Z",
+      "at": "2026-11-09T00:52:02.379Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-cli-default.intent.json"
+    },
+    {
+      "id": "record_approval:review-cli-default:2026-11-09T00:52:13.207Z",
+      "at": "2026-11-09T00:52:13.207Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-cfbb31d0\naction_v2_sha256:a907e808e8d7ad02fb333e19e00683830446497a21ba9914c460caf783a6a699",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e2350ba4b3c18ac6",
+        "issued_at": "2026-11-09T00:52:13.207Z"
+      }
+    },
+    {
+      "id": "record_approval:review-cli-default:2026-11-09T00:54:51.652Z",
+      "at": "2026-11-09T00:54:51.652Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-93e7e864\naction_v2_sha256:dc672434baab843c3c43181ee28013516e0cbb3a62404f6230b7e533a57fbe96",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-f51184850e57e818",
+        "issued_at": "2026-11-09T00:54:51.652Z"
+      },
+      "review_started_at": "2026-11-09T00:52:16.966Z",
+      "review_submitted_at": "2026-11-09T00:54:50.656Z"
+    },
+    {
+      "id": "complete:review-cli-default:2026-11-09T00:54:54.505Z",
+      "at": "2026-11-09T00:54:54.505Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aef1727ab8b1ed4a211bbe1457bc40dedceabb714645399d4ba70b77bde508f8"
+    }
+  ]
+}

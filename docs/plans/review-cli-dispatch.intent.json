@@ -1,0 +1,84 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-cli-dispatch",
+  "owner": "user",
+  "goal": "Issue #386 slice S2 (Spec docs/specs/review-cli-stage.spec.md, D3-D9, D12). A Host-neutral CliReviewHost in runtime/assurance/cli_review.ts reserves authority Review by writing a per-task facts packet with review_contract_hash and a POSIX sh script that runs the configured reviewer CLI (claude, pi or agy) on the generated authority-review skill; review_ready returns review_command and review_profile; the Review submission tool mediates the output file through submitMediatedReview with a tree guard over HEAD, index and tracked diff; failures release without a Review round. The skill is generated from code-review.md and STATIC_REVIEW_RULES with its contract hash stamped and ships in all three Host packages. All three composition roots wrap their Host when IMMUNE_BRAIN_REVIEW_DISPATCH=cli; the default stays subagent and findings verification stays on the wrapped Host.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S2 AC1 (BR-REQ-2, BR-DEC-5, BR-DEC-6; D5, D9). Done looks like: each review_host gets a fresh-context, skill-invoking argv. Seam: tests/cli-review-dispatch.test.ts describe 'review arguments', calling the exported reviewArguments(profile, packetPath, turnBudget). Positive: claude-code with model 'm' and effort 'high' contains --print, --no-session-persistence, --max-turns <budget>, --tools 'Read,Grep,Glob,Bash', --permission-mode dontAsk, --model m and --effort high, and ends with '/immune-brain:authority-review <packet>'; pi with model 'm' and effort 'high' equals ['--print', '--no-session', '--model', 'm', '--thinking', 'high', '/skill:authority-review <packet>']; antigravity contains --print and ends with '/authority-review <packet>'. Negative: the claude --tools value names neither Edit nor Write; the pi argv contains none of --tools, --no-extensions, --no-skills, --no-mcp; no argv element for any host contains 'drive' or '--plugin-dir'. Bound: a profile without model or effort omits --model, --effort and --thinking.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"review arguments\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S2 AC2 (BR-REQ-1, BR-REQ-6; D8). Done looks like: under the switch every Host composition returns the CLI reservation, and without it the subagent reservation is unchanged. Seam: tests/dual-host-assurance-conformance.test.ts describe 'cli review dispatch', driving the Pi, Claude and Antigravity composition roots to review_ready on a material task with project lanes.review_host 'pi'. Positive: with IMMUNE_BRAIN_REVIEW_DISPATCH=cli each returns review_command starting with 'sh ' and review_profile {host: 'pi'} and no agent_params. Bound: with the variable unset or 'subagent' each returns agent_params and no review_command.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"-t\",\n      \"cli review dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec S2 AC3 (BR-REQ-2, BR-DEC-1; D3, D4, D12). Done looks like: a reviewer output settles through the existing verdict mechanics and every process failure releases without a Review round. Seam: tests/cli-review-dispatch.test.ts describe 'cli review settlement', running the coordinator with CliReviewHost in a temporary Git repository and a fake reviewer executable first on PATH, then calling the script from review_command. Positive: a pass verdict output and submit_review with the verdict omitted settles Review PASS with actor 'cli:pi:<operation id>' and reviewer_verdict_sha256 equal to the sha256 of the output bytes; a rework verdict records one REVISE round. Negative: a relayed verdict that differs from the output is rejected and the reservation retained; submit before the exit file exists keeps the reservation and records no round; exit status 3 releases with review_process_failed; exit 0 with empty output releases with review_process_failed; output 'REVIEW_CONTRACT_MISMATCH sha256:0' releases with review_contract_mismatch naming both hashes; output 'not json' releases as an invalid verdict. In each negative case the TaskRecord gains no Review round and the rework budget is unchanged. The packet file contains the line 'review_contract_hash: ' followed by currentReviewContractHash().",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"cli review settlement\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec S2 AC4 (BR-REQ-4, BR-DEC-5; D6). Done looks like: a reviewer that changes tracked state invalidates its round. Seam: tests/cli-review-dispatch.test.ts describe 'review tree guard', same harness, fake reviewer writing a pass verdict after a mutation. Negative: editing a tracked file, creating a commit, and staging a change each release with review_tree_changed whose paths name the touched file, and the TaskRecord gains no Review round. Bound: creating only an untracked file settles PASS normally.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"review tree guard\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Spec S2 AC5 (BR-REQ-5, BR-DEC-3; D5, D7). Done looks like: Review without a usable profile stops with one recovery action. Seam: tests/cli-review-dispatch.test.ts describe 'review profile required', same harness. Negative: a material task with no review_host returns review_preparation_failed with code 'review_profile_required' and one recovery_action naming lanes.review_host, and the QA settlement stays recorded; review_host 'claude-code' with no claude executable on PATH returns review_host_unavailable. Bound: a routine task completes after QA with no review_host configured.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"review profile required\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "Spec S2 AC6 (BR-REQ-6; D8). Done looks like: the default subagent Review path is unchanged while the switch is unset. Seam: the existing focused Host review tests run without IMMUNE_BRAIN_REVIEW_DISPATCH and pass unmodified in their assertions on agent_params and observed receipts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"env -u IMMUNE_BRAIN_REVIEW_DISPATCH bun test tests/claude-review-host-async-agent.test.ts tests/pi-canary-native-review.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC7",
+      "assertion": "Spec S2 AC7 (BR-DEC-4; D8). Done looks like: findings verification ignores the switch. Seam: tests/cli-review-dispatch.test.ts describe 'verifier stays on host', with IMMUNE_BRAIN_REVIEW_DISPATCH=cli and a wrapped fake Host. Positive: verification_ready returns the wrapped Host's prepareVerification dispatch, and submit_verification reads the wrapped Host's inspectVerification receipt. Negative: CliReviewHost writes no review script or packet for a verification operation.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"-t\",\n      \"verifier stays on host\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC8",
+      "assertion": "Spec S2 AC8 (BR-DEC-6; D12). Done looks like: the authority-review skill is generated, hash-stamped and packaged. Seam: tests/claude-host-package.test.ts and tests/antigravity-host-package.test.ts describe 'authority-review skill'. Positive: plugins/immune-brain/skills/authority-review/SKILL.md equals a fresh generate, contains currentReviewContractHash() and the literal 'REVIEW_CONTRACT_MISMATCH'; plugins/immune-brain-antigravity/skills/authority-review/SKILL.md is byte-equal to it. Negative: a fixture copy with one STATIC_REVIEW_RULES sentence removed fails the generated-output comparison.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"-t\",\n      \"authority-review skill\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-cli-dispatch.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/review-cli-dispatch.intent.json",
+    "docs/specs/review-cli-stage.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/host_port.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/review_mediation.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "scripts/build-antigravity-plugin.ts",
+    "scripts/build-claude-plugin.ts",
+    "tests/antigravity-host-package.test.ts",
+    "tests/claude-host-package.test.ts",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts"
+  ],
+  "scope_size_reason": "One CLI dispatch path must land on the Pi, Claude and Antigravity composition roots together with the generated authority-review skill so the conformance test can compare all three Hosts; about a third of the paths are deterministic Antigravity runtime/skill mirrors and the two generated MCP bundles, regenerated by the existing build scripts rather than edited.",
+  "risk": "material",
+  "revision": 1
+}

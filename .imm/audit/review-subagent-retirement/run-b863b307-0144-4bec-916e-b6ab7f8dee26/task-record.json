@@ -1,0 +1,175 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-subagent-retirement",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-subagent-retirement",
+    "goal": "Issue #386 slice S4 (Spec docs/specs/review-cli-stage.spec.md, D11). Delete the subagent authority-Review path on all three Hosts: the Review half of PiReviewHost, the review observation in runtime/claude/review_host.ts and runtime/antigravity/review_host.ts, the generated immune-brain-reviewer agent definitions with generateReviewerDefinition, REVIEWER_DISPATCH_RULES and their derived-files entries, the IMMUNE_BRAIN_REVIEW_DISPATCH switch, and tests that protect only those paths. Findings verification and immune-brain-review-verifier stay.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S4 AC1 (BR-REQ-6; D11). Done looks like: no live source, contract, build or test text names the retired path. Seam: repository grep over plugins/, scripts/, tests/, docs/reference/ and docs/agents/, skipping the frozen hashed evidence corpora (every corpus.jsonl and the goal-driven-run-historical-sources.json), whose historical bytes are validated by their own tests and must not be rewritten. Negative: no match for 'immune-brain-reviewer', 'generateReviewerDefinition', 'REVIEWER_DISPATCH_RULES' or 'IMMUNE_BRAIN_REVIEW_DISPATCH' outside those corpora; no plugins/**/agents/immune-brain-reviewer.md exists; plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts does not contain 'subagent_type === \"Review\"'. Bound: 'immune-brain-review-verifier' still matches.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"sh\",\"argv\":[\"-c\",\"! grep -rE 'immune-brain-reviewer|generateReviewerDefinition|REVIEWER_DISPATCH_RULES|IMMUNE_BRAIN_REVIEW_DISPATCH' --exclude=corpus.jsonl --exclude='*historical-sources.json' plugins scripts tests docs/reference docs/agents && ! find plugins -name immune-brain-reviewer.md -print -quit | grep -q . && ! grep -q 'subagent_type === \\\"Review\\\"' plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts && grep -rq immune-brain-review-verifier plugins\"],\"cwd\":\".\",\"timeout_ms\":30000,\"max_output_bytes\":65536},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S4 AC2 (BR-DEC-4; D11). Done looks like: findings verification still reserves and settles through each Host's subagent path. Seam: tests/host-neutral-assurance-coordinator.test.ts describe 'review verification packet' and tests/cli-review-dispatch.test.ts describe 'verifier stays on host'. Positive: verification_ready returns the Host verifier dispatch and submit_verification settles from the Host receipt. Negative: a verification receipt with mismatched packet sha is rejected as before.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/host-neutral-assurance-coordinator.test.ts\",\"tests/cli-review-dispatch.test.ts\",\"-t\",\"verif\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":65536},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec S4 AC3 (BR-REQ-6; D11, D12). Done looks like: the packaged plugins ship the skill and no reviewer agent. Seam: tests/claude-host-package.test.ts and tests/antigravity-host-package.test.ts describe 'retired reviewer agent'. Positive: both packages contain skills/authority-review/SKILL.md and agents/immune-brain-review-verifier.md. Negative: neither package lists agents/immune-brain-reviewer.md, and docs/agents/derived-files.json lists no reviewer agent output.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/claude-host-package.test.ts\",\"tests/antigravity-host-package.test.ts\",\"-t\",\"retired reviewer agent\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":65536},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec S4 AC4 (BR-REQ-6; D8). Done looks like: CLI dispatch is the only authority Review path. Seam: tests/cli-review-dispatch.test.ts describe 'cli only dispatch'. Bound: with the retired switch name set to subagent in the environment, a material task with project lanes.review_host 'pi' still returns review_command and no agent_params from the Pi, Claude and Antigravity composition roots.",
+        "verification": "{\"contract\":\"assurance_kernel/verification_descriptor/v2\",\"command\":{\"executable\":\"bun\",\"argv\":[\"test\",\"tests/cli-review-dispatch.test.ts\",\"-t\",\"cli only dispatch\"],\"cwd\":\".\",\"timeout_ms\":120000,\"max_output_bytes\":65536},\"environment\":{\"prepare\":null,\"writable_paths\":[]}}"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-subagent-retirement.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/review-subagent-retirement.intent.json",
+      "docs/specs/review-cli-stage.spec.md",
+      "plugins/immune-brain-antigravity/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/review_host.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/role_agents.ts",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/agents/immune-brain-reviewer.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain/runtime/antigravity/review_host.ts",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/claude/role_agents.ts",
+      "scripts/build-antigravity-plugin.ts",
+      "scripts/build-claude-plugin.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/claude-host-package.test.ts",
+      "tests/claude-review-host-async-agent.test.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/pi-canary-native-review.test.ts"
+    ],
+    "risk": "material",
+    "revision": 3,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-subagent-retirement.intent.json",
+    "content_hash": "sha256:ef1079ff5a976228a448fa76e59e816aa17e1fdf0ae62e581402a53b7ce9a82e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ef1079ff5a976228a448fa76e59e816aa17e1fdf0ae62e581402a53b7ce9a82e",
+  "git_base_head": "e3b45d980521b7f00056b13eae839ba6df305f8b",
+  "attestations": [
+    {
+      "id": "approval-qa-e15fc894",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ef1079ff5a976228a448fa76e59e816aa17e1fdf0ae62e581402a53b7ce9a82e",
+      "diff_hash": "sha256:2442cc8bc3813d97917632fa183fcb9ebf20a75a32531b7c57a9d702eebaa1ae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:2f215969e8382a3fcda16756d51e256d480d29076ce49dc5becd81f1fc0d081a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2f215969e8382a3fcda16756d51e256d480d29076ce49dc5becd81f1fc0d081a"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2f215969e8382a3fcda16756d51e256d480d29076ce49dc5becd81f1fc0d081a"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2f215969e8382a3fcda16756d51e256d480d29076ce49dc5becd81f1fc0d081a"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:2f215969e8382a3fcda16756d51e256d480d29076ce49dc5becd81f1fc0d081a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c52854fd",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 3,
+      "intent_content_hash": "sha256:ef1079ff5a976228a448fa76e59e816aa17e1fdf0ae62e581402a53b7ce9a82e",
+      "diff_hash": "sha256:2442cc8bc3813d97917632fa183fcb9ebf20a75a32531b7c57a9d702eebaa1ae",
+      "actor_id": "parent-mediated-review",
+      "summary": "Subagent Review fully retired on all three Hosts with CLI-only dispatch and Host-based findings verification intact; blast radius medium (host_port contract, three composition roots, both dist bundles, test migration; no persisted shape changes).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e3b45d980521b7f00056b13eae839ba6df305f8b",
+        "review_commit": "92ddedcb33672e03c5c570818e960f41bfedd363",
+        "review_tree": "aa5b8d7100dc88c8a75fd0dd2bdebf272c1536ba",
+        "manifest_digest": "sha256:ac132888ea1fab63e2797772c781f49121bb24e6636b61f892c65e9e51abc4b3"
+      },
+      "reviewer_verdict_sha256": "sha256:a122c1957b3b90cb1b2bd8a360750e22b62032a8751ec3c329acf1dcdaa13c54"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-subagent-retirement:2026-11-09T12:56:08.342Z",
+      "at": "2026-11-09T12:56:08.342Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-subagent-retirement.intent.json"
+    },
+    {
+      "id": "record_approval:review-subagent-retirement:2026-11-09T12:56:28.248Z",
+      "at": "2026-11-09T12:56:28.248Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e15fc894\naction_v2_sha256:cbf3241ee5caa047b41364c943467cd0eca28a64f4ac04537663302cb0e58027",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-97cccde4024c090d",
+        "issued_at": "2026-11-09T12:56:28.248Z"
+      }
+    },
+    {
+      "id": "record_approval:review-subagent-retirement:2026-11-09T13:01:07.372Z",
+      "at": "2026-11-09T13:01:07.372Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c52854fd\naction_v2_sha256:4bd095fd17f11a7c87771f09a4d5a2139a772b690398cdba8bbc7a1c75b23283",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "parent-mediated-review",
+        "confirmation_ref": "pi-confirm-547172d5994106cf",
+        "issued_at": "2026-11-09T13:01:07.372Z"
+      },
+      "review_started_at": "2026-11-09T12:56:34.942Z",
+      "review_submitted_at": "2026-11-09T13:01:05.869Z"
+    },
+    {
+      "id": "complete:review-subagent-retirement:2026-11-09T13:01:11.622Z",
+      "at": "2026-11-09T13:01:11.622Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6ed848263296e3f5318d6600af1d2dd09fbd0408e71a63f5d96f2aa249ab6b1f"
+    }
+  ]
+}

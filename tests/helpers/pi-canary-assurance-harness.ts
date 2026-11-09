@@ -1,5 +1,10 @@
 import { writeTestReviewPacket } from "../helpers/review-packet-fixture";
 import { mock } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { installCliReviewer } from "./cli-reviewer";
 import type { VerdictAuthority } from "../../plugins/immune-brain/runtime/assurance/verdict_authority";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -12,8 +17,39 @@ import {
 import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
+// These fixtures reserve the CLI reviewer (Spec review-cli-stage D11), so the
+// fixture root is a real repository with a review profile and the reviewer
+// binary on PATH. Settlement stays in the test: a submitted verdict is relayed
+// through the coordinator, never produced by the process.
 export const TASK = "phase3-task";
-export const ROOT = "/tmp/phase3-assurance";
+// One root and one reviewer output per test process: Bun runs test files in
+// parallel workers, and a shared root would let one file's reserved tree guard
+// see another file's writes.
+export const ROOT = join(tmpdir(), `immune-brain-phase3-assurance-${process.pid}`);
+
+
+function prepareReviewRoot(): void {
+	mkdirSync(join(ROOT, ".imm"), { recursive: true });
+	installCliReviewer();
+	if (!existsSync(join(ROOT, ".git"))) {
+		execFileSync("git", ["init", "-q"], { cwd: ROOT });
+		writeFileSync(join(ROOT, "tracked.ts"), "export const value = 1;\n");
+		execFileSync("git", ["add", "-A"], { cwd: ROOT });
+		execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture"], { cwd: ROOT });
+	}
+	writeFileSync(join(ROOT, ".imm", "config.json"), JSON.stringify({
+		contract: "immune_brain/project_config/v1",
+		lanes: { review_host: "pi" },
+	}) + "\n");
+	for (const entry of ["tracked.ts", ".imm/config.json"]) {
+		try { execFileSync("git", ["ls-files", "--error-unmatch", "--", entry], { cwd: ROOT, stdio: "ignore" }); }
+		catch { execFileSync("git", ["add", "--", entry], { cwd: ROOT }); }
+	}
+	try { execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture config"], { cwd: ROOT, stdio: "ignore" }); }
+	catch { /* nothing to commit */ }
+}
+
+prepareReviewRoot();
 export const ctx = { cwd: ROOT, mode: "tui", ui: {} } as unknown as ExtensionContext;
 
 export function projection(

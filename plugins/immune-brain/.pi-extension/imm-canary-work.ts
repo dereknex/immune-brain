@@ -304,8 +304,8 @@ export async function advancePiTask(root: string, taskId: string): Promise<any> 
 	if (result.state === "completed") return { state: "completed", ...facts };
 	if (result.state === "stopped") return { state: "stopped", ...facts };
 	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
-	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params, ...facts };
-	if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params, review_command: result.review_command, review_profile: result.review_profile, ...facts };
+	if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, code: result.code, recovery_action: result.recovery_action, ...facts };
 	if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
 	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 }
@@ -501,22 +501,19 @@ export default function (
 		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
 		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
-			// ADR 0030: validate marker-targeted dispatch before binding the reviewer.
-			return progression.piReviewHost.observeReviewDispatch(event.input as Parameters<typeof progression.piReviewHost.observeReviewDispatch>[0], event.toolCallId);
+			// ADR 0017: validate a marker-targeted dispatch before binding the verifier.
+			return progression.piReviewHost.observeVerifierDispatch(event.input as Record<string, unknown> | undefined, event.toolCallId);
 		}
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
 		if (ctx) railContext = ctx;
 		const result = event as { toolName?: string; details?: Record<string, unknown>; toolCallId?: string; content?: Array<{ type?: string; text?: string }> };
 		if (result.toolName === "Agent" && result.toolCallId) {
-			// ADR 0017: record the reviewer's own result bytes for receipt-bound submission.
+			// ADR 0017: record the verifier's own result bytes for receipt-bound submission.
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			const model = typeof result.details?.model === "string" ? result.details.model : undefined;
-			const offeredModels = Array.isArray(result.details?.offered_models) && result.details.offered_models.every(item => typeof item === "string")
-				? result.details.offered_models as string[] : undefined;
-			progression.piReviewHost.observeReviewResult(result.toolCallId, text, model, offeredModels);
+			progression.piReviewHost.observeVerifierResult(result.toolCallId, text);
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -1834,7 +1831,7 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 	if (result.code === "verdict_invalid") return "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
-		case "review_ready": return "invoke the foreground reviewer and submit its verdict";
+		case "review_ready": return typeof (result as { review_command?: unknown }).review_command === "string" ? "run review_command in your shell, then submit_review" : "invoke the foreground reviewer and submit its verdict";
 		case "verification_ready": return "invoke the reserved foreground verifier and submit_verification";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;

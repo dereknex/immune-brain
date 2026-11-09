@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { reviewPacketHandle, reviewPacketError, verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
+import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
 import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,9 +15,9 @@ export type ConsumeReviewResult =
 	| { ok: true; receipt: ObservedReviewReceipt }
 	| { ok: false; reason: string; release: boolean };
 
-export const REVIEWER_AGENT = "immune-brain-reviewer";
-export const CLAUDE_REVIEWER_AGENT = "immune-brain:immune-brain-reviewer";
 export const AGENT_TOOL = "Agent";
+/** The verifier agent types a Claude Host reports for its own dispatch. */
+const VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
 
 export type ClaudeHookEvent =
 	| {
@@ -329,21 +329,6 @@ export function parseReviewMarker(prompt: unknown): { operationId: string; taskI
 	if (match) return { operationId: match[1], taskId: match[2] };
 }
 
-/** The hook rejects a marker-targeted dispatch before the wrong reviewer runs. */
-export function reviewDispatchHookOutput(payload: Record<string, unknown>): string | undefined {
-	if (payload.hook_event_name !== "PreToolUse" || payload.tool_name !== AGENT_TOOL) return;
-	const input = payload.tool_input as Record<string, unknown> | undefined;
-	if (!parseReviewMarker(input?.prompt)) return;
-	const reason = input?.subagent_type !== REVIEWER_AGENT && input?.subagent_type !== CLAUDE_REVIEWER_AGENT
-		? "Reserved Review dispatch requires subagent_type immune-brain:immune-brain-reviewer or immune-brain-reviewer."
-		: reviewPacketError(input!.prompt as string);
-	if (!reason) return;
-	return JSON.stringify({ hookSpecificOutput: {
-		hookEventName: "PreToolUse", permissionDecision: "deny",
-		permissionDecisionReason: reason,
-	} });
-}
-
 /**
  * Whether hook evidence carrying a prompt belongs to this reservation.
  *
@@ -385,42 +370,8 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	inspectVerification(reservation: HostReviewReservation) {
 		const state = this.pending.get(reservation.id);
 		if (!state?.verifierModel) return { ok: false as const, reason: "verifier reservation not found", release: true };
-		const result = this.inspectReview(reservation);
+		const result = this.inspectVerifier(reservation);
 		return result.ok ? { ok: true as const, receipt: { ...result.receipt, model: state.verifierModel } } : result;
-	}
-
-	prepareReview(request: ReviewRequest): HostReviewReservation {
-		// Retire whatever the log already holds before the cursors are taken. A
-		// resumed session inherits its predecessor's file, and an unprocessed
-		// `SessionEnd` sitting in it used to survive until the first inspection —
-		// long after this reservation's own events had been appended behind it.
-		this.drain();
-		const initialCursors = new Map<string, number>();
-		const sessionCursors = new Map<string, number>();
-		for (const sessionId of this.log.sessions()) {
-			const len = this.log.list(sessionId).length;
-			initialCursors.set(sessionId, len);
-			sessionCursors.set(sessionId, len);
-		}
-		const dispatchPrompt = reviewPacketHandle({ taskId: request.taskId, operationId: request.operationId,
-			packet: request.writePacket(request.operationId, request.snapshotPrompt) });
-		this.pending.set(request.operationId, {
-			request,
-			dispatchPrompt,
-			initialCursors,
-			sessionCursors,
-			consumed: false,
-		});
-		return {
-			id: request.operationId,
-			// Only parameters the Claude `Agent` tool accepts. The Host has no turn
-			// cap and no background switch, so `request.maxTurns` (which the Pi port
-			// forwards natively) has no receiver here and is not projected.
-			dispatch: {
-				subagent_type: CLAUDE_REVIEWER_AGENT,
-				prompt: dispatchPrompt,
-			},
-		};
 	}
 
 	observe(event: ClaudeHookEvent): void {
@@ -492,8 +443,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	private applyReviewEvent(event: ClaudeHookEvent, state: PendingReview): void {
 		if (state.error) return;
 		if (event.type === "SubagentStart") {
-			const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
-			if (!expectedAgents.includes(event.agent)) return;
+			if (!VERIFIER_AGENTS.includes(event.agent)) return;
 			// If operationId or prompt is explicit on Start, it must bind to this reservation
 			if (event.operationId || event.prompt !== undefined) {
 				if (!bindsStart(event, state)) return;
@@ -539,8 +489,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 			return;
 		}
 		if (event.type === "SubagentStop") {
-			const expectedAgents = state.verifierModel ? ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"] : [REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT];
-			if (!expectedAgents.includes(event.agent)) return;
+			if (!VERIFIER_AGENTS.includes(event.agent)) return;
 			if (!event.agentId) return;
 			if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId) return;
 			if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId) return;
@@ -558,11 +507,11 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		}
 	}
 
-	inspectReview(reservation: HostReviewReservation): ConsumeReviewResult {
+	private inspectVerifier(reservation: HostReviewReservation): ConsumeReviewResult {
 		this.drain();
 		const state = this.pending.get(reservation.id);
 		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
+		const packetError = verificationPacketError(state.dispatchPrompt);
 		if (packetError) return { ok: false, reason: packetError, release: true };
 		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
 		if (state.error) return { ok: false, reason: state.error, release: true };
@@ -616,22 +565,6 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 		}
 		const model = launch.resolvedModel ?? state.postEvent.model;
 		return { ok: true, receipt: { actorId, result: verdict, ...(model ? { model } : {}) } };
-	}
-
-	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
-		const result = this.inspectReview(reservation);
-		if (result.ok) {
-			const pending = this.pending.get(reservation.id);
-			if (pending) pending.consumed = true;
-		}
-		return result;
-	}
-
-	inspectReviewForTask(taskId: string): ConsumeReviewResult {
-		this.drain();
-		const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-		if (!entry) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {

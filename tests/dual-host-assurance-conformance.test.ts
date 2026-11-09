@@ -16,8 +16,10 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
-import { ClaudeReviewHost, REVIEWER_AGENT, AGENT_TOOL } from "../plugins/immune-brain/runtime/claude/review_host";
-import { submitClaudeReview, ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
+import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
+import { ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
@@ -124,10 +126,26 @@ afterAll(() => {
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
 const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
 
+/**
+ * Settle one Review through the CLI dispatcher (Spec review-cli-stage D11): the
+ * fixture root carries a review profile and PATH carries the stand-in binary,
+ * so the reserved script runs here and its bytes are the submitted verdict.
+ */
+function settleCli(coordinator: AssuranceCoordinator, ready: unknown, verdict: AssuranceVerdict) {
+	runReservedReview(ready, verdict);
+	return coordinator.submitReview(TASK, ctx, verdict);
+}
+
 /** One enrolled fixture repository both Host adapters drive below. */
+installCliReviewer();
+
 function enrolledHostFixture(taskId: string, extraScope: string[] = []): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-host-divergence-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({
+		contract: "immune_brain/project_config/v1",
+		lanes: { review_host: "pi" },
+	}) + "\n");
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	mkdirSync(join(root, "docs/specs/archive"), { recursive: true });
 	const intent = {
@@ -409,6 +427,21 @@ setDefaultTimeout(120_000);
 
 const TASK = "dual-host-task";
 const ROOT = "/tmp/dual-host-assurance";
+// The shared fixture cwd is a real repository with the project's review profile
+// committed, so the CLI dispatcher can read the tree it guards (D5, D6).
+mkdirSync(join(ROOT, ".imm"), { recursive: true });
+writeFileSync(join(ROOT, ".imm/config.json"), JSON.stringify({
+	contract: "immune_brain/project_config/v1",
+	lanes: { review_host: "pi" },
+}) + "\n");
+if (!existsSync(join(ROOT, ".git"))) {
+	execFileSync("git", ["init", "-q"], { cwd: ROOT });
+	writeFileSync(join(ROOT, "tracked.ts"), "export const value = 1;\n");
+	execFileSync("git", ["add", "-A"], { cwd: ROOT });
+}
+try {
+	execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-qm", "fixture"], { cwd: ROOT, stdio: "ignore" });
+} catch { /* already committed */ }
 
 // Reviewer transcripts are local 0600 files under the system temp directory;
 // they stand in for the bytes a synchronous `Agent` result points at.
@@ -511,36 +544,6 @@ function passVerdict(s: SnapshotDescriptor): AssuranceVerdict {
 	};
 }
 
-function completeClaudeReview(host: ClaudeReviewHost, operationId: string, risk: Risk, verdict = passVerdict(snapshot("review", risk))) {
-	const agentId = `claude-agent-${operationId}`;
-	// The Claude receipt is the reviewer's own transcript, never the tool result.
-	const transcriptPath = transcripts.sessionTranscriptPath(agentId, JSON.stringify(verdict));
-	host.observe({ type: "SubagentStart", sessionId: "claude", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
-	host.observe({
-		type: "PostToolUse",
-		sessionId: "claude",
-		agentId,
-		toolName: AGENT_TOOL,
-		result: JSON.stringify(verdict),
-		transcriptPath,
-		taskId: TASK,
-		operationId,
-	});
-	host.observe({ type: "SubagentStop", sessionId: "claude", agent: REVIEWER_AGENT, agentId, taskId: TASK, operationId });
-}
-
-async function submitObservedReview(
-	h: { coordinator: AssuranceCoordinator; host: ClaudeReviewHost },
-	taskId = TASK,
-) {
-	const observed = h.host.inspectReviewForTask(taskId);
-	if (!observed.ok) {
-		if (observed.release) return h.coordinator.abandonReview(taskId, observed.reason);
-		return { state: "blocked" as const, reason: observed.reason };
-	}
-	return submitClaudeReview(h.host, h.coordinator, ctx, taskId, observed.receipt.result);
-}
-
 function sharedKernel(
 	risk: Risk,
 	start: Obligation = "run_qa",
@@ -628,11 +631,11 @@ function sharedKernel(
 		releaseClaim() { holder = null; },
 		claude() {
 			const host = new ClaudeReviewHost();
-			return { host, coordinator: new AssuranceCoordinator(portsFor(host), portsFor(host)) };
+			const review = new CliReviewHost(host);
+			return { host, review, coordinator: new AssuranceCoordinator(portsFor(review), portsFor(review)) };
 		},
 		pi() {
-			const ports = portsFor({ host: "pi", prepareReview: () => ({ id: "x", dispatch: {} }), releaseReview: () => undefined });
-			const { host: _ignored, ...rest } = ports;
+			const { host: _ignored, ...rest } = portsFor(new ClaudeReviewHost());
 			return new AssuranceProgression({ ...rest, authorityOverrides: rest });
 		},
 		stale() { recordRevision = "stale"; },
@@ -650,6 +653,10 @@ function projectVerificationFixture(taskId: string, mode: "pass" | "prepare-fail
 	options: { risk?: "routine" | "material"; gitIntegration?: "auto" | "manual" } = {}): string {
 	const root = mkdtempSync(join(tmpdir(), "imm-project-verification-"));
 	mkdirSync(join(root, ".imm/state"), { recursive: true });
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({
+		contract: "immune_brain/project_config/v1",
+		lanes: { review_host: "pi" },
+	}) + "\n");
 	mkdirSync(join(root, "docs/plans"), { recursive: true });
 	mkdirSync(join(root, "tools"), { recursive: true });
 	const tool = join(root, "tools/future-pm");
@@ -866,222 +873,12 @@ describe("dual-host assurance conformance", () => {
 		const m = material.claude();
 		const ready = await m.coordinator.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		completeClaudeReview(m.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await submitObservedReview(m)).toEqual({ state: "completed" });
+		expect(await settleCli(m.coordinator, ready, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
 
 		const critical = sharedKernel("critical");
 		const c = critical.claude();
 		const critReady = await c.coordinator.advance(TASK, ctx);
-		completeClaudeReview(c.host, (critReady as { operation_id: string }).operation_id, "critical");
-		expect(await submitObservedReview(c)).toEqual({ state: "completed" });
-	});
-
-	test("Review reservations made in two concurrent Lanes never bind to each other's run", async () => {
-		// Each Lane has its own Host session and Authority Store; model them as two independent kernels.
-		const first = sharedKernel("material").claude();
-		const second = sharedKernel("material").claude();
-		const firstReady = (await first.coordinator.advance(TASK, ctx)) as { state: string; operation_id: string };
-		const secondReady = (await second.coordinator.advance(TASK, ctx)) as { state: string; operation_id: string };
-		expect(firstReady.state).toBe("review_ready");
-		expect(secondReady.state).toBe("review_ready");
-		expect(firstReady.operation_id).not.toBe(secondReady.operation_id);
-
-		// A verdict produced for the first Lane's reservation is offered to the second Lane's Host.
-		completeClaudeReview(second.host, firstReady.operation_id, "material");
-		const crossed = await submitObservedReview(second);
-		expect(crossed.state).not.toBe("completed");
-
-		// Each Lane still completes through its own reservation.
-		completeClaudeReview(first.host, firstReady.operation_id, "material");
-		expect(await submitObservedReview(first)).toEqual({ state: "completed" });
-		const renewed = await second.coordinator.advance(TASK, ctx) as { operation_id: string };
-		completeClaudeReview(second.host, renewed.operation_id, "material");
-		expect(await submitObservedReview(second)).toEqual({ state: "completed" });
-	});
-
-	test("an omitted verdict settles through the observed receipt on both hosts", async () => {
-		const kernel = sharedKernel("material");
-		const claude = kernel.claude();
-		const ready = await claude.coordinator.advance(TASK, ctx);
-		expect(ready.state).toBe("review_ready");
-		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await submitClaudeReview(claude.host, claude.coordinator, ctx, TASK, undefined)).toEqual({ state: "completed" });
-		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
-
-		const piKernel = sharedKernel("material");
-		const pi = piKernel.pi();
-		const piReady = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string; description: string } };
-		expect(piReady.state).toBe("review_ready");
-		pi.piReviewHost.observeReviewDispatch({ ...piReady.agent_params, subagent_type: "Review" }, "pi-call-1");
-		pi.piReviewHost.observeReviewResult("pi-call-1", "Agent completed.\n\n" + JSON.stringify(passVerdict(snapshot("review")), null, 2));
-		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
-		expect(piKernel.executionCounts).toEqual({ qa: 1, completion: 1 });
-	});
-
-	test("omitted correlated rework settles on both hosts without completion", async () => {
-		const verdict: AssuranceVerdict = {
-			contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
-			snapshot_digest: snapshotDigest(snapshot("review")), decision: "rework",
-			findings: [{ id: "receipt-rework", kind: "blocking", acceptance_id: "A1", summary: "repair required",
-				evidence: { trigger: "changed path violates acceptance", caller_chain: ["entry", "owner"], violated: { kind: "acceptance", ref: "A1" } } }],
-		};
-		for (const host of ["claude", "pi"] as const) {
-			const kernel = sharedKernel("material");
-			if (host === "claude") {
-				const h = kernel.claude();
-				const ready = await h.coordinator.advance(TASK, ctx);
-				completeClaudeReview(h.host, (ready as { operation_id: string }).operation_id, "material", verdict);
-				expect(await submitClaudeReview(h.host, h.coordinator, ctx, TASK, undefined)).toMatchObject({ state: "rework" });
-				expect(h.coordinator.active(TASK)).toBeNull();
-			} else {
-				const h = kernel.pi();
-				const ready = await h.advance(TASK, ctx as never) as { agent_params: { prompt: string; description: string } };
-				h.piReviewHost.observeReviewDispatch({ ...ready.agent_params, subagent_type: "Review" }, "rework");
-				h.piReviewHost.observeReviewResult("rework", JSON.stringify(verdict));
-				expect(await h.submitMediated(TASK, ctx as never, undefined)).toMatchObject({ state: "rework" });
-				expect(h.active(TASK)).toBeNull();
-			}
-			expect(kernel.appliedVerdicts.at(-1)).toMatchObject({ decision: "rework", findings: [{ kind: "blocking", acceptance_id: "A1", evidence: verdict.findings![0].evidence }] });
-			expect(kernel.executionCounts).toEqual({ qa: 1, completion: 0 });
-		}
-	});
-
-	test.each([
-		["pi", "nothing"], ["pi", "blocked"], ["claude", "nothing"],
-		["claude", "post-only"], ["claude", "edited"], ["claude", "missing-host-state"],
-	] as const)("an unbound %s submission (%s) releases without an incomplete round or budget change", async (host, variant) => {
-		const kernel = sharedKernel("material");
-		const claude = host === "claude" ? kernel.claude() : undefined;
-		const pi = host === "pi" ? kernel.pi() : undefined;
-		const budgets: number[] = [];
-		if (claude) {
-			const prepare = claude.host.prepareReview.bind(claude.host);
-			claude.host.prepareReview = request => { budgets.push(request.maxTurns); return prepare(request); };
-		}
-		const coordinator = pi ?? claude!.coordinator;
-		const ready = await coordinator.advance(TASK, ctx as never);
-		if (ready.state !== "review_ready") throw new Error("expected review_ready");
-		if (pi && variant === "blocked") {
-			expect(pi.piReviewHost.observeReviewDispatch({ ...(ready.agent_params as Record<string, unknown>), subagent_type: "general-purpose" }, "blocked")).toMatchObject({ block: true });
-		}
-		if (claude && variant === "post-only") {
-			claude.host.observe({ type: "PostToolUse", sessionId: "s", agentId: "a", toolName: AGENT_TOOL, operationId: ready.operation_id, taskId: TASK, prompt: (ready.agent_params as { prompt: string }).prompt, result: JSON.stringify(passVerdict(snapshot("review"))) });
-		}
-		if (claude && variant === "edited") {
-			claude.host.observe({ type: "SubagentStart", sessionId: "s", agentId: "a", agent: REVIEWER_AGENT, operationId: ready.operation_id, taskId: TASK, prompt: `${(ready.agent_params as { prompt: string }).prompt}!` });
-		}
-		if (claude && variant === "missing-host-state") {
-			claude.host.releaseReview({ id: ready.operation_id, dispatch: ready.agent_params });
-			expect(claude.host.inspectReview({ id: ready.operation_id, dispatch: ready.agent_params })).toMatchObject({ ok: false, release: true });
-			expect(claude.host.inspectReviewForTask(TASK)).toMatchObject({ ok: false, release: true });
-		}
-		const blocked = pi ? await pi.submitMediated(TASK, ctx as never, undefined) : await submitClaudeReview(claude!.host, claude!.coordinator, ctx, TASK, undefined);
-		expect(blocked).toMatchObject({ state: "blocked", recovery_action: expect.stringContaining("Call advance_assurance") });
-		expect(coordinator.active(TASK)).toBeNull();
-		const retried = await coordinator.advance(TASK, ctx as never);
-		if (retried.state !== "review_ready") throw new Error("expected fresh review_ready");
-		expect(retried.operation_id).not.toBe(ready.operation_id);
-		if (pi) expect((retried.agent_params as { max_turns: number }).max_turns).toBe((ready.agent_params as { max_turns: number }).max_turns);
-		else expect(budgets).toEqual([budgets[0], budgets[0]]);
-		expect(kernel.appliedVerdicts).toHaveLength(1);
-		expect(kernel.appliedVerdicts[0].role).toBe("qa");
-		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 0 });
-	});
-
-	test.each([
-		["pi", "edited"], ["claude", "edited"], ["pi", "missing"], ["claude", "missing"],
-		["pi", "unchanged"], ["claude", "unchanged"],
-	] as const)("a bound %s reviewer with a %s packet cannot settle altered instructions", async (host, variant) => {
-		const kernel = sharedKernel("material");
-		const claude = host === "claude" ? kernel.claude() : undefined;
-		const pi = host === "pi" ? kernel.pi() : undefined;
-		const coordinator = pi ?? claude!.coordinator;
-		const ready = await coordinator.advance(TASK, ctx);
-		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
-		if (pi) {
-			expect(pi.piReviewHost.observeReviewDispatch(ready.agent_params as Record<string, unknown>, "bound")).toBeUndefined();
-			pi.piReviewHost.observeReviewResult("bound", JSON.stringify(passVerdict(snapshot("review"))));
-		} else completeClaudeReview(claude!.host, ready.operation_id, "material");
-		const packet = parseReviewPacketHandle((ready.agent_params as { prompt: string }).prompt)!.packet;
-		if (variant === "edited") writeFileSync(packet.path, "altered review instructions");
-		if (variant === "missing") rmSync(packet.path);
-		const result = pi ? await pi.submitMediated(TASK, ctx, undefined) : await submitClaudeReview(claude!.host, coordinator, ctx, TASK, undefined);
-		if (variant === "unchanged") {
-			expect(result).toEqual({ state: "completed" });
-			expect(kernel.executionCounts.completion).toBe(1);
-		} else {
-			expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining(variant === "edited" ? "digest" : "missing"), recovery_action: expect.stringContaining("Call advance_assurance") });
-			expect(coordinator.active(TASK)).toBeNull();
-			expect(kernel.executionCounts.completion).toBe(0);
-			expect(kernel.appliedVerdicts.map(v => v.role)).toEqual(["qa"]);
-			const next = await coordinator.advance(TASK, ctx);
-			if (next.state !== "review_ready") throw new Error("expected fresh Review reservation");
-			expect(next.operation_id).not.toBe(ready.operation_id);
-		}
-	});
-
-	test.each([
-		["pi", "edited"], ["claude", "edited"], ["pi", "missing"], ["claude", "missing"],
-	] as const)("a %s packet %s during submission releases in the same call", async (host, variant) => {
-		let packetPath: string | undefined;
-		const kernel = sharedKernel("material", "run_qa", { onProject: async () => {
-			if (!packetPath) return;
-			await Promise.resolve();
-			if (variant === "edited") writeFileSync(packetPath, "changed during projection");
-			else rmSync(packetPath);
-			packetPath = undefined;
-		} });
-		const claude = host === "claude" ? kernel.claude() : undefined;
-		const pi = host === "pi" ? kernel.pi() : undefined;
-		const coordinator = pi ?? claude!.coordinator;
-		const ready = await coordinator.advance(TASK, ctx);
-		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
-		if (pi) {
-			expect(pi.piReviewHost.observeReviewDispatch(ready.agent_params as Record<string, unknown>, "bound")).toBeUndefined();
-			pi.piReviewHost.observeReviewResult("bound", JSON.stringify(passVerdict(snapshot("review"))));
-			expect(pi.piReviewHost.inspectReview(TASK)).toMatchObject({ ok: true });
-		} else {
-			completeClaudeReview(claude!.host, ready.operation_id, "material");
-			expect(claude!.host.inspectReviewForTask(TASK)).toMatchObject({ ok: true });
-		}
-		packetPath = parseReviewPacketHandle((ready.agent_params as { prompt: string }).prompt)!.packet.path;
-		const result = pi ? await pi.submitMediated(TASK, ctx, undefined) : await submitClaudeReview(claude!.host, coordinator, ctx, TASK, undefined);
-		expect(result).toMatchObject({ state: "blocked", reason: expect.stringContaining(variant === "edited" ? "digest" : "missing"), recovery_action: expect.stringContaining("Call advance_assurance") });
-		expect(coordinator.active(TASK)).toBeNull();
-		expect(kernel.appliedVerdicts.map(v => v.role)).toEqual(["qa"]);
-		expect(kernel.executionCounts.completion).toBe(0);
-		const next = await coordinator.advance(TASK, ctx);
-		if (next.state !== "review_ready") throw new Error("expected fresh Review reservation");
-		expect(next.operation_id).not.toBe(ready.operation_id);
-	});
-
-	test.each(["pi", "claude"] as const)("a bound %s reviewer awaiting its result retains the reservation", async (host) => {
-		const kernel = sharedKernel("material");
-		const claude = host === "claude" ? kernel.claude() : undefined;
-		const pi = host === "pi" ? kernel.pi() : undefined;
-		const coordinator = pi ?? claude!.coordinator;
-		const ready = await coordinator.advance(TASK, ctx);
-		if (ready.state !== "review_ready") throw new Error("expected Review reservation");
-		if (pi) pi.piReviewHost.observeReviewDispatch(ready.agent_params as Record<string, unknown>, "bound");
-		else claude!.host.observe({ type: "SubagentStart", sessionId: "s", agentId: "a", agent: REVIEWER_AGENT, operationId: ready.operation_id, taskId: TASK });
-		const pending = pi ? await pi.submitMediated(TASK, ctx, undefined) : await submitClaudeReview(claude!.host, coordinator, ctx, TASK, undefined);
-		expect(pending).toMatchObject({ state: "blocked", recovery_action: expect.stringContaining("Wait for the dispatched reviewer") });
-		expect(await coordinator.advance(TASK, ctx)).toMatchObject({ state: "review_ready", operation_id: ready.operation_id });
-	});
-
-	test("a Pi relayed verdict must match the observed receipt", async () => {
-		const kernel = sharedKernel("material");
-		const pi = kernel.pi();
-		const ready = await pi.advance(TASK, ctx as never) as { state: string; agent_params: { prompt: string; description: string } };
-		expect(ready.state).toBe("review_ready");
-		pi.piReviewHost.observeReviewDispatch({ ...ready.agent_params, subagent_type: "Review" }, "pi-call-1");
-		pi.piReviewHost.observeReviewResult("pi-call-1", JSON.stringify(passVerdict(snapshot("review"))));
-		const relaid = passVerdict(snapshot("review"));
-		const mismatched = await pi.submitMediated(TASK, ctx as never, { ...relaid, approval: { ...relaid.approval!, summary: "quietly rewritten" } }) as { state: string; reason: string };
-		expect(mismatched).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
-		// The reservation survives a mismatch: the no-verdict retry still settles.
-		expect(await pi.submitMediated(TASK, ctx as never, undefined)).toEqual({ state: "completed" });
-		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
+		expect(await settleCli(c.coordinator, critReady, passVerdict(snapshot("review", "critical")))).toEqual({ state: "completed" });
 	});
 
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
@@ -1108,8 +905,7 @@ describe("dual-host assurance conformance", () => {
 		const claude = kernel.claude();
 		const resumed = await claude.coordinator.advance(TASK, ctx);
 		expect(resumed.state).toBe("review_ready");
-		completeClaudeReview(claude.host, (resumed as { operation_id: string }).operation_id, "material");
-		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, resumed as { operation_id: string }, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
 		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
@@ -1121,8 +917,7 @@ describe("dual-host assurance conformance", () => {
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx); // freezes artifacts, runs QA
 		expect(ready.state).toBe("review_ready");
-		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, ready as { operation_id: string }, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(2);
 	});
 
@@ -1179,8 +974,7 @@ describe("dual-host assurance conformance", () => {
 		const kernel = sharedKernel("critical");
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx);
-		completeClaudeReview(claude.host, (ready as { operation_id: string }).operation_id, "critical");
-		expect(await submitObservedReview(claude)).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, ready, passVerdict(snapshot("review", "critical")))).toEqual({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(2);
 	});
 
@@ -1236,8 +1030,7 @@ describe("dual-host assurance conformance", () => {
 		const first = stale.claude();
 		const ready = await first.coordinator.advance(TASK, ctx);
 		stale.stale();
-		completeClaudeReview(first.host, (ready as { operation_id: string }).operation_id, "material");
-		expect(await submitObservedReview(first)).toMatchObject({ state: "blocked" });
+		expect(await settleCli(first.coordinator, ready as { operation_id: string }, passVerdict(snapshot("review", "material")))).toMatchObject({ state: "blocked" });
 
 		expect(probeHost({ CLAUDE_CODE_VERSION: "9.0.0" }).ok).toBe(true);
 		expect(probeHost({ CLAUDE_CODE_VERSION: "2.0.0" }).ok).toBe(false);
@@ -2741,3 +2534,57 @@ describe("status stays readable with unstaged scope paths on both Hosts", () => 
 		}
 	});
 });
+
+/**
+ * S2 AC2: the CLI switch is read at each composition root. The Host wiring is
+ * real — Pi's `AssuranceProgression`, `ClaudeRuntime` and `AntigravityRuntime` —
+ * and only the Kernel ports are the same synthetic fixtures the conformance
+ * drives above, because the reservation shape is what the switch changes.
+ */
+const { AntigravityRuntime } = await import("../plugins/immune-brain/runtime/antigravity/kernel_ports.ts");
+
+function cliReviewRoot(): string {
+	const root = mkdtempSync(join(tmpdir(), "imm-cli-dispatch-root-"));
+	execFileSync("git", ["init", "-q"], { cwd: root });
+	execFileSync("git", ["config", "user.name", "test"], { cwd: root });
+	execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+	mkdirSync(join(root, ".imm"), { recursive: true });
+	writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } }) + "\n");
+	writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
+	execFileSync("git", ["add", "-A"], { cwd: root });
+	execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
+	return root;
+}
+
+function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; applied: string[] } {
+	let obligation: "run_qa" | "run_review" = "run_qa";
+	const applied: string[] = [];
+	const snapshotFor = (role: "qa" | "review"): SnapshotDescriptor => ({
+		...snapshot(role, "material"), dirty_files: ["src.ts"], root,
+	} as SnapshotDescriptor);
+	const ports: AssuranceCoordinatorPorts = {
+		host: { host: "pi", prepareReview: () => { throw new Error("the composition root owns the Host"); }, releaseReview: () => undefined },
+		reviewVerifierMode: () => "off",
+		confirmationReference: ({ actorId }) => `fixture:${actorId}`,
+		projectTask: async () => projection({ lifecycle: "active", artifactState: "frozen", nextObligation: obligation, risk: "material" }),
+		readTaskRecord: async () => ({ revision: "record-1", record: { findings: [], history: [] } }),
+		readTaskIntent: async () => ({ token: "intent-token" }),
+		buildAssurance: async (_root: string, _task: string, role: "qa" | "review") => ({
+			snapshot: snapshotFor(role),
+			descriptors: new Map([["A1", {
+				contract: "assurance_kernel/verification_descriptor/v2",
+				command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+				environment: { prepare: null, writable_paths: [] },
+			}]] as never),
+			reviewBundle: role === "review" ? { ...reviewBundle(), root } : null,
+		}),
+		runQa: async (s: SnapshotDescriptor) => passVerdict(s),
+		writeReviewEvidence: () => ({ path: join(root, "review-evidence.json"), writePacket: writeTestReviewPacket, remove: () => undefined }),
+		applyVerdict: async (_ctx: HostContext, input: { snapshot: { role: string } }) => {
+			applied.push(input.snapshot.role);
+			if (input.snapshot.role === "qa") obligation = "run_review";
+		},
+		applyOrdinaryOperation: async () => undefined,
+	} as unknown as AssuranceCoordinatorPorts;
+	return { ports, applied };
+}

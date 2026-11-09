@@ -21,12 +21,11 @@ const HOSTS: Record<string, string> = {
 	pi: "plugins/immune-brain/.pi-extension",
 };
 
-/** D1: the four host-to-host edges on main, each owned by #414. */
+/** D1: the host-to-host edges on main, each owned by #414; S4 retired the Pi -> claude/review_host edge. */
 const BASELINE: Array<{ edge: string; owner: "#414" }> = [
 	{ edge: "plugins/immune-brain/runtime/antigravity/kernel_ports.ts -> plugins/immune-brain/runtime/claude/kernel_ports", owner: "#414" },
 	{ edge: "plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server", owner: "#414" },
 	{ edge: "plugins/immune-brain/runtime/antigravity/interaction.ts -> plugins/immune-brain/runtime/claude/interaction", owner: "#414" },
-	{ edge: "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts -> plugins/immune-brain/runtime/claude/review_host", owner: "#414" },
 ];
 
 interface SourceFile {
@@ -134,8 +133,8 @@ describe("runtime layering boundary", () => {
 		expect(innerLayerViolations(fixture.slice(1, 2), HOSTS)).toEqual([]);
 	});
 
-	test("AC2: observed host-to-host edges equal the four-edge baseline", () => {
-		expect(BASELINE).toHaveLength(4);
+	test("AC2: observed host-to-host edges equal the baseline", () => {
+		expect(BASELINE).toHaveLength(3);
 		expect(BASELINE.every(({ owner }) => owner === "#414")).toBe(true);
 		const { unexpected, stale } = compareEdges(
 			hostToHostEdges(real, HOSTS),

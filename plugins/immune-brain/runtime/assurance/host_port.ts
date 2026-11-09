@@ -1,3 +1,4 @@
+import type { ReviewProfile } from "../config/layered_config";
 import type { SnapshotDescriptor } from "./coordinator";
 import type { ReviewPacket } from "./review_packet";
 
@@ -16,6 +17,8 @@ export interface ReviewEvidence {
 export interface ReviewRequest {
 	taskId: string;
 	operationId: string;
+	/** The task's working directory; set by the coordinator for a Host that writes reviewer files. */
+	root?: string;
 	/**
 	 * The complete Review prompt: internal role contract, static review rules and
 	 * the per-dispatch facts. Written into the packet by a Host whose reviewer
@@ -38,6 +41,26 @@ export interface ReviewRequest {
 export interface HostReviewReservation {
 	id: string;
 	dispatch: unknown;
+	/** Set by a Host that dispatches Review to a CLI process instead of an in-process agent. */
+	review_command?: string;
+	review_profile?: ReviewProfile;
+	/** The actor identity the Kernel records for this reservation's verdict. */
+	review_actor_id?: string;
+}
+
+/**
+ * A Review reservation the Host could not make, with the stable reason the
+ * Kernel reports and the single action that repairs it (D7).
+ */
+export class ReviewPreparationError extends Error {
+	constructor(
+		readonly code: "review_profile_required" | "review_host_unavailable",
+		message: string,
+		readonly recovery_action: string,
+	) {
+		super(message);
+		this.name = "ReviewPreparationError";
+	}
 }
 
 export interface VerificationRequest {
@@ -54,7 +77,8 @@ export type VerificationReceipt =
 
 export interface AssuranceHostPort {
 	readonly host: "pi" | "claude-code" | "antigravity" | "fake";
-	prepareReview(request: ReviewRequest): HostReviewReservation;
+	/** Present only on a Host that dispatches Review itself; the CLI dispatcher supplies it. */
+	prepareReview?(request: ReviewRequest): HostReviewReservation;
 	prepareVerification?(request: VerificationRequest): HostReviewReservation;
 	inspectVerification?(reservation: HostReviewReservation): VerificationReceipt;
 	releaseReview(reservation: HostReviewReservation): void;

@@ -1,15 +1,6 @@
 ---
-name: immune-brain-reviewer
-description: "Independent Immune-Brain Review authority. Read-only evidence review against an immutable snapshot."
-mainAgent: false
-subagent: true
-excludeDefaultComponents: true
-inheritMcp: false
-tools:
-  - view_file
-  - grep_search
-  - list_dir
-  - find_by_name
+name: authority-review
+description: Invoked by the drive Review stage with one per-task review packet path. Read that packet and return its structured verdict.
 ---
 
 # Internal role: code-review
@@ -205,5 +196,9 @@ If the turn budget cannot cover every changed path, return decision "incomplete"
 
 A pass verdict's approval must carry `inspected_paths`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.
 
-A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim as a four-line handle: operation marker, absolute Review packet path, Packet sha256, and digest-verification instruction. Verify the named packet digest before following its instructions; on a mismatch reply exactly `review packet digest mismatch`. Read the packet for the per-dispatch snapshot facts. The host binds this reviewer's final result bytes to the reservation, so a Parent may submit them without transcribing them. A blocked `submit_review` is recovered only through its returned `recovery_action`.
+Review contract hash: sha256:2e4d13dd57148f7aad0ce5b4c936ccabe708a3dd4669a64096824b7bb8c59330
+
+The packet's first line reads `review_contract_hash: <hash>`. Compare it with sha256:2e4d13dd57148f7aad0ce5b4c936ccabe708a3dd4669a64096824b7bb8c59330 before reading any other line. If it differs, reply with exactly `REVIEW_CONTRACT_MISMATCH sha256:2e4d13dd57148f7aad0ce5b4c936ccabe708a3dd4669a64096824b7bb8c59330` and stop; your install carries different review instructions than the Host that bound this Review.
+
+The packet states the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.
 

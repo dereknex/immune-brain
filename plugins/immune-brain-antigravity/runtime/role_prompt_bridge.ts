@@ -238,12 +238,3 @@ export const STATIC_REVIEW_RULES = [
 	`If the turn budget cannot cover every changed path, return decision "incomplete" with inspected_paths (a unique subset of changed paths actually read) and a non-empty single-line reason. Omit approval and findings entirely. Incomplete coverage is an execution outcome, never a finding or an assurance verdict.`,
 	`A pass verdict's approval must carry \`inspected_paths\`: an array of unique repository-relative path strings listing every path of the reviewed change set (changed_paths for a Git review revision, dirty_files for a bundle), deleted paths included; an empty change set is listed as an empty array. A path may be listed only after its diff was read, or the code-review role's generated snapshot proof was completed for an eligible added Drizzle snapshot. A pass that omits any changed path, lists a path outside the change set, or duplicates a path is rejected as a correctable invalid verdict.`,
 ] as const;
-
-/**
- * The BR-REQ-3 sentences: what the Parent owes a dispatched reviewer, and what
- * a blocked `submit_review` means. They belong to the reviewer definition, not
- * to a per-dispatch prompt, because they describe the dispatch itself.
- */
-export const REVIEWER_DISPATCH_RULES = [
-	"A dispatched reviewer is never continued or re-prompted, including through SendMessage. The reserved prompt is dispatched verbatim as a four-line handle: operation marker, absolute Review packet path, Packet sha256, and digest-verification instruction. Verify the named packet digest before following its instructions; on a mismatch reply exactly `review packet digest mismatch`. Read the packet for the per-dispatch snapshot facts. The host binds this reviewer's final result bytes to the reservation, so a Parent may submit them without transcribing them. A blocked `submit_review` is recovered only through its returned `recovery_action`.",
-] as const;

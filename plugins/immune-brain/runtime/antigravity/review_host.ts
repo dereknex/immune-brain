@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { reviewPacketHandle, reviewPacketError, verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
+import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
 import { mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,7 +16,6 @@ export type ConsumeReviewResult =
 	| { ok: true; receipt: ObservedReviewReceipt }
 	| { ok: false; reason: string; release: boolean };
 
-export const REVIEWER_AGENT = "immune-brain-reviewer";
 export const VERIFIER_AGENT = "immune-brain-review-verifier";
 export const SUBAGENT_TOOL = "invoke_subagent";
 
@@ -220,7 +219,7 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 	inspectVerification(reservation: HostReviewReservation): VerificationReceipt {
 		const state = this.pending.get(reservation.id);
 		if (!state?.verifierModel) return { ok: false, reason: "verifier reservation not found", release: true };
-		const result = this.inspectReview(reservation);
+		const result = this.inspectVerifier(reservation);
 		if (!result.ok) return result;
 		return {
 			ok: true,
@@ -228,38 +227,6 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 				actorId: result.receipt.actorId,
 				result: result.receipt.result,
 				model: state.verifierModel,
-			},
-		};
-	}
-
-	prepareReview(request: ReviewRequest): HostReviewReservation {
-		this.drain();
-		const initialCursors = new Map<string, number>();
-		const sessionCursors = new Map<string, number>();
-		for (const sessionId of this.log.sessions()) {
-			const len = this.log.list(sessionId).length;
-			initialCursors.set(sessionId, len);
-			sessionCursors.set(sessionId, len);
-		}
-		const dispatchPrompt = reviewPacketHandle({
-			taskId: request.taskId,
-			operationId: request.operationId,
-			packet: request.writePacket(request.operationId, request.snapshotPrompt),
-		});
-		this.pending.set(request.operationId, {
-			request,
-			dispatchPrompt,
-			initialCursors,
-			sessionCursors,
-			consumed: false,
-		});
-		return {
-			id: request.operationId,
-			dispatch: {
-				TypeName: REVIEWER_AGENT,
-				Role: "Code Reviewer",
-				Prompt: dispatchPrompt,
-				Model: "inherit",
 			},
 		};
 	}
@@ -312,8 +279,7 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 	private applyReviewEvent(event: AntigravityHookEvent, state: PendingReview): void {
 		if (state.error) return;
 		if (event.type === "SubagentStart") {
-			const expectedAgents = state.verifierModel ? [VERIFIER_AGENT] : [REVIEWER_AGENT];
-			if (!expectedAgents.includes(event.agent)) return;
+			if (event.agent !== VERIFIER_AGENT) return;
 			if (event.operationId && event.operationId !== state.request.operationId) return;
 			if (!bindsPrompt(event.prompt, state)) return;
 			if (state.startEvent && state.startEvent !== event) {
@@ -340,8 +306,7 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 			return;
 		}
 		if (event.type === "SubagentStop") {
-			const expectedAgents = state.verifierModel ? [VERIFIER_AGENT] : [REVIEWER_AGENT];
-			if (!expectedAgents.includes(event.agent)) return;
+			if (event.agent !== VERIFIER_AGENT) return;
 			if (event.operationId && event.operationId !== state.request.operationId) return;
 			if (state.stopEvent && state.stopEvent !== event) {
 				state.error = "duplicate SubagentStop observed for review reservation";
@@ -351,11 +316,11 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 		}
 	}
 
-	inspectReview(reservation: HostReviewReservation): ConsumeReviewResult {
+	private inspectVerifier(reservation: HostReviewReservation): ConsumeReviewResult {
 		this.drain();
 		const state = this.pending.get(reservation.id);
 		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		const packetError = state.verifierModel ? verificationPacketError(state.dispatchPrompt) : reviewPacketError(state.dispatchPrompt);
+		const packetError = verificationPacketError(state.dispatchPrompt);
 		if (packetError) return { ok: false, reason: packetError, release: true };
 		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
 		if (state.error) return { ok: false, reason: state.error, release: true };
@@ -372,22 +337,6 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 				...(state.postEvent.model ? { model: state.postEvent.model } : {}),
 			},
 		};
-	}
-
-	consumeReview(reservation: HostReviewReservation): ConsumeReviewResult {
-		const result = this.inspectReview(reservation);
-		if (result.ok) {
-			const pending = this.pending.get(reservation.id);
-			if (pending) pending.consumed = true;
-		}
-		return result;
-	}
-
-	inspectReviewForTask(taskId: string): ConsumeReviewResult {
-		this.drain();
-		const entry = [...this.pending.entries()].find(([, state]) => state.request.taskId === taskId);
-		if (!entry) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		return this.inspectReview({ id: entry[0], dispatch: entry[1].request });
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {

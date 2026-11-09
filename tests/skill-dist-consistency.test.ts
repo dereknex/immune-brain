@@ -8,7 +8,7 @@ import {
 	SKILL_OWNED_ENTRIES,
 	renderDistDoc,
 } from "../scripts/dist-sync-manifest.ts";
-import { publicSkillNames } from "./helpers/public-skills.ts";
+import { INTERNAL_SKILL_NAMES, publicSkillNames } from "./helpers/public-skills.ts";
 import { buildRoleDelegationPacket } from "../plugins/immune-brain/runtime/role_prompt_bridge.ts";
 import { reviewerDefinitionDrift } from "../scripts/build-claude-plugin.ts";
 
@@ -28,7 +28,7 @@ function listFiles(dir: string): string[] {
 
 function publicSkills(): Array<{ name: string; skill: string; dist: string }> {
 	const names = readdirSync(SKILLS_DIR, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
+		.filter((entry) => entry.isDirectory() && !INTERNAL_SKILL_NAMES.includes(entry.name))
 		.map((entry) => entry.name);
 	// Every Skill directory is registered: an empty or partial list cannot pass vacuously.
 	expect(names.sort()).toEqual([...publicSkillNames()].sort());

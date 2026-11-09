@@ -3,6 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { INTERNAL_SKILL_NAMES } from "./helpers/public-skills";
 
 const ROOT = resolve(__dirname, "..");
 const SKILLS = join(ROOT, "plugins/immune-brain/skills");
@@ -74,6 +75,7 @@ describe("drive Kernel routing contract", () => {
 		const dirs = readdirSync(SKILLS, { withFileTypes: true })
 			.filter((d) => d.isDirectory() && existsSync(join(SKILLS, d.name, "SKILL.md")))
 			.map((d) => d.name);
-		for (const dir of dirs) expect(names).toContain(dir);
+		// Role-internal skills ship without a registry entry (see the helper).
+		for (const dir of dirs.filter((name) => !INTERNAL_SKILL_NAMES.includes(name))) expect(names).toContain(dir);
 	});
 });

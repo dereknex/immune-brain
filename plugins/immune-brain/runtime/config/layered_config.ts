@@ -8,11 +8,21 @@ import { POINT_REGISTRY } from "../decision_model/thresholds.ts";
 import { projectIdentity } from "./project_identity.ts";
 
 type Obj = Record<string, any>;
+type ResolvedLeaf = { value: unknown; source: string };
+export type ReviewProfile = { host: "pi" | "claude-code" | "antigravity"; model?: string; effort?: string };
 type Diagnostic = { code: string; severity: "error" | "warning"; file: string; key_path: string; message: string };
 const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const leaf = (value: unknown, source: string) => ({ value, source });
 const has = (o: Obj | undefined, k: string) => !!o && Object.hasOwn(o, k);
 const envName = /^[A-Z_][A-Z0-9_]*$/;
+
+/** The Review profile `lanes` resolves to, or null when no `review_host` is set. No model-distinctness rule (BR-DEC-2). */
+export function chooseReviewer(lanes: { review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf }): ReviewProfile | null {
+	const host = lanes.review_host.value as ReviewProfile["host"] | null;
+	if (!host) return null;
+	const model = lanes.review_model.value as string | null, effort = lanes.review_effort.value as string | null;
+	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+}
 
 export function resolveConfig(root: string, options: { userConfigPath?: string; checkEnv?: boolean; registry?: PointRegistry } = {}) {
 	const registry = options.registry ?? POINT_REGISTRY;
@@ -68,13 +78,13 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
 	validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
 	validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort"];
+	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"];
 	validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
 	validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
 	const validateLane = (o: Obj, file: string, path: string) => {
 		validKeys(o, laneKeys, file, path, "lanes");
 		for (const [k, v] of Object.entries(o)) {
-			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k === "executor_host" ? v === "pi" || v === "claude-code" || v === "antigravity" : k === "executor_model" || k === "executor_effort" ? typeof v === "string" && v.length > 0 : true;
+			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : true;
 			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
 		}
 	};
@@ -155,12 +165,14 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const resolvedLaneProfiles = choose([has(ul, "profiles") ? laneProfiles : undefined, "user"], [legacyLane.profiles, "legacy:.imm/lanes.local.json"], [{}, "default"]);
 	const lanes: Obj = { valid: !failed.has("lanes"), active, profiles: resolvedLaneProfiles, project_defaults: leaf(pl, Object.keys(pl).length ? "project" : "default") };
 	for (const key of laneKeys) {
+		const hostKey = key.startsWith("review_") ? "review_host" : "executor_host";
+		const dependent = key.endsWith("_model") || key.endsWith("_effort");
 		const userValue = laneProfile?.[key];
 		let projectValue = pl[key];
-		if ((key === "executor_model" || key === "executor_effort") && projectValue !== undefined && laneProfile?.executor_host !== undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host overridden by higher layer"); projectValue = undefined; }
-		if ((key === "executor_model" || key === "executor_effort") && userValue !== undefined && laneProfile?.executor_host === undefined) { diag("not_applied", "warning", userPath, `lanes.${key}`, "host must be set in the same layer"); }
-		if ((key === "executor_model" || key === "executor_effort") && projectValue !== undefined && pl.executor_host === undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer"); projectValue = undefined; }
-		lanes[key] = choose([(key === "executor_model" || key === "executor_effort") && laneProfile?.executor_host === undefined ? undefined : userValue, active.source], [projectValue, "project"], [key === "max_parallel" ? 1 : undefined, "default"]);
+		if (dependent && projectValue !== undefined && laneProfile?.[hostKey] !== undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host overridden by higher layer"); projectValue = undefined; }
+		if (dependent && userValue !== undefined && laneProfile?.[hostKey] === undefined) { diag("not_applied", "warning", userPath, `lanes.${key}`, "host must be set in the same layer"); }
+		if (dependent && projectValue !== undefined && pl[hostKey] === undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer"); projectValue = undefined; }
+		lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [key === "max_parallel" ? 1 : undefined, "default"]);
 	}
 	if (failed.has("lanes")) {
 		lanes.active = leaf(null, "default");

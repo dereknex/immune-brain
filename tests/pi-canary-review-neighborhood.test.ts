@@ -1,8 +1,5 @@
-import { readFileSync as readPacket } from "node:fs";
-import { parseReviewPacketHandle, packetDigest } from "../plugins/immune-brain/runtime/assurance/review_packet";
-import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
-import { execFileSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,10 +8,6 @@ import {
 	captureReviewBundle,
 	verifyReviewBundle,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
-import {
-	reservedAgentParams,
-	semanticNeighborhoodReviewPrompt,
-} from "../plugins/immune-brain/.pi-extension/pi-canary-native-review.ts";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
 function git(root: string, args: string[]): string {
@@ -138,18 +131,5 @@ describe("review semantic neighborhood", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
-	});
-
-	test("reserved prompt requires provenance checks and full settlement-path enumeration", () => {
-		const base = "Review the immutable evidence bundle.";
-		const prompt = semanticNeighborhoodReviewPrompt(base);
-		expect(prompt).toContain("neighborhood_files entry");
-		expect(prompt).toContain("path_provenance is authoritative");
-		expect(prompt).toContain("terminal, cancellation, timeout, and race path");
-		expect(prompt).toContain("Reference a bundle path at the start of each finding summary");
-		const params = reservedAgentParams({ taskId: "task-1", operationId: "op-1", writePacket: writeTestReviewPacket, prompt: base });
-		const packet = parseReviewPacketHandle(params.prompt)!.packet;
-		expect(readPacket(packet.path, "utf8")).toBe(prompt);
-		expect(packet.sha256).toBe(packetDigest(prompt));
 	});
 });

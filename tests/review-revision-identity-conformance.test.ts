@@ -45,6 +45,13 @@ const {
  * defect, which is exactly why the existing coordinator suites never saw it.
  */
 
+// These fixtures reserve the CLI reviewer, so a Review-ready task needs the
+// project's review profile and a reviewer binary on PATH (Spec review-cli-stage D5).
+const ROOT_PATH = process.env.PATH ?? "";
+const reviewerBin = mkdtempSync(join(tmpdir(), "review-revision-bin-"));
+process.env.PATH = `${reviewerBin}:${ROOT_PATH}`;
+writeFileSync(join(reviewerBin, "pi"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+
 const TASK = "review-revision-identity-task";
 const NOW = "2025-01-01T00:00:00.000Z";
 const GIT_ENV = {
@@ -79,6 +86,8 @@ const INTENT_HASH = canonicalIntentHash(parseTaskIntentV1(INTENT));
 const roots: string[] = [];
 
 afterAll(() => {
+	process.env.PATH = ROOT_PATH;
+	rmSync(reviewerBin, { recursive: true, force: true });
 	for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
@@ -91,6 +100,10 @@ function makeReviewReadyRoot(): string {
 	roots.push(root);
 	mkdirSync(join(root, "src"), { recursive: true });
 	mkdirSync(join(root, ".imm", "state", "tasks"), { recursive: true });
+	writeFileSync(join(root, ".imm", "config.json"), JSON.stringify({
+		contract: "immune_brain/project_config/v1",
+		lanes: { review_host: "pi" },
+	}) + "\n");
 	execFileSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
 	writeFileSync(join(root, "src", "worked.ts"), "export const value = 1;\n");
 	execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });

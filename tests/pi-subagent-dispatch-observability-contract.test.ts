@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 const read = (path: string) => readFileSync(path, "utf8");
@@ -68,7 +68,6 @@ test("dispatch contracts name the native Claude route and keep the Pi boundary a
 test("interactive dispatch contracts are foreground-only and do not poll", () => {
 	for (const path of [
 		"plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
-		"plugins/immune-brain/.pi-extension/pi-canary-native-review.ts",
 	]) {
 		const source = read(path);
 		for (const forbidden of ["get_subagent_result", "setTimeout(", "setInterval(", "setStatus(", "setWidget(", "deliverFollowUp"]) expect(source).not.toContain(forbidden);
@@ -86,4 +85,46 @@ test("canonical Loop contract describes direct QA and Parent-mediated Review ver
 	const batch = read("plugins/immune-brain/dist/drive-batch.md");
 	expect(batch).toContain("batch_lane_unreadable");
 	expect(batch).toContain("Decisions and Recovery");
+});
+
+/**
+ * S3 AC3 (Spec review-cli-stage D3-D7, D10, D12): the drive contracts run the
+ * CLI reviewer, and only the advisory and verifier dispatches stay on Agents.
+ */
+describe("authority review cli contract", () => {
+	const canonical = "docs/reference/subagent-dispatch-protocol.md";
+	const mirrors = [
+		"plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+		"plugins/immune-brain-antigravity/dist/docs/reference/subagent-dispatch-protocol.md",
+	];
+
+	test("the drive contracts run review_command and name the missing-profile stop", () => {
+		for (const path of [
+			"plugins/immune-brain/dist/drive.md",
+			"plugins/immune-brain/dist/drive-batch.md",
+			"plugins/immune-brain-antigravity/dist/drive.md",
+			"plugins/immune-brain-antigravity/dist/drive-batch.md",
+		]) {
+			const contract = read(path);
+			expect({ path, statement: contract.includes("review_command") }).toEqual({ path, statement: true });
+			expect({ path, statement: contract.includes("review_profile_required") }).toEqual({ path, statement: true });
+		}
+	});
+
+	test("the drive contract dispatches no reviewer Agent for authority Review", () => {
+		const contract = read("plugins/immune-brain/dist/drive.md");
+		expect(contract).not.toContain('subagent_type: "Review"');
+	});
+
+	test("the protocol names the authority-review skill and keeps advisory and verifier dispatch", () => {
+		for (const path of [canonical, ...mirrors]) {
+			const contract = read(path);
+			expect(contract).toContain("authority-review");
+			// Advisory dispatch keeps its Agent envelope.
+			expect(contract).toContain('subagent_type: "general-purpose"');
+			// Findings verification keeps its Host Agent dispatch.
+			expect(contract).toContain("Findings verification returns a complete foreground `Agent` envelope");
+		}
+		for (const mirror of mirrors) expect(read(mirror)).toBe(read(canonical));
+	});
 });

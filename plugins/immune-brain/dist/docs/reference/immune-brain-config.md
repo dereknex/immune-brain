@@ -30,7 +30,7 @@ and subagent preferences stay in the Host's agent instruction files (see
   "lanes": {
     "active": "fast",
     "profiles": {
-      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high" },
+      "fast": { "max_parallel": 4, "executor_host": "claude-code", "executor_model": "<model id>", "executor_effort": "high", "review_host": "claude-code", "review_model": "<model id>", "review_effort": "high" },
       "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
     }
   },
@@ -83,7 +83,7 @@ request; the Parent or the Planner applies them on top of the resolved files.
 | Kind | Keys | Order |
 |---|---|---|
 | personal | `decision_models.default_profile`, `decision_models.bindings.<point>`, `lanes.active` | request → user per-project → user |
-| personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort` | request → selected user Lane profile → project `lanes` → default |
+| personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort`, `lanes.review_host`, `lanes.review_model`, `lanes.review_effort` | request → selected user Lane profile → project `lanes` → default |
 | repository fact | `initiative_carrier` | request → project → user per-project → user → none (the Planner asks) |
 | policy | `git_integration` | project → default (`manual`) |
 | policy | `decision_models.enabled_points` | project → default (every registered point) |
@@ -95,7 +95,13 @@ request; the Parent or the Planner applies them on top of the resolved files.
 - Project Lane values are defaults, not caps.
 - A Lane `executor_model` or `executor_effort` applies only with an
   `executor_host` from the same layer; otherwise it is reported as `not_applied`
-  and dropped.
+  and dropped. `review_model` and `review_effort` follow the same rule with a
+  `review_host` from their own layer.
+- `review_host` is `pi`, `claude-code` or `antigravity`; `review_model` and
+  `review_effort` are non-empty strings. `chooseReviewer` in
+  `runtime/config/layered_config.ts` turns the resolved keys into one review
+  profile `{ host, model?, effort? }`, or `null` when no `review_host` resolves.
+  A review model may equal the executor model: no distinctness rule applies.
 
 ## Inspecting the Effective Configuration
 
