@@ -7,8 +7,9 @@ export type HostProbe =
 	| { ok: true; host: typeof HOST_ID; version: string; platform: string }
 	| { ok: false; reason: string };
 
-function parseSemver(value: string): [number, number, number] | null {
-	const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
+/** Antigravity reports its own version with a leading `v` (`v1.0.0`); one optional `v` is normalized, anything else is not semver. */
+export function parseSemver(value: string): [number, number, number] | null {
+	const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
 	if (!match) return null;
 	return [Number(match[1]), Number(match[2]), Number(match[3])];
 }

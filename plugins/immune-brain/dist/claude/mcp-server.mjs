@@ -17356,7 +17356,7 @@ init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync19, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
-import { join as join34 } from "node:path";
+import { isAbsolute as isAbsolute12, join as join34 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -22154,6 +22154,9 @@ class ClaudeRuntime {
   observe(event) {
     this.host.observe(event);
   }
+  bindWorkspace(cwd) {
+    this.cwd = cwd;
+  }
   bindHostVersion(version) {
     this.hostVersion = version || undefined;
   }
@@ -23083,8 +23086,11 @@ function withCompletionDelivery(taskId, result, root = process.cwd()) {
 }
 function createMcpRuntime(options = {}) {
   const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
+  const defaultWorkspace = options.cwd ?? process.cwd();
+  const trustedClientNames = options.trustedClientNames ?? [HOST_ID];
+  const serverInfo = options.serverInfo ?? { name: HOST_ID, minimumHostVersion: MIN_CLAUDE_CODE_VERSION };
   const runtime = new ClaudeRuntime({
-    cwd: options.cwd ?? process.cwd(),
+    cwd: defaultWorkspace,
     env: options.env ?? process.env,
     parentHost: options.parentHost,
     probeHost: options.probeHost,
@@ -23099,7 +23105,29 @@ function createMcpRuntime(options = {}) {
   });
   let negotiatedVersion;
   let negotiatedInteractive = false;
+  let negotiatedRoots = false;
+  let rootsWorkspace;
+  let rootsProvider = options.rootsProvider;
   const connectionId = randomUUID12();
+  const resolveWorkspace = async (meta, signal) => {
+    let workspace = typeof meta.workspace === "string" && isAbsolute12(meta.workspace) ? meta.workspace : undefined;
+    if (!workspace && rootsProvider && (negotiatedRoots || options.rootsProvider)) {
+      if (rootsWorkspace === undefined) {
+        let roots;
+        try {
+          roots = await rootsProvider(signal);
+        } catch {
+          roots = undefined;
+        }
+        rootsWorkspace = firstFileRootPath(roots) ?? null;
+      }
+      workspace = rootsWorkspace ?? undefined;
+    }
+    if (!workspace)
+      workspace = defaultWorkspace;
+    runtime.bindWorkspace(workspace);
+    return workspace;
+  };
   const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
   const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
@@ -23110,8 +23138,7 @@ function createMcpRuntime(options = {}) {
     return probe.ok ? "host version is unavailable" : probe.reason;
   };
   let hookSessionId = null;
-  const requireRunEntry = (operation, toolCallId) => {
-    const workspace = options.cwd ?? process.cwd();
+  const requireRunEntry = (operation, toolCallId, workspace) => {
     const correlated = readRunToolSession(toolCallId, operation, workspace);
     if (!options.consumePhaseAdmission && !correlated)
       throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
@@ -23140,19 +23167,30 @@ function createMcpRuntime(options = {}) {
     host,
     connectionId,
     listTools: listMcpTools,
+    trustedClientNames,
+    serverInfo,
     bindClientHandshake(identity) {
       negotiatedVersion = identity.version || undefined;
       negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
+      negotiatedRoots = identity.roots === true;
+      rootsWorkspace = undefined;
       runtime.bindHostVersion(negotiatedVersion);
+    },
+    bindRootsProvider(provider) {
+      rootsProvider = provider;
+    },
+    clearRootsWorkspace() {
+      rootsWorkspace = undefined;
     },
     bindNativeConfirmation(port) {
       runtime.bindNativeConfirmation(port);
     },
     sessionInteractive: () => negotiatedInteractive,
     async callTool(name, args, meta = {}) {
+      const workspace = await resolveWorkspace(meta, meta.signal);
       if (name !== "status" && bundle.stale())
         throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-      const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, options.cwd ?? process.cwd());
+      const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
       if (observedSession)
         hookSessionId = observedSession;
       if (name === "start_unattended_batch") {
@@ -23179,7 +23217,7 @@ function createMcpRuntime(options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -23191,7 +23229,7 @@ function createMcpRuntime(options = {}) {
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
-        const maxParallel = task ? 1 : resolveLaneParallel(options.cwd ?? process.cwd(), initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+        const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
           ...task ? { plan_source: "single_task" } : {},
@@ -23220,7 +23258,7 @@ function createMcpRuntime(options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`);
+        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -23259,14 +23297,14 @@ function createMcpRuntime(options = {}) {
         signal: meta.signal
       };
       if (name === "advance_assurance")
-        return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), options.cwd);
+        return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), workspace);
       if (name === "submit_review") {
-        return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), options.cwd);
+        return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), workspace);
       }
       if (name === "submit_verification") {
         if (args.result !== undefined && typeof args.result !== "string")
           throw new Error("result must be a string");
-        return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result, toolMeta), options.cwd);
+        return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result, toolMeta), workspace);
       }
       if (name === "revise_intent") {
         if (!Object.hasOwn(args, "next_intent"))
@@ -23301,6 +23339,26 @@ function hostCallIdentity(meta) {
   const toolCallId = meta["claudecode/toolUseId"];
   return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
 }
+function metaWorkspacePath(meta) {
+  const paths = meta?.["antigravity.google/workspace_paths"];
+  if (!Array.isArray(paths) || typeof paths[0] !== "string")
+    return;
+  const first = paths[0].trim();
+  return first && isAbsolute12(first) ? first : undefined;
+}
+function firstFileRootPath(roots) {
+  for (const root of roots ?? []) {
+    const uri = root?.uri;
+    if (typeof uri !== "string" || !uri.startsWith("file://"))
+      continue;
+    try {
+      const path = fileURLToPath4(uri);
+      if (isAbsolute12(path))
+        return path;
+    } catch {}
+  }
+  return;
+}
 function rpcError(error) {
   if (error instanceof NativeAuthorityError) {
     return {
@@ -23318,12 +23376,14 @@ function encodeMessage(message) {
 async function handleJsonRpc(message, mcp = createMcpRuntime()) {
   if (message.method === "initialize") {
     const params = message.params ?? {};
-    const trustedClient = params.clientInfo?.name === HOST_ID;
+    const trustedClient = mcp.trustedClientNames.includes(String(params.clientInfo?.name ?? ""));
     const elicitation = params.capabilities?.elicitation;
+    const roots = params.capabilities?.roots;
     mcp.bindClientHandshake({
       version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
       protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
-      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation)
+      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
+      roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots)
     });
     return {
       jsonrpc: "2.0",
@@ -23331,10 +23391,10 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       result: {
         protocolVersion: MCP_PROTOCOL_VERSION,
         serverInfo: {
-          name: HOST_ID,
+          name: mcp.serverInfo.name,
           version: PLUGIN_VERSION,
           contract: CORE_CONTRACT,
-          minimumHostVersion: MIN_CLAUDE_CODE_VERSION
+          minimumHostVersion: mcp.serverInfo.minimumHostVersion
         },
         capabilities: { tools: {} }
       }
@@ -23342,6 +23402,10 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
   }
   if (message.method === "notifications/initialized")
     return null;
+  if (message.method === "notifications/roots/list_changed") {
+    mcp.clearRootsWorkspace();
+    return null;
+  }
   if (message.method === "notifications/cancelled") {
     const requestId = message.params?.requestId;
     if (requestId !== undefined)
@@ -23371,6 +23435,7 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       const result = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
         toolCallId,
+        workspace: metaWorkspacePath(params._meta),
         interactive,
         requiresUserInteraction: isPrivilegedOperation(name),
         signal: ac.signal
@@ -23612,6 +23677,7 @@ async function serveStdio(options = {}) {
   const inFlight = new Set;
   const pending = new Map;
   let chain = Promise.resolve();
+  let callChain = Promise.resolve();
   const rejectPending = (error) => {
     for (const item of pending.values())
       item.reject(error);
@@ -23684,13 +23750,40 @@ async function serveStdio(options = {}) {
         input.signal?.removeEventListener("abort", abortListener);
     }
   });
+  mcp.bindRootsProvider(async (signal) => {
+    if (!accepting)
+      return;
+    const requestId = `immune-brain:roots:${mcp.connectionId}:${++requestSequence}`;
+    let abortListener;
+    const response = new Promise((resolve, reject) => {
+      pending.set(requestId, { resolve, reject });
+      abortListener = () => {
+        pending.delete(requestId);
+        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+      };
+      signal?.addEventListener("abort", abortListener, { once: true });
+    });
+    try {
+      await writeReply(output, { jsonrpc: "2.0", id: requestId, method: "roots/list", params: {} });
+      const reply = await response;
+      const roots = reply.error ? undefined : reply.result?.roots;
+      return Array.isArray(roots) ? roots : undefined;
+    } catch {
+      return;
+    } finally {
+      pending.delete(requestId);
+      if (abortListener)
+        signal?.removeEventListener("abort", abortListener);
+    }
+  });
   const runCall = (parsed) => {
-    const task = handleJsonRpc(parsed, mcp).then(async (reply) => {
+    const task = callChain.then(() => handleJsonRpc(parsed, mcp)).then(async (reply) => {
       if (reply)
         await writeReply(output, reply);
     }).catch(() => {
       executeShutdown(1);
     });
+    callChain = task;
     inFlight.add(task);
     task.finally(() => inFlight.delete(task));
   };
@@ -23892,7 +23985,7 @@ async function runHook() {
   new FileHookEventLog().append(event);
 }
 var entry = process.argv[1] ?? "";
-if (entry.endsWith("mcp_server.ts") || entry.endsWith("mcp-server.mjs")) {
+if (entry.endsWith("/claude/mcp_server.ts") || entry.endsWith("/claude/mcp-server.mjs")) {
   if (process.argv.includes("--hook"))
     runHook();
   else
