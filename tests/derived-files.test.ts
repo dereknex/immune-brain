@@ -154,6 +154,22 @@ describe("derived files", () => {
 		expect(buildCandidate({ root: fx.root, lane_base: base, lane_commit: unrelated, batch_head: base })).toBe(unrelated);
 	});
 
+	test("integrates a Lane that retires a declared output", () => {
+		const fx = fixture();
+		const value = declaration(); value.entries[0]!.outputs.push("retired.txt");
+		writeFileSync(join(fx.root, "docs/agents/derived-files.json"), JSON.stringify(value));
+		writeFileSync(join(fx.root, "retired.txt"), "old");
+		git(fx.root, "add", "-A"); git(fx.root, "commit", "-qm", "declared retired output");
+		const base = git(fx.root, "rev-parse", "HEAD");
+		git(fx.root, "checkout", "-qb", "retire-lane", base);
+		writeFileSync(join(fx.root, "a.txt"), "a1"); writeFileSync(join(fx.root, "bundle.txt"), "stale");
+		git(fx.root, "rm", "-q", "retired.txt"); git(fx.root, "add", "-A"); git(fx.root, "commit", "-qm", "retire");
+		const lane = git(fx.root, "rev-parse", "HEAD"); git(fx.root, "checkout", "-q", "main");
+		const candidate = buildCandidate({ root: fx.root, lane_base: base, lane_commit: lane, batch_head: base });
+		expect(git(fx.root, "show", `${candidate}:bundle.txt`)).toBe("a1b0");
+		expect(git(fx.root, "ls-tree", "--name-only", candidate)).not.toContain("retired.txt");
+	});
+
 	test("source globs match files directly and recursively without matching sibling directories", () => {
 		const fx = fixture();
 		const value = declaration(); value.entries[0]!.sources = ["src/**/*.ts"];

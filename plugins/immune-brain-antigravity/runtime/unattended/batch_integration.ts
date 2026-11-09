@@ -168,8 +168,10 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 			entryId = selected.map(entry => entry.id).join(", ");
 			const changed = gitOut(delivery.root, ["diff", "--name-only", "-z", "HEAD"], "inspect generated delta").split("\0").filter(Boolean);
 			const untracked = gitOut(delivery.root, ["ls-files", "--others", "--exclude-standard", "-z"], "inspect generated files").split("\0").filter(Boolean);
-			if ([...changed, ...untracked].some(path => !outputs.has(path))) throw new Error("generate changed an undeclared output");
-			gitOut(delivery.root, ["add", "--", ...outputs], "stage regenerated outputs");
+			const delta = [...changed, ...untracked];
+			if (delta.some(path => !outputs.has(path))) throw new Error("generate changed an undeclared output");
+			// Stage only the contained delta: a declared output the merged tree retires is absent and is not a pathspec.
+			if (delta.length) gitOut(delivery.root, ["--literal-pathspecs", "add", "-A", "--", ...delta], "stage regenerated outputs");
 			const generatedTree = gitOut(delivery.root, ["write-tree"], "write regenerated tree").trim();
 			if ([...changeIdentity(delivery.root, tree, generatedTree).keys()].some(path => !outputs.has(path)))
 				throw new Error("generate changed an undeclared tree entry");
