@@ -1,5 +1,34 @@
 # Changelog
 
+## 8.0.0
+
+### Major Changes
+
+- [#440](https://github.com/dereknex/immune-brain/pull/440) [`054262c`](https://github.com/dereknex/immune-brain/commit/054262ca0bc5ca44121b3f6bf440d2bd09b34fe3) Thanks [@dereknex](https://github.com/dereknex)! - Authority Review is CLI-only. The `IMMUNE_BRAIN_REVIEW_DISPATCH` switch is gone,
+  along with the subagent Review path it could re-enable: no Host reserves, blocks
+  or observes a reviewer `Agent` dispatch any more, the generated
+  `immune-brain-reviewer` agent definition is no longer shipped, and a
+  `REVIEWER_DISPATCH_RULES` definition no longer exists. `advance_assurance`
+  always returns `review_command`, so a project without `lanes.review_host` stops
+  with `review_profile_required` instead of falling back to an Agent dispatch.
+  Findings verification and `immune-brain-review-verifier` are unchanged.
+
+### Minor Changes
+
+- [#440](https://github.com/dereknex/immune-brain/pull/440) [`e3b45d9`](https://github.com/dereknex/immune-brain/commit/e3b45d980521b7f00056b13eae839ba6df305f8b) Thanks [@dereknex](https://github.com/dereknex)! - Authority Review now runs as a separate CLI process by default. `advance_assurance` returns `review_command` and `review_profile` instead of `agent_params`, and the Parent runs that command in its own shell before `submit_review`; the in-process reviewer stays reachable with `IMMUNE_BRAIN_REVIEW_DISPATCH=subagent` until the next release deletes it. A project without `lanes.review_host` stops Review preparation with `review_profile_required` and one recovery action, retaining its QA settlement. `drive.md`, `drive-batch.md` and the subagent dispatch protocol describe the CLI stage, and ADR 0037 supersedes the primary-Review parts of ADRs 0006, 0017 and 0030.
+
+- [#440](https://github.com/dereknex/immune-brain/pull/440) [`6d1a132`](https://github.com/dereknex/immune-brain/commit/6d1a132b0d830dcfc32afb0b9d431a2b10ce1e57) Thanks [@dereknex](https://github.com/dereknex)! - Authority Review can run as a separate CLI process selected by the new `lanes.review_host` profile, behind `IMMUNE_BRAIN_REVIEW_DISPATCH=cli`. The runtime writes one review packet and a POSIX `sh` script, the Parent runs the script in its own shell, and `submit_review` settles the reviewer's output through the existing mediated receipt path. A tree guard over HEAD, the index and tracked content releases any round that changed the reviewed state. The generated `authority-review` skill ships in all three Host packages and stamps the review contract hash, so a reviewer with a different install answers `REVIEW_CONTRACT_MISMATCH` instead of reviewing. The switch defaults to `subagent`, so the in-process reviewer and findings verification are unchanged.
+
+### Patch Changes
+
+- [#438](https://github.com/dereknex/immune-brain/pull/438) [`85dc48e`](https://github.com/dereknex/immune-brain/commit/85dc48eef5a0e34eab23368cd036204ac2f94b1e) Thanks [@dereknex](https://github.com/dereknex)! - Resolve the active Antigravity workspace per MCP tool call instead of the process `cwd`. `tools/call` `params._meta["antigravity.google/workspace_paths"][0]` wins, then the first `file://` root answered by MCP `roots/list` (cached until re-`initialize` or `notifications/roots/list_changed`), then `options.cwd ?? process.cwd()`, and the resolved path is bound on `ClaudeRuntime` before any tool runs. The Antigravity runtime trusts the `antigravity-client` and `antigravity` client names, `parseSemver` normalizes one optional leading `v`, and `serveStdio` delegates to the shared bidirectional transport so it can issue `roots/list`. Both bundled entrypoints now start only their own server, so `dist/antigravity/mcp-server.mjs` answers once per request.
+
+- [#440](https://github.com/dereknex/immune-brain/pull/440) [`36cfe89`](https://github.com/dereknex/immune-brain/commit/36cfe898835eba6750184b351af02474a679131b) Thanks [@dereknex](https://github.com/dereknex)! - Batch integration no longer fails with `pathspec ... did not match` when a Lane
+  deletes a file declared in `docs/agents/derived-files.json`. The containment
+  step now stages only the regenerated delta instead of every declared output.
+
+- [#440](https://github.com/dereknex/immune-brain/pull/440) [`a57d355`](https://github.com/dereknex/immune-brain/commit/a57d35543d745884791c397845884788d0615779) Thanks [@dereknex](https://github.com/dereknex)! - Resolve a Review profile in the layered lane configuration. `lanes` accepts `review_host` (`pi`, `claude-code` or `antigravity`), `review_model` and `review_effort` in user Lane profiles and in the project file, with the active-profile → project precedence; the model and effort apply only in the layer that sets `review_host` and otherwise report `not_applied`, as the executor keys do. `chooseReviewer` in `runtime/config/layered_config.ts` returns `{ host, model?, effort? }` or `null`, with no model-distinctness check. No Review dispatch change.
+
 ## 7.2.2
 
 ### Patch Changes
