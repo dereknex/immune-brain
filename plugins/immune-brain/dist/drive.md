@@ -158,11 +158,17 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    `protected_input_or_output_drift`. Content outside the scope, and untracked
    or ignored files, are the user's environment and are not compared. Do not
    dispatch a separate per-Step QA Agent.
-3. On `review_ready`, invoke the returned `agent_params` as one exact foreground
-   Agent call, then pass its structured verdict to `submit_review`. Do not
-   replace this snapshot-bound reviewer with a generic role dispatch. The Parent
-   cannot issue its own QA or Review pass. On `verification_ready`, invoke its
-   exact `agent_params` as one foreground verifier, then call
+3. On `review_ready`, run the returned `review_command` from your own shell, in
+   the background when that shell tool would otherwise time out, then call
+   `submit_review` once the process exits. The command launches one reviewer
+   process in the task's working directory with the profile it names
+   (`review_profile`). Never dispatch the authority Review as an Agent, and do
+   not replace this snapshot-bound reviewer with a generic role dispatch. The
+   Parent cannot issue its own QA or Review pass. A `review_preparation_failed`
+   result with `review_profile_required` means no `lanes.review_host` resolves:
+   set it in the active user lane profile or in `.imm/config.json`, then call
+   `advance_assurance`; QA settlement is retained. On `verification_ready`,
+   invoke its exact `agent_params` as one foreground verifier, then call
    `submit_verification` without a result to use the Host-observed receipt.
    Follow a returned `review_ready` or `awaiting_user` through the same loop.
 4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
@@ -365,26 +371,29 @@ rejected as a correctable invalid verdict.
 `dispatch_role` for `qa`, `code-review`, or `ui-review` is used only when an
 explicit runtime-supported role boundary requests it, followed by the returned
 foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
-Pass the returned Agent envelope through unchanged. On the Claude Host an Agent
-call always returns an asynchronous launch receipt, which is normal and never a
-configuration fault; the Parent waits for the reviewer to finish before
-`submit_review`. A dispatched reviewer is never continued or re-prompted,
-including through SendMessage. The reserved prompt is dispatched verbatim as a four-line handle:
-operation marker, `Review packet: <absolute path>`, `Packet sha256: <hex>`, and
-the fixed digest-verification instruction. The runtime writes
-`review-packet-<operation>.md` beside the evidence manifest; the reviewer verifies
-its digest before following its instructions and replies exactly
-`review packet digest mismatch` on a difference. Pi packets contain the full
-Review prompt including semantic-neighborhood rules; Claude packets contain only
-snapshot facts because the reviewer definition supplies static rules. Releasing
-the reservation removes the packet with its evidence directory; the manifest
-bytes remain unchanged. A marker-targeted dispatch with a
-non-matching reviewer type or Pi Agent parameters is blocked at dispatch before
-binding a reviewer; prompt acceptance remains byte-identical. On `submit_review`,
-an unbound reservation is released with recovery to `advance_assurance`; a bound
-reviewer whose result is pending retains its reservation. Dispatch the same
-envelope unchanged. A blocked `submit_review` is recovered only through its
-returned `recovery_action`.
+Pass the returned Agent envelope through unchanged.
+
+Authority Review is a separate CLI process, not an Agent call. The runtime
+writes the review packet beside the evidence manifest and returns
+`review_command` (`sh <script>`) with `review_profile`; the script runs one
+reviewer in the task's working directory, invoking the packaged
+`authority-review` skill on that packet. The packet names the review contract
+hash; the skill compares it with its own and answers
+`REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
+install carries different rules. The process writes its output under a temporary
+name and its exit status last, so a present exit file marks a complete output.
+Releasing the reservation removes the packet, the script and the output with the
+evidence directory; the manifest bytes remain unchanged. A finished review
+releases its reservation without a Review round when the process exits non-zero
+or prints nothing (`review_process_failed`), when HEAD, the index or tracked
+content differ from the reviewed tree (`review_tree_changed` with the changed
+paths), or when the reviewer reports a contract mismatch. Restore the listed
+paths to the reviewed state, then call `advance_assurance`. A process that has
+not exited is not an error: `submit_review` retains the reservation. A blocked
+`submit_review` is recovered only through its returned `recovery_action`.
+Findings verification keeps its Host subagent dispatch: `verification_ready`
+returns the verifier's `agent_params`, submitted through
+`submit_verification` as the Host observes it.
 
 Role dispatches follow the user's interaction language: include
 `"interaction_language"` in the `dispatch_role` or routed role context with

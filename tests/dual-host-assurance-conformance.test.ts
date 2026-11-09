@@ -122,7 +122,10 @@ afterAll(() => {
 });
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
-const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" };
+// The Pi port reads the dispatch switch from process.env. These suites cover the
+// in-process reviewer, which Spec review-cli-stage D8 keeps as the rollback value.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
 
 /** One enrolled fixture repository both Host adapters drive below. */
 function enrolledHostFixture(taskId: string, extraScope: string[] = []): string {
@@ -2799,6 +2802,7 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 describe("cli review dispatch", () => {
 	test.each(["pi", "claude", "antigravity"] as const)("%s reserves the CLI reviewer under the switch", async (host) => {
 		const root = cliReviewRoot();
+		const saved = process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
 		process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "cli";
 		try {
 			const { ports, applied } = cliReviewPorts(root);
@@ -2815,31 +2819,28 @@ describe("cli review dispatch", () => {
 			expect(ready.review_profile).toMatchObject({ host: "pi" });
 			expect(ready).not.toHaveProperty("agent_params");
 		} finally {
-			delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+			if (saved === undefined) delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+			else process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = saved;
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 
-	test.each(["pi", "claude", "antigravity"] as const)("%s keeps the subagent reservation without the switch", async (host) => {
+	test.each(["pi", "claude", "antigravity"] as const)("%s keeps the subagent reservation under the rollback value", async (host) => {
 		const root = cliReviewRoot();
 		try {
 			const { ports } = cliReviewPorts(root);
-			for (const value of [undefined, "subagent"]) {
-				if (value) process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = value;
-				else delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
-				const env = { ...HOST_ENV, ...(value ? { IMMUNE_BRAIN_REVIEW_DISPATCH: value } : {}) };
-				const runtime = host === "pi"
-					? new AssuranceProgression({ ...ports, authorityOverrides: ports } as never)
-					: host === "claude"
-						? new ClaudeRuntime({ cwd: root, env, ports, authorityOverrides: ports as never })
-						: new AntigravityRuntime({ cwd: root, env, ports, authorityOverrides: ports as never });
-				const ready = await (host === "pi" ? runtime.advance(TASK, { cwd: root } as never) : runtime.advance(TASK)) as { state: string; review_command?: string; agent_params?: unknown };
-				expect(ready.state).toBe("review_ready");
-				expect(ready.agent_params).toBeDefined();
-				expect(ready).not.toHaveProperty("review_command");
-			}
+			const env = { ...HOST_ENV, IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" };
+			const runtime = host === "pi"
+				? new AssuranceProgression({ ...ports, authorityOverrides: ports } as never)
+				: host === "claude"
+					? new ClaudeRuntime({ cwd: root, env, ports, authorityOverrides: ports as never })
+					: new AntigravityRuntime({ cwd: root, env, ports, authorityOverrides: ports as never });
+			const ready = await (host === "pi" ? runtime.advance(TASK, { cwd: root } as never) : runtime.advance(TASK)) as { state: string; review_command?: string; agent_params?: unknown };
+			expect(ready.state).toBe("review_ready");
+			expect(ready.agent_params).toBeDefined();
+			expect(ready).not.toHaveProperty("review_command");
 		} finally {
-			delete process.env.IMMUNE_BRAIN_REVIEW_DISPATCH;
+			process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
 			rmSync(root, { recursive: true, force: true });
 		}
 	});

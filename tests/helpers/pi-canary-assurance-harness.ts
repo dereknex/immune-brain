@@ -12,6 +12,10 @@ import {
 import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
+// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
+// as the rollback value; the CLI default is covered in cli-review-dispatch.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+
 export const TASK = "phase3-task";
 export const ROOT = "/tmp/phase3-assurance";
 export const ctx = { cwd: ROOT, mode: "tui", ui: {} } as unknown as ExtensionContext;

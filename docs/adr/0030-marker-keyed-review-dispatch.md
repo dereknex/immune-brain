@@ -1,8 +1,13 @@
 ---
-status: accepted
+status: partially superseded by ADR-0037
 ---
 
 # Marker-Keyed Review Dispatch
+
+**Status update:** the marker-keyed Agent-dispatch binding below no longer
+carries the primary Review; it applies to findings verification, the Host
+subagent dispatch that remains after
+[ADR 0037](0037-authority-review-cli-stage.md).
 
 ## Context
 

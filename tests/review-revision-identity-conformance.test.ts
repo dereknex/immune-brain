@@ -45,6 +45,10 @@ const {
  * defect, which is exactly why the existing coordinator suites never saw it.
  */
 
+// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
+// as the rollback value; the CLI default is covered in cli-review-dispatch.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+
 const TASK = "review-revision-identity-task";
 const NOW = "2025-01-01T00:00:00.000Z";
 const GIT_ENV = {

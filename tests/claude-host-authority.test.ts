@@ -106,7 +106,7 @@ const ctx = { cwd: ROOT };
 // explicitly instead of depending on bun's 5s default.
 setDefaultTimeout(60_000);
 
-const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+const ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" };
 
 // Reviewer transcripts are local 0600 files under the system temp directory;
 // they stand in for the bytes a synchronous `Agent` result points at.

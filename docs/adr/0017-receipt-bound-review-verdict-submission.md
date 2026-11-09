@@ -7,6 +7,11 @@ status: partially superseded
 [ADR 0030](0030-marker-keyed-review-dispatch.md) supersedes the reserved-prompt
 binding and unbound-recovery rules below; receipt-bound settlement remains unchanged.
 
+[ADR 0037](0037-authority-review-cli-stage.md) removes the observed-subagent
+receipt from the primary Review, which now submits the reviewer process's output
+bytes; the host-observed receipt this ADR defines remains the findings
+verifier's channel.
+
 Accepted with the Issue #177 remaining work. The reviewer's verdict reaches the
 Kernel through a Parent transcription today; this ADR removes the transcription
 as the required channel and closes the Pi host's observation gap. ADR 0004's

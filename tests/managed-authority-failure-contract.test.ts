@@ -117,26 +117,28 @@ describe("Managed native authority failure contract", () => {
 		expect(protocol).toContain("不得把多个 foreground Agent 假定为并发 batch");
 	});
 
-	test("the Loop contract blocks non-matching dispatches and releases unbound reservations", () => {
+	test("the Loop contract runs the CLI reviewer and releases unbound or failed reviews", () => {
 		const loop = read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ");
-		expect(loop).toContain("The reserved prompt is dispatched verbatim");
-		for (const path of ["plugins/immune-brain/dist/drive.md", "docs/reference/subagent-dispatch-protocol.md"]) {
-			const contract = read(path);
-			for (const text of ["four-line handle", "Review packet: <absolute path>", "Packet sha256: <hex>", "review-packet-<operation>.md", "review packet digest mismatch"])
-				expect(contract, path).toContain(text);
-		}
+		expect(loop).toContain("Authority Review is a separate CLI process");
+		expect(loop).toContain("run the returned `review_command`");
+		expect(loop).toContain("releases its reservation without a Review round");
+		expect(loop).toContain("`submit_review` retains the reservation");
+		expect(loop).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
+		expect(loop).not.toContain("The reserved prompt is dispatched verbatim");
+		for (const text of ["review-packet-<operation>.md", "REVIEW_CONTRACT_MISMATCH", "review_tree_changed"])
+			expect(read("docs/reference/subagent-dispatch-protocol.md")).toContain(text);
+		expect(read("docs/reference/subagent-dispatch-protocol.md")).not.toContain("four-line handle");
+		// The marker-keyed binding survives in the retained subagent reviewer definition.
 		const reviewer = read("plugins/immune-brain/agents/immune-brain-reviewer.md");
+		expect(reviewer).toContain("The reserved prompt is dispatched verbatim");
 		expect(reviewer).toContain("Read the packet for the per-dispatch snapshot facts");
 		expect(reviewer).toContain("Verify the named packet digest");
-		expect(loop).toContain("is blocked at dispatch before binding a reviewer");
-		expect(loop).toContain("an unbound reservation is released with recovery to `advance_assurance`");
-		expect(loop).not.toContain("Any edit to it forfeits the reservation");
 		const adr = read("docs/adr/0030-marker-keyed-review-dispatch.md");
 		expect(adr).toContain("branch-boundary-r2-followups");
 		expect(adr).toContain("D2");
 		expect(adr).toContain("0017");
+		expect(adr).toContain("0037");
 		expect(read("docs/adr/0017-receipt-bound-review-verdict-submission.md")).toContain("partially superseded");
-		expect(loop).toContain("Dispatch the same envelope unchanged");
 	});
 
 	test("the Loop contract states the inspected_paths requirement and its read-before-claim rule", () => {

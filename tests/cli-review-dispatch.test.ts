@@ -11,6 +11,7 @@ import {
 	type HostContext,
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { CliReviewHost, reviewArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -52,7 +53,7 @@ beforeAll(() => {
 });
 
 /** One real Git repository: the tree guard needs HEAD, an index and tracked bytes. */
-function reviewRepo(reviewHost: "pi" | "claude-code" | "antigravity" | null = "pi"): string {
+function reviewRepo(reviewHost: "pi" | "claude-code" | "antigravity" | null = "pi", lanes: Record<string, string> = {}): string {
 	const root = scratchDir("repo");
 	execFileSync("git", ["init", "-q"], { cwd: root });
 	execFileSync("git", ["config", "user.name", "test"], { cwd: root });
@@ -60,7 +61,7 @@ function reviewRepo(reviewHost: "pi" | "claude-code" | "antigravity" | null = "p
 	mkdirSync(join(root, ".imm"), { recursive: true });
 	writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({
 		contract: "immune_brain/project_config/v1",
-		...(reviewHost ? { lanes: { review_host: reviewHost } } : {}),
+		...(reviewHost ? { lanes: { review_host: reviewHost, ...lanes } } : {}),
 	})}\n`);
 	writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
 	execFileSync("git", ["add", "-A"], { cwd: root });
@@ -261,7 +262,11 @@ interface Kernel {
 	snapshot: SnapshotDescriptor;
 }
 
-function kernelFor(root: string, options: { risk?: Risk; revision?: boolean; verifier?: boolean } = {}): Kernel {
+/** The fixture ports, shared by the direct coordinator and the composition-root cases. */
+function fixtureFor(root: string, options: { risk?: Risk; revision?: boolean; verifier?: boolean } = {}): {
+	ports: AssuranceCoordinatorPorts; cli: CliReviewHost; applied: Applied[]; calls: WrappedCalls;
+	snapshot: SnapshotDescriptor; current: (role: "qa" | "review") => SnapshotDescriptor;
+} {
 	const risk = options.risk ?? "material";
 	let lifecycle: "active" | "done" = "active";
 	let obligation: Obligation = "run_qa";
@@ -304,8 +309,13 @@ function kernelFor(root: string, options: { risk?: Risk; revision?: boolean; ver
 		},
 		ensureReviewRevision: async () => current("review").review_revision!,
 	} as AssuranceCoordinatorPorts;
+	return { ports, cli, applied, calls, snapshot: current("review"), current };
+}
+
+function kernelFor(root: string, options: { risk?: Risk; revision?: boolean; verifier?: boolean } = {}): Kernel {
+	const { ports, cli, applied, calls, snapshot } = fixtureFor(root, options);
 	const coordinator = new AssuranceCoordinator(ports, ports as unknown as Partial<VerdictAuthority>);
-	return { coordinator, cli, applied, calls, snapshot: current("review") };
+	return { coordinator, cli, applied, calls, snapshot };
 }
 
 function reviewsOf(kernel: Kernel): Applied[] {
@@ -553,5 +563,64 @@ describe("verifier stays on host", () => {
 
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
 		expect(kernel.calls.inspectVerification).toBeGreaterThan(0);
+	});
+});
+
+// --- S3 AC1/AC2: the composition root's default ----------------------------
+
+/** The Claude composition root is where the dispatch default is read (D8). */
+const ROOT_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+
+async function claudeAdvance(
+	root: string,
+	env: Record<string, string | undefined>,
+	risk: Risk = "material",
+): Promise<{ state: string; review_command?: string; review_profile?: { host: string; model?: string }; agent_params?: unknown; code?: string; recovery_action?: string }> {
+	const fixture = fixtureFor(root, { risk });
+	const runtime = new ClaudeRuntime({ cwd: root, env, ports: fixture.ports, authorityOverrides: fixture.ports as never });
+	return await runtime.advance(TASK) as never;
+}
+
+describe("default cli dispatch", () => {
+	test("an unset switch reserves the project's CLI reviewer and names its profile", async () => {
+		const root = reviewRepo("pi", { review_model: "model-x" });
+		onPath(fakeReviewer("exit 0"));
+		const ready = await claudeAdvance(root, ROOT_ENV);
+
+		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
+		// One command, not a dispatch list: the Parent runs this exact `sh <script>`.
+		expect(typeof ready.review_command).toBe("string");
+		const script = reviewScriptPath(ready.review_command!);
+		expect(existsSync(script)).toBe(true);
+		expect(readFileSync(script, "utf8").match(/authority-review/g)).toHaveLength(1);
+		expect(ready).not.toHaveProperty("agent_params");
+	});
+
+	test("the rollback value keeps the in-process reviewer", async () => {
+		const root = reviewRepo("pi", { review_model: "model-x" });
+		onPath(fakeReviewer("exit 0"));
+		const ready = await claudeAdvance(root, { ...ROOT_ENV, IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" });
+
+		expect(ready.state).toBe("review_ready");
+		expect(ready.agent_params).toBeDefined();
+		expect(ready).not.toHaveProperty("review_command");
+	});
+});
+
+describe("default profile required", () => {
+	test("an unset switch without lanes.review_host stops with one recovery action", async () => {
+		const root = reviewRepo(null);
+		onPath(fakeReviewer("exit 0"));
+		const ready = await claudeAdvance(root, ROOT_ENV);
+
+		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_profile_required" });
+		expect(typeof ready.recovery_action).toBe("string");
+		expect(ready.recovery_action).toContain("lanes.review_host");
+	});
+
+	test("a routine task completes after QA without a profile", async () => {
+		const root = reviewRepo(null);
+		onPath(fakeReviewer("exit 0"));
+		expect((await claudeAdvance(root, ROOT_ENV, "routine")).state).toBe("completed");
 	});
 });

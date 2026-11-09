@@ -44,6 +44,10 @@ import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
 import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 
+// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
+// as the rollback value; the CLI default is covered in cli-review-dispatch.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+
 const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
 const ctx = { cwd: ROOT };

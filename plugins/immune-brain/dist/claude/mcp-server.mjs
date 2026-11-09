@@ -22089,7 +22089,7 @@ import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
 import { delimiter as delimiter5, join as join33 } from "node:path";
 function reviewDispatchMode(env = process.env) {
-  return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "cli" ? "cli" : "subagent";
+  return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "subagent" ? "subagent" : "cli";
 }
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {

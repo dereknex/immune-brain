@@ -24,9 +24,9 @@ import {
 } from "./host_port";
 import type { ReviewObservation } from "./review_mediation";
 
-/** `subagent` keeps the in-process reviewer; `cli` reserves a reviewer process (D8). */
+/** `cli` reserves a reviewer process and is the default; `subagent` is the rollback value (D8). */
 export function reviewDispatchMode(env: NodeJS.ProcessEnv = process.env): "subagent" | "cli" {
-	return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "cli" ? "cli" : "subagent";
+	return env.IMMUNE_BRAIN_REVIEW_DISPATCH === "subagent" ? "subagent" : "cli";
 }
 
 const REVIEW_PROFILE_RECOVERY =

@@ -1,8 +1,14 @@
 ---
-status: accepted
+status: partially superseded by ADR-0037
 ---
 
 # Unattended Review Dispatch Authority
+
+**Status update:** the primary Review is now a separate CLI process launched by
+`review_command` from a review profile; it is no longer a reserved in-process
+Agent dispatch. See
+[ADR 0037](0037-authority-review-cli-stage.md). Enrollment, batch ownership and
+findings verification below are unchanged.
 
 ## Context
 

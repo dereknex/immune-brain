@@ -47,6 +47,10 @@ function snapshot(overrides: Partial<SnapshotDescriptor> = {}): SnapshotDescript
 	};
 }
 
+// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
+// as the rollback value; the CLI default is covered in cli-review-dispatch.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+
 describe("review contract outcome evidence", () => {
 	test("Pi observed incomplete receipt reaches the non-verdict path and is bound to reason and paths", async () => {
 		const f = reviewIncompleteFixture();

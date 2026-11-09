@@ -31,7 +31,7 @@ describe("native repair recovery round trip", () => {
   let decision: "accept" | "decline" = "accept", gates = 0;
   const inputs: Array<Record<string, any>> = [];
   const runtime = new ClaudeRuntime({ cwd: root, host, interactive: true,
-   env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "default" },
+   env: { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "default", IMMUNE_BRAIN_REVIEW_DISPATCH: "subagent" },
    requestConfirmation: async input => { inputs.push(input); return { decision, requestId: `repair-gate-${++gates}` }; } });
   runtime.bindHostVersion("2.1.236");
   const meta = (taskId: string) => ({ taskId, sessionId: "repair-test", toolCallId: `call-${gates}`, interactive: true });

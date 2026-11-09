@@ -49,6 +49,10 @@ const {
 
 afterAll(() => mock.restore());
 
+// These fixtures drive the in-process reviewer, which Spec review-cli-stage D8 keeps
+// as the rollback value; the CLI default is covered in cli-review-dispatch.
+process.env.IMMUNE_BRAIN_REVIEW_DISPATCH = "subagent";
+
 // This repository's risk-floor declaration, committed into each fixture
 // repository so its Kernel and Pi extension paths are floored there too.
 const FLOOR_TEXT = readFileSync(join(process.cwd(), RISK_FLOOR_DECLARATION_PATH), "utf8");
