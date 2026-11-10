@@ -17401,7 +17401,7 @@ init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync22 } from "node:fs";
+import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync23 } from "node:fs";
 import { isAbsolute as isAbsolute12, join as join37 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
@@ -18877,13 +18877,8 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir7()) {
 }
 
 // plugins/immune-brain/runtime/claude/run_continuation.ts
-init_coordinator();
-init_storage();
-init_batch_state();
-import { existsSync as existsSync15, realpathSync as realpathSync19, lstatSync as lstatSync19, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
-import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join29 } from "node:path";
-import { tmpdir as tmpdir8 } from "node:os";
+import { realpathSync as realpathSync20, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
+import { tmpdir as tmpdir8, homedir as homedir3 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
 import { createHash as createHash25 } from "node:crypto";
@@ -18974,12 +18969,17 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
   return coordinator.submitReview(taskId, ctx, verdictInput, options);
 }
 
-// plugins/immune-brain/runtime/claude/run_continuation.ts
-import { homedir as homedir3 } from "node:os";
-var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+init_coordinator();
+init_storage();
+init_batch_state();
+import { existsSync as existsSync15, lstatSync as lstatSync19, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync11 } from "node:fs";
+import { randomUUID as randomUUID11 } from "node:crypto";
+import { join as join29 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
+var AUTOMATED_STOP_OBLIGATIONS = ["run_qa", "run_review", "submit_assurance", "resolve_findings"];
 var blank = () => ({
   state: null,
   sequence: 0,
@@ -18992,12 +18992,12 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (sessionId, root) => join29(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.continuation`);
-var callPath = (toolId, root) => join29(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolId)}.continuation-call`);
-function drop(path, root) {
+var statePath2 = (host, sessionId, root) => join29(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join29(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+function drop(host, path, root) {
   if (!existsSync15(path))
     return;
-  if (!ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR)))
+  if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
     return;
   try {
     const stat = lstatSync19(path);
@@ -19016,6 +19016,8 @@ function readLast(path) {
   }
   if (!stat.isFile() || !ownedByUs(stat))
     throw new Error("unsafe continuation metadata");
+  if (stat.size > MAX_METADATA_BYTES)
+    return null;
   const text = readPrivate(path, MAX_METADATA_BYTES);
   if (text === undefined)
     throw new Error("continuation metadata could not be read");
@@ -19023,8 +19025,8 @@ function readLast(path) {
 `);
   return JSON.parse(lines.at(-1) ?? "null");
 }
-function readMetadata(sessionId, root) {
-  const value = readLast(statePath2(sessionId, root));
+function readMetadata(host, sessionId, root) {
+  const value = readLast(statePath2(host, sessionId, root));
   if (!value)
     return blank();
   value.native_failures ??= 0;
@@ -19038,43 +19040,270 @@ function readMetadata(sessionId, root) {
   }
   return value;
 }
-function save(sessionId, root, value) {
-  const path = statePath2(sessionId, root);
+function save(host, sessionId, root, value) {
+  const path = statePath2(host, sessionId, root);
   const temporary = `${path}.${randomUUID11()}`;
-  if (!appendPrivate(temporary, cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(value) + `
+  if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + `
 `))
     throw new Error("continuation metadata could not be written");
   try {
     renameSync6(temporary, path);
   } finally {
-    drop(temporary, root);
+    drop(host, temporary, root);
   }
 }
-function pauseRun(metadata, sessionId, root, reason) {
+function pauseRun(host, metadata, sessionId, root, reason) {
   metadata.paused = reason;
-  save(sessionId, root, metadata);
-  revokeEntryToken(sessionId, "spent", root);
+  save(host, sessionId, root, metadata);
+  host.revoke_entry(sessionId);
 }
-async function observeNativeFailure(metadata, correlation, root, reason) {
+async function observeNativeFailure(host, metadata, correlation, root, reason) {
   metadata.native_failures++;
   if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
-    save(correlation.session_id, root, metadata);
+    save(host, correlation.session_id, root, metadata);
     return;
   }
-  pauseRun(metadata, correlation.session_id, root, reason);
+  pauseRun(host, metadata, correlation.session_id, root, reason);
 }
-function readRunToolSession(toolId, operation, workspace, root = tmpdir8()) {
-  const record = readLast(callPath(toolId, root));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !readPhaseEntryState(record.session_id, root)?.run_live)
+function readSessionToolCall(host, root, toolId, operation, workspace) {
+  const record = readLast(callPath(host, toolId, root));
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
     return null;
   return record.session_id;
 }
-function selectedClaudeParent(toolId, workspace, slug, root = tmpdir8()) {
-  const call = readLast(callPath(toolId, root));
-  if (!call || call.workspace !== realpathSync19(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !readPhaseEntryState(call.session_id, root)?.run_live)
+function selectedParentSession(host, root, toolId, workspace, slug) {
+  const call = readLast(callPath(host, toolId, root));
+  if (!call || call.workspace !== realpathSync19(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
     return false;
-  const state = readMetadata(call.session_id, root).state;
+  const state = readMetadata(host, call.session_id, root).state;
   return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
+}
+async function applyRunContinuationEvent(host, root, session, event) {
+  const sessionId = session.session_id;
+  const { workspace } = session;
+  if (event.kind === "session_end") {
+    drop(host, statePath2(host, sessionId, root), root);
+    host.drop_entry_log(sessionId);
+    return { kind: "none" };
+  }
+  if (event.kind === "prompt") {
+    if (event.releases)
+      drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (event.kind === "tool_call" && host.entry_state(sessionId)?.run_live) {
+    const metadata = readMetadata(host, sessionId, root);
+    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
+      return { kind: "deny", reason: metadata.paused };
+    const correlation = {
+      session_id: sessionId,
+      workspace,
+      tool_use_id: event.tool_id,
+      operation: event.operation,
+      task_id: event.task_id
+    };
+    if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + `
+`))
+      throw new Error("tool correlation could not be recorded");
+    return { kind: "none" };
+  }
+  const metadata = readMetadata(host, sessionId, root);
+  if (metadata.paused)
+    return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
+  if (event.kind === "tool_result") {
+    const correlated = readLast(callPath(host, event.tool_id, root));
+    if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
+      return { kind: "none" };
+    drop(host, callPath(host, event.tool_id, root), root);
+    if (event.failed) {
+      if (NATIVE_OPERATIONS.has(event.operation))
+        await observeNativeFailure(host, metadata, correlated, root, `${event.operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
+      else if (event.operation === "submit_review") {
+        metadata.review = "rejected";
+        save(host, sessionId, root, metadata);
+      }
+      return { kind: "none" };
+    }
+    const response = event.response;
+    if (event.operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
+      if (metadata.state?.binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: null,
+          initiative_slug: response.initiative_slug,
+          plan_digest: response.plan_digest,
+          final_verification: response.final_verification_commands
+        });
+    }
+    if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
+      const batch = readAnyBatchRunState(workspace, response.batch_id);
+      if (!batch)
+        throw new Error("batch receipt has no persisted identity");
+      if (metadata.state?.binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: batch.batch_id,
+          initiative_slug: batch.initiative_slug,
+          plan_digest: batch.plan_digest
+        });
+    }
+    if (!metadata.state && correlated.task_id && event.operation === "status") {
+      const status = await projectTaskStatus(workspace, correlated.task_id);
+      if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
+        metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
+    }
+    if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
+      return { kind: "none" };
+    if (event.operation === "advance_assurance" && response?.state === "review_ready") {
+      const params = response.agent_params;
+      if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
+        metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
+        metadata.reviewer_call_id = null;
+        metadata.reviewer_agent_id = null;
+        metadata.review = "ready";
+      }
+    }
+    if (["advance_assurance", "submit_review"].includes(event.operation) && response?.state === "review_incomplete") {
+      pauseRun(host, metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
+      return { kind: "none" };
+    }
+    if (event.operation === "submit_review") {
+      if (response?.reason === "review_incomplete_retry") {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
+        metadata.review = "rejected";
+        const recovery = response?.recovery_action ?? response?.next_action;
+        metadata.recovery_action = typeof recovery === "string" ? recovery : null;
+      } else {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      }
+    }
+    if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
+      await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+    if (metadata.state)
+      save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer" && metadata.state && metadata.reviewer_prompt) {
+    if (event.phase === "dispatch" && event.call_id && event.prompt_digest !== null && event.prompt_digest === metadata.reviewer_prompt) {
+      if (metadata.reviewer_call_id) {
+        metadata.review = "rejected";
+      } else {
+        metadata.reviewer_call_id = event.call_id;
+        metadata.review = "running";
+      }
+      save(host, sessionId, root, metadata);
+    }
+    if (event.phase === "return" && event.call_id === metadata.reviewer_call_id) {
+      if (event.asynchronous)
+        metadata.reviewer_agent_id = event.agent_id;
+      else
+        metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer_stop") {
+    if (metadata.reviewer_agent_id && event.agent_id === metadata.reviewer_agent_id) {
+      metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind !== "stop" || !metadata.state)
+    return { kind: "none" };
+  if (!host.entry_state(sessionId)?.run_live) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (metadata.state.binding.workspace !== workspace) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "paused", reason: "workspace changed; enter drive explicitly in this workspace" };
+  }
+  const boundary = event.boundary();
+  if (!boundary)
+    return { kind: "none" };
+  metadata.sequence++;
+  const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
+  let observation;
+  if (metadata.state.binding.kind === "parent")
+    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+  else {
+    const status = await projectTaskStatus(workspace, taskId);
+    const record = readTaskRecordRaw(workspace, taskId);
+    observation = {
+      kind: "task",
+      workspace,
+      session_id: sessionId,
+      boundary_id: boundary,
+      status,
+      source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
+      review: metadata.review,
+      recovery_action: metadata.recovery_action ?? undefined
+    };
+  }
+  const decision = decideRunContinuation(metadata.state, observation);
+  if (decision.action === "unbound" || decision.action === "settled") {
+    if (decision.action === "settled")
+      host.revoke_entry(sessionId);
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (decision.action === "wait") {
+    metadata.state = decision.state;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (decision.action === "pause" && decision.stalled) {
+    metadata.state = decision.state;
+    metadata.stop_blocks = 0;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (decision.state.progress_digest !== metadata.state.progress_digest || !event.stop_hook_active)
+    metadata.stop_blocks = 0;
+  metadata.state = decision.state;
+  if (decision.action === "pause" || metadata.stop_blocks >= 7) {
+    pauseRun(host, metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
+    return { kind: "paused", reason: metadata.paused };
+  }
+  metadata.stop_blocks++;
+  save(host, sessionId, root, metadata);
+  return { kind: "continue", label: taskId, next_action: decision.next_action };
+}
+function decideAutomatedStop(taskId, projection) {
+  if (projection.lifecycle !== "active")
+    return {};
+  if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0)
+    return {};
+  if (!AUTOMATED_STOP_OBLIGATIONS.includes(projection.next_obligation))
+    return {};
+  return { decision: "continue", reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.` };
+}
+
+// plugins/immune-brain/runtime/claude/run_continuation.ts
+var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
+var claudeContinuationHost = (root) => ({
+  cache_name: CLAUDE_CACHE_DIR,
+  entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
+  revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
+  drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root)
+});
+function readRunToolSession(toolId, operation, workspace, root = tmpdir8()) {
+  return readSessionToolCall(claudeContinuationHost(root), root, toolId, operation, workspace);
+}
+function selectedClaudeParent(toolId, workspace, slug, root = tmpdir8()) {
+  return selectedParentSession(claudeContinuationHost(root), root, toolId, workspace, slug);
 }
 function stopBoundary(payload) {
   if (typeof payload.transcript_path !== "string" || !payload.transcript_path)
@@ -19139,220 +19368,70 @@ function toolResponse(payload) {
 function warning(reason) {
   return JSON.stringify({ systemMessage: `Immune-Brain run paused: ${reason}` });
 }
+function continuationEvent(payload, workspace) {
+  const event = String(payload.hook_event_name ?? "");
+  const operation = MCP_TOOL.exec(String(payload.tool_name ?? ""))?.[1];
+  const toolId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
+  if (event === "SessionEnd")
+    return { kind: "session_end" };
+  if (event === "UserPromptSubmit") {
+    const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+    const entry = recognizePhaseEntry(prompt, claudeLocalNames(workspace, homedir3()), "claude");
+    return { kind: "prompt", releases: releasesRunBinding(prompt, entry === "plan" ? "planner" : null) || entry === "run" };
+  }
+  if (event === "PreToolUse" && operation && toolId) {
+    const input = payload.tool_input ?? {};
+    return { kind: "tool_call", operation, tool_id: toolId, task_id: typeof input.task_id === "string" ? input.task_id : null };
+  }
+  if ((event === "PostToolUse" || event === "PostToolUseFailure") && operation && toolId)
+    return { kind: "tool_result", operation, tool_id: toolId, response: toolResponse(payload), failed: event === "PostToolUseFailure" };
+  if (payload.tool_name === "Agent" && (event === "PreToolUse" || event === "PostToolUse" || event === "PostToolUseFailure")) {
+    const input = payload.tool_input;
+    const response = event === "PreToolUse" ? null : toolResponse(payload);
+    return {
+      kind: "reviewer",
+      phase: event === "PreToolUse" ? "dispatch" : "return",
+      call_id: toolId,
+      prompt_digest: typeof input?.prompt === "string" ? digestOfReviewerBytes(input.prompt) : null,
+      agent_id: typeof response?.agentId === "string" ? response.agentId : null,
+      asynchronous: response?.isAsync === true || response?.status === "async_launched"
+    };
+  }
+  if (event === "SubagentStop")
+    return { kind: "reviewer_stop", agent_id: typeof payload.agent_id === "string" ? payload.agent_id : null };
+  if (event === "Stop")
+    return { kind: "stop", boundary: () => stopBoundary(payload), stop_hook_active: payload.stop_hook_active === true };
+  return null;
+}
+function render(outcome) {
+  switch (outcome.kind) {
+    case "deny":
+      return JSON.stringify({ hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`
+      } });
+    case "paused":
+      return warning(outcome.reason);
+    case "continue":
+      return JSON.stringify({
+        decision: "block",
+        reason: `Explicit drive is bound to ${outcome.label}; Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}`
+      });
+    default:
+      return null;
+  }
+}
 async function runContinuationHookOutput(payload, root = tmpdir8()) {
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
   if (!sessionId)
     return null;
-  const workspace = realpathSync19(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
-  const event = String(payload.hook_event_name ?? "");
-  if (event === "SessionEnd") {
-    drop(statePath2(sessionId, root), root);
-    dropPhaseEntryLog(sessionId, root);
+  const workspace = realpathSync20(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
+  const event = continuationEvent(payload, workspace);
+  if (!event)
     return null;
-  }
-  if (event === "UserPromptSubmit") {
-    const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-    const entry = recognizePhaseEntry(prompt, claudeLocalNames(workspace, homedir3()), "claude");
-    if (releasesRunBinding(prompt, entry === "plan" ? "planner" : null) || entry === "run")
-      drop(statePath2(sessionId, root), root);
-    return null;
-  }
   try {
-    const operation = MCP_TOOL.exec(String(payload.tool_name ?? ""))?.[1];
-    const toolId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
-    if (event === "PreToolUse" && operation && toolId && readPhaseEntryState(sessionId, root)?.run_live) {
-      const metadata = readMetadata(sessionId, root);
-      if (metadata.paused && NATIVE_OPERATIONS.has(operation))
-        return JSON.stringify({ hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate`
-        } });
-      const input = payload.tool_input ?? {};
-      const correlation = {
-        session_id: sessionId,
-        workspace,
-        tool_use_id: toolId,
-        operation,
-        task_id: typeof input.task_id === "string" ? input.task_id : null
-      };
-      if (!appendPrivate(callPath(toolId, root), cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(correlation) + `
-`))
-        throw new Error("tool correlation could not be recorded");
-      return null;
-    }
-    const metadata = readMetadata(sessionId, root);
-    if (metadata.paused)
-      return event === "Stop" ? warning(metadata.paused) : null;
-    if ((event === "PostToolUse" || event === "PostToolUseFailure") && operation && toolId) {
-      const correlated = readLast(callPath(toolId, root));
-      if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== operation || readRunToolSession(toolId, operation, workspace, root) !== sessionId)
-        return null;
-      drop(callPath(toolId, root), root);
-      if (event === "PostToolUseFailure") {
-        if (NATIVE_OPERATIONS.has(operation))
-          await observeNativeFailure(metadata, correlated, root, `${operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
-        else if (operation === "submit_review") {
-          metadata.review = "rejected";
-          save(sessionId, root, metadata);
-        }
-        return null;
-      }
-      const response = toolResponse(payload);
-      if (operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
-        if (metadata.state?.binding.kind !== "parent")
-          metadata.state = bindRun({
-            kind: "parent",
-            workspace,
-            session_id: sessionId,
-            batch_id: null,
-            initiative_slug: response.initiative_slug,
-            plan_digest: response.plan_digest,
-            final_verification: response.final_verification_commands
-          });
-      }
-      if (operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
-        const batch = readAnyBatchRunState(workspace, response.batch_id);
-        if (!batch)
-          throw new Error("batch receipt has no persisted identity");
-        if (metadata.state?.binding.kind !== "parent")
-          metadata.state = bindRun({
-            kind: "parent",
-            workspace,
-            session_id: sessionId,
-            batch_id: batch.batch_id,
-            initiative_slug: batch.initiative_slug,
-            plan_digest: batch.plan_digest
-          });
-      }
-      if (!metadata.state && correlated.task_id && operation === "status") {
-        const status = await projectTaskStatus(workspace, correlated.task_id);
-        if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
-          metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
-      }
-      if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
-        return null;
-      if (operation === "advance_assurance" && response?.state === "review_ready") {
-        const params = response.agent_params;
-        if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
-          metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
-          metadata.reviewer_call_id = null;
-          metadata.reviewer_agent_id = null;
-          metadata.review = "ready";
-        }
-      }
-      if (["advance_assurance", "submit_review"].includes(operation) && response?.state === "review_incomplete") {
-        pauseRun(metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
-        return null;
-      }
-      if (operation === "submit_review") {
-        if (response?.reason === "review_incomplete_retry") {
-          metadata.review = "unobserved";
-          metadata.reviewer_prompt = null;
-          metadata.reviewer_call_id = null;
-          metadata.recovery_action = null;
-        } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
-          metadata.review = "rejected";
-          const recovery = response?.recovery_action ?? response?.next_action;
-          metadata.recovery_action = typeof recovery === "string" ? recovery : null;
-        } else {
-          metadata.review = "unobserved";
-          metadata.reviewer_prompt = null;
-          metadata.reviewer_call_id = null;
-          metadata.recovery_action = null;
-        }
-      }
-      if (NATIVE_OPERATIONS.has(operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
-        await observeNativeFailure(metadata, correlated, root, `${operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
-      if (metadata.state)
-        save(sessionId, root, metadata);
-      return null;
-    }
-    if (payload.tool_name === "Agent" && metadata.state && metadata.reviewer_prompt) {
-      const input = payload.tool_input;
-      if (event === "PreToolUse" && typeof input?.prompt === "string" && digestOfReviewerBytes(input.prompt) === metadata.reviewer_prompt && toolId) {
-        if (metadata.reviewer_call_id) {
-          metadata.review = "rejected";
-        } else {
-          metadata.reviewer_call_id = toolId;
-          metadata.review = "running";
-        }
-        save(sessionId, root, metadata);
-      }
-      if ((event === "PostToolUse" || event === "PostToolUseFailure") && toolId === metadata.reviewer_call_id) {
-        const response = toolResponse(payload);
-        if (response?.isAsync === true || response?.status === "async_launched") {
-          metadata.reviewer_agent_id = typeof response.agentId === "string" ? response.agentId : null;
-        } else
-          metadata.review = "returned";
-        save(sessionId, root, metadata);
-      }
-    }
-    if (event === "SubagentStop" && metadata.reviewer_agent_id && payload.agent_id === metadata.reviewer_agent_id) {
-      metadata.review = "returned";
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (event !== "Stop" || !metadata.state)
-      return null;
-    if (!readPhaseEntryState(sessionId, root)?.run_live) {
-      drop(statePath2(sessionId, root), root);
-      return null;
-    }
-    if (metadata.state.binding.workspace !== workspace) {
-      drop(statePath2(sessionId, root), root);
-      return warning("workspace changed; enter drive explicitly in this workspace");
-    }
-    const boundary = stopBoundary(payload);
-    if (!boundary)
-      return null;
-    metadata.sequence++;
-    const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
-    let observation;
-    if (metadata.state.binding.kind === "parent")
-      observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-    else {
-      const status = await projectTaskStatus(workspace, taskId);
-      const record = readTaskRecordRaw(workspace, taskId);
-      observation = {
-        kind: "task",
-        workspace,
-        session_id: sessionId,
-        boundary_id: boundary,
-        status,
-        source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
-        review: metadata.review,
-        recovery_action: metadata.recovery_action ?? undefined
-      };
-    }
-    const decision = decideRunContinuation(metadata.state, observation);
-    if (decision.action === "unbound" || decision.action === "settled") {
-      if (decision.action === "settled")
-        revokeEntryToken(sessionId, "spent", root);
-      drop(statePath2(sessionId, root), root);
-      return null;
-    }
-    if (decision.action === "wait") {
-      metadata.state = decision.state;
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (decision.action === "pause" && decision.stalled) {
-      metadata.state = decision.state;
-      metadata.stop_blocks = 0;
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (decision.state.progress_digest !== metadata.state.progress_digest || payload.stop_hook_active !== true)
-      metadata.stop_blocks = 0;
-    metadata.state = decision.state;
-    if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-      pauseRun(metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
-      return warning(metadata.paused);
-    }
-    metadata.stop_blocks++;
-    save(sessionId, root, metadata);
-    return JSON.stringify({ decision: "block", reason: `Explicit drive is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
+    return render(await applyRunContinuationEvent(claudeContinuationHost(root), root, { session_id: sessionId, workspace }, event));
   } catch (error) {
     return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -19737,7 +19816,7 @@ init_batch_final_verification();
 init_batch_final_report();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
-import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
+import { existsSync as existsSync16, realpathSync as realpathSync21 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join33 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 
@@ -20203,14 +20282,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync20(result.stdout);
+    return realpathSync21(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync20(path);
+    return realpathSync21(path);
   } catch {
     return null;
   }
@@ -22047,7 +22126,7 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync22, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir9 } from "node:os";
 import { delimiter as delimiter5, dirname as dirname17, join as join35 } from "node:path";
@@ -22168,7 +22247,7 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = realpathSync21(mkdtempSync6(join35(tmpdir9(), "imm-cli-review-")));
+    const directory = realpathSync22(mkdtempSync6(join35(tmpdir9(), "imm-cli-review-")));
     chmodSync5(directory, 493);
     const packet = join35(directory, "packet.md");
     const script = join35(directory, "review.sh");
@@ -23372,7 +23451,7 @@ function createMcpRuntime(options = {}) {
       return;
     let current = null;
     try {
-      current = realpathSync22(workspace);
+      current = realpathSync23(workspace);
     } catch {}
     if (!current || grant.workspace !== current)
       throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
@@ -24419,7 +24498,7 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync21, realpathSync as realpathSync23, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
+import { lstatSync as lstatSync21, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
 import { randomUUID as randomUUID13 } from "node:crypto";
 import { homedir as homedir4, tmpdir as tmpdir11 } from "node:os";
 import { join as join38 } from "node:path";
@@ -24488,7 +24567,7 @@ function recordPhaseEntryPrompt2(conversationId, prompt, cwd, locations = {}) {
   let workspace = null;
   if (entry === "run") {
     try {
-      workspace = realpathSync23(cwd);
+      workspace = realpathSync24(cwd);
     } catch {}
   }
   const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID13(), workspace } : undefined);
@@ -24550,26 +24629,7 @@ async function antigravityRunContinuationHook(payload) {
   if (!status || status.error || !status.projection) {
     return {};
   }
-  const projection = status.projection;
-  if (projection.lifecycle !== "active") {
-    return {};
-  }
-  if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0) {
-    return {};
-  }
-  const automatedObligations = [
-    "run_qa",
-    "run_review",
-    "submit_assurance",
-    "resolve_findings"
-  ];
-  if (automatedObligations.includes(projection.next_obligation)) {
-    return {
-      decision: "continue",
-      reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.`
-    };
-  }
-  return {};
+  return decideAutomatedStop(taskId, status.projection);
 }
 
 // plugins/immune-brain/runtime/antigravity/capability.ts

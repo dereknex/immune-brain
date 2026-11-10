@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +29,11 @@ import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigrav
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import * as batchPreflight from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
+import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import type { AssuranceObligation } from "../plugins/immune-brain/runtime/kernel/types";
+import type { AssuranceProjection } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 
 describe("Antigravity Harness Conformance", () => {
 	it("probes host capability and enforces fail-closed version checking", () => {
@@ -250,6 +255,19 @@ describe("Antigravity Harness Conformance", () => {
 	});
 
 	describe("Run Continuation Hook", () => {
+		function projectionStatus(next_obligation: AssuranceObligation,
+				overrides: Partial<AssuranceProjection> = {}): StatusProjectionResult {
+			return { contract: "assurance_kernel/assurance_projection/v1", task_id: "task-a", error: null,
+				claim: { task_id: "task-a", lifecycle_status: "active" },
+				projection: { run_id: "run-a", record_revision: "record-a", workspace_revision: "workspace-a", intent_revision: 1,
+					intent_content_hash: "intent-a", diff_hash: "diff-a", lifecycle: "active", artifact_state: "active", risk: "material",
+					next_obligation, fresh_acceptance_ids: [], missing_acceptance_ids: [], stale_attestation_ids: [],
+					fresh_approval_kinds: [], missing_approval_kinds: [], blocking_finding_ids: [],
+					unresolved_user_decision_ids: [], replan_required_ids: [], independence_violations: [],
+					open_user_decision_count: 0, completion_ready: false,
+					authorization: { state: "none", blocked: null }, ...overrides } };
+		}
+
 		it("allows stop when workspace has no active task", async () => {
 			const emptyDir = mkdtempSync(join(tmpdir(), "imm-empty-ws-"));
 			try {
@@ -260,6 +278,33 @@ describe("Antigravity Harness Conformance", () => {
 				expect(result.decision).toBeUndefined();
 			} finally {
 				rmSync(emptyDir, { recursive: true, force: true });
+			}
+		});
+
+		it("continues an automated obligation and stops on a user wait, a non-active lifecycle or any other obligation (D11)", async () => {
+			const stopWorkspace = mkdtempSync(join(tmpdir(), "imm-stop-projection-"));
+			const claim = spyOn(batchPreflight, "readActiveClaimTaskId").mockReturnValue("task-a");
+			const projection = spyOn(coordinator, "projectTaskStatus");
+			try {
+				projection.mockResolvedValue(projectionStatus("run_qa"));
+				expect(await antigravityRunContinuationHook({ conversationId: "conv-stop-2", workspacePaths: [stopWorkspace] }))
+					.toEqual({ decision: "continue", reason: "Task task-a is active with next obligation: run_qa. Please proceed." });
+
+				for (const stopped of [
+					projectionStatus("resolve_user_decision"),
+					projectionStatus("revise_intent"),
+					projectionStatus("run_qa", { open_user_decision_count: 1 }),
+					projectionStatus("run_qa", { unresolved_user_decision_ids: ["decision-1"] }),
+					projectionStatus("run_qa", { lifecycle: "stopped" }),
+					projectionStatus("none"),
+					projectionStatus("complete"),
+				]) {
+					projection.mockResolvedValue(stopped);
+					expect(await antigravityRunContinuationHook({ conversationId: "conv-stop-2", workspacePaths: [stopWorkspace] })).toEqual({});
+				}
+			} finally {
+				claim.mockRestore(); projection.mockRestore();
+				rmSync(stopWorkspace, { recursive: true, force: true });
 			}
 		});
 	});

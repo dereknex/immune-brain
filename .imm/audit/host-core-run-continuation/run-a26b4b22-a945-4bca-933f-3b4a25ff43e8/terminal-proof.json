@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "host-core-run-continuation",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:host-core-run-continuation:2026-11-10T13:06:36.587Z",
+  "final_record_hash": "sha256:65a3e6d49cfcb6625b1bd3ffb24ca37e044a7fad8e9825276315766ecf4bd9d3",
+  "terminalized_at": "2026-11-10T13:06:36.587Z"
+}
