@@ -11,7 +11,8 @@ import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { recognizePhaseEntry } from "../assurance/phase_entry";
 import { homedir } from "node:os";
 import { readPhaseEntryState, claudeLocalNames, dropPhaseEntryLog, revokeEntryToken } from "./lane_guard";
-import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
+import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "../host-core/private_file";
+import { CLAUDE_CACHE_DIR } from "./review_host";
 
 const MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
 const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
@@ -33,12 +34,12 @@ interface ContinuationMetadata {
 }
 const blank = (): ContinuationMetadata => ({ state: null, sequence: 0, review: "unobserved", reviewer_prompt: null,
 	reviewer_call_id: null, reviewer_agent_id: null, recovery_action: null, paused: null, stop_blocks: 0, native_failures: 0 });
-const statePath = (sessionId: string, root: string) => join(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
-const callPath = (toolId: string, root: string) => join(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
+const statePath = (sessionId: string, root: string) => join(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.continuation`);
+const callPath = (toolId: string, root: string) => join(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolId)}.continuation-call`);
 function drop(path: string, root: string): void {
 	// Nothing to drop means no cache directory either: an idle session must leave the store untouched.
 	if (!existsSync(path)) return;
-	if (!ensurePrivateDir(cacheDir(root))) return;
+	if (!ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR))) return;
 	try { const stat = lstatSync(path); if (stat.isFile() && ownedByUs(stat)) rmSync(path); } catch { /* absent */ }
 }
 function readLast(path: string): unknown {
@@ -76,7 +77,7 @@ function readMetadata(sessionId: string, root: string): ContinuationMetadata {
 function save(sessionId: string, root: string, value: ContinuationMetadata): void {
 	const path = statePath(sessionId, root);
 	const temporary = `${path}.${randomUUID()}`;
-	if (!appendPrivate(temporary, cacheDir(root), JSON.stringify(value) + "\n")) throw new Error("continuation metadata could not be written");
+	if (!appendPrivate(temporary, cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(value) + "\n")) throw new Error("continuation metadata could not be written");
 	try { renameSync(temporary, path); } finally { drop(temporary, root); }
 }
 
@@ -172,7 +173,7 @@ export async function runContinuationHookOutput(payload: Record<string, unknown>
 			const input = (payload.tool_input ?? {}) as Record<string, unknown>;
 			const correlation: Correlation = { session_id: sessionId, workspace, tool_use_id: toolId, operation,
 				task_id: typeof input.task_id === "string" ? input.task_id : null };
-			if (!appendPrivate(callPath(toolId, root), cacheDir(root), JSON.stringify(correlation) + "\n")) throw new Error("tool correlation could not be recorded");
+			if (!appendPrivate(callPath(toolId, root), cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(correlation) + "\n")) throw new Error("tool correlation could not be recorded");
 			return null;
 		}
 		const metadata = readMetadata(sessionId, root);

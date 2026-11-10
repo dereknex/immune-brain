@@ -17,7 +17,7 @@ import {
 	type NativeConfirmationInput,
 	type NativeConfirmationPort,
 } from "./interaction";
-import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_host";
+import { ClaudeReviewHost, claudeHookEventLog, parseHookStdin } from "./review_host";
 import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool, type PhaseAdmissionGrant } from "./lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
@@ -167,7 +167,7 @@ export function withCompletionDelivery<T>(taskId: string, result: T, root = proc
 }
 
 export function createMcpRuntime(options: McpRuntimeOptions = {}) {
-	const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
+	const host = options.host ?? new ClaudeReviewHost(claudeHookEventLog());
 	const defaultWorkspace = options.cwd ?? process.cwd();
 	const trustedClientNames = options.trustedClientNames ?? [HOST_ID];
 	const serverInfo = options.serverInfo ?? { name: HOST_ID, minimumHostVersion: MIN_CLAUDE_CODE_VERSION };
@@ -1058,7 +1058,7 @@ async function runHook(): Promise<void> {
 		});
 		if (!activeBatch) return;
 	}
-	new FileHookEventLog().append(event);
+	claudeHookEventLog().append(event);
 }
 
 const entry = process.argv[1] ?? "";

@@ -110,7 +110,7 @@ import {
 	type PrivilegedOperation,
 } from "./interaction";
 import { selectedClaudeParent } from "./run_continuation";
-import { ClaudeReviewHost, FileHookEventLog, type ClaudeHookEvent } from "./review_host";
+import { ClaudeReviewHost, claudeHookEventLog, type ClaudeHookEvent } from "./review_host";
 import { CliReviewHost } from "../assurance/cli_review";
 import { probeHost, type PermissionMode, type HostProbe } from "./capability";
 
@@ -348,7 +348,7 @@ export class ClaudeRuntime {
 		this.batchGit = options.batchGit;
 		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
-		this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog());
+		this.host = options.host ?? new ClaudeReviewHost(claudeHookEventLog());
 		this.reviewHost = new CliReviewHost(this.host);
 		this.coordinator = new AssuranceCoordinator({
 			...this.createKernelPorts(),

@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
 import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
-import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
+import { FileHookEventLog, MemoryHookEventLog, hookEventPath as sharedHookEventPath, type HookEventLog } from "../host-core/hook_event_log";
+import { readPrivate } from "../host-core/private_file";
+import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
@@ -54,94 +55,17 @@ export type ClaudeHookEvent =
 	}
 	| { type: "SessionEnd"; sessionId: string };
 
-export interface HookEventLog {
-	append(event: ClaudeHookEvent): boolean;
-	list(sessionId?: string): ClaudeHookEvent[];
-	sessions(): string[];
-	clear(sessionId?: string): void;
+/** The Claude Host keeps its own cache directory name; storage is shared (D3). */
+export const CLAUDE_CACHE_DIR = "immune-brain-claude";
+
+/** Claude session files stay `<hash>.jsonl` under the Claude cache directory. */
+export function hookEventPath(sessionId: string, root = tmpdir()): string {
+	return sharedHookEventPath(CLAUDE_CACHE_DIR, sessionId, root);
 }
 
-export class MemoryHookEventLog implements HookEventLog {
-	private readonly events: ClaudeHookEvent[] = [];
-	append(event: ClaudeHookEvent): boolean { this.events.push(event); return true; }
-	list(sessionId?: string): ClaudeHookEvent[] {
-		return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-	}
-	sessions(): string[] {
-		return [...new Set(this.events.map((event) => event.sessionId))];
-	}
-	clear(sessionId?: string): void {
-		if (!sessionId) {
-			this.events.length = 0;
-			return;
-		}
-		for (let i = this.events.length - 1; i >= 0; i--) {
-			if (this.events[i].sessionId === sessionId) this.events.splice(i, 1);
-		}
-	}
-}
-
-const CACHE_DIR = "immune-brain-claude";
-
-export function sessionHash(sessionId: string): string {
-	return createHash("sha256").update(sessionId).digest("hex");
-}
-
-export function cacheDir(root: string): string {
-	return join(root, CACHE_DIR);
-}
-
-export function ownedByUs(stat: { uid: number; isSymbolicLink(): boolean }): boolean {
-	if (stat.isSymbolicLink()) return false;
-	const uid = process.getuid?.();
-	return uid === undefined || stat.uid === uid;
-}
-
-export function ensurePrivateDir(dir: string): boolean {
-	try {
-		const existing = lstatSync(dir);
-		return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 0o777) === 0o700;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-	}
-	try { mkdirSync(dir, { mode: 0o700 }); } catch { return false; }
-	try {
-		const created = lstatSync(dir);
-		return created.isDirectory() && ownedByUs(created) && (created.mode & 0o777) === 0o700;
-	} catch {
-		return false;
-	}
-}
-
-export function appendPrivate(path: string, dir: string, line: string): boolean {
-	if (!ensurePrivateDir(dir)) return false;
-	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-	let fd: number;
-	try { fd = openSync(path, flags, 0o600); } catch { return false; }
-	try {
-		const stat = fstatSync(fd);
-		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return false;
-		return writeSync(fd, line) === Buffer.byteLength(line);
-	} catch {
-		return false;
-	} finally {
-		closeSync(fd);
-	}
-}
-
-export function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): string | undefined {
-	let fd: number;
-	try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch { return; }
-	try {
-		const stat = fstatSync(fd);
-		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return;
-		if (stat.size > maxBytes) return;
-		const buf = Buffer.alloc(stat.size);
-		readSync(fd, buf, 0, stat.size, 0);
-		return buf.toString("utf8");
-	} finally {
-		closeSync(fd);
-	}
+/** The event log this adapter constructs: the shared file log over the Claude cache. */
+export function claudeHookEventLog(root = tmpdir()): FileHookEventLog<ClaudeHookEvent> {
+	return new FileHookEventLog<ClaudeHookEvent>(CLAUDE_CACHE_DIR, root);
 }
 
 /**
@@ -254,57 +178,6 @@ function readSyncAgentTranscript(
 	return readAgentTranscript(derived);
 }
 
-export function hookEventPath(sessionId: string, root = tmpdir()): string {
-	return join(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
-}
-
-export class FileHookEventLog implements HookEventLog {
-	constructor(private readonly root = tmpdir()) {}
-	append(event: ClaudeHookEvent): boolean {
-		const path = hookEventPath(event.sessionId, this.root);
-		return appendPrivate(path, dirname(path), `${JSON.stringify(event)}\n`);
-	}
-	list(sessionId?: string): ClaudeHookEvent[] {
-		if (sessionId) return this.readSession(sessionId);
-		const dir = cacheDir(this.root);
-		if (!ensurePrivateDir(dir)) return [];
-		try {
-			return readdirSync(dir)
-				.filter((name) => name.endsWith(".jsonl"))
-				.flatMap((name) => this.readFile(join(dir, name)));
-		} catch {
-			return [];
-		}
-	}
-	sessions(): string[] {
-		const ids = new Set<string>();
-		for (const event of this.list()) if (event.sessionId) ids.add(event.sessionId);
-		return [...ids];
-	}
-	private readFile(path: string): ClaudeHookEvent[] {
-		const text = readPrivate(path);
-		if (!text) return [];
-		try {
-			return text.split("\n").filter(Boolean).map((line) => JSON.parse(line) as ClaudeHookEvent);
-		} catch {
-			return [];
-		}
-	}
-	private readSession(sessionId: string): ClaudeHookEvent[] {
-		if (!ensurePrivateDir(cacheDir(this.root))) return [];
-		return this.readFile(hookEventPath(sessionId, this.root));
-	}
-	clear(sessionId?: string): void {
-		if (!sessionId || !ensurePrivateDir(cacheDir(this.root))) return;
-		const path = hookEventPath(sessionId, this.root);
-		try {
-			const stat = lstatSync(path);
-			if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 0o777) !== 0o600) return;
-			rmSync(path, { force: true });
-		} catch { /* cleanup cannot create authority */ }
-	}
-}
-
 interface PendingReview {
 	request: ReviewRequest;
 	verifierModel?: string;
@@ -353,7 +226,7 @@ export class ClaudeReviewHost implements AssuranceHostPort {
 	readonly host = "claude-code" as const;
 	private readonly pending = new Map<string, PendingReview>();
 	private readonly appliedBySession = new Map<string, number>();
-	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
+	constructor(private readonly log: HookEventLog<ClaudeHookEvent> = new MemoryHookEventLog<ClaudeHookEvent>()) {}
 
 	prepareVerification(request: VerificationRequest): HostReviewReservation {
 		const reviewRequest: ReviewRequest = { taskId: request.taskId, operationId: request.operationId,

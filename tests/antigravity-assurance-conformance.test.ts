@@ -7,10 +7,12 @@ import { PassThrough } from "node:stream";
 import { pathToFileURL } from "node:url";
 import {
 	AntigravityReviewHost,
-	MemoryHookEventLog,
+	antigravityHookEventLog,
 	VERIFIER_AGENT,
 	SUBAGENT_TOOL,
+	type AntigravityHookEvent,
 } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import {
 	antigravityPreInvocationHook,
 	antigravityPreToolUseHook,
@@ -56,7 +58,7 @@ describe("Antigravity Harness Conformance", () => {
 
 	describe("AntigravityReviewHost", () => {
 		it("prepares a verification reservation with requested verifier model", () => {
-			const eventLog = new MemoryHookEventLog();
+			const eventLog = new MemoryHookEventLog<AntigravityHookEvent>();
 			const host = new AntigravityReviewHost(eventLog);
 
 			const request: VerificationRequest = {
@@ -82,7 +84,7 @@ describe("Antigravity Harness Conformance", () => {
 		});
 
 		it("observes PostToolUse and inspects review and verification receipts", () => {
-			const eventLog = new MemoryHookEventLog();
+			const eventLog = new MemoryHookEventLog<AntigravityHookEvent>();
 			const host = new AntigravityReviewHost(eventLog);
 
 			const request: VerificationRequest = {
@@ -774,4 +776,74 @@ describe("Antigravity Harness Conformance", () => {
 			input.end();
 		}, 30_000);
 	});
+
+describe("hook dispatch writes subagent events", () => {
+	const HOOK = join(process.cwd(), "plugins/immune-brain/runtime/antigravity/mcp_server.ts");
+	const SUBAGENT_ARGS = { TypeName: "immune-brain-review-verifier", Role: "Review Verifier", Prompt: "p", Model: "m" };
+
+	/** Run the real `--hook` entry over an isolated cache root and read its file log. */
+	function dispatch(root: string, payload: unknown) {
+		const stdout = execFileSync("bun", [HOOK, "--hook"], {
+			env: { ...process.env, TMPDIR: root },
+			input: JSON.stringify(payload),
+			encoding: "utf8",
+		});
+		return { stdout: stdout.trim(), events: antigravityHookEventLog(root).list("c") };
+	}
+
+	function preToolUse(toolCall: { name: string; args: Record<string, unknown> }, extra: Record<string, unknown> = {}) {
+		return { toolCall, stepIdx: 7, conversationId: "c", ...extra };
+	}
+
+	it("records an allowed invoke_subagent start and its terminal result in order", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-events-"));
+		try {
+			const pre = dispatch(root, preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }));
+			expect(pre.stdout).toBe('{"decision":"allow"}');
+			const post = dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), result: "r" });
+			expect(post.stdout).toBe("{}");
+			expect(post.events.map((event) => event.type)).toEqual(["SubagentStart", "PostToolUse"]);
+			expect(post.events[0]).toMatchObject({ sessionId: "c", agent: "immune-brain-review-verifier", agentId: "7", prompt: "p" });
+			expect(post.events[1]).toMatchObject({ sessionId: "c", agentId: "7", result: "r" });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("maps the Subagent tool name the same way", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-subagent-"));
+		try {
+			const pre = dispatch(root, preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }));
+			expect(pre.stdout).toBe('{"decision":"allow"}');
+			const post = dispatch(root, { ...preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }), result: "r" });
+			expect(post.events.map((event) => event.type)).toEqual(["SubagentStart", "PostToolUse"]);
+			expect(post.events[1]).toMatchObject({ agentId: "7", result: "r" });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("appends nothing for another tool or for a subagent call without stepIdx", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-no-events-"));
+		try {
+			expect(dispatch(root, preToolUse({ name: "edit_file", args: { Path: "x" } })).events).toEqual([]);
+			const withoutStep = { toolCall: { name: "invoke_subagent", args: SUBAGENT_ARGS }, conversationId: "c" };
+			expect(dispatch(root, withoutStep).events).toEqual([]);
+			expect(antigravityHookEventLog(root).sessions()).toEqual([]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps a PostToolUse result that has no earlier start event", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-orphan-"));
+		try {
+			const post = dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), result: "r" });
+			expect(post.events.map((event) => event.type)).toEqual(["PostToolUse"]);
+			expect(post.events[0]).toMatchObject({ agentId: "7", result: "r" });
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 });

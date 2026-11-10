@@ -17398,7 +17398,7 @@ init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync22 } from "node:fs";
-import { isAbsolute as isAbsolute12, join as join35 } from "node:path";
+import { isAbsolute as isAbsolute12, join as join37 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -17642,42 +17642,21 @@ function enrollmentNonce() {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 init_review_packet();
-import { createHash as createHash23 } from "node:crypto";
-import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
-import { basename as basename3, dirname as dirname15, isAbsolute as isAbsolute10, join as join24 } from "node:path";
-import { tmpdir as tmpdir5 } from "node:os";
-var AGENT_TOOL = "Agent";
-var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
 
-class MemoryHookEventLog {
-  events = [];
-  append(event) {
-    this.events.push(event);
-    return true;
-  }
-  list(sessionId) {
-    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-  }
-  sessions() {
-    return [...new Set(this.events.map((event) => event.sessionId))];
-  }
-  clear(sessionId) {
-    if (!sessionId) {
-      this.events.length = 0;
-      return;
-    }
-    for (let i = this.events.length - 1;i >= 0; i--) {
-      if (this.events[i].sessionId === sessionId)
-        this.events.splice(i, 1);
-    }
-  }
-}
-var CACHE_DIR = "immune-brain-claude";
+// plugins/immune-brain/runtime/host-core/hook_event_log.ts
+import { lstatSync as lstatSync17, readdirSync as readdirSync9, rmSync as rmSync9 } from "node:fs";
+import { dirname as dirname15, join as join25 } from "node:path";
+import { tmpdir as tmpdir5 } from "node:os";
+
+// plugins/immune-brain/runtime/host-core/private_file.ts
+import { createHash as createHash23 } from "node:crypto";
+import { constants as constants7, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { join as join24 } from "node:path";
 function sessionHash(sessionId) {
   return createHash23("sha256").update(sessionId).digest("hex");
 }
-function cacheDir(root) {
-  return join24(root, CACHE_DIR);
+function cacheDir(root, cacheName) {
+  return join24(root, cacheName);
 }
 function ownedByUs(stat) {
   if (stat.isSymbolicLink())
@@ -17745,6 +17724,105 @@ function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   } finally {
     closeSync7(fd);
   }
+}
+
+// plugins/immune-brain/runtime/host-core/hook_event_log.ts
+class MemoryHookEventLog {
+  events = [];
+  append(event) {
+    this.events.push(event);
+    return true;
+  }
+  list(sessionId) {
+    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
+  }
+  sessions() {
+    return [...new Set(this.events.map((event) => event.sessionId))];
+  }
+  clear(sessionId) {
+    if (!sessionId) {
+      this.events.length = 0;
+      return;
+    }
+    for (let i = this.events.length - 1;i >= 0; i--) {
+      if (this.events[i].sessionId === sessionId)
+        this.events.splice(i, 1);
+    }
+  }
+}
+function hookEventPath(cacheName, sessionId, root = tmpdir5()) {
+  return join25(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+}
+
+class FileHookEventLog {
+  cacheName;
+  root;
+  constructor(cacheName, root = tmpdir5()) {
+    this.cacheName = cacheName;
+    this.root = root;
+  }
+  append(event) {
+    const path = hookEventPath(this.cacheName, event.sessionId, this.root);
+    return appendPrivate(path, dirname15(path), `${JSON.stringify(event)}
+`);
+  }
+  list(sessionId) {
+    if (sessionId)
+      return this.readSession(sessionId);
+    const dir = cacheDir(this.root, this.cacheName);
+    if (!ensurePrivateDir(dir))
+      return [];
+    try {
+      return readdirSync9(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join25(dir, name)));
+    } catch {
+      return [];
+    }
+  }
+  sessions() {
+    const ids = new Set;
+    for (const event of this.list())
+      if (event.sessionId)
+        ids.add(event.sessionId);
+    return [...ids];
+  }
+  readFile(path) {
+    const text = readPrivate(path);
+    if (!text)
+      return [];
+    try {
+      return text.split(`
+`).filter(Boolean).map((line) => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  }
+  readSession(sessionId) {
+    if (!ensurePrivateDir(cacheDir(this.root, this.cacheName)))
+      return [];
+    return this.readFile(hookEventPath(this.cacheName, sessionId, this.root));
+  }
+  clear(sessionId) {
+    if (!sessionId || !ensurePrivateDir(cacheDir(this.root, this.cacheName)))
+      return;
+    const path = hookEventPath(this.cacheName, sessionId, this.root);
+    try {
+      const stat = lstatSync17(path);
+      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
+        return;
+      rmSync9(path, { force: true });
+    } catch {}
+  }
+}
+
+// plugins/immune-brain/runtime/claude/review_host.ts
+import { realpathSync as realpathSync17 } from "node:fs";
+import { basename as basename3, dirname as dirname16, isAbsolute as isAbsolute10, join as join26 } from "node:path";
+import { tmpdir as tmpdir6 } from "node:os";
+var AGENT_TOOL = "Agent";
+var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
+var CLAUDE_CACHE_DIR = "immune-brain-claude";
+function claudeHookEventLog(root = tmpdir6()) {
+  return new FileHookEventLog(CLAUDE_CACHE_DIR, root);
 }
 var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
 function parseAsyncAgentLaunch(result) {
@@ -17823,69 +17901,8 @@ function readSyncAgentTranscript(post, stop) {
   const session = post.transcriptPath;
   if (!session || !isAbsolute10(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join24(dirname15(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join26(dirname16(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
-}
-function hookEventPath(sessionId, root = tmpdir5()) {
-  return join24(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
-}
-
-class FileHookEventLog {
-  root;
-  constructor(root = tmpdir5()) {
-    this.root = root;
-  }
-  append(event) {
-    const path = hookEventPath(event.sessionId, this.root);
-    return appendPrivate(path, dirname15(path), `${JSON.stringify(event)}
-`);
-  }
-  list(sessionId) {
-    if (sessionId)
-      return this.readSession(sessionId);
-    const dir = cacheDir(this.root);
-    if (!ensurePrivateDir(dir))
-      return [];
-    try {
-      return readdirSync9(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join24(dir, name)));
-    } catch {
-      return [];
-    }
-  }
-  sessions() {
-    const ids = new Set;
-    for (const event of this.list())
-      if (event.sessionId)
-        ids.add(event.sessionId);
-    return [...ids];
-  }
-  readFile(path) {
-    const text = readPrivate(path);
-    if (!text)
-      return [];
-    try {
-      return text.split(`
-`).filter(Boolean).map((line) => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-  readSession(sessionId) {
-    if (!ensurePrivateDir(cacheDir(this.root)))
-      return [];
-    return this.readFile(hookEventPath(sessionId, this.root));
-  }
-  clear(sessionId) {
-    if (!sessionId || !ensurePrivateDir(cacheDir(this.root)))
-      return;
-    const path = hookEventPath(sessionId, this.root);
-    try {
-      const stat = lstatSync16(path);
-      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
-        return;
-      rmSync9(path, { force: true });
-    } catch {}
-  }
 }
 function parseReviewMarker(prompt) {
   if (typeof prompt !== "string")
@@ -18266,10 +18283,10 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync17, realpathSync as realpathSync18, rmSync as rmSync10 } from "node:fs";
+import { lstatSync as lstatSync18, realpathSync as realpathSync18, rmSync as rmSync10 } from "node:fs";
 import { randomUUID as randomUUID10 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir6 } from "node:os";
-import { join as join26 } from "node:path";
+import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
+import { join as join28 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -18621,7 +18638,7 @@ function decideRunContinuation(previous, observation) {
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
 import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join25 } from "node:path";
+import { join as join27 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
@@ -18649,7 +18666,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join25(dir, name, "SKILL.md"));
+    statSync6(join27(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -18688,10 +18705,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join26(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+  return join28(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join26(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+  return join28(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -18700,29 +18717,29 @@ function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 function claudeLocalNames(cwd, home) {
-  const roots = [join26(cwd, ".claude"), join26(home, ".claude")];
+  const roots = [join28(cwd, ".claude"), join28(home, ".claude")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join26(root, "commands", `${name}.md`));
+        const body = readAliasFile(join28(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join26(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join28(root, "skills"), name))
   };
 }
-function readPhaseEntryState(sessionId, root = tmpdir6(), read = readPrivate) {
+function readPhaseEntryState(sessionId, root = tmpdir7(), read = readPrivate) {
   if (!sessionId)
     return null;
   const path = entryLogPath(sessionId, root);
   try {
-    lstatSync17(path);
+    lstatSync18(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }
-  if (!ensurePrivateDir(cacheDir(root)))
+  if (!ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR)))
     return null;
   let text;
   try {
@@ -18734,7 +18751,7 @@ function readPhaseEntryState(sessionId, root = tmpdir6(), read = readPrivate) {
 }
 function dropPrivate(path) {
   try {
-    const stat = lstatSync17(path);
+    const stat = lstatSync18(path);
     if (ownedByUs(stat) && stat.isFile())
       rmSync10(path, { force: true });
   } catch {}
@@ -18743,17 +18760,17 @@ function appendPhaseEntry(sessionId, line, root, locations) {
   const path = entryLogPath(sessionId, root);
   let recorded = false;
   try {
-    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), line);
+    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root, CLAUDE_CACHE_DIR), line);
   } catch {}
   if (!recorded)
     dropPrivate(path);
   return recorded;
 }
-function dropPhaseEntryLog(sessionId, root = tmpdir6()) {
+function dropPhaseEntryLog(sessionId, root = tmpdir7()) {
   if (sessionId)
     dropPrivate(entryLogPath(sessionId, root));
 }
-function revokeEntryToken(sessionId, reason, root = tmpdir6()) {
+function revokeEntryToken(sessionId, reason, root = tmpdir7()) {
   if (sessionId && readPhaseEntryState(sessionId, root)?.token)
     appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root, {});
 }
@@ -18773,7 +18790,7 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
     } catch {}
   }
   const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID10(), workspace } : undefined);
-  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir6(), locations);
+  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir7(), locations);
 }
 function gatedOperation(payload) {
   const toolName = String(payload.tool_name ?? "");
@@ -18793,7 +18810,7 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
     return null;
   if (operation.kind === "skill" && operation.skill !== "drive")
     return null;
-  const root = locations.root ?? tmpdir6();
+  const root = locations.root ?? tmpdir7();
   const sessionId = sessionIdOf(payload);
   let state = null;
   try {
@@ -18807,15 +18824,15 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
   let recorded = false;
   try {
-    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}
+    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root, CLAUDE_CACHE_DIR), `${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}
 `);
   } catch {}
   if (recorded)
     return null;
   return denyPreToolUse(`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`);
 }
-function consumePhaseAdmission(toolUseId, operation, root = tmpdir6()) {
-  if (!toolUseId || !ensurePrivateDir(cacheDir(root)))
+function consumePhaseAdmission(toolUseId, operation, root = tmpdir7()) {
+  if (!toolUseId || !ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR)))
     return false;
   const path = admissionPath(toolUseId, root);
   let text;
@@ -18859,10 +18876,10 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir6()) {
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync15, realpathSync as realpathSync19, lstatSync as lstatSync18, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
+import { existsSync as existsSync15, realpathSync as realpathSync19, lstatSync as lstatSync19, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join27 } from "node:path";
-import { tmpdir as tmpdir7 } from "node:os";
+import { join as join29 } from "node:path";
+import { tmpdir as tmpdir8 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
 import { createHash as createHash25 } from "node:crypto";
@@ -18971,15 +18988,15 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (sessionId, root) => join27(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
-var callPath = (toolId, root) => join27(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (sessionId, root) => join29(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.continuation`);
+var callPath = (toolId, root) => join29(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolId)}.continuation-call`);
 function drop(path, root) {
   if (!existsSync15(path))
     return;
-  if (!ensurePrivateDir(cacheDir(root)))
+  if (!ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR)))
     return;
   try {
-    const stat = lstatSync18(path);
+    const stat = lstatSync19(path);
     if (stat.isFile() && ownedByUs(stat))
       rmSync11(path);
   } catch {}
@@ -18987,7 +19004,7 @@ function drop(path, root) {
 function readLast(path) {
   let stat;
   try {
-    stat = lstatSync18(path);
+    stat = lstatSync19(path);
   } catch (error) {
     if (error.code === "ENOENT")
       return null;
@@ -19020,7 +19037,7 @@ function readMetadata(sessionId, root) {
 function save(sessionId, root, value) {
   const path = statePath2(sessionId, root);
   const temporary = `${path}.${randomUUID11()}`;
-  if (!appendPrivate(temporary, cacheDir(root), JSON.stringify(value) + `
+  if (!appendPrivate(temporary, cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(value) + `
 `))
     throw new Error("continuation metadata could not be written");
   try {
@@ -19042,13 +19059,13 @@ async function observeNativeFailure(metadata, correlation, root, reason) {
   }
   pauseRun(metadata, correlation.session_id, root, reason);
 }
-function readRunToolSession(toolId, operation, workspace, root = tmpdir7()) {
+function readRunToolSession(toolId, operation, workspace, root = tmpdir8()) {
   const record = readLast(callPath(toolId, root));
   if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !readPhaseEntryState(record.session_id, root)?.run_live)
     return null;
   return record.session_id;
 }
-function selectedClaudeParent(toolId, workspace, slug, root = tmpdir7()) {
+function selectedClaudeParent(toolId, workspace, slug, root = tmpdir8()) {
   const call = readLast(callPath(toolId, root));
   if (!call || call.workspace !== realpathSync19(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !readPhaseEntryState(call.session_id, root)?.run_live)
     return false;
@@ -19118,7 +19135,7 @@ function toolResponse(payload) {
 function warning(reason) {
   return JSON.stringify({ systemMessage: `Immune-Brain run paused: ${reason}` });
 }
-async function runContinuationHookOutput(payload, root = tmpdir7()) {
+async function runContinuationHookOutput(payload, root = tmpdir8()) {
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
   if (!sessionId)
     return null;
@@ -19155,7 +19172,7 @@ async function runContinuationHookOutput(payload, root = tmpdir7()) {
         operation,
         task_id: typeof input.task_id === "string" ? input.task_id : null
       };
-      if (!appendPrivate(callPath(toolId, root), cacheDir(root), JSON.stringify(correlation) + `
+      if (!appendPrivate(callPath(toolId, root), cacheDir(root, CLAUDE_CACHE_DIR), JSON.stringify(correlation) + `
 `))
         throw new Error("tool correlation could not be recorded");
       return null;
@@ -19343,13 +19360,13 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
+import { dirname as dirname18, join as join36, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
 import { spawn as spawn4 } from "node:child_process";
 import { accessSync as accessSync3, constants as constants9 } from "node:fs";
-import { delimiter as delimiter4, join as join28 } from "node:path";
+import { delimiter as delimiter4, join as join30 } from "node:path";
 function chooseExecutor(layers, fallback) {
   const hostLayer = layers.findIndex((layer) => layer.executor_host !== undefined);
   const host = hostLayer < 0 ? fallback : layers[hostLayer].executor_host;
@@ -19409,7 +19426,7 @@ class LaneSupervisor {
       return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
     if (!handle && !input.stop) {
       const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
-      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join28(dir || ".", binaryName)).find((path) => {
+      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join30(dir || ".", binaryName)).find((path) => {
         try {
           accessSync3(path, constants9.X_OK);
           return true;
@@ -19660,11 +19677,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join29 } from "node:path";
+import { join as join31 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync21(join29(root, relativePath)),
+    bytes: readFileSync21(join31(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -19672,7 +19689,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join29(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join31(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -19684,7 +19701,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync21(join29(root, snapshot.path));
+  const restoredBytes = readFileSync21(join31(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -19717,15 +19734,15 @@ init_batch_final_report();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash26 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute11, join as join31 } from "node:path";
+import { isAbsolute as isAbsolute11, join as join33 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 init_git_integration_preference();
 init_batch_preflight();
 import { spawnSync as spawnSync18 } from "node:child_process";
-import { lstatSync as lstatSync19 } from "node:fs";
-import { join as join30 } from "node:path";
+import { lstatSync as lstatSync20 } from "node:fs";
+import { join as join32 } from "node:path";
 var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
 function deliveredPaths(root, base, head) {
   const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
@@ -19749,7 +19766,7 @@ function pathSatisfied(root, entry) {
     if (staged.stdout.length)
       return false;
     try {
-      lstatSync19(join30(root, entry.path));
+      lstatSync20(join32(root, entry.path));
       return false;
     } catch {
       return true;
@@ -19760,7 +19777,7 @@ function pathSatisfied(root, entry) {
     return false;
   let stat;
   try {
-    stat = lstatSync19(join30(root, entry.path));
+    stat = lstatSync20(join32(root, entry.path));
   } catch {
     return false;
   }
@@ -20133,7 +20150,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join31(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync22(join33(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -20570,7 +20587,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join31(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join33(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -20743,7 +20760,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join31(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync16(join33(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -21829,7 +21846,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join32 } from "node:path";
+import { join as join34 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -21849,7 +21866,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join32(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join34(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -22028,8 +22045,8 @@ init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
-import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
+import { tmpdir as tmpdir9 } from "node:os";
+import { delimiter as delimiter5, dirname as dirname17, join as join35 } from "node:path";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -22085,7 +22102,7 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join35(dir || ".", name)).find((path) => {
     try {
       accessSync4(path, constants10.X_OK);
       return true;
@@ -22147,17 +22164,17 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = realpathSync21(mkdtempSync6(join33(tmpdir8(), "imm-cli-review-")));
+    const directory = realpathSync21(mkdtempSync6(join35(tmpdir9(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join33(directory, "packet.md");
-    const script = join33(directory, "review.sh");
-    const output = join33(directory, `review-output-${request.operationId}.txt`);
-    const exitFile = join33(directory, `review-exit-${request.operationId}`);
+    const packet = join35(directory, "packet.md");
+    const script = join35(directory, "review.sh");
+    const output = join35(directory, `review-output-${request.operationId}.txt`);
+    const exitFile = join35(directory, `review-exit-${request.operationId}`);
     const contractHash = currentReviewContractHash();
     writeFileSync12(packet, `review_contract_hash: ${contractHash}
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
-    const readDirs = [...new Set([directory, dirname16(request.evidencePath)])];
+    const readDirs = [...new Set([directory, dirname17(request.evidencePath)])];
     const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
     writeFileSync12(script, [
       "#!/bin/sh",
@@ -22343,7 +22360,7 @@ class ClaudeRuntime {
     this.batchGit = options.batchGit;
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
-    this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
+    this.host = options.host ?? new ClaudeReviewHost(claudeHookEventLog());
     this.reviewHost = new CliReviewHost(this.host);
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
@@ -22458,7 +22475,7 @@ class ClaudeRuntime {
     try {
       if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync19(join34(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync19(join36(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -22542,7 +22559,7 @@ class ClaudeRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: "claude-code",
-        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname18(fileURLToPath3(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal
       });
@@ -22611,7 +22628,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join34(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join36(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22752,7 +22769,7 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join34(ctx.cwd, priorIntent.intent_ref.path);
+    const sidecar = join36(ctx.cwd, priorIntent.intent_ref.path);
     const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
@@ -23069,7 +23086,7 @@ class ClaudeRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname18(fileURLToPath3(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -23286,7 +23303,7 @@ function withCompletionDelivery(taskId, result, root = process.cwd()) {
   }
 }
 function createMcpRuntime(options = {}) {
-  const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
+  const host = options.host ?? new ClaudeReviewHost(claudeHookEventLog());
   const defaultWorkspace = options.cwd ?? process.cwd();
   const trustedClientNames = options.trustedClientNames ?? [HOST_ID];
   const serverInfo = options.serverInfo ?? { name: HOST_ID, minimumHostVersion: MIN_CLAUDE_CODE_VERSION };
@@ -24167,7 +24184,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join35(cwd, ".imm", "state", "batches");
+    const batchesDir = join37(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync20(batchesDir) && readdirSync10(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
@@ -24183,7 +24200,7 @@ async function runHook() {
     if (!activeBatch)
       return;
   }
-  new FileHookEventLog().append(event);
+  claudeHookEventLog().append(event);
 }
 var entry = process.argv[1] ?? "";
 if (entry.endsWith("/claude/mcp_server.ts") || entry.endsWith("/claude/mcp-server.mjs")) {

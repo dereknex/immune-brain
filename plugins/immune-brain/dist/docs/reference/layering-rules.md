@@ -8,11 +8,12 @@ The rules apply when the target repository declares layers: an architecture map,
 
 **Principle.** A source dependency points from the outer layer toward the inner one, never the reverse, and a layer never depends on a sibling at the same level. An inner layer states the interface it needs; an outer layer implements it.
 
-**This repository.** Kernel ← Port + coordinator ← Adapter ← CLI/host.
+**This repository.** Kernel ← Port + coordinator ← host-core ← Adapter ← CLI/host.
 
 - The Kernel owns authority state and depends on no Host.
 - The Port and the host-neutral coordinator under `plugins/immune-brain/runtime/assurance/` depend on the Kernel and on no adapter.
-- Adapters (`plugins/immune-brain/runtime/claude/`, `plugins/immune-brain/runtime/antigravity/`, `.pi-extension/`) depend on the Port and coordinator, never on each other. An adapter neither imports nor extends another adapter's machinery.
+- The host-neutral adapter core at `plugins/immune-brain/runtime/host-core/` holds the adapter machinery both Hosts need, recorded by ADR 0038 (`docs/adr/0038-host-neutral-adapter-core.md` in the source repository). It depends on the Kernel, the Port and the coordinator, and on no adapter.
+- Adapters (`plugins/immune-brain/runtime/claude/`, `plugins/immune-brain/runtime/antigravity/`, `.pi-extension/`) depend on the Port, the coordinator and the host-neutral core, never on each other. An adapter neither imports nor extends another adapter's machinery.
 - The CLI and host entry points call adapters; nothing below them imports a host entry point.
 
 A slice that adds or moves a dependency states its direction in its acceptance.
@@ -56,6 +57,8 @@ Share code between adapters through composition and neutral modules, never inher
 
 ## Enforcement
 
-The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It locks host-to-host import edges to a four-edge baseline owned by #414, including `.pi-extension` to `runtime/claude/review_host`.
+The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It refuses an inner-layer import of a host adapter, an adapter import of another adapter, and a `runtime/kernel/` or `runtime/assurance/` import of `runtime/host-core/`. The host-to-host imports that remain are an exact ratchet baseline owned by #414: a new import fails, and a baseline entry whose import is gone fails as stale.
+
+The third rule is recorded by ADR 0038 (`docs/adr/0038-host-neutral-adapter-core.md` in the source repository).
 
 The Planner and Executor rules in this reference are instruction text. They are checked by Review and by `tests/layering-rules-contract.test.ts`, which proves the contracts say the rule and that every packaged copy matches this file; they do not prove a model obeys it. No new enforcement tool is introduced.

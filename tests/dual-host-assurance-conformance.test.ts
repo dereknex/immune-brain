@@ -4,7 +4,7 @@ import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assuran
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -16,7 +16,9 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
-import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
+import { antigravityHookEventLog } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { MemoryHookEventLog, type HookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 import { ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -2588,3 +2590,111 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 	} as unknown as AssuranceCoordinatorPorts;
 	return { ports, applied };
 }
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S1 AC3 (D3): one event log
+// implementation, constructed by each adapter over its own cache directory.
+describe("shared hook event log", () => {
+	interface LogEvent {
+		type: "SubagentStart" | "PostToolUse";
+		sessionId: string;
+		agent?: string;
+		agentId: string;
+		toolName?: string;
+		result?: string;
+	}
+
+	/** The two Host vocabularies both carry these variants, so one fixture drives both. */
+	const HOSTS: Array<{ host: string; cacheName: string; make: (root: string) => HookEventLog<LogEvent> }> = [
+		{ host: "claude-code", cacheName: "immune-brain-claude", make: (root) => claudeHookEventLog(root) as unknown as HookEventLog<LogEvent> },
+		{ host: "antigravity", cacheName: "immune-brain-antigravity", make: (root) => antigravityHookEventLog(root) as unknown as HookEventLog<LogEvent> },
+	];
+
+	const start = (sessionId: string, agentId: string): LogEvent => ({ type: "SubagentStart", sessionId, agentId, agent: "immune-brain-review-verifier" });
+	const result = (sessionId: string, agentId: string, text: string): LogEvent => ({ type: "PostToolUse", sessionId, agentId, toolName: "invoke_subagent", result: text });
+
+	function scratchRoot(): string {
+		return mkdtempSync(join(tmpdir(), "shared-hook-log-"));
+	}
+
+	for (const { host, cacheName, make } of HOSTS) {
+		test(`${host}: events list per session in append order under its own cache directory`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(true);
+				expect(log.append(result("s1", "a1", "first"))).toBe(true);
+				expect(log.append(start("s2", "a2"))).toBe(true);
+				expect(log.list("s1").map((event) => event.agentId)).toEqual(["a1", "a1"]);
+				expect(log.list("s2").map((event) => event.agentId)).toEqual(["a2"]);
+				expect(log.sessions()).toEqual(["s1", "s2"]);
+				expect(existsSync(join(root, cacheName))).toBe(true);
+				expect(readdirSync(root)).toEqual([cacheName]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: clear removes only the named session`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				log.append(start("s1", "a1"));
+				log.append(result("s1", "a1", "first"));
+				log.append(start("s2", "a2"));
+				log.clear("s1");
+				expect(log.list("s1")).toEqual([]);
+				expect(log.list("s2").map((event) => event.agentId)).toEqual(["a2"]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: append refuses a cache directory that is a symlink to another directory`, () => {
+			const root = scratchRoot();
+			const outside = mkdtempSync(join(tmpdir(), "shared-hook-log-outside-"));
+			try {
+				symlinkSync(outside, join(root, cacheName));
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(false);
+				expect(readdirSync(outside)).toEqual([]);
+				expect(log.list("s1")).toEqual([]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(outside, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: a session file with a non-private mode lists no events`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(true);
+				const dir = join(root, cacheName);
+				const file = join(dir, readdirSync(dir)[0] ?? "");
+				chmodSync(file, 0o644);
+				expect(log.list("s1")).toEqual([]);
+				expect(log.sessions()).toEqual([]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	}
+
+	test("the in-memory log lists what the file log lists for the same append and clear sequence", () => {
+		const root = scratchRoot();
+		try {
+			const memory = new MemoryHookEventLog<LogEvent>();
+			const file = claudeHookEventLog(root) as unknown as HookEventLog<LogEvent>;
+			for (const log of [memory, file]) {
+				log.append(start("s1", "a1"));
+				log.append(result("s1", "a1", "first"));
+				log.append(start("s2", "a2"));
+				log.clear("s1");
+			}
+			expect(memory.list()).toEqual(file.list());
+			expect(memory.sessions()).toEqual(file.sessions());
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});

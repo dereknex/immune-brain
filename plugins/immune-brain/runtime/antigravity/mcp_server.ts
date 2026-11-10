@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 import type { Readable, Writable } from "node:stream";
 import { createMcpRuntime, serveStdio as serveSharedStdio, type McpRuntimeOptions } from "../claude/mcp_server";
-import { AntigravityReviewHost, FileHookEventLog, type AntigravityHookEvent } from "./review_host";
+import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "./review_host";
 import {
 	antigravityPreInvocationHook,
 	antigravityPreToolUseHook,
@@ -14,7 +14,7 @@ import { antigravityRunContinuationHook } from "./run_continuation";
 import { MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
 
 export function createAntigravityMcpRuntime(options: McpRuntimeOptions = {}) {
-	const host = options.host ?? new AntigravityReviewHost(new FileHookEventLog());
+	const host = options.host ?? new AntigravityReviewHost(antigravityHookEventLog());
 	return createMcpRuntime({
 		...options,
 		parentHost: "antigravity",
@@ -34,6 +34,22 @@ export async function serveStdio(
 	// The shared bidirectional transport can serve `roots/list`; the readline
 	// loop this replaced could not issue server-to-client requests.
 	await serveSharedStdio({ input, output, exit, runtime: createAntigravityMcpRuntime(runtimeOptions) });
+}
+
+/** Append the start event for a subagent dispatch that may complete the same `stepIdx`. */
+function appendSubagentStart(toolCall: { name: string; args?: Record<string, unknown> }, payload: Record<string, unknown>): void {
+	if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent") return;
+	if (typeof payload.stepIdx !== "number") return;
+	const args = toolCall.args ?? {};
+	const event: AntigravityHookEvent = {
+		type: "SubagentStart",
+		sessionId: String(payload.conversationId ?? ""),
+		agent: typeof args.TypeName === "string" ? args.TypeName : "",
+		agentId: String(payload.stepIdx),
+		...(typeof args.Prompt === "string" ? { prompt: args.Prompt } : {}),
+		...(typeof args.Model === "string" ? { model: args.Model } : {}),
+	};
+	antigravityHookEventLog().append(event);
 }
 
 export async function runHook(): Promise<void> {
@@ -79,14 +95,16 @@ export async function runHook(): Promise<void> {
 					model,
 					prompt,
 				};
-				new FileHookEventLog().append(event);
+				antigravityHookEventLog().append(event);
 			}
 			stdout.write("{}\n");
 			return;
 		}
 
-		// PreToolUse
+		// PreToolUse: an allowed subagent dispatch is the start event of the call
+		// the matching PostToolUse terminates (Spec D4).
 		const result = antigravityPreToolUseHook(payload as unknown as AntigravityPreToolUsePayload);
+		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
 		stdout.write(JSON.stringify(result) + "\n");
 		return;
 	}

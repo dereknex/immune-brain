@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
-import { mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { FileHookEventLog, MemoryHookEventLog, type HookEventLog } from "../host-core/hook_event_log";
 import { tmpdir } from "node:os";
 import type {
 	AssuranceHostPort,
@@ -28,6 +26,7 @@ export type AntigravityHookEvent =
 		taskId?: string;
 		operationId?: string;
 		prompt?: string;
+		model?: string;
 	}
 	| {
 		type: "PostToolUse";
@@ -50,109 +49,12 @@ export type AntigravityHookEvent =
 	}
 	| { type: "SessionEnd"; sessionId: string };
 
-export interface HookEventLog {
-	append(event: AntigravityHookEvent): boolean;
-	list(sessionId?: string): AntigravityHookEvent[];
-	sessions(): string[];
-	clear(sessionId?: string): void;
-}
+/** The Antigravity Host keeps its own cache directory name; storage is shared (D3). */
+export const ANTIGRAVITY_CACHE_DIR = "immune-brain-antigravity";
 
-export class MemoryHookEventLog implements HookEventLog {
-	private readonly events: AntigravityHookEvent[] = [];
-	append(event: AntigravityHookEvent): boolean { this.events.push(event); return true; }
-	list(sessionId?: string): AntigravityHookEvent[] {
-		return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-	}
-	sessions(): string[] {
-		return [...new Set(this.events.map((event) => event.sessionId))];
-	}
-	clear(sessionId?: string): void {
-		if (!sessionId) {
-			this.events.length = 0;
-			return;
-		}
-		for (let i = this.events.length - 1; i >= 0; i--) {
-			if (this.events[i].sessionId === sessionId) this.events.splice(i, 1);
-		}
-	}
-}
-
-const CACHE_DIR = "immune-brain-antigravity";
-
-export function sessionHash(sessionId: string): string {
-	return createHash("sha256").update(sessionId).digest("hex");
-}
-
-export function cacheDir(root: string): string {
-	return join(root, CACHE_DIR);
-}
-
-export function ensurePrivateDir(dir: string): boolean {
-	try {
-		mkdirSync(dir, { recursive: true, mode: 0o700 });
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-export class FileHookEventLog implements HookEventLog {
-	constructor(private readonly root: string = tmpdir()) {}
-
-	private dir(): string {
-		const path = cacheDir(this.root);
-		ensurePrivateDir(path);
-		return path;
-	}
-
-	private file(sessionId: string): string {
-		return join(this.dir(), `${sessionHash(sessionId)}.events.jsonl`);
-	}
-
-	append(event: AntigravityHookEvent): boolean {
-		try {
-			const line = JSON.stringify(event) + "\n";
-			writeFileSync(this.file(event.sessionId), line, { flag: "a", mode: 0o600 });
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
-	list(sessionId?: string): AntigravityHookEvent[] {
-		if (!sessionId) {
-			const results: AntigravityHookEvent[] = [];
-			for (const session of this.sessions()) results.push(...this.list(session));
-			return results;
-		}
-		try {
-			const content = readFileSync(this.file(sessionId), "utf8");
-			return content
-				.trim()
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => JSON.parse(line));
-		} catch {
-			return [];
-		}
-	}
-
-	sessions(): string[] {
-		try {
-			const files = readdirSync(this.dir());
-			return files.filter(f => f.endsWith(".events.jsonl")).map(f => f.replace(/\.events\.jsonl$/, ""));
-		} catch {
-			return [];
-		}
-	}
-
-	clear(sessionId?: string): void {
-		if (sessionId) {
-			try { rmSync(this.file(sessionId), { force: true }); } catch {}
-		} else {
-			try { rmSync(this.dir(), { recursive: true, force: true }); } catch {}
-		}
-	}
+/** The event log this adapter constructs: the shared file log over the Antigravity cache. */
+export function antigravityHookEventLog(root = tmpdir()): FileHookEventLog<AntigravityHookEvent> {
+	return new FileHookEventLog<AntigravityHookEvent>(ANTIGRAVITY_CACHE_DIR, root);
 }
 
 interface PendingReview {
@@ -178,7 +80,7 @@ export class AntigravityReviewHost implements AssuranceHostPort {
 	private readonly pending = new Map<string, PendingReview>();
 	private readonly appliedBySession = new Map<string, number>();
 
-	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
+	constructor(private readonly log: HookEventLog<AntigravityHookEvent> = new MemoryHookEventLog<AntigravityHookEvent>()) {}
 
 	prepareVerification(request: VerificationRequest): HostReviewReservation {
 		const reviewRequest: ReviewRequest = {

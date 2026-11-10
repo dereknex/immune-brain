@@ -17,7 +17,9 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
-import { ClaudeReviewHost, FileHookEventLog, hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { FileHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
+import type { ClaudeHookEvent } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime as createMcpRuntimeUngated, elicitationParams, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -884,14 +886,14 @@ describe("claude host authority", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-symlink-"));
 		const outside = mkdtempSync(join(tmpdir(), "claude-session-outside-"));
 		symlinkSync(outside, join(dir, "immune-brain-claude"));
-		new ClaudeReviewHost(new FileHookEventLog(dir)).observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
+		new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir)).observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		expect(readdirSync(outside)).toEqual([]);
 		expect(statSync(outside).mode & 0o777).toBe(0o700);
 	});
 
 	test("Hook cache rejects an owned evidence file with a non-private mode", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-file-mode-"));
-		const log = new FileHookEventLog(dir);
+		const log = new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir);
 		log.append({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		const file = join(dir, "immune-brain-claude", readdirSync(join(dir, "immune-brain-claude"))[0]);
 		chmodSync(file, 0o644);
@@ -900,7 +902,7 @@ describe("claude host authority", () => {
 
 	test("Hook cache directory and files are owner-only", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-mode-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
+		const host = new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir));
 		host.observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		const cache = join(dir, "immune-brain-claude");
 		expect(statSync(cache).mode & 0o777).toBe(0o700);
@@ -910,7 +912,7 @@ describe("claude host authority", () => {
 
 	test("crafted session IDs cannot write Hook evidence outside the cache directory", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-escape-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
+		const host = new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir));
 		host.observe({ type: "SubagentStart", sessionId: "../evil", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		expect(existsSync(join(dir, "evil.jsonl"))).toBe(false);
 		expect(readdirSync(dir)).toEqual(["immune-brain-claude"]);
@@ -1078,7 +1080,7 @@ describe("hook entry writes only for active work", () => {
 		}
 		const path = hookEventPath("hook-work-session", store);
 		if (active) {
-			expect(new FileHookEventLog(store).list("hook-work-session").map((event) => event.type)).toEqual(events);
+			expect(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", store).list("hook-work-session").map((event) => event.type)).toEqual(events);
 		} else {
 			expect(existsSync(path)).toBe(false);
 			expect(readdirSync(store)).toEqual([]);

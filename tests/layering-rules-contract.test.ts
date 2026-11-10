@@ -47,14 +47,27 @@ describe("layering reference", () => {
 		expect(between(reference, "## Enforcement", "\n## ")).toContain("tests/runtime-layering-boundary.test.ts");
 	});
 
-	it("states the four-edge baseline owned by #414 and drops the retired edge", () => {
+	it("names the #414 ratchet baseline without pinning an edge count", () => {
 		const enforcement = between(reference, "## Enforcement", "\n## ");
 		expect(enforcement).toContain("tests/runtime-layering-boundary.test.ts");
-		expect(enforcement).toContain("four-edge");
 		expect(enforcement).toContain("#414");
+		// The observed baseline has three edges; a count in the prose drifts from it.
+		expect(reference).not.toMatch(/\b(?:one|two|three|four|five|six)-edge\b/);
 		expect(reference).not.toContain("kernel_ports.ts:115");
-		expect(reference).not.toContain("five-edge");
 		expect(reference).not.toContain("#413");
+	});
+
+	it("names the host-neutral adapter core and records it in an ADR", () => {
+		// The packaged copy cannot resolve a relative ADR link, so the reference
+		// points at the ADR the way the other shipped documents do: its repository path.
+		const rule = between(reference, "## Dependency Rule", "\n## ");
+		expect(rule).toContain("plugins/immune-brain/runtime/host-core/");
+		expect(rule).toContain("docs/adr/0038-host-neutral-adapter-core.md");
+		expect(brokenRelativeLinks(rule, resolve(ROOT, "docs/reference"))).toEqual([]);
+		const adr = read("docs/adr/0038-host-neutral-adapter-core.md");
+		expect(adr).toContain("runtime/host-core");
+		expect(adr).toMatch(/^Status: accepted/m);
+		expect(brokenRelativeLinks(adr, resolve(ROOT, "docs/adr"))).toEqual([]);
 	});
 
 	it("keeps the packaged copies byte-equal and in the mirror manifest", () => {
