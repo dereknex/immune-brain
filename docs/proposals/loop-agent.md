@@ -8,6 +8,7 @@ Loop 增加第二种运行形态：一个**独立守护进程**，可运行在�
 
 - **持续推进**：只要存在“下一步归守护进程”的 Issue 且有空闲容量，守护进程就在工作。一步完成后立即接下一步（分析 → 计划 → 实现 → 开 PR → 修到就绪），不等下一个定时点。
 - **AI 判断每个事件怎么处理**：每个外部对象的变化事件交给 AI 判断应调用哪个处理；代码只负责观察、校验权限前提和执行（§5.3）。
+- **调度 agent 干活**：守护进程自己不写代码，它调度判断、分析、规划、执行、修复五类 agent，并只凭可核对的证据确认它们的结果（§5.7）。执行这一段复用现有的 Parent 与 Lane 机制（§5.9）。
 - **人工等待不停线**：某个 Issue 等人时，守护进程转去推进其他 Issue，并提前为后面的 Issue 做好计划。
 - **定期检查只是兜底**：定时器用来发现外部变化（新 Issue、评论、CI 结果）和停滞的工作项，不是推进的节拍。
 - **唤起人工**：只在需要人工判断或澄清时，在 GitHub 上提出一个结构化问题；人回复后立即续跑。
@@ -43,7 +44,7 @@ Loop 仍不是 authority 源：Enrollment、QA、Review、Settlement 只由 Kern
 拟改为：
 
 > **Loop**:
-> The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in two forms. In a session, after an explicit `drive` entry, it continues one enrolled Task or Initiative. As the Loop daemon, a standing process, it observes the tracker, pull requests and CI, plans open Issues, and starts or resumes those entries across sessions.
+> The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in two forms. In a session, after an explicit `drive` entry, it continues one enrolled Task or Initiative. As the Loop daemon, a standing process, it observes the tracker, pull requests and CI, plans open Issues, and dispatches bounded agents that start or resume those entries across sessions.
 > _Avoid_: workflow engine, checkpoint store, scheduler authority
 
 连带影响：
@@ -227,12 +228,39 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 - **Review 意见**：沿用 `fix-pr` 的处置集（`plugins/immune-brain/dist/fix-pr.md` §4）。fixed、already satisfied、not applicable 自动处理并回复；declined 与 blocked on a decision/scope expansion 升级给人，线程保持未解决。
 - PR 属于某个 active Managed task 时由 `drive` 负责，`fix-pr` 不介入（`plugins/immune-brain/dist/fix-pr.md:11`）。
 
-### 5.7 派发、并发与失败上限
+### 5.7 调度的 agent 与派发契约
 
-- 每个工作项持有带过期时间的**租约**，防止重复派发；租约不是 Workspace Claim，过期只表示可以重新观察。
-- 每次派发是一个新的有界 Host 会话，运行在独立 worktree；启动时按 Kernel projection 绑定 `task_id`、`run_id`，不信任上一次的对话总结。
-- 失败上限按**失败签名**计：同一工作项、同一 head SHA、同一失败签名连续 2 次修复无效 → parked 并升级。
-- 并发上限、每日分析与派发预算由仓库配置声明；耗尽时只观察不派发，并在状态 Issue 中说明。
+守护进程自己不写代码、不读懂需求；它调度五类 agent 完成工作，每类是一个有界的 Host 会话。
+
+| agent | 做什么 | 入口 | 工作区 | 权限 | 完成的证据（守护进程自己读取） |
+| --- | --- | --- | --- | --- | --- |
+| 判断 | 为一个对象的新事件选择处理（§5.3） | 判断提示与处理目录 | 无，只给快照 | 只读，无写工具 | 决策通过格式校验 |
+| 分析 | 分析一个 Issue（§5.4） | 只读分析提示 | 默认分支的只读检出 | 只读 | 分析记录通过格式校验 |
+| 规划 | 产出候选 TaskIntent，必要时加 Spec | `draw-up` | 计划 worktree，分支 `imm-loop/<issue>` | 只写该 worktree | 候选通过 Planner 校验；内容哈希 |
+| 执行 | 把一个 Task 实现到 Settlement | `drive <task_id>` | Lane | 只写该 Lane | Kernel projection：`done`、`stopped`，或在等人工决策 |
+| 修复 | 解除一个 PR 的阻塞 | `fix-pr` | 该 PR 分支的 worktree | 只写该 worktree | head 前进且本地检查通过；每条意见有处置 |
+
+QA 与 Review 不由守护进程调度：它们是 `drive` 内部由 Kernel 驱动的环节（确定性 QA 与 CLI Review）。
+
+**派发契约。**
+
+- 每次派发先落盘一条记录（工作项、agent 类型、输入哈希、工作区、Host 配置、代次、租约到期时间），再启动进程。
+- **不信任 agent 的自述。** 会话的文字输出不作为结果；守护进程只读表中的证据（Kernel projection、Git head、校验结果、GitHub API）。
+- 每个工作项同一时刻至多一个写类 agent。租约防止重复派发；租约不是 Workspace Claim，过期只表示可以重新观察。
+- 每类 agent 有超时；超时即终止进程，按“会话中断”处理。
+
+**槽位与并行。**
+
+- 五类 agent 各有独立的并发槽位，判断与分析不会被长时间的执行占满。执行槽位即 `lanes.max_parallel` 的语义。
+- **scope 冲突不并行**：两个工作项的范围估计重叠时不同时执行，后一个等前一个的 PR 合并。重叠判定复用 `scopesOverlap`（`plugins/immune-brain/runtime/unattended/batch_schedule.ts:77`）。
+- **背压**：“已计划待批准”与“已就绪待合并”各有上限。达到上限后不再开新的规划或执行，状态 Issue 说明“在等你批准或合并”。这避免在你没空时堆出一批互相冲突的 PR。
+
+**失败上限。**
+
+- 执行 agent：沿用现有规则，连续 2 代没有推进 Kernel 记录即 `lane_executor_no_progress`（`plugins/immune-brain/runtime/unattended/lane_supervisor.ts:209`、`:228`），该工作项 parked 并升级。
+- 修复 agent：同一 head SHA、同一失败签名连续 2 次修复无效 → parked 并升级。
+- 判断 agent：见 §5.3。
+- 并发、缓冲上限与每日派发预算由仓库配置声明（§5.12）；预算耗尽时只观察不派发。
 
 ### 5.8 唤起人工
 
@@ -251,9 +279,100 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 - 在对应 Issue 或 PR 上发**一条**评论：一句话结论、唯一的问题、2–4 个带后果说明的选项、证据链接、回复格式；加 `imm:needs-human` 标签并 @ 所有者。
 - 同一阻塞只问一次；条件未变不重复提醒，超过配置时长后至多再提醒一次。
 - 一个工作项 parked 不影响其他工作项。
-- 所有者输入只有命令评论一种形式：`/approve <hash>`、`/plan`、`/skip`，以及对问题的选项回复。无法解析时再问一次，不猜。
+- 所有者输入只有命令评论一种形式：`/approve <hash>`、`/plan`、`/skip`、`/priority <n>`、`/pause`、`/resume`，以及对问题的选项回复。无法解析时再问一次，不猜。在状态 Issue 上的 `/pause` 是全局开关：停止一切新派发，进行中的 agent 跑完当前一代后不再续。
 - 批准可以批量：在状态 Issue 上一条评论列出多个哈希，等价于在各自 Issue 上分别批准。
 - **状态 Issue**：一个固定的 Issue，正文由守护进程原地更新（不发新评论，避免通知噪音）。最上面是“等你处理”的列表，按**你的动作能解锁多少后续工作**排序（例如“合并 #12 将解锁 3 个 Issue”）；其后是每个工作项的状态与归属、守护进程当前是否空闲及原因、预算使用和待清理的 Lane。这是人查看全局的唯一入口。
+
+### 5.9 守护进程是无头 Parent：复用现有机制
+
+现有的 batch 与单任务 `drive` 已经是“Parent 调度、Lane 里的 Executor 执行”的结构。守护进程不另造一套，而是成为第四个组合根（现有三个是 Pi、Claude Code、Antigravity，`docs/adr/0037-authority-review-cli-stage.md:74`），一个没有交互界面的 Parent。
+
+| 守护进程需要 | 现有机制 | 证据 | 缺口 |
+| --- | --- | --- | --- |
+| 无头启动执行 agent | `LaneSupervisor` 在 Lane 目录里以 `--print … /drive <task_id>` 启动 Host CLI | `plugins/immune-brain/runtime/unattended/lane_supervisor.ts:22-36`、`:69` | 无 |
+| 会话退出后续跑 | `superviseLane`：进程退出后读 Kernel projection，任务仍 active 且不在等人就启动下一代 | 同文件 `:192-229` | 无 |
+| 无进展上限 | 连续 2 代未推进 → `lane_executor_no_progress` | 同文件 `:209`、`:228` | 无 |
+| Lane 里出现人工决策 | `laneDecisionFacts` 识别等待；`relayLaneDecision` 把 Parent 的答复写入 Lane 并启动下一代 | `plugins/immune-brain/runtime/unattended/lane_decision.ts:31`、`:93` | 答复目前来自 Parent 的原生 gate；守护进程要改为来自经校验的 GitHub 回复 |
+| Enrollment 与 batch 启动 | `startBatch`，含单任务形态 | `plugins/immune-brain/runtime/unattended/batch_runner.ts:109-111`、`:261` | 启动所需的 capability 在原生确认后签发；Claude Host 在没有交互式 elicitation 时直接拒绝（`unsupported_host`，`plugins/immune-brain/runtime/claude/kernel_ports.ts:447`）。守护进程需要自己的确认来源，即 §6.1 的批准校验 |
+| 并行与 scope 冲突 | `startableChildren`、`projectScopeOverlap` | `plugins/immune-brain/runtime/unattended/batch_schedule.ts:157`、`:114` | 目前只在一个 batch 内；跨 Issue 需要守护进程一层 |
+| Initiative 内逐个集成 | Parent 分支与合并队列 | `docs/adr/0027-parent-branch-merge-queue.md` Decision 3 | 无 |
+| 关闭 Child Issue | `BatchTrackerPort.markTerminal` | `plugins/immune-brain/runtime/unattended/batch_runner.ts:164` | 无 |
+| 选择执行与 Review 的 Host、模型 | `lanes.executor_*`、`lanes.review_*`、`max_parallel` | `plugins/immune-brain/runtime/config/layered_config.ts:81` | 判断、分析、规划、修复 agent 的配置是新增的 |
+
+结论：
+
+- **执行这一段几乎全部复用。** 守护进程只是 `startBatch` 的又一个调用方；batch 状态转换仍只属于 `runtime/unattended/`（`docs/adr/0005-unattended-initiative-batch-run.md` Decision 4）。
+- **新增代码集中在五处**：观察与事件、判断与守卫、以 GitHub 批准为来源的确认、把人工决策发到 GitHub 并把答复接回 `relayLaneDecision`、规划与 PR 修复的派发。
+- **一个要在 Spec 里解决的缺口**：Executor 进程句柄只存在于启动它的进程里（`lane_supervisor.ts:68`）。守护进程重启后，之前启动的那一代会被记为 `unobservable`（`:85`）。需要规定重启后如何等待或接管，且不重复启动。
+
+### 5.10 一轮 tick 的步骤
+
+```text
+tick():
+  1 取实例锁，读编排状态
+  2 回收  检查进行中的派发：已结束的产生内部事件；租约过期的标记为可重派
+  3 观察  读 GitHub 游标之后的变化与 Kernel projection，产生事件；丢弃自身造成的变化
+  4 判断  按对象合并事件，为每个有新事件的对象派发判断 agent
+  5 守卫  校验每个决策；通过的写入“待执行处理”，拒绝的回送重判或升级
+  6 调度  按 §5.4 排序，在槽位、scope 冲突、背压、预算允许的范围内派发
+  7 停滞  下一步归守护进程、却既无进行中派发也无待执行处理的工作项，产生 stalled 事件
+  8 发布  状态 Issue 内容有变化才更新；写回编排状态，释放锁
+```
+
+两条保证：
+
+- **先记后做。** 决策与派发记录在产生副作用之前落盘。崩溃后重放时，每个处理带幂等键（工作项、事件 id、处理名）。
+- **远端写入可核对。** 守护进程写的每条评论带隐藏标记。写入结果不明时不盲目重试，先按标记重新读取确认是否已写入。
+
+### 5.11 项目进度
+
+Loop 对项目进度负责的方式是维护一份始终最新的进度视图，并让它决定下一步做什么。
+
+- **进度单位**是工作项的状态；按 Initiative Parent 或里程碑分组汇总。
+- **状态 Issue 的内容**，自上而下：
+  1. 等你处理：批准、澄清、决策、合并，按能解锁的后续工作量排序。
+  2. 进行中：每个工作项当前是哪类 agent 在处理、从何时开始、第几代。
+  3. 排队：顺序与未开始的原因（槽位、scope 冲突、依赖、背压）。
+  4. 最近完成，以及近 7 天的完成数、从批准到就绪的耗时。
+  5. 守护进程自身：是否空闲及原因、预算使用、被暂停与否、待清理的 Lane。
+- **你调整方向的方式**：`/priority`、`/skip`、`/pause`，以及 GitHub 原生的 Issue 依赖关系。守护进程不自行改变优先级，只在状态 Issue 里指出“哪个决定现在最卡进度”。
+
+### 5.12 配置与状态
+
+配置放在已跟踪的 `.imm/config.json` 新增的 `loop` 段（该文件现有契约为 `immune_brain/project_config/v1`，`.imm/config.json:2`；新增段是否需要契约升级在 Spec 中确定）。数值仅为示意，默认值要等 P0 数据。
+
+```json
+"loop": {
+  "enabled": false,
+  "owners": ["<owner-login>"],
+  "identity": "<daemon-login>",
+  "author_allowlist": [],
+  "publish": { "branch_prefixes": ["imm-loop/", "imm/"], "open_pr": true },
+  "slots": { "judge": 2, "analyze": 1, "plan": 1, "execute": 1, "repair": 1 },
+  "buffers": { "planned_awaiting_approval": 3, "ready_awaiting_merge": 3 },
+  "budget": { "dispatches_per_day": 40 },
+  "intervals": { "observe_seconds": 120, "reconcile_minutes": 60, "remind_hours": 48 },
+  "agents": {
+    "judge": { "host": "claude-code" },
+    "analyze": { "host": "claude-code" },
+    "plan": { "host": "claude-code" },
+    "repair": { "host": "claude-code" }
+  }
+}
+```
+
+执行与 Review agent 继续使用现有的 `lanes.*` 配置，不重复定义。
+
+编排状态在 Git-ignored 的 `.imm/state/loop/`，四类记录：
+
+| 记录 | 关键字段 | 用途 |
+| --- | --- | --- |
+| 工作项 | Issue 号、状态、下一步归属、关联的 task_id 与 PR、最近进展时间、parked 原因 | 调度与进度视图 |
+| 事件 | 对象、类型、作者及其身份校验结果、head SHA 或评论 id、观察时间 | 去重与判断输入 |
+| 决策 | 事件 id、输入哈希、处理、理由、守卫结果 | 审计、重放、评估集 |
+| 派发 | agent 类型、工作区、代次、pid、租约、结束证据 | 回收、续跑、失败计数 |
+
+这些都不是 authority：删掉整个目录后，守护进程能从 GitHub 与 Kernel 重新推导出工作项状态，损失的只是历史与去重信息。
 
 ## 6. 新增的两类授权
 
@@ -299,7 +418,7 @@ D1 的安全性依赖一个前提：**模型不能以所有者身份在 GitHub �
 - `plugins/immune-brain/runtime/loop_daemon/`：观察、判断输入的组装、处理目录与守卫、排序、状态与租约，host-neutral；除调用判断会话外均为确定性代码。
 - `plugins/immune-brain/bin/imm-loop`。
 - GitHub 读取复用 `createGhTransport`（`plugins/immune-brain/runtime/github_issue_tracker.ts:504`）；不向 tracker 适配器添加 Kernel 读写。
-- 各 Host 适配器只负责“启动一个有界会话”。
+- 守护进程作为第四个组合根，直接调用 `startBatch` 与 `LaneSupervisor`（§5.9）；现有三个 Host 适配器不改。
 
 | 阶段 | 内容 | 新增授权 | 验收 |
 | --- | --- | --- | --- |
@@ -323,8 +442,10 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 
 ## 10. 未验证
 
-- `draw-up`、`drive` 与 Enrollment 能否在无头 Host 会话中完成：未验证。只确认了 Review 阶段以 `--print` 无头调用 reviewer CLI（`plugins/immune-brain/runtime/assurance/cli_review.ts:41`）。
-- 三个 Host（Pi、Claude Code、Antigravity）的无头能力是否对等：未验证。
+- 执行 agent 的无头运行有现成代码（`lane_supervisor.ts:22-36`），但我没有实际运行验证。
+- `draw-up` 能否以同样的 `--print` 方式无头进入并被识别为阶段入口：未验证。
+- 守护进程重启后接管 `unobservable` 的 Executor 代次的方式：未设计，见 §5.9。
+- 判断、分析、规划、修复四类 agent 在三个 Host 上的无头能力是否对等：未验证。
 - GitHub API 能否可靠判断评论未被编辑：未验证。
 - Enrollment 能否直接在守护进程的计划分支上进行（现规则是 Lane 从用户 HEAD 起、只复制 TaskIntent 与 Spec，`plugins/immune-brain/dist/BASELINE.md:133`）：未验证，可能需要调整。
 - AI 事件判断的准确率与一致性：未验证，需 P0 的评估集。
