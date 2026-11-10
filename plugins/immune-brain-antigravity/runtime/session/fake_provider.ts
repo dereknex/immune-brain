@@ -114,13 +114,15 @@ export function createFakeSessionProvider(): { port: SupervisedSessionPort; cont
 					if (timer) clearTimeout(timer);
 					resolve(result);
 				};
+				const giveUp = () => {
+					waiters.delete(wake);
+					if (timer) clearTimeout(timer);
+					resolve({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
+				};
 				waiters.add(wake);
-				if (options?.timeoutMs !== undefined && options.timeoutMs > 0) {
-					timer = setTimeout(() => {
-						waiters.delete(wake);
-						resolve({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
-					}, options.timeoutMs);
-				}
+				if (options?.signal?.aborted) return giveUp();
+				options?.signal?.addEventListener("abort", giveUp, { once: true });
+				if (options?.timeoutMs !== undefined && options.timeoutMs > 0) timer = setTimeout(giveUp, options.timeoutMs);
 			});
 		},
 		async readOutput(handle, source) {

@@ -31,7 +31,7 @@ const USAGE = [
 	"  probe",
 	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [--env KEY=VALUE]... [-- <host arguments>]",
 	"  send <handle> --text <instruction>",
-	"  await <handle> [--timeout-ms <ms>]",
+	"  await <handle>... [--timeout-ms <ms>]   (several handles: the first transition, with its handle)",
 	"  observe <handle>",
 	"  read <handle> [--source visible|scrollback]",
 	"  stop <handle>",
@@ -138,11 +138,21 @@ export async function runSessionCli(
 			return emit(await provider.sendInstruction(handle, text));
 		}
 		case "await": {
-			const bad = needHandle();
-			if (bad) return bad;
+			if (positional.length === 0) return usage("await needs at least one handle");
+			if (new Set(positional).size !== positional.length) return usage("await names each handle once");
 			const raw = flags.get("--timeout-ms");
 			if (raw !== undefined && !/^\d+$/.test(raw)) return usage("--timeout-ms must be a whole number of milliseconds");
-			return emit(await provider.awaitTransition(handle, raw === undefined ? undefined : { timeoutMs: Number(raw) }));
+			const bound = raw === undefined ? {} : { timeoutMs: Number(raw) };
+			if (positional.length === 1) return emit(await provider.awaitTransition(handle, raw === undefined ? undefined : bound));
+			// Several sessions: the first transition wins and names its handle; the
+			// other waits are aborted and awaited, so no wait process outlives the call.
+			const controller = new AbortController();
+			const waits = positional.map(each => provider.awaitTransition(each, { ...bound, signal: controller.signal }).then(result => ({ each, result })));
+			const first = await Promise.race(waits);
+			controller.abort();
+			await Promise.allSettled(waits);
+			if (first.result.ok && first.result.transition === "timeout") return emit(first.result);
+			return emit({ ...first.result, handle: first.each });
 		}
 		case "observe": {
 			const bad = needHandle();

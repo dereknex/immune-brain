@@ -10,7 +10,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 const file = process.env.FAKE_HERDR_STATE;
 if (!file) { process.stderr.write("FAKE_HERDR_STATE is not set\n"); process.exit(3); }
 const load = () => existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-const save = (state) => { writeFileSync(`${file}.tmp`, JSON.stringify(state)); renameSync(`${file}.tmp`, file); };
+const save = (state) => { writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(state)); renameSync(`${file}.${process.pid}.tmp`, file); };
 const argv = process.argv.slice(2);
 const id = `cli:${argv.slice(0, 2).join(":")}`;
 const ok = (result) => { process.stdout.write(`${JSON.stringify({ id, result })}\n`); process.exit(0); };

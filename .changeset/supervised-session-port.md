@@ -16,3 +16,6 @@ After the first live run: Herdr sessions are owned by a token in the tab label
 `done` session (the batch runner accepts `session_state: "done"`), `--resume`
 restarts an exited Host in the same Herdr tab, and `create --env` passes extra
 Host environment.
+`imm-session await` takes several handles and returns the first transition with
+its handle, so a Pi Parent, which a background command cannot wake, waits for
+all its Lanes in the foreground in bounded rounds.

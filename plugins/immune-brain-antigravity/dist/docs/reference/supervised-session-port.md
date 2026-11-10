@@ -22,7 +22,7 @@ A provider missing any of these, or implementing another port protocol, is refus
 | --- | --- | --- | --- |
 | `createSession` | Lane `cwd`; one explicit `drive` entry; label ≤ 32 characters | Exactly one live session rooted in the Lane, the entry submitted once, state reported | Refusal and no session; never a detached job, in-process subagent or serial in-place work. A start dialog reports `entry_submitted: false`, `blocked`. With `resume`, the entry is resubmitted in the same session only when it is `idle` or `done`; a provider that can restarts an exited Host in place first (Herdr), and one that cannot refuses (`state_refused`, herdr-core) so the caller creates a new session. `env` sets extra Host environment at creation |
 | `sendInstruction` | Owned handle; the adapter observes `idle` or `done` (a finished turn not yet seen) immediately before sending; the Parent recorded the instruction first (`lane_instruction` accepted) | Delivered, with the state after delivery | Any other state: `state_refused`, nothing sent |
-| `awaitTransition` | Owned handle | Returns once the session is not `working` (at once if it already is not): `changed`, `exited`, `timeout` or `events_lost` | `timeout` and `exited` carry `unknown`; `exited` is a process signal, never a verdict or settlement |
+| `awaitTransition` | Owned handle | Returns once the session is not `working` (at once if it already is not): `changed`, `exited`, `timeout` or `events_lost` | `timeout` and `exited` carry `unknown`; `exited` is a process signal, never a verdict or settlement. An aborted signal ends the wait as `timeout` and terminates any provider process it started |
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
@@ -56,14 +56,14 @@ imm-session <verb> --provider herdr|herdr-core [options]
   probe
   create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [--env KEY=VALUE]... [-- <host arguments>]
   send <handle> --text <instruction>
-  await <handle> [--timeout-ms <ms>]
+  await <handle>... [--timeout-ms <ms>]
   observe <handle>
   read <handle> [--source visible|scrollback]
   stop <handle>
   reconcile <handle>...
 ```
 
-Each call admits and probes the provider, runs one verb and prints one JSON object. Exit `0` on success, `1` on a refusal, `2` on a usage error.
+Each call admits and probes the provider, runs one verb and prints one JSON object. `await` over several handles returns the first transition with its `handle` (a shared `timeout` names none) and aborts the other waits, terminating their provider processes before it exits; this lets a Parent Host that a background command cannot re-invoke (Pi) wait for all its Lanes in the foreground, in bounded rounds. Exit `0` on success, `1` on a refusal, `2` on a usage error.
 
 ## Provider mapping
 

@@ -408,11 +408,23 @@ read. For each `executor` handoff without a live session:
    from a directory names it `/immune-brain:drive`, Pi names it `/skill:drive`
    and Antigravity names it `/drive`. Keep `task_id → handle`
    from the result; the handle is opaque and is not authority.
-3. Supervise with `imm-session await <handle> --provider herdr` as a Host
-   background command, so its return re-invokes the Parent. Start it only after
-   the create reported `entry_submitted: true` and `state: "working"`: a wait
-   attached to a session that is not working returns at once. Do not loop on
-   `imm-session observe` or read the session's output to judge progress.
+3. Supervise with one `imm-session await <handle>... --provider herdr` over the
+   handles of every live Lane session; it returns at the first transition and
+   names that session's `handle`. How it runs depends on the Parent Host:
+   - A Parent Host whose background command re-invokes it when the command ends
+     (Claude Code) runs it as a Host background command, so its return
+     re-invokes the Parent.
+   - A Parent Host without that (Pi, whose bash tool is not woken when a
+     background process ends, and any Host not known to re-invoke) runs it in
+     the foreground with `--timeout-ms 600000`. A `timeout` return is no
+     transition: the Parent calls `start_unattended_batch`, answers anything
+     the user said meanwhile, and runs the wait again. It never polls
+     `imm-session observe` instead.
+
+   Start it only after the create reported `entry_submitted: true` and
+   `state: "working"`: a wait attached to a session that is not working returns
+   at once. Do not loop on `imm-session observe` or read the session's output to
+   judge progress.
 
 A create that reports `entry_submitted: false`, or a `blocked` state at any
 time, means the tab shows a dialog only the user may answer: workspace trust,
@@ -466,9 +478,12 @@ Single tasks outside a batch keep their existing budget behavior, and Review
 independence is unchanged. A Review rework budget that the Kernel turns into a
 `replan_required` decision still needs the user's own native decision.
 
-Every live Lane session keeps exactly one `imm-session await` armed, so `blocked`
-and idle-without-settlement wake the Parent on their own; a Parent that has
-nothing else to do still ends its turn with those waits armed. A wait that returns
+Every live Lane session is covered by exactly one armed `imm-session await` (one
+call covers several sessions), so `blocked` and idle-without-settlement wake the
+Parent on their own. After a return the Parent handles that session and runs the
+wait again over every session still live. A background-wait Parent that has
+nothing else to do still ends its turn with the wait armed; a foreground-wait
+Parent keeps waiting in bounded rounds instead. A wait that returns
 `exited` means the Host process is gone, never that the child finished. A wait
 that returns `unknown` ends nothing: the Parent calls `start_unattended_batch`
 and re-arms the wait, and when the next wait returns `unknown` again it tells

@@ -80,7 +80,7 @@ export const HERDR_CLI = {
 } as const;
 
 export type HerdrExecResult = ExecResult;
-export type HerdrExec = (args: string[]) => Promise<HerdrExecResult>;
+export type HerdrExec = (args: string[], signal?: AbortSignal) => Promise<HerdrExecResult>;
 
 export interface HerdrProviderOptions {
 	env: Record<string, string | undefined>;
@@ -89,7 +89,7 @@ export interface HerdrProviderOptions {
 }
 
 export function defaultHerdrExec(env: Record<string, string | undefined>): HerdrExec {
-	return args => runCommand(env, "herdr", args);
+	return (args, signal) => runCommand(env, "herdr", args, signal);
 }
 
 interface HerdrIds { workspace: string; tab: string; pane: string; token: string }
@@ -160,8 +160,8 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 	const promptTimeoutMs = options.promptTimeoutMs ?? HERDR_PROMPT_TIMEOUT_MS;
 	const workspace = options.env.HERDR_WORKSPACE_ID ?? "";
 
-	const run = async (args: string[]): Promise<HerdrExecResult | Refusal> => {
-		const result = await exec(args);
+	const run = async (args: string[], signal?: AbortSignal): Promise<HerdrExecResult | Refusal> => {
+		const result = await exec(args, signal);
 		if (result.missing) return refuse("provider_unavailable", "the herdr executable is not on PATH");
 		return result;
 	};
@@ -302,8 +302,9 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (isRefusal(found)) return found;
 			if (found.gone) return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
 			const ids = found.ids;
-			const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs));
+			const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs), waitOptions?.signal);
 			if (isRefusal(result)) return result;
+			if (result.aborted) return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
 			if (result.code === 0) {
 				const state = parseHerdrState(result.stdout);
 				return { ok: true, transition: "changed", ...detected(state) };

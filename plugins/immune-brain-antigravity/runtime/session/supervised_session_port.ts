@@ -73,6 +73,7 @@ export type InstructionResult = ({ ok: true } & Observation) | Refusal;
  * `events_lost`: the provider dropped events; reconcile before acting.
  */
 export type Transition = "changed" | "exited" | "timeout" | "events_lost";
+export interface AwaitOptions { timeoutMs?: number; signal?: AbortSignal }
 export type AwaitResult = ({ ok: true; transition: Transition } & Observation) | Refusal;
 export type ReadResult = { ok: true; text: string; source: OutputSource } | Refusal;
 export type StopResult = { ok: true } | Refusal;
@@ -100,8 +101,12 @@ export interface SupervisedSessionPort {
 	createSession(input: CreateSessionInput): Promise<CreateSessionResult>;
 	/** Sends one text instruction only to an owned session observed `idle` or `done`; otherwise sends nothing. */
 	sendInstruction(handle: SessionHandle, text: string): Promise<InstructionResult>;
-	/** Returns once the session is not `working` (at once if it already is not), or at the timeout. */
-	awaitTransition(handle: SessionHandle, options?: { timeoutMs?: number }): Promise<AwaitResult>;
+	/**
+	 * Returns once the session is not `working` (at once if it already is not),
+	 * or at the timeout. An aborted `signal` ends the wait early as `timeout`
+	 * and leaves no provider process behind.
+	 */
+	awaitTransition(handle: SessionHandle, options?: AwaitOptions): Promise<AwaitResult>;
 	/** For people to read. Never Kernel progress evidence. */
 	readOutput(handle: SessionHandle, source: OutputSource): Promise<ReadResult>;
 	/** Reports `unknown` when no state is available; never invents `idle` or `done`. */

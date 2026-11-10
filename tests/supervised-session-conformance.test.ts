@@ -124,6 +124,17 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(await port.awaitTransition(handle, { timeoutMs: 150 })).toEqual({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
 	});
 
+	it("ends an aborted wait promptly as a timeout", async () => {
+		const { port } = start();
+		const handle = await created(port);
+		const controller = new AbortController();
+		const started = Date.now();
+		const waiting = port.awaitTransition(handle, { signal: controller.signal });
+		setTimeout(() => controller.abort(), 100);
+		expect(await waiting).toEqual({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
+		expect(Date.now() - started).toBeLessThan(3_000);
+	});
+
 	it("reports an exited session as exited, not done", async () => {
 		const { port, control } = start();
 		const handle = await created(port);

@@ -137,3 +137,10 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 | 补测入口 `--env` | `imm-session create --env KEY=VALUE`（可重复，只用于 create）：Herdr 走 `tab create --env`，core 在 Host 命令前加 `env K=V`；变量名与单行值在 port 校验 | Herdr 与 core 的 env 用例、CLI 解析用例 |
 
 待实测确认的新写法：`herdr pane get` / `tab get` 的 `.result.pane` / `.result.tab` 形状（取自 0.9.5 API schema 的 `pane_info`、`tab_info`），Host 退出后 `agent get` 的错误码（文档只列出 `agent_not_found`、`agent_not_running` 两种可能），以及 `tab create --env` 对之后 `agent start` 的 Host 是否生效。
+
+### C-3：Pi Parent 不会被后台命令唤醒（修复）
+
+- `imm-session await` 接受多个 handle：任一会话发生转换即返回，并带上该会话的 `handle`；共享的 `timeout` 不带 handle。其余等待通过 `AbortSignal` 取消，`runCommand` 收到取消即对子进程发 `SIGTERM`，CLI 等所有等待结束后才退出，不留孤儿 `herdr agent wait` / `hc wait` 进程。port 的 `awaitTransition` 增加 `signal`，三个 provider 都实现。
+- Loop 契约（`dist/drive-batch.md` Herdr Lane Tabs 第 3 步）：后台命令结束能唤起 Parent 的 Host（Claude Code）照旧后台挂起；其他 Host（Pi，及不确定能唤起的 Host）在前台以 `--timeout-ms 600000` 分轮等待，`timeout` 不算转换，Parent 调 `start_unattended_batch`、回应用户后再等，从不改为轮询 `observe`。
+- 测试：一致性测试“ends an aborted wait promptly as a timeout”×3 provider；CLI 多 handle 用例（返回正确 handle、无残留进程、共享 timeout、重复 handle 拒绝）；`runCommand` 取消用例。去掉 `child.kill` 的变异被 2 个用例抓到。
+- 待实测：Pi Parent 在 Herdr 内按前台分轮等待跑通阶段 C（实测方案 C 阶段第 6 条）。

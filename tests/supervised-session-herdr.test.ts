@@ -291,6 +291,29 @@ describe("imm-session CLI", () => {
 		expect((await runSessionCli(["observe", "herdr:w-parent/t1/p1/x", "--provider", "herdr", "--env", "A=1"], env)).returncode).toBe(2);
 	});
 
+	it("awaits several sessions, returns the first transition with its handle, and leaves no wait process behind (C-3)", async () => {
+		const { port, control, env } = subject();
+		const first = await port.createSession(INPUT);
+		const second = await port.createSession({ ...INPUT, label: "slice-b" });
+		if (!first.ok || !second.ok) throw new Error("create refused");
+		setTimeout(() => control.setState(second.handle, "blocked"), 300);
+		const out = await runSessionCli(["await", first.handle, second.handle, "--provider", "herdr"], env);
+		expect(out.returncode).toBe(0);
+		expect(JSON.parse(out.stdout)).toEqual({ ok: true, transition: "changed", state: "blocked", provenance: "detected", handle: second.handle });
+		const lingering = spawnSync("pgrep", ["-f", "herdr agent wait p1 "], { encoding: "utf8" });
+		expect(lingering.stdout.trim()).toBe("");
+	});
+
+	it("reports a shared timeout without naming a handle", async () => {
+		const { port, env } = subject();
+		const first = await port.createSession(INPUT);
+		const second = await port.createSession({ ...INPUT, label: "slice-b" });
+		if (!first.ok || !second.ok) throw new Error("create refused");
+		const out = await runSessionCli(["await", first.handle, second.handle, "--provider", "herdr", "--timeout-ms", "150"], env);
+		expect(JSON.parse(out.stdout)).toEqual({ ok: true, transition: "timeout", state: "unknown", provenance: "none" });
+		expect((await runSessionCli(["await", first.handle, first.handle, "--provider", "herdr"], env)).returncode).toBe(2);
+	});
+
 	it("offers no close verb", async () => {
 		const { env } = subject();
 		const out = await runSessionCli(["close", "herdr:w-parent/t1/p1", "--provider", "herdr"], env);

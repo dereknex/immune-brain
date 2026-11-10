@@ -121,14 +121,14 @@ function newToken(): string {
 }
 
 export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions): SupervisedSessionPort {
-	const exec: CommandExec = options.exec ?? ((command, args) => runCommand(options.env, command, args));
+	const exec: CommandExec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
 	const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
 	const pollMs = options.pollMs ?? 250;
 	const sleep = options.sleep ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
 	const isRefusal = (value: unknown): value is Refusal => typeof value === "object" && value !== null && (value as Refusal).ok === false;
 
-	const hc = async (args: string[]): Promise<ExecResult | Refusal> => {
-		const result = await exec("hc", args);
+	const hc = async (args: string[], signal?: AbortSignal): Promise<ExecResult | Refusal> => {
+		const result = await exec("hc", args, signal);
 		if (result.missing) return refuse("provider_unavailable", "the hc executable is not on PATH");
 		return result;
 	};
@@ -265,8 +265,9 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (isRefusal(found)) return found;
 			const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
 			for (;;) {
-				const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions!.timeoutMs! / 1000 : undefined));
+				const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions!.timeoutMs! / 1000 : undefined), waitOptions?.signal);
 				if (isRefusal(result)) return result;
+				if (result.aborted) return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
 				if (result.code !== 0) {
 					if (hcErrorKind(result) === "finished") return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
 					return refuse("provider_error", `hc wait failed: ${failure(result)}`, handle);

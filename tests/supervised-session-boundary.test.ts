@@ -75,3 +75,17 @@ describe("Supervised Session Port boundary", () => {
 		expect(spelled).toEqual([HERDR_ADAPTER]);
 	});
 });
+
+describe("session exec", () => {
+	test("an aborted command is terminated and resolves at once", async () => {
+		const { runCommand } = await import("../plugins/immune-brain/runtime/session/exec");
+		const controller = new AbortController();
+		const started = Date.now();
+		const running = runCommand(process.env, "sleep", ["30"], controller.signal);
+		setTimeout(() => controller.abort(), 100);
+		expect(await running).toMatchObject({ aborted: true, code: null });
+		expect(Date.now() - started).toBeLessThan(3_000);
+		const lingering = Bun.spawnSync(["pgrep", "-x", "-f", "sleep 30"]).stdout.toString().trim();
+		expect(lingering).toBe("");
+	});
+});
