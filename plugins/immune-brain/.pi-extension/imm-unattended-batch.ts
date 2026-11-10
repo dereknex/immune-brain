@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { claimLoader, copySource, loaderScope } from "./single-copy";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -535,6 +536,9 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
+	// A second copy of the plugin in this process registers nothing (C-1); the
+	// notice comes from this copy's other factory.
+	if (!claimLoader(loaderScope(pi), copySource(import.meta.url)).active) return;
 	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",

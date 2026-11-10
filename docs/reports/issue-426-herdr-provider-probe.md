@@ -144,3 +144,11 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 - Loop 契约（`dist/drive-batch.md` Herdr Lane Tabs 第 3 步）：后台命令结束能唤起 Parent 的 Host（Claude Code）照旧后台挂起；其他 Host（Pi，及不确定能唤起的 Host）在前台以 `--timeout-ms 600000` 分轮等待，`timeout` 不算转换，Parent 调 `start_unattended_batch`、回应用户后再等，从不改为轮询 `observe`。
 - 测试：一致性测试“ends an aborted wait promptly as a timeout”×3 provider；CLI 多 handle 用例（返回正确 handle、无残留进程、共享 timeout、重复 handle 拒绝）；`runCommand` 取消用例。去掉 `child.kill` 的变异被 2 个用例抓到。
 - 待实测：Pi Parent 在 Herdr 内按前台分轮等待跑通阶段 C（实测方案 C 阶段第 6 条）。
+
+### C-1：同一插件装两份时 Pi Executor 起不来（修复）
+
+- 成因：Parent 从本地插件目录启动时，按契约把同一目录以 `-e` 传给 Executor；若同一插件也装成了用户级 Pi package，一个 Pi 进程会加载两份 Immune-Brain。Pi 先加载 `-e` 扩展、再加载已安装的扩展（本地依赖 `@earendil-works/pi-coding-agent` 0.84.1 的 `dist/core/resource-loader.js` 中 `mergePaths(cliEnabledExtensions, enabledExtensions)`），两份注册同名工具；且 `imm-canary-work.ts` 每次加载都替换进程级的 Assurance progression，第二份会换掉第一份的状态。0.84.1 只把工具冲突记为诊断；实测的 Pi 1.5.0 直接退出，本地未能复现该版本行为。
+- 修复：新增 `plugins/immune-brain/.pi-extension/single-copy.ts`。两个扩展入口先按源目录（realpath 后的插件根）认领自己的 resource loader，以 Pi 让同一 loader 加载的所有扩展共享的 `pi.events` 作标识（0.84.1 `resource-loader.js:158` 的 `this.eventBus`）：第一份的目录拥有该 loader，同一目录重载照常，其他目录的副本什么都不注册，只在 `session_start` 提示一次“已从哪里加载、哪份被忽略”；原拥有目录已不存在（package 被移动或升级）时由新目录接管。因 `-e` 先加载，显式指定的目录生效。`dist/drive-batch.md` 写明该行为。
+- 第一版按“进程”认领，`tests/pi-canary-packed-loader.test.ts` 在同进程其他测试之后从打包副本加载时被误判为重复而失败（单独跑通过），因此改为按 loader 认领；该测试现已通过。
+- 测试：`tests/pi-extension-single-copy.test.ts`（认领规则与接管；两个真实入口在被他人认领时零注册、只提示一次；自己拥有的 loader 与另一个 loader 都照常注册工具）。
+- 待实测：在装有用户级 Immune-Brain Pi package 的机器上，以 `-e <插件目录>` 启动 Pi Executor，确认不再退出、提示出现一次、使用的是 `-e` 那份。

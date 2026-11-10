@@ -111,7 +111,8 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
    - child 结算后 Parent 重新进入，Kernel 结算为 `done`，交付符合 `git_integration` 设置。
 4. 证据：保存 Parent 的会话记录，检查其中**没有**直接执行 `herdr tab|agent|pane` 的命令（G5）。保存 batch report 中的 `lane_supervision` 与 `interventions`。
 5. 对三个 Executor Host 各跑一次，通过 Lane Preferences 的 `executor_host` 指定。
-6. C-3：分别用 Claude Code 与 Pi 作 Parent 各跑一次。Claude Code 应以后台命令挂起 `imm-session await`；Pi 应在前台运行带 `--timeout-ms 600000` 的 `imm-session await <handle>...`，`timeout` 返回后调 `start_unattended_batch` 再等。并行 batch（`max_parallel` 2）时一次 `await` 覆盖两个 Lane，返回的 `handle` 对应先变化的那个；Parent 返回后用 `ps` 确认没有残留的 `herdr agent wait` 进程。
+6. C-1：在装有用户级 Immune-Brain Pi package 的机器上，让 Parent 以本地插件目录启动 Pi Executor（`-e <插件目录>`）。期望 Executor 不退出，Pi 里出现一次“已从 <目录> 加载”的提示，工具行为来自 `-e` 那份。
+7. C-3：分别用 Claude Code 与 Pi 作 Parent 各跑一次。Claude Code 应以后台命令挂起 `imm-session await`；Pi 应在前台运行带 `--timeout-ms 600000` 的 `imm-session await <handle>...`，`timeout` 返回后调 `start_unattended_batch` 再等。并行 batch（`max_parallel` 2）时一次 `await` 覆盖两个 Lane，返回的 `handle` 对应先变化的那个；Parent 返回后用 `ps` 确认没有残留的 `herdr agent wait` 进程。
 
 ## 7. 重点观察与已知缺口
 

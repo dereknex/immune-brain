@@ -19,3 +19,6 @@ Host environment.
 `imm-session await` takes several handles and returns the first transition with
 its handle, so a Pi Parent, which a background command cannot wake, waits for
 all its Lanes in the foreground in bounded rounds.
+A Pi session now loads one Immune-Brain only: a second copy (an installed Pi
+package next to `-e <plugin root>`) registers nothing and shows a notice,
+instead of the Executor Host exiting on duplicate tools.

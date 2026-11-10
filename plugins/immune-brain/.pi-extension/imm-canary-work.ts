@@ -2,6 +2,7 @@ import { buildAssuranceSnapshot, stagePlanningArtifactTransition } from "../runt
 export { buildSnapshot, ensureReviewRevision as ensureTaskReviewRevision } from "../runtime/assurance/verdict_authority";
 export type { SnapshotDescriptorInput } from "../runtime/assurance/verdict_authority";
 import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port";
+import { announceSkippedCopy, claimLoader, copySource, loaderScope } from "./single-copy";
 // P3 Pi lifecycle extension: the only production route for Kernel canary
 // assurance after enrollment.
 //
@@ -402,6 +403,9 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
 ) {
+	// A second copy of the plugin in this process registers nothing (C-1).
+	const claim = claimLoader(loaderScope(pi), copySource(import.meta.url));
+	if (!claim.active) { announceSkippedCopy(pi as never, claim); return; }
 	// One progression per extension load, published for the batch gate to reuse.
 	// Reusing whatever instance a previous load left behind would leak another
 	// session's Review reservations into this one, so the load always replaces it.

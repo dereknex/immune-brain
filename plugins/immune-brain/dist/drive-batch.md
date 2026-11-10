@@ -352,7 +352,10 @@ Parent's own Host type, and use another available one when it is not available,
 naming the Host chosen in the report. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
 same Immune-Brain plugin or package the Parent runs: a Parent started from a
-local plugin directory passes that same directory to the Executor Host. The
+local plugin directory passes that same directory to the Executor Host. A Pi
+session loads one Immune-Brain only: when that directory and an installed Pi
+package both load, the first loaded (the `-e` directory) is used and the other
+registers nothing and shows a notice naming both. The
 Parent adds no permission or trust option of its own; the Executor Host runs
 under the user's own settings, with the model and effort of its own defaults
 unless [Lane Preferences](#lane-preferences) resolve them. How the Parent obtains a supervised session
