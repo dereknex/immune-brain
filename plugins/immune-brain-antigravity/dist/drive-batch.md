@@ -385,47 +385,46 @@ with a runtime-owned Executor keep that process until settlement; never add a ta
 For a single-task user decision, follow [Parent decision relay](#single-task-lane)
 and resume the existing tab after the native decision is applied.
 
-Inside Herdr the Parent drives the `herdr` CLI itself; the runtime and the
-`lane-steward` never do. Each Lane gets a tab of its own, so its Executor Host
-has a full-size terminal the user can read. For each `executor` handoff without
-a live tab:
+Inside Herdr the Parent drives each Lane session through the
+[Supervised Session Port](docs/reference/supervised-session-port.md) with
+`imm-session --provider herdr`; the runtime and the `lane-steward` never do.
+Resolve `../bin/imm-session` from this packaged contract; do not assume a bare
+command is on `PATH`. Every call prints one JSON object; `ok: false` names a
+refusal `code` and means nothing beyond its `reason` was done. Each Lane gets a
+tab of its own, so its Executor Host has a full-size terminal the user can
+read. For each `executor` handoff without a live session:
 
-1. Take the Lane from the handoff's `lane_path`. Pick the Executor Host as above;
-   `claude-code` is Herdr kind `claude` and `pi` is kind `pi`.
-2. Create the tab without taking focus, in the Parent's own workspace and rooted
-   in the Lane:
-   `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus`.
-   Without `--workspace` the tab lands in whichever workspace has focus. `<name>`
-   is a label of at most 32 characters such as the Slice ID; a `task_id` is
-   usually too long. Read `tab.tab_id` and `root_pane.pane_id` from the JSON
-   result and keep `task_id → tab_id, pane_id`: the pane ID addresses the
-   session, the tab ID closes it.
-3. Start the Host in that tab's root pane:
-   `herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>`.
-   Host arguments are only those that load the Parent's plugin and those that
-   [Lane Preferences](#lane-preferences) resolved for model and effort.
-4. Submit the entry and nothing else (later text follows only the instruction
-   rule below), and confirm the turn began:
-   `herdr agent prompt <pane_id> "<drive entry> <task_id>" --wait --until working --until blocked --timeout 30000`.
-   The entry is the Executor Host's own `drive` invocation as that Host names
-   it: a Claude Code Host that loaded the plugin from a directory names it
-   `/immune-brain:drive`.
-5. Supervise with `herdr agent wait <pane_id>` as a Host background command, so
-   its return re-invokes the Parent. Start it only after step 4 reported
-   `working`: a wait attached to a still-`idle` session returns at once. Do not
-   loop on `herdr agent get` or read the pane to judge progress.
+1. Take the Lane from the handoff's `lane_path`. Pick the Executor Host as above.
+2. Create the session, which opens a tab rooted in the Lane in the Parent's own
+   Herdr workspace without taking focus, starts the Host there and submits the
+   entry and nothing else (later text follows only the instruction rule below):
+   `imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>`.
+   `<name>` is a label of at most 32 characters such as the Slice ID; a
+   `task_id` is usually too long. Host arguments are only those that load the
+   Parent's plugin and those that [Lane Preferences](#lane-preferences)
+   resolved for model and effort. The entry is the Executor Host's own `drive`
+   invocation as that Host names it: a Claude Code Host that loaded the plugin
+   from a directory names it `/immune-brain:drive`. Keep `task_id → handle`
+   from the result; the handle is opaque and is not authority.
+3. Supervise with `imm-session await <handle> --provider herdr` as a Host
+   background command, so its return re-invokes the Parent. Start it only after
+   the create reported `entry_submitted: true` and `state: "working"`: a wait
+   attached to a session that is not working returns at once. Do not loop on
+   `imm-session observe` or read the session's output to judge progress.
 
-`agent_not_ready` from step 3, or a `blocked` state at any time, means the tab
-shows a dialog only the user may answer: workspace trust, sign-in, a permission
-request, a question, or a native confirmation such as an Intent revision gate.
-The Parent sends that tab no keys and no prompt, and never answers such a dialog
-for the user. As soon as the wait returns `blocked` it tells the user which tab
-and `task_id` is waiting and what the dialog asks, without waiting to be asked,
-leaves the tab open, and continues the other Lanes; once the user has answered, step 3's tab is resumed
-from step 4 if the entry was never submitted, otherwise from step 5. `idle` or
-`done` is a session end for the rules below, although the tab stays open: the
-Parent calls `start_unattended_batch`, and a relaunch submits the entry again in
-the same tab instead of creating another. When that report shows the child
+A create that reports `entry_submitted: false`, or a `blocked` state at any
+time, means the tab shows a dialog only the user may answer: workspace trust,
+sign-in, a permission request, a question, or a native confirmation such as an
+Intent revision gate. The Parent sends that tab no keys and no prompt, and never
+answers such a dialog for the user. As soon as the wait returns `blocked` it
+tells the user which tab and `task_id` is waiting and what the dialog asks,
+without waiting to be asked, leaves the tab open, and continues the other Lanes;
+once the user has answered, it resubmits the entry with the same create and
+`--resume <handle>` if the entry was never submitted, otherwise it re-arms the
+wait. `idle` or `done` is a session end for the rules below, although the tab
+stays open: the Parent calls `start_unattended_batch`, and a relaunch submits the
+entry again in the same tab instead of creating another, with
+`--resume <handle>`. When that report shows the child
 neither settled nor waiting on a user decision, the Parent tells the user which
 tab and `task_id` went idle and what the Kernel projection still requires.
 
@@ -434,11 +433,11 @@ The Parent may send one text instruction to a Lane session, and only while it is
 Executor's approach, never an answer to a dialog. It first calls
 `start_unattended_batch` with `lane_instruction` (`task_id`, `text`, `kind`
 `instruction` or `correction`, and the `session_state` it just observed with
-`herdr agent get`). The runner records the text in the batch record and report
+`imm-session observe <handle> --provider herdr`). The runner records the text in the batch record and report
 as `interventions` and answers `lane_instruction.accepted`; only when accepted
-does the Parent submit it with `herdr agent prompt <pane_id> "<text>" --wait
---until working --until blocked --timeout 30000` and re-arm step 5. A `blocked`
-or `working` session is refused and receives nothing. Every instruction the
+does the Parent submit it with `imm-session send <handle> --provider herdr --text "<text>"`
+and re-arm step 3. `imm-session send` observes the session again first: a
+`blocked` or `working` session is refused (`state_refused`) and receives nothing. Every instruction the
 coordinator sent is therefore in the report, so Executor-initiated behavior and
 coordinator intervention can be told apart afterwards. This never applies to the
 authority Review: it runs as a separate CLI process the Lane Executor starts and
@@ -461,14 +460,17 @@ Single tasks outside a batch keep their existing budget behavior, and Review
 independence is unchanged. A Review rework budget that the Kernel turns into a
 `replan_required` decision still needs the user's own native decision.
 
-Every live Lane session keeps exactly one `herdr agent wait` armed, so `blocked`
+Every live Lane session keeps exactly one `imm-session await` armed, so `blocked`
 and idle-without-settlement wake the Parent on their own; a Parent that has
-nothing else to do still ends its turn with those waits armed. A failed or timed-out `herdr` command
-proves nothing about delivery; inspect the session's state before repeating it.
+nothing else to do still ends its turn with those waits armed. A wait that returns
+`exited` means the Host process is gone, never that the child finished. A
+`provider_error` or `timeout` proves nothing about delivery; inspect the session
+with `imm-session observe` before repeating a command.
 
 The Parent only creates: it closes no tab, including the tabs it created, and
 every tab stays open for the user to read and close. It splits no pane and
-creates no workspace. Outside Herdr the Parent never invokes `herdr`.
+creates no workspace. The Parent never invokes `herdr` itself, and outside
+Herdr it never invokes `imm-session`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -518,7 +520,7 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   `executor_mode: "interactive"` and returns an `executor` handoff instead of
   spawning a child process. The Parent creates one Herdr tab in the admitted
   Lane, starts the selected interactive Executor with the resolved model and
-  effort, submits its `drive` entry and arms `herdr agent wait` under
+  effort, submits its `drive` entry and arms `imm-session await` under
   [Herdr Lane Tabs](#herdr-lane-tabs). Re-entry uses the recorded mode and the
   existing tab, never a second Executor. `stop: true` reports
   `lane_executor_interactive` and asks the user to close that tab; it invents

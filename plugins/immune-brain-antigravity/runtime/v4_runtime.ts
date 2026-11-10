@@ -231,6 +231,10 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 	if (command === "imm-kernel") return runKernelCli(args, root);
 	if (command === "imm-plan") return runPlanCli(args, root);
 	if (command === "imm-tracker") return runGithubTrackerCli(args, root);
+	if (command === "imm-session") {
+		const { runSessionCli } = await import("./session/cli");
+		return runSessionCli(args, process.env);
+	}
 	return {
 		stdout: "",
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
@@ -321,6 +325,17 @@ async function main(argv: string[]): Promise<number> {
 							json_output: true,
 							examples: [
 								"imm-tracker publish-initiative --stdin --json",
+							],
+						},
+						{
+							name: "imm-session",
+							description:
+								"The Parent's Supervised Session Port surface: create, instruct, await, observe, read, stop and reconcile one Lane Executor session through an explicitly named provider. Never Kernel authority or progress evidence.",
+							json_output: true,
+							examples: [
+								"imm-session probe --provider herdr",
+								"imm-session create --provider herdr --cwd <lane_path> --label <name> --host claude-code --entry \"<drive entry> <task_id>\" -- <host arguments>",
+								"imm-session await <handle> --provider herdr",
 							],
 						},
 					],

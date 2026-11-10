@@ -40,6 +40,7 @@ export const DIST_DOC_ENTRIES: DistDocEntry[] = [
 	{ rel: "reference/planning-quality-gate.md", mode: "mirror" },
 	{ rel: "reference/code-quality-guard.md", mode: "mirror" },
 	{ rel: "reference/layering-rules.md", mode: "mirror" },
+	{ rel: "reference/supervised-session-port.md", mode: "mirror" },
 
 	// ── adapted: intentionally divergent packaged copies ──
 	// (none currently; empty by design until a packaged doc needs divergence)

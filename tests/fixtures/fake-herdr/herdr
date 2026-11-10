@@ -1,0 +1,61 @@
+#!/usr/bin/env bun
+// A stand-in `herdr` CLI for Supervised Session Port tests. State lives in the
+// JSON file named by FAKE_HERDR_STATE; every invocation's argv is appended to
+// its `calls` list. Only the commands the Herdr adapter spells are modelled.
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+
+const file = process.env.FAKE_HERDR_STATE;
+if (!file) { process.stderr.write("FAKE_HERDR_STATE is not set\n"); process.exit(3); }
+const load = () => existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+const save = (state) => { writeFileSync(`${file}.tmp`, JSON.stringify(state)); renameSync(`${file}.tmp`, file); };
+const out = (value) => { process.stdout.write(`${JSON.stringify(value)}\n`); process.exit(0); };
+const fail = (message) => { process.stderr.write(`${message}\n`); process.exit(1); };
+const flag = (args, name) => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1]; };
+
+const argv = process.argv.slice(2);
+const state = load();
+state.calls = [...(state.calls ?? []), argv];
+state.panes ??= {};
+save(state);
+const [group, verb, ...args] = argv;
+const pane = (id) => { const value = state.panes[id]; if (!value || value.closed) fail("pane_not_found"); return value; };
+
+if (group === "api" && verb === "schema") out({ protocol: state.protocol ?? 22 });
+if (group === "tab" && verb === "create") {
+	const n = (state.counter ?? 0) + 1;
+	state.counter = n;
+	state.panes[`p${n}`] = { tab: `t${n}`, workspace: flag(args, "--workspace"), cwd: flag(args, "--cwd"), label: flag(args, "--label"), state: "idle", prompts: [], keys: [], output: "", closed: false };
+	save(state);
+	out({ tab: { tab_id: `t${n}` }, root_pane: { pane_id: `p${n}` } });
+}
+if (group === "tab" && verb === "close") { state.tabs_closed = [...(state.tabs_closed ?? []), args[0]]; save(state); out({ ok: true }); }
+if (group === "agent" && verb === "start") {
+	const target = pane(flag(args, "--pane"));
+	if (state.not_ready_next) { state.not_ready_next = false; target.state = "blocked"; save(state); fail("agent_not_ready"); }
+	target.started = true;
+	save(state);
+	out({ ok: true });
+}
+if (group === "agent" && verb === "prompt") {
+	const target = pane(args[0]);
+	target.prompts.push(args[1]);
+	target.state = state.after_prompt ?? "working";
+	save(state);
+	out({ agent: { state: target.state } });
+}
+if (group === "agent" && verb === "get") out({ agent: { state: pane(args[0]).state } });
+if (group === "agent" && verb === "wait") {
+	const timeout = Number(flag(args, "--timeout") ?? 0);
+	const started = Date.now();
+	for (;;) {
+		const current = load().panes?.[args[0]];
+		if (!current || current.closed) fail("pane exited");
+		if (current.state !== "working") out({ agent: { state: current.state } });
+		if (timeout && Date.now() - started > timeout) fail("timeout");
+		await Bun.sleep(20);
+	}
+}
+if (group === "agent" && verb === "send-keys") { pane(args[0]).keys.push(args[1]); save(state); out({ ok: true }); }
+if (group === "pane" && verb === "read") out({ text: `${pane(args[0]).output}`, source: flag(args, "--source") });
+if (group === "pane" && verb === "close") { pane(args[0]).closed = true; save(state); out({ ok: true }); }
+fail(`fake herdr does not model: ${argv.join(" ")}`);
