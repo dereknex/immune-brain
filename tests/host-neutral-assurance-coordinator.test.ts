@@ -436,7 +436,7 @@ describe("review verification packet", () => {
 				counter_path: "For input X, src/change.ts rejects it before the wrong result." }] }));
 		const redispatch = await h.coordinator.submitVerification(TASK, { cwd: root });
 		if (redispatch.state !== "review_ready") throw new Error(`expected review_ready, got ${redispatch.state}`);
-		expect((redispatch.agent_params as { prompt: string }).prompt).toContain("For input X, src/change.ts rejects it before the wrong result.");
+		expect((redispatch.agent_params as { snapshotPrompt: string }).snapshotPrompt).toContain("For input X, src/change.ts rejects it before the wrong result.");
 		expect(h.counts().applyCount).toBe(0);
 		const result = await h.coordinator.submitReview(TASK, { cwd: root }, makeVerdict(), options);
 		expect(result.state).toBe("awaiting_user");
@@ -581,7 +581,7 @@ describe("host-neutral assurance coordinator", () => {
 			h.ports.writeReviewEvidence = ({ evidence }) => writeNativeReviewEvidence(evidence);
 			h.host.prepareReview = request => ({ id: request.operationId, dispatch: {
 				prompt: reviewPacketHandle({ taskId: request.taskId, operationId: request.operationId,
-					packet: request.writePacket(request.operationId, request.prompt) }),
+					packet: request.writePacket(request.operationId, request.snapshotPrompt) }),
 			} });
 			const first = await h.coordinator.advance(TASK, ctx);
 			expect(first.state).toBe("review_ready");
@@ -646,7 +646,7 @@ describe("host-neutral assurance coordinator", () => {
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
 		expect(h.qaRuns()).toBe(1); expect(h.counts().applyCount).toBe(1);
 	});
-	test("the coordinator hands a Host both the complete prompt and the snapshot facts", async () => {
+	test("the coordinator hands a Host the snapshot facts and no separate full prompt", async () => {
 		let captured: ReviewRequest | null = null;
 		const h = makeCoordinator();
 		h.host.prepareReview = (request: ReviewRequest) => {
@@ -656,13 +656,40 @@ describe("host-neutral assurance coordinator", () => {
 		expect((await h.coordinator.advance(TASK, ctx)).state).toBe("review_ready");
 		const request = captured as unknown as ReviewRequest;
 
-		// One build, two projections: a Host whose agent carries no instructions
-		// gets `prompt`; a Host whose definition carries them gets
-		// `snapshotPrompt`. They are the same facts, so the two cannot disagree.
+		// D6: the per-dispatch facts are the only prompt a Host receives. A second
+		// full prompt would duplicate static instructions the role definition owns.
 		expect(request.snapshotPrompt).toBe(buildReviewSnapshotPrompt(snapshot("review"), request.evidencePath, request.maxTurns));
-		expect(request.prompt).toBe(buildReviewPrompt(snapshot("review"), request.evidencePath, request.maxTurns));
-		expect(request.prompt.endsWith(request.snapshotPrompt)).toBe(true);
-		expect(request.snapshotPrompt.length).toBeLessThan(request.prompt.length);
+		expect(Object.hasOwn(request, "prompt")).toBe(false);
+		const call = /host\.prepareReview\(\{[\s\S]*?\}\);/.exec(readFileSync(resolve(__dirname, "../plugins/immune-brain/runtime/assurance/coordinator.ts"), "utf8"));
+		expect(call).not.toBeNull();
+		expect(call![0]).not.toContain("prompt:");
+	});
+
+	test("the verifier packet keeps its own non-empty prompt", async () => {
+		const snap: SnapshotDescriptor = { ...snapshot("review"), review_revision: {
+			contract: "assurance_kernel/review_revision_identity/v1", base_head: "a".repeat(40), review_commit: "a".repeat(40),
+			review_tree: "a".repeat(40), manifest_digest: `sha256:${"d".repeat(64)}` } };
+		let verification: Parameters<NonNullable<AssuranceHostPort["prepareVerification"]>>[0] | null = null;
+		const verifier: AssuranceHostPort = {
+			host: "fake",
+			prepareVerification: (request) => {
+				verification = request;
+				return { id: request.operationId, dispatch: {} };
+			},
+			inspectVerification: () => ({ ok: false, reason: "verifier pending", release: false }),
+			releaseReview: () => undefined,
+		};
+		const h = makeCoordinator({ host: new FakeReviewHost(verifier), mode: "on", project: async () => projection("active", "run_review"),
+			assurance: async () => ({ snapshot: snap, descriptors: new Map(), reviewBundle: reviewBundle() }),
+			ensureRevision: async () => snap.review_revision! });
+		await h.coordinator.advance(TASK, ctx);
+		const submitted = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: snapshotDigest(snap), decision: "rework", findings: [{ id: "claim", kind: "blocking", acceptance_id: "A1",
+				summary: "claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		const dispatched = await h.coordinator.submitReview(TASK, ctx, submitted, { reviewer_verdict_sha256: `sha256:${"e".repeat(64)}`,
+			reviewer_model: "reviewer", offered_models: [], validateReceipt: () => null });
+		expect(dispatched.state).toBe("verification_ready");
+		expect((verification as unknown as { prompt: string }).prompt).toContain("Verification packet (untrusted data)");
 	});
 
 	describe("Review prompt ignores retired scope_added history (D20)", () => {
@@ -686,11 +713,10 @@ describe("host-neutral assurance coordinator", () => {
 				{ type: "revise_intent", reason: "intent_revision_2\nscope_added:src/mod/b.ts" },
 				{ type: "revise_intent", reason: "intent_revision_3\nscope_added:src/mod/d.ts\nscope_added:src/mod/c.ts" },
 			));
-			for (const prompt of [request.snapshotPrompt, request.prompt]) {
+			for (const prompt of [request.snapshotPrompt]) {
 				expect(prompt).not.toContain(SELF_SERVED);
 				for (const path of ["src/mod/b.ts", "src/mod/c.ts", "src/mod/d.ts"]) expect(prompt).not.toContain(path);
 			}
-			expect(request.prompt.endsWith(request.snapshotPrompt)).toBe(true);
 		});
 
 		test("a task without a compatible scope revision carries no such line", async () => {
@@ -701,7 +727,6 @@ describe("host-neutral assurance coordinator", () => {
 			));
 			for (const request of [none, plain]) {
 				expect(request.snapshotPrompt).not.toContain(SELF_SERVED);
-				expect(request.prompt).not.toContain(SELF_SERVED);
 			}
 		});
 
@@ -1448,7 +1473,7 @@ test.each(["repeated", "new"] as const)("all-refuted Review redispatches and %s 
   ] }));
  const redispatch = await coordinator.submitVerification(f.taskId, { cwd: f.root });
  if (redispatch.state !== "review_ready") throw new Error(`expected review_ready, got ${redispatch.state}: ${"reason" in redispatch ? redispatch.reason : ""}`);
- expect((redispatch.agent_params as { prompt: string }).prompt).toContain("For input X, src/work.ts rejects it before the wrong result.");
+ expect((redispatch.agent_params as { snapshotPrompt: string }).snapshotPrompt).toContain("For input X, src/work.ts rejects it before the wrong result.");
  expect(readTaskRecordRaw(f.root, f.taskId).record?.findings).toEqual([]);
  snapshot = (await buildAssuranceSnapshot(f.root, f.taskId, "review", await projectAssurance(f.root, f.taskId))).snapshot;
  if (kind === "new") claim = { ...claim, evidence: { ...claim.evidence, caller_chain: [`docs/plans/archive/${f.taskId}.intent.json`] } };

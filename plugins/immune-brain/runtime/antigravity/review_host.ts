@@ -1,53 +1,25 @@
-import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
 import { FileHookEventLog, MemoryHookEventLog, type HookEventLog } from "../host-core/hook_event_log";
+import {
+	VerifierObservation,
+	type VerifierEvent,
+	type VerifierObservationProfile,
+} from "../host-core/verifier_observation";
 import { tmpdir } from "node:os";
 import type {
 	AssuranceHostPort,
 	HostReviewReservation,
-	ReviewRequest,
-	VerificationRequest,
 	VerificationReceipt,
+	VerificationRequest,
 } from "../assurance/host_port";
 
-export type ObservedReviewReceipt = { actorId: string; result: string; model?: string };
-export type ConsumeReviewResult =
-	| { ok: true; receipt: ObservedReviewReceipt }
-	| { ok: false; reason: string; release: boolean };
-
 export const VERIFIER_AGENT = "immune-brain-review-verifier";
-export const SUBAGENT_TOOL = "invoke_subagent";
 
-export type AntigravityHookEvent =
-	| {
-		type: "SubagentStart";
-		sessionId: string;
-		agent: string;
-		agentId: string;
-		taskId?: string;
-		operationId?: string;
-		prompt?: string;
-		model?: string;
-	}
-	| {
-		type: "PostToolUse";
-		sessionId: string;
-		agentId: string;
-		toolName: string;
-		result: string;
-		model?: string;
-		taskId?: string;
-		operationId?: string;
-		prompt?: string;
-	}
-	| {
-		type: "SubagentStop";
-		sessionId: string;
-		agent: string;
-		agentId: string;
-		taskId?: string;
-		operationId?: string;
-	}
-	| { type: "SessionEnd"; sessionId: string };
+/**
+ * This adapter's log already holds only verifier evidence, so it stores the
+ * shared vocabulary directly (D4, D5): `start` for an allowed dispatch, `result`
+ * for its `PostToolUse`, which is terminal on its own.
+ */
+export type AntigravityHookEvent = VerifierEvent;
 
 /** The Antigravity Host keeps its own cache directory name; storage is shared (D3). */
 export const ANTIGRAVITY_CACHE_DIR = "immune-brain-antigravity";
@@ -57,191 +29,43 @@ export function antigravityHookEventLog(root = tmpdir()): FileHookEventLog<Antig
 	return new FileHookEventLog<AntigravityHookEvent>(ANTIGRAVITY_CACHE_DIR, root);
 }
 
-interface PendingReview {
-	request: ReviewRequest;
-	verifierModel?: string;
-	dispatchPrompt: string;
-	initialCursors: Map<string, number>;
-	sessionCursors: Map<string, number>;
-	startEvent?: Extract<AntigravityHookEvent, { type: "SubagentStart" }>;
-	postEvent?: Extract<AntigravityHookEvent, { type: "PostToolUse" }>;
-	stopEvent?: Extract<AntigravityHookEvent, { type: "SubagentStop" }>;
-	consumed: boolean;
-	error?: string;
-}
-
-function bindsPrompt(prompt: string | undefined, state: PendingReview): boolean {
-	if (prompt === undefined) return true;
-	return prompt.trim() === state.dispatchPrompt.trim();
-}
+const ANTIGRAVITY_VERIFIER_PROFILE: VerifierObservationProfile<AntigravityHookEvent> = {
+	verifierAgents: [VERIFIER_AGENT],
+	// BR-SCN-1 / BR-DEC-3: `PostToolUse` is this Host's terminal event, so a
+	// `stop` never follows and never gates the receipt.
+	terminal: "result",
+	actorPrefix: "antigravity",
+	dispatch: ({ dispatchPrompt, model }) => ({
+		TypeName: VERIFIER_AGENT,
+		Role: "Review Verifier",
+		Prompt: dispatchPrompt,
+		Model: model,
+	}),
+	decode: (event) => event,
+	resolveResult: (observed) => ({ ok: true, result: observed.result.result }),
+};
 
 export class AntigravityReviewHost implements AssuranceHostPort {
 	readonly host = "antigravity" as const;
-	private readonly pending = new Map<string, PendingReview>();
-	private readonly appliedBySession = new Map<string, number>();
+	private readonly observation: VerifierObservation<AntigravityHookEvent>;
 
-	constructor(private readonly log: HookEventLog<AntigravityHookEvent> = new MemoryHookEventLog<AntigravityHookEvent>()) {}
+	constructor(log: HookEventLog<AntigravityHookEvent> = new MemoryHookEventLog<AntigravityHookEvent>()) {
+		this.observation = new VerifierObservation(ANTIGRAVITY_VERIFIER_PROFILE, log);
+	}
 
 	prepareVerification(request: VerificationRequest): HostReviewReservation {
-		const reviewRequest: ReviewRequest = {
-			taskId: request.taskId,
-			operationId: request.operationId,
-			prompt: request.prompt,
-			snapshotPrompt: request.prompt,
-			evidencePath: "",
-			writePacket: request.writePacket,
-			maxTurns: 16,
-		};
-		this.drain();
-		const cursors = new Map(this.log.sessions().map(sessionId => [sessionId, this.log.list(sessionId).length]));
-		const dispatchPrompt = verificationPacketHandle({
-			taskId: request.taskId,
-			operationId: request.operationId,
-			packet: request.writePacket(request.operationId, request.prompt),
-		});
-		this.pending.set(request.operationId, {
-			request: reviewRequest,
-			verifierModel: request.model,
-			dispatchPrompt,
-			initialCursors: new Map(cursors),
-			sessionCursors: new Map(cursors),
-			consumed: false,
-		});
-		return {
-			id: request.operationId,
-			dispatch: {
-				TypeName: VERIFIER_AGENT,
-				Role: "Review Verifier",
-				Prompt: dispatchPrompt,
-				Model: request.model,
-			},
-		};
+		return this.observation.prepare(request);
 	}
 
 	inspectVerification(reservation: HostReviewReservation): VerificationReceipt {
-		const state = this.pending.get(reservation.id);
-		if (!state?.verifierModel) return { ok: false, reason: "verifier reservation not found", release: true };
-		const result = this.inspectVerifier(reservation);
-		if (!result.ok) return result;
-		return {
-			ok: true,
-			receipt: {
-				actorId: result.receipt.actorId,
-				result: result.receipt.result,
-				model: state.verifierModel,
-			},
-		};
+		return this.observation.inspect(reservation);
 	}
 
 	observe(event: AntigravityHookEvent): void {
-		this.log.append(event);
-	}
-
-	private drain(): void {
-		for (const sessionId of this.log.sessions()) {
-			const events = this.log.list(sessionId);
-			let start = this.appliedBySession.get(sessionId) ?? 0;
-			if (start > events.length) start = 0;
-			let ended = false;
-			for (let i = start; i < events.length; i++) {
-				const event = events[i];
-				if (event.type === "SessionEnd") {
-					for (const [id, state] of this.pending) {
-						if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-							this.pending.delete(id);
-						}
-					}
-					for (const state of this.pending.values()) {
-						const current = state.initialCursors.get(sessionId) ?? 0;
-						if (i + 1 > current) state.initialCursors.set(sessionId, i + 1);
-					}
-					if (i === events.length - 1) {
-						this.log.clear(event.sessionId);
-						ended = true;
-						this.appliedBySession.delete(event.sessionId);
-						break;
-					}
-					continue;
-				}
-				for (const state of this.pending.values()) {
-					if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0)) continue;
-					this.applyReviewEvent(event, state);
-				}
-			}
-			if (ended) {
-				this.appliedBySession.delete(sessionId);
-				for (const state of this.pending.values()) state.sessionCursors.delete(sessionId);
-			} else {
-				this.appliedBySession.set(sessionId, events.length);
-				for (const state of this.pending.values()) state.sessionCursors.set(sessionId, events.length);
-			}
-		}
-	}
-
-	private applyReviewEvent(event: AntigravityHookEvent, state: PendingReview): void {
-		if (state.error) return;
-		if (event.type === "SubagentStart") {
-			if (event.agent !== VERIFIER_AGENT) return;
-			if (event.operationId && event.operationId !== state.request.operationId) return;
-			if (!bindsPrompt(event.prompt, state)) return;
-			if (state.startEvent && state.startEvent !== event) {
-				state.error = "reserved Review already has a native tool call";
-				return;
-			}
-			state.startEvent = event;
-			return;
-		}
-		if (event.type === "PostToolUse") {
-			if (event.toolName !== SUBAGENT_TOOL) return;
-			if (event.operationId && event.operationId !== state.request.operationId) return;
-			if (event.taskId && event.taskId !== state.request.taskId) return;
-			if (!bindsPrompt(event.prompt, state)) return;
-			if (state.verifierModel && event.model && event.model !== state.verifierModel) {
-				state.error = "verifier model differs from reservation";
-				return;
-			}
-			if (state.postEvent !== undefined && state.postEvent !== event) {
-				state.error = "duplicate PostToolUse result observed for review reservation";
-				return;
-			}
-			state.postEvent = event;
-			return;
-		}
-		if (event.type === "SubagentStop") {
-			if (event.agent !== VERIFIER_AGENT) return;
-			if (event.operationId && event.operationId !== state.request.operationId) return;
-			if (state.stopEvent && state.stopEvent !== event) {
-				state.error = "duplicate SubagentStop observed for review reservation";
-				return;
-			}
-			state.stopEvent = event;
-		}
-	}
-
-	private inspectVerifier(reservation: HostReviewReservation): ConsumeReviewResult {
-		this.drain();
-		const state = this.pending.get(reservation.id);
-		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		const packetError = verificationPacketError(state.dispatchPrompt);
-		if (packetError) return { ok: false, reason: packetError, release: true };
-		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
-		if (state.error) return { ok: false, reason: state.error, release: true };
-		if (!state.startEvent) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-			return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-		}
-		const actorId = `antigravity:${state.startEvent.agentId || reservation.id}`;
-		return {
-			ok: true,
-			receipt: {
-				actorId,
-				result: state.postEvent.result,
-				...(state.postEvent.model ? { model: state.postEvent.model } : {}),
-			},
-		};
+		this.observation.observe(event);
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {
-		this.pending.delete(reservation.id);
+		this.observation.release(reservation);
 	}
 }

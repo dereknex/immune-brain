@@ -9,7 +9,6 @@ import {
 	AntigravityReviewHost,
 	antigravityHookEventLog,
 	VERIFIER_AGENT,
-	SUBAGENT_TOOL,
 	type AntigravityHookEvent,
 } from "../plugins/immune-brain/runtime/antigravity/review_host";
 import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
@@ -27,7 +26,8 @@ import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime
 import { NativeAuthorityError } from "../plugins/immune-brain/runtime/antigravity/interaction";
 import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
-import type { ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
+import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
+import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import * as batchPreflight from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
@@ -88,7 +88,7 @@ describe("Antigravity Harness Conformance", () => {
 			expect(dispatch.Model).toBe("pro");
 		});
 
-		it("observes PostToolUse and inspects review and verification receipts", () => {
+		it("settles a verification receipt from the start and the PostToolUse result alone", () => {
 			const eventLog = new MemoryHookEventLog<AntigravityHookEvent>();
 			const host = new AntigravityReviewHost(eventLog);
 
@@ -103,31 +103,29 @@ describe("Antigravity Harness Conformance", () => {
 			const reservation = host.prepareVerification(request);
 			const dispatchPrompt = (reservation.dispatch as { Prompt: string }).Prompt;
 
-			// Before event observation, inspect returns incomplete
-			const beforeResult = host.inspectVerification(reservation);
-			expect(beforeResult.ok).toBe(false);
+			// Before event observation, no start event has been observed.
+			expect(host.inspectVerification(reservation)).toMatchObject({ ok: false, release: true });
 
-			// Append 3-event subagent lifecycle
 			eventLog.append({
-				type: "SubagentStart",
+				type: "start",
 				sessionId: "conv-123",
 				agent: VERIFIER_AGENT,
 				agentId: "agent-step-456",
 				prompt: dispatchPrompt,
 			});
+			// BR-SCN-1: `PostToolUse` is this Host's terminal event, so the receipt is
+			// complete without any `SubagentStop`.
+			expect(host.inspectVerification(reservation)).toMatchObject({
+				ok: false,
+				reason: "foreground Agent terminal event order is incomplete",
+				release: false,
+			});
 			eventLog.append({
-				type: "PostToolUse",
+				type: "result",
 				sessionId: "conv-123",
 				agentId: "agent-step-456",
-				toolName: SUBAGENT_TOOL,
 				result: JSON.stringify({ verdict: "approved", findings: [] }),
 				prompt: dispatchPrompt,
-			});
-			eventLog.append({
-				type: "SubagentStop",
-				sessionId: "conv-123",
-				agent: VERIFIER_AGENT,
-				agentId: "agent-step-456",
 			});
 
 			const receiptResult = host.inspectVerification(reservation);
@@ -847,7 +845,7 @@ describe("hook dispatch writes subagent events", () => {
 			expect(pre.stdout).toBe('{"decision":"allow"}');
 			const post = dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), result: "r" });
 			expect(post.stdout).toBe("{}");
-			expect(post.events.map((event) => event.type)).toEqual(["SubagentStart", "PostToolUse"]);
+			expect(post.events.map((event) => event.type)).toEqual(["start", "result"]);
 			expect(post.events[0]).toMatchObject({ sessionId: "c", agent: "immune-brain-review-verifier", agentId: "7", prompt: "p" });
 			expect(post.events[1]).toMatchObject({ sessionId: "c", agentId: "7", result: "r" });
 		} finally {
@@ -861,7 +859,7 @@ describe("hook dispatch writes subagent events", () => {
 			const pre = dispatch(root, preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }));
 			expect(pre.stdout).toBe('{"decision":"allow"}');
 			const post = dispatch(root, { ...preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }), result: "r" });
-			expect(post.events.map((event) => event.type)).toEqual(["SubagentStart", "PostToolUse"]);
+			expect(post.events.map((event) => event.type)).toEqual(["start", "result"]);
 			expect(post.events[1]).toMatchObject({ agentId: "7", result: "r" });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
@@ -884,11 +882,281 @@ describe("hook dispatch writes subagent events", () => {
 		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-orphan-"));
 		try {
 			const post = dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), result: "r" });
-			expect(post.events.map((event) => event.type)).toEqual(["PostToolUse"]);
+			expect(post.events.map((event) => event.type)).toEqual(["result"]);
 			expect(post.events[0]).toMatchObject({ agentId: "7", result: "r" });
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
 });
+});
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S2 AC3 (BR-SCN-1, BR-REQ-8,
+// BR-DEC-3; D4, D5). BR-SCN-1: an Antigravity developer's `submit_verification`
+// accepts the receipt its own `--hook` entry wrote, because `PostToolUse` is
+// this Host's terminal event.
+describe("verifier via real hook dispatch", () => {
+	const HOOK_ENTRY = join(process.cwd(), "plugins/immune-brain/runtime/antigravity/mcp_server.ts");
+	const SCRATCH: string[] = [];
+	const TMPDIR_BEFORE = process.env.TMPDIR;
+	const PATH_BEFORE = process.env.PATH;
+	const TASK = "antigravity-verifier-task";
+	const STEP_IDX = 7;
+	const CONVERSATION = "conversation-1";
+	const CLAIM = "the delivery violates its acceptance";
+
+	afterAll(() => {
+		if (TMPDIR_BEFORE === undefined) delete process.env.TMPDIR;
+		else process.env.TMPDIR = TMPDIR_BEFORE;
+		process.env.PATH = PATH_BEFORE;
+		for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true });
+	});
+
+	function scratchDir(label: string): string {
+		const dir = mkdtempSync(join(tmpdir(), `imm-antigravity-verifier-${label}-`));
+		SCRATCH.push(dir);
+		return dir;
+	}
+
+	/** One real Git repository: the CLI reviewer's tree guard needs HEAD and tracked bytes. */
+	function repo(): string {
+		const root = scratchDir("repo");
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["config", "user.name", "test"], { cwd: root });
+		execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+		mkdirSync(join(root, ".imm"), { recursive: true });
+		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({
+			contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" }, review_verifier: "on",
+		})}\n`);
+		writeFileSync(join(root, "src.ts"), "export const value = 1;\n");
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["commit", "-qm", "fixture"], { cwd: root });
+		return root;
+	}
+
+	/** A reviewer stand-in under the Host binary name, first on PATH (no model call). */
+	function fakeReviewer(bytes: string): void {
+		const dir = scratchDir("bin");
+		const file = join(dir, "pi");
+		writeFileSync(file, `#!/bin/sh\ncat <<'IMM_VERDICT'\n${bytes}IMM_VERDICT\n`, { mode: 0o755 });
+		execFileSync("chmod", ["755", file]);
+		process.env.PATH = [dir, PATH_BEFORE].filter(Boolean).join(":");
+	}
+
+	function snapshotOf(root: string, role: "qa" | "review"): coordinator.SnapshotDescriptor {
+		return {
+			contract: "assurance_kernel/assurance_snapshot/v2", task_id: TASK, run_id: null, role,
+			record_revision: "record-1", workspace_revision: "workspace-1", intent_revision: 1,
+			intent_content_hash: "sha256:intent", diff_hash: "sha256:diff", lifecycle: "active", artifact_state: "frozen",
+			risk: "material", fresh_acceptance_ids: ["A1"], missing_acceptance_ids: [], stale_attestation_ids: [],
+			acceptance: [{ id: "A1", assertion: "the change satisfies the acceptance", verification: "{}" }],
+			dirty_files: ["src.ts"], review_bundle_digest: role === "review" ? "sha256:bundle" : null,
+			review_revision: { contract: "assurance_kernel/review_revision_identity/v1", base_head: "a".repeat(40),
+				review_commit: "b".repeat(40), review_tree: "c".repeat(40), manifest_digest: `sha256:${"d".repeat(64)}` },
+			root,
+		} as coordinator.SnapshotDescriptor;
+	}
+
+	function reviewBundle(root: string): coordinator.ReviewBundle {
+		return {
+			contract: "assurance_kernel/review_bundle/v4", root, head: "a".repeat(40), scope: ["src.ts"],
+			diff_hash: "sha256:diff", dirty_files: {}, outcomes: { A1: { status: "passed", summary: "fresh" } },
+			bundle_digest: "sha256:bundle",
+		} as unknown as coordinator.ReviewBundle;
+	}
+
+	function reworkVerdict(snapshot: coordinator.SnapshotDescriptor): coordinator.AssuranceVerdict {
+		return {
+			contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
+			snapshot_digest: coordinator.snapshotDigest(snapshot), decision: "rework",
+			findings: [{ id: "review-1", kind: "blocking", acceptance_id: "A1", summary: CLAIM,
+				evidence: { trigger: "src.ts returns a stale value → the acceptance assertion fails", caller_chain: ["src.ts"],
+					violated: { kind: "acceptance", ref: "A1" } } }],
+		} as coordinator.AssuranceVerdict;
+	}
+
+	interface Applied {
+		role: string;
+		decision: string;
+		kept?: string[];
+		actor?: string | null;
+		failure?: string;
+	}
+
+	/** Fixture ports: the Review dispatch is real, everything behind it is not. */
+	function fixturePorts(root: string, applied: Applied[]): {
+		ports: Partial<coordinator.AssuranceCoordinatorPorts>;
+		authority: Partial<coordinator.VerdictAuthority>;
+	} {
+		let obligation: "run_qa" | "run_review" | "complete" = "run_qa";
+		const ports = {
+			confirmationReference: ({ actorId }) => `fixture:${actorId}`,
+			projectTask: async () => ({
+				error: null,
+				claim: { task_id: TASK, lifecycle_status: "active" },
+				projection: { lifecycle: "active", artifact_state: "frozen", risk: "material", next_obligation: obligation,
+					record_revision: "record-1", workspace_revision: "workspace-1", intent_revision: 1,
+					intent_content_hash: "sha256:intent", diff_hash: "sha256:diff", fresh_acceptance_ids: ["A1"],
+					missing_acceptance_ids: [], stale_attestation_ids: [], blocking_finding_ids: [], unresolved_user_decision_ids: [],
+					replan_required_ids: [], completion_ready: false, authorization: { state: "none" } },
+			}) as never,
+			readTaskRecord: async () => ({ revision: "record-1", record: { findings: [], history: [] } }),
+			readTaskIntent: async () => ({ token: "intent-token" }),
+			buildAssurance: async (_root: string, _task: string, role: "qa" | "review") => ({
+				snapshot: snapshotOf(root, role),
+				descriptors: new Map([["A1", {
+					contract: "assurance_kernel/verification_descriptor/v2",
+					command: { executable: "bun", argv: ["test"], cwd: ".", timeout_ms: 1000, max_output_bytes: 1024 },
+					environment: { prepare: null, writable_paths: [] },
+				}]] as never),
+				reviewBundle: role === "review" ? reviewBundle(root) : null,
+			}),
+			runQa: async (s: coordinator.SnapshotDescriptor) => ({
+				contract: "assurance_kernel/assurance_verdict/v2", role: s.role, task_id: TASK,
+				snapshot_digest: coordinator.snapshotDigest(s), decision: "pass",
+				approval: { kind: "qa", authority_role: "qa", summary: "passed" },
+			} as coordinator.AssuranceVerdict),
+			writeReviewEvidence: () => {
+				const dir = scratchDir("evidence");
+				const path = join(dir, "evidence.json");
+				writeFileSync(path, "{}");
+				return { path, writePacket: writeTestReviewPacket, remove: () => rmSync(dir, { recursive: true, force: true }) };
+			},
+			applyOrdinaryOperation: async () => undefined,
+		} as unknown as Partial<coordinator.AssuranceCoordinatorPorts>;
+		const authority = {
+			buildAssurance: ports.buildAssurance,
+			applyVerdict: async (_ctx, input) => {
+				applied.push({ role: input.snapshot.role, decision: input.verdict.decision,
+					...(input.verification ? { kept: input.verification.kept_finding_ids,
+						actor: input.verification.facts.verifier_actor, ...(input.verification.facts.failure ? { failure: input.verification.facts.failure } : {}) } : {}) });
+				obligation = input.snapshot.role === "qa" ? "run_review" : input.verdict.decision === "rework" ? "run_qa" : "complete";
+			},
+			ensureReviewRevision: async () => snapshotOf(root, "review").review_revision!,
+		} as unknown as Partial<coordinator.VerdictAuthority>;
+		return { ports, authority };
+	}
+
+	/** The runtime's own Host, wrapped so a refused inspection reason stays observable. */
+	function recordingHost(): { host: AssuranceHostPort & { observe(event: AntigravityHookEvent): void }; reasons: string[] } {
+		const inner = new AntigravityReviewHost(antigravityHookEventLog());
+		const reasons: string[] = [];
+		return {
+			reasons,
+			host: {
+				host: "antigravity",
+				prepareVerification: (request: VerificationRequest) => inner.prepareVerification(request),
+				inspectVerification: (reservation: HostReviewReservation) => {
+					const result = inner.inspectVerification(reservation);
+					if (!result.ok) reasons.push(result.reason);
+					return result;
+				},
+				observe: (event: AntigravityHookEvent) => inner.observe(event),
+				releaseReview: (reservation: HostReviewReservation) => inner.releaseReview(reservation),
+			},
+		};
+	}
+
+	/** Dispatch the real `--hook` entry against this case's isolated cache root. */
+	function hook(cache: string, payload: unknown): string {
+		return execFileSync("bun", [HOOK_ENTRY, "--hook"], {
+			env: { ...process.env, TMPDIR: cache }, input: JSON.stringify(payload), encoding: "utf8",
+		}).trim();
+	}
+
+	function dispatchEvent(dispatch: { TypeName: string; Prompt: string; Model: string }, result?: string) {
+		return {
+			toolCall: { name: "invoke_subagent", args: dispatch },
+			stepIdx: STEP_IDX, conversationId: CONVERSATION,
+			...(result === undefined ? {} : { result }),
+		};
+	}
+
+	interface Setup {
+		root: string;
+		cache: string;
+		host: { host: AssuranceHostPort & { observe(event: AntigravityHookEvent): void }; reasons: string[] };
+		runtime: AntigravityRuntime;
+		applied: Applied[];
+		bytes: string;
+	}
+
+	/** A repository with the verifier mode on, its own cache root, and a real dispatch. */
+	async function setup(): Promise<Setup & { dispatch: { TypeName: string; Prompt: string; Model: string } }> {
+		const root = repo();
+		const cache = scratchDir("cache");
+		process.env.TMPDIR = cache;
+		const host = recordingHost();
+		const applied: Applied[] = [];
+		const reviewerVerdict = reworkVerdict(snapshotOf(root, "review"));
+		const bytes = `${JSON.stringify(reviewerVerdict)}\n`;
+		fakeReviewer(bytes);
+		const fixture = fixturePorts(root, applied);
+		const runtime = new AntigravityRuntime({ cwd: root, interactive: false, host: host.host, ports: fixture.ports,
+			authorityOverrides: fixture.authority });
+		const ready = await runtime.coordinator.advance(TASK, { cwd: root });
+		if (ready.state !== "review_ready" || !ready.review_command) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
+		execFileSync("sh", [ready.review_command.slice(3)]);
+		const verification = await runtime.submitReview(TASK, undefined);
+		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
+		return { root, cache, host, runtime, applied, bytes, dispatch: verification.agent_params as { TypeName: string; Prompt: string; Model: string } };
+	}
+
+	function verifierResult(caseSetup: Setup): string {
+		const snapshot = snapshotOf(caseSetup.root, "review");
+		const parsed = coordinator.parseAssuranceVerdict(reworkVerdict(snapshot), snapshot);
+		const packet = coordinator.buildReviewVerificationPacket(snapshot, parsed, digestOfReviewerBytes(caseSetup.bytes));
+		const finding = packet.findings[0]!;
+		return JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
+			results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
+	}
+
+	it("accepts the receipt the real hook entry wrote for the handed-out dispatch", async () => {
+		const current = await setup();
+		expect(current.dispatch.TypeName).toBe(VERIFIER_AGENT);
+		expect(current.dispatch.Prompt).toContain("immune-brain-verifier:operation_id=");
+
+		expect(hook(current.cache, dispatchEvent(current.dispatch))).toBe('{"decision":"allow"}');
+		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
+
+		const settled = await current.runtime.submitVerification(TASK, undefined);
+		expect(settled).toMatchObject({ state: "rework", summary: CLAIM });
+		expect(current.applied.at(-1)).toMatchObject({ role: "review", decision: "rework",
+			kept: [expect.stringContaining("review-1")], actor: `antigravity:${STEP_IDX}` });
+		expect(current.applied.at(-1)?.failure).toBeUndefined();
+	});
+
+	it("refuses a receipt whose start event never arrived", async () => {
+		const current = await setup();
+		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
+
+		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.host.reasons).toContain("reserved foreground Agent was not observed");
+		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
+	});
+
+	it("refuses a start event that names another agent", async () => {
+		const current = await setup();
+		const foreign = { ...current.dispatch, TypeName: "immune-brain-reviewer" };
+		expect(hook(current.cache, dispatchEvent(foreign))).toBe('{"decision":"allow"}');
+		hook(current.cache, dispatchEvent(foreign, verifierResult(current)));
+
+		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.host.reasons).toContain("reserved foreground Agent was not observed");
+	});
+
+	it("keeps the reservation after the start event and accepts the result that follows", async () => {
+		const current = await setup();
+		hook(current.cache, dispatchEvent(current.dispatch));
+
+		const pendingSubmit = await current.runtime.submitVerification(TASK, undefined);
+		expect(pendingSubmit).toMatchObject({ state: "blocked", reason: "verification result pending" });
+		expect(current.host.reasons).toContain("foreground Agent terminal event order is incomplete");
+
+		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
+		const accepted = await current.runtime.submitVerification(TASK, undefined);
+		expect(accepted).toMatchObject({ state: "rework" });
+		expect(current.applied.at(-1)).toMatchObject({ actor: `antigravity:${STEP_IDX}` });
+	});
 });

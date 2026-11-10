@@ -11279,26 +11279,6 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget, counterEv
   ].join(`
 `);
 }
-function buildReviewPrompt(snapshot, evidencePath, turnBudget, counterEvidence) {
-  if (snapshot.role !== "review")
-    throw new Error("native review prompt requires review role");
-  const digest = snapshotDigest(snapshot);
-  const rolePacket = buildRoleDelegationPacket({
-    role: "code-review",
-    context: {
-      task_id: snapshot.task_id,
-      review_gate: "imm-code-review",
-      changed_files_signature: snapshot.diff_hash,
-      snapshot_digest: digest
-    }
-  });
-  return [
-    rolePacket.prompt,
-    ...STATIC_REVIEW_RULES,
-    buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget, counterEvidence)
-  ].join(`
-`);
-}
 function reviewSecurityBoundarySources(snapshot, verdict, intent) {
   const boundaries = verdict.findings?.filter((finding) => finding.evidence?.violated.kind === "security_boundary") ?? [];
   if (boundaries.length === 0)
@@ -12203,7 +12183,6 @@ class AssuranceCoordinator {
           taskId,
           operationId,
           root: review.snapshot.root,
-          prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           evidencePath: evidence.path,
           writePacket: evidence.writePacket,
@@ -17640,9 +17619,6 @@ function enrollmentNonce() {
   return randomUUID9();
 }
 
-// plugins/immune-brain/runtime/claude/review_host.ts
-init_review_packet();
-
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync17, readdirSync as readdirSync9, rmSync as rmSync9 } from "node:fs";
 import { dirname as dirname15, join as join25 } from "node:path";
@@ -17814,6 +17790,197 @@ class FileHookEventLog {
   }
 }
 
+// plugins/immune-brain/runtime/host-core/verifier_observation.ts
+init_review_packet();
+
+class VerifierObservation {
+  profile;
+  log;
+  pending = new Map;
+  constructor(profile, log) {
+    this.profile = profile;
+    this.log = log;
+  }
+  prepare(request) {
+    this.drain();
+    const initialCursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
+    const dispatchPrompt = verificationPacketHandle({
+      taskId: request.taskId,
+      operationId: request.operationId,
+      packet: request.writePacket(request.operationId, request.prompt)
+    });
+    this.pending.set(request.operationId, { request, dispatchPrompt, initialCursors });
+    return { id: request.operationId, dispatch: this.profile.dispatch({ dispatchPrompt, model: request.model }) };
+  }
+  observe(event) {
+    this.log.append(event);
+  }
+  inspect(reservation) {
+    this.drain();
+    const state = this.pending.get(reservation.id);
+    if (!state)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const packetError = verificationPacketError(state.dispatchPrompt);
+    if (packetError)
+      return { ok: false, reason: packetError, release: true };
+    if (state.error)
+      return { ok: false, reason: state.error, release: true };
+    if (!state.start)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const { start, result, stop } = state;
+    if (!result?.event.result.trim() || this.profile.terminal === "result+stop" && !stop) {
+      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
+    }
+    if (start.sessionId !== result.sessionId || start.event.agentId !== result.event.agentId || stop !== undefined && (start.sessionId !== stop.sessionId || start.event.agentId !== stop.event.agentId)) {
+      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
+    }
+    const resolved = this.profile.resolveResult({
+      agentId: start.event.agentId,
+      start: start.event,
+      result: result.event,
+      ...stop ? { stop: stop.event } : {},
+      host: { start: start.host, result: result.host, ...stop ? { stop: stop.host } : {} }
+    });
+    if (!resolved.ok)
+      return { ok: false, reason: resolved.reason, release: resolved.release };
+    return {
+      ok: true,
+      receipt: { actorId: `${this.profile.actorPrefix}:${start.event.agentId}`, result: resolved.result, model: state.request.model }
+    };
+  }
+  release(reservation) {
+    this.pending.delete(reservation.id);
+  }
+  drain() {
+    for (const sessionId of this.log.sessions()) {
+      const events = this.log.list(sessionId);
+      for (let index = 0;index < events.length; index++) {
+        const host = events[index];
+        const event = this.profile.decode(host);
+        if (!event)
+          continue;
+        if (event.type === "session_end") {
+          this.endSession(sessionId, index, events.length);
+          continue;
+        }
+        for (const state of this.pending.values())
+          this.consider(state, sessionId, index, event, host);
+      }
+      for (const state of this.pending.values())
+        this.reconsider(state, sessionId, events);
+    }
+  }
+  consider(state, sessionId, index, event, host) {
+    if (state.error || event.type === "session_end")
+      return;
+    if (index < (state.initialCursors.get(sessionId) ?? 0))
+      return;
+    this.apply(state, sessionId, index, event, host);
+  }
+  reconsider(state, sessionId, events) {
+    if (state.error || !state.result)
+      return;
+    if (state.start && (this.profile.terminal === "result" || state.stop))
+      return;
+    for (let index = state.initialCursors.get(sessionId) ?? 0;index < events.length; index++) {
+      const host = events[index];
+      const event = this.profile.decode(host);
+      if (!event || event.type === "session_end")
+        continue;
+      this.apply(state, sessionId, index, event, host);
+      if (state.error)
+        return;
+    }
+  }
+  apply(state, sessionId, index, event, host) {
+    const { request } = state;
+    if (event.type === "start") {
+      if (this.applied(state.start, sessionId, index))
+        return;
+      if (!this.profile.verifierAgents.includes(event.agent ?? ""))
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.prompt !== undefined && event.prompt !== state.dispatchPrompt)
+        return;
+      if (state.result && (event.sessionId !== state.result.sessionId || event.agentId !== state.result.event.agentId))
+        return;
+      if (state.stop && (event.sessionId !== state.stop.sessionId || event.agentId !== state.stop.event.agentId))
+        return;
+      if (event.operationId === undefined && event.prompt === undefined && !state.result && !state.stop)
+        return;
+      if (state.start) {
+        state.error = "reserved Review already has a native tool call";
+        return;
+      }
+      state.start = { sessionId, index, event, host };
+      return;
+    }
+    if (event.type === "result") {
+      if (this.applied(state.result, sessionId, index))
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.prompt !== undefined && event.prompt !== state.dispatchPrompt)
+        return;
+      if (state.start && (event.sessionId !== state.start.sessionId || event.agentId !== state.start.event.agentId))
+        return;
+      if (state.stop && (event.sessionId !== state.stop.sessionId || event.agentId !== state.stop.event.agentId))
+        return;
+      if (event.operationId === undefined && event.prompt === undefined && !state.start)
+        return;
+      if (event.model !== undefined && event.model !== request.model) {
+        state.error = "verifier model differs from reservation";
+        return;
+      }
+      if (state.result) {
+        state.error = "duplicate PostToolUse result observed for review reservation";
+        return;
+      }
+      state.result = { sessionId, index, event, host };
+      return;
+    }
+    if (event.type === "stop") {
+      if (this.applied(state.stop, sessionId, index))
+        return;
+      if (!this.profile.verifierAgents.includes(event.agent ?? ""))
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.operationId === undefined && !state.start && !state.result)
+        return;
+      if (state.stop) {
+        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
+        return;
+      }
+      state.stop = { sessionId, index, event, host };
+    }
+  }
+  applied(applied, sessionId, index) {
+    return applied?.sessionId === sessionId && applied.index === index;
+  }
+  endSession(sessionId, index, size) {
+    for (const [id, state] of this.pending) {
+      if (state.start?.sessionId === sessionId || state.result?.sessionId === sessionId || state.stop?.sessionId === sessionId) {
+        this.pending.delete(id);
+      }
+    }
+    for (const state of this.pending.values()) {
+      const current = state.initialCursors.get(sessionId) ?? 0;
+      if (index + 1 > current)
+        state.initialCursors.set(sessionId, index + 1);
+    }
+    if (index + 1 === size)
+      this.log.clear(sessionId);
+  }
+}
+
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { realpathSync as realpathSync17 } from "node:fs";
 import { basename as basename3, dirname as dirname16, isAbsolute as isAbsolute10, join as join26 } from "node:path";
@@ -17911,256 +18078,95 @@ function parseReviewMarker(prompt) {
   if (match)
     return { operationId: match[1], taskId: match[2] };
 }
-function bindsPrompt(prompt, pending) {
-  return prompt === undefined || prompt === pending.dispatchPrompt;
-}
-function bindsStart(event, pending) {
-  if (event.taskId && event.taskId !== pending.request.taskId)
-    return false;
-  if (!bindsPrompt(event.prompt, pending))
-    return false;
-  if (event.operationId)
-    return event.operationId === pending.request.operationId;
-  return event.prompt !== undefined;
-}
+var CLAUDE_VERIFIER_PROFILE = {
+  verifierAgents: VERIFIER_AGENTS,
+  terminal: "result+stop",
+  actorPrefix: "claude",
+  dispatch: ({ dispatchPrompt, model }) => ({
+    subagent_type: "immune-brain:immune-brain-review-verifier",
+    model,
+    prompt: dispatchPrompt
+  }),
+  decode(event) {
+    if (event.type === "SessionEnd")
+      return { type: "session_end", sessionId: event.sessionId };
+    if (event.type === "SubagentStart")
+      return {
+        type: "start",
+        sessionId: event.sessionId,
+        agentId: event.agentId,
+        ...event.agent ? { agent: event.agent } : {},
+        ...event.prompt !== undefined ? { prompt: event.prompt } : {},
+        ...event.taskId ? { taskId: event.taskId } : {},
+        ...event.operationId ? { operationId: event.operationId } : {}
+      };
+    if (event.type === "PostToolUse") {
+      if (event.toolName !== AGENT_TOOL || !event.agentId || !event.operationId)
+        return null;
+      return {
+        type: "result",
+        sessionId: event.sessionId,
+        agentId: event.agentId,
+        result: event.result,
+        ...event.model !== undefined ? { model: event.model } : {},
+        ...event.prompt !== undefined ? { prompt: event.prompt } : {},
+        ...event.taskId ? { taskId: event.taskId } : {},
+        operationId: event.operationId
+      };
+    }
+    if (!event.agentId)
+      return null;
+    return {
+      type: "stop",
+      sessionId: event.sessionId,
+      agentId: event.agentId,
+      ...event.agent ? { agent: event.agent } : {},
+      ...event.taskId ? { taskId: event.taskId } : {},
+      ...event.operationId ? { operationId: event.operationId } : {}
+    };
+  },
+  resolveResult(observed) {
+    const post = observed.host.result;
+    const stop = observed.host.stop;
+    const launch = parseAsyncAgentLaunch(observed.result.result);
+    if (!launch) {
+      const transcript = readSyncAgentTranscript(post, stop);
+      if (transcript === undefined)
+        return { ok: false, reason: "sync Agent transcript is not readable", release: false };
+      const report = readAgentTranscriptResult(transcript, post.agentId);
+      if (!report?.trim())
+        return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
+      return { ok: true, result: report };
+    }
+    if (launch.agentId !== post.agentId)
+      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
+    const transcript = readAgentTranscript(launch.outputFile);
+    if (transcript === undefined)
+      return { ok: false, reason: "async Agent transcript is not readable", release: false };
+    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
+    if (!verdict?.trim())
+      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
+    return { ok: true, result: verdict };
+  }
+};
 
 class ClaudeReviewHost {
-  log;
   host = "claude-code";
-  pending = new Map;
-  appliedBySession = new Map;
+  observation;
   constructor(log = new MemoryHookEventLog) {
-    this.log = log;
+    this.observation = new VerifierObservation(CLAUDE_VERIFIER_PROFILE, log);
   }
   prepareVerification(request) {
-    const reviewRequest = {
-      taskId: request.taskId,
-      operationId: request.operationId,
-      prompt: request.prompt,
-      snapshotPrompt: request.prompt,
-      evidencePath: "",
-      writePacket: request.writePacket,
-      maxTurns: 16
-    };
-    this.drain();
-    const cursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
-    const dispatchPrompt = verificationPacketHandle({
-      taskId: request.taskId,
-      operationId: request.operationId,
-      packet: request.writePacket(request.operationId, request.prompt)
-    });
-    this.pending.set(request.operationId, {
-      request: reviewRequest,
-      verifierModel: request.model,
-      dispatchPrompt,
-      initialCursors: new Map(cursors),
-      sessionCursors: new Map(cursors),
-      consumed: false
-    });
-    return { id: request.operationId, dispatch: { subagent_type: "immune-brain:immune-brain-review-verifier", model: request.model, prompt: dispatchPrompt } };
+    return this.observation.prepare(request);
   }
   inspectVerification(reservation) {
-    const state = this.pending.get(reservation.id);
-    if (!state?.verifierModel)
-      return { ok: false, reason: "verifier reservation not found", release: true };
-    const result = this.inspectVerifier(reservation);
-    return result.ok ? { ok: true, receipt: { ...result.receipt, model: state.verifierModel } } : result;
+    return this.observation.inspect(reservation);
   }
   observe(event) {
-    this.log.append(event);
-  }
-  drain() {
-    for (const sessionId of this.log.sessions()) {
-      const events = this.log.list(sessionId);
-      let start = this.appliedBySession.get(sessionId) ?? 0;
-      if (start > events.length)
-        start = 0;
-      let ended = false;
-      for (let i = start;i < events.length; i++) {
-        const event = events[i];
-        if (event.type === "SessionEnd") {
-          for (const [id, state] of this.pending) {
-            if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-              this.pending.delete(id);
-            }
-          }
-          for (const state of this.pending.values()) {
-            const current = state.initialCursors.get(sessionId) ?? 0;
-            if (i + 1 > current)
-              state.initialCursors.set(sessionId, i + 1);
-          }
-          if (i === events.length - 1) {
-            this.log.clear(event.sessionId);
-            ended = true;
-            this.appliedBySession.delete(event.sessionId);
-            break;
-          }
-          continue;
-        }
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
-            continue;
-          this.applyReviewEvent(event, state);
-        }
-      }
-      if (ended) {
-        this.appliedBySession.delete(sessionId);
-        for (const state of this.pending.values())
-          state.sessionCursors.delete(sessionId);
-      } else {
-        this.appliedBySession.set(sessionId, events.length);
-        for (const state of this.pending.values())
-          state.sessionCursors.set(sessionId, events.length);
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || !state.postEvent || state.postEvent.sessionId !== sessionId)
-            continue;
-          if (!state.startEvent || !state.stopEvent) {
-            const from = state.initialCursors.get(sessionId) ?? 0;
-            for (let j = from;j < events.length; j++) {
-              this.applyReviewEvent(events[j], state);
-              if (state.error)
-                break;
-            }
-          }
-        }
-      }
-    }
-  }
-  applyReviewEvent(event, state) {
-    if (state.error)
-      return;
-    if (event.type === "SubagentStart") {
-      if (!VERIFIER_AGENTS.includes(event.agent))
-        return;
-      if (event.operationId || event.prompt !== undefined) {
-        if (!bindsStart(event, state))
-          return;
-      }
-      if (state.postEvent) {
-        if (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId)
-          return;
-      }
-      if (state.stopEvent) {
-        if (event.sessionId !== state.stopEvent.sessionId || event.agentId !== state.stopEvent.agentId)
-          return;
-      }
-      if (!event.operationId && event.prompt === undefined && !state.postEvent && !state.stopEvent) {
-        return;
-      }
-      if (state.startEvent) {
-        if (state.startEvent === event)
-          return;
-        state.error = "reserved Review already has a native tool call";
-        return;
-      }
-      state.startEvent = event;
-      return;
-    }
-    if (event.type === "PostToolUse") {
-      if (event.toolName !== AGENT_TOOL)
-        return;
-      if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (!bindsPrompt(event.prompt, state))
-        return;
-      if (state.verifierModel && event.model !== state.verifierModel) {
-        state.error = "verifier model differs from reservation";
-        return;
-      }
-      if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
-        return;
-      if (state.startEvent && event.agentId !== state.startEvent.agentId)
-        return;
-      if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId)
-        return;
-      if (state.stopEvent && event.agentId !== state.stopEvent.agentId)
-        return;
-      if (state.postEvent !== undefined) {
-        if (state.postEvent === event)
-          return;
-        state.error = "duplicate PostToolUse result observed for review reservation";
-        return;
-      }
-      state.postEvent = event;
-      return;
-    }
-    if (event.type === "SubagentStop") {
-      if (!VERIFIER_AGENTS.includes(event.agent))
-        return;
-      if (!event.agentId)
-        return;
-      if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (state.startEvent && (event.sessionId !== state.startEvent.sessionId || event.agentId !== state.startEvent.agentId))
-        return;
-      if (state.postEvent && (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId))
-        return;
-      if (!event.operationId && !state.startEvent && !state.postEvent) {
-        return;
-      }
-      if (state.stopEvent) {
-        if (state.stopEvent === event)
-          return;
-        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
-        return;
-      }
-      state.stopEvent = event;
-    }
-  }
-  inspectVerifier(reservation) {
-    this.drain();
-    const state = this.pending.get(reservation.id);
-    if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = verificationPacketError(state.dispatchPrompt);
-    if (packetError)
-      return { ok: false, reason: packetError, release: true };
-    if (state.consumed)
-      return { ok: false, reason: "review receipt already consumed", release: true };
-    if (state.error)
-      return { ok: false, reason: state.error, release: true };
-    if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-    }
-    if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
-      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
-    }
-    const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
-    const launch = parseAsyncAgentLaunch(state.postEvent.result);
-    if (!launch) {
-      const transcript = readSyncAgentTranscript(state.postEvent, state.stopEvent);
-      if (transcript === undefined) {
-        return { ok: false, reason: "sync Agent transcript is not readable", release: false };
-      }
-      const report = readAgentTranscriptResult(transcript, state.postEvent.agentId);
-      if (!report?.trim()) {
-        return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
-      }
-      const syncModel = state.postEvent.model;
-      return { ok: true, receipt: { actorId, result: report, ...syncModel ? { model: syncModel } : {} } };
-    }
-    if (launch.agentId !== state.postEvent.agentId) {
-      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
-    }
-    const transcript = readAgentTranscript(launch.outputFile);
-    if (transcript === undefined) {
-      return { ok: false, reason: "async Agent transcript is not readable", release: false };
-    }
-    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
-    if (!verdict?.trim()) {
-      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
-    }
-    const model = launch.resolvedModel ?? state.postEvent.model;
-    return { ok: true, receipt: { actorId, result: verdict, ...model ? { model } : {} } };
+    this.observation.observe(event);
   }
   releaseReview(reservation) {
-    this.pending.delete(reservation.id);
+    this.observation.release(reservation);
   }
 }
 function hookPath(value) {

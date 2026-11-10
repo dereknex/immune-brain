@@ -1,0 +1,5 @@
+---
+"immune-brain": patch
+---
+
+Verifier observation now has one state machine in the host-neutral layer: `plugins/immune-brain/runtime/host-core/verifier_observation.ts` binds the `VerificationRequest` directly and both Hosts map their own hook events into its `start` / `result` / `stop` / `session_end` vocabulary. Each adapter keeps only that mapping and its result resolution, so the Claude Code and Antigravity receipts now settle through the same outcomes: a start without its terminal keeps the reservation, a foreign agent, a model that differs from the reservation, a duplicate result and a finished session all refuse it. Antigravity's `PostToolUse` is terminal for its verifier dispatch (BR-SCN-1), so a receipt written by its own `--hook` entry no longer waits for a `SubagentStop` that Host never sends; the Antigravity hook log stores the shared vocabulary directly. `ReviewRequest.prompt` is removed: a Host receives the per-dispatch facts only, and the role contract and static review rules stay generated from the reviewer definition. No user-visible change on the Claude Code Host (#414).

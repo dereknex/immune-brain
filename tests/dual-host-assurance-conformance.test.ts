@@ -17,7 +17,7 @@ import {
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
-import { antigravityHookEventLog } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { AntigravityReviewHost, antigravityHookEventLog } from "../plugins/immune-brain/runtime/antigravity/review_host";
 import { MemoryHookEventLog, type HookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
@@ -27,6 +27,7 @@ import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio 
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import type { AssuranceHostPort, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { batchTopologyDigest, prepareBatchRunState, writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
@@ -2697,4 +2698,183 @@ describe("shared hook event log", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+});
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S2 AC1 (BR-REQ-2, BR-REQ-6;
+// D5): both Hosts settle a verifier receipt through one state machine, so the
+// same evidence produces the same outcomes on either Host.
+describe("verifier observation", () => {
+	const TRANSCRIPTS = reviewerTranscripts();
+	afterAll(() => TRANSCRIPTS.cleanup());
+
+	const TASK = "verifier-task";
+	const OPERATION = "verifier-operation";
+	const MODEL = "verifier-model";
+	const RESULT = "reviewer result bytes";
+
+	interface Driver {
+		host: AssuranceHostPort;
+		start(sessionId: string, agentId: string, prompt: string, agent?: string): void;
+		result(sessionId: string, agentId: string, text: string, prompt: string, model?: string): void;
+		stop(sessionId: string, agentId: string, agent?: string): void;
+		end(sessionId: string): void;
+	}
+
+	interface HostSpec {
+		label: string;
+		prefix: string;
+		verifier: string;
+		make(): Driver;
+		dispatchPrompt(reservation: HostReviewReservation): string;
+		/** This Host's terminal events for one correlated dispatch. */
+		terminate(driver: Driver, sessionId: string, agentId: string, prompt: string, model?: string): void;
+	}
+
+	function claudeHost(): Driver {
+		const host = new ClaudeReviewHost();
+		const verifier = "immune-brain-review-verifier";
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "SubagentStart", sessionId, agent, agentId, prompt, operationId: OPERATION }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({
+				type: "PostToolUse", sessionId, agentId, toolName: "Agent", result: text, model, prompt, operationId: OPERATION,
+				transcriptPath: TRANSCRIPTS.sessionTranscriptPath(agentId, text),
+			}),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "SubagentStop", sessionId, agent, agentId, operationId: OPERATION }),
+			end: (sessionId) => host.observe({ type: "SessionEnd", sessionId }),
+		};
+	}
+
+	function antigravityHost(): Driver {
+		const host = new AntigravityReviewHost();
+		const verifier = "immune-brain-review-verifier";
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "start", sessionId, agentId, agent, prompt }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({ type: "result", sessionId, agentId, result: text, model, prompt }),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "stop", sessionId, agentId, agent }),
+			end: (sessionId) => host.observe({ type: "session_end", sessionId }),
+		};
+	}
+
+	const HOST_SPECS: HostSpec[] = [
+		{
+			label: "claude-code", prefix: "claude", verifier: "immune-brain-review-verifier", make: claudeHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { prompt: string }).prompt,
+			// PostToolUse carries the result and SubagentStop ends the dispatch.
+			terminate: (driver, sessionId, agentId, prompt, model) => {
+				driver.result(sessionId, agentId, RESULT, prompt, model);
+				driver.stop(sessionId, agentId);
+			},
+		},
+		{
+			label: "antigravity", prefix: "antigravity", verifier: "immune-brain-review-verifier", make: antigravityHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { Prompt: string }).Prompt,
+			// BR-SCN-1: PostToolUse is terminal here, so no stop event follows.
+			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
+		},
+	];
+
+	for (const spec of HOST_SPECS) {
+		const prepare = (driver: Driver): HostReviewReservation => {
+			expect(driver.host.prepareVerification).toBeDefined();
+			return driver.host.prepareVerification!({
+				taskId: TASK, operationId: OPERATION, prompt: "verifier prompt", model: MODEL, writePacket: writeTestReviewPacket,
+			});
+		};
+		const inspect = (driver: Driver, reservation: HostReviewReservation) => {
+			expect(driver.host.inspectVerification).toBeDefined();
+			return driver.host.inspectVerification!(reservation);
+		};
+
+		test(`${spec.label}: a bound start and its terminal events settle one receipt`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+			expect(prompt).toContain(OPERATION);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			expect(inspect(driver, reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `${spec.prefix}:agent-1`, result: RESULT, model: MODEL },
+			});
+		});
+
+		test(`${spec.label}: no start event leaves the reservation unobserved and releases it`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a start naming another agent leaves the reservation unobserved`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			// Appended last: the evidence is complete before the foreign start lands.
+			driver.start("session-1", "agent-1", prompt, "immune-brain-reviewer");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a terminal event whose model differs from the reservation is refused`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt, "other-model");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "verifier model differs from reservation", release: true });
+		});
+
+		test(`${spec.label}: a second distinct result is a duplicate`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			driver.result("session-1", "agent-1", "a second reviewer result", prompt);
+
+			const refused = inspect(driver, reservation);
+			expect(refused.ok).toBe(false);
+			if (refused.ok) throw new Error("a duplicate result settled a receipt");
+			expect(refused.reason).toContain("duplicate");
+			expect(refused.release).toBe(true);
+		});
+
+		test(`${spec.label}: a SessionEnd for the bound session retires the reservation`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			driver.end("session-1");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a start without its terminal keeps the reservation until the terminal lands`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toEqual({
+				ok: false, reason: "foreground Agent terminal event order is incomplete", release: false,
+			});
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toMatchObject({ ok: true, receipt: { actorId: `${spec.prefix}:agent-1` } });
+		});
+	}
 });

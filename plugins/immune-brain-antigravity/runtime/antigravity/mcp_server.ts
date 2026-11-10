@@ -42,7 +42,7 @@ function appendSubagentStart(toolCall: { name: string; args?: Record<string, unk
 	if (typeof payload.stepIdx !== "number") return;
 	const args = toolCall.args ?? {};
 	const event: AntigravityHookEvent = {
-		type: "SubagentStart",
+		type: "start",
 		sessionId: String(payload.conversationId ?? ""),
 		agent: typeof args.TypeName === "string" ? args.TypeName : "",
 		agentId: String(payload.stepIdx),
@@ -79,7 +79,7 @@ export async function runHook(): Promise<void> {
 	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
 		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
 
-		// PostToolUse observation
+		// PostToolUse observation: this Host's terminal event for a dispatch.
 		if ("stepIdx" in payload && ("error" in payload || "result" in payload)) {
 			if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
 				const args = toolCall.args ?? {};
@@ -87,13 +87,12 @@ export async function runHook(): Promise<void> {
 				const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
 				const result = typeof payload.result === "string" ? payload.result : "";
 				const event: AntigravityHookEvent = {
-					type: "PostToolUse",
+					type: "result",
 					sessionId: String(payload.conversationId ?? ""),
 					agentId: String(payload.stepIdx ?? ""),
-					toolName: "invoke_subagent",
 					result,
-					model,
-					prompt,
+					...(model ? { model } : {}),
+					...(prompt ? { prompt } : {}),
 				};
 				antigravityHookEventLog().append(event);
 			}
