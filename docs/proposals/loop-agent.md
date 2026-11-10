@@ -7,6 +7,7 @@
 Loop 增加第二种运行形态：一个**独立守护进程**，可运行在本机或云端机器。它的目标只有一个：**让每个打开的 Issue 持续向“已合并关闭”前进**。
 
 - **持续推进**：只要存在“下一步归守护进程”的 Issue 且有空闲容量，守护进程就在工作。一步完成后立即接下一步（分析 → 计划 → 实现 → 开 PR → 修到就绪），不等下一个定时点。
+- **AI 判断每个事件怎么处理**：每个外部对象的变化事件交给 AI 判断应调用哪个处理；代码只负责观察、校验权限前提和执行（§5.3）。
 - **人工等待不停线**：某个 Issue 等人时，守护进程转去推进其他 Issue，并提前为后面的 Issue 做好计划。
 - **定期检查只是兜底**：定时器用来发现外部变化（新 Issue、评论、CI 结果）和停滞的工作项，不是推进的节拍。
 - **唤起人工**：只在需要人工判断或澄清时，在 GitHub 上提出一个结构化问题；人回复后立即续跑。
@@ -58,13 +59,13 @@ Loop 仍不是 authority 源：Enrollment、QA、Review、Settlement 只由 Kern
 
 | # | 阻塞点 | 证据 | 性质 | 处理 |
 | --- | --- | --- | --- | --- |
-| B1 | 没有任何机制主动挑选 Issue 并开始规划；规划要用户进入 `draw-up`，Planner 产出候选后即停 | `plugins/immune-brain/dist/BASELINE.md` “Host Confirmation Boundary”一节，`docs/adr/0019-explicit-run-entry-owns-enrollment.md:28` | 机械（启动）＋判断（计划是否正确） | 守护进程主动挑选并进入 `draw-up`；计划是否正确由 B2 的批准承担（§5.2、§5.3） |
+| B1 | 没有任何机制主动挑选 Issue 并开始规划；规划要用户进入 `draw-up`，Planner 产出候选后即停 | `plugins/immune-brain/dist/BASELINE.md` “Host Confirmation Boundary”一节，`docs/adr/0019-explicit-run-entry-owns-enrollment.md:28` | 机械（启动）＋判断（计划是否正确） | 守护进程主动挑选并进入 `draw-up`；计划是否正确由 B2 的批准承担（§5.2、§5.4） |
 | B2 | 开始执行必须有字面用户的 `drive` 入口和一次原生 Enrollment gate | `docs/adr/0019-explicit-run-entry-owns-enrollment.md:30`，`docs/adr/0025-run-entry-decision-hosting.md:41` | 人工判断 | 保留判断，改为异步批准（§6.1） |
-| B3 | 会话结束即停止推进：entry token 随会话结束失效；第三次原生操作失败后只有新的字面入口能恢复 | `docs/adr/0025-run-entry-decision-hosting.md:54`，`plugins/immune-brain/dist/drive.md:265` | 机械 | 会话结束不是停止点：从 Kernel projection 恢复并立即重新派发，直到 Settlement；同签名失败到上限后才升级（§5.2、§5.6） |
+| B3 | 会话结束即停止推进：entry token 随会话结束失效；第三次原生操作失败后只有新的字面入口能恢复 | `docs/adr/0025-run-entry-decision-hosting.md:54`，`plugins/immune-brain/dist/drive.md:265` | 机械 | 会话结束不是停止点：从 Kernel projection 恢复并立即重新派发，直到 Settlement；同签名失败到上限后才升级（§5.2、§5.7） |
 | B4 | push、PR 创建各自需要确认；Batch Branch 从不 push、从不开 PR | `docs/adr/0025-run-entry-decision-hosting.md:49`，`plugins/immune-brain/dist/BASELINE.md:112`，`CONTEXT.md:141` | 机械 | 常设授权（§6.2） |
-| B5 | `fix-pr` 只在用户明确请求时进入；修复请求不授予 push 或回复评论 | `plugins/immune-brain/skills/fix-pr/SKILL.md:3`，`plugins/immune-brain/dist/fix-pr.md:87` | 机械＋判断 | CI 红与冲突自动修；有争议的 review 意见升级（§5.5） |
+| B5 | `fix-pr` 只在用户明确请求时进入；修复请求不授予 push 或回复评论 | `plugins/immune-brain/skills/fix-pr/SKILL.md:3`，`plugins/immune-brain/dist/fix-pr.md:87` | 机械＋判断 | CI 红与冲突自动修；有争议的 review 意见升级（§5.6） |
 | B6 | `manual` Git 集成下 batch 以最终报告结束，留下 Parent 分支 | `docs/adr/0027-parent-branch-merge-queue.md:46` | 机械 | 以 PR 作为回到 main 的通道，人合并 |
-| B7 | breaking Intent revision、`awaiting_user`、rework 出口、Review 重试授权 | `plugins/immune-brain/dist/drive.md:205`，`:292`，`:265` | **真正的人工判断** | 不绕过，转成结构化问题，只停该工作项（§5.7） |
+| B7 | breaking Intent revision、`awaiting_user`、rework 出口、Review 重试授权 | `plugins/immune-brain/dist/drive.md:205`，`:292`，`:265` | **真正的人工判断** | 不绕过，转成结构化问题，只停该工作项（§5.8） |
 | B8 | tracker 适配器是单向投影，不读事件 | `CONTEXT.md:264` | 能力缺口 | 新增只读观察层（§5.1） |
 | B9 | Lane 只能由用户删除，无人值守下会累积 | `CONTEXT.md:149`，`docs/adr/0027-parent-branch-merge-queue.md:34` | 不阻塞推进，占磁盘 | 本提案不解决；状态 Issue 报告待清理数量 |
 
@@ -75,15 +76,17 @@ Loop 仍不是 authority 源：Enrollment、QA、Review、Settlement 只由 Kern
 ```mermaid
 flowchart LR
     subgraph Daemon[Loop 守护进程]
-      O[观察: Issue / PR / CI] --> T[规则表: 每个工作项的下一步与归属]
-      T --> S[(编排状态 + 租约)]
-      S --> D[派发有界 Host 会话]
-      D -->|会话结束, 立即重新评估| T
+      O[观察: Issue / PR / CI 变化事件] --> T[AI 判断: 调用哪个处理]
+      T --> G[守卫: 校验前提与授权]
+      G --> S[(编排状态 + 租约)]
+      S --> D[执行处理: 派发有界 Host 会话]
+      D -->|会话结束也是事件| T
+      G -->|拒绝, 附原因| T
     end
     GH[GitHub] --> O
     D -->|draw-up / drive / fix-pr| K[Kernel authority]
     D -->|push 分支 / 开 PR / 评论| GH
-    T -->|需要人工判断| H[结构化问题 + 标签 + @]
+    G -->|处理为 escalate| H[结构化问题 + 标签 + @]
     H --> GH
 ```
 
@@ -93,13 +96,13 @@ flowchart LR
 - 每个仓库一个实例，用锁文件保证；进程崩溃后下一轮从持久状态恢复，不依赖内存。
 - 三种唤醒，执行的是同一个 `tick`：**完成唤醒**（某个派发的会话结束，立即执行）；**观察唤醒**（分钟级轮询评论、PR、CI、新 Issue）；**全量对账**（低频，重新读取全部打开的 Issue 与 PR，纠正漏掉的事件）。Webhook 只是加速器，正确性只依赖轮询。
 - 编排状态存于 Git-ignored 的 `.imm/state/loop/`，与 batch 的做法一致：它只记录进度，引用的每个 authority 事实仍是 Kernel 的 TaskRecord（`docs/adr/0005-unattended-initiative-batch-run.md` Decision 3）。
-- 判定逻辑是确定性的规则表；模型只出现在被派发的会话里。
+- 分工：**观察、守卫、执行是确定性代码；“这个事件该怎么处理”由 AI 判断**（§5.3）。
 
 每轮读取：打开的 Issue 及游标之后的评论；守护进程自己开的 PR 的 head SHA、mergeable、check runs、review threads；Kernel 只读投影 `imm-kernel inspect --json`（`CONTEXT.md:109`）。同一 `(对象, 事件类型, head SHA 或评论 id)` 只处理一次。
 
 ### 5.2 持续推进循环
 
-每个工作项的目标固定为“Issue 由已合并的 PR 关闭”。每次 `tick` 对每个工作项回答同一个问题：**离目标的下一步是什么，归谁？**
+每个工作项的目标固定为“Issue 由已合并的 PR 关闭”。每个事件到达时，AI 对它所属的工作项回答同一个问题：**离目标的下一步是什么，归谁？**（判断方式见 §5.3）
 
 | 归属 | 含义 | 守护进程的动作 |
 | --- | --- | --- |
@@ -110,13 +113,59 @@ flowchart LR
 规则：
 
 1. **有活就干。** 存在归守护进程的下一步且并发未满时必须派发。守护进程只在三种情况下空闲：所有工作项都在等人或等外部、预算耗尽、没有打开的 Issue。空闲原因写入状态 Issue。
-2. **链式推进。** 会话结束触发完成唤醒，立即重新评估该工作项并派发下一步。从分析到“PR 就绪”之间，除 §5.7 列出的人工点外没有等待。
+2. **链式推进。** 会话结束触发完成唤醒，立即重新评估该工作项并派发下一步。从分析到“PR 就绪”之间，除 §5.8 列出的人工点外没有等待。
 3. **会话结束不是停止点。** 会话因上下文、超时或崩溃结束而任务未 Settlement 时，下一步仍归守护进程：按 Kernel projection 恢复，重新派发。
 4. **提前规划。** 执行中的工作项不足并发上限时先执行；执行槽位满或都在等人时，继续为排在后面的 Issue 做分析与计划，保持一个“已计划、待批准”的缓冲（数量上限可配置）。这样所有者一次可以批准多个，批准后在下一次观察唤醒内开始执行。
 5. **停滞检测。** 每个工作项记录最近一次进展的时间与当前归属。归守护进程却超时无进展 → 租约过期后自动重新派发；归外部超时（例如 CI 长时间无结果）→ 重新查询，仍无结果则升级；归人超时 → 至多提醒一次。这是“定期检查”的全部职责。
 6. **解锁传播。** 一个 PR 合并、一个 Issue 关闭或一条批准到达后，被它阻塞的工作项在同一个 `tick` 内重新评估。
 
-### 5.3 选择、分析与规划
+### 5.3 事件判断与处理调用
+
+每个外部对象的每次变化都成为一个事件；事件不经规则表，直接交给 AI 判断应调用哪个处理。
+
+**流程。**
+
+1. **观察（代码）**：对比对象的上次快照，产生事件。守护进程自己造成的变化（自己的评论、标签、push）不产生事件。同一对象在一次 `tick` 内的多个事件合并为一次判断。
+2. **判断（AI）**：派发一个只读的判断会话，输入为事件、对象当前内容、工作项状态与历史决策、Kernel projection 摘要、以及处理目录。输出一个结构化决策：`{handler, args, reason, evidence, owner_after}`。
+3. **守卫（代码）**：校验决策格式，再校验所选处理的前提（下表）。不满足则拒绝，把拒绝原因作为新输入让 AI 重判一次；再次被拒则该工作项 parked 并升级。
+4. **执行（代码）**：调用处理。处理结束（包括会话中断）本身是一个事件，回到第 2 步。
+
+**事件。** AI 面对的是事件本身，下表的“常见处理”只是处理目录的说明，不是规则。
+
+| 对象 | 变化事件 | 常见处理 |
+| --- | --- | --- |
+| Issue | 新建、正文编辑、新评论、关闭或重开、依赖变化 | `analyze_issue`、`ask_clarification`、`plan_issue`、`replan_issue`、`start_drive`、`ignore` |
+| PR | review 提交、新 review 评论、出现冲突、head 被他人移动、合并、未合并关闭 | `fix_pr`、`reply_review`、`escalate`、`mark_ready`、`close_out` |
+| CI | 检查失败、通过、长时间无结果、被取消 | `fix_pr`、`recheck`、`mark_ready`、`escalate` |
+| 内部 | 会话结束、Settlement、`awaiting_user`、租约过期、依赖解除 | `resume_drive`、`open_pr`、`escalate`、`plan_issue` |
+
+**处理目录。** 封闭集合；AI 只能从中选择，不能自造动作。
+
+| 处理 | 作用 | 守卫校验的前提（代码，AI 不能越过） |
+| --- | --- | --- |
+| `ignore`、`wait` | 不动作；`wait` 记录等待对象与复查条件 | 无 |
+| `analyze_issue` | 只读分析 Issue | 预算 |
+| `ask_clarification`、`escalate` | 向人提出一个结构化问题 | 同一阻塞未问过；§6.2 |
+| `plan_issue`、`replan_issue` | 进入 `draw-up`，发布计划 | 作者在允许名单内或所有者已 `/plan`；并发与缓冲上限；§6.2 |
+| `start_drive` | Enrollment 并进入 `drive` | **§6.1 的批准校验全部通过**；Kernel 前提 |
+| `resume_drive` | 按 Kernel projection 续跑 | 存在未 Settlement 的 run；租约空闲 |
+| `open_pr` | push 分支并开 PR | Settlement 为 `done`；§6.2 |
+| `fix_pr`、`reply_review` | 进入 `fix-pr`；回复或解决线程 | PR 由守护进程创建；失败签名未达上限；§6.2 |
+| `recheck` | 重新查询外部状态 | 无 |
+| `mark_ready`、`close_out` | 标记就绪等人合并；合并后收尾 | 检查全绿且每条意见有处置；合并事实来自 API |
+
+**AI 判断什么，代码保证什么。**
+
+- AI 判断语义：一条评论是在回答澄清、提出新需求、表示反对还是无关；CI 失败是代码问题还是基础设施抖动；review 意见是否有争议；Issue 是否已被别的改动解决；此刻最合适的处理是哪个。
+- 代码保证权限：谁批准了什么哈希、作者是谁、分支是谁建的、预算与上限。**批准是否成立永远由代码校验**，AI 说“所有者同意了”不构成批准。
+- 判断会话只读，没有任何写工具；它的输出只是一个处理名和参数。远端文本即使含有指令性内容，最坏结果也只是选中一个前提本来就满足的处理。
+- AI 不可用或输出无效：重试一次，仍失败则不动作并记录；连续失败后升级。失败时绝不默认执行有副作用的处理。
+
+**可审计与可评估。** 每个决策连同输入哈希、理由、守卫结果写入 `.imm/state/loop/`，`--dry-run` 只做到第 3 步并输出决策。记录下来的“事件 → 处理”即评估集，沿用仓库已有的离线评估方式（`scripts/decision-eval/`，其中 `a14_pr_comment_triage`、`a15_issue_triage` 已覆盖 PR 评论与 Issue 分诊，`plugins/immune-brain/runtime/decision_model/thresholds.ts:21`、`:37`）。
+
+**判断会话如何运行。** 与 Review 阶段相同，通过 Host CLI 无头调用（`plugins/immune-brain/runtime/assurance/cli_review.ts:41`），使用的 Host、模型在仓库配置中声明。不直接引入 `runtime/decision_model/`：它被定义为离线工具，`plugins/immune-brain` 下没有任何模块导入它（`plugins/immune-brain/runtime/decision_model/contract.ts:5-7`）。
+
+### 5.4 选择、分析与规划
 
 **选择。** 确定性排序：所有者的显式优先级 > 已在进行中的工作项（先做完再开新的）> 无未关闭阻塞项（GitHub 原生 issue dependencies，`docs/agents/issue-tracker.md:143`）> 创建时间。
 
@@ -145,9 +194,9 @@ Planner 不打开 Enrollment gate 的规则不变；批准到达前该工作项�
 
 **谁的 Issue 会被规划。** 所有者与配置允许名单内作者的 Issue 默认进入。其他作者的 Issue 只分析、不规划，直到所有者评论 `/plan`；本仓库当前不把外部 PR 当需求入口（`docs/agents/issue-tracker.md:36`），这一点不变。所有者可用 `/skip` 让某个 Issue 退出。
 
-### 5.4 工作项状态机
+### 5.5 工作项状态机
 
-一个工作项对应一个 Issue 及其产生的 Task 与 PR。状态以 `imm:*` 标签单向投影到 GitHub 供人查看；标签不是输入。
+一个工作项对应一个 Issue 及其产生的 Task 与 PR。状态以 `imm:*` 标签单向投影到 GitHub 供人查看；标签不是输入。状态是 AI 判断的输入和守卫的前提，不是规则：下表描述的是通常路径，实际调用哪个处理由 §5.3 决定。
 
 ```text
 observed → analyzed ─┬→ needs-clarify ⇄（人回复后重新分析）
@@ -157,7 +206,7 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 任何状态 → parked（等人；记录唯一原因与恢复条件）
 ```
 
-| 状态 | 下一步归属 | 派发的入口 | 离开条件 |
+| 状态 | 下一步归属 | 通常调用的入口 | 离开条件 |
 | --- | --- | --- | --- |
 | observed | 守护进程 | 只读分析 | 分析完成 → analyzed |
 | analyzed | 守护进程 | `draw-up` | 计划发布 → planned；缺信息 → needs-clarify |
@@ -171,21 +220,21 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 
 计划与实现在同一分支、同一 PR 里，一个 Issue 对应一个 PR。
 
-### 5.5 PR 与 CI 推进规则
+### 5.6 PR 与 CI 推进规则
 
 - **CI 失败**：先本地复现，再修，同一检查本地通过后才 push。不跳过、不禁用测试，不用空提交重跑 CI。
 - **合并冲突**：仅在自己创建的分支上解决；不改写他人分支历史。
 - **Review 意见**：沿用 `fix-pr` 的处置集（`plugins/immune-brain/dist/fix-pr.md` §4）。fixed、already satisfied、not applicable 自动处理并回复；declined 与 blocked on a decision/scope expansion 升级给人，线程保持未解决。
 - PR 属于某个 active Managed task 时由 `drive` 负责，`fix-pr` 不介入（`plugins/immune-brain/dist/fix-pr.md:11`）。
 
-### 5.6 派发、并发与失败上限
+### 5.7 派发、并发与失败上限
 
 - 每个工作项持有带过期时间的**租约**，防止重复派发；租约不是 Workspace Claim，过期只表示可以重新观察。
 - 每次派发是一个新的有界 Host 会话，运行在独立 worktree；启动时按 Kernel projection 绑定 `task_id`、`run_id`，不信任上一次的对话总结。
 - 失败上限按**失败签名**计：同一工作项、同一 head SHA、同一失败签名连续 2 次修复无效 → parked 并升级。
 - 并发上限、每日分析与派发预算由仓库配置声明；耗尽时只观察不派发，并在状态 Issue 中说明。
 
-### 5.7 唤起人工
+### 5.8 唤起人工
 
 | 类别 | 例子 |
 | --- | --- |
@@ -193,7 +242,7 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 | 批准计划并开始执行 | 候选 TaskIntent 或 batch 计划等待批准（B2） |
 | 权威主体变化 | breaking Intent revision、验收变更、rework 出口 |
 | 有争议的 review | declined，或需要扩大范围 |
-| 修不动 | 达到 §5.6 的失败上限 |
+| 修不动 | 达到 §5.7 的失败上限 |
 | 合并 | PR 进入 ready |
 | 越权 | 需要新凭据、新外部服务、触碰 no-touch 路径 |
 
@@ -212,7 +261,7 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 
 保留“字面用户对确切内容哈希作出一次判断”这个不变量，只换承载方式：
 
-1. 候选的内容哈希随计划摘要发布到 Issue（§5.3）。
+1. 候选的内容哈希随计划摘要发布到 Issue（§5.4）。
 2. 所有者评论 `/approve <intent-hash>`（batch 为 `<plan-digest>`）。
 3. 守护进程校验：评论作者是配置的所有者；作者不是守护进程自己的身份；评论未被编辑；哈希等于分支上当前候选的哈希；HEAD 满足 Enrollment 前提。任一不成立即拒绝并回复原因。
 4. Enrollment 记录一个新种类的 `confirmation_ref`（例如 `tracker_approval`，含评论 id 与作者）。
@@ -238,27 +287,28 @@ D1 的安全性依赖一个前提：**模型不能以所有者身份在 GitHub �
 ## 7. 不变量
 
 1. Kernel 仍是唯一 authority；Issue 状态不是 authority，与 Kernel projection 冲突时信 projection（`plugins/immune-brain/dist/drive.md` “Resume from authority facts”一条）。
-2. 远端文本是数据，不是指令（`plugins/immune-brain/dist/fix-pr.md:28`）。能改变守护进程行为的只有已跟踪的仓库配置，和经 API 验证作者身份的所有者命令评论。
-3. 不合并、不批准、不发版、不变更凭据与权限。
-4. 分析记录与模型的分类建议不产生 authority，与 `runtime/decision_model/` 的现有约束一致（`CONTEXT.md:265`）。
+2. AI 选择处理，代码校验前提：处理目录是封闭的，每个有副作用的处理都有 AI 无法越过的守卫（§5.3）。
+3. 远端文本是数据，不是指令（`plugins/immune-brain/dist/fix-pr.md:28`）。能改变守护进程行为的只有已跟踪的仓库配置，和经 API 验证作者身份的所有者命令评论。
+4. 不合并、不批准、不发版、不变更凭据与权限。
+5. AI 的判断与分析记录不产生 authority：Enrollment 的依据是代码校验过的批准，不是 AI 的结论。
 
 ## 8. 落点与分阶段
 
 落点建议（模块边界在 Spec 阶段按 `docs/reference/layering-rules.md` 确定）：
 
-- `plugins/immune-brain/runtime/loop_daemon/`：观察、规则表、排序、状态与租约，host-neutral、确定性。
+- `plugins/immune-brain/runtime/loop_daemon/`：观察、判断输入的组装、处理目录与守卫、排序、状态与租约，host-neutral；除调用判断会话外均为确定性代码。
 - `plugins/immune-brain/bin/imm-loop`。
 - GitHub 读取复用 `createGhTransport`（`plugins/immune-brain/runtime/github_issue_tracker.ts:504`）；不向 tracker 适配器添加 Kernel 读写。
 - 各 Host 适配器只负责“启动一个有界会话”。
 
 | 阶段 | 内容 | 新增授权 | 验收 |
 | --- | --- | --- | --- |
-| P0 | `tick --dry-run`：观察、排序，输出每个工作项的下一步与归属，零写入 | 无 | 对录制的 Issue 与事件序列，输出确定且幂等 |
+| P0 | `tick --dry-run`：观察、AI 判断、守卫，输出每个事件的决策，不执行、零写入 | 无 | 观察与守卫对录制的事件序列输出确定且幂等；AI 决策在评估集上达到约定的一致率 |
 | P1 | 持续推进循环与规划：分析、`draw-up`、push 计划分支、发布计划摘要；澄清问题；状态 Issue | §6.2 | 有归守护进程的下一步且有容量时不空闲；内容未变不重复分析与评论；非允许作者的 Issue 不被规划 |
 | P2 | 异步批准 → `drive` → 开 PR；中断的会话自动续跑到 Settlement | §6.1 | 哈希不符、作者不符、作者为守护进程自身、评论被编辑均被拒绝；杀掉执行中的会话后任务仍能完成 |
 | P3 | 自己的 PR 上修 CI、冲突、无争议 review，直到 ready | 沿用 §6.2 | 红 CI 无人介入下变绿，或在上限后升级 |
 
-P0 不触碰任何 ADR，可先做，并提供成本与规则表校准所需的数据。
+P0 不执行任何处理，可先做，并提供成本数据与判断质量的评估集。它仍会调用 Host CLI 做判断，是否需要先修订 ADR 0006 见第 9 节。
 
 ## 9. 需要修订的契约
 
@@ -268,6 +318,7 @@ P0 不触碰任何 ADR，可先做，并提供成本与规则表校准所需的�
 - ADR 0019 与 ADR 0025 Decision 2：Enrollment 增加 `tracker_approval` 这一确认来源；push 与 PR 创建在 §6.2 范围内不再逐次确认。
 - BASELINE “Host Confirmation Boundary” 中 “A generic continuation or configured preference is not blanket authorization”（`plugins/immune-brain/dist/BASELINE.md:112`）：说明枚举了操作、目标与影响的仓库声明授权不属于该句所指的泛化偏好。
 - `fix-pr` 的进入条件：守护进程对自己开的 PR 可进入。
+- ADR 0006 Decision 3 “The runtime never invokes an Executor or reviewer model”（`docs/adr/0006-unattended-review-dispatch-authority.md:34`）：守护进程会直接启动 Host CLI 来做事件判断和执行处理，需要明确守护进程是否属于该句所指的 runtime，或为它单独立规则。
 - §6.3 的同 uid 部署规则。
 
 ## 10. 未验证
@@ -276,4 +327,5 @@ P0 不触碰任何 ADR，可先做，并提供成本与规则表校准所需的�
 - 三个 Host（Pi、Claude Code、Antigravity）的无头能力是否对等：未验证。
 - GitHub API 能否可靠判断评论未被编辑：未验证。
 - Enrollment 能否直接在守护进程的计划分支上进行（现规则是 Lane 从用户 HEAD 起、只复制 TaskIntent 与 Spec，`plugins/immune-brain/dist/BASELINE.md:133`）：未验证，可能需要调整。
-- 每个 Issue 的分析与规划成本、合理的并发与预算默认值：未验证，需 P0 数据。
+- AI 事件判断的准确率与一致性：未验证，需 P0 的评估集。
+- 每个事件一次判断的成本、每个 Issue 的分析与规划成本、合理的并发与预算默认值：未验证，需 P0 数据。
