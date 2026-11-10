@@ -87,14 +87,14 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | --- | --- | --- | --- |
 | B1 准入 | `rec B1 $IMM probe --provider herdr-core`；另保存 `hc schema --json` 的 `info` 字段与 `hc server status --json` | `ok:true`；`info.version` ≥ 0.1.19，`info.description` 含 “Protocol generation 1” | G1 |
 | B2 正常一轮 | 同 A2，`--provider herdr-core`。另保存 `hc get <address> --json` 的原始输出 | `hc ls` 里只多一个终端，带标签 `imm-session=<token>`；create 返回 `entry_submitted:true`；`observe` 的 provenance 为 `reported`；`await` 返回 `changed`；`stop` 后终端为 `finished` | G2 |
-| B3 workspace trust | 同 A3 | 首次上报为 `blocked`，create 返回 `entry_submitted:false`；回答后 `create --resume` 提交 entry | G3 |
+| B3 workspace trust | 同 A3 | 首次上报为 `blocked`，create 返回 `entry_submitted:false`；回答后 `create --resume` 提交 entry。Claude Code 2.1.322 已知不上报：30 秒后返回 `entry_submitted:false`、`state:"unknown"` 与含 `hc attach <address>` 的 `attention`，终端保留；用户在 `hc attach` 里接受 trust 后 `--resume` 应提交 entry（G3 对该 Host 仍记失败） | G3 |
 | B4 权限对话框 | 同 A4。另保存 `hc get --json` 的 `status`，应为 `{state:"blocked",kind:"permission"}` | ≤ 5 秒 | G3 |
 | B5 登录对话框 | 同 A5 | `blocked`，或者 30 秒内没有上报。后者说明该 Host 不报登录状态，在 core 上不准入 | G3 |
 | B6 首次上报与就绪 | B2 期间每 0.2 秒执行一次 `hc get --json`，记录首个 `status.state` 及其距 `hc run` 的秒数 | 首个上报为 `idle`，且在 30 秒内（观察 O2） | O2 |
 | B7 指令与 `done` | 同 A6 | O1 已修：`done` 时 adapter 发不带 `--if` 的 `send`，投递成功；`idle` 时带 `--if idle` | O1 |
 | B8 版本门 | 把 PATH 临时指向一个打印旧版本号的 `claude` 包装脚本，然后 create | `provider_unavailable`，`hc ls` 没有新终端 | G4 |
 | B9 所有权 | 用 `hc run --bg --json -- sh` 自建一个终端，拼 handle `herdr-core:<address>/guessed` 执行 `observe` 和 `stop` | 都返回 `not_owned`；该终端仍在运行 | G4 |
-| B10 无上报 | `--host` 选一个旧版本 Host（或对 Pi 设 `PI_PROGRAM_STATUS=0`、对 Antigravity 设 `AGY_CLI_OSC7501=off`），关闭版本门不可行时只做环境变量这一种 | 30 秒后 `start_failed`，entry 未发送 | G4 |
+| B10 无上报 | `--host` 选一个旧版本 Host（或对 Pi 设 `PI_PROGRAM_STATUS=0`、对 Antigravity 设 `AGY_CLI_OSC7501=off`），关闭版本门不可行时只做环境变量这一种 | 30 秒后 `entry_submitted:false`、`state:"unknown"`，带 `attention`，entry 未发送，终端保留 | G4 |
 | B12 已结束终端的 resume（C-2） | B2 会话 `stop` 之后执行 `create --resume <h> --provider herdr-core ...` | `state_refused`，原因写明需新建会话；`hc ls` 没有新终端 | C-2 |
 | B11 长等待 | 对一个正在工作的会话执行不带 `--timeout-ms` 的 `await`，让一轮工作超过 3 分钟（例如让 Host 运行 `sleep 200` 并批准权限） | 跨过 core 180 秒的 check-in 后继续等待，直到真正的状态变化才返回 | G2 |
 

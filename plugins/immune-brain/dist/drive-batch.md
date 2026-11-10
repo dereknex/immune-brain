@@ -432,8 +432,12 @@ read. For each `executor` handoff without a live session:
 A create that reports `entry_submitted: false`, or a `blocked` state at any
 time, means the tab shows a dialog only the user may answer: workspace trust,
 sign-in, a permission request, a question, or a native confirmation such as an
-Intent revision gate. The Parent sends that tab no keys and no prompt, and never
-answers such a dialog for the user. As soon as the wait returns `blocked` it
+Intent revision gate. A create may also report `entry_submitted: false` with
+state `unknown` and an `attention` text: the Host reported nothing at startup,
+which some Hosts do while they show a dialog; the Parent relays that text and
+treats the session exactly like a blocked one. The Parent sends that tab no keys
+and no prompt, and never answers such a dialog for the user. As soon as the
+wait returns `blocked`, or the create returned `entry_submitted: false`, it
 tells the user which tab and `task_id` is waiting and what the dialog asks,
 without waiting to be asked, leaves the tab open, and continues the other Lanes;
 once the user has answered, it resubmits the entry with the same create and

@@ -64,7 +64,12 @@ export interface CreateSessionInput {
 	env?: Record<string, string>;
 }
 
-export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean } & Observation) | Refusal;
+/**
+ * `entry_submitted: false` means the session exists but needs the user before
+ * its entry: a dialog, or a Host that has not reported yet. `attention` says
+ * what the provider observed and how the user can look at the session.
+ */
+export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean; attention?: string } & Observation) | Refusal;
 export type ObserveResult = ({ ok: true } & Observation) | Refusal;
 export type InstructionResult = ({ ok: true } & Observation) | Refusal;
 /**

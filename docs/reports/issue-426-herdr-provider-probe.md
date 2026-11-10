@@ -152,3 +152,15 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 - 第一版按“进程”认领，`tests/pi-canary-packed-loader.test.ts` 在同进程其他测试之后从打包副本加载时被误判为重复而失败（单独跑通过），因此改为按 loader 认领；该测试现已通过。
 - 测试：`tests/pi-extension-single-copy.test.ts`（认领规则与接管；两个真实入口在被他人认领时零注册、只提示一次；自己拥有的 loader 与另一个 loader 都照常注册工具）。
 - 待实测：在装有用户级 Immune-Brain Pi package 的机器上，以 `-e <插件目录>` 启动 Pi Executor，确认不再退出、提示出现一次、使用的是 `-e` 那份。
+
+### Claude Code 启动对话框不上报（缓解，未根治）
+
+- 现象（实测）：Claude Code 2.1.322 在 herdr-core 中显示 workspace trust 对话框时，30 秒内不发出任何 OSC 7501 记录，`hc get` 的 `status` 保持 `null`。原先 adapter 返回 `start_failed`，Parent 只能另起会话，而用户回答对话框后本可继续。
+- 缓解：就绪超时不再失败，而是保留终端并返回 `entry_submitted: false`、`state: "unknown"`、`provenance: "none"`，附 `attention` 文本，说明观察到的是“无上报”（可能是启动对话框，也可能根本不上报），并给出 `hc attach <address>`。port 的 `CreateSessionResult` 增加可选 `attention`。Loop 契约把这种结果与 `blocked` 同样处理：转告用户、不发任何按键或文本，用户回答后 `--resume`。adapter 不把沉默猜成 `blocked`。
+- 准入不变：G3 要求对话框报 `blocked`，Claude Code 在 herdr-core 上仍不准入；Parent 只有在用户告知后才知道对话框已回答。
+- 测试：`tests/supervised-session-herdr-core.test.ts` 中“keeps a silent session for the user…”与“submits the entry once on resume after the user answered…”。
+- 根治在上游。以下是可提交给 `anthropics/claude-code` 的 issue 草稿，尚未提交：
+
+> **Program Status Protocol: report `blocked` while the workspace trust dialog is shown**
+>
+> Claude Code 2.1.295 added OSC 7501 support (CHANGELOG: “terminals that implement it can show whether Claude Code is working, waiting on you, or done”). In 2.1.322, starting `claude` in a directory that has not been trusted shows the workspace trust dialog, but no OSC 7501 record is written until it is answered, under a terminal that answers the `OSC 7501;?` probe (herdr-core 0.1.19). A supervisor therefore cannot tell “waiting on the user” from “still starting”. Expected: a `state=blocked:kind=permission` (or `question`) record while the trust dialog is visible, as for other waiting-on-you states.

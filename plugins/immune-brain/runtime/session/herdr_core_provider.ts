@@ -242,7 +242,13 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 					return { ok: true, handle, entry_submitted: true, ...after };
 				}
 				if (Date.now() >= deadline) {
-					return refuse("start_failed", `the Executor Host reported no idle status within ${readyTimeoutMs} ms; the entry was not submitted`, handle);
+					// Silence is observed, not a dialog guessed: Claude Code 2.1.322 shows its
+					// workspace trust dialog without any OSC 7501 report. Keep the terminal so
+					// the user can look and answer; `--resume` then submits the entry.
+					return {
+						ok: true, handle, entry_submitted: false, state: "unknown", provenance: "none",
+						attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look with \`hc attach ${address}\`, answer it there, then resume this session.`,
+					};
 				}
 				await sleep(pollMs);
 			}

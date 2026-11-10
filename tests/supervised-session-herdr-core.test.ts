@@ -123,12 +123,24 @@ describe("herdr-core readiness and Host versions", () => {
 		expect(hcCalls(stateFile)).toEqual([]);
 	});
 
-	it("submits no entry when the Host never reports a status, and says so", async () => {
+	it("keeps a silent session for the user instead of failing, and says how to look at it", async () => {
 		const { port, control, stateFile } = subject({ initial_status: null }, { readyTimeoutMs: 100 });
 		const result = await port.createSession(INPUT);
-		expect(result).toMatchObject({ ok: false, code: "start_failed", handle: expect.stringMatching(/^herdr-core:t1\//) });
-		expect(hcCalls(stateFile).some(call => call[0] === "send")).toBe(false);
+		expect(result).toMatchObject({ ok: true, entry_submitted: false, state: "unknown", provenance: "none", handle: expect.stringMatching(/^herdr-core:t1\//) });
+		if (result.ok) expect(result.attention).toContain("hc attach t1");
+		expect(hcCalls(stateFile).some(call => call[0] === "send" || call[0] === "kill")).toBe(false);
 		expect(control.sessionCount()).toBe(1);
+	});
+
+	it("submits the entry once on resume after the user answered the silent startup dialog", async () => {
+		const { port, control, stateFile } = subject({ initial_status: null }, { readyTimeoutMs: 100 });
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: false, code: "state_refused" });
+		control.setState(created.handle, "idle");
+		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: true, entry_submitted: true, handle: created.handle });
+		expect(control.submitted(created.handle)).toEqual([INPUT.entry]);
+		expect(hcCalls(stateFile).filter(call => call[0] === "run")).toHaveLength(1);
 	});
 
 	it("keeps waiting across core's own check-ins when the Parent set no bound", async () => {

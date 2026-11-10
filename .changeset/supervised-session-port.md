@@ -22,3 +22,7 @@ all its Lanes in the foreground in bounded rounds.
 A Pi session now loads one Immune-Brain only: a second copy (an installed Pi
 package next to `-e <plugin root>`) registers nothing and shows a notice,
 instead of the Executor Host exiting on duplicate tools.
+On herdr-core, an Executor Host that reports no status at startup (Claude Code
+shows workspace trust that way) keeps its terminal and returns
+`entry_submitted: false` with an `attention` text, so the user can answer and
+the Parent resumes, instead of failing the session.
