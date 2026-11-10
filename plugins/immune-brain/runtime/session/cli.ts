@@ -9,6 +9,7 @@
 import { createHerdrSessionProvider } from "./herdr_provider";
 import {
 	admitSessionProvider,
+	EXECUTOR_HOSTS,
 	refuse,
 	type ExecutorHostKind,
 	type OutputSource,
@@ -27,7 +28,7 @@ export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "re
 const USAGE = [
 	"imm-session <verb> --provider herdr [options]",
 	"  probe",
-	"  create --cwd <lane_path> --label <name> --host claude-code|pi --entry <drive entry> [--resume <handle>] [-- <host arguments>]",
+	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]",
 	"  send <handle> --text <instruction>",
 	"  await <handle> [--timeout-ms <ms>]",
 	"  observe <handle>",
@@ -103,7 +104,7 @@ export async function runSessionCli(
 		case "create": {
 			if (positional.length > 0) return usage("create takes no positional argument");
 			const host = flags.get("--host");
-			if (host !== "claude-code" && host !== "pi") return usage("--host must be claude-code or pi");
+			if (!host || !(EXECUTOR_HOSTS as readonly string[]).includes(host)) return usage(`--host must be one of ${EXECUTOR_HOSTS.join(", ")}`);
 			const cwd = flags.get("--cwd");
 			const label = flags.get("--label");
 			const entry = flags.get("--entry");

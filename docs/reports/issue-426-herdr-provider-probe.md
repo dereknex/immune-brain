@@ -43,10 +43,12 @@ stand-in `tests/fixtures/fake-herdr/herdr` 已改为输出上述真实形状，`
 - `terminal.send` 有 `if: idle|working`，是服务端条件发送，没有 TUI 上的先查后发竞态；`force` 会在 `blocked` 时仍然输入（可能代答对话框），adapter 永远不能用（`docs/commands.md` `hc send`）。
 - 状态只来自 OSC 7501 自报，core 不看屏幕（`README.md` “Status comes from the program”）；模板不配置自报（`docs/templates.md` 第 4 行）。状态词表是 `idle/working/done/blocked/error`，`error` 不在 port 词表里，映射为 `unknown`。
 
-**准入后果：** executor 与 advisory 角色在 herdr-core 上能否准入，取决于 Executor Host（Claude Code、Pi）是否通过 OSC 7501 自报状态。不自报的 Host 每个状态都是 `unknown`：不能发指令，也没有 idle/done 唤醒，只剩 `exit`。这一条已写进 `docs/reference/supervised-session-port.md` 的准入矩阵。本次未核实 Claude Code 或 Pi 是否发出 OSC 7501。
+**谁负责发出 OSC 7501：** 不是 core。`CONTRIBUTING.md:5` 写明“We don't add per-agent integrations or hooks… Agent-specific status support belongs in the program or its integration, not core”，`AGENTS.md:34` 把给 core 加屏幕检测或 agent 识别列为禁止事项，仓库也不附带任何 agent 集成。Herdr TUI 不同：它自己做屏幕检测，并通过 `herdr integration install` 安装的扩展经 socket 上报（Pi 等），不依赖 OSC 7501；Claude Code 与 Antigravity CLI 的状态都来自屏幕检测（`integrations.mdx` 第 113、314 行）。
+
+**准入后果：** executor 与 advisory 角色在 herdr-core 上能否准入，取决于三个 Executor Host（`claude-code`、`pi`、`antigravity`）的状态能否经 OSC 7501 到达 core：由 Host 自身发出，或由某个集成发出。若由 Immune-Brain 提供该集成，它属于 herdr-core adapter（provider 的状态来源翻译），不属于 port 或 Kernel。不能到达的 Host 每个状态都是 `unknown`：不能发指令，也没有 idle/done 唤醒，只剩 `exit`。这一条已写进 `docs/reference/supervised-session-port.md` 的准入矩阵。本次未核实任何一个 Host 是否发出 OSC 7501。
 
 ## 未完成与下一步
 
 1. 在装有 Herdr 0.9.5 的机器上跑一次 `imm-session` 全程：`probe → create → observe → send → await → read → stop`，确认上表在运行中的 server 上成立。
-2. 核实 Claude Code 与 Pi 是否发出 OSC 7501；若不发，herdr-core 上的 executor 准入不成立，S0.5 的 adapter 没有可用的角色。
+2. 决定 OSC 7501 的来源：核实 Claude Code、Pi、Antigravity 是否原生发出；若不发，选择由 Immune-Brain 在 herdr-core adapter 中提供集成、等待上游，或不在 core 上运行 executor。在此之前 S0.5 的 adapter 没有可用的角色。
 3. 上面两项通过之前，不写 herdr-core adapter（D2）。

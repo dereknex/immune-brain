@@ -54,7 +54,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 ```text
 imm-session <verb> --provider herdr [options]
   probe
-  create --cwd <lane_path> --label <name> --host claude-code|pi --entry <drive entry> [--resume <handle>] [-- <host arguments>]
+  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]
   send <handle> --text <instruction>
   await <handle> [--timeout-ms <ms>]
   observe <handle>
@@ -75,11 +75,11 @@ Every spelling and response shape below is checked against the Herdr 0.9.5 CLI r
 
 | Port | Herdr command |
 | --- | --- |
-| `createSession` | `tab create --workspace <ws> --cwd <lane> --label <name> --no-focus` (IDs at `.result.tab.tab_id`, `.result.root_pane.pane_id`), `agent start <agent-name> --kind claude\|pi --pane <pane> -- <args>`, `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`. The agent name is the label folded to `[a-z][a-z0-9_-]{0,31}`; `agent_not_ready` is a dialog |
+| `createSession` | `tab create --workspace <ws> --cwd <lane> --label <name> --no-focus` (IDs at `.result.tab.tab_id`, `.result.root_pane.pane_id`), `agent start <agent-name> --kind claude\|pi\|agy --pane <pane> -- <args>` (`claude-code`, `pi`, `antigravity`), `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`. The agent name is the label folded to `[a-z][a-z0-9_-]{0,31}`; `agent_not_ready` is a dialog |
 | `sendInstruction` | `agent get <pane>`, then `agent prompt` as above only when `idle`; Herdr's own `agent_blocked` refusal is `state_refused` |
 | `awaitTransition` | `agent wait <pane> --until idle --until done --until blocked --until unknown [--timeout <ms>]`: Herdr's default ignores `unknown`, the port does not. `timeout` and `pane_not_found` / `agent_not_running` / `agent_not_found` map to `timeout` and `exited` |
 | `readOutput` | `pane read <pane> --source visible\|recent-unwrapped`, which prints terminal text |
-| `observeState` | `agent get <pane>`; provenance `detected` |
+| `observeState` | `agent get <pane>`; provenance `detected`. Herdr reads Claude Code and Antigravity state from the screen, and Pi state from its Herdr integration when installed, else from the screen |
 | `stopSession` | `agent send-keys <pane> ctrl+c`, then `pane close <pane>` |
 | `closeSession` | `tab close <tab>`; a `confirmation_required` answer is a `provider_error` |
 | `reconcile` | `agent get` per owned handle |
@@ -99,7 +99,7 @@ Not admitted. The probe of herdr-core 0.1.19's released OpenRPC schema closes th
 | `createSession` | `terminal.run` (`hc run --bg --json --name --cwd`) | Returns `address` (`t7`), the stable handle on that core |
 | `sendInstruction` | `terminal.send` with `if: idle` | Server-side conditional send; no check-then-act race. Never `force`, which may answer a dialog |
 | `awaitTransition` | `terminal.wait` | `reason`: `status`, `exit`, `output`, `timeout`, `not_started`; timeout is in seconds and defaults to 180, after which it checks in and leaves the terminal running |
-| `observeState` | `terminal.get` | Provenance `reported` (OSC 7501); a program that reports nothing has no state, which is `unknown`. Its `error` word maps to `unknown` |
+| `observeState` | `terminal.get` | Provenance `reported` (OSC 7501, from the program or its integration; core never infers status); a program that reports nothing has no state, which is `unknown`. Its `error` word maps to `unknown` |
 | `readOutput` | `terminal.read` | |
 | `stopSession` | `terminal.interrupt`, then `terminal.kill` | |
 | `closeSession` | `terminal.rm` | |
@@ -114,7 +114,7 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
-| executor | create, await, observe, stop, close | Admitted | Only if the Executor Host reports its status through OSC 7501, and after a live run; otherwise every state is `unknown` and no instruction or settled wake is possible |
+| executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity` | Only for an Executor Host whose status reaches core through OSC 7501, and after a live run; otherwise every state is `unknown` and no instruction or settled wake is possible. Core ships no per-agent integration by design, so the report comes from the Host itself or an integration; one Immune-Brain supplies would live in the herdr-core adapter. Unverified for all three Hosts |
 | authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
 | advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
 

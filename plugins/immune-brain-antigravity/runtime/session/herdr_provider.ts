@@ -36,7 +36,8 @@ export const SUPPORTED_HERDR_PROTOCOLS = [22] as const;
 /** The bound for the entry and instruction submissions: until `working` or `blocked`. */
 export const HERDR_PROMPT_TIMEOUT_MS = 30_000;
 
-const HOST_KIND: Record<ExecutorHostKind, string> = { "claude-code": "claude", pi: "pi" };
+/** Herdr agent kinds (CLI reference, `agent start --kind`). */
+const HOST_KIND: Record<ExecutorHostKind, string> = { "claude-code": "claude", pi: "pi", antigravity: "agy" };
 
 /**
  * Herdr agent names must match `[a-z][a-z0-9_-]{0,31}`; a tab label has no such

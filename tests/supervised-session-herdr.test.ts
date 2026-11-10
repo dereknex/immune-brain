@@ -3,8 +3,12 @@
 // `imm-session` CLI that the Parent's Loop contract invokes.
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config";
+import { EXECUTOR_HOSTS } from "../plugins/immune-brain/runtime/session/supervised_session_port";
 import { runSessionCli } from "../plugins/immune-brain/runtime/session/cli";
 import { createHerdrSessionProvider, herdrAgentName, parseHerdrState } from "../plugins/immune-brain/runtime/session/herdr_provider";
 import { herdrCalls, herdrSubject } from "./helpers/fake-herdr";
@@ -84,6 +88,31 @@ describe("Herdr adapter command spelling", () => {
 		if (!created.ok) throw new Error(created.reason);
 		control.setState(created.handle, "unknown");
 		expect(await port.awaitTransition(created.handle, { timeoutMs: 2_000 })).toEqual({ ok: true, transition: "changed", state: "unknown", provenance: "none" });
+	});
+});
+
+describe("Executor Host coverage", () => {
+	it.each([["claude-code", "claude"], ["pi", "pi"], ["antigravity", "agy"]] as const)("starts a %s Executor as Herdr kind %s", async (host, kind) => {
+		const { port, stateFile } = subject();
+		expect(await port.createSession({ ...INPUT, host })).toMatchObject({ ok: true, entry_submitted: true });
+		expect(herdrCalls(stateFile)[1].slice(0, 5)).toEqual(["agent", "start", "slice-a", "--kind", kind]);
+	});
+
+	it("launches only Executor Hosts the Lane configuration accepts", () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-session-hosts-"));
+		try {
+			execFileSync("git", ["init", "-q", root]);
+			mkdirSync(join(root, ".imm"));
+			const accepted = (host: string) => {
+				writeFileSync(join(root, ".imm/config.json"), JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { executor_host: host } }));
+				execFileSync("git", ["add", ".imm/config.json"], { cwd: root });
+				return !resolveConfig(root, { userConfigPath: join(root, "absent-user.json") }).diagnostics.some(d => d.key_path === "lanes.executor_host");
+			};
+			for (const host of EXECUTOR_HOSTS) expect({ host, accepted: accepted(host) }).toEqual({ host, accepted: true });
+			expect(accepted("codex")).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

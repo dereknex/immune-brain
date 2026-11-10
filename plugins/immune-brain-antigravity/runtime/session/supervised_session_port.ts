@@ -16,7 +16,9 @@ export type StateProvenance = "detected" | "reported" | "none";
 export type SessionProviderName = "herdr" | "fake";
 /** Opaque to every caller. Only the adapter that minted a handle decodes it. */
 export type SessionHandle = string;
-export type ExecutorHostKind = "claude-code" | "pi";
+/** The Executor Hosts the Lane configuration accepts (`executor_host`); tests/supervised-session-herdr.test.ts checks each against it. */
+export const EXECUTOR_HOSTS = ["claude-code", "pi", "antigravity"] as const;
+export type ExecutorHostKind = (typeof EXECUTOR_HOSTS)[number];
 export type OutputSource = "visible" | "scrollback";
 
 export type RefusalCode =
@@ -185,7 +187,7 @@ export function closeProofRefusal(handle: SessionHandle, proof: CloseProof): Ref
 export function validateCreateInput(input: CreateSessionInput): Refusal | null {
 	if (!input.cwd) return refuse("invalid_input", "cwd is required");
 	if (!input.label || input.label.length > 32) return refuse("invalid_input", "label must be 1 to 32 characters");
-	if (input.host !== "claude-code" && input.host !== "pi") return refuse("invalid_input", "host must be claude-code or pi");
+	if (!(EXECUTOR_HOSTS as readonly string[]).includes(input.host)) return refuse("invalid_input", `host must be one of ${EXECUTOR_HOSTS.join(", ")}`);
 	if (!input.entry || input.entry.trim() === "") return refuse("invalid_input", "entry is required");
 	return null;
 }

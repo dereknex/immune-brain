@@ -273,9 +273,9 @@ Instruction-file lane directives are not read.
 | Field | Value | Effect | Without it |
 | --- | --- | --- | --- |
 | `max_parallel` | positive integer | The Parent passes it as `max_parallel` when it starts a batch. The native confirmation shows the Lane capacity. | No `max_parallel`: one Lane at a time |
-| `executor_host` | `claude-code` or `pi` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to the other one. | The Parent's own Host type, else the other allowlisted Host |
+| `executor_host` | `claude-code`, `pi` or `antigravity` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type, else another allowlisted Host the `lane-steward` reported available |
 | `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
-| `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi` | The Executor Host's own default |
+| `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi` | The Executor Host's own default |
 
 Each field resolves on its own, in order: literal request, selected user Lane
 profile, project `lanes` defaults, then the default above. Select the profile
@@ -345,10 +345,11 @@ A supervised session is defined by what it guarantees, not by a Host's name:
 - The Parent can stop it.
 
 The Parent Host and the Executor Host are chosen independently. The Executor
-Host is any allowlisted Host (`claude-code` or `pi`) that the `lane-steward`
-reported available in that Lane. An `executor_host` resolved under
+Host is any allowlisted Host (`claude-code`, `pi` or `antigravity`) that the
+`lane-steward` reported available in that Lane. An `executor_host` resolved under
 [Lane Preferences](#lane-preferences) decides it; without one, prefer the
-Parent's own Host type, and use the other when only it is available. The child's QA and Review then run under that
+Parent's own Host type, and use another available one when it is not available,
+naming the Host chosen in the report. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
 same Immune-Brain plugin or package the Parent runs: a Parent started from a
 local plugin directory passes that same directory to the Executor Host. The
@@ -404,7 +405,8 @@ read. For each `executor` handoff without a live session:
    Parent's plugin and those that [Lane Preferences](#lane-preferences)
    resolved for model and effort. The entry is the Executor Host's own `drive`
    invocation as that Host names it: a Claude Code Host that loaded the plugin
-   from a directory names it `/immune-brain:drive`. Keep `task_id → handle`
+   from a directory names it `/immune-brain:drive`, Pi names it `/skill:drive`
+   and Antigravity names it `/drive`. Keep `task_id → handle`
    from the result; the handle is opaque and is not authority.
 3. Supervise with `imm-session await <handle> --provider herdr` as a Host
    background command, so its return re-invokes the Parent. Start it only after
