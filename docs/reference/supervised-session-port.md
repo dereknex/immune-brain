@@ -92,7 +92,7 @@ The shapes are checked against Herdr's published source and schema, not yet by r
 
 ### herdr-core (`herdr-core`)
 
-Not admitted. The probe of herdr-core 0.1.19's released OpenRPC schema closes the four open mappings, and its consequences for admission are recorded there; an adapter waits for a live run.
+Not admitted. The probe of herdr-core 0.1.19's released OpenRPC schema closes the four open mappings, and all three Executor Hosts report OSC 7501 natively (`docs/reports/issue-426-herdr-provider-probe.md`); the adapter waits for a live run.
 
 | Port | herdr-core method | Note |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
-| executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity` | Only for an Executor Host whose status reaches core through OSC 7501, and after a live run; otherwise every state is `unknown` and no instruction or settled wake is possible. Core ships no per-agent integration by design, so the report comes from the Host itself or an integration; one Immune-Brain supplies would live in the herdr-core adapter. Unverified for all three Hosts |
+| executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity` | Executor Host at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, which report OSC 7501 natively after a feature probe core answers; admitted only after a live run shows `blocked` for every dialog kind (permission, workspace trust, sign-in). An older Host has no state on core. No Immune-Brain integration is needed; should a Host drop native support, one would live in the herdr-core adapter |
 | authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
 | advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
 

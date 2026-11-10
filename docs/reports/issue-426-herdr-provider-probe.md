@@ -45,10 +45,34 @@ stand-in `tests/fixtures/fake-herdr/herdr` 已改为输出上述真实形状，`
 
 **谁负责发出 OSC 7501：** 不是 core。`CONTRIBUTING.md:5` 写明“We don't add per-agent integrations or hooks… Agent-specific status support belongs in the program or its integration, not core”，`AGENTS.md:34` 把给 core 加屏幕检测或 agent 识别列为禁止事项，仓库也不附带任何 agent 集成。Herdr TUI 不同：它自己做屏幕检测，并通过 `herdr integration install` 安装的扩展经 socket 上报（Pi 等），不依赖 OSC 7501；Claude Code 与 Antigravity CLI 的状态都来自屏幕检测（`integrations.mdx` 第 113、314 行）。
 
-**准入后果：** executor 与 advisory 角色在 herdr-core 上能否准入，取决于三个 Executor Host（`claude-code`、`pi`、`antigravity`）的状态能否经 OSC 7501 到达 core：由 Host 自身发出，或由某个集成发出。若由 Immune-Brain 提供该集成，它属于 herdr-core adapter（provider 的状态来源翻译），不属于 port 或 Kernel。不能到达的 Host 每个状态都是 `unknown`：不能发指令，也没有 idle/done 唤醒，只剩 `exit`。这一条已写进 `docs/reference/supervised-session-port.md` 的准入矩阵。本次未核实任何一个 Host 是否发出 OSC 7501。
+## 三个 Executor Host 的 OSC 7501 上游实现（2026-11-10 核对）
+
+三个 Host 都已原生发出 OSC 7501，且都先做特性探测再上报；herdr-core 会回应该探测。因此 core 上不需要 Immune-Brain 或第三方提供状态集成。
+
+| Executor Host | 原生支持起始版本 | 上报内容 | 开关 | 证据 |
+| --- | --- | --- | --- | --- |
+| `claude-code` | 2.1.295 | working、waiting on you、done | 未见环境变量 | `anthropics/claude-code` `CHANGELOG.md` 第 1550 行（`## 2.1.295` 下）：“Added Program Status Protocol (OSC 7501) support: terminals that implement it can show whether Claude Code is working, waiting on you, or done” |
+| `pi` | 1.1.0（2026-10-07） | working、blocked（对话框或登录）、done、failed；1.5.1 起 overlay 提问也报 blocked | `PI_PROGRAM_STATUS=1\|0` 覆盖探测 | `earendil-works/pi` `packages/coding-agent/CHANGELOG.md` 第 422 行（`## [1.1.0]`）与第 27 行（`## [1.5.1]`）；issue #10607 以提交 `503c605` 关闭 |
+| `antigravity` | Antigravity CLI 1.4.0（10 月 16 日发布） | working、waiting for your input、done、failed | `AGY_CLI_OSC7501=off\|on`；`on` 用于支持但不回应探测的终端 | `google-antigravity/antigravity-cli` release `1.4.0` 说明第一条 |
+
+core 侧：`crates/ghostty-vt/src/tests.rs:155-171` 断言 core 解析 `state=working:app=claude-code:progress=40`、`state=blocked:kind=permission` 等记录，并对探测 `OSC 7501;?` 作出回应。Herdr TUI 0.9.5 不读 OSC 7501，仍用屏幕检测与 socket 集成，与本表无关。
+
+仍未核实，需在运行时确认：
+
+- Claude Code 的 “waiting on you” 在 core 上记录为 `blocked`，且覆盖启动时的 workspace trust、登录与权限对话框；changelog 没有逐一列出对话框种类。Pi 与 Antigravity 的说明同样没有提到 workspace trust。
+- 三者在 `hc run` 启动的终端里确实完成探测并开始上报（三者都依赖探测，Antigravity 另有强制开关）。
+- 旧版本 Host 不上报：低于上表版本时，core 上的状态始终是 `unknown`。
+
+**准入后果：** herdr-core 上 executor 与 advisory 的准入条件改为“Executor Host 不低于上表版本，并经运行实测确认每类对话框都报 `blocked`”。若某个 Host 漏报某类对话框，Parent 只能等 `hc wait` 的超时（默认 180 秒）醒来，该 Host 在 core 上不准入，直到上游修复。不再需要 Immune-Brain 自建状态集成；若将来某个 Host 撤回原生支持，集成仍应放在 herdr-core adapter，不放进 port 或 Kernel。
 
 ## 未完成与下一步
 
-1. 在装有 Herdr 0.9.5 的机器上跑一次 `imm-session` 全程：`probe → create → observe → send → await → read → stop`，确认上表在运行中的 server 上成立。
-2. 决定 OSC 7501 的来源：核实 Claude Code、Pi、Antigravity 是否原生发出；若不发，选择由 Immune-Brain 在 herdr-core adapter 中提供集成、等待上游，或不在 core 上运行 executor。在此之前 S0.5 的 adapter 没有可用的角色。
-3. 上面两项通过之前，不写 herdr-core adapter（D2）。
+1. **Herdr TUI 运行实测**：在装有 Herdr 0.9.5 的机器上跑 `imm-session probe → create → observe → send → await → read → stop`，三个 Host 各一次，确认上文 TUI 表在运行中的 server 上成立。
+2. **herdr-core 运行实测（D2 的 probe）**：装 `hc` 0.1.19，对每个 Host（不低于上表版本）执行 `hc run --bg --json`，用 `hc get` / `hc wait` 记录状态序列：启动、提交 entry、权限提示、workspace trust、完成、退出。逐项确认 `blocked` 覆盖与 `address` 寻址。
+3. **herdr-core adapter（S0.5 实现）**，2 通过后开始：
+   - 传输：沿用 TUI 的取舍，调用 `hc` CLI 的 `--json` 输出，不直接讲 JSON-RPC；命令写法集中在一张表里。
+   - 映射：`createSession` = `hc run --bg --json --name --cwd -- <host argv>`，再用 `hc send <address> <entry> --if idle --wait` 提交 entry；`sendInstruction` = `hc send --if idle`，永不用 `--force`；`awaitTransition` = `hc wait <address> --timeout <秒>`，`reason: timeout` 映射为 `timeout`，`exit` 映射为 `exited`；`observeState` = `hc get`，provenance `reported`，`error` 映射为 `unknown`；`stopSession` = `hc interrupt` 后 `hc kill`；`closeSession` = `hc rm`。
+   - 准入：probe 时检查 `hc` 的协议代数（`hello` 的 `generation`）与 schema 版本，并检查所选 Host 的版本不低于上表；不满足即 `provider_unavailable`，不降级。
+   - 测试：同一套 conformance suite 加一个 stand-in `hc`，形状取自 `released.openrpc.json`。
+   - Loop 契约：Herdr Lane Tabs 一节改为按 provider 选择，`--provider herdr-core` 仅在显式配置时使用，不自动探测。
+4. 1 和 2 通过之前，不合并 herdr-core adapter（D2）。
