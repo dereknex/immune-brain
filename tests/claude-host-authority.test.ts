@@ -341,7 +341,7 @@ describe("claude host authority", () => {
 
 	test("production runtime exposes no direct-decision authority seam", () => {
 		const source = [
-			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8"),
 			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8"),
 		].join("\n");
 		expect(source).not.toContain("configured-test-decision");

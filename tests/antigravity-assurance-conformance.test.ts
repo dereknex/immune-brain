@@ -17,13 +17,13 @@ import {
 	antigravityPreToolUseHook,
 	readPhaseEntryState,
 } from "../plugins/immune-brain/runtime/antigravity/lane_guard";
-import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/antigravity/interaction";
+import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { antigravityRunContinuationHook } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createAntigravityMcpRuntime, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { NativeAuthorityError } from "../plugins/immune-brain/runtime/antigravity/interaction";
+import { NativeAuthorityError } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";

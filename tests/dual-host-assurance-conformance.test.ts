@@ -17,11 +17,15 @@ import {
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
-import { AntigravityReviewHost, antigravityHookEventLog } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
+import { HostRuntime } from "../plugins/immune-brain/runtime/host-core/runtime";
+import { NativeAuthorityError } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { MemoryHookEventLog, type HookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 import { ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
@@ -2063,7 +2067,7 @@ describe("dual-host assurance conformance", () => {
 	test("the shared batch reason table is the only producer of gate prose", () => {
 		const adapterSources = [
 			readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8"),
-			readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+			readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8"),
 		];
 		const keys = Object.keys(BATCH_REASONS) as Array<keyof typeof BATCH_REASONS>;
 		expect(keys.length).toBeGreaterThan(20);
@@ -2351,7 +2355,7 @@ describe("dual-host assurance conformance", () => {
 		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
 		for (const path of [
 			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
-			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+			"plugins/immune-brain/runtime/host-core/runtime.ts",
 		]) {
 			const source = readFileSync(resolve(path), "utf8");
 			expect({ path, shared: source.includes("authorizeBatch") }).toEqual({ path, shared: true });
@@ -2375,8 +2379,8 @@ describe("dual-host assurance conformance", () => {
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-tracker-gate" }),
 			});
 			const reads: string[] = [];
-			const status = runtime.status.bind(runtime);
-			runtime.status = async (taskId: string) => {
+			const status = runtime.runtime.status.bind(runtime.runtime);
+			runtime.runtime.status = async (taskId: string) => {
 				reads.push(taskId);
 				return status(taskId);
 			};
@@ -2463,7 +2467,7 @@ describe("dual-host assurance conformance", () => {
 
 			// Both Hosts settle through the one shared step.
 			for (const path of [
-				"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+				"plugins/immune-brain/runtime/host-core/runtime.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 			]) {
 				expect({ path, shared: readFileSync(resolve(path), "utf8").includes("projectTerminalTrackerState") }).toEqual({
@@ -2877,4 +2881,120 @@ describe("verifier observation", () => {
 			expect(inspect(driver, reservation)).toMatchObject({ ok: true, receipt: { actorId: `${spec.prefix}:agent-1` } });
 		});
 	}
+});
+
+describe("runtime composition", () => {
+	/** An isolated repository with one scripted TaskIntent whose check passes. */
+	function compositionRepo(taskId: string): string {
+		const root = mkdtempSync(join(tmpdir(), "imm-runtime-composition-"));
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		mkdirSync(join(root, "src"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
+			goal: "share one runtime between two Hosts",
+			acceptance: [{
+				id: "acc-1", assertion: "the scripted check passes",
+				verification: JSON.stringify({
+					contract: "assurance_kernel/verification_descriptor/v2",
+					command: { executable: "sh", argv: ["-c", "true"], cwd: ".", timeout_ms: 30_000, max_output_bytes: 8_192 },
+					environment: { prepare: null, writable_paths: [] },
+				}),
+			}],
+			scope_hint: [`docs/plans/${taskId}.intent.json`, "src/task.ts"],
+			risk: "material", revision: 1,
+		};
+		writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+		writeFileSync(join(root, "src/task.ts"), "export const delivered = false;\n");
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		// D11: the Review CLI dispatcher needs a resolved review profile, exactly as
+		// the project-owned-verification fixture does.
+		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } })}\n`);
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
+		return root;
+	}
+
+	/** Enroll, deliver the in-scope change, freeze and run QA through the runtime itself. */
+	async function driveToReview(taskId: string, root: string, runtime: ClaudeRuntime | AntigravityRuntime) {
+		await enrollTaskForTest(root, taskId);
+		writeFileSync(join(root, "src/task.ts"), "export const delivered = true;\n");
+		execFileSync("git", ["add", "--", "src/task.ts"], { cwd: root });
+		const advanced = await runtime.advance(taskId);
+		if (advanced.state !== "review_ready") throw new Error(`expected review_ready, got ${JSON.stringify(advanced)}`);
+		const status = await runtime.status(taskId);
+		if (status.error) throw new Error(`status failed: ${status.error}`);
+		return status;
+	}
+
+	test("both Hosts compose one HostRuntime and yield the same Kernel projection", async () => {
+		const taskId = "composition-task";
+		const claudeRoot = compositionRepo(taskId);
+		const antigravityRoot = compositionRepo(taskId);
+		const claude = new ClaudeRuntime({ cwd: claudeRoot, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
+		const antigravity = new AntigravityRuntime({ cwd: antigravityRoot, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
+		try {
+			// One implementation, two profiles: the same class carries both Hosts.
+			expect(claude.runtime).toBeInstanceOf(HostRuntime);
+			expect(antigravity.runtime).toBeInstanceOf(HostRuntime);
+			expect(claude.runtime.profile.hostId).toBe("claude-code");
+			expect(antigravity.runtime.profile.hostId).toBe("antigravity");
+			expect(claude.host.host).toBe("claude-code");
+			expect(antigravity.host.host).toBe("antigravity");
+
+			const claudeStatus = await driveToReview(taskId, claudeRoot, claude);
+			const antigravityStatus = await driveToReview(taskId, antigravityRoot, antigravity);
+
+			// The repository-identity fields differ (two checkouts, two Git bases); every
+			// Kernel fact derived from the scripted task is identical.
+			const neutral = (projection: Record<string, unknown>) => {
+				const { run_id: _run, record_revision: _record, workspace_revision: _workspace, diff_hash: _diff, ...rest } = projection;
+				return rest;
+			};
+			expect(claudeStatus.projection.next_obligation).toBe("run_review");
+			expect(claudeStatus.projection.artifact_state).toBe("frozen");
+			expect(neutral(antigravityStatus.projection)).toEqual(neutral(claudeStatus.projection));
+
+			// Each Host records its own native confirmation reference.
+			const facts = { connectionId: "s", toolCallId: "t", requestId: "nested", operation: "stop", taskId };
+			expect(claude.runtime.profile.confirmationRef(facts)).toMatch(/^claude-confirm-[0-9a-f]{16}$/);
+			expect(antigravity.runtime.profile.confirmationRef(facts)).toMatch(/^antigravity-confirm-[0-9a-f]{16}$/);
+		} finally {
+			await claude.shutdown();
+			await antigravity.shutdown();
+			rmSync(claudeRoot, { recursive: true, force: true });
+			rmSync(antigravityRoot, { recursive: true, force: true });
+		}
+	}, 120_000);
+
+	test("an Antigravity verifier event reaches that runtime's ReviewHost", () => {
+		const log = new MemoryHookEventLog<AntigravityHookEvent>();
+		const runtime = new AntigravityRuntime({ cwd: process.cwd(), host: new AntigravityReviewHost(log), interactive: false });
+		runtime.observeAntigravity({ type: "start", sessionId: "conv-1", agent: "agent-7", agentId: "1", prompt: "dispatch" });
+		expect(log.list("conv-1")).toMatchObject([{ type: "start", sessionId: "conv-1", agent: "agent-7", agentId: "1" }]);
+	});
+
+	test("a native refusal from either runtime is the shared NativeAuthorityError", async () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-runtime-refusal-"));
+		const claude = new ClaudeRuntime({ cwd: root, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
+		const antigravity = new AntigravityRuntime({ cwd: root, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
+		try {
+			const meta = (toolCallId: string): ToolMeta => ({ taskId: "probe-initiative", sessionId: "s", toolCallId, interactive: true });
+			for (const [host, runtime] of [["claude-code", claude], ["antigravity", antigravity]] as const) {
+				const refusal = await runtime.retireStaleBatch("probe-initiative", meta("probe-call")).catch((error: unknown) => error);
+				expect({ host, shared: refusal instanceof NativeAuthorityError, code: (refusal as NativeAuthorityError).reasonCode })
+					.toEqual({ host, shared: true, code: "interaction_not_opened" });
+			}
+			// Bound: one declaration serves both adapters.
+			const declaring = readdirSync(join(process.cwd(), "plugins/immune-brain/runtime"), { recursive: true })
+				.map(String).map((path) => path.split("\\").join("/"))
+				.filter((path) => path.endsWith(".ts") && readFileSync(join(process.cwd(), "plugins/immune-brain/runtime", path), "utf8").includes("class NativeAuthorityError"));
+			expect(declaring).toEqual(["host-core/interaction.ts"]);
+		} finally {
+			await claude.shutdown();
+			await antigravity.shutdown();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

@@ -27,11 +27,9 @@ const HOSTS: Record<string, string> = {
 const HOST_CORE_DIR = "plugins/immune-brain/runtime/host-core";
 const INNER_LAYERS = ["plugins/immune-brain/runtime/kernel", "plugins/immune-brain/runtime/assurance"];
 
-/** D1: the host-to-host edges on main, each owned by #414; S4 retired the Pi -> claude/review_host edge. */
+/** D1: the host-to-host edges on main, each owned by #414; S3 retired the kernel_ports and interaction edges, and S4 retired the Pi -> claude/review_host edge. */
 const BASELINE: Array<{ edge: string; owner: "#414" }> = [
-	{ edge: "plugins/immune-brain/runtime/antigravity/kernel_ports.ts -> plugins/immune-brain/runtime/claude/kernel_ports", owner: "#414" },
 	{ edge: "plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server", owner: "#414" },
-	{ edge: "plugins/immune-brain/runtime/antigravity/interaction.ts -> plugins/immune-brain/runtime/claude/interaction", owner: "#414" },
 ];
 
 interface SourceFile {
@@ -152,7 +150,7 @@ describe("runtime layering boundary", () => {
 	});
 
 	test("AC2: observed host-to-host edges equal the baseline", () => {
-		expect(BASELINE).toHaveLength(3);
+		expect(BASELINE).toHaveLength(1);
 		expect(BASELINE.every(({ owner }) => owner === "#414")).toBe(true);
 		const { unexpected, stale } = compareEdges(
 			hostToHostEdges(real, HOSTS),
@@ -267,8 +265,15 @@ describe("runtime layering boundary", () => {
 			expect(coreImporterViolations(fixture)).toEqual([]);
 			expect(innerLayerViolations(fixture, HOSTS)).toEqual([]);
 			expect(hostToHostEdges(fixture, HOSTS)).toEqual([]);
-			expect(BASELINE).toHaveLength(3);
+			expect(BASELINE).toHaveLength(1);
 		});
+	});
+
+	test("AC1: no adapter runtime inherits another adapter's class", () => {
+		const inheriting = real
+			.filter((file) => file.path.startsWith(`${RUNTIME_DIR}/`) && file.source.includes("extends ClaudeRuntime"))
+			.map((file) => file.path);
+		expect(inheriting).toEqual([]);
 	});
 
 	test("the path resolver covers upward relative forms and leaves bare specifiers alone", () => {

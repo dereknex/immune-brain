@@ -17424,7 +17424,7 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
 // plugins/immune-brain/runtime/plugin_version.ts
 var PLUGIN_VERSION = "8.0.0";
 
-// plugins/immune-brain/runtime/claude/interaction.ts
+// plugins/immune-brain/runtime/host-core/interaction.ts
 import { createHash as createHash22, randomUUID as randomUUID9 } from "node:crypto";
 
 // plugins/immune-brain/runtime/assurance/phase_entry.ts
@@ -17563,7 +17563,7 @@ function phaseRefusalMessage(refusal) {
   return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
 }
 
-// plugins/immune-brain/runtime/claude/interaction.ts
+// plugins/immune-brain/runtime/host-core/interaction.ts
 var PRIVILEGED_OPERATIONS = [
   "request_authorization",
   "approve_breaking_intent_revision",
@@ -17615,12 +17615,17 @@ var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
 function entryTokenRequestId(token) {
   return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
-function confirmationRef(input) {
+function hostConfirmationRef(host, input) {
   const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
-  return `claude-${kind}-${createHash22("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `${host}-${kind}-${createHash22("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
   return randomUUID9();
+}
+
+// plugins/immune-brain/runtime/claude/interaction.ts
+function confirmationRef(input) {
+  return hostConfirmationRef("claude", input);
 }
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
@@ -19443,8 +19448,7 @@ async function runContinuationHookOutput(payload, root = tmpdir8()) {
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_verdict_authority();
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
@@ -19692,7 +19696,7 @@ async function superviseLane(supervisor, input) {
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_coordinator();
 init_verification();
 init_review_evidence();
@@ -19736,7 +19740,7 @@ function createEnrollmentAuthorityRegistry() {
   }, "enrollment");
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_storage();
 init_workflow_autocommit();
 init_qa();
@@ -19759,7 +19763,7 @@ function deriveAuthorizationOperation(input) {
   return { blocked: "no unique host-derived authorization operation" };
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_role_prompt_bridge();
 init_actor_identity();
 
@@ -19803,7 +19807,7 @@ function restoreStagedIntent(root, snapshot) {
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_coordinator();
 init_github_issue_tracker();
 init_backend_claim();
@@ -22121,7 +22125,7 @@ function runEntryManifest(children, readIntent) {
   };
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_batch_state();
 init_batch_authority();
 init_batch_git();
@@ -22345,11 +22349,11 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-var CLAUDE_LANE_WAIT_MS = 500;
-function claudeLaneWaitMs(env) {
+// plugins/immune-brain/runtime/host-core/runtime.ts
+var LANE_WAIT_MS = 500;
+function laneWaitMs(env) {
   const limit = Number(env.MCP_TOOL_TIMEOUT);
-  return Number.isFinite(limit) && limit > 0 ? Math.min(CLAUDE_LANE_WAIT_MS, Math.floor(limit / 2)) : CLAUDE_LANE_WAIT_MS;
+  return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
 }
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
@@ -22362,7 +22366,7 @@ function readTaskIntentForRecord(root, taskId) {
   const record = readTaskRecordRaw(root, taskId).record;
   return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
-async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
+async function submitHostReview(host, coordinator, ctx, taskId, verdictInput) {
   return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 function settledKernelResult(result) {
@@ -22418,7 +22422,8 @@ function throwIfCancelled(signal) {
 }
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
-class ClaudeRuntime {
+class HostRuntime {
+  profile;
   laneSupervisor = new LaneSupervisor;
   parentHost;
   host;
@@ -22438,28 +22443,30 @@ class ClaudeRuntime {
   batchGit;
   batchTracker;
   readInitiative;
-  constructor(options) {
+  constructor(profile, options) {
+    this.profile = profile;
     this.cwd = options.cwd;
     this.options = options;
     this.env = options.env ?? process.env;
     this.interactive = options.interactive ?? true;
-    this.parentHost = options.parentHost ?? "claude-code";
+    this.parentHost = options.parentHost ?? profile.hostId;
     this.requestConfirmation = options.requestConfirmation;
     this.batchKernel = options.batchKernel;
     this.batchGit = options.batchGit;
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
-    this.host = options.host ?? new ClaudeReviewHost(claudeHookEventLog());
+    this.host = options.host ?? profile.createHost();
     this.reviewHost = new CliReviewHost(this.host);
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
       ...options.ports,
       host: this.reviewHost,
-      confirmationReference: ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`
+      confirmationReference: this.actorConfirmationRef
     }, options.authorityOverrides);
   }
+  actorConfirmationRef = ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`;
   observe(event) {
-    this.host.observe(event);
+    this.profile.observe(this.host, event);
   }
   bindWorkspace(cwd) {
     this.cwd = cwd;
@@ -22468,7 +22475,7 @@ class ClaudeRuntime {
     this.hostVersion = version || undefined;
   }
   probeHost() {
-    return (this.options.probeHost ?? probeHost)(this.env, process.platform, this.hostVersion);
+    return (this.options.probeHost ?? this.profile.probeHost)(this.env, process.platform, this.hostVersion);
   }
   bindNativeConfirmation(port) {
     this.requestConfirmation = port;
@@ -22482,7 +22489,7 @@ class ClaudeRuntime {
   createKernelPorts() {
     return {
       host: this.reviewHost,
-      confirmationReference: ({ actorId }) => `claude:${actorId}`,
+      confirmationReference: this.actorConfirmationRef,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
       readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
@@ -22520,7 +22527,7 @@ class ClaudeRuntime {
       throw gate.error;
     const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
     return {
-      confirmation_ref: confirmationRef({
+      confirmation_ref: this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: result.requestId,
@@ -22542,7 +22549,7 @@ class ClaudeRuntime {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
   async submitReview(taskId, verdictInput, meta) {
-    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
+    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitHostReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
   }
   async submitVerification(taskId, result, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
@@ -22562,7 +22569,7 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
+      if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
       if (existsSync19(join36(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
@@ -22625,7 +22632,7 @@ class ClaudeRuntime {
     const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot ? findLaneRelayTarget(this.cwd, taskId) : null;
     if (!relayed)
       return this.authorizeInRoot(taskId, operation, meta, extra);
-    const laneRuntime = new ClaudeRuntime({
+    const laneRuntime = this.profile.laneRuntime({
       ...this.options,
       cwd: relayed.lane_path,
       laneRoot: true,
@@ -22647,9 +22654,9 @@ class ClaudeRuntime {
         apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
-        parentHost: "claude-code",
+        parentHost: this.parentHost,
         pluginDir: resolve16(dirname18(fileURLToPath3(import.meta.url)), "../.."),
-        waitMs: claudeLaneWaitMs(this.env),
+        waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
       return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
@@ -23119,7 +23126,7 @@ class ClaudeRuntime {
           request_id: confirmationResult.requestId
         };
       },
-      confirmationRef: ({ batch_id, request_id }) => confirmationRef({
+      confirmationRef: ({ batch_id, request_id }) => this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: request_id ?? `resumed-${batch_id}`,
@@ -23176,7 +23183,7 @@ class ClaudeRuntime {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
         pluginDir: resolve16(dirname18(fileURLToPath3(import.meta.url)), "../.."),
-        waitMs: claudeLaneWaitMs(this.env),
+        waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
         request: options.executor
@@ -23283,7 +23290,7 @@ class ClaudeRuntime {
           return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
         return { kind: "confirmed", request_id: confirmationResult.requestId };
       },
-      confirmationRef: ({ request_id, plan_digest }) => confirmationRef({
+      confirmationRef: ({ request_id, plan_digest }) => this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: request_id,
@@ -23297,6 +23304,79 @@ class ClaudeRuntime {
     if (outcome.outcome === "rejected")
       return outcome.rejection;
     return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
+  }
+}
+
+// plugins/immune-brain/runtime/claude/kernel_ports.ts
+init_verdict_authority();
+var CLAUDE_PROFILE = {
+  hostId: "claude-code",
+  createHost: () => new ClaudeReviewHost(claudeHookEventLog()),
+  observe: (host, event) => host.observe(event),
+  probeHost,
+  confirmationRef,
+  laneRuntime: (options) => new HostRuntime(CLAUDE_PROFILE, options),
+  selectedParent: selectedClaudeParent
+};
+
+class ClaudeRuntime {
+  runtime;
+  constructor(options) {
+    this.runtime = new HostRuntime(CLAUDE_PROFILE, options);
+  }
+  get host() {
+    return this.runtime.host;
+  }
+  get coordinator() {
+    return this.runtime.coordinator;
+  }
+  observe(event) {
+    this.runtime.observe(event);
+  }
+  bindWorkspace(cwd) {
+    this.runtime.bindWorkspace(cwd);
+  }
+  bindHostVersion(version) {
+    this.runtime.bindHostVersion(version);
+  }
+  bindNativeConfirmation(port) {
+    this.runtime.bindNativeConfirmation(port);
+  }
+  shutdown() {
+    return this.runtime.shutdown();
+  }
+  kernelPorts() {
+    return this.runtime.kernelPorts();
+  }
+  status(...args) {
+    return this.runtime.status(...args);
+  }
+  advance(...args) {
+    return this.runtime.advance(...args);
+  }
+  submitReview(...args) {
+    return this.runtime.submitReview(...args);
+  }
+  submitVerification(...args) {
+    return this.runtime.submitVerification(...args);
+  }
+  reviseIntent(...args) {
+    return this.runtime.reviseIntent(...args);
+  }
+  resolveFinding(...args) {
+    return this.runtime.resolveFinding(...args);
+  }
+  refuteFinding(...args) {
+    return this.runtime.refuteFinding(...args);
+  }
+  authorize(...args) {
+    return this.runtime.authorize(...args);
+  }
+  startUnattendedBatch(...args) {
+    return this.runtime.startUnattendedBatch(...args);
+  }
+  retireStaleBatch(...args) {
+    return this.runtime.retireStaleBatch(...args);
   }
 }
 
