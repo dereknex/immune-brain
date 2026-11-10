@@ -13965,12 +13965,14 @@ async function buildBatchFinalReport(root, record) {
       if (parent && parent.status !== 0)
         throw new Error(`final report unreadable integration: ${child.task_id}`);
       const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent.stdout.trim(), child.commit).changed_paths : null;
+      const outsideRoutine = paths ? routineAllowlistEscapes(intent, paths, floor) : [];
       return {
         task_id: child.task_id,
         acceptance: intent.acceptance.map((item) => ({ id: item.id, qa: qa?.acceptance_results.find((result) => result.acceptance_id === item.id)?.status ?? null })),
         beyond_estimate: paths?.filter((file) => !intent.scope_hint.some((scope) => pathMatchesScope(file, scope))) ?? null,
         declared_risk: intent.risk,
         projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
+        ...outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {},
         redo_count: child.redo_grants ?? 0,
         parked_reason: integrated ? null : child.reason,
         ...child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}

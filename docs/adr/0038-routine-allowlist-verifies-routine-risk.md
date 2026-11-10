@@ -35,9 +35,9 @@ no diff exists before execution and `scope_hint` is only an estimate.
    `runtime/kernel/tracked_declaration.ts`) makes every task `critical`, and the
    file's own path is always `critical`.
 5. **Visible.** `imm-kernel inspect --json` reports `risk.routine_classes` and
-   `risk.outside_routine_allowlist`; the Review manifest carries
-   `outside_routine_allowlist` only when it is non-empty, so other manifests
-   keep their bytes.
+   `risk.outside_routine_allowlist`; the Review manifest and each child of a
+   batch final report carry `outside_routine_allowlist` only when it is
+   non-empty, so other manifests and reports keep their bytes.
 6. **Planner advice only.** The draw-up contract tells the Planner to declare
    `routine` only inside the allowlist; the settlement check decides.
 7. **Pilot.** This repository lists one class, `docs-only`: `README.md`,
