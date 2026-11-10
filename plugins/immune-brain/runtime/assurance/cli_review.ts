@@ -10,10 +10,10 @@
 // delegate to the wrapped Host (BR-DEC-4).
 
 import { execFileSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import {
@@ -33,13 +33,30 @@ const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 	antigravity: "agy",
 };
 
-/** The reviewer argv for one Host, model and effort applied only when the profile sets them (D5). */
-export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number): string[] {
+/**
+ * Claude Code reviewer settings: user hooks must not rewrite the allowlisted
+ * git commands (a PreToolUse rewrite no longer matches `--allowedTools` and
+ * `dontAsk` denies it), and Bash output must hold a whole reviewed file.
+ */
+export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
+	disableAllHooks: true,
+	env: { BASH_MAX_OUTPUT_LENGTH: "150000" },
+});
+
+/**
+ * The reviewer argv for one Host, model and effort applied only when the profile sets them (D5).
+ * `readDirs` are the out-of-tree directories the reviewer must read (packet, evidence).
+ */
+export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number, readDirs: string[] = []): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
 	if (profile.host === "claude-code") {
 		return [
 			"--print",
 			"--no-session-persistence",
+			"--settings",
+			CLAUDE_REVIEW_SETTINGS,
+			// Variadic: keep a flag after it so the prompt is never taken as a directory.
+			...(readDirs.length ? ["--add-dir", ...readDirs] : []),
 			"--max-turns",
 			String(turnBudget),
 			"--tools",
@@ -162,7 +179,7 @@ export class CliReviewHost implements AssuranceHostPort {
 			`Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
 		const tree = reviewTreeState(root);
 
-		const directory = mkdtempSync(join(tmpdir(), "imm-cli-review-"));
+		const directory = realpathSync(mkdtempSync(join(tmpdir(), "imm-cli-review-")));
 		chmodSync(directory, 0o755);
 		const packet = join(directory, "packet.md");
 		const script = join(directory, "review.sh");
@@ -170,7 +187,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		const exitFile = join(directory, `review-exit-${request.operationId}`);
 		const contractHash = currentReviewContractHash();
 		writeFileSync(packet, `review_contract_hash: ${contractHash}\n\n${request.snapshotPrompt}`, { encoding: "utf8", mode: 0o644 });
-		const argv = reviewArguments(profile, packet, request.maxTurns);
+		const readDirs = [...new Set([directory, dirname(request.evidencePath)])];
+		const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
 		writeFileSync(script, [
 			"#!/bin/sh",
 			`cd ${shellQuote(root)} || exit 1`,
