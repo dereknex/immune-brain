@@ -96,8 +96,10 @@ rather than its socket protocol.
   Architecture Map entry for `runtime/session/`.
 - `tests/supervised-session-conformance.test.ts` runs every provider through the
   same behaviors; the Herdr adapter runs against a stand-in `herdr` executable,
-  so its exec seam, spelling and parsing are tested. A live Herdr run is still
-  required before relying on the five spellings the old contract never used.
+  so its exec seam, spelling and parsing are tested. Every spelling and response
+  shape is checked against Herdr 0.9.5's published CLI reference and API schema
+  (`docs/reports/issue-426-herdr-provider-probe.md`); a live Herdr run is still
+  required to confirm them on a running server.
 - `tests/supervised-session-boundary.test.ts` locks the dependency direction and
   that only the Herdr adapter spawns `herdr`.
 - The `herdr`-spelling assertions in the Loop contract tests become `imm-session`

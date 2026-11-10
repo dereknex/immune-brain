@@ -463,7 +463,10 @@ independence is unchanged. A Review rework budget that the Kernel turns into a
 Every live Lane session keeps exactly one `imm-session await` armed, so `blocked`
 and idle-without-settlement wake the Parent on their own; a Parent that has
 nothing else to do still ends its turn with those waits armed. A wait that returns
-`exited` means the Host process is gone, never that the child finished. A
+`exited` means the Host process is gone, never that the child finished. A wait
+that returns `unknown` ends nothing: the Parent calls `start_unattended_batch`
+and re-arms the wait, and when the next wait returns `unknown` again it tells
+the user which tab and `task_id` Herdr cannot classify. A
 `provider_error` or `timeout` proves nothing about delivery; inspect the session
 with `imm-session observe` before repeating a command.
 

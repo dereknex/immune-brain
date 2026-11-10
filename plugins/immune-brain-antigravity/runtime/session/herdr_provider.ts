@@ -4,8 +4,12 @@
 // verbs into the `herdr` CLI that the Parent's Loop contract drove directly
 // before this port existed: a tab per session in the Parent's own workspace,
 // created without taking focus; the pane ID addresses the session and the tab
-// ID closes it. `HERDR_CLI` holds every command spelling in one place so a live
-// probe that finds a different spelling corrects one table.
+// ID closes it. `HERDR_CLI` holds every command spelling in one place. Each
+// spelling and response shape is checked against the Herdr 0.9.5 CLI reference
+// and API schema (docs/reports/issue-426-herdr-provider-probe.md): a success
+// prints `{"id","result":{...}}` on stdout, a server error prints
+// `{"id","error":{"code","message"}}` on stderr and exits 1, and `pane read`
+// prints terminal text directly.
 
 import { spawn } from "node:child_process";
 import {
@@ -34,12 +38,25 @@ export const HERDR_PROMPT_TIMEOUT_MS = 30_000;
 
 const HOST_KIND: Record<ExecutorHostKind, string> = { "claude-code": "claude", pi: "pi" };
 
+/**
+ * Herdr agent names must match `[a-z][a-z0-9_-]{0,31}`; a tab label has no such
+ * rule, so a label like a Slice ID is folded into a valid name.
+ */
+export function herdrAgentName(label: string): string {
+	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "");
+	return (folded || "lane").slice(0, 32);
+}
+
 export const HERDR_CLI = {
-	schema: () => ["api", "schema"],
+	schema: () => ["api", "schema", "--json"],
 	tabCreate: (workspace: string, cwd: string, label: string) => ["tab", "create", "--workspace", workspace, "--cwd", cwd, "--label", label, "--no-focus"],
 	agentStart: (label: string, kind: string, pane: string, hostArgs: string[]) => ["agent", "start", label, "--kind", kind, "--pane", pane, "--", ...hostArgs],
 	prompt: (pane: string, text: string, timeoutMs: number) => ["agent", "prompt", pane, text, "--wait", "--until", "working", "--until", "blocked", "--timeout", String(timeoutMs)],
-	wait: (pane: string, timeoutMs?: number) => timeoutMs ? ["agent", "wait", pane, "--timeout", String(timeoutMs)] : ["agent", "wait", pane],
+	// Herdr's default wait ignores `unknown`; the port wakes on every non-working state.
+	wait: (pane: string, timeoutMs?: number) => [
+		"agent", "wait", pane, "--until", "idle", "--until", "done", "--until", "blocked", "--until", "unknown",
+		...(timeoutMs ? ["--timeout", String(timeoutMs)] : []),
+	],
 	get: (pane: string) => ["agent", "get", pane],
 	read: (pane: string, source: OutputSource) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped"],
 	sendKeys: (pane: string, key: string) => ["agent", "send-keys", pane, key],
@@ -107,18 +124,26 @@ function pick(value: unknown, path: string[]): unknown {
 	return current;
 }
 
-/** Reads a state from Herdr output; anything it cannot name is `unknown`, never a guess. */
+/**
+ * Reads `.result.agent.agent_status`, which `agent get`, `agent prompt --wait`
+ * and `agent wait` return. Herdr's AgentStatus vocabulary is the port's own;
+ * anything else is `unknown`, never a guess.
+ */
 export function parseHerdrState(stdout: string): SessionState {
-	const json = parseJson(stdout.trim());
-	const candidates = json === undefined
-		? [stdout.trim()]
-		: [["state"], ["status"], ["agent_status"], ["agent", "state"], ["agent", "status"], ["result", "state"], ["result", "status"]].map(path => pick(json, path));
-	for (const candidate of candidates) {
-		const value = typeof candidate === "string" ? candidate.toLowerCase() : undefined;
-		if (isSessionState(value)) return value;
-	}
-	return "unknown";
+	const value = pick(parseJson(stdout.trim()), ["result", "agent", "agent_status"]);
+	return isSessionState(value) ? value : "unknown";
 }
+
+/** The `error.code` of a Herdr error response, read from stderr or stdout. */
+export function herdrErrorCode(result: HerdrExecResult): string | undefined {
+	for (const text of [result.stderr, result.stdout]) {
+		const code = pick(parseJson(text.trim()), ["error", "code"]);
+		if (typeof code === "string") return code;
+	}
+	return undefined;
+}
+
+const EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
 
 function detected(state: SessionState): Observation {
 	return { state, provenance: state === "unknown" ? "none" : "detected" };
@@ -166,7 +191,9 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 	const submit = async (handle: SessionHandle, pane: string, text: string): Promise<Observation | Refusal> => {
 		const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
 		if (isRefusal(result)) return result;
-		// A failed or timed-out submission proves nothing about delivery.
+		// Herdr itself refuses a blocked agent before writing anything.
+		if (herdrErrorCode(result) === "agent_blocked") return refuse("state_refused", "session is blocked; Herdr sent nothing", handle);
+		// A failed, stalled or timed-out submission proves nothing about delivery.
 		if (result.code !== 0) return refuse("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
 		return detected(parseHerdrState(result.stdout));
 	};
@@ -206,17 +233,17 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (isRefusal(created)) return created;
 			if (created.code !== 0) return refuse("start_failed", `herdr tab create failed: ${failure(created)}`);
 			const json = parseJson(created.stdout);
-			const tab = pick(json, ["tab", "tab_id"]);
-			const pane = pick(json, ["root_pane", "pane_id"]);
+			const tab = pick(json, ["result", "tab", "tab_id"]);
+			const pane = pick(json, ["result", "root_pane", "pane_id"]);
 			if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
-				return refuse("start_failed", "herdr tab create returned no tab.tab_id and root_pane.pane_id");
+				return refuse("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
 			}
 			const handle = encodeHerdrHandle({ workspace, tab, pane });
-			const started = await run(HERDR_CLI.agentStart(input.label, HOST_KIND[input.host], pane, input.hostArgs));
+			const started = await run(HERDR_CLI.agentStart(herdrAgentName(input.label), HOST_KIND[input.host], pane, input.hostArgs));
 			if (isRefusal(started)) return { ...started, handle };
 			if (started.code !== 0) {
 				// The tab shows a dialog only the user may answer; the entry was never submitted.
-				if (/agent_not_ready/.test(`${started.stdout}\n${started.stderr}`)) {
+				if (herdrErrorCode(started) === "agent_not_ready") {
 					return { ok: true, handle, entry_submitted: false, state: "blocked", provenance: "detected" };
 				}
 				return refuse("start_failed", `herdr agent start failed: ${failure(started)}`, handle);
@@ -242,13 +269,13 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (isRefusal(ids)) return ids;
 			const result = await run(HERDR_CLI.wait(ids.pane, waitOptions?.timeoutMs));
 			if (isRefusal(result)) return result;
-			const text = `${result.stdout}\n${result.stderr}`;
 			if (result.code === 0) {
 				const state = parseHerdrState(result.stdout);
 				return { ok: true, transition: "changed", ...detected(state) };
 			}
-			if (/timeout|timed out/i.test(text)) return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
-			if (/exited|not[_ ]found|no such pane/i.test(text)) return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
+			const code = herdrErrorCode(result);
+			if (code === "timeout") return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
+			if (code && EXITED_CODES.has(code)) return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
 			return refuse("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
 		},
 		async readOutput(handle, source) {
@@ -257,8 +284,8 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			const result = await run(HERDR_CLI.read(ids.pane, source));
 			if (isRefusal(result)) return result;
 			if (result.code !== 0) return refuse("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
-			const text = pick(parseJson(result.stdout), ["text"]);
-			return { ok: true, text: typeof text === "string" ? text : result.stdout, source };
+			// `pane read` prints the terminal text itself, not JSON.
+			return { ok: true, text: result.stdout, source };
 		},
 		async observeState(handle) {
 			const ids = own(handle);

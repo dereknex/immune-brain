@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { runSessionCli } from "../plugins/immune-brain/runtime/session/cli";
-import { createHerdrSessionProvider, parseHerdrState } from "../plugins/immune-brain/runtime/session/herdr_provider";
+import { createHerdrSessionProvider, herdrAgentName, parseHerdrState } from "../plugins/immune-brain/runtime/session/herdr_provider";
 import { herdrCalls, herdrSubject } from "./helpers/fake-herdr";
 
 const INPUT = { cwd: "/lanes/slice-a", label: "slice-a", host: "pi" as const, hostArgs: ["--model", "m1"], entry: "/drive slice-a" };
@@ -43,7 +43,7 @@ describe("Herdr adapter command spelling", () => {
 		expect(herdrCalls(stateFile).slice(3)).toEqual([
 			["agent", "get", "p1"],
 			["agent", "prompt", "p1", "hold the invariant", "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
-			["agent", "wait", "p1"],
+			["agent", "wait", "p1", "--until", "idle", "--until", "done", "--until", "blocked", "--until", "unknown"],
 		]);
 	});
 
@@ -60,12 +60,43 @@ describe("Herdr adapter command spelling", () => {
 		]);
 	});
 
-	it("reads only states Herdr names and treats anything else as unknown", () => {
-		expect(parseHerdrState('{"agent":{"state":"Blocked"}}')).toBe("blocked");
-		expect(parseHerdrState('{"status":"idle"}')).toBe("idle");
-		expect(parseHerdrState("working\n")).toBe("working");
-		expect(parseHerdrState('{"agent":{"state":"thinking"}}')).toBe("unknown");
+	it("reads .result.agent.agent_status and treats anything else as unknown", () => {
+		expect(parseHerdrState('{"id":"x","result":{"agent":{"agent_status":"blocked"}}}')).toBe("blocked");
+		expect(parseHerdrState('{"id":"x","result":{"agent":{"agent_status":"thinking"}}}')).toBe("unknown");
+		expect(parseHerdrState('{"agent":{"agent_status":"idle"}}')).toBe("unknown");
+		expect(parseHerdrState("idle\n")).toBe("unknown");
 		expect(parseHerdrState("")).toBe("unknown");
+	});
+
+	it("folds a tab label into a valid Herdr agent name", async () => {
+		expect(herdrAgentName("S0a")).toBe("s0a");
+		expect(herdrAgentName("01 Slice/A")).toBe("slice-a");
+		expect(herdrAgentName("___")).toBe("lane");
+		expect(herdrAgentName(`a${"b".repeat(40)}`)).toHaveLength(32);
+		const { port, stateFile } = subject();
+		expect(await port.createSession({ ...INPUT, label: "S0a" })).toMatchObject({ ok: true, entry_submitted: true });
+		expect(herdrCalls(stateFile)[1].slice(0, 3)).toEqual(["agent", "start", "s0a"]);
+	});
+
+	it("wakes a wait when Herdr can no longer classify the session", async () => {
+		const { port, control } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		control.setState(created.handle, "unknown");
+		expect(await port.awaitTransition(created.handle, { timeoutMs: 2_000 })).toEqual({ ok: true, transition: "changed", state: "unknown", provenance: "none" });
+	});
+});
+
+describe("Herdr adapter refusal mapping", () => {
+	it("reports Herdr's own agent_blocked refusal as state_refused when the session blocked after it was observed idle", async () => {
+		const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w" };
+		const port = createHerdrSessionProvider({
+			env,
+			exec: async args => args[1] === "get"
+				? { code: 0, stdout: '{"id":"g","result":{"agent":{"agent_status":"idle"}}}', stderr: "" }
+				: { code: 1, stdout: "", stderr: '{"id":"p","error":{"code":"agent_blocked","message":"agent is blocked"}}' },
+		});
+		expect(await port.sendInstruction("herdr:w/t1/p1", "x")).toMatchObject({ ok: false, code: "state_refused", handle: "herdr:w/t1/p1" });
 	});
 });
 
@@ -105,7 +136,7 @@ describe("imm-session CLI", () => {
 		const out = await runSessionCli(["create", "--provider", "herdr", "--cwd", "/l", "--label", "a", "--host", "pi", "--entry", "/drive a"], env);
 		expect(out.returncode).toBe(1);
 		expect(JSON.parse(out.stdout)).toMatchObject({ ok: false, code: "protocol_mismatch" });
-		expect(herdrCalls(stateFile)).toEqual([["api", "schema"]]);
+		expect(herdrCalls(stateFile)).toEqual([["api", "schema", "--json"]]);
 	});
 
 	it("offers no close verb", async () => {

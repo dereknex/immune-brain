@@ -69,27 +69,44 @@ Each call admits and probes the provider, runs one verb and prints one JSON obje
 
 ### Herdr TUI (`herdr`)
 
-`runtime/session/herdr_provider.ts`, pinned to Herdr protocol `22`. Admission requires `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, a `herdr` executable and `herdr api schema` stating a pinned protocol. A handle names the Parent's workspace, tab and pane; any other workspace is `not_owned`. The adapter's `HERDR_CLI` table is the one place a command is spelled.
+`runtime/session/herdr_provider.ts`, pinned to Herdr protocol `22` (Herdr 0.9.x). Admission requires `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, a `herdr` executable and `herdr api schema --json` stating a pinned top-level `protocol`. A handle names the Parent's workspace, tab and pane; any other workspace is `not_owned`. The adapter's `HERDR_CLI` table is the one place a command is spelled.
+
+Every spelling and response shape below is checked against the Herdr 0.9.5 CLI reference and API schema (`docs/reports/issue-426-herdr-provider-probe.md`). A success prints `{"id","result":{...}}` on stdout; a server error prints `{"id","error":{"code","message"}}` on stderr and exits `1`. State is read from `.result.agent.agent_status`, whose vocabulary is the port's own five states.
 
 | Port | Herdr command |
 | --- | --- |
-| `createSession` | `tab create --workspace <ws> --cwd <lane> --label <name> --no-focus`, `agent start <name> --kind claude\|pi --pane <pane> -- <args>`, `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`; `agent_not_ready` is a dialog |
-| `sendInstruction` | `agent get <pane>`, then `agent prompt` as above only when `idle` |
-| `awaitTransition` | `agent wait <pane> [--timeout <ms>]` |
-| `readOutput` | `pane read <pane> --source visible\|recent-unwrapped` |
+| `createSession` | `tab create --workspace <ws> --cwd <lane> --label <name> --no-focus` (IDs at `.result.tab.tab_id`, `.result.root_pane.pane_id`), `agent start <agent-name> --kind claude\|pi --pane <pane> -- <args>`, `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`. The agent name is the label folded to `[a-z][a-z0-9_-]{0,31}`; `agent_not_ready` is a dialog |
+| `sendInstruction` | `agent get <pane>`, then `agent prompt` as above only when `idle`; Herdr's own `agent_blocked` refusal is `state_refused` |
+| `awaitTransition` | `agent wait <pane> --until idle --until done --until blocked --until unknown [--timeout <ms>]`: Herdr's default ignores `unknown`, the port does not. `timeout` and `pane_not_found` / `agent_not_running` / `agent_not_found` map to `timeout` and `exited` |
+| `readOutput` | `pane read <pane> --source visible\|recent-unwrapped`, which prints terminal text |
 | `observeState` | `agent get <pane>`; provenance `detected` |
 | `stopSession` | `agent send-keys <pane> ctrl+c`, then `pane close <pane>` |
-| `closeSession` | `tab close <tab>` |
+| `closeSession` | `tab close <tab>`; a `confirmation_required` answer is a `provider_error` |
 | `reconcile` | `agent get` per owned handle |
 | `sendKeys` | `agent send-keys <pane> <key>` |
-| `waitForState`, `subscribeEvents`, `snapshot`, `manageWorktree`, `attachSession` | Not implemented in this adapter; degrade as above |
+| `snapshot` | Not wired; Herdr offers `api snapshot`, to adopt with event subscriptions |
+| `waitForState`, `subscribeEvents`, `manageWorktree`, `attachSession` | Not implemented in this adapter; degrade as above |
 | `reportState` | Not applicable: Herdr TUI state is `detected` |
 
-`tab create`, `agent start`, `agent prompt`, `agent wait` and `agent get` are the spellings the Loop contract used before this port. `api schema`, `pane read`, `agent send-keys`, `pane close` and `tab close` are spelled from Herdr's documented methods and await a live probe; a different spelling is corrected in `HERDR_CLI` alone.
+The shapes are checked against Herdr's published source and schema, not yet by running a Herdr binary; the first live create → send → await → read → stop run confirms them.
 
 ### herdr-core (`herdr-core`)
 
-Not admitted. Its transport (OpenRPC over stdio), its state source (OSC 7501 self-report only) and four mappings (a wait verb, raw keys, snapshot, a machine-readable id from `run`) await a live probe before an adapter is written.
+Not admitted. The probe of herdr-core 0.1.19's released OpenRPC schema closes the four open mappings, and its consequences for admission are recorded there; an adapter waits for a live run.
+
+| Port | herdr-core method | Note |
+| --- | --- | --- |
+| `createSession` | `terminal.run` (`hc run --bg --json --name --cwd`) | Returns `address` (`t7`), the stable handle on that core |
+| `sendInstruction` | `terminal.send` with `if: idle` | Server-side conditional send; no check-then-act race. Never `force`, which may answer a dialog |
+| `awaitTransition` | `terminal.wait` | `reason`: `status`, `exit`, `output`, `timeout`, `not_started`; timeout is in seconds and defaults to 180, after which it checks in and leaves the terminal running |
+| `observeState` | `terminal.get` | Provenance `reported` (OSC 7501); a program that reports nothing has no state, which is `unknown`. Its `error` word maps to `unknown` |
+| `readOutput` | `terminal.read` | |
+| `stopSession` | `terminal.interrupt`, then `terminal.kill` | |
+| `closeSession` | `terminal.rm` | |
+| `reconcile` | `terminal.list` / `terminal.get` | |
+| `sendKeys` | `terminal.keys` | |
+| `subscribeEvents` | `events.subscribe` | |
+| `snapshot`, `manageWorktree` | None | Degrade as above |
 
 ## Admission matrix
 
@@ -97,9 +114,9 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
-| executor | create, await, observe, stop, close | Admitted | Not admitted until probed |
+| executor | create, await, observe, stop, close | Admitted | Only if the Executor Host reports its status through OSC 7501, and after a live run; otherwise every state is `unknown` and no instruction or settled wake is possible |
 | authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
-| advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Not admitted until probed |
+| advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
 
 ## Invariants
 
