@@ -81,6 +81,40 @@ describe("herdr-core adapter command spelling", () => {
 	});
 });
 
+describe("herdr-core instructions, resume and env", () => {
+	it("sends to an idle session with --if idle and to a done session plainly, since --if cannot name done (O1)", async () => {
+		const { port, control, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		control.setState(created.handle, "done");
+		expect(await port.sendInstruction(created.handle, "after done")).toMatchObject({ ok: true, state: "working" });
+		control.setState(created.handle, "idle");
+		expect(await port.sendInstruction(created.handle, "after idle")).toMatchObject({ ok: true });
+		expect(hcCalls(stateFile).filter(call => call[0] === "send").slice(1)).toEqual([
+			["send", "t1", "after done", "--json"],
+			["send", "t1", "after idle", "--if", "idle", "--json"],
+		]);
+	});
+
+	it("refuses to resume a finished terminal, sending nothing, so the caller creates a new session (C-2)", async () => {
+		const { port, control, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		control.exit(created.handle);
+		const result = await port.createSession({ ...INPUT, resume: created.handle });
+		expect(result).toMatchObject({ ok: false, code: "state_refused" });
+		if (!result.ok) expect(result.reason).toContain("create a new session");
+		expect(hcCalls(stateFile).filter(call => call[0] === "send")).toHaveLength(1);
+	});
+
+	it("sets --env for the Host alone through env", async () => {
+		const { port, stateFile } = subject();
+		expect(await port.createSession({ ...INPUT, env: { CLAUDE_CONFIG_DIR: "/tmp/empty" } })).toMatchObject({ ok: true });
+		const run = hcCalls(stateFile)[0];
+		expect(run.slice(run.indexOf("--"))).toEqual(["--", "env", "CLAUDE_CONFIG_DIR=/tmp/empty", "claude", "--plugin-dir", "/p"]);
+	});
+});
+
 describe("herdr-core readiness and Host versions", () => {
 	it.each([["claude-code", "2.1.294"], ["pi", "1.0.9"], ["antigravity", "1.3.9"]] as const)("refuses a %s %s that does not report OSC 7501, starting nothing", async (host, version) => {
 		const { port, stateFile } = subject({}, {}, version);

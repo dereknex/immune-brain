@@ -20121,8 +20121,8 @@ function decideLaneInstruction(record, request) {
     return `${request.task_id} waits for a design-level correction; send it with kind correction`;
   if (request.session_state === "blocked")
     return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
-  if (request.session_state !== "idle")
-    return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+  if (request.session_state !== "idle" && request.session_state !== "done")
+    return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle or done session`;
   return null;
 }
 var MAX_COORDINATOR_CORRECTIONS = 2;

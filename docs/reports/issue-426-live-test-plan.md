@@ -72,11 +72,12 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | A2 正常一轮 | `rec A2-create $IMM create --provider herdr --cwd ~/imm-probe/lanes/trusted --label probe-a2 --host $H --entry "Reply with exactly READY. Do not run any tool."`；随后依次执行 `observe <h>`、`await <h>`、`read <h> --source visible`、`stop <h>` | create 返回 `entry_submitted:true`、`state:"working"`；新 tab 出现在 `imm-probe` workspace 且焦点不变；`await` 返回 `changed` 与 `idle` 或 `done`；`read` 文本里有 `READY`；`stop` 后 pane 关闭 | G2 |
 | A3 workspace trust | 新建从未信任的目录，以它为 `--cwd` 执行 create | create 返回 `entry_submitted:false`、`state:"blocked"`；测试者接受 trust 后，`create --resume <h> ...` 提交 entry | G3 |
 | A4 权限对话框 | 在 trusted 目录 create，entry 为 `Use your shell tool to run: touch imm-probe-permission.txt, then reply DONE.`；create 返回后立刻后台执行 `rec A4-await $IMM await <h> --provider herdr &`，另一个 shell 每 0.5 秒执行一次 `observe` 并记录首次出现 `blocked` 的时间 | `await` 返回 `blocked`；await 返回时间减去首次 observe 到 `blocked` 的时间 ≤ 5 秒；测试者拒绝权限后会话回到 `working` 或 `idle` | G3 |
-| A5 登录对话框（可选） | Claude Code：设 `CLAUDE_CONFIG_DIR` 为空临时目录后 create；Pi：设 `PI_CODING_AGENT_DIR` 为空临时目录。Antigravity 若无安全的隔离方式，记“未测”并写明原因 | 返回 `blocked`（create 时为 `entry_submitted:false`） | G3 |
-| A6 指令与 `done` | A2 的会话结束一轮后先 `observe`，记录是 `idle` 还是 `done`；然后 `send <h> --provider herdr --text "Reply with exactly AGAIN."`。若返回 `state_refused`，在 Herdr 里聚焦该 tab，再 `observe` 并重试 `send` | 记录观察 O1（见第 7 节）。聚焦后应为 `idle`，`send` 成功 | O1 |
+| A5 登录对话框（可选） | 用 `create --env`：Claude Code 加 `--env CLAUDE_CONFIG_DIR=<空临时目录>`；Pi 加 `--env PI_CODING_AGENT_DIR=<空临时目录>`。Antigravity 若无安全的隔离方式，记“未测”并写明原因 | 返回 `blocked`（create 时为 `entry_submitted:false`） | G3 |
+| A6 指令与 `done` | A2 的会话结束一轮后先 `observe`，记录是 `idle` 还是 `done`；然后 `send <h> --provider herdr --text "Reply with exactly AGAIN."` | O1 已修：`done` 与 `idle` 都应投递成功，`read` 里出现 `AGAIN` | O1 |
 | A7 `unknown` 唤醒 | 在 tab 里退出 Host，回到 shell，然后执行 `await <h>` | 返回 `exited`（`agent_not_running` / `agent_not_found`），或返回 `changed` 加 `unknown`，两者之一；不得一直挂起 | G2 |
 | A8 负向 | `observe "herdr:other-ws/t1/p1" --provider herdr` 返回 `not_owned`；在 Herdr 外的普通终端执行 `probe` 和 `create`，返回 `provider_unavailable`，且 Herdr 里没有新 tab | 两项都符合 | G4 |
-| A9 已知缺口 K1 | 在同一 workspace 里，用测试者自己 shell 所在 pane 拼一个 handle `herdr:$HERDR_WORKSPACE_ID/<tab>/<pane>` 执行 `observe` | 按当前实现会被当作“自己的”会话（见 K1）。只记录，不执行 `stop`/`send` | K1 |
+| A9 所有权（K1 已修） | 记下 A2 create 返回的 handle 与新 tab 的标签（应形如 `probe-a2 [imm:<12 位十六进制>]`）。再用测试者自己 shell 所在 pane 拼 `herdr:$HERDR_WORKSPACE_ID/<tab>/<pane>/guessed`，以及把 A2 handle 的 token 改错，分别执行 `observe` 与 `stop` | 都返回 `not_owned`，测试者的 pane 不受影响 | K1 |
+| A10 Host 退出后原地重启（C-2 已修） | A2 会话里退出 Host 回到 shell，执行 `create --resume <h> --provider herdr --cwd ... --label probe-a2 --host $H --entry "Reply with exactly BACK."` | 不新增 tab，同一 pane 里 Host 重新启动并收到 entry，`read` 里出现 `BACK`；记录 `agent get` 在 Host 退出后的错误码 | C-2 |
 
 每个 Host 都跑 A1–A8；A9 只需跑一次。
 
@@ -90,10 +91,11 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | B4 权限对话框 | 同 A4。另保存 `hc get --json` 的 `status`，应为 `{state:"blocked",kind:"permission"}` | ≤ 5 秒 | G3 |
 | B5 登录对话框 | 同 A5 | `blocked`，或者 30 秒内没有上报。后者说明该 Host 不报登录状态，在 core 上不准入 | G3 |
 | B6 首次上报与就绪 | B2 期间每 0.2 秒执行一次 `hc get --json`，记录首个 `status.state` 及其距 `hc run` 的秒数 | 首个上报为 `idle`，且在 30 秒内（观察 O2） | O2 |
-| B7 指令与 `done` | 同 A6；core 用 `send --if idle`，一轮结束后若停在 `done` 会被拒绝 | 记录观察 O1 | O1 |
+| B7 指令与 `done` | 同 A6 | O1 已修：`done` 时 adapter 发不带 `--if` 的 `send`，投递成功；`idle` 时带 `--if idle` | O1 |
 | B8 版本门 | 把 PATH 临时指向一个打印旧版本号的 `claude` 包装脚本，然后 create | `provider_unavailable`，`hc ls` 没有新终端 | G4 |
 | B9 所有权 | 用 `hc run --bg --json -- sh` 自建一个终端，拼 handle `herdr-core:<address>/guessed` 执行 `observe` 和 `stop` | 都返回 `not_owned`；该终端仍在运行 | G4 |
 | B10 无上报 | `--host` 选一个旧版本 Host（或对 Pi 设 `PI_PROGRAM_STATUS=0`、对 Antigravity 设 `AGY_CLI_OSC7501=off`），关闭版本门不可行时只做环境变量这一种 | 30 秒后 `start_failed`，entry 未发送 | G4 |
+| B12 已结束终端的 resume（C-2） | B2 会话 `stop` 之后执行 `create --resume <h> --provider herdr-core ...` | `state_refused`，原因写明需新建会话；`hc ls` 没有新终端 | C-2 |
 | B11 长等待 | 对一个正在工作的会话执行不带 `--timeout-ms` 的 `await`，让一轮工作超过 3 分钟（例如让 Host 运行 `sleep 200` 并批准权限） | 跨过 core 180 秒的 check-in 后继续等待，直到真正的状态变化才返回 | G2 |
 
 收尾：`hc ls` 列出的每个终端都 `hc kill` 并 `hc rm`；最后 `HC_SESSION=imm-probe hc server stop`。这里停的是隔离的 core，不是默认 session。
@@ -116,7 +118,7 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 - **O2：首次上报。** herdr-core adapter 只在看到 `idle` 后提交 entry。若某个 Host 启动后第一次报的不是 `idle`（例如直接报 `done`），create 会在 30 秒后 `start_failed`。实测确认后，再决定是否把 `done` 也当作就绪。
 - **O3：对话框覆盖。** 三个 Host 的上游说明都没有逐一列出对话框种类。A3–A5、B3–B5 的结果直接决定准入。
 - **O4：时延。** 记录 G2、G3 的实际耗时，写回 #426 §6 建议值的讨论。
-- **K1（已知缺口，Herdr TUI）：** Herdr adapter 的所有权检查只比对 workspace，Parent 自己所在的 pane、测试者在同一 workspace 的 pane 都会通过。herdr-core 用随机标签 token，没有这个问题。修复建议：create 时把 token 写进 tab label（`herdr tab rename`）或 agent name，每个动词先 `herdr tab get` 核对。可在实测前修好，A9 改为期望 `not_owned`。
+- **K1（已修，待实测）：** Herdr adapter 原先只比对 workspace。现在 token 写进 tab label 并编进 handle，每个动词先 `pane get` 与 `tab get` 核对；A9 期望 `not_owned`。
 
 ## 8. 记录与回写
 

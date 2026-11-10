@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config";
@@ -24,19 +24,27 @@ function subject(extra: Record<string, unknown> = {}) {
 	return made;
 }
 
+/** Calls that act, without the ownership reads every verb makes first. */
+const acting = (calls: string[][]) => calls.filter(call => !(call[1] === "get" && (call[0] === "pane" || call[0] === "tab")));
+const tokenOf = (handle: string) => decodeURIComponent(handle.split("/")[3]);
+const PROOF = { created_by_parent: true, child_integrated: true, release_handoff_issued: true, audit_pair_reachable: true, record: "r" };
+
 describe("Herdr adapter command spelling", () => {
-	it("creates the tab in the Parent's workspace without focus, starts the Host by kind and waits until working or blocked", async () => {
+	it("creates the tab in the Parent's workspace without focus and marked with the session token, starts the Host by kind and waits until working or blocked", async () => {
 		const { port, stateFile } = subject();
 		const result = await port.createSession(INPUT);
-		expect(result).toMatchObject({ ok: true, handle: "herdr:w-parent/t1/p1" });
+		if (!result.ok) throw new Error(result.reason);
+		const token = tokenOf(result.handle);
+		expect(token).toMatch(/^[0-9a-f]{12}$/);
+		expect(result.handle).toBe(`herdr:w-parent/t1/p1/${token}`);
 		expect(herdrCalls(stateFile)).toEqual([
-			["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/slice-a", "--label", "slice-a", "--no-focus"],
+			["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/slice-a", "--label", `slice-a [imm:${token}]`, "--no-focus"],
 			["agent", "start", "slice-a", "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
 			["agent", "prompt", "p1", "/drive slice-a", "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
 		]);
 	});
 
-	it("observes before it sends an instruction and arms the wait on the pane", async () => {
+	it("checks the pane and the tab token before every verb", async () => {
 		const { port, control, stateFile } = subject();
 		const created = await port.createSession(INPUT);
 		if (!created.ok) throw new Error(created.reason);
@@ -45,8 +53,10 @@ describe("Herdr adapter command spelling", () => {
 		control.setState(created.handle, "idle");
 		await port.awaitTransition(created.handle);
 		expect(herdrCalls(stateFile).slice(3)).toEqual([
+			["pane", "get", "p1"], ["tab", "get", "t1"],
 			["agent", "get", "p1"],
 			["agent", "prompt", "p1", "hold the invariant", "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
+			["pane", "get", "p1"], ["tab", "get", "t1"],
 			["agent", "wait", "p1", "--until", "idle", "--until", "done", "--until", "blocked", "--until", "unknown"],
 		]);
 	});
@@ -56,12 +66,19 @@ describe("Herdr adapter command spelling", () => {
 		const created = await port.createSession(INPUT);
 		if (!created.ok) throw new Error(created.reason);
 		await port.stopSession(created.handle);
-		await port.closeSession(created.handle, { created_by_parent: true, child_integrated: true, release_handoff_issued: true, audit_pair_reachable: true, record: "r" });
-		expect(herdrCalls(stateFile).slice(3)).toEqual([
+		await port.closeSession(created.handle, PROOF);
+		expect(acting(herdrCalls(stateFile)).slice(3)).toEqual([
 			["agent", "send-keys", "p1", "ctrl+c"],
 			["pane", "close", "p1"],
 			["tab", "close", "t1"],
 		]);
+	});
+
+	it("passes --env to the new tab's shell", async () => {
+		const { port, stateFile } = subject();
+		expect(await port.createSession({ ...INPUT, env: { PI_PROGRAM_STATUS: "0", A: "x=y" } })).toMatchObject({ ok: true });
+		expect(herdrCalls(stateFile)[0].slice(-5)).toEqual(["--env", "PI_PROGRAM_STATUS=0", "--env", "A=x=y", "--no-focus"]);
+		expect(await port.createSession({ ...INPUT, env: { "BAD-NAME": "1" } })).toMatchObject({ ok: false, code: "invalid_input" });
 	});
 
 	it("reads .result.agent.agent_status and treats anything else as unknown", () => {
@@ -95,7 +112,7 @@ describe("Executor Host coverage", () => {
 	it.each([["claude-code", "claude"], ["pi", "pi"], ["antigravity", "agy"]] as const)("starts a %s Executor as Herdr kind %s", async (host, kind) => {
 		const { port, stateFile } = subject();
 		expect(await port.createSession({ ...INPUT, host })).toMatchObject({ ok: true, entry_submitted: true });
-		expect(herdrCalls(stateFile)[1].slice(0, 5)).toEqual(["agent", "start", "slice-a", "--kind", kind]);
+		expect(acting(herdrCalls(stateFile))[1].slice(0, 5)).toEqual(["agent", "start", "slice-a", "--kind", kind]);
 	});
 
 	it("launches only Executor Hosts the Lane configuration accepts", () => {
@@ -116,16 +133,111 @@ describe("Executor Host coverage", () => {
 	});
 });
 
+describe("Herdr adapter ownership (K1)", () => {
+	/** Adds a tab and pane of the user's own to the stand-in, in the Parent's workspace. */
+	const userPane = (stateFile: string, label: string) => {
+		const state = JSON.parse(readFileSync(stateFile, "utf8"));
+		state.tabs ??= {};
+		state.tabs.t9 = { workspace: "w-parent", label };
+		state.panes.p9 = { tab: "t9", workspace: "w-parent", agent: true, state: "idle", prompts: [], keys: [], output: "", closed: false, starts: 1 };
+		writeFileSync(stateFile, JSON.stringify(state));
+	};
+
+	it("refuses every verb on a pane of the Parent's own workspace that it did not create", async () => {
+		const { port, stateFile } = subject();
+		userPane(stateFile, "my shell");
+		const handle = "herdr:w-parent/t9/p9/guessed";
+		for (const result of [
+			await port.observeState(handle),
+			await port.sendInstruction(handle, "x"),
+			await port.awaitTransition(handle, { timeoutMs: 50 }),
+			await port.readOutput(handle, "visible"),
+			await port.stopSession(handle),
+			await port.closeSession(handle, PROOF),
+			await port.createSession({ ...INPUT, resume: handle }),
+		]) expect(result).toMatchObject({ ok: false, code: "not_owned" });
+		expect(acting(herdrCalls(stateFile))).toEqual([]);
+	});
+
+	it("refuses a guessed token and a pane borrowed from another tab", async () => {
+		const { port, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		const token = tokenOf(created.handle);
+		userPane(stateFile, "my shell");
+		expect(await port.observeState("herdr:w-parent/t1/p1/000000000000")).toMatchObject({ ok: false, code: "not_owned" });
+		expect(await port.observeState(`herdr:w-parent/t1/p9/${token}`)).toMatchObject({ ok: false, code: "not_owned" });
+		expect(await port.stopSession(`herdr:w-parent/t1/p9/${token}`)).toMatchObject({ ok: false, code: "not_owned" });
+		expect(acting(herdrCalls(stateFile)).slice(3)).toEqual([]);
+	});
+
+	it("refuses a handle in the old three-part form", async () => {
+		const { port } = subject();
+		expect(await port.observeState("herdr:w-parent/t1/p1")).toMatchObject({ ok: false, code: "not_owned" });
+	});
+});
+
+describe("Herdr adapter resume (C-2)", () => {
+	const hostExit = (stateFile: string, pane: string) => {
+		const state = JSON.parse(readFileSync(stateFile, "utf8"));
+		Object.assign(state.panes[pane], { agent: false, state: "unknown" });
+		writeFileSync(stateFile, JSON.stringify(state));
+	};
+
+	it("restarts an exited Host in the same pane and submits the entry once", async () => {
+		const { port, control, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		hostExit(stateFile, "p1");
+		expect(await port.observeState(created.handle)).toEqual({ ok: true, state: "unknown", provenance: "none" });
+		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: true, handle: created.handle, entry_submitted: true, state: "working" });
+		expect(control.sessionCount()).toBe(1);
+		expect(control.submitted(created.handle)).toEqual([INPUT.entry, INPUT.entry]);
+		expect(acting(herdrCalls(stateFile)).slice(3)).toEqual([
+			["agent", "get", "p1"],
+			["agent", "get", "p1"],
+			["agent", "start", "slice-a", "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
+			["agent", "prompt", "p1", INPUT.entry, "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
+		]);
+	});
+
+	it("reports a restart dialog as blocked without submitting the entry", async () => {
+		const { port, control, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		hostExit(stateFile, "p1");
+		control.blockNextStart();
+		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: true, entry_submitted: false, state: "blocked" });
+		expect(control.submitted(created.handle)).toEqual([INPUT.entry]);
+	});
+
+	it("refuses to resume a session whose pane is gone, sending nothing", async () => {
+		const { port, stateFile } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		await port.stopSession(created.handle);
+		const before = acting(herdrCalls(stateFile)).length;
+		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: false, code: "state_refused" });
+		expect(await port.sendInstruction(created.handle, "x")).toMatchObject({ ok: false, code: "state_refused" });
+		expect(acting(herdrCalls(stateFile)).length).toBe(before);
+	});
+});
+
 describe("Herdr adapter refusal mapping", () => {
 	it("reports Herdr's own agent_blocked refusal as state_refused when the session blocked after it was observed idle", async () => {
 		const env = { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w" };
+		const handle = "herdr:w/t1/p1/abc";
+		const reply = (result: unknown) => ({ code: 0, stdout: JSON.stringify({ id: "x", result }), stderr: "" });
 		const port = createHerdrSessionProvider({
 			env,
-			exec: async args => args[1] === "get"
-				? { code: 0, stdout: '{"id":"g","result":{"agent":{"agent_status":"idle"}}}', stderr: "" }
-				: { code: 1, stdout: "", stderr: '{"id":"p","error":{"code":"agent_blocked","message":"agent is blocked"}}' },
+			exec: async args => {
+				if (args[0] === "pane" && args[1] === "get") return reply({ type: "pane_info", pane: { pane_id: "p1", tab_id: "t1", workspace_id: "w" } });
+				if (args[0] === "tab" && args[1] === "get") return reply({ type: "tab_info", tab: { tab_id: "t1", label: "a [imm:abc]" } });
+				if (args[1] === "get") return reply({ agent: { agent_status: "idle" } });
+				return { code: 1, stdout: "", stderr: '{"id":"p","error":{"code":"agent_blocked","message":"agent is blocked"}}' };
+			},
 		});
-		expect(await port.sendInstruction("herdr:w/t1/p1", "x")).toMatchObject({ ok: false, code: "state_refused", handle: "herdr:w/t1/p1" });
+		expect(await port.sendInstruction(handle, "x")).toMatchObject({ ok: false, code: "state_refused", handle });
 	});
 });
 
@@ -166,6 +278,17 @@ describe("imm-session CLI", () => {
 		expect(out.returncode).toBe(1);
 		expect(JSON.parse(out.stdout)).toMatchObject({ ok: false, code: "protocol_mismatch" });
 		expect(herdrCalls(stateFile)).toEqual([["api", "schema", "--json"]]);
+	});
+
+	it("parses repeated --env KEY=VALUE for create only", async () => {
+		const { env, stateFile } = subject();
+		const base = ["create", "--provider", "herdr", "--cwd", "/l", "--label", "a", "--host", "pi", "--entry", "/drive a"];
+		expect((await runSessionCli([...base, "--env", "A=1", "--env", "B=x=y"], env)).returncode).toBe(0);
+		expect(herdrCalls(stateFile).find(call => call[1] === "create")).toContain("B=x=y");
+		for (const bad of [["--env", "NOEQUALS"], ["--env", "=v"], ["--env", "A=1", "--env", "A=2"]]) {
+			expect((await runSessionCli([...base, ...bad], env)).returncode).toBe(2);
+		}
+		expect((await runSessionCli(["observe", "herdr:w-parent/t1/p1/x", "--provider", "herdr", "--env", "A=1"], env)).returncode).toBe(2);
 	});
 
 	it("offers no close verb", async () => {

@@ -2120,7 +2120,7 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 		}
 	});
 
-	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane", async () => {
+	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane, and accepts a done session", async () => {
 		const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
 		const fx = fixture();
 		try {
@@ -2140,6 +2140,8 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "", session_state: "idle" })).toThrow();
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "asleep" })).toThrow();
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle", keys: "y" })).toThrow(/unknown/);
+			// A finished turn not yet seen is ready for input; Herdr and herdr-core report it as `done`.
+			expect((await ask("task-a", "done")).accepted).toBe(true);
 		} finally {
 			fx.cleanup();
 		}

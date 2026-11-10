@@ -426,12 +426,16 @@ once the user has answered, it resubmits the entry with the same create and
 wait. `idle` or `done` is a session end for the rules below, although the tab
 stays open: the Parent calls `start_unattended_batch`, and a relaunch submits the
 entry again in the same tab instead of creating another, with
-`--resume <handle>`. When that report shows the child
+`--resume <handle>`. When the Executor Host has exited and its shell is back in
+the tab, the same `--resume` starts the Host there again before submitting the
+entry; when the tab's pane is gone, `--resume` is refused (`state_refused`) and
+the Parent creates a new session for that `task_id`. When that report shows the child
 neither settled nor waiting on a user decision, the Parent tells the user which
 tab and `task_id` went idle and what the Kernel projection still requires.
 
 The Parent may send one text instruction to a Lane session, and only while it is
-`idle` and its child is still running in the Lane: a correction to the
+`idle` or `done` (a finished turn not yet seen) and its child is still running in
+the Lane: a correction to the
 Executor's approach, never an answer to a dialog. It first calls
 `start_unattended_batch` with `lane_instruction` (`task_id`, `text`, `kind`
 `instruction` or `correction`, and the `session_state` it just observed with

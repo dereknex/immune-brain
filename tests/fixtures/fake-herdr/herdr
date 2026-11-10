@@ -23,7 +23,10 @@ state.calls = [...(state.calls ?? []), argv];
 state.panes ??= {};
 save(state);
 const [group, verb, ...args] = argv;
+state.tabs ??= {};
 const pane = (paneId) => { const value = state.panes[paneId]; if (!value || value.closed) fail("pane_not_found", `pane ${paneId} not found`); return value; };
+// An agent target is a pane that currently hosts an agent.
+const hosted = (paneId) => { const value = pane(paneId); if (!value.agent) fail("agent_not_found", `no agent in ${paneId}`); return value; };
 const agent = (paneId) => ({ agent: { pane_id: paneId, name: state.panes[paneId].name ?? null, agent_status: state.panes[paneId].state } });
 
 if (group === "api" && verb === "schema") {
@@ -33,36 +36,57 @@ if (group === "api" && verb === "schema") {
 if (group === "tab" && verb === "create") {
 	const n = (state.counter ?? 0) + 1;
 	state.counter = n;
-	state.panes[`p${n}`] = { tab: `t${n}`, workspace: flag(args, "--workspace"), cwd: flag(args, "--cwd"), label: flag(args, "--label"), state: "unknown", prompts: [], keys: [], output: "", closed: false };
+	const env = args.flatMap((value, index) => (args[index - 1] === "--env" ? [value] : []));
+	state.tabs[`t${n}`] = { workspace: flag(args, "--workspace"), label: flag(args, "--label") };
+	state.panes[`p${n}`] = { tab: `t${n}`, workspace: flag(args, "--workspace"), cwd: flag(args, "--cwd"), env, agent: false, state: "unknown", prompts: [], keys: [], output: "", closed: false, starts: 0 };
 	save(state);
 	ok({ tab: { tab_id: `t${n}` }, root_pane: { pane_id: `p${n}` } });
 }
-if (group === "tab" && verb === "close") { state.tabs_closed = [...(state.tabs_closed ?? []), args[0]]; save(state); ok({}); }
+if (group === "tab" && verb === "get") {
+	const tab = state.tabs[args[0]];
+	if (!tab) fail("tab_not_found", `tab ${args[0]} not found`);
+	ok({ type: "tab_info", tab: { tab_id: args[0], workspace_id: tab.workspace, label: tab.label } });
+}
+if (group === "pane" && verb === "get") {
+	const value = pane(args[0]);
+	ok({ type: "pane_info", pane: { pane_id: args[0], tab_id: value.tab, workspace_id: value.workspace, agent_status: value.agent ? value.state : "unknown" } });
+}
+if (group === "tab" && verb === "close") {
+	if (!state.tabs[args[0]]) fail("tab_not_found");
+	delete state.tabs[args[0]];
+	for (const value of Object.values(state.panes)) if (value.tab === args[0]) value.closed = true;
+	state.tabs_closed = [...(state.tabs_closed ?? []), args[0]];
+	save(state);
+	ok({});
+}
 if (group === "agent" && verb === "start") {
 	const name = args[0];
 	if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name ?? "")) fail("invalid_params", `invalid agent name ${name}`);
 	const target = pane(flag(args, "--pane"));
-	if (state.not_ready_next) { state.not_ready_next = false; target.state = "blocked"; save(state); fail("agent_not_ready"); }
+	// agent_not_ready: the agent is there but shows a dialog (CLI reference, `agent start`).
+	if (state.not_ready_next) { state.not_ready_next = false; target.agent = true; target.name = name; target.starts += 1; target.state = "blocked"; save(state); fail("agent_not_ready"); }
 	target.name = name;
+	target.agent = true;
+	target.starts += 1;
 	target.state = "idle";
 	save(state);
 	ok(agent(flag(args, "--pane")));
 }
 if (group === "agent" && verb === "prompt") {
-	const target = pane(args[0]);
+	const target = hosted(args[0]);
 	if (target.state === "blocked") fail("agent_blocked");
 	target.prompts.push(args[1]);
 	target.state = state.after_prompt ?? "working";
 	save(state);
 	ok(agent(args[0]));
 }
-if (group === "agent" && verb === "get") { pane(args[0]); ok(agent(args[0])); }
+if (group === "agent" && verb === "get") { hosted(args[0]); ok(agent(args[0])); }
 if (group === "agent" && verb === "wait") {
 	const timeout = Number(flag(args, "--timeout") ?? 0);
 	const started = Date.now();
 	for (;;) {
 		const current = load().panes?.[args[0]];
-		if (!current || current.closed) fail("agent_not_running");
+		if (!current || current.closed || !current.agent) fail("agent_not_running");
 		// Herdr's default is idle, done or blocked; repeated --until replaces it.
 		const until = args.flatMap((value, index) => (args[index - 1] === "--until" ? [value] : []));
 		if ((until.length ? until : ["idle", "done", "blocked"]).includes(current.state)) ok({ agent: { pane_id: args[0], agent_status: current.state } });
@@ -70,7 +94,7 @@ if (group === "agent" && verb === "wait") {
 		await Bun.sleep(20);
 	}
 }
-if (group === "agent" && verb === "send-keys") { pane(args[0]).keys.push(...args.slice(1)); save(state); ok({}); }
+if (group === "agent" && verb === "send-keys") { hosted(args[0]).keys.push(...args.slice(1)); save(state); ok({}); }
 if (group === "pane" && verb === "read") text(pane(args[0]).output);
 if (group === "pane" && verb === "close") { pane(args[0]).closed = true; save(state); ok({}); }
 fail("unknown_command", `fake herdr does not model: ${argv.join(" ")}`);

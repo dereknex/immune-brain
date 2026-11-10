@@ -18,6 +18,7 @@ import { randomBytes } from "node:crypto";
 import { parseJson, parseVersion, pick, runCommand, versionAtLeast, type CommandExec, type ExecResult } from "./exec";
 import {
 	closeProofRefusal,
+	instructionRefusal,
 	isSessionState,
 	refuse,
 	resumeRefusal,
@@ -204,6 +205,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (input.resume !== undefined) {
 				const found = await owned(input.resume);
 				if (isRefusal(found)) return found;
+				// Core cannot restart a finished terminal in place; the caller creates a new session.
+				if (pick(found.terminal, ["state"]) === "finished") {
+					return refuse("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
+				}
 				const current = observed(found.terminal);
 				const refused = resumeRefusal(input.resume, current);
 				if (refused) return refused;
@@ -214,7 +219,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const tooOld = await hostVersionRefusal(input.host);
 			if (tooOld) return tooOld;
 			const token = newToken();
-			const started = await hc(HC_CLI.run(herdrCoreName(input.label), input.cwd, token, [HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs]));
+			// `hc run` takes no environment; `env` sets it for the Host alone.
+			const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
+			const argv = [...(envPrefix.length > 0 ? ["env", ...envPrefix] : []), HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
+			const started = await hc(HC_CLI.run(herdrCoreName(input.label), input.cwd, token, argv));
 			if (isRefusal(started)) return started;
 			if (started.code !== 0) return refuse("start_failed", `hc run failed: ${failure(started)}`);
 			const address = pick(parseJson(started.stdout), ["address"]);
@@ -243,8 +251,12 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (!text.trim()) return refuse("invalid_input", "instruction text is empty", handle);
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			// `--if idle` makes core itself refuse any other state, with nothing sent.
-			const after = await send(handle, found.ids.address, text, "idle");
+			const current = observed(found.terminal);
+			const refused = instructionRefusal(handle, current);
+			if (refused) return refused;
+			// `--if idle` makes core itself refuse any other state. `--if` cannot name
+			// `done`, so a done session is sent to plainly; core still refuses `blocked`.
+			const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
 			if (isRefusal(after)) return after;
 			return { ok: true, ...after };
 		},

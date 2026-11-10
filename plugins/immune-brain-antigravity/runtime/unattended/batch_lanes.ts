@@ -168,7 +168,7 @@ export function parseLaneInstruction(value: unknown): LaneInstructionRequest | u
 
 /**
  * Whether the coordinator may send this text to the Lane session now. Text goes
- * only to an idle session of a child that is still running in its Lane. A
+ * only to an idle or done session of a child that is still running in its Lane. A
  * blocked session shows a dialog only the user may answer (trust, sign-in,
  * permission, a question, a native confirmation), so it never receives input;
  * a working session is not interrupted. Null means allowed.
@@ -183,7 +183,9 @@ export function decideLaneInstruction(record: BatchLaneRunStateRecord, request: 
 		return `${request.task_id} waits for a design-level correction; send it with kind correction`;
 	if (request.session_state === "blocked")
 		return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
-	if (request.session_state !== "idle") return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+	// `done` is idle with an unseen finished turn: ready for input (Supervised Session Port, ADR 0038).
+	if (request.session_state !== "idle" && request.session_state !== "done")
+		return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle or done session`;
 	return null;
 }
 

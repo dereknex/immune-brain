@@ -77,7 +77,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(await port.observeState(handle)).toEqual({ ok: true, state: "unknown", provenance: "none" });
 	});
 
-	it.each(["working", "blocked", "unknown", "done"] as const)("sends nothing to a %s session", async state => {
+	it.each(["working", "blocked", "unknown"] as const)("sends nothing to a %s session", async state => {
 		const { port, control } = start();
 		const handle = await created(port);
 		control.setState(handle, state);
@@ -85,10 +85,10 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(control.submitted(handle)).toEqual([INPUT.entry]);
 	});
 
-	it("delivers one instruction to an idle session", async () => {
+	it.each(["idle", "done"] as const)("delivers one instruction to a %s session", async state => {
 		const { port, control } = start();
 		const handle = await created(port);
-		control.setState(handle, "idle");
+		control.setState(handle, state);
 		expect(await port.sendInstruction(handle, "correct the approach")).toMatchObject({ ok: true, state: "working" });
 		expect(control.submitted(handle)).toEqual([INPUT.entry, "correct the approach"]);
 	});

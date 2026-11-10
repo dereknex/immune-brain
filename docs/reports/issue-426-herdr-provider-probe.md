@@ -124,3 +124,16 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 
 - A4/B4 权限对话框、A5/B5 登录对话框：claude 处于 5 小时用量上限（不发起工具调用），pi 与 agy 的 shell 工具默认自动放行（agy 真建了文件、无对话框）；且 `imm-session`、`herdr agent start`、`hc run` 都没有注入环境变量的入口，无法用空配置目录触发登录框。
 - 阶段 C 只在 pi Executor、单任务 Lane 上跑过；另两个 Host 与并行 batch 未跑。
+
+## 修复（实测之后，2026-11-10）
+
+按“先修 1”处理 K1、O1、C-2，并补上 `--env`。以下改动只有 stand-in 测试覆盖，需在下一轮实测中确认（见 `docs/reports/issue-426-live-test-plan.md` 的 A6、A9、A10、B7、B12 与 A5/B5）。
+
+| 问题 | 修复 | 测试 |
+| --- | --- | --- |
+| K1 Herdr 所有权只比 workspace | 创建时生成 12 位十六进制 token，写进 tab label（`<label> [imm:<token>]`）并编进 handle（`herdr:<ws>/<tab>/<pane>/<token>`）。每个动词先 `pane get`（pane 在该 workspace、该 tab）再 `tab get`（label 以 token 结尾），不符即 `not_owned`；旧的三段 handle 一律 `not_owned` | `tests/supervised-session-herdr.test.ts` “Herdr adapter ownership (K1)”；去掉 token 检查或 pane-in-tab 检查的变异分别被 2 个、1 个用例抓到 |
+| O1 `done` 发不出指令 | port 的 `instructionRefusal` 改为放行 `idle` 与 `done`；batch runner 的 `decideLaneInstruction`（`plugins/immune-brain/runtime/unattended/batch_lanes.ts`）同步放行 `done`；Herdr 直接 `agent prompt`；core 对 `idle` 用 `send --if idle`，对 `done` 用不带 `--if` 的 `send`（`--if` 不接受 `done`，core 仍拒绝 `blocked`，剩下与“刚开始工作”的竞态） | 一致性测试 “delivers one instruction to a done session” ×3 provider；`tests/supervised-session-herdr-core.test.ts` O1 用例；`tests/unattended-batch-lanes.test.ts` 新增 `done` 被接受 |
+| C-2 Host 退出后无法原地重启 | Herdr：`--resume` 时若 `agent get` 返回 `agent_not_found` / `agent_not_running` 且 pane 仍在，先在同一 pane `agent start` 再提交 entry（对话框仍报 `blocked`、entry 不提交）；pane 已不在则 `state_refused`。core：已 `finished` 的终端 `--resume` 明确 `state_refused`，由 Parent 新建会话。Loop 契约同步写明 | “Herdr adapter resume (C-2)” 3 个用例；core 的 C-2 用例 |
+| 补测入口 `--env` | `imm-session create --env KEY=VALUE`（可重复，只用于 create）：Herdr 走 `tab create --env`，core 在 Host 命令前加 `env K=V`；变量名与单行值在 port 校验 | Herdr 与 core 的 env 用例、CLI 解析用例 |
+
+待实测确认的新写法：`herdr pane get` / `tab get` 的 `.result.pane` / `.result.tab` 形状（取自 0.9.5 API schema 的 `pane_info`、`tab_info`），Host 退出后 `agent get` 的错误码（文档只列出 `agent_not_found`、`agent_not_running` 两种可能），以及 `tab create --env` 对之后 `agent start` 的 Host 是否生效。

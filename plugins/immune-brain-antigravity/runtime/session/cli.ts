@@ -29,7 +29,7 @@ export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "re
 const USAGE = [
 	"imm-session <verb> --provider herdr|herdr-core [options]",
 	"  probe",
-	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]",
+	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [--env KEY=VALUE]... [-- <host arguments>]",
 	"  send <handle> --text <instruction>",
 	"  await <handle> [--timeout-ms <ms>]",
 	"  observe <handle>",
@@ -52,16 +52,27 @@ function emit<T extends { ok: boolean }>(result: T): CliOutcome {
 	return { stdout: `${JSON.stringify(result)}\n`, stderr: "", returncode: result.ok ? 0 : 1 };
 }
 
-interface Parsed { positional: string[]; flags: Map<string, string>; rest: string[] }
+interface Parsed { positional: string[]; flags: Map<string, string>; env: Record<string, string>; rest: string[] }
 
 const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source"]);
 
 function parse(args: string[]): Parsed | string {
 	const positional: string[] = [];
 	const flags = new Map<string, string>();
+	const env: Record<string, string> = {};
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index];
-		if (arg === "--") return { positional, flags, rest: args.slice(index + 1) };
+		if (arg === "--") return { positional, flags, env, rest: args.slice(index + 1) };
+		if (arg === "--env") {
+			const pair = args[index + 1];
+			const at = pair?.indexOf("=") ?? -1;
+			if (!pair || at <= 0) return "--env needs KEY=VALUE";
+			const key = pair.slice(0, at);
+			if (key in env) return `--env ${key} given twice`;
+			env[key] = pair.slice(at + 1);
+			index++;
+			continue;
+		}
 		if (arg.startsWith("--")) {
 			if (!VALUE_FLAGS.has(arg)) return `unknown option ${arg}`;
 			const value = args[index + 1];
@@ -73,7 +84,7 @@ function parse(args: string[]): Parsed | string {
 		}
 		positional.push(arg);
 	}
-	return { positional, flags, rest: [] };
+	return { positional, flags, env, rest: [] };
 }
 
 export async function runSessionCli(
@@ -86,8 +97,9 @@ export async function runSessionCli(
 	if (!verb || !(SESSION_VERBS as readonly string[]).includes(verb)) return usage(`unknown verb ${JSON.stringify(verb ?? "")}`);
 	const parsed = parse(tail);
 	if (typeof parsed === "string") return usage(parsed);
-	const { positional, flags, rest } = parsed;
+	const { positional, flags, env: hostEnv, rest } = parsed;
 	if (rest.length > 0 && verb !== "create") return usage("only create takes host arguments after --");
+	if (Object.keys(hostEnv).length > 0 && verb !== "create") return usage("only create takes --env");
 
 	const port = resolve(flags.get("--provider"), env);
 	if ("ok" in port && port.ok === false) return emit(port);
@@ -112,7 +124,11 @@ export async function runSessionCli(
 			const entry = flags.get("--entry");
 			if (!cwd || !label || !entry) return usage("create needs --cwd, --label and --entry");
 			const resume = flags.get("--resume");
-			return emit(await provider.createSession({ cwd, label, host: host as ExecutorHostKind, entry, hostArgs: rest, ...(resume ? { resume } : {}) }));
+			return emit(await provider.createSession({
+				cwd, label, host: host as ExecutorHostKind, entry, hostArgs: rest,
+				...(resume ? { resume } : {}),
+				...(Object.keys(hostEnv).length > 0 ? { env: hostEnv } : {}),
+			}));
 		}
 		case "send": {
 			const bad = needHandle();

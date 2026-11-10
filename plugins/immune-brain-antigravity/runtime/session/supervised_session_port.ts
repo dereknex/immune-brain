@@ -54,8 +54,14 @@ export interface CreateSessionInput {
 	hostArgs: string[];
 	/** The single explicit `drive` entry for the Lane's task, and nothing else. */
 	entry: string;
-	/** Submit the entry again in this existing session instead of creating another. */
+	/**
+	 * Submit the entry again in this existing session instead of creating
+	 * another. A provider that can restarts an exited Host in the same place
+	 * first; one that cannot refuses, and the caller creates a new session.
+	 */
 	resume?: SessionHandle;
+	/** Extra environment for the Host, applied when the session is created; ignored on resume. */
+	env?: Record<string, string>;
 }
 
 export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean } & Observation) | Refusal;
@@ -92,7 +98,7 @@ export interface SupervisedSessionPort {
 
 	// ── required capabilities ──
 	createSession(input: CreateSessionInput): Promise<CreateSessionResult>;
-	/** Sends one text instruction only to an owned session observed `idle`; otherwise sends nothing. */
+	/** Sends one text instruction only to an owned session observed `idle` or `done`; otherwise sends nothing. */
 	sendInstruction(handle: SessionHandle, text: string): Promise<InstructionResult>;
 	/** Returns once the session is not `working` (at once if it already is not), or at the timeout. */
 	awaitTransition(handle: SessionHandle, options?: { timeoutMs?: number }): Promise<AwaitResult>;
@@ -160,10 +166,14 @@ export function refuse(code: RefusalCode, reason: string, handle?: SessionHandle
 	return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
 }
 
-/** The instruction rule shared by every adapter: only an `idle` session receives text. */
+/**
+ * The instruction rule shared by every adapter: only a session ready for input
+ * receives text. `done` is ready too: it is idle with a finished turn not yet
+ * seen, and on providers without a "seen" action it never becomes `idle`.
+ */
 export function instructionRefusal(handle: SessionHandle, observed: Observation): Refusal | null {
-	if (observed.state === "idle") return null;
-	return refuse("state_refused", `session is ${observed.state}; an instruction is sent only to an idle session and nothing was sent`, handle);
+	if (observed.state === "idle" || observed.state === "done") return null;
+	return refuse("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
 }
 
 /** The resume rule: the entry is submitted again only to a session that has stopped working without a dialog. */
@@ -189,6 +199,10 @@ export function validateCreateInput(input: CreateSessionInput): Refusal | null {
 	if (!input.label || input.label.length > 32) return refuse("invalid_input", "label must be 1 to 32 characters");
 	if (!(EXECUTOR_HOSTS as readonly string[]).includes(input.host)) return refuse("invalid_input", `host must be one of ${EXECUTOR_HOSTS.join(", ")}`);
 	if (!input.entry || input.entry.trim() === "") return refuse("invalid_input", "entry is required");
+	for (const [key, value] of Object.entries(input.env ?? {})) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return refuse("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
+		if (typeof value !== "string" || /[\0\n\r]/.test(value)) return refuse("invalid_input", `env ${key} must be a single-line string`);
+	}
 	return null;
 }
 
