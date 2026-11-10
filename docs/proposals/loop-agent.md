@@ -549,7 +549,7 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 
 ## 14. 需要修订的契约
 
-实施前需要一份新 ADR，覆盖：
+实施前需要一份新 ADR，草稿见 `docs/adr/0038-loop-daemon.md`（状态 `proposed`）。它覆盖：
 
 - `CONTEXT.md` 的 Loop 定义（§3）与 Batch Branch “never pushed and never opened as a pull request”（`CONTEXT.md:141`）。
 - ADR 0019 与 ADR 0025 Decision 2：Enrollment 增加 `tracker_approval` 与 `policy_auto` 两种确认来源；push 与 PR 创建在 §10.2 范围内不再逐次确认。其中 `policy_auto` 是最大的改动：ADR 0019 规定规划与实现两个阶段各由字面用户发起（`docs/adr/0019-explicit-run-entry-owns-enrollment.md:25`），ADR 0025 保留 gate 的理由是伪造的 token 不能开始执行（`docs/adr/0025-run-entry-decision-hosting.md:41-43`）；routine 免批准后，开始执行不再有任何逐次的字面用户行为。
@@ -596,17 +596,17 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 
 ## 17. 下一步
 
-本提案到此为止是设计。进入实施需要所有者发起，顺序建议如下；每个切片各自经 `draw-up` 与 `drive`，本提案不创建它们。
+本提案到此为止是设计。契约修订已起草为 `docs/adr/0038-loop-daemon.md`（状态 `proposed`）；切片已发布为 GitHub 上的规划 Issue，Parent 为 #458。这些 Issue 不带 tracker 的归属标记：TaskIntent 尚未撰写，每个切片仍需所有者经 `draw-up` 与 `drive` 进入实施。
 
-| 切片 | 内容 | 对应阶段 | 依赖 |
-| --- | --- | --- | --- |
-| S0 | 新 ADR：第 14 节列出的全部契约修订，含 Loop 定义 | — | 所有者接受 |
-| S1 | 观察层、事件与编排状态记录、`imm-loop tick --dry-run`（只输出事件） | P0 | S0 |
-| S2 | 判断阶梯、处理目录与守卫；登记新增的决策模型应用点与初始阈值 | P0 | S1 |
-| S3 | `loop` 配置段、守护进程身份检查、常设发布授权；状态 Issue；澄清、升级与所有者命令 | P1 | S2 |
-| S4 | 分析与规划 agent 的派发；计划分支与计划摘要发布 | P1 | S3 |
-| S5 | `tracker_approval` 与 `policy_auto` 两种确认来源；调用 `startBatch`；退出记录器；开 PR | P2 | S4 |
-| S6 | Lane 内人工决策与 GitHub 的往返 | P2 | S5 |
-| S7 | 修复 agent 的派发：CI、冲突、review | P3 | S5 |
+| 切片 | Issue | 内容 | 对应阶段 | 依赖 |
+| --- | --- | --- | --- | --- |
+| S0 | #459 | 接受 ADR 0038，并落实第 14 节列出的全部契约修订，含 Loop 定义 | — | 所有者接受 |
+| S1 | #460 | 观察层、事件与编排状态记录、`imm-loop tick --dry-run`（只输出事件） | P0 | S0 |
+| S2 | #461 | 判断阶梯、处理目录与守卫；登记新增的决策模型应用点与初始阈值 | P0 | S1 |
+| S3 | #462 | `loop` 配置段、守护进程身份检查、常设发布授权；状态 Issue；澄清、升级与所有者命令 | P1 | S2 |
+| S4 | #463 | 分析与规划 agent 的派发；计划分支与计划摘要发布 | P1 | S3 |
+| S5 | #464 | `tracker_approval` 与 `policy_auto` 两种确认来源；调用 `startBatch`；退出记录器；开 PR | P2 | S4 |
+| S6 | #465 | Lane 内人工决策与 GitHub 的往返 | P2 | S5 |
+| S7 | #466 | 修复 agent 的派发：CI、冲突、review | P3 | S5 |
 
 S1 与 S2 完成后即可在真实仓库上空跑，得到 §16.2 里成本与判断质量的数据，再决定 S3 之后的默认值。
