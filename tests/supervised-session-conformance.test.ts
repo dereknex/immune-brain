@@ -1,11 +1,13 @@
 // Supervised Session Port conformance (ADR 0038, docs/reference/supervised-session-port.md).
 // Every provider runs the same behaviors through the port. The Herdr adapter
 // runs against a stand-in `herdr` executable on PATH, so its real exec seam,
-// argument spelling and output parsing are exercised.
+// argument spelling and output parsing are exercised; so does the herdr-core
+// adapter against a stand-in `hc`.
 
 import { afterEach, describe, expect, it } from "bun:test";
 import { createFakeSessionProvider } from "../plugins/immune-brain/runtime/session/fake_provider";
 import { herdrSubject, type SessionSubject as Subject } from "./helpers/fake-herdr";
+import { herdrCoreSubject } from "./helpers/fake-herdr-core";
 import {
 	admitSessionProvider,
 	REQUIRED_CAPABILITIES,
@@ -16,10 +18,10 @@ import {
 
 function fakeSubject(): Subject {
 	const { port, control } = createFakeSessionProvider();
-	return { port, control: { ...control, foreignHandle: () => "fake:not-mine" }, cleanup: () => {} };
+	return { port, control: { ...control, foreignHandle: () => "fake:not-mine" }, provenance: "detected", cleanup: () => {} };
 }
 
-const SUBJECTS: Array<[string, () => Subject]> = [["fake", fakeSubject], ["herdr", () => herdrSubject()]];
+const SUBJECTS: Array<[string, () => Subject]> = [["fake", fakeSubject], ["herdr", () => herdrSubject()], ["herdr-core", () => herdrCoreSubject()]];
 
 const INPUT = { cwd: "/lanes/slice-a", label: "slice-a", host: "claude-code" as const, hostArgs: ["--plugin-dir", "/p"], entry: "/immune-brain:drive slice-a" };
 const PROOF: CloseProof = { created_by_parent: true, child_integrated: true, release_handoff_issued: true, audit_pair_reachable: true, record: "batch report: slice-a closed" };
@@ -46,7 +48,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 	it("creates exactly one session that receives the entry once and reports working", async () => {
 		const { port, control } = start();
 		const result = await port.createSession(INPUT);
-		expect(result).toMatchObject({ ok: true, entry_submitted: true, state: "working", provenance: "detected" });
+		expect(result).toMatchObject({ ok: true, entry_submitted: true, state: "working", provenance: subject.provenance });
 		if (!result.ok) return;
 		expect(control.sessionCount()).toBe(1);
 		expect(control.submitted(result.handle)).toEqual([INPUT.entry]);
@@ -70,7 +72,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		const { port, control } = start();
 		const handle = await created(port);
 		control.setState(handle, "blocked");
-		expect(await port.observeState(handle)).toEqual({ ok: true, state: "blocked", provenance: "detected" });
+		expect(await port.observeState(handle)).toEqual({ ok: true, state: "blocked", provenance: subject.provenance });
 		control.setState(handle, "unknown");
 		expect(await port.observeState(handle)).toEqual({ ok: true, state: "unknown", provenance: "none" });
 	});
@@ -113,7 +115,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		const handle = await created(port);
 		const waiting = port.awaitTransition(handle, { timeoutMs: 5_000 });
 		setTimeout(() => control.setState(handle, "blocked"), 100);
-		expect(await waiting).toMatchObject({ ok: true, transition: "changed", state: "blocked", provenance: "detected" });
+		expect(await waiting).toMatchObject({ ok: true, transition: "changed", state: "blocked", provenance: subject.provenance });
 	});
 
 	it("reports a timeout without guessing a state", async () => {
@@ -174,7 +176,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(await port.reconcile([handle, foreign])).toEqual({
 			ok: true,
 			sessions: [
-				{ handle, state: "idle", provenance: "detected" },
+				{ handle, state: "idle", provenance: subject.provenance },
 				{ handle: foreign, state: "unknown", provenance: "none", refused: "not_owned" },
 			],
 		});

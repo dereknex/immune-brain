@@ -151,7 +151,7 @@ describe("Herdr adapter admission fails closed", () => {
 describe("imm-session CLI", () => {
 	it("requires an explicit provider and never falls back", async () => {
 		const { env, stateFile } = subject();
-		for (const provider of [undefined, "herdr-core", "fake"]) {
+		for (const provider of [undefined, "herdr-tui", "fake"]) {
 			const args = provider ? ["probe", "--provider", provider] : ["probe"];
 			const out = await runSessionCli(args, env);
 			expect(out.returncode).toBe(1);

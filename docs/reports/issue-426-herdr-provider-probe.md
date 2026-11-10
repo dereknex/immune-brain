@@ -69,10 +69,5 @@ core 侧：`crates/ghostty-vt/src/tests.rs:155-171` 断言 core 解析 `state=wo
 
 1. **Herdr TUI 运行实测**：在装有 Herdr 0.9.5 的机器上跑 `imm-session probe → create → observe → send → await → read → stop`，三个 Host 各一次，确认上文 TUI 表在运行中的 server 上成立。
 2. **herdr-core 运行实测（D2 的 probe）**：装 `hc` 0.1.19，对每个 Host（不低于上表版本）执行 `hc run --bg --json`，用 `hc get` / `hc wait` 记录状态序列：启动、提交 entry、权限提示、workspace trust、完成、退出。逐项确认 `blocked` 覆盖与 `address` 寻址。
-3. **herdr-core adapter（S0.5 实现）**，2 通过后开始：
-   - 传输：沿用 TUI 的取舍，调用 `hc` CLI 的 `--json` 输出，不直接讲 JSON-RPC；命令写法集中在一张表里。
-   - 映射：`createSession` = `hc run --bg --json --name --cwd -- <host argv>`，再用 `hc send <address> <entry> --if idle --wait` 提交 entry；`sendInstruction` = `hc send --if idle`，永不用 `--force`；`awaitTransition` = `hc wait <address> --timeout <秒>`，`reason: timeout` 映射为 `timeout`，`exit` 映射为 `exited`；`observeState` = `hc get`，provenance `reported`，`error` 映射为 `unknown`；`stopSession` = `hc interrupt` 后 `hc kill`；`closeSession` = `hc rm`。
-   - 准入：probe 时检查 `hc` 的协议代数（`hello` 的 `generation`）与 schema 版本，并检查所选 Host 的版本不低于上表；不满足即 `provider_unavailable`，不降级。
-   - 测试：同一套 conformance suite 加一个 stand-in `hc`，形状取自 `released.openrpc.json`。
-   - Loop 契约：Herdr Lane Tabs 一节改为按 provider 选择，`--provider herdr-core` 仅在显式配置时使用，不自动探测。
-4. 1 和 2 通过之前，不合并 herdr-core adapter（D2）。
+3. **herdr-core adapter（S0.5 实现）**：已按用户要求在运行实测之前写成，见 `plugins/immune-brain/runtime/session/herdr_core_provider.ts`，映射见 `docs/reference/supervised-session-port.md`。它通过同一套 conformance suite（stand-in `hc` 取自上述 0.1.19 源码与 schema），可用 `--provider herdr-core` 显式选择，但 Loop 契约尚不使用它。与原计划相比有两处具体化：所有权用随机 token 作为终端标签 `imm-session`，每个动词先读终端核对；创建时先轮询 `hc get` 等 Host 的首个状态上报（30 秒上限），再 `send --if idle`。
+4. 1 和 2 通过之前，Loop 契约不启用 herdr-core（D2）；届时再决定由哪项配置显式选择 provider，仍不自动探测。

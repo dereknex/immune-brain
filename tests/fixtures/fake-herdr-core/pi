@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stand-in Executor Host for herdr-core tests: answers --version only.
+if [ "$1" = "--version" ]; then echo "${FAKE_HOST_VERSION:-9.9.9} (stand-in)"; exit 0; fi
+echo "stand-in host does not run" >&2; exit 1

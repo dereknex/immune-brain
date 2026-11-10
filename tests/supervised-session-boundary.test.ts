@@ -36,7 +36,7 @@ function targets(path: string, source: string): string[] {
 		.map(specifier => (specifier.startsWith(".") ? posix.normalize(posix.join(posix.dirname(path), specifier)) : specifier));
 }
 
-const HERDR_COMMAND = /\bherdr\s+(?:tab|agent|pane|api|worktree)\s+[a-z]|spawn\(\s*["']herdr["']/;
+const HERDR_COMMAND = /\bherdr\s+(?:tab|agent|pane|api|worktree)\s+[a-z]|(?:spawn|runCommand)\([^)]*["']herdr["']/;
 
 describe("Supervised Session Port boundary", () => {
 	const runtime = [...files(RUNTIME, [".ts"]), ...files(`${PLUGIN}/.pi-extension`, [".ts"])];
@@ -45,7 +45,9 @@ describe("Supervised Session Port boundary", () => {
 		const session = runtime.filter(file => file.path.startsWith(`${SESSION}/`));
 		expect(session.map(file => file.path).sort()).toEqual([
 			`${SESSION}/cli.ts`,
+			`${SESSION}/exec.ts`,
 			`${SESSION}/fake_provider.ts`,
+			`${SESSION}/herdr_core_provider.ts`,
 			`${SESSION}/herdr_provider.ts`,
 			`${SESSION}/supervised_session_port.ts`,
 		]);

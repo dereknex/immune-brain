@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { createHerdrSessionProvider, encodeHerdrHandle } from "../../plugins/immune-brain/runtime/session/herdr_provider";
-import type { SessionHandle, SessionState, SupervisedSessionPort } from "../../plugins/immune-brain/runtime/session/supervised_session_port";
+import type { SessionHandle, SessionState, StateProvenance, SupervisedSessionPort } from "../../plugins/immune-brain/runtime/session/supervised_session_port";
 
 export interface SessionControl {
 	setState(handle: SessionHandle, state: SessionState): void;
@@ -16,7 +16,13 @@ export interface SessionControl {
 	blockNextStart(): void;
 	foreignHandle(): SessionHandle;
 }
-export interface SessionSubject { port: SupervisedSessionPort; control: SessionControl; cleanup(): void }
+export interface SessionSubject {
+	port: SupervisedSessionPort;
+	control: SessionControl;
+	/** Where this provider's states come from: its own detection, or the program's report. */
+	provenance: StateProvenance;
+	cleanup(): void;
+}
 
 export const FAKE_HERDR_DIR = resolve(__dirname, "../fixtures/fake-herdr");
 
@@ -48,6 +54,7 @@ export function herdrSubject(extraState: Record<string, unknown> = {}): SessionS
 		stateFile,
 		env,
 		port: createHerdrSessionProvider({ env }),
+		provenance: "detected",
 		control: {
 			setState: (handle, value) => update(handle, pane => { pane.state = value; }),
 			exit: handle => update(handle, pane => { pane.closed = true; }),

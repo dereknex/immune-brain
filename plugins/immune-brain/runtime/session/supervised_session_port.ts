@@ -13,7 +13,7 @@ export type SessionState = (typeof SESSION_STATES)[number];
 /** Where a state came from: a provider's own detection, the session's own report, or nowhere. */
 export type StateProvenance = "detected" | "reported" | "none";
 /** A new provider adds a literal here; the port itself does not change. */
-export type SessionProviderName = "herdr" | "fake";
+export type SessionProviderName = "herdr" | "herdr-core" | "fake";
 /** Opaque to every caller. Only the adapter that minted a handle decodes it. */
 export type SessionHandle = string;
 /** The Executor Hosts the Lane configuration accepts (`executor_host`); tests/supervised-session-herdr.test.ts checks each against it. */

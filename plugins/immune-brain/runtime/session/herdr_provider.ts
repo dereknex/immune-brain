@@ -11,7 +11,7 @@
 // `{"id","error":{"code","message"}}` on stderr and exits 1, and `pane read`
 // prints terminal text directly.
 
-import { spawn } from "node:child_process";
+import { parseJson, pick, runCommand, type ExecResult } from "./exec";
 import {
 	closeProofRefusal,
 	instructionRefusal,
@@ -65,13 +65,7 @@ export const HERDR_CLI = {
 	tabClose: (tab: string) => ["tab", "close", tab],
 } as const;
 
-export interface HerdrExecResult {
-	code: number | null;
-	stdout: string;
-	stderr: string;
-	/** The `herdr` executable was not found. */
-	missing?: boolean;
-}
+export type HerdrExecResult = ExecResult;
 export type HerdrExec = (args: string[]) => Promise<HerdrExecResult>;
 
 export interface HerdrProviderOptions {
@@ -81,17 +75,7 @@ export interface HerdrProviderOptions {
 }
 
 export function defaultHerdrExec(env: Record<string, string | undefined>): HerdrExec {
-	return args => new Promise(resolve => {
-		let stdout = "";
-		let stderr = "";
-		let settled = false;
-		const finish = (result: HerdrExecResult) => { if (!settled) { settled = true; resolve(result); } };
-		const child = spawn("herdr", args, { env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] });
-		child.stdout.on("data", chunk => { stdout += chunk; });
-		child.stderr.on("data", chunk => { stderr += chunk; });
-		child.once("error", (error: NodeJS.ErrnoException) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));
-		child.once("close", code => finish({ code, stdout, stderr }));
-	});
+	return args => runCommand(env, "herdr", args);
 }
 
 interface HerdrIds { workspace: string; tab: string; pane: string }
@@ -110,19 +94,6 @@ export function decodeHerdrHandle(handle: SessionHandle): HerdrIds | null {
 	} catch {
 		return null;
 	}
-}
-
-function parseJson(text: string): unknown {
-	try { return JSON.parse(text); } catch { return undefined; }
-}
-
-function pick(value: unknown, path: string[]): unknown {
-	let current = value;
-	for (const key of path) {
-		if (current === null || typeof current !== "object") return undefined;
-		current = (current as Record<string, unknown>)[key];
-	}
-	return current;
 }
 
 /**

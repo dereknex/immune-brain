@@ -52,7 +52,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 ### `imm-session`
 
 ```text
-imm-session <verb> --provider herdr [options]
+imm-session <verb> --provider herdr|herdr-core [options]
   probe
   create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]
   send <handle> --text <instruction>
@@ -92,21 +92,23 @@ The shapes are checked against Herdr's published source and schema, not yet by r
 
 ### herdr-core (`herdr-core`)
 
-Not admitted. The probe of herdr-core 0.1.19's released OpenRPC schema closes the four open mappings, and all three Executor Hosts report OSC 7501 natively (`docs/reports/issue-426-herdr-provider-probe.md`); the adapter waits for a live run.
+`runtime/session/herdr_core_provider.ts`, driving the `hc` CLI with `--json`. It is selectable with `--provider herdr-core` and passes the conformance suite against a stand-in `hc`, but the Loop contract does not use it until a live run with each Executor Host passes (D2). Shapes come from herdr-core 0.1.19 (`docs/reports/issue-426-herdr-provider-probe.md`): a success prints the method result on stdout; an error prints `{"error":{"kind","message","hint"}}` on stderr with exit `3` not_found, `9` blocked, `10` status_mismatch, `11` finished. The adapter's `HC_CLI` table is the one place a command is spelled.
 
-| Port | herdr-core method | Note |
+Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol generation 1 and every method the adapter calls, and `hc server status --json` to answer. A handle carries the terminal address and a random token kept as the terminal label `imm-session`; every verb reads the terminal first, and one without that token is `not_owned`, so the user's own terminals are never touched.
+
+| Port | `hc` command | Note |
 | --- | --- | --- |
-| `createSession` | `terminal.run` (`hc run --bg --json --name --cwd`) | Returns `address` (`t7`), the stable handle on that core |
-| `sendInstruction` | `terminal.send` with `if: idle` | Server-side conditional send; no check-then-act race. Never `force`, which may answer a dialog |
-| `awaitTransition` | `terminal.wait` | `reason`: `status`, `exit`, `output`, `timeout`, `not_started`; timeout is in seconds and defaults to 180, after which it checks in and leaves the terminal running |
-| `observeState` | `terminal.get` | Provenance `reported` (OSC 7501, from the program or its integration; core never infers status); a program that reports nothing has no state, which is `unknown`. Its `error` word maps to `unknown` |
-| `readOutput` | `terminal.read` | |
-| `stopSession` | `terminal.interrupt`, then `terminal.kill` | |
-| `closeSession` | `terminal.rm` | |
-| `reconcile` | `terminal.list` / `terminal.get` | |
-| `sendKeys` | `terminal.keys` | |
-| `subscribeEvents` | `events.subscribe` | |
-| `snapshot`, `manageWorktree` | None | Degrade as above |
+| `createSession` | `<host> --version`, then `run --bg --json --no-parent --name <name> --cwd <lane> --label imm-session=<token> -- <host> <args>`, then `get` until the Host's first report, then `send <t> <entry> --if idle` | The Host must be at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, else `provider_unavailable` and nothing starts. A first report of `blocked` returns `entry_submitted: false`; no report within 30 s is `start_failed` with the entry unsent. The name is the label folded to core's `a-z 0-9 - _` |
+| `sendInstruction` | `send <t> <text> --if idle` | Core itself refuses any other state (`status_mismatch`, `blocked`) and sends nothing; no check-then-act race. `--force`, which may answer a dialog, is never sent |
+| `awaitTransition` | `wait <t> [--timeout <seconds>]` | `reason` `exit` is `exited`; `timeout` is `timeout` when the Parent set a bound, otherwise core's own 180-second check-in and the wait continues; a `message` to a waiting Parent also continues |
+| `readOutput` | `read <t> --lines 0` (visible) or `--lines 200` (scrollback) | |
+| `observeState` | `get <t>` | Provenance `reported`; no report, `error` or a finished terminal is `unknown` |
+| `stopSession` | `interrupt <t>`, then `kill <t>` | |
+| `closeSession` | `kill <t>` when live, then `rm <t>` | |
+| `reconcile` | `get` per owned handle | |
+| `sendKeys` | `keys <t> <key>` | |
+| `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState`, `attachSession` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
+| `reportState` | Not applicable | The Host reports OSC 7501 itself |
 
 ## Admission matrix
 
@@ -128,11 +130,11 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 
 ## Side Effects
 
-The Herdr adapter creates tabs in the Parent's own workspace, starts Host processes there, submits text and keys to panes it owns, and closes panes or tabs it owns. It writes no file and no Kernel or batch state.
+The Herdr adapter creates tabs in the Parent's own workspace, starts Host processes there, submits text and keys to panes it owns, and closes panes or tabs it owns. The herdr-core adapter runs each Executor Host's `--version`, starts one labelled terminal per session on the local core, submits text and keys to terminals carrying its token, and kills and removes them. Neither writes a file or any Kernel or batch state.
 
 ## Verification
 
-`bun test tests/supervised-session-conformance.test.ts tests/supervised-session-herdr.test.ts tests/supervised-session-boundary.test.ts`. A new provider is accepted by passing the same conformance suite, then a live create → send → await → read → stop run on the real provider.
+`bun test tests/supervised-session-conformance.test.ts tests/supervised-session-herdr.test.ts tests/supervised-session-herdr-core.test.ts tests/supervised-session-boundary.test.ts`. A new provider is accepted by passing the same conformance suite, then a live create → send → await → read → stop run on the real provider.
 
 ## New provider checklist
 

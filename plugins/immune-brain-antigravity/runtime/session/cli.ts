@@ -6,6 +6,7 @@
 // port refusal (the JSON names it), 2 on a usage error. There is no `close`
 // verb: the Parent closes no session until the Executor close rule lands.
 
+import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
 import { createHerdrSessionProvider } from "./herdr_provider";
 import {
 	admitSessionProvider,
@@ -26,7 +27,7 @@ export interface CliOutcome {
 export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "read", "stop", "reconcile"] as const;
 
 const USAGE = [
-	"imm-session <verb> --provider herdr [options]",
+	"imm-session <verb> --provider herdr|herdr-core [options]",
 	"  probe",
 	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]",
 	"  send <handle> --text <instruction>",
@@ -39,7 +40,8 @@ const USAGE = [
 
 export function resolveSessionProvider(name: string | undefined, env: Record<string, string | undefined>): SupervisedSessionPort | Refusal {
 	if (name === "herdr") return createHerdrSessionProvider({ env });
-	return refuse("invalid_input", `unknown session provider ${JSON.stringify(name ?? "")}; name one explicitly (herdr); there is no fallback`);
+	if (name === "herdr-core") return createHerdrCoreSessionProvider({ env });
+	return refuse("invalid_input", `unknown session provider ${JSON.stringify(name ?? "")}; name one explicitly (herdr, herdr-core); there is no fallback`);
 }
 
 function usage(message: string): CliOutcome {

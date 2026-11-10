@@ -58,7 +58,9 @@ command surface the Parent runs, not only an interface.
    the same `herdr` commands the Loop contract used, admits only inside Herdr
    with the Parent's workspace, and refuses a Herdr protocol other than 22.
    Every command spelling sits in one table so a live probe corrects one place.
-   herdr-core is not admitted until a live probe closes its open mappings.
+   herdr-core has its own adapter (`runtime/session/herdr_core_provider.ts`)
+   on the `hc` CLI, selectable only by name; the Loop contract does not use it
+   until a live run with each Executor Host passes.
 6. **Behavior is unchanged in this step.** The Parent still closes no tab and
    stops no session, still answers no dialog, and still treats Kernel
    projections as the only progress signal. `imm-session` offers no `close` verb;

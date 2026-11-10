@@ -1,0 +1,79 @@
+#!/usr/bin/env bun
+// A stand-in `hc` (herdr-core 0.1.19) for Supervised Session Port tests,
+// modelled on docs/commands.md, schema/released.openrpc.json and
+// crates/herdr-core/src/cli.rs (docs/reports/issue-426-herdr-provider-probe.md):
+// `--json` prints the method result on stdout; an error prints
+// {"error":{"kind","message","hint"}} on stderr with the kind's exit code.
+// Status is only what a program "reported" (set by the test). State lives in
+// the JSON file named by FAKE_HC_STATE; every argv is appended to `calls`.
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+
+const file = process.env.FAKE_HC_STATE;
+if (!file) { process.stderr.write("FAKE_HC_STATE is not set\n"); process.exit(3); }
+const load = () => existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+const save = (state) => { writeFileSync(`${file}.tmp`, JSON.stringify(state)); renameSync(`${file}.tmp`, file); };
+const EXIT = { not_found: 3, needs_target: 7, blocked: 9, status_mismatch: 10, finished: 11 };
+const ok = (value) => { process.stdout.write(`${JSON.stringify(value)}\n`); process.exit(0); };
+const fail = (kind, message = kind) => { process.stderr.write(`${JSON.stringify({ error: { kind, message, hint: "" } })}\n`); process.exit(EXIT[kind] ?? 1); };
+const flag = (args, name) => { const index = args.indexOf(name); return index < 0 ? undefined : args[index + 1]; };
+
+const argv = process.argv.slice(2);
+const state = load();
+state.calls = [...(state.calls ?? []), argv];
+state.terminals ??= {};
+save(state);
+const [verb, ...args] = argv;
+const terminal = (address) => state.terminals[address] ?? fail("not_found", `no terminal ${address}`);
+const info = (address) => {
+	const t = terminal(address);
+	return { address, name: t.name, state: t.state, labels: t.labels, cwd: t.cwd, argv: t.argv, reported: t.status !== null, status: t.status === null ? null : { state: t.status } };
+};
+
+if (verb === "schema") ok({
+	info: { title: "herdr-core", version: state.version ?? "0.1.19", description: `Terminal runtime for coding agents. Protocol generation ${state.generation ?? 1}. Errors carry a stable \`data.kind\`.` },
+	methods: (state.methods ?? ["hello", "terminal.run", "terminal.list", "terminal.get", "terminal.kill", "terminal.rm", "terminal.read", "terminal.send", "terminal.wait", "terminal.keys", "terminal.interrupt"]).map(name => ({ name })),
+});
+if (verb === "server" && args[0] === "status") { if (state.server_down) fail("unavailable", "no core running"); ok({ live: Object.keys(state.terminals).length, finished: 0 }); }
+if (verb === "run") {
+	const split = args.indexOf("--");
+	const options = args.slice(0, split);
+	const n = (state.counter ?? 0) + 1;
+	state.counter = n;
+	const labels = {};
+	options.forEach((value, index) => { if (options[index - 1] === "--label") { const [key, ...rest] = value.split("="); labels[key] = rest.join("="); } });
+	const initial = state.initial_status === undefined ? "idle" : state.initial_status;
+	state.terminals[`t${n}`] = { name: flag(options, "--name"), cwd: flag(options, "--cwd"), argv: args.slice(split + 1), labels, state: "live", status: initial, sends: [], keys: [], output: "" };
+	save(state);
+	const t = state.terminals[`t${n}`];
+	ok({ address: `t${n}`, name: t.name, state: "live", ...(t.status ? { status: t.status } : {}), agent: t.argv[0] });
+}
+if (verb === "get") ok(info(args[0]));
+if (verb === "send") {
+	const t = terminal(args[0]);
+	if (t.state === "finished") fail("finished");
+	const wanted = flag(args, "--if");
+	if (t.status === "blocked" && !args.includes("--force")) fail("blocked", "it is blocked");
+	if (wanted !== undefined && t.status !== wanted) fail("status_mismatch", `status is ${t.status}`);
+	t.sends.push(args[1]);
+	t.status = state.after_send ?? "working";
+	save(state);
+	ok({ turn: t.sends.length, status: t.status, started: t.status === "working" });
+}
+if (verb === "wait") {
+	const timeout = Number(flag(args, "--timeout") ?? state.default_wait_seconds ?? 180) * 1000;
+	const started = Date.now();
+	for (;;) {
+		const t = load().terminals?.[args[0]];
+		if (!t) fail("not_found");
+		if (t.state === "finished") ok({ terminal: args[0], ended: true, reason: "exit", status: t.status, exit_code: 0 });
+		if (t.status !== "working") ok({ terminal: args[0], ended: true, reason: "status", status: t.status });
+		if (Date.now() - started > timeout) ok({ terminal: args[0], ended: false, reason: "timeout", status: t.status });
+		await Bun.sleep(20);
+	}
+}
+if (verb === "read") ok({ text: terminal(args[0]).output, lines: Number(flag(args, "--lines") ?? 0) });
+if (verb === "keys") { const t = terminal(args[0]); t.keys.push(...args.slice(1, -1)); save(state); ok({}); }
+if (verb === "interrupt") { const t = terminal(args[0]); t.keys.push("interrupt"); save(state); ok({ key: "ctrl+c", outcome: "no_effect" }); }
+if (verb === "kill") { const t = terminal(args[0]); if (t.state === "finished") fail("finished"); t.state = "finished"; t.status = null; save(state); ok(info(args[0])); }
+if (verb === "rm") { const t = terminal(args[0]); if (t.state !== "finished") fail("live", "terminal is still running"); delete state.terminals[args[0]]; save(state); ok({ removed: args[0] }); }
+fail("unknown_command", `fake hc does not model: ${argv.join(" ")}`);
