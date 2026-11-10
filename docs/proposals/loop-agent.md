@@ -7,7 +7,7 @@
 Loop 增加第二种运行形态：一个**独立守护进程**，可运行在本机或云端机器。它的目标只有一个：**让每个打开的 Issue 持续向“已合并关闭”前进**。
 
 - **持续推进**：只要存在“下一步归守护进程”的 Issue 且有空闲容量，守护进程就在工作。一步完成后立即接下一步（分析 → 计划 → 实现 → 开 PR → 修到就绪），不等下一个定时点。
-- **AI 判断每个事件怎么处理**：每个外部对象的变化事件交给 AI 判断应调用哪个处理；代码只负责观察、校验权限前提和执行（§5.3）。
+- **AI 判断每个事件怎么处理**：每个外部对象的变化事件交给 AI 判断应调用哪个处理；代码只负责观察、校验权限前提和执行（§5.3）。封闭的分类问题先用决策模型，拿不准的再交判断 agent（§5.13）。
 - **调度 agent 干活**：守护进程自己不写代码，它调度判断、分析、规划、执行、修复五类 agent，并只凭可核对的证据确认它们的结果（§5.7）。执行这一段复用现有的 Parent 与 Lane 机制（§5.9）。
 - **人工等待不停线**：某个 Issue 等人时，守护进程转去推进其他 Issue，并提前为后面的 Issue 做好计划。
 - **定期检查只是兜底**：定时器用来发现外部变化（新 Issue、评论、CI 结果）和停滞的工作项，不是推进的节拍。
@@ -164,7 +164,7 @@ flowchart LR
 
 **可审计与可评估。** 每个决策连同输入哈希、理由、守卫结果写入 `.imm/state/loop/`，`--dry-run` 只做到第 3 步并输出决策。记录下来的“事件 → 处理”即评估集，沿用仓库已有的离线评估方式（`scripts/decision-eval/`，其中 `a14_pr_comment_triage`、`a15_issue_triage` 已覆盖 PR 评论与 Issue 分诊，`plugins/immune-brain/runtime/decision_model/thresholds.ts:21`、`:37`）。
 
-**判断会话如何运行。** 与 Review 阶段相同，通过 Host CLI 无头调用（`plugins/immune-brain/runtime/assurance/cli_review.ts:41`），使用的 Host、模型在仓库配置中声明。不直接引入 `runtime/decision_model/`：它被定义为离线工具，`plugins/immune-brain` 下没有任何模块导入它（`plugins/immune-brain/runtime/decision_model/contract.ts:5-7`）。
+**判断由谁做。** 分两级：封闭的分类问题先交给决策模型（`runtime/decision_model/`），其余以及决策模型拿不准的交给判断 agent。哪些环节用哪一级见 §5.13。判断 agent 与 Review 阶段相同，通过 Host CLI 无头调用（`plugins/immune-brain/runtime/assurance/cli_review.ts:41`），使用的 Host、模型在仓库配置中声明。
 
 ### 5.4 选择、分析与规划
 
@@ -374,6 +374,62 @@ Loop 对项目进度负责的方式是维护一份始终最新的进度视图，
 
 这些都不是 authority：删掉整个目录后，守护进程能从 GitHub 与 Kernel 重新推导出工作项状态，损失的只是历史与去重信息。
 
+### 5.13 哪些环节用决策模型
+
+**决策模型是什么。** 仓库里的 `decide()` 只回答一种问题：给定一段文本，在一个固定的小选项集里选一个，并返回每个选项的概率（`question_type` 只有 `choice`，`plugins/immune-brain/runtime/decision_model/contract.ts:48`）。它没有工具、不读代码、上下文有限；任何失败都返回 `unavailable`，由调用方走基线行为，没有重试和备用配置（`docs/specs/decision-model-core.spec.md:127`）。
+
+**判断阶梯。** 一个问题由能回答它的最便宜的一级回答：
+
+```text
+代码（事实与权限） → 决策模型（封闭分类，过阈值才采纳） → 判断 agent（需要上下文或拿不准） → 人
+```
+
+**适用标准。** 一个环节适合决策模型，要同时满足：
+
+1. 问题能写成少量互斥选项。
+2. 回答所需的信息全在一段短文本里，不需要读代码或跑命令。
+3. 出现频繁，成本与延迟值得优化。
+4. 判错的代价小、可被后续环节发现并纠正。
+5. 有安全的基线：模型不可用或置信度不够时，退回上一级即可。
+6. 能从历史数据拿到标注，用来评估和定阈值。
+
+**逐环节结论。**
+
+| 环节 | 问题与选项 | 结论 | 基线（不可用或低置信） | 说明 |
+| --- | --- | --- | --- | --- |
+| 事件预筛 | 这条评论或变化是否需要处理：需处理 / 仅信息 / 噪音 | **适合，优先做** | 一律当作需处理，交判断 agent | 频率最高，直接决定判断 agent 的调用量。只在高置信时丢弃；漏掉的由全量对账兜底 |
+| Issue 分诊 | 重复 / 需要补充规格 / 可直接实施 | **适合**，已有应用点 `a15_issue_triage` | 交分析 agent | 分别对应列入状态 Issue、提澄清问题、进入规划。证据不足，见下 |
+| PR review 评论分诊 | 必须修改 / 可选润色 / 超出范围 / 重复 | **适合**，已有应用点 `a14_pr_comment_triage` | 全部按必须修改处理，即 `fix-pr` 现状（`docs/specs/decision-model-core.spec.md:13`） | 超出范围对应升级给人；判错会留下未解决的线程，reviewer 能看到 |
+| 所有者评论的意图 | 回答了问题 / 新需求 / 反对 / 想批准但格式不对 / 无关 | **适合** | 交判断 agent | “想批准”只触发一次格式提醒，永不构成批准 |
+| 重复 Issue 的成对比较 | 同一问题 / 相关 / 无关 | **适合**，需新增应用点 | 视为无关 | 候选对由代码按文本相似度挑出。单看一个 Issue 的正文无法判断重复 |
+| CI 失败归类 | 代码缺陷 / 偶发 / 基础设施 / 配置 | **可用，有前提** | 按代码缺陷处理，交修复 agent 本地复现 | 需要新增输入类别；日志可能含敏感内容，要过 egress 审查 |
+| 澄清回复是否充分 | 充分 / 部分 / 不充分 | **待评估** | 交分析 agent | 需要同时理解问题与回答，上下文较长，先看评估结果 |
+| 升级事后归因 | 可避免的摩擦 / 必要的决策 / 错误恢复 | **适合，仅离线** | 无，不影响运行 | 已有相近的应用点 `a16_revisit_chain_class`。用来统计哪些唤起本可避免，改进规则 |
+| 从处理目录里选处理 | 十几个处理选一个 | **不适合**直接做 | — | 选项多且取决于状态。做法是让决策模型回答上面的语义子问题，由代码把“答案 × 工作项状态”映射到处理；映射不唯一时交判断 agent |
+| Issue 规模、依赖、风险估计 | — | **不适合** | — | 需要读代码，属于分析 agent |
+| 制定计划、撰写问题与回复 | — | **不适合** | — | 开放式生成 |
+| 排序与优先级 | — | **不适合** | — | 你的决定加确定性规则 |
+| 批准校验、身份、范围重叠、预算、是否 Settlement | — | **禁止** | — | 事实与权限，只能由代码或 Kernel 判定 |
+| 是否跳过一个人工点 | — | **禁止** | — | §5.8 的人工点不因模型置信度高而省略 |
+
+Review 发现相关的应用点（`a1`、`a4`、`a17`）属于 `drive` 内部的 Review 环节，不在守护进程的范围内。
+
+**现有证据的状况。**
+
+- `a15_issue_triage` 有一份评估报告：182 条标注全部判对，但其中 180 条是“可直接实施”，“需要补充规格”只有 2 条，“重复”为 0 条；报告自己注明基线比较不具结论性，校准误差 ECE 为 0.192（`docs/reports/decision-eval/a15-2026-11-03.md`）。这不足以为“需要补充规格”和“重复”定阈值。
+- `a14_pr_comment_triage` 在 `docs/reports/decision-eval/` 下没有报告，Spec 把真实报告列为遗留项（`docs/specs/decision-model-core.spec.md:258`）。
+- 所有应用点的阈值目前都是空的（`plugins/immune-brain/runtime/decision_model/thresholds.ts:3`）。
+- 结论：**现在没有任何一个应用点可以直接上线做决定。**
+
+**上线规则。**
+
+1. **先影子运行。** P0 里决策模型与判断 agent 对同一事件各自作答，只记录不采纳。两者的一致率和人工抽查构成标注集，阈值由此确定。
+2. **逐点启用。** 一个应用点有了评估报告和非空阈值才启用；启用后置信度低于阈值、`unavailable`、或输入可能被截断（`truncation` 不为 `none`）都退回上一级。
+3. **只采纳可纠正的方向。** 例如事件预筛只在高置信“噪音”时丢弃事件，“需处理”永远放行。
+4. **输入类别与外发。** Issue 正文与 PR 评论属于非敏感类别（`contract.ts:10`）；diff、Spec、目标与范围属于敏感类别，需要项目 egress 列表放行，当前只放行了 `finding`（`.imm/config.json:5`）。守护进程的应用点只用非敏感类别，CI 日志在完成敏感性审查前不外发。
+5. **记录信封。** 每次调用的选项概率、模型、阈值版本写入决策记录（§5.12），供审计与回放。评估报告里 `model_version` 为空，模型被静默更换时无法察觉，因此要定期重跑评估集。
+6. **依赖方向。** 决策模型不得被 authority 路径的运行时文件导入（`runtime/kernel/`、`runtime/assurance/`、`runtime/unattended/`、`runtime/claude/`、`.pi-extension/`，`docs/specs/decision-model-core.spec.md:69`）。守护进程里只有判断模块导入它；守卫与调用 `startBatch` 的模块不导入。Spec 提到的上线限制（BR-DEC-1 的阈值规则与安全排除项）我没有在仓库内找到具体条文，需对照 Issue #286。
+
 ## 6. 新增的两类授权
 
 ### 6.1 异步 Enrollment 批准（D1）
@@ -422,7 +478,7 @@ D1 的安全性依赖一个前提：**模型不能以所有者身份在 GitHub �
 
 | 阶段 | 内容 | 新增授权 | 验收 |
 | --- | --- | --- | --- |
-| P0 | `tick --dry-run`：观察、AI 判断、守卫，输出每个事件的决策，不执行、零写入 | 无 | 观察与守卫对录制的事件序列输出确定且幂等；AI 决策在评估集上达到约定的一致率 |
+| P0 | `tick --dry-run`：观察、AI 判断、守卫，输出每个事件的决策，不执行、零写入；决策模型影子运行（§5.13） | 无 | 观察与守卫对录制的事件序列输出确定且幂等；AI 决策在评估集上达到约定的一致率 |
 | P1 | 持续推进循环与规划：分析、`draw-up`、push 计划分支、发布计划摘要；澄清问题；状态 Issue | §6.2 | 有归守护进程的下一步且有容量时不空闲；内容未变不重复分析与评论；非允许作者的 Issue 不被规划 |
 | P2 | 异步批准 → `drive` → 开 PR；中断的会话自动续跑到 Settlement | §6.1 | 哈希不符、作者不符、作者为守护进程自身、评论被编辑均被拒绝；杀掉执行中的会话后任务仍能完成 |
 | P3 | 自己的 PR 上修 CI、冲突、无争议 review，直到 ready | 沿用 §6.2 | 红 CI 无人介入下变绿，或在上限后升级 |
@@ -437,7 +493,8 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 - ADR 0019 与 ADR 0025 Decision 2：Enrollment 增加 `tracker_approval` 这一确认来源；push 与 PR 创建在 §6.2 范围内不再逐次确认。
 - BASELINE “Host Confirmation Boundary” 中 “A generic continuation or configured preference is not blanket authorization”（`plugins/immune-brain/dist/BASELINE.md:112`）：说明枚举了操作、目标与影响的仓库声明授权不属于该句所指的泛化偏好。
 - `fix-pr` 的进入条件：守护进程对自己开的 PR 可进入。
-- ADR 0006 Decision 3 “The runtime never invokes an Executor or reviewer model”（`docs/adr/0006-unattended-review-dispatch-authority.md:34`）：守护进程会直接启动 Host CLI 来做事件判断和执行处理，需要明确守护进程是否属于该句所指的 runtime，或为它单独立规则。
+- ADR 0006 Decision 3 “The runtime never invokes an Executor or reviewer model”（`docs/adr/0006-unattended-review-dispatch-authority.md:34`）：守护进程会直接启动 Host CLI 来做事件判断和执行处理，并在线调用决策模型，需要明确守护进程是否属于该句所指的 runtime，或为它单独立规则。
+- 决策模型的在线使用：`contract.ts:5-7` 的注释写着“Nothing under plugins/immune-brain imports it”，Spec 的后续修订只禁止 authority 路径导入（`docs/specs/decision-model-core.spec.md:69`）。两处说法不一致，启用前要统一，并为守护进程新增的应用点登记选项集与阈值版本。
 - §6.3 的同 uid 部署规则。
 
 ## 10. 未验证
@@ -449,4 +506,5 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 - GitHub API 能否可靠判断评论未被编辑：未验证。
 - Enrollment 能否直接在守护进程的计划分支上进行（现规则是 Lane 从用户 HEAD 起、只复制 TaskIntent 与 Spec，`plugins/immune-brain/dist/BASELINE.md:133`）：未验证，可能需要调整。
 - AI 事件判断的准确率与一致性：未验证，需 P0 的评估集。
+- 决策模型在 §5.13 各环节上的准确率与校准：除 `a15` 一份类别严重不均衡的报告外没有数据，需 P0 影子运行。
 - 每个事件一次判断的成本、每个 Issue 的分析与规划成本、合理的并发与预算默认值：未验证，需 P0 数据。
