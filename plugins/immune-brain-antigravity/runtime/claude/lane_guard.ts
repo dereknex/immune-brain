@@ -50,6 +50,12 @@ export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
+	/**
+	 * The Host session the admission belongs to, when the Host names it outright.
+	 * Claude binds its session through the Hook correlation file instead, so it
+	 * stays absent there; Antigravity names the conversation (D5).
+	 */
+	session_id?: string | null;
 }
 
 /** Where the phase entry gate keeps its private files and finds user aliases. */
