@@ -110,6 +110,17 @@ blocking layout conditions.
   planning authority with `routing_policy_invalid`;
 - no Planner path grants execution authority or falls back to v3 after retirement.
 
+**Routine allowlist**
+
+When the project declares `.imm/routine-classes.json`, declare
+`risk: "routine"` only for an outcome whose expected changed paths all lie
+under a listed class; otherwise declare at least `material`. This choice is
+advice, never classification: the Kernel checks the actual diff at settlement
+and raises a `routine` task with any changed path outside the list to
+`material`, which requires Review and opens no gate. Never edit the allowlist
+to fit a task; its own path is always `critical`. Without the file, declare
+risk as before.
+
 Current owner, phase, completion, and authority facts are authoritative only
 when read from the Assurance projection and TaskRecord. `CONTEXT.md` is
 non-authoritative vocabulary and architecture navigation, not a workflow-status

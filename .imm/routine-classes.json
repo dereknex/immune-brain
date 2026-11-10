@@ -1,0 +1,14 @@
+{
+  "contract": "assurance_kernel/routine_classes/v1",
+  "classes": [
+    {
+      "id": "docs-only",
+      "paths": [
+        "README.md",
+        "README.zh-CN.md",
+        "CHANGELOG.md",
+        "docs/solutions"
+      ]
+    }
+  ]
+}

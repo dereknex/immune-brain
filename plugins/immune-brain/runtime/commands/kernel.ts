@@ -31,9 +31,15 @@ import {
 	floorMatchingScopeEntries,
 	floorScopePrefixes,
 	readRiskFloor,
+	type RiskFloor,
 } from "../kernel/risk_floor";
+
+/** The declared routine class ids (ADR 0038), or null when none are declared. */
+function routineClassIds(floor: RiskFloor): string[] | null {
+	return floor.routine ? floor.routine.map((item) => item.id) : null;
+}
 import { inspectSpecBinding } from "../kernel/spec_binding";
-import { projectTask, resolveProjectedRisk } from "../kernel/completion";
+import { projectTask, resolveProjectedRisk, routineAllowlistEscapes } from "../kernel/completion";
 import { deriveAssuranceAuthorization } from "../kernel/assurance_projection";
 import { taskDeliveryIdentity } from "../workspace_scope";
 import type { TaskIntentV1, TaskRisk } from "../kernel/types";
@@ -198,6 +204,8 @@ function runInspect(root: string): KernelExecution {
 			floor_invalid: floor.invalid,
 			floor_applied: false,
 			matching_scope_entries: [] as string[],
+			routine_classes: routineClassIds(floor),
+			outside_routine_allowlist: [] as string[],
 		};
 		const ok = layout.layout === "ready" || layout.layout === "migration_uncommitted";
 		if (!claim || !ok || layout.layout !== "ready") {
@@ -317,6 +325,8 @@ function runInspect(root: string): KernelExecution {
 					floor_invalid: floor.invalid,
 					floor_applied: RISK_ORDER[resolved] > RISK_ORDER[declared],
 					matching_scope_entries: floorMatchingScopeEntries(intent.scope_hint, floor),
+					routine_classes: routineClassIds(floor),
+					outside_routine_allowlist: routineAllowlistEscapes(intent, changedPaths, floor),
 				},
 				unobservable: UNOBSERVABLE,
 			}),

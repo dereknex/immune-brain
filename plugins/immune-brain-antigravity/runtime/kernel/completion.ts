@@ -1,6 +1,6 @@
 import { classifyTaskRisk } from "./intent";
 import { assertNoTouch } from "../no_touch";
-import { NO_RISK_FLOOR, raiseRisk, scopeRiskFloor, type RiskFloor } from "./risk_floor";
+import { NO_RISK_FLOOR, outsideRoutineAllowlist, raiseRisk, scopeRiskFloor, type RiskFloor } from "./risk_floor";
 import { archivePath, boundSpecPath, inspectSpecBinding } from "./spec_binding";
 import type {
 	ApprovalKind,
@@ -47,20 +47,36 @@ export function asTaskDiffSnapshot(value: TaskDiffInput): {
 	return { diff_hash: value.diff_hash, changed_paths: value.changed_paths };
 }
 
+// The changed paths that decide a task's risk: its own planning sidecars are
+// excluded only while its Spec binding is valid.
+function riskBearingPaths(intent: TaskIntentV1, changedPaths: readonly string[]): readonly string[] {
+	// Invalid bindings have no trusted planning-path exclusions.
+	if (!inspectSpecBinding(intent).ok) return changedPaths;
+	const excluded = ownSidecarPaths(intent);
+	return changedPaths.filter((path) => !excluded.has(path));
+}
+
 export function resolveProjectedRisk(
 	intent: TaskIntentV1,
 	changedPaths: readonly string[] = [],
 	floor: RiskFloor = NO_RISK_FLOOR,
 ): TaskIntentV1["risk"] {
 	const risk = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor));
-	// Invalid bindings have no trusted planning-path exclusions.
-	if (!inspectSpecBinding(intent).ok) return classifyTaskRisk(changedPaths, risk, floor);
-	const excluded = ownSidecarPaths(intent);
-	return classifyTaskRisk(
-		changedPaths.filter((path) => !excluded.has(path)),
-		risk,
-		floor,
-	);
+	return classifyTaskRisk(riskBearingPaths(intent, changedPaths), risk, floor);
+}
+
+/**
+ * The changed paths that keep a `routine` declaration from standing (ADR 0038):
+ * those outside the project's routine allowlist. Empty unless the task is still
+ * `routine` after its scope floor and an allowlist is declared.
+ */
+export function routineAllowlistEscapes(
+	intent: TaskIntentV1,
+	changedPaths: readonly string[] = [],
+	floor: RiskFloor = NO_RISK_FLOOR,
+): string[] {
+	if (raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor)) !== "routine") return [];
+	return outsideRoutineAllowlist(riskBearingPaths(intent, changedPaths), floor);
 }
 
 function hasDistinctAuthorityAssignment(
