@@ -149,7 +149,7 @@ tick():
 
 - **执行这一段几乎全部复用。** 守护进程只是 `startBatch` 的又一个调用方；batch 状态转换仍只属于 `runtime/unattended/`（`docs/adr/0005-unattended-initiative-batch-run.md` Decision 4）。
 - **新增代码集中在五处**：观察与事件、判断与守卫、以 GitHub 批准为来源的确认、把人工决策发到 GitHub 并把答复接回 `relayLaneDecision`、规划与 PR 修复的派发。
-- **一个要在 Spec 里解决的缺口**：Executor 进程句柄只存在于启动它的进程里（`plugins/immune-brain/runtime/unattended/lane_supervisor.ts:68`）。守护进程重启后，之前启动的那一代会被记为 `unobservable`（同文件 `:85`）。需要规定重启后如何等待或接管，且不重复启动。
+- **重启后的接管需要新增一个小机制。** Executor 进程句柄只存在于启动它的进程里，持久状态从不虚构退出事件（`plugins/immune-brain/runtime/unattended/lane_supervisor.ts:68`）。守护进程重启后，之前启动的那一代被记为 `unobservable`（同文件 `:85`），现有行为是报告 `lane_executor_unobservable` 并停下等人检查（`plugins/immune-brain/runtime/unattended/batch_runner.ts:239-240`，`plugins/immune-brain/runtime/unattended/batch_reasons.ts:65`）。这在无人值守下等于每次重启都要人介入。做法：守护进程通过一个极小的**退出记录器**启动 Executor，由记录器在子进程退出时把退出码写入该代次的持久记录。守护进程重启后读到的是真实的退出证据，而不是推断；记录器仍在运行说明 Executor 还活着，继续等待即可。
 
 ## 6. 持续推进
 
@@ -190,13 +190,13 @@ pr-open → ready（检查全绿、意见均有处置；等人合并）→ done
 | analyzed | 守护进程 | `draw-up` | 计划发布 → planned；缺信息 → needs-clarify |
 | needs-clarify | 人 | 无 | 所有者回复 → 重新分析 |
 | planned | routine：守护进程；其余：人 | 无 | routine 且满足 §10.4 → approved；其余由所有者批准当前内容哈希 → approved |
-| approved、driving | 守护进程 | `drive`（单任务或 batch），在批准的分支上 | Settlement `done` → pr-open；`awaiting_user` → parked |
+| approved、driving | 守护进程 | `drive`（单任务或 batch），以计划分支的 head 为基线 | Settlement `done` → pr-open；`awaiting_user` → parked |
 | pr-open | 外部（CI 运行中）或守护进程 | 无，或 `fix-pr` | 全绿且意见均有处置 → ready；红 CI、冲突、新 review → repairing |
 | repairing | 守护进程 | `fix-pr` | head 变化后重新观察 |
 | ready | 人 | 无 | 人合并 → done |
 | parked | 人 | 无 | 恢复条件满足 → 回到停下前的状态 |
 
-计划与实现在同一分支、同一 PR 里，一个 Issue 对应一个 PR。
+一个 Issue 对应一个 PR，分支关系沿用现有机制：计划分支 `imm-loop/<issue>` 的 head 作为基线；runtime 在基线上创建交付分支 `imm/<slug>`（`plugins/immune-brain/runtime/unattended/batch_ref.ts:30`），每个 Child 的 Lane 从它的当前 head 切出（`plugins/immune-brain/runtime/unattended/batch_worktrees.ts:39`），规划产物由 runtime 复制进 Lane（同文件 `:62`），完成后逐个集成回交付分支。PR 从 `imm/<slug>` 发起，因此同时包含计划与实现。
 
 ### 6.4 选择、分析与规划
 
@@ -440,7 +440,9 @@ Loop 对项目进度负责的方式是维护一份始终最新的进度视图，
 
 1. 候选的内容哈希随计划摘要发布到 Issue（§6.4）。
 2. 所有者评论 `/approve <intent-hash>`（batch 为 `<plan-digest>`）。
-3. 守护进程校验：评论作者是配置的所有者；作者不是守护进程自己的身份；评论未被编辑；哈希等于分支上当前候选的哈希；HEAD 满足 Enrollment 前提。任一不成立即拒绝并回复原因。
+3. 守护进程校验：评论作者是配置的所有者；作者不是守护进程自己的身份；评论创建于计划发布之后且**从未被任何人编辑**；哈希等于分支上当前候选的哈希；HEAD 满足 Enrollment 前提。任一不成立即拒绝并回复原因。
+
+   “从未被编辑”是必需的：按 GitHub 的权限模型，对仓库有写权限的账号可以编辑他人的评论，而守护进程的身份为了 push 分支必须有写权限。若不检查，被调度的会话可以把所有者的一条旧评论改成批准。被编辑过的评论一律不认，由所有者重新发一条。
 4. Enrollment 记录一个新种类的 `confirmation_ref`（例如 `tracker_approval`，含评论 id 与作者）。
 
 ### 10.2 有范围的常设发布授权（D2）
@@ -468,7 +470,7 @@ routine 任务规划完成后不等所有者批准，由守护进程直接发起
 免批准的条件，全部由代码与 Kernel 校验：
 
 1. 仓库配置声明了免批准的风险等级，且只含 `routine`（§11 的 `auto_start_risk`）。该配置是已跟踪文件，所有者提交它即是授权行为。
-2. 任务的风险经 Kernel 结合项目 risk floor 判定后仍为 routine。risk floor 由已跟踪的 `.imm/risk-floor.json` 声明，声明不可信时所有任务按 critical 处理（`docs/adr/0023-project-declared-risk-floor.md` Decision 2、4）。agent 在 TaskIntent 里自报的风险只能被提升，不能据此降低。
+2. 任务的风险经 Kernel 结合项目 risk floor 判定后仍为 routine。risk floor 由已跟踪的 `.imm/risk-floor.json` 声明，声明不可信时所有任务按 critical 处理（`docs/adr/0023-project-declared-risk-floor.md` Decision 2、4）。agent 在 TaskIntent 里自报的风险只能被提升，不能据此降低。本仓库的 risk floor 把 `docs/specs` 与 `docs/plans` 列为会提升风险的改动路径（`.imm/risk-floor.json:15-18`），但任务自己的 TaskIntent 与绑定的 Spec 不计入改动路径（`plugins/immune-brain/runtime/kernel/completion.ts:27-38`、`:50-66`），所以免批准在本仓库可以生效；改动其他任务的计划文件仍会被提升。
 3. Issue 作者是所有者或在允许名单内（与 §6.4 的规划条件相同）。
 4. 范围不触碰 no-touch 路径（`docs/agents/no-touch.json`）。
 5. batch 计划的每个 Child 都满足以上条件；否则整个计划走 §10.1。
@@ -567,16 +569,44 @@ P0 不执行任何处理，可先做，并提供成本数据与判断质量的�
 | D11 决策模型直接启用 | 初始阈值没有评估数据支撑；三个新增应用点从未被评估过。上线初期的错判只能靠下游发现 | §7.6 的规则 2–5：只采纳可纠正的方向、被跳过的事件复核、线上记录校准、逐点可关 |
 | D10 同 uid 部署 | 在这种部署下，§10.1 的批准可被会话里的模型伪造，material 与 critical 任务的批准不再是可靠的人工判断 | 状态标注为降级；合并仍由人完成；改用独立系统用户或云端机器即可消除 |
 
-## 16. 未验证
+## 16. 核实情况
 
-- 执行 agent 的无头运行有现成代码（`plugins/immune-brain/runtime/unattended/lane_supervisor.ts:22-36`），未实际运行验证。
-- `draw-up` 能否以同样的 `--print` 方式无头进入并被识别为阶段入口：未验证。
-- 守护进程重启后接管 `unobservable` 的 Executor 代次的方式：未设计，见 §5.4。
-- 判断、分析、规划、修复四类 agent 在三个 Host 上的无头能力是否对等：未验证。
-- GitHub API 能否可靠判断评论未被编辑：未验证。
-- Enrollment 能否直接在守护进程的计划分支上进行（现规则是 Lane 从用户 HEAD 起、只复制 TaskIntent 与 Spec，`plugins/immune-brain/dist/BASELINE.md:133`）：未验证，可能需要调整。
-- AI 事件判断的准确率与一致性：未验证，需 P0 的评估集。
+### 16.1 已通过阅读代码核实
+
+以下结论来自代码，没有实际运行。
+
+| 问题 | 结论 | 证据 |
+| --- | --- | --- |
+| `drive` 能否无头运行 | 能。现有 Parent 就是以 `--print … /drive <task_id>` 启动 Lane Executor 的；提示以斜杠命令开头，会被识别为字面的 run 入口 | `plugins/immune-brain/runtime/unattended/lane_supervisor.ts:22-36`，`plugins/immune-brain/runtime/assurance/phase_entry.ts:80` |
+| `draw-up` 能否无头进入 | 能。阶段入口的准入只拒绝没有 run 入口的 `drive`，Planner 与 Brainstorm 从不被拒绝 | `plugins/immune-brain/runtime/assurance/phase_entry.ts:174-179` |
+| Enrollment 能否无头完成 | 现有 Host 不能，没有交互式 elicitation 即拒绝。守护进程必须提供自己的确认来源 | `plugins/immune-brain/runtime/claude/kernel_ports.ts:447` |
+| 计划分支上的候选如何进入执行 | Lane 从指定的 head 创建，规划产物由 runtime 复制进去，不要求在用户检出里提交 | `plugins/immune-brain/runtime/unattended/batch_worktrees.ts:39`、`:62` |
+| risk floor 是否让每个任务都升级 | 不会。任务自己的 TaskIntent 与绑定的 Spec 被排除在改动路径之外 | `plugins/immune-brain/runtime/kernel/completion.ts:27-38`、`:50-66` |
+| 守护进程重启后的现有行为 | 之前启动的 Executor 被记为 `unobservable`，batch 停下等人检查。需要 §5.4 的退出记录器 | `plugins/immune-brain/runtime/unattended/batch_runner.ts:239-240` |
+
+### 16.2 仍未验证
+
+- 以上各项的实际运行；判断、分析、规划、修复四类 agent 在三个 Host 上的无头能力是否对等。
+- 守护进程调用 `startBatch` 时以哪个目录作为 Parent 根目录（守护进程自己的检出，还是每个 Issue 的计划 worktree）：未设计，Spec 确定。
+- GitHub API 对“评论是否被编辑、被谁编辑”的判断，以及“有写权限的账号可编辑他人评论”这一前提：依据 GitHub 文档，未在本环境调用验证。
+- AI 事件判断的准确率与一致性：需 P0 的评估集。
 - 决策模型在 §7.5 各环节上的准确率与校准：除 `a15` 一份类别严重不均衡的报告外没有数据；按 D11 直接启用后由线上记录补足。
-- 本仓库的 risk floor 把 `docs/specs` 与 `docs/plans` 列为 `changed_only` 路径（`.imm/risk-floor.json:15-18`），而候选 TaskIntent 与 Spec 正存放在这两个目录。如果任务的改动路径把计划分支上的这些文件算进去，每个任务都会被提升为 material，§10.4 的免批准在本仓库将不生效：未验证。
 - Spec 提到的决策模型上线限制（BR-DEC-1 的阈值规则与安全排除项，`docs/specs/decision-model-core.spec.md:47`）：仓库内未找到具体条文，需对照 Issue #286。
-- 每个事件一次判断的成本、每个 Issue 的分析与规划成本、合理的并发与预算默认值：未验证，需 P0 数据。
+- 每个事件一次判断的成本、每个 Issue 的分析与规划成本、合理的并发与预算默认值：需 P0 数据。
+
+## 17. 下一步
+
+本提案到此为止是设计。进入实施需要所有者发起，顺序建议如下；每个切片各自经 `draw-up` 与 `drive`，本提案不创建它们。
+
+| 切片 | 内容 | 对应阶段 | 依赖 |
+| --- | --- | --- | --- |
+| S0 | 新 ADR：第 14 节列出的全部契约修订，含 Loop 定义 | — | 所有者接受 |
+| S1 | 观察层、事件与编排状态记录、`imm-loop tick --dry-run`（只输出事件） | P0 | S0 |
+| S2 | 判断阶梯、处理目录与守卫；登记新增的决策模型应用点与初始阈值 | P0 | S1 |
+| S3 | `loop` 配置段、守护进程身份检查、常设发布授权；状态 Issue；澄清、升级与所有者命令 | P1 | S2 |
+| S4 | 分析与规划 agent 的派发；计划分支与计划摘要发布 | P1 | S3 |
+| S5 | `tracker_approval` 与 `policy_auto` 两种确认来源；调用 `startBatch`；退出记录器；开 PR | P2 | S4 |
+| S6 | Lane 内人工决策与 GitHub 的往返 | P2 | S5 |
+| S7 | 修复 agent 的派发：CI、冲突、review | P3 | S5 |
+
+S1 与 S2 完成后即可在真实仓库上空跑，得到 §16.2 里成本与判断质量的数据，再决定 S3 之后的默认值。
