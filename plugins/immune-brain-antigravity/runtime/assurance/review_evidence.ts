@@ -12,6 +12,9 @@ import {
 	chmodSync,
 } from "node:fs";
 import type { ReviewEvidence } from "./host_port";
+import { routineAllowlistEscapes } from "../kernel/completion";
+import { readRiskFloor } from "../kernel/risk_floor";
+import type { TaskIntentV1 } from "../kernel/types";
 import { packetDigest } from "./review_packet";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -284,6 +287,8 @@ export interface ReviewManifestV5 {
 	changed_paths: Record<string, GitTaskIndexEntry>;
 	/** Delivered paths outside the TaskIntent estimate. */
 	beyond_estimate?: string[];
+	/** Present only when non-empty: delivered paths that keep a `routine` declaration from standing (ADR 0038). */
+	outside_routine_allowlist?: string[];
 	diff_hash: string;
 	outcomes: Record<string, ReviewOutcome>;
 	record_revision: string;
@@ -536,9 +541,14 @@ export function captureReviewManifest(
 		outcomes: Record<string, ReviewOutcome>;
 		/** Present once the task has a Review history; absent keeps rounds 1-2 byte-identical. */
 		delta?: ReviewDeltaInput;
+		/** The task's intent, so a `routine` declaration raised by the allowlist names its paths. */
+		intent?: TaskIntentV1;
 	},
 ): ReviewManifestV5 {
 	const { snapshot, revision } = publishInput(root, input);
+	const outsideRoutine = input.intent
+		? routineAllowlistEscapes(input.intent, Object.keys(snapshot.changed_paths), readRiskFloor(root)).sort(compareRevisionPaths)
+		: [];
 	const unsigned = {
 		contract: "assurance_kernel/review_manifest/v5" as const,
 		task_id: input.taskId,
@@ -551,6 +561,7 @@ export function captureReviewManifest(
 		review_ref: revision.review_ref,
 		changed_paths: snapshot.changed_paths,
 		beyond_estimate: Object.keys(snapshot.changed_paths).filter(path => !snapshot.scope.some(entry => pathMatchesScope(path, entry))).sort(compareRevisionPaths),
+		...(outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {}),
 		diff_hash: revision.diff_hash,
 		outcomes: Object.fromEntries(
 			Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }]),
