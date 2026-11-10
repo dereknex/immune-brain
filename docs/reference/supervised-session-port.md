@@ -120,6 +120,8 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 | authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
 | advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
 
+Measured 2026-11-10 (`docs/reports/issue-426-herdr-provider-probe.md`): no Executor Host is admitted on `herdr-core` yet. Claude Code 2.1.322 shows the workspace trust dialog without reporting any status for 30 s, so `create` is `start_failed`, not `blocked`; Pi 1.5.0 and Antigravity CLI 1.5.3 have not been observed on the permission or sign-in dialog. On `herdr`, all three Hosts pass G1, G2 and G4, and G3 is measured for workspace trust only. Both roles on `herdr-core` therefore stay unadmitted until a live run reports `blocked` for every dialog kind.
+
 ## Invariants
 
 - The Kernel, the batch runtime, the Host adapters and the `lane-steward` import nothing from `runtime/session/`; only the CLI router does.

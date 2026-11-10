@@ -67,7 +67,60 @@ core 侧：`crates/ghostty-vt/src/tests.rs:155-171` 断言 core 解析 `state=wo
 
 ## 未完成与下一步
 
-1. **Herdr TUI 运行实测**：在装有 Herdr 0.9.5 的机器上跑 `imm-session probe → create → observe → send → await → read → stop`，三个 Host 各一次，确认上文 TUI 表在运行中的 server 上成立。
-2. **herdr-core 运行实测（D2 的 probe）**：装 `hc` 0.1.19，对每个 Host（不低于上表版本）执行 `hc run --bg --json`，用 `hc get` / `hc wait` 记录状态序列：启动、提交 entry、权限提示、workspace trust、完成、退出。逐项确认 `blocked` 覆盖与 `address` 寻址。
+1. **Herdr TUI 运行实测**：已执行，见下节；G3 的权限与登录两类对话框仍缺。
+2. **herdr-core 运行实测（D2 的 probe）**：已执行，见下节；结论是“无 Host 准入”，其中 Claude Code 的 workspace trust 一项被推翻。
 3. **herdr-core adapter（S0.5 实现）**：已按用户要求在运行实测之前写成，见 `plugins/immune-brain/runtime/session/herdr_core_provider.ts`，映射见 `docs/reference/supervised-session-port.md`。它通过同一套 conformance suite（stand-in `hc` 取自上述 0.1.19 源码与 schema），可用 `--provider herdr-core` 显式选择，但 Loop 契约尚不使用它。与原计划相比有两处具体化：所有权用随机 token 作为终端标签 `imm-session`，每个动词先读终端核对；创建时先轮询 `hc get` 等 Host 的首个状态上报（30 秒上限），再 `send --if idle`。
 4. 1 和 2 通过之前，Loop 契约不启用 herdr-core（D2）；届时再决定由哪项配置显式选择 provider，仍不自动探测。
+
+## 运行实测（2026-11-10）
+
+方法：按 `docs/reports/issue-426-live-test-plan.md` 执行。本机 `herdr` 0.9.5（protocol 22）、`hc` 0.1.19、`claude` 2.1.322、`pi` 1.5.0、`agy` 1.5.3、`bun` 1.4.2；被测代码为 `0fe3f41a` 的 `plugins/immune-brain/bin/imm-session`。herdr-core 全程用隔离的 `HC_SESSION=imm-probe` 与独立 `XDG_STATE_HOME` / `XDG_CONFIG_HOME` / `XDG_RUNTIME_DIR`，默认 session 未停止、未重启。证据：`~/imm-probe/evidence/`（`*.json`、`timeline.log`、`results.md`）。
+
+### 结果
+
+| 用例 | herdr × claude-code | herdr × pi | herdr × antigravity | core × claude-code | core × pi | core × antigravity |
+| --- | --- | --- | --- | --- | --- | --- |
+| G1 `probe` | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 |
+| G2 一轮 `create → observe → await → read → stop` | 通过（先 trust，后 `--resume`） | 通过 | 通过（先 trust，后 `--resume`） | 通过 | 通过 | 通过 |
+| G3 workspace trust | 通过：4.03 s 报 `blocked`，entry 未提交 | 不适用（无此对话框） | 通过：4.03 s 报 `blocked` | **失败**：30 s 内无任何上报，`start_failed` | 不适用 | 未测 |
+| G3 权限 / 登录 | 未测 | 未测 | 未测 | 未测 | 未测 | 未测 |
+| G4 负向 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 |
+
+G2 细节：create 3.7–4.0 s（Herdr，含 agent 就绪）、1.7–3.7 s（core）；一轮 `await` 用 0.05–6.7 s 返回 `changed` 与 `idle` 或 `done`；`read` 均取到 `READY`；`stop` 后 Herdr 关 tab、core 的终端为 `state: "finished"`。
+
+G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数由 2 到 2；外 workspace 的 handle 得 `not_owned`；core 上假 `claude`（2.1.100）得 `provider_unavailable` 且无新终端；自建终端配猜出的 handle，`observe` 与 `stop` 均 `not_owned`，终端仍 live；`PI_PROGRAM_STATUS=0` 时 30.47 s `start_failed`，entry 未发送。
+
+### 每条“源码核对”结论的状态
+
+| 结论 | 状态 | 实测依据 |
+| --- | --- | --- |
+| 命令写法与响应形状（`tab create`、`api schema --json`、`agent start`、`agent_status`、`agent wait` 四态、`pane read` 纯文本、`error.code`） | **证实** | A1、A2、A6、A7 均按表返回；顶层 `protocol` 为 22 |
+| core 的 `run` 返回永久 `address`、`send --if idle` 由服务端拒绝、`wait` 的 `timeout` 只是 check-in | **证实** | B2、B7、B11：`address` 稳定；`done` 上 `send` 得 `state_refused`；203.8 s 的 `await` 跨过 180 s check-in 后返回 `changed` 与 `done` |
+| 三个 Host 原生上报 OSC 7501 | **证实** | core 上首报均为 `idle`：claude ≈0.4 s、pi ≈0.9 s、agy ≈3.5 s |
+| `error` 不在 port 词表，映射为 `unknown` | **证实** | claude 撞 5 小时上限时 `status.state` 为 `error`，`await` 返回 `changed` 与 `unknown` |
+| 旧版本 Host 不上报 | **证实** | `PI_PROGRAM_STATUS=0` 得 `start_failed`，entry 未发送 |
+| “`waiting on you` 覆盖 workspace trust、登录与权限对话框” | **被推翻（workspace trust）** | claude 2.1.322 显示 trust 对话框时，`hc get` 的 `status` 30 s 保持 `null`，create 得 `start_failed` 而非 `blocked` |
+| Pi / Antigravity 的说明未提到 workspace trust | Herdr 上**确有该对话框** | 两者在 Herdr 的 create 都返回 `entry_submitted:false` 与 `blocked`，接受后 `--resume` 成功 |
+| K1：Herdr 所有权只比 workspace | **证实** | 自己 pane 的 handle 可被 `observe` 成功（`unknown` / `none`），未判 `not_owned` |
+| O1：`done` 的指令规则 | **证实，core 上更严重** | 三 Host 一轮后均报 `done`，`send` 一律 `state_refused`；Herdr 聚焦 tab 后变 `idle` 才可发；core 无聚焦概念，`done` 之后再也发不出指令 |
+| O2：首报可能是 `done` | **部分推翻** | 三 Host 首报都是 `idle`；真正的风险是“启动对话框 = 完全静默” |
+| O4：时延 | 记录 | create 3.7–4.0 s（Herdr）、1.7–3.7 s（core）；G3 的 5 s 门限在 Herdr 的 trust 场景成立 |
+
+### 准入后果（D2）
+
+- **herdr**：三 Host 的 G1、G2、G4 通过；G3 只覆盖 workspace trust，权限与登录未测，按 `supervised-session-port.md` 的准入文本尚不能算全过。
+- **herdr-core：无任何 Host 准入。** Claude Code 2.1.322 因 trust 对话框静默而不合格；Pi 1.5.0 与 Antigravity CLI 1.5.3 的权限、登录对话框未测。
+- 因此 D2 仍未满足，Loop 契约继续不启用 herdr-core。
+
+### 阶段 C（Loop 端到端，Herdr）
+
+单任务 Lane `probe-c-1` 在 throwaway 仓跑通：原生门打开一次并由用户确认，Parent 经 `imm-session create --provider herdr` 建不抢焦点的 tab，Kernel 结算 `lifecycle: done`、batch `completed`、child `integrated`（commit `b7ab496`，A1 QA passed）；Parent 会话里没有一条直接执行 `herdr tab`、`herdr agent` 或 `herdr pane` 的命令。三个问题：
+
+1. Lane Executor 用 `-e <plugin root>` 启动时，若同一插件也被装成用户级 pi package，工具名冲突使 Host 立刻退出（`start_failed`）；同一机器装两份该插件就起不来。
+2. 契约要求“在死 host 的同一 tab 里用 `--resume` 重投 entry”，但 Host 退出后会话是 `unknown`，`resumeRefusal` 只放行 `idle` 与 `done`，必然 `state_refused`，Parent 只能多开一个 tab。
+3. 契约要求把 `imm-session await` 作为 Host 后台命令挂起、由返回唤起 Parent；pi 的 bash 工具不会因后台进程结束而唤醒，Parent 只能前台阻塞等待。
+
+### 未覆盖
+
+- A4/B4 权限对话框、A5/B5 登录对话框：claude 处于 5 小时用量上限（不发起工具调用），pi 与 agy 的 shell 工具默认自动放行（agy 真建了文件、无对话框）；且 `imm-session`、`herdr agent start`、`hc run` 都没有注入环境变量的入口，无法用空配置目录触发登录框。
+- 阶段 C 只在 pi Executor、单任务 Lane 上跑过；另两个 Host 与并行 batch 未跑。
