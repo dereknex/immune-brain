@@ -17512,7 +17512,7 @@ init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
+import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync22 } from "node:fs";
 import { isAbsolute as isAbsolute12, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
@@ -19458,7 +19458,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname16, join as join34, resolve as resolve16 } from "node:path";
+import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
@@ -22141,22 +22141,29 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, join as join33 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
   pi: "pi",
   antigravity: "agy"
 };
-function reviewArguments(profile, packetPath, turnBudget) {
+var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
+  disableAllHooks: true,
+  env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
+});
+function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
     return [
       "--print",
       "--no-session-persistence",
+      "--settings",
+      CLAUDE_REVIEW_SETTINGS,
+      ...readDirs.length ? ["--add-dir", ...readDirs] : [],
       "--max-turns",
       String(turnBudget),
       "--tools",
@@ -22255,7 +22262,7 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = mkdtempSync6(join33(tmpdir8(), "imm-cli-review-"));
+    const directory = realpathSync21(mkdtempSync6(join33(tmpdir8(), "imm-cli-review-")));
     chmodSync5(directory, 493);
     const packet = join33(directory, "packet.md");
     const script = join33(directory, "review.sh");
@@ -22265,7 +22272,8 @@ class CliReviewHost {
     writeFileSync12(packet, `review_contract_hash: ${contractHash}
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
-    const argv = reviewArguments(profile, packet, request.maxTurns);
+    const readDirs = [...new Set([directory, dirname16(request.evidencePath)])];
+    const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
     writeFileSync12(script, [
       "#!/bin/sh",
       `cd ${shellQuote(root)} || exit 1`,
@@ -22649,7 +22657,7 @@ class ClaudeRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: "claude-code",
-        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal
       });
@@ -23176,7 +23184,7 @@ class ClaudeRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -23470,7 +23478,7 @@ function createMcpRuntime(options = {}) {
       return;
     let current = null;
     try {
-      current = realpathSync21(workspace);
+      current = realpathSync22(workspace);
     } catch {}
     if (!current || grant.workspace !== current)
       throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);

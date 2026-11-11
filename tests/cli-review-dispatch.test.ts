@@ -337,6 +337,29 @@ describe("review arguments", () => {
 		expect(argv[argv.indexOf("--tools") + 1]).not.toMatch(/Edit|Write/);
 	});
 
+	test("claude-code reviewer ignores user hooks and keeps a whole file of Bash output", () => {
+		const argv = reviewArguments({ host: "claude-code" }, packet, 12);
+		const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]);
+		expect(settings.disableAllHooks).toBe(true);
+		expect(Number(settings.env.BASH_MAX_OUTPUT_LENGTH)).toBeGreaterThanOrEqual(100_000);
+		expect(argv).not.toContain("--add-dir");
+	});
+
+	test("claude-code reads the packet and evidence directories without taking the prompt as one", () => {
+		const dirs = ["/tmp/imm-cli-review-x", "/tmp/imm-canary-native-review-y"];
+		const argv = reviewArguments({ host: "claude-code", model: "m" }, packet, 12, dirs);
+		const at = argv.indexOf("--add-dir");
+		expect(argv.slice(at + 1, at + 1 + dirs.length)).toEqual(dirs);
+		expect(argv[at + 1 + dirs.length]).toMatch(/^--/);
+		expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
+	});
+
+	test("pi and antigravity take no out-of-tree directory flags", () => {
+		for (const host of ["pi", "antigravity"] as const) {
+			expect(reviewArguments({ host }, packet, 12, ["/tmp/d"])).toEqual(reviewArguments({ host }, packet, 12));
+		}
+	});
+
 	test("pi equals the documented fresh print session", () => {
 		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
 			"--print", "--no-session", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
