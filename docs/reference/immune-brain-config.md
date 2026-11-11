@@ -183,8 +183,8 @@ worktrees read no configuration of their own.
   Host type with that Host's default model and effort.
 - `max_parallel` is passed as `max_parallel` and turns lane mode on. A resumed
   batch keeps the value it recorded.
-- `executor_host` is `claude-code` or `pi`. Every Lane uses it, with no fallback
-  to the other Host.
+- `executor_host` is `claude-code`, `pi` or `antigravity`. Every Lane uses it,
+  with no fallback to another Host.
 - A request may name a profile and state single fields, such as "use `cheap`,
   but max parallel 3", for that batch only. The Parent shows each value with its
   source.

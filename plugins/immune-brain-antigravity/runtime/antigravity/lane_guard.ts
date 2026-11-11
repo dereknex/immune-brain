@@ -22,12 +22,31 @@ import { cacheDir, ensurePrivateDir, sessionHash } from "./review_host";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 const GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
+/** The lazy `call_mcp_tool` form names its target operation bare, inside `args.ToolName`. */
+const LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
+/** The lazy calls this Host may admit: Immune-Brain itself, under either registered server name. */
+const IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
 
 export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
+
+/**
+ * The gated operation one PreToolUse payload asks for, or null (D2). A direct
+ * tool name is the operation; a lazy `call_mcp_tool` is one only when it targets
+ * Immune-Brain, so every other lazy call stays an ordinary allow.
+ */
+function gatedOperation(toolName: string, args: Record<string, unknown>): GatedTool | null {
+	const direct = GATED_MCP_TOOL.exec(toolName);
+	if (direct) return direct[1] as GatedTool;
+	if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? ""))) return null;
+	const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
+	return lazy ? (lazy[1] as GatedTool) : null;
+}
 
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
+	/** The Host conversation the admission belongs to; it becomes the runtime Hook session. */
+	session_id?: string | null;
 }
 
 export interface PhaseEntryLocations {
@@ -178,7 +197,12 @@ export function consumePhaseAdmission(toolCallId: string, operation: GatedTool, 
 		dropPrivate(path);
 		const parsed = JSON.parse(text);
 		if (parsed.operation !== operation) return null;
-		return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null };
+		// D5: the admission is only live while its own conversation still holds the
+		// entry token it was written under. A later /drive or /draw-up revokes it.
+		if (typeof parsed.conversation !== "string" || !parsed.conversation) return null;
+		const state = readPhaseEntryState(parsed.conversation, root);
+		if (!state?.run_live || state.token !== parsed.token) return null;
+		return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
 	} catch {
 		return null;
 	}
@@ -210,10 +234,9 @@ export function antigravityPreToolUseHook(
 		}
 	}
 
-	// Gated operation check
-	const match = GATED_MCP_TOOL.exec(toolName);
-	if (match) {
-		const gated = match[1] as GatedTool;
+	// Gated operation check: a direct Immune-Brain tool, or the matching lazy call.
+	const gated = gatedOperation(toolName, payload.toolCall.args ?? {});
+	if (gated) {
 		const root = locations.root ?? tmpdir();
 		const state = readPhaseEntryState(payload.conversationId, root);
 		const opName: PhaseOperation = { kind: "tool", name: gated };
@@ -225,7 +248,7 @@ export function antigravityPreToolUseHook(
 			return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
 		}
 		const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
-		const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace });
+		const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
 		ensurePrivateDir(cacheDir(root));
 		writeFileSync(admissionPath(toolUseId, root), admitLine, { mode: 0o600 });
 		return { decision: "allow" };

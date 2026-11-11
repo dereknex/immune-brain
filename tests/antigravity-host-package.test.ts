@@ -30,6 +30,7 @@ import {
 	generateVerifierDefinition,
 } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
+import { sessionHash } from "../plugins/immune-brain/runtime/antigravity/review_host";
 
 const ROOT = resolve(import.meta.dir, "..");
 const ARTIFACT = resolve(ROOT, ANTIGRAVITY_ROOT);
@@ -220,6 +221,67 @@ describe("Antigravity configured executable paths (AC2)", () => {
 		const mcp = spawnSync("node", [join(copy, "dist/antigravity/mcp-server.mjs")], { env: isolatedEnv(), input: "", encoding: "utf8" });
 		expect(mcp.status).not.toBe(0);
 		expect(artifactClosureErrors(copy)).toContain("hook command: missing dist/antigravity/mcp-server.mjs");
+	});
+});
+
+// Spec antigravity-tool-hook-and-mcp-correlation AC1 (D1, D2): a native tool
+// payload that also carries `lastUserInput` is a tool call, not PreInvocation,
+// so the packaged hook answers it and observes subagent completion.
+describe("Antigravity hook dispatch and observation", () => {
+	/** One hook invocation of the packaged bundle in a workspace of the test's own. */
+	function hookRunner(artifact: string, env: Record<string, string>) {
+		const command = hookCommands(artifact).find((entry) => entry.event === "PreToolUse")?.command;
+		if (!command) throw new Error("the packaged artifact configures no PreToolUse hook");
+		return (payload: unknown): Record<string, unknown> => {
+			const run = spawnSync("sh", ["-c", command], { cwd: artifact, env, input: JSON.stringify(payload), encoding: "utf8" });
+			expect(run.status).toBe(0);
+			return JSON.parse(run.stdout);
+		};
+	}
+
+	it("answers mixed tool payloads as tools and still observes the subagent result", () => {
+		const copy = relocate();
+		const workspace = scratchDir("workspace");
+		const env = isolatedEnv();
+		const hook = hookRunner(copy, env);
+		const conversationId = "conv-hook-dispatch";
+
+		// A pure PreInvocation payload keeps its injection response.
+		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive task", workspacePaths: [workspace] }))
+			.toEqual({ injectSteps: [], terminationBehavior: "" });
+
+		// The same marker on a tool payload is a tool call: a file edit is allowed.
+		expect(hook({ conversationId, stepIdx: 1, lastUserInput: "edit the file", workspacePaths: [workspace],
+			toolCall: { name: "write_file", args: { Path: join(workspace, "a.ts") } } })).toEqual({ decision: "allow" });
+
+		// The canonical matcher routes the lazy Immune-Brain form, which admits one gated operation.
+		const matcher = (JSON.parse(readFileSync(join(copy, "hooks.json"), "utf8"))["immune-brain"].PreToolUse as Array<{ matcher?: string }>)[0]?.matcher ?? "";
+		expect(matcher).toContain("call_mcp_tool");
+		expect(hook({ conversationId, stepIdx: 2, lastUserInput: "start the batch", workspacePaths: [workspace],
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "task" } } } }))
+			.toEqual({ decision: "allow" });
+
+		// An unrelated lazy server receives the ordinary allow and admits nothing.
+		expect(hook({ conversationId, stepIdx: 3, lastUserInput: "other server", workspacePaths: [workspace],
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "someone-else", ToolName: "start_unattended_batch", Arguments: {} } } }))
+			.toEqual({ decision: "allow" });
+
+		// PostToolUse keeps its empty response and appends the observed subagent result.
+		expect(hook({ conversationId, stepIdx: 4, lastUserInput: "review it", workspacePaths: [workspace], result: "subagent says yes",
+			toolCall: { name: "invoke_subagent", args: { Model: "model-x", Prompt: "review the change" } } })).toEqual({});
+		const events = join(env.TMPDIR, "immune-brain-antigravity", `${sessionHash(conversationId)}.events.jsonl`);
+		expect(JSON.parse(readFileSync(events, "utf8").trim())).toMatchObject({
+			type: "PostToolUse",
+			sessionId: conversationId,
+			agentId: "4",
+			toolName: "invoke_subagent",
+			result: "subagent says yes",
+			model: "model-x",
+			prompt: "review the change",
+		});
+
+		// Stop markers win over the PreInvocation marker in the same payload.
+		expect(hook({ conversationId, executionNum: 1, terminationReason: "done", lastUserInput: "stop now", workspacePaths: [scratchDir("idle")] })).toEqual({});
 	});
 });
 

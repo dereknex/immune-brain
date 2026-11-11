@@ -156,7 +156,7 @@ describe("python reference boundary", () => {
 		expect(result.status).toBe(0);
 		const manifest = JSON.parse(result.stdout);
 		const commands = manifest.commands.map((command: any) => command.name).sort();
-		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-tracker"]);
+		expect(commands).toEqual(["imm-kernel", "imm-plan", "imm-session", "imm-tracker"]);
 		// The removed command names are no longer advertised in any form.
 		expect(manifest.retired).toBeUndefined();
 	});

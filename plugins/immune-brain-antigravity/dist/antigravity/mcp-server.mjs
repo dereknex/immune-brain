@@ -23443,6 +23443,18 @@ function createMcpRuntime(options = {}) {
   const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
   const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
+  const resolveHostCall = (operation, meta, messageId) => {
+    if (options.parentHost === "antigravity") {
+      const conversation = meta?.["antigravity.google/conversation_id"];
+      if (typeof conversation !== "string" || !conversation)
+        return;
+      const step = metaProgressStep(meta);
+      return { toolCallId: String(messageId), ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
+    }
+    const identity = hostCallIdentity(meta);
+    return identity ? { toolCallId: identity.toolCallId, admissionId: identity.toolCallId } : undefined;
+  };
+  const correlationMissingMessage = options.parentHost === "antigravity" ? "antigravity.google/conversation_id metadata is missing" : "canonical claudecode/toolUseId metadata is missing";
   const sessionProbe = options.probeHost ?? probeHost;
   const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
   const unversionedHostReason = () => {
@@ -23450,14 +23462,14 @@ function createMcpRuntime(options = {}) {
     return probe.ok ? "host version is unavailable" : probe.reason;
   };
   let hookSessionId = null;
-  const requireRunEntry = (operation, toolCallId, workspace) => {
+  const requireRunEntry = (operation, toolCallId, workspace, admissionId = toolCallId) => {
     const correlated = readRunToolSession(toolCallId, operation, workspace);
     if (!options.consumePhaseAdmission && !correlated)
       throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
-    const grant = consumeAdmission(toolCallId, operation);
+    const grant = consumeAdmission(admissionId, operation);
     if (!grant)
       throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-    hookSessionId = correlated ?? hookSessionId;
+    hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
     if (grant === true || !grant.entry_token)
       return;
     let current = null;
@@ -23479,6 +23491,8 @@ function createMcpRuntime(options = {}) {
     host,
     connectionId,
     listTools: listMcpTools,
+    resolveHostCall,
+    correlationMissingMessage,
     trustedClientNames,
     serverInfo,
     bindClientHandshake(identity) {
@@ -23529,10 +23543,11 @@ function createMcpRuntime(options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
+          toolCallId,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -23570,10 +23585,11 @@ function createMcpRuntime(options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
+          toolCallId,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -23650,6 +23666,13 @@ function hostCallIdentity(meta) {
     return;
   const toolCallId = meta["claudecode/toolUseId"];
   return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
+}
+function metaProgressStep(meta) {
+  const token = meta?.progressToken;
+  if (typeof token !== "string")
+    return null;
+  const match = /:(\d+)$/.exec(token);
+  return match ? Number(match[1]) : null;
 }
 function metaWorkspacePath(meta) {
   const paths = meta?.["antigravity.google/workspace_paths"];
@@ -23738,15 +23761,16 @@ async function handleJsonRpc(message, mcp = createMcpRuntime()) {
       if (isPrivilegedOperation(name) && !interactive) {
         throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
       }
-      const identity = hostCallIdentity(params._meta);
+      const identity = mcp.resolveHostCall(name, params._meta, message.id ?? "stdio");
       if (isPrivilegedOperation(name) && !identity) {
-        throw new NativeAuthorityError("correlation_missing", "canonical claudecode/toolUseId metadata is missing");
+        throw new NativeAuthorityError("correlation_missing", mcp.correlationMissingMessage);
       }
       const sessionId = mcp.connectionId;
       const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
       const result = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
         toolCallId,
+        ...identity?.admissionId ? { admissionId: identity.admissionId } : {},
         workspace: metaWorkspacePath(params._meta),
         interactive,
         requiresUserInteraction: isPrivilegedOperation(name),
@@ -24612,6 +24636,17 @@ import { homedir as homedir4, tmpdir as tmpdir10 } from "node:os";
 import { join as join37 } from "node:path";
 var FILE_TOOLS2 = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 var GATED_MCP_TOOL2 = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
+var LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
+var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+function gatedOperation2(toolName, args) {
+  const direct = GATED_MCP_TOOL2.exec(toolName);
+  if (direct)
+    return direct[1];
+  if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
+    return null;
+  const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
+  return lazy ? lazy[1] : null;
+}
 function entryLogPath2(sessionId, root) {
   return join37(cacheDir2(root), `${sessionHash2(sessionId)}.entry`);
 }
@@ -24681,6 +24716,24 @@ function recordPhaseEntryPrompt2(conversationId, prompt, cwd, locations = {}) {
   const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID13(), workspace } : undefined);
   return appendPhaseEntry2(conversationId, line, locations.root ?? tmpdir10());
 }
+function consumePhaseAdmission2(toolCallId, operation, root = tmpdir10()) {
+  const path = admissionPath2(toolCallId, root);
+  try {
+    const text = readFileSync26(path, "utf8");
+    dropPrivate2(path);
+    const parsed = JSON.parse(text);
+    if (parsed.operation !== operation)
+      return null;
+    if (typeof parsed.conversation !== "string" || !parsed.conversation)
+      return null;
+    const state = readPhaseEntryState2(parsed.conversation, root);
+    if (!state?.run_live || state.token !== parsed.token)
+      return null;
+    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
+  } catch {
+    return null;
+  }
+}
 function antigravityPreInvocationHook(payload, locations = {}) {
   const prompt = payload.lastUserInput ?? "";
   const cwd = payload.workspacePaths?.[0] ?? process.cwd();
@@ -24697,9 +24750,8 @@ function antigravityPreToolUseHook(payload, locations = {}) {
       return { decision: "deny", reason: refusal };
     }
   }
-  const match = GATED_MCP_TOOL2.exec(toolName);
-  if (match) {
-    const gated = match[1];
+  const gated = gatedOperation2(toolName, payload.toolCall.args ?? {});
+  if (gated) {
     const root = locations.root ?? tmpdir10();
     const state = readPhaseEntryState2(payload.conversationId, root);
     const opName = { kind: "tool", name: gated };
@@ -24711,7 +24763,7 @@ function antigravityPreToolUseHook(payload, locations = {}) {
       return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
     }
     const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
-    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace });
+    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
     ensurePrivateDir2(cacheDir2(root));
     writeFileSync15(admissionPath2(toolUseId, root), admitLine, { mode: 384 });
     return { decision: "allow" };
@@ -24799,6 +24851,7 @@ function createAntigravityMcpRuntime(options = {}) {
     parentHost: "antigravity",
     probeHost: options.probeHost ?? probeHost2,
     host,
+    consumePhaseAdmission: options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission2(toolCallId, operation)),
     trustedClientNames: options.trustedClientNames ?? ["antigravity-client", "antigravity"],
     serverInfo: options.serverInfo ?? { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION }
   });
@@ -24824,12 +24877,6 @@ async function runHook2() {
   }
   if (!payload)
     return;
-  if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = antigravityPreInvocationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
   if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
     const toolCall = payload.toolCall;
     if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
@@ -24860,6 +24907,12 @@ async function runHook2() {
   }
   if ("terminationReason" in payload || "executionNum" in payload) {
     const result = await antigravityRunContinuationHook(payload);
+    stdout2.write(JSON.stringify(result) + `
+`);
+    return;
+  }
+  if ("invocationNum" in payload || "lastUserInput" in payload) {
+    const result = antigravityPreInvocationHook(payload);
     stdout2.write(JSON.stringify(result) + `
 `);
     return;

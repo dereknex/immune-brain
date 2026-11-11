@@ -138,7 +138,7 @@ export interface McpRuntimeOptions {
 	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
 	 * private file store. `true` is an admission without an entry token.
 	 */
-	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant;
+	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant | null;
 	/** The startup identity of this server's own bundle; defaults to this module file. */
 	bundleIdentity?: BundleIdentityWatch;
 	/** Client names whose `initialize` handshake may bind a trusted host version; defaults to `[HOST_ID]`. */
@@ -226,6 +226,26 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath(import.meta.url));
 	const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
 	const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId: string, operation: GatedTool) => consumePhaseAdmission(toolCallId, operation));
+	/**
+	 * D4: the Host's identity rule for one `tools/call`. Claude names an exact
+	 * tool-use id, which is also its Hook correlation key; Antigravity names the
+	 * conversation, and the step its `progressToken` ends with keys the admission
+	 * the Hook wrote for that step. `undefined` means the call names no Host
+	 * session, so a privileged call refuses before any authority work.
+	 */
+	const resolveHostCall = (operation: string, meta: Record<string, unknown> | undefined, messageId: string | number | null) => {
+		if (options.parentHost === "antigravity") {
+			const conversation = meta?.["antigravity.google/conversation_id"];
+			if (typeof conversation !== "string" || !conversation) return undefined;
+			const step = metaProgressStep(meta);
+			return { toolCallId: String(messageId), ...(step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` }) };
+		}
+		const identity = hostCallIdentity(meta);
+		return identity ? { toolCallId: identity.toolCallId, admissionId: identity.toolCallId } : undefined;
+	};
+	const correlationMissingMessage = options.parentHost === "antigravity"
+		? "antigravity.google/conversation_id metadata is missing"
+		: "canonical claudecode/toolUseId metadata is missing";
 	// The environment version fallback stays disabled on this connection: these
 	// gates judge only a version bound from the trusted handshake, so the probe
 	// never reads the environment here. A session without one is refused with
@@ -242,13 +262,16 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 	// session's entry token, which stands in for the native gate only in the
 	// workspace the token was minted for.
 	let hookSessionId: string | null = null;
-	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string): string | undefined => {
+	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string, admissionId = toolCallId): string | undefined => {
 		const correlated = readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
 			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
-		const grant = consumeAdmission(toolCallId, operation);
+		const grant = consumeAdmission(admissionId, operation);
 		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-		hookSessionId = correlated ?? hookSessionId;
+		// D5: admission identity and the display/audit call id are separate. An
+		// admission that names its own conversation makes that conversation this
+		// run's Hook session, not the transport connection.
+		hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
 		if (grant === true || !grant.entry_token) return undefined;
 		let current: string | null = null;
 		try { current = realpathSync(workspace); } catch { /* an unresolvable workspace refuses */ }
@@ -265,6 +288,8 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 		host,
 		connectionId,
 		listTools: listMcpTools,
+		resolveHostCall,
+		correlationMissingMessage,
 		trustedClientNames,
 		serverInfo,
 		bindClientHandshake(identity: { version: string; interactive: boolean; protocolVersion?: string; roots?: boolean }) {
@@ -307,10 +332,11 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+				const toolCallId = meta.toolCallId ?? `call-${name}`;
+				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId: meta.toolCallId ?? `call-${name}`,
+					toolCallId,
 					taskId: initiativeSlug,
 					initiativeSlug,
 					...(entryToken ? { entryToken } : {}),
@@ -346,10 +372,11 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+				const toolCallId = meta.toolCallId ?? `call-${name}`;
+				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId: meta.toolCallId ?? `call-${name}`,
+					toolCallId,
 					taskId: initiativeSlug,
 					initiativeSlug,
 					...(entryToken ? { entryToken } : {}),
@@ -438,6 +465,17 @@ function hostCallIdentity(meta: Record<string, unknown> | undefined): { toolCall
 	if (!meta) return undefined;
 	const toolCallId = meta["claudecode/toolUseId"];
 	return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
+}
+
+/**
+ * The step index Antigravity appends to a call's `progressToken` (E4): the final
+ * `:<decimal>` suffix. The token's prefix is evidence, never a session credential.
+ */
+function metaProgressStep(meta: Record<string, unknown> | undefined): number | null {
+	const token = meta?.progressToken;
+	if (typeof token !== "string") return null;
+	const match = /:(\d+)$/.exec(token);
+	return match ? Number(match[1]) : null;
 }
 
 /**
@@ -541,15 +579,16 @@ export async function handleJsonRpc(message: JsonRpc, mcp = createMcpRuntime()):
 			if (isPrivilegedOperation(name) && !interactive) {
 				throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 			}
-			const identity = hostCallIdentity(params._meta);
+			const identity = mcp.resolveHostCall(name, params._meta, message.id ?? "stdio");
 			if (isPrivilegedOperation(name) && !identity) {
-				throw new NativeAuthorityError("correlation_missing", "canonical claudecode/toolUseId metadata is missing");
+				throw new NativeAuthorityError("correlation_missing", mcp.correlationMissingMessage);
 			}
 			const sessionId = mcp.connectionId;
 			const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
 			const result = await mcp.callTool(name, params.arguments ?? {}, {
 				sessionId,
 				toolCallId,
+				...(identity?.admissionId ? { admissionId: identity.admissionId } : {}),
 				workspace: metaWorkspacePath(params._meta),
 				interactive,
 				requiresUserInteraction: isPrivilegedOperation(name),

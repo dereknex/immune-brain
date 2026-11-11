@@ -160,6 +160,10 @@ runtime 自建 Lane 可自动清理，但应明确取得 Executor 不再使用�
 
 后续应扩展现有用例覆盖中断后 resume 的等价行为、Child 已批准但 batch 未批准时不得集成、明确批准更新后的恢复，以及拓扑变化仍拒绝。旧 binding 与新主体 binding 分别验证，不以删掉旧测试掩盖仍支持的记录格式。
 
+### 澄清（2026-11-10）：Supervised Session Port 不是被拒绝的 adapter 框架
+
+上文“不因此新增通用 adapter 框架”拒绝的是 runtime 层的通用框架：由 runtime 持有 provider 选择、互换 Host adapter。[ADR 0038](../adr/0038-supervised-session-port.md) 的 Supervised Session Port 不属于此类：它是 Parent Loop 层的能力契约，每个 provider 一个薄翻译层，由 `imm-session --provider` 显式选择，不自动探测、不静默回落，缺失能力时仍返回 handoff。它正是上文“具体接口需另行设计”所指的接口；本报告的其余判断不变。
+
 ## 后续规划建议
 
 按风险排序，分别规划，不直接合并为全面重构：
