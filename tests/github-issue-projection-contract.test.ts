@@ -718,7 +718,7 @@ describe("post-settlement tracker projection", () => {
 		// every one of those paths runs the shared step; the Pi Host runs it after
 		// its own settlement. A Host that stops calling it, or that invents its own
 		// tracker step, fails here.
-		const claude = readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8");
+		const claude = readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8");
 		const piWork = readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
 		expect(claude).toContain("projectTerminalTrackerState");
 		expect(piWork).toContain("projectTerminalTrackerState");

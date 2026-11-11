@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { watchBundleIdentity } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import { FileHookEventLog, hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { FileHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
+import type { ClaudeHookEvent } from "../plugins/immune-brain/runtime/claude/review_host";
 import { readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 
 // Spec branch-boundary D3: the long-lived MCP server refuses authority calls
@@ -106,7 +108,7 @@ describe("Claude MCP server bundle staleness", () => {
 			execFileSync("bun", [join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "--hook"], {
 				cwd, input: JSON.stringify({ hook_event_name: "SubagentStart", session_id: sessionId, agent_id: "review", cwd }), encoding: "utf8",
 			});
-			expect(new FileHookEventLog().list(sessionId)).toHaveLength(1);
+			expect(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude").list(sessionId)).toHaveLength(1);
 			expect(readFileSync(path, "utf8")).toBe(bytes);
 		} finally { rmSync(hookEventPath(sessionId), { force: true }); }
 	});

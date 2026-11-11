@@ -24,6 +24,245 @@ var __esm = (fn, res, err) => () => {
   return res;
 };
 
+// plugins/immune-brain/runtime/unattended/batch_reasons.ts
+function batchReason(key, detail = "") {
+  const spec = BATCH_REASONS[key];
+  return {
+    state: spec.state,
+    reason: typeof spec.reason === "function" ? spec.reason(detail) : spec.reason,
+    recovery_action: spec.recovery_action
+  };
+}
+var BATCH_REASONS;
+var init_batch_reasons = __esm(() => {
+  BATCH_REASONS = Object.freeze({
+    lane_config_invalid: { state: "rejected", reason: "lane_config_invalid", recovery_action: "Correct the Lane configuration and retry in the current Host." },
+    lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
+    lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
+    lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
+    lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
+    lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
+    batch_entry_ambiguous: {
+      state: "rejected",
+      reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
+      recovery_action: "specify exactly one batch entry and retry in the current Host"
+    },
+    batch_entry_kind_mismatch: {
+      state: "rejected",
+      reason: "batch_entry_kind_mismatch: the existing batch has a different plan source",
+      recovery_action: "use the entry matching the existing batch in the current Host"
+    },
+    batch_record_shape_retired: {
+      state: "rejected",
+      reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
+      recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."
+    },
+    batch_parent_branch_exists: {
+      state: "rejected",
+      reason: (detail) => `batch_parent_branch_exists: ${detail} does not point at base_head`,
+      recovery_action: "inspect the existing Parent branch and retry with a reconciled base in the current Host"
+    },
+    batch_resource_collision: {
+      state: "rejected",
+      reason: (detail) => `batch_resource_collision: ${detail}`,
+      recovery_action: "inspect the retained branch or Lane and its missing provenance in the current Host before retrying"
+    },
+    invalid_slug: {
+      state: "rejected",
+      reason: (detail) => `invalid initiative slug: ${detail}`,
+      recovery_action: "specify a valid initiative slug and retry in the current Host"
+    },
+    batch_runtime_too_old: {
+      state: "blocked",
+      reason: (detail) => `batch_runtime_too_old: ${detail}`,
+      recovery_action: "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host"
+    },
+    batch_state_unreadable: {
+      state: "blocked",
+      reason: (detail) => `batch run state is unreadable or invalid: ${detail}`,
+      recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host"
+    },
+    claim_already_active: {
+      state: "blocked",
+      reason: (detail) => `an active workspace claim already exists for task: ${detail}`,
+      recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+    },
+    kernel_authority_conflict: {
+      state: "rejected",
+      reason: (detail) => `Kernel authority conflict: ${detail}`,
+      recovery_action: "resolve the Kernel storage conflict before resuming in the current Host"
+    },
+    git_head_unreadable: {
+      state: "rejected",
+      reason: (detail) => detail,
+      recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host"
+    },
+    branch_already_exists: {
+      state: "rejected",
+      reason: (detail) => `branch preflight failed: branch refs/heads/${detail} already exists`,
+      recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
+    },
+    git_status_unreadable: {
+      state: "rejected",
+      reason: "branch preflight failed: git status is unreadable",
+      recovery_action: "check the repository integrity and retry in the current Host"
+    },
+    working_tree_dirty: {
+      state: "rejected",
+      reason: (detail) => `branch preflight failed: working tree is dirty${detail ? `: ${detail}` : ""}`,
+      recovery_action: "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"
+    },
+    authorized_scope_underivable: {
+      state: "rejected",
+      reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
+      recovery_action: "resolve the child's intent record, then retry in the current Host"
+    },
+    working_tree_unstaged: {
+      state: "rejected",
+      reason: (detail) => `branch preflight failed: working tree has unstaged or untracked changes${detail ? ` (not restored: ${detail})` : ""}`,
+      recovery_action: "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host"
+    },
+    working_tree_out_of_scope: {
+      state: "rejected",
+      reason: "branch preflight failed: working tree has changes outside the authorized child scope",
+      recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host"
+    },
+    audit_evidence_ignored: {
+      state: "rejected",
+      reason: (detail) => `batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: ${detail}`,
+      recovery_action: "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host"
+    },
+    empty_enrollable_set: {
+      state: "rejected",
+      reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
+      recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
+    },
+    plan_projection_failed: {
+      state: "rejected",
+      reason: (detail) => `failed to project batch plan: ${detail}`,
+      recovery_action: "review initiative issues and planning sidecars in the current Host"
+    },
+    confirmation_port_unavailable: {
+      state: "rejected",
+      reason: "native confirmation port is unavailable",
+      recovery_action: "retry through a fresh native gate in the current Host"
+    },
+    confirmation_cancelled: {
+      state: "cancelled",
+      reason: "native interaction cancelled",
+      recovery_action: "wait for a fresh literal-user request"
+    },
+    confirmation_declined: {
+      state: "rejected",
+      reason: "native interaction declined",
+      recovery_action: "wait for a fresh literal-user request"
+    },
+    confirmation_no_decision: {
+      state: "rejected",
+      reason: "native interaction returned no decision",
+      recovery_action: "retry through a fresh native gate in the current Host"
+    },
+    confirmation_failed: {
+      state: "rejected",
+      reason: (detail) => detail,
+      recovery_action: "retry through a fresh native gate in the current Host"
+    },
+    claim_appeared_during_confirmation: {
+      state: "blocked",
+      reason: (detail) => `an active workspace claim appeared during confirmation for task: ${detail}`,
+      recovery_action: "resolve or stop the active task before starting a batch in the current Host"
+    },
+    plan_became_unreadable: {
+      state: "rejected",
+      reason: "batch plan became unreadable after native confirmation",
+      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+    },
+    plan_changed: {
+      state: "rejected",
+      reason: "batch plan changed after native confirmation",
+      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+    },
+    repository_became_unreadable: {
+      state: "rejected",
+      reason: "Git repository became unreadable after native confirmation",
+      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+    },
+    head_moved: {
+      state: "rejected",
+      reason: "Git HEAD moved after native confirmation",
+      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
+    },
+    cancelled_before_execution: {
+      state: "cancelled",
+      reason: "user cancelled before batch execution",
+      recovery_action: "wait for a fresh literal-user request"
+    },
+    precondition_commit_failed: {
+      state: "rejected",
+      reason: (detail) => `batch precondition commit failed: ${detail}`,
+      recovery_action: "repair the reported Git precondition failure and retry the batch in the current Host"
+    },
+    batch_run_rejected: {
+      state: "rejected",
+      reason: (detail) => detail || "batch run rejected",
+      recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
+    },
+    stale_batch_absent: {
+      state: "rejected",
+      reason: (detail) => `no retirable batch record to dispose: ${detail}`,
+      recovery_action: "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"
+    },
+    stale_batch_in_flight: {
+      state: "blocked",
+      reason: (detail) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
+      recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"
+    }
+  });
+});
+
+// plugins/immune-brain/runtime/kernel/capability_registry.ts
+function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
+  const states = new WeakMap;
+  const brand = Symbol(`${domainLabel}-registry`);
+  function isCapability(value) {
+    return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
+  }
+  function stateOf(capability) {
+    const state = states.get(capability);
+    if (!state)
+      throw new Error(`${domainLabel} capability is not recognized by this registry`);
+    return state;
+  }
+  return {
+    brand,
+    issue(binding, issuedAt = new Date().toISOString()) {
+      hooks.validateBinding(binding);
+      const capability = Object.freeze(Object.defineProperties({}, {
+        [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
+        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
+      }));
+      states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
+      return capability;
+    },
+    inspect(capability, expected) {
+      if (!isCapability(capability))
+        throw new Error(`${domainLabel} capability is not recognized by this registry`);
+      const state = stateOf(capability);
+      if (state.consumed)
+        throw new Error(`${domainLabel} capability already consumed`);
+      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected);
+    },
+    consume(capability, expected) {
+      const validated = this.inspect(capability, expected);
+      stateOf(capability).consumed = true;
+      return validated;
+    },
+    isConsumed(capability) {
+      return stateOf(capability).consumed;
+    }
+  };
+}
+
 // plugins/immune-brain/runtime/kernel/actor_identity.ts
 function isLiteralUserActor(actorId) {
   return LITERAL_USER_SPELLINGS.has(actorId);
@@ -37,7 +276,7 @@ var init_actor_identity = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/storage_paths.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 import {
   constants as FS_CONSTANTS,
   lstatSync,
@@ -53,7 +292,7 @@ function stateDatabasePath() {
   return KERNEL_DB_RELATIVE;
 }
 function kernelStoreBindingDigest(canonicalRoot, workspaceId) {
-  return createHash("sha256").update(`${canonicalRoot}\x00${workspaceId}`).digest("hex");
+  return createHash2("sha256").update(`${canonicalRoot}\x00${workspaceId}`).digest("hex");
 }
 function validateTaskId(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
@@ -170,7 +409,7 @@ var STATE_RELATIVE = ".imm/state", AUDIT_RELATIVE = ".imm/audit", KERNEL_DB_RELA
 var init_storage_paths = () => {};
 
 // plugins/immune-brain/runtime/kernel/sqlite_store.ts
-import { randomUUID } from "node:crypto";
+import { randomUUID as randomUUID2 } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   constants,
@@ -336,7 +575,7 @@ function initializeSchema(db, root, now) {
   db.exec("BEGIN IMMEDIATE");
   try {
     db.exec(SCHEMA_SQL);
-    const workspaceId = readMeta(db, "workspace_id") ?? randomUUID();
+    const workspaceId = readMeta(db, "workspace_id") ?? randomUUID2();
     writeMeta(db, "workspace_id", workspaceId);
     writeMeta(db, "schema_version", String(KERNEL_STORE_SCHEMA_VERSION));
     writeMeta(db, "workspace_binding", workspaceBinding(root, workspaceId));
@@ -811,49 +1050,6 @@ var init_backend_claim = __esm(() => {
     }
   };
 });
-
-// plugins/immune-brain/runtime/kernel/capability_registry.ts
-function createCapabilityRegistry(capabilityBrand, hooks, domainLabel) {
-  const states = new WeakMap;
-  const brand = Symbol(`${domainLabel}-registry`);
-  function isCapability(value) {
-    return !!value && typeof value === "object" && value[capabilityBrand] === true && value[brand] === true;
-  }
-  function stateOf(capability) {
-    const state = states.get(capability);
-    if (!state)
-      throw new Error(`${domainLabel} capability is not recognized by this registry`);
-    return state;
-  }
-  return {
-    brand,
-    issue(binding, issuedAt = new Date().toISOString()) {
-      hooks.validateBinding(binding);
-      const capability = Object.freeze(Object.defineProperties({}, {
-        [capabilityBrand]: { value: true, enumerable: false, writable: false, configurable: false },
-        [brand]: { value: true, enumerable: false, writable: false, configurable: false }
-      }));
-      states.set(capability, { binding: { ...binding }, issued_at: issuedAt, consumed: false });
-      return capability;
-    },
-    inspect(capability, expected) {
-      if (!isCapability(capability))
-        throw new Error(`${domainLabel} capability is not recognized by this registry`);
-      const state = stateOf(capability);
-      if (state.consumed)
-        throw new Error(`${domainLabel} capability already consumed`);
-      return hooks.validateAndProject({ ...state.binding, issued_at: state.issued_at }, expected);
-    },
-    consume(capability, expected) {
-      const validated = this.inspect(capability, expected);
-      stateOf(capability).consumed = true;
-      return validated;
-    },
-    isConsumed(capability) {
-      return stateOf(capability).consumed;
-    }
-  };
-}
 
 // plugins/immune-brain/runtime/canonical_json.ts
 function stableStringify(value) {
@@ -1386,7 +1582,7 @@ var NO_TOUCH_PATH = "docs/agents/no-touch.json", CONTRACT = "immune_brain/no_tou
 var init_no_touch = () => {};
 
 // plugins/immune-brain/runtime/kernel/intent.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 import {
   closeSync as closeSync3,
   constants as fsConstants,
@@ -1399,7 +1595,7 @@ import {
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { join as join4, resolve as resolve4, sep as sep2 } from "node:path";
 function sha256Hex(bytes) {
-  return createHash2("sha256").update(bytes).digest("hex");
+  return createHash3("sha256").update(bytes).digest("hex");
 }
 function objectAt(value, path, violations) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1763,7 +1959,7 @@ var init_intent = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/refutation.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 function refutationIdentity(record, diffHash) {
   return {
     intent_revision: record.intent_snapshot.revision,
@@ -1772,7 +1968,7 @@ function refutationIdentity(record, diffHash) {
   };
 }
 function anchorForEvidence(evidence) {
-  return `sha256:${createHash3("sha256").update(stableStringify({
+  return `sha256:${createHash4("sha256").update(stableStringify({
     violated: evidence.violated,
     caller_chain: evidence.caller_chain
   })).digest("hex")}`;
@@ -2974,7 +3170,7 @@ var init_completion = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/reducer.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 function transitionLifecycle(record, to) {
   if (record.lifecycle !== "active")
     throw new KernelInvariantError([
@@ -2996,13 +3192,13 @@ function stableJson(value) {
   return primitive === undefined ? "null" : primitive;
 }
 function canonicalRecordHash(record) {
-  return `sha256:${createHash4("sha256").update(`${JSON.stringify(record, null, 2)}
+  return `sha256:${createHash5("sha256").update(`${JSON.stringify(record, null, 2)}
 `).digest("hex")}`;
 }
 function actionFingerprint(action, intentRevision, intentContentHash, audit) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...payload } = action;
   const base = audit ? { action: payload, intentRevision, intentContentHash, audit } : { action: payload, intentRevision, intentContentHash };
-  return createHash4("sha256").update(stableJson(base)).digest("hex");
+  return createHash5("sha256").update(stableJson(base)).digest("hex");
 }
 function historyReason(action, intentRevision, intentContentHash, audit, detail) {
   const fingerprint = `action_v2_sha256:${actionFingerprint(action, intentRevision, intentContentHash, audit)}`;
@@ -3091,7 +3287,7 @@ function findingsDigestV2(findings) {
     ...finding.anchor !== undefined ? { anchor: finding.anchor ?? null } : {},
     ...finding.evidence !== undefined ? { evidence: finding.evidence ?? null } : {}
   }));
-  return `sha256:${createHash4("sha256").update(stableJson(normalized)).digest("hex")}`;
+  return `sha256:${createHash5("sha256").update(stableJson(normalized)).digest("hex")}`;
 }
 function effectiveReviewRoundBudget(record) {
   return REVIEW_REWORK_ROUND_BUDGET + (record.review_round_budget_extension ?? 0);
@@ -3876,9 +4072,9 @@ var init_legacy_task_record = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/run_identity.ts
-import { createHash as createHash5, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash6, randomUUID as randomUUID3 } from "node:crypto";
 function mintRunId() {
-  return `run-${randomUUID2()}`;
+  return `run-${randomUUID3()}`;
 }
 function runIdentity(db, row) {
   return { workspace_id: workspaceIdentity(db), task_id: row.task_id, run_id: row.run_id };
@@ -3902,7 +4098,7 @@ function enrollmentRequestDigest(request) {
     confirmation_ref: request.confirmation_ref,
     nonce: request.nonce
   });
-  return `sha256:${createHash5("sha256").update(canonical).digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(canonical).digest("hex")}`;
 }
 function drainOperationId(taskId, updatedAt) {
   return `drain:${taskId}:${updatedAt}`;
@@ -3915,7 +4111,7 @@ function terminalRequestDigest(action) {
     actor_id: action.actor_id,
     reason: typeof action.reason === "string" ? action.reason : null
   });
-  return `sha256:${createHash5("sha256").update(canonical).digest("hex")}`;
+  return `sha256:${createHash6("sha256").update(canonical).digest("hex")}`;
 }
 function terminalOperationId(taskId, eventId) {
   return `terminal:${taskId}:${eventId}`;
@@ -3925,7 +4121,7 @@ var init_run_identity = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/storage.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 import {
   constants as constants2,
   closeSync as closeSync4,
@@ -3944,7 +4140,7 @@ import {
 } from "node:fs";
 import { dirname as dirname2, isAbsolute as isAbsolute3, relative as relative2, resolve as resolve5, sep as sep3 } from "node:path";
 function revisionFor(content) {
-  return `sha256:${createHash6("sha256").update(content).digest("hex")}`;
+  return `sha256:${createHash7("sha256").update(content).digest("hex")}`;
 }
 function revisionForContent(content) {
   return revisionFor(content);
@@ -5054,7 +5250,7 @@ var init_storage = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts
-import { createHash as createHash7 } from "node:crypto";
+import { createHash as createHash8 } from "node:crypto";
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { resolve as resolve6 } from "node:path";
 function readGitHead(root) {
@@ -5067,7 +5263,7 @@ function readGitHead(root) {
   return head.toLowerCase();
 }
 function sha256Hex2(bytes) {
-  return createHash7("sha256").update(bytes).digest("hex");
+  return createHash8("sha256").update(bytes).digest("hex");
 }
 function stableStringify2(value) {
   if (value === null || typeof value !== "object")
@@ -5158,10 +5354,10 @@ var init_pi_canary_prepare = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/batch_authority.ts
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { spawnSync as spawnSync3 } from "node:child_process";
 function sha256Hex3(bytes) {
-  return createHash8("sha256").update(bytes).digest("hex");
+  return createHash9("sha256").update(bytes).digest("hex");
 }
 function stableStringify3(value) {
   if (value === null || typeof value !== "object")
@@ -5437,9 +5633,58 @@ var init_batch_authority = __esm(() => {
   GIT_COMMIT_ID = /^[a-f0-9]{40}$/;
 });
 
+// plugins/immune-brain/runtime/kernel/runtime_contracts.ts
+import { existsSync as existsSync3, readFileSync as readFileSync8 } from "node:fs";
+import { dirname as dirname3, join as join5, resolve as resolve7 } from "node:path";
+import { fileURLToPath } from "node:url";
+function runningRuntimeSource() {
+  try {
+    return dirname3(fileURLToPath(import.meta.url));
+  } catch {
+    return "unknown";
+  }
+}
+function readRuntimeContracts(runtimeDir) {
+  const candidates = [
+    join5(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
+    join5(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join5(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
+    join5(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
+  ];
+  const path = candidates.find((candidate) => existsSync3(candidate));
+  if (!path)
+    return null;
+  const raw = JSON.parse(readFileSync8(path, "utf8"));
+  if (raw.contract !== "immune_brain/runtime_contracts/v1")
+    throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
+  for (const key of KEYS) {
+    const value = raw[key];
+    if (key === "kernel_store_schema" ? !Number.isSafeInteger(value) : typeof value !== "string" || !value)
+      throw new Error(`${path} has an invalid ${key}`);
+  }
+  return { contracts: raw, path: resolve7(path) };
+}
+function runtimeContractDifferences(a, b) {
+  return KEYS.filter((key) => a[key] !== b[key]).map((key) => `${key}: ${String(a[key])} != ${String(b[key])}`);
+}
+var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json", RUNTIME_CONTRACTS, KEYS;
+var init_runtime_contracts = __esm(() => {
+  init_backend_claim();
+  init_storage_paths();
+  init_types();
+  RUNTIME_CONTRACTS = {
+    contract: "immune_brain/runtime_contracts/v1",
+    task_record: TASK_RECORD_CONTRACT_V4,
+    task_tombstone: TASK_TOMBSTONE_CONTRACT,
+    assurance_projection: "assurance_kernel/assurance_projection/v1",
+    kernel_store_schema: KERNEL_STORE_SCHEMA_VERSION
+  };
+  KEYS = ["task_record", "task_tombstone", "assurance_projection", "kernel_store_schema"];
+});
+
 // plugins/immune-brain/runtime/derived_files.ts
 import { spawnSync as spawnSync4 } from "node:child_process";
-import { delimiter, join as join5 } from "node:path";
+import { delimiter, join as join6 } from "node:path";
 function object2(value, fields, field) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`invalid ${field}: expected object`);
@@ -5522,7 +5767,7 @@ function runDerivedCommand(root, command, dependencyRoot = root) {
     encoding: "utf8",
     timeout: 300000,
     maxBuffer: 131072,
-    env: { ...process.env, NODE_PATH: [join5(dependencyRoot, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(delimiter) }
+    env: { ...process.env, NODE_PATH: [join6(dependencyRoot, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(delimiter) }
   });
   if (result.error || result.status !== 0 || result.signal)
     throw new Error(`derived command failed: ${command.executable} ${command.argv.join(" ")}`);
@@ -5534,17 +5779,17 @@ var init_derived_files = __esm(() => {
 
 // plugins/immune-brain/runtime/workspace_scope.ts
 import { spawnSync as spawnSync5 } from "node:child_process";
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 import {
-  existsSync as existsSync3,
+  existsSync as existsSync4,
   lstatSync as lstatSync8,
   mkdirSync as mkdirSync3,
-  readFileSync as readFileSync8,
+  readFileSync as readFileSync9,
   readlinkSync,
   realpathSync as realpathSync7,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname3, join as join6, resolve as resolve7 } from "node:path";
+import { dirname as dirname4, join as join7, resolve as resolve8 } from "node:path";
 function git(root, args) {
   const diff = args[0] === "diff";
   const command = diff ? ["diff", "--exit-code", ...args.slice(1)] : args;
@@ -5585,7 +5830,7 @@ function isPlanningNoise(path, taskId) {
   return path.startsWith("docs/plans/") && !isOtherTaskSidecar(path, taskId) && !isOwnPlanningSidecar(path, taskId);
 }
 function enrollmentBaselinePath(root) {
-  return join6(root, ".imm/state/enrollment-baseline.json");
+  return join7(root, ".imm/state/enrollment-baseline.json");
 }
 function writeEnrollmentBaseline(root, claimedPaths = [], wholeWorkspaceDelivery = false) {
   const snapshot = captureGitWorkspaceSnapshot(root);
@@ -5596,16 +5841,16 @@ function writeEnrollmentBaseline(root, claimedPaths = [], wholeWorkspaceDelivery
   for (const path of claimedPaths)
     delete snapshot.dirty_files[path];
   const path = enrollmentBaselinePath(root);
-  mkdirSync3(dirname3(path), { recursive: true });
+  mkdirSync3(dirname4(path), { recursive: true });
   writeFileSync3(path, `${JSON.stringify(snapshot)}
 `);
 }
 function readEnrollmentBaseline(root) {
   const baselinePath = enrollmentBaselinePath(root);
-  if (!existsSync3(baselinePath))
+  if (!existsSync4(baselinePath))
     return null;
   try {
-    const baseline = JSON.parse(readFileSync8(baselinePath, "utf8"));
+    const baseline = JSON.parse(readFileSync9(baselinePath, "utf8"));
     return isGitWorkspaceSnapshot(baseline) ? baseline : null;
   } catch {
     throw new Error("enrollment baseline is unreadable");
@@ -5645,15 +5890,15 @@ function isRuntimeAuthorityPath(path) {
   return path === ".imm/workspace.json" || path.startsWith(".imm/tasks/") || path.startsWith(".imm/memory/") || path.startsWith(".imm/state/") || path.startsWith(".imm/authority/") || path.startsWith(".imm/journal") || path === "HANDOFF.md";
 }
 function fileFingerprint(root, relativePath) {
-  const absolutePath = resolve7(root, relativePath);
-  if (!existsSync3(absolutePath))
+  const absolutePath = resolve8(root, relativePath);
+  if (!existsSync4(absolutePath))
     return "missing";
   const stat = lstatSync8(absolutePath);
   if (stat.isSymbolicLink())
     return `symlink:${readlinkSync(absolutePath)}`;
   if (!stat.isFile())
     return `other:${stat.mode}:${stat.size}`;
-  return `file:${stat.mode}:${createHash9("sha256").update(readFileSync8(absolutePath)).digest("hex")}`;
+  return `file:${stat.mode}:${createHash10("sha256").update(readFileSync9(absolutePath)).digest("hex")}`;
 }
 function dirtyPaths(root) {
   const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
@@ -5669,10 +5914,10 @@ function dirtyPaths(root) {
   return [...new Set([...splitNull(tracked), ...splitNull(untracked)])].filter((path) => !isRuntimeAuthorityPath(path)).sort(comparePaths);
 }
 function captureGitWorkspaceSnapshot(projectRoot) {
-  const root = realpathSync7(resolve7(projectRoot));
+  const root = realpathSync7(resolve8(projectRoot));
   const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
   const head = git(root, ["rev-parse", "HEAD"])?.trim();
-  if (!repositoryRoot || !head || realpathSync7(resolve7(repositoryRoot)) !== root)
+  if (!repositoryRoot || !head || realpathSync7(resolve8(repositoryRoot)) !== root)
     return null;
   const paths = dirtyPaths(root);
   if (!paths)
@@ -5842,7 +6087,7 @@ function dirtyWorkspacePaths(root, planningPaths) {
   return [...new Set([...splitNull(tracked), ...splitNull(staged), ...splitNull(untracked).filter((path) => !path.startsWith(".imm/state/"))])].filter((path) => !planningPaths.includes(path)).sort(comparePaths);
 }
 function dirtyScopePaths(projectRoot, scopeHint, taskId) {
-  const root = realpathSync7(resolve7(projectRoot));
+  const root = realpathSync7(resolve8(projectRoot));
   const scope = assertCanonicalTaskScope(scopeHint);
   const paths = dirtyPaths(root);
   if (!paths)
@@ -5854,7 +6099,7 @@ function taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope) {
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive task snapshot outside a committed Git workspace");
-  if (realpathSync7(resolve7(repositoryRoot)) !== root)
+  if (realpathSync7(resolve8(repositoryRoot)) !== root)
     throw new Error("task snapshot repository root does not match the project root");
   const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
   const sparseIndex = git(root, ["config", "--bool", "index.sparse"])?.trim();
@@ -5901,7 +6146,7 @@ function taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope) {
   };
 }
 function captureGitTaskSnapshot(projectRoot, scopeHint, taskId, tolerated, outOfScope) {
-  const requestedRoot = resolve7(projectRoot);
+  const requestedRoot = resolve8(projectRoot);
   const requestedStat = lstatSync8(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task snapshot root must be a real directory");
@@ -5915,7 +6160,7 @@ function captureGitTaskSnapshot(projectRoot, scopeHint, taskId, tolerated, outOf
   return before;
 }
 function hashTaskSnapshot(snapshot) {
-  return `sha256:${createHash9("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash10("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function taskDiffIdentity(projectRoot, scopeHint, taskId) {
   if (usesBranchDelivery(projectRoot, taskId)) {
@@ -5944,7 +6189,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outO
   const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive a task revision outside a committed Git workspace");
-  if (realpathSync7(resolve7(repositoryRoot)) !== root)
+  if (realpathSync7(resolve8(repositoryRoot)) !== root)
     throw new Error("task revision repository root does not match the project root");
   if (gitRequired(root, ["cat-file", "-t", baseHead], `task revision base is unreadable: ${baseHead}`) !== "commit")
     throw new Error(`task revision base is not a commit: ${baseHead}`);
@@ -6004,7 +6249,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outO
   };
 }
 function captureGitTaskRevisionSnapshot(projectRoot, scopeHint, baseHead, taskId, tolerated, outOfScope) {
-  const requestedRoot = resolve7(projectRoot);
+  const requestedRoot = resolve8(projectRoot);
   const requestedStat = lstatSync8(requestedRoot);
   if (requestedStat.isSymbolicLink() || !requestedStat.isDirectory())
     throw new Error("task revision root must be a real directory");
@@ -6065,7 +6310,7 @@ function taskStatusIdentity(projectRoot, record) {
   };
 }
 function scopedContentIdentity(projectRoot, scopes) {
-  const root = realpathSync7(resolve7(projectRoot));
+  const root = realpathSync7(resolve8(projectRoot));
   const listed = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--"]);
   if (listed === null)
     throw new Error("cannot derive scoped content identity outside a Git workspace");
@@ -6073,7 +6318,7 @@ function scopedContentIdentity(projectRoot, scopes) {
   return hashTaskSnapshot({ kind: "scoped-content-v1", scopes: [...new Set(scopes)].sort(comparePaths), entries });
 }
 function taskCommitRevisionIdentity(projectRoot, scopeHint, baseHead, commit) {
-  const requested = resolve7(projectRoot);
+  const requested = resolve8(projectRoot);
   if (lstatSync8(requested).isSymbolicLink())
     throw new Error("task commit root must be a real directory");
   const root = realpathSync7(requested), scope = assertCanonicalTaskScope(scopeHint);
@@ -6151,13 +6396,13 @@ function pathMatchesScope(path, scopePath) {
   return normalizedPath === normalizedScope || normalizedPath.startsWith(`${normalizedScope}/`);
 }
 function gitBlobId(body, length) {
-  const hash = createHash9(length === 64 ? "sha256" : "sha1");
+  const hash = createHash10(length === 64 ? "sha256" : "sha1");
   hash.update(`blob ${body.length}\x00`);
   hash.update(body);
   return hash.digest("hex");
 }
 function inScopeTrackedDrift(projectRoot, tree, scopeHint, deliveryPaths = []) {
-  const root = resolve7(projectRoot);
+  const root = resolve8(projectRoot);
   const env = { ...process.env };
   for (const name of GIT_REPOSITORY_BINDINGS)
     delete env[name];
@@ -6182,7 +6427,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint, deliveryPaths = []) {
     const want = expected.get(path);
     let stat;
     try {
-      stat = lstatSync8(join6(root, path));
+      stat = lstatSync8(join7(root, path));
     } catch {
       stat = null;
     }
@@ -6194,7 +6439,7 @@ function inScopeTrackedDrift(projectRoot, tree, scopeHint, deliveryPaths = []) {
     if (want.mode === "160000")
       continue;
     if (stat.isSymbolicLink()) {
-      if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join6(root, path))), want.oid.length) !== want.oid)
+      if (want.mode !== "120000" || gitBlobId(Buffer.from(readlinkSync(join7(root, path))), want.oid.length) !== want.oid)
         drift.add(path);
     } else if (!stat.isFile() || want.mode === "120000" || want.mode === "100755" !== ((stat.mode & 64) !== 0))
       drift.add(path);
@@ -6246,477 +6491,10 @@ var init_workspace_scope = __esm(() => {
   ];
 });
 
-// plugins/immune-brain/runtime/unattended/batch_worktrees.ts
-import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync4, lstatSync as lstatSync9, mkdirSync as mkdirSync4, mkdtempSync, realpathSync as realpathSync8, rmdirSync, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join7 } from "node:path";
-function git2(root, args) {
-  const result = spawnSync6("git", ["-C", root, ...args], { encoding: "utf8" });
-  if (result.status !== 0)
-    throw new Error(`batch_worktree_failed: ${result.stderr.trim() || args.join(" ")}`);
-  return result.stdout.trim();
-}
-function worktreeDirectory(root) {
-  const common = realpathSync8(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
-  const directory = join7(common, "imm", "worktrees");
-  mkdirSync4(directory, { recursive: true });
-  if (realpathSync8(directory) !== directory)
-    throw new Error("batch_worktree_failed: worktree directory contains a symlink");
-  return directory;
-}
-function assertLaneWorktreeAvailable(root, slug, taskId) {
-  parentBranchRef(slug);
-  parentBranchRef(taskId);
-  const common = realpathSync8(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
-  const path = join7(common, "imm", "worktrees", slug, taskId);
-  const branch = `refs/heads/imm-lane/${slug}/${taskId}`;
-  const found = spawnSync6("git", ["-C", root, "show-ref", "--verify", "--quiet", branch]);
-  const symbolic = spawnSync6("git", ["-C", root, "symbolic-ref", "--quiet", branch]);
-  if (lstatSync9(path, { throwIfNoEntry: false }) || found.status !== 1 || symbolic.status !== 1 || git2(root, ["worktree", "list", "--porcelain", "-z"]).split("\x00").includes(`worktree ${path}`))
-    throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
-}
-function createLaneWorktree(root, slug, taskId, head) {
-  assertLaneWorktreeAvailable(root, slug, taskId);
-  const branch = `imm-lane/${slug}/${taskId}`;
-  const directory = join7(worktreeDirectory(root), slug);
-  mkdirSync4(directory, { recursive: true });
-  if (realpathSync8(directory) !== directory)
-    throw new Error("batch_worktree_failed: Lane directory contains a symlink");
-  const path = join7(directory, taskId);
-  if (existsSync4(path))
-    throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
-  try {
-    mkdirSync4(path);
-  } catch (error) {
-    throw new Error(`batch_worktree_failed: cannot exclusively reserve ${path}; resource retained`, { cause: error });
-  }
-  try {
-    git2(root, ["update-ref", "--no-deref", `refs/heads/${branch}`, head, "0".repeat(40)]);
-    git2(root, ["worktree", "add", path, branch]);
-  } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}; unbound Lane reservation retained at ${path}`, { cause: error });
-  }
-  return path;
-}
-function copyLanePlanningInput(root, lane, taskId, kind) {
-  const read = observeEnrollmentTaskIntent(root, taskId);
-  const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
-  if (!input)
-    return;
-  const parts = input.path.split("/");
-  let directory = lane;
-  for (const part of parts.slice(0, -1)) {
-    directory = join7(directory, part);
-    if (!existsSync4(directory))
-      mkdirSync4(directory);
-    if (!lstatSync9(directory).isDirectory() || lstatSync9(directory).isSymbolicLink())
-      throw new Error("batch_worktree_failed: planning directory is not a real directory");
-  }
-  const target = join7(lane, input.path);
-  const stat = lstatSync9(target, { throwIfNoEntry: false });
-  if (stat && (!stat.isFile() || stat.isSymbolicLink()))
-    throw new Error("batch_worktree_failed: planning input is not a regular file");
-  writeFileSync4(target, input.content);
-  git2(lane, ["add", "--", input.path]);
-}
-async function withParentWorktree(root, head, use) {
-  const path = mkdtempSync(join7(worktreeDirectory(root), "verify-"));
-  rmdirSync(path);
-  git2(root, ["worktree", "add", "--detach", path, head]);
-  try {
-    return await use(path);
-  } finally {
-    git2(root, ["worktree", "remove", "--force", path]);
-  }
-}
-var init_batch_worktrees = __esm(() => {
-  init_intent();
-  init_spec_binding();
-  init_storage();
-  init_batch_ref();
-});
-
-// plugins/immune-brain/runtime/unattended/batch_final_verification.ts
-import { delimiter as delimiter2, join as join8 } from "node:path";
-import { spawn, spawnSync as spawnSync7 } from "node:child_process";
-function parseFinalVerification(value) {
-  if (value === undefined || value === null)
-    return;
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_FINAL_VERIFICATION_COMMANDS)
-    throw new Error(`invalid final_verification: expected 1 to ${MAX_FINAL_VERIFICATION_COMMANDS} commands`);
-  return value.map((command) => {
-    if (typeof command !== "string" || !command.trim() || command.length > MAX_COMMAND_LENGTH || /[\0\n\r]/.test(command))
-      throw new Error("invalid final_verification: each command must be one non-empty line");
-    if (/[|&;<>`$(){}"'\\]/.test(command))
-      throw new Error("invalid final_verification: commands run without a shell and are split on spaces, so shell syntax and quoting are not allowed");
-    return command.trim().replace(/\s+/g, " ");
-  });
-}
-function parseFinalVerificationReport(value, commands) {
-  if (!value || typeof value !== "object")
-    throw new Error("invalid final verification result");
-  const report = value;
-  if (typeof report.passed !== "boolean" || !(report.head === null || typeof report.head === "string") || !(report.content_identity === undefined || typeof report.content_identity === "string") || !Array.isArray(report.results) || !report.results.length && !report.derived_checks?.length || report.results.some((result) => !result || typeof result.command !== "string" || typeof result.passed !== "boolean" || !(result.exit_code === null || Number.isInteger(result.exit_code)) || !(result.signal === null || typeof result.signal === "string") || !Number.isFinite(result.duration_ms) || result.duration_ms < 0 || result.passed !== (result.exit_code === 0 && result.signal === null)))
-    throw new Error("invalid final verification result");
-  if (report.results.length)
-    parseFinalVerification(report.results.map((result) => result.command));
-  if (report.passed && report.results.some((result) => !result.passed))
-    throw new Error("contradictory final verification result");
-  if (report.derived_checks !== undefined) {
-    if (!Array.isArray(report.derived_checks) || report.derived_checks.some((result) => !result || typeof result.id !== "string" || !result.invocation || typeof result.invocation.executable !== "string" || !Array.isArray(result.invocation.argv) || result.invocation.argv.some((arg) => typeof arg !== "string") || !(result.exit_code === null || Number.isInteger(result.exit_code)) || !(result.signal === null || typeof result.signal === "string") || !Number.isFinite(result.duration_ms) || result.duration_ms < 0 || result.passed !== (result.exit_code === 0 && result.signal === null)))
-      throw new Error("invalid derived verification result");
-    if (report.passed && report.derived_checks.some((result) => !result.passed))
-      throw new Error("contradictory derived verification result");
-  }
-  if (commands && JSON.stringify(report.results.map((result) => result.command)) !== JSON.stringify(commands))
-    throw new Error("final verification commands changed");
-  return report;
-}
-function reusableFinalVerification(observed, input) {
-  let report;
-  try {
-    report = parseFinalVerificationReport(observed, input.commands);
-  } catch {
-    return null;
-  }
-  if (!report.passed || report.head !== input.head || report.content_identity !== undefined)
-    return null;
-  const derived = report.derived_checks ?? [];
-  if (!sameJson(derived.map((item) => [item.id, item.invocation]), input.declared.map((item) => [item.id, item.check])))
-    return null;
-  return report;
-}
-function runOne(root, command, timeoutMs, invocation, dependencyRoot = root) {
-  const [executable, ...argv] = invocation ? [invocation.executable, ...invocation.argv] : command.split(" ");
-  const started = Date.now();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (exitCode, signal) => {
-      if (settled)
-        return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ command, exit_code: exitCode, signal, passed: exitCode === 0 && signal === null, duration_ms: Date.now() - started });
-    };
-    const child = spawn(executable, argv, { cwd: root, stdio: "ignore", env: invocation ? { ...process.env, NODE_PATH: [join8(dependencyRoot, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(delimiter2) } : process.env });
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(null, "timeout");
-    }, timeoutMs);
-    child.once("error", (error) => finish(null, String(error.code ?? "spawn_failed")));
-    child.once("close", (code, signal) => finish(code, signal));
-  });
-}
-async function runFinalVerification(root, commands, options = {}) {
-  if (options.parent_head) {
-    return withParentWorktree(root, options.parent_head, (path) => runFinalVerification(path, commands, { timeoutMs: options.timeoutMs, dependencyRoot: root, declaration_head: options.declaration_head }));
-  }
-  const entries = options.declaration_head ? readDerivedFilesAt(root, options.declaration_head) : readDerivedFiles(root);
-  const verifiedCommands = commands.length === 0 && entries.length > 0 ? [] : parseFinalVerification([...commands]);
-  const runDerivedChecks = async () => {
-    const results = [];
-    for (const entry of entries)
-      results.push({
-        ...await runOne(root, JSON.stringify(entry.check), options.timeoutMs ?? DEFAULT_TIMEOUT_MS, entry.check, options.dependencyRoot),
-        id: entry.id,
-        invocation: entry.check
-      });
-    return results;
-  };
-  const head = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-  if (options.scopes) {
-    const before = scopedContentIdentity(root, options.scopes);
-    const results = [];
-    for (const command of verifiedCommands)
-      results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
-    const derived_checks = await runDerivedChecks();
-    const unchanged = scopedContentIdentity(root, options.scopes) === before;
-    return {
-      passed: [...results, ...derived_checks].every((result) => result.passed) && unchanged,
-      head: head.status === 0 ? head.stdout.trim() : null,
-      content_identity: before,
-      results,
-      ...derived_checks.length ? { derived_checks } : {}
-    };
-  }
-  const clean = () => {
-    const tracked = spawnSync7("git", ["-C", root, "diff", "--quiet", "HEAD"]);
-    const untracked = spawnSync7("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" });
-    return tracked.status === 0 && untracked.status === 0 && untracked.stdout.length === 0;
-  };
-  const cleanBefore = clean();
-  const results = [];
-  for (const command of verifiedCommands)
-    results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
-  const derived_checks = await runDerivedChecks();
-  const after = spawnSync7("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
-  const unchangedHead = head.status === 0 && after.status === 0 && head.stdout.trim() === after.stdout.trim();
-  const cleanAfter = clean();
-  return {
-    passed: [...results, ...derived_checks].every((result) => result.passed) && unchangedHead && cleanBefore && cleanAfter,
-    head: head.status === 0 ? head.stdout.trim() : null,
-    results,
-    ...derived_checks.length ? { derived_checks } : {}
-  };
-}
-var MAX_FINAL_VERIFICATION_COMMANDS = 8, MAX_COMMAND_LENGTH = 512, DEFAULT_TIMEOUT_MS, sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-var init_batch_final_verification = __esm(() => {
-  init_intent();
-  init_derived_files();
-  init_workspace_scope();
-  init_batch_worktrees();
-  DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
-});
-
-// plugins/immune-brain/runtime/kernel/runtime_contracts.ts
-import { existsSync as existsSync5, readFileSync as readFileSync9 } from "node:fs";
-import { dirname as dirname4, join as join9, resolve as resolve8 } from "node:path";
-import { fileURLToPath } from "node:url";
-function runningRuntimeSource() {
-  try {
-    return dirname4(fileURLToPath(import.meta.url));
-  } catch {
-    return "unknown";
-  }
-}
-function readRuntimeContracts(runtimeDir) {
-  const candidates = [
-    join9(runtimeDir, RUNTIME_CONTRACTS_MANIFEST),
-    join9(runtimeDir, "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join9(runtimeDir, "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST),
-    join9(runtimeDir, "plugins", "immune-brain", "runtime", "kernel", RUNTIME_CONTRACTS_MANIFEST)
-  ];
-  const path = candidates.find((candidate) => existsSync5(candidate));
-  if (!path)
-    return null;
-  const raw = JSON.parse(readFileSync9(path, "utf8"));
-  if (raw.contract !== "immune_brain/runtime_contracts/v1")
-    throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
-  for (const key of KEYS) {
-    const value = raw[key];
-    if (key === "kernel_store_schema" ? !Number.isSafeInteger(value) : typeof value !== "string" || !value)
-      throw new Error(`${path} has an invalid ${key}`);
-  }
-  return { contracts: raw, path: resolve8(path) };
-}
-function runtimeContractDifferences(a, b) {
-  return KEYS.filter((key) => a[key] !== b[key]).map((key) => `${key}: ${String(a[key])} != ${String(b[key])}`);
-}
-var RUNTIME_CONTRACTS_MANIFEST = "runtime_contracts.json", RUNTIME_CONTRACTS, KEYS;
-var init_runtime_contracts = __esm(() => {
-  init_backend_claim();
-  init_storage_paths();
-  init_types();
-  RUNTIME_CONTRACTS = {
-    contract: "immune_brain/runtime_contracts/v1",
-    task_record: TASK_RECORD_CONTRACT_V4,
-    task_tombstone: TASK_TOMBSTONE_CONTRACT,
-    assurance_projection: "assurance_kernel/assurance_projection/v1",
-    kernel_store_schema: KERNEL_STORE_SCHEMA_VERSION
-  };
-  KEYS = ["task_record", "task_tombstone", "assurance_projection", "kernel_store_schema"];
-});
-
-// plugins/immune-brain/runtime/unattended/batch_reasons.ts
-function batchReason(key, detail = "") {
-  const spec = BATCH_REASONS[key];
-  return {
-    state: spec.state,
-    reason: typeof spec.reason === "function" ? spec.reason(detail) : spec.reason,
-    recovery_action: spec.recovery_action
-  };
-}
-var BATCH_REASONS;
-var init_batch_reasons = __esm(() => {
-  BATCH_REASONS = Object.freeze({
-    lane_config_invalid: { state: "rejected", reason: "lane_config_invalid", recovery_action: "Correct the Lane configuration and retry in the current Host." },
-    lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
-    lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
-    lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
-    lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
-    lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
-    batch_entry_ambiguous: {
-      state: "rejected",
-      reason: "batch_entry_ambiguous: specify exactly one of initiative_slug or task_id",
-      recovery_action: "specify exactly one batch entry and retry in the current Host"
-    },
-    batch_entry_kind_mismatch: {
-      state: "rejected",
-      reason: "batch_entry_kind_mismatch: the existing batch has a different plan source",
-      recovery_action: "use the entry matching the existing batch in the current Host"
-    },
-    batch_record_shape_retired: {
-      state: "rejected",
-      reason: "batch_record_shape_retired: v1 serial batch records are read-and-retire only",
-      recovery_action: "Inspect the recorded batch, then use retire_stale_batch for this Initiative in the current Host."
-    },
-    batch_parent_branch_exists: {
-      state: "rejected",
-      reason: (detail) => `batch_parent_branch_exists: ${detail} does not point at base_head`,
-      recovery_action: "inspect the existing Parent branch and retry with a reconciled base in the current Host"
-    },
-    batch_resource_collision: {
-      state: "rejected",
-      reason: (detail) => `batch_resource_collision: ${detail}`,
-      recovery_action: "inspect the retained branch or Lane and its missing provenance in the current Host before retrying"
-    },
-    invalid_slug: {
-      state: "rejected",
-      reason: (detail) => `invalid initiative slug: ${detail}`,
-      recovery_action: "specify a valid initiative slug and retry in the current Host"
-    },
-    batch_runtime_too_old: {
-      state: "blocked",
-      reason: (detail) => `batch_runtime_too_old: ${detail}`,
-      recovery_action: "reconnect the immune-brain MCP server or upgrade the plugin so the loaded runtime supports this batch record, then retry in the current Host"
-    },
-    batch_state_unreadable: {
-      state: "blocked",
-      reason: (detail) => `batch run state is unreadable or invalid: ${detail}`,
-      recovery_action: "resolve or remove the invalid batch state file, then retry in the current Host"
-    },
-    claim_already_active: {
-      state: "blocked",
-      reason: (detail) => `an active workspace claim already exists for task: ${detail}`,
-      recovery_action: "resolve or stop the active task before starting a batch in the current Host"
-    },
-    kernel_authority_conflict: {
-      state: "rejected",
-      reason: (detail) => `Kernel authority conflict: ${detail}`,
-      recovery_action: "resolve the Kernel storage conflict before resuming in the current Host"
-    },
-    git_head_unreadable: {
-      state: "rejected",
-      reason: (detail) => detail,
-      recovery_action: "commit working changes and ensure a committed Git HEAD exists in the current Host"
-    },
-    branch_already_exists: {
-      state: "rejected",
-      reason: (detail) => `branch preflight failed: branch refs/heads/${detail} already exists`,
-      recovery_action: "delete or rename the conflicting branch, or commit working changes in the current Host"
-    },
-    git_status_unreadable: {
-      state: "rejected",
-      reason: "branch preflight failed: git status is unreadable",
-      recovery_action: "check the repository integrity and retry in the current Host"
-    },
-    working_tree_dirty: {
-      state: "rejected",
-      reason: (detail) => `branch preflight failed: working tree is dirty${detail ? `: ${detail}` : ""}`,
-      recovery_action: "resolve the listed remaining paths outside the batch committable set, then retry in the current Host"
-    },
-    authorized_scope_underivable: {
-      state: "rejected",
-      reason: "branch preflight failed: cannot derive the in-flight child's authorized scope",
-      recovery_action: "resolve the child's intent record, then retry in the current Host"
-    },
-    working_tree_unstaged: {
-      state: "rejected",
-      reason: (detail) => `branch preflight failed: working tree has unstaged or untracked changes${detail ? ` (not restored: ${detail})` : ""}`,
-      recovery_action: "establish where each unstaged or untracked change came from before staging anything; move changes that are not the active child's verified work out of the working tree, then retry in the current Host"
-    },
-    working_tree_out_of_scope: {
-      state: "rejected",
-      reason: "branch preflight failed: working tree has changes outside the authorized child scope",
-      recovery_action: "commit or unstage changes outside the active task scope, then retry in the current Host"
-    },
-    audit_evidence_ignored: {
-      state: "rejected",
-      reason: (detail) => `batch preflight failed: .gitignore ignores terminal audit evidence, so a child commit would silently drop it: ${detail}`,
-      recovery_action: "keep .imm/audit/ tracked (ignore .imm/state/ instead of .imm/, or write .imm/* followed by !.imm/audit/), commit the .gitignore change, then retry in the current Host"
-    },
-    empty_enrollable_set: {
-      state: "rejected",
-      reason: "empty enrollable child set: no enrollable child tasks found in the initiative plan",
-      recovery_action: "ensure the initiative has uncompleted, non-critical child tasks in the current Host"
-    },
-    plan_projection_failed: {
-      state: "rejected",
-      reason: (detail) => `failed to project batch plan: ${detail}`,
-      recovery_action: "review initiative issues and planning sidecars in the current Host"
-    },
-    confirmation_port_unavailable: {
-      state: "rejected",
-      reason: "native confirmation port is unavailable",
-      recovery_action: "retry through a fresh native gate in the current Host"
-    },
-    confirmation_cancelled: {
-      state: "cancelled",
-      reason: "native interaction cancelled",
-      recovery_action: "wait for a fresh literal-user request"
-    },
-    confirmation_declined: {
-      state: "rejected",
-      reason: "native interaction declined",
-      recovery_action: "wait for a fresh literal-user request"
-    },
-    confirmation_no_decision: {
-      state: "rejected",
-      reason: "native interaction returned no decision",
-      recovery_action: "retry through a fresh native gate in the current Host"
-    },
-    confirmation_failed: {
-      state: "rejected",
-      reason: (detail) => detail,
-      recovery_action: "retry through a fresh native gate in the current Host"
-    },
-    claim_appeared_during_confirmation: {
-      state: "blocked",
-      reason: (detail) => `an active workspace claim appeared during confirmation for task: ${detail}`,
-      recovery_action: "resolve or stop the active task before starting a batch in the current Host"
-    },
-    plan_became_unreadable: {
-      state: "rejected",
-      reason: "batch plan became unreadable after native confirmation",
-      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-    },
-    plan_changed: {
-      state: "rejected",
-      reason: "batch plan changed after native confirmation",
-      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-    },
-    repository_became_unreadable: {
-      state: "rejected",
-      reason: "Git repository became unreadable after native confirmation",
-      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-    },
-    head_moved: {
-      state: "rejected",
-      reason: "Git HEAD moved after native confirmation",
-      recovery_action: "review the current workspace and retry through a fresh native gate in the current Host"
-    },
-    cancelled_before_execution: {
-      state: "cancelled",
-      reason: "user cancelled before batch execution",
-      recovery_action: "wait for a fresh literal-user request"
-    },
-    precondition_commit_failed: {
-      state: "rejected",
-      reason: (detail) => `batch precondition commit failed: ${detail}`,
-      recovery_action: "repair the reported Git precondition failure and retry the batch in the current Host"
-    },
-    batch_run_rejected: {
-      state: "rejected",
-      reason: (detail) => detail || "batch run rejected",
-      recovery_action: "delete or rename the conflicting branch, or commit working changes and retry in the current Host"
-    },
-    stale_batch_absent: {
-      state: "rejected",
-      reason: (detail) => `no retirable batch record to dispose: ${detail}`,
-      recovery_action: "start a batch for this Initiative, or inspect the batch records under .imm/state/batches in the current Host"
-    },
-    stale_batch_in_flight: {
-      state: "blocked",
-      reason: (detail) => `a batch child is still mid-flight, so the record cannot be disposed: ${detail}`,
-      recovery_action: "settle or stop the in-flight child through its own task, then dispose the batch in the current Host; a child whose Kernel run already ended no longer blocks the disposition"
-    }
-  });
-});
-
 // plugins/immune-brain/runtime/unattended/batch_state.ts
-import { existsSync as existsSync6, mkdirSync as mkdirSync5, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync5, renameSync as renameSync3, lstatSync as lstatSync10, constants as constants3, rmSync as rmSync3 } from "node:fs";
-import { createHash as createHash10, randomUUID as randomUUID3 } from "node:crypto";
-import { dirname as dirname5, join as join10 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync4, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync4, renameSync as renameSync3, lstatSync as lstatSync9, constants as constants3, rmSync as rmSync3 } from "node:fs";
+import { createHash as createHash11, randomUUID as randomUUID4 } from "node:crypto";
+import { dirname as dirname5, join as join8 } from "node:path";
 function classifyBatchRunStateContract(contract) {
   if (contract === "assurance_kernel/batch_run_state/v1")
     return "v1";
@@ -6742,7 +6520,7 @@ function validateBatchId(batchId) {
 }
 function statePath(batchId) {
   validateBatchId(batchId);
-  return join10(".imm", "state", "batches", `${batchId}.json`);
+  return join8(".imm", "state", "batches", `${batchId}.json`);
 }
 function withoutRetiredClock(record) {
   const { authorization_expires_at: _expiry, ...rest } = record;
@@ -6859,37 +6637,37 @@ function parseBatchRunState(raw, batchId) {
   return withoutRetiredClock(parsed);
 }
 function ensureSecureDirectory2(root, relative) {
-  const target = join10(root, relative);
+  const target = join8(root, relative);
   const parent = dirname5(target);
-  if (!existsSync6(parent))
-    mkdirSync5(parent, { recursive: true });
-  if (existsSync6(target)) {
-    const stats = lstatSync10(target);
+  if (!existsSync5(parent))
+    mkdirSync4(parent, { recursive: true });
+  if (existsSync5(target)) {
+    const stats = lstatSync9(target);
     if (!stats.isDirectory())
       throw new Error(`${relative} exists but is not a directory`);
   } else {
-    mkdirSync5(target);
+    mkdirSync4(target);
   }
   return target;
 }
 function writeFileAtomically(root, relative, bytes) {
-  const target = join10(root, relative);
+  const target = join8(root, relative);
   const targetDir = dirname5(target);
-  const stats = lstatSync10(targetDir);
+  const stats = lstatSync9(targetDir);
   if (!stats.isDirectory())
     throw new Error(`${dirname5(relative)} is not a directory`);
-  const tempPath = `${target}.${randomUUID3()}.tmp`;
+  const tempPath = `${target}.${randomUUID4()}.tmp`;
   let fd = null;
   try {
     fd = openSync5(tempPath, constants3.O_WRONLY | constants3.O_CREAT | constants3.O_EXCL, 384);
-    writeFileSync5(fd, bytes, "utf8");
+    writeFileSync4(fd, bytes, "utf8");
     closeSync5(fd);
     fd = null;
     renameSync3(tempPath, target);
   } finally {
     if (fd !== null)
       closeSync5(fd);
-    if (existsSync6(tempPath)) {
+    if (existsSync5(tempPath)) {
       try {
         rmSync3(tempPath);
       } catch {}
@@ -6915,14 +6693,14 @@ function writeBatchRunState(root, record) {
   const path = statePath(record.batch_id);
   validateRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync6(join10(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync5(join8(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = withoutRetiredClock({
       ...record,
       updated_at: new Date().toISOString()
     });
-    ensureSecureDirectory2(root, join10(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
@@ -7074,7 +6852,7 @@ function batchTopologyDigest(tasks) {
     slice_id: task.slice_id,
     blocked_by: [...task.blocked_by].sort()
   })).sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
-  return `sha256:${createHash10("sha256").update(JSON.stringify(topology)).digest("hex")}`;
+  return `sha256:${createHash11("sha256").update(JSON.stringify(topology)).digest("hex")}`;
 }
 function prepareBatchLaneRunState(input) {
   validateBatchId(input.batch_id);
@@ -7129,9 +6907,9 @@ function parseAnyBatchRunState(raw, batchId, path = statePath(batchId)) {
 }
 function readAnyBatchRunState(root, batchId) {
   const path = statePath(batchId);
-  if (!existsSync6(join10(root, path)))
+  if (!existsSync5(join8(root, path)))
     return null;
-  return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join10(root, path));
+  return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join8(root, path));
 }
 function parkLaneForExecutor(root, batchId, taskId, reason) {
   const path = statePath(batchId);
@@ -7182,10 +6960,10 @@ function rebindSingleTaskIdentity(root, batchId, input) {
 }
 function laneGenerationStore(root, batchId) {
   validateBatchId(batchId);
-  const directory = join10(".imm", "state", "lane-supervisors");
-  const path = join10(directory, `${batchId}.json`);
+  const directory = join8(".imm", "state", "lane-supervisors");
+  const path = join8(directory, `${batchId}.json`);
   const read = () => {
-    if (!existsSync6(join10(root, path)))
+    if (!existsSync5(join8(root, path)))
       return null;
     const value = JSON.parse(readSecureProjectFile(root, path));
     if (!isObject(value) || typeof value.repository !== "string" || !value.repository || typeof value.lane_path !== "string" || !value.lane_path || !Number.isSafeInteger(value.generation) || value.generation < 1 || value.pid !== null && (!Number.isSafeInteger(value.pid) || value.pid < 1) || !Number.isSafeInteger(value.owner_pid) || value.owner_pid < 1 || !["starting", "running", "exited", "stopped_by_parent", "interrupted", "unobservable", "unavailable"].includes(String(value.state)) || typeof value.baseline !== "string" || !Number.isSafeInteger(value.no_progress) || value.no_progress < 0 || value.handled_generation !== undefined && (!Number.isSafeInteger(value.handled_generation) || value.handled_generation < 1 || value.handled_generation > value.generation) || (value.state === "starting" || value.state === "unavailable") && (value.pid !== null || value.exit !== null) || value.state === "running" && (value.pid === null || value.exit !== null) || value.state === "unobservable" && value.exit !== null || ["exited", "stopped_by_parent", "interrupted"].includes(String(value.state)) && (value.pid === null || value.exit === null) || value.exit !== null && (!isObject(value.exit) || value.exit.repository !== value.repository || value.exit.lane_path !== value.lane_path || value.exit.generation !== value.generation || value.exit.pid !== value.pid || value.exit.code !== null && !Number.isInteger(value.exit.code) || value.exit.signal !== null && typeof value.exit.signal !== "string" || value.exit.code === null === (value.exit.signal === null)))
@@ -7205,22 +6983,22 @@ function writeBatchLaneRunState(root, record) {
   const path = statePath(record.batch_id);
   validateLaneRecordShape(record, record.batch_id);
   return withKernelStoreLock(root, () => {
-    const existing = existsSync6(join10(root, path)) ? readSecureProjectFile(root, path) : null;
+    const existing = existsSync5(join8(root, path)) ? readSecureProjectFile(root, path) : null;
     if (existing !== null && existing === canonicalBytes(record))
       return record;
     const stored = withoutRetiredClock({ ...record, updated_at: new Date().toISOString() });
-    ensureSecureDirectory2(root, join10(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
     writeFileAtomically(root, path, canonicalBytes(stored));
     return stored;
   });
 }
 function reportPath(batchId) {
   validateBatchId(batchId);
-  return join10(".imm", "state", "batches", `${batchId}.report.json`);
+  return join8(".imm", "state", "batches", `${batchId}.report.json`);
 }
 function nativeParentReportPath(slug) {
   validateBatchId(slug);
-  return join10(".imm", "state", "batches", `${slug}.native.report.json`);
+  return join8(".imm", "state", "batches", `${slug}.native.report.json`);
 }
 function validateNativeParentReport(report) {
   if (report.contract !== "assurance_kernel/parent_final_report/v1" || !Array.isArray(report.task_ids) || !report.task_ids.length || new Set(report.task_ids).size !== report.task_ids.length || report.task_ids.some((id) => typeof id !== "string" || !BATCH_ID_PATTERN.test(id)))
@@ -7231,7 +7009,7 @@ function validateNativeParentReport(report) {
 }
 function readNativeParentFinalReport(root, slug) {
   const path = nativeParentReportPath(slug);
-  if (!existsSync6(join10(root, path)))
+  if (!existsSync5(join8(root, path)))
     return null;
   const report = JSON.parse(readSecureProjectFile(root, path));
   validateNativeParentReport(report);
@@ -7242,7 +7020,7 @@ function readNativeParentFinalReport(root, slug) {
 function writeNativeParentFinalReport(root, report) {
   validateNativeParentReport(report);
   withKernelStoreLock(root, () => {
-    ensureSecureDirectory2(root, join10(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
     writeFileAtomically(root, nativeParentReportPath(report.initiative_slug), JSON.stringify(report, null, 2) + `
 `);
   });
@@ -7250,8 +7028,8 @@ function writeNativeParentFinalReport(root, report) {
 function writeBatchRunReport(root, report) {
   const relative = reportPath(report.batch_id);
   return withKernelStoreLock(root, () => {
-    const path = join10(root, relative);
-    if (existsSync6(path)) {
+    const path = join8(root, relative);
+    if (existsSync5(path)) {
       const original = JSON.parse(readSecureProjectFile(root, relative));
       if (typeof original !== "object" || original === null || original.contract !== "assurance_kernel/batch_run_report/v1")
         throw new Error(`batch run report ${report.batch_id} has an unknown contract`);
@@ -7261,7 +7039,7 @@ function writeBatchRunReport(root, report) {
       if (prior.batch_state !== "needs_human")
         return prior;
     }
-    ensureSecureDirectory2(root, join10(".imm", "state", "batches"));
+    ensureSecureDirectory2(root, join8(".imm", "state", "batches"));
     writeFileAtomically(root, relative, canonicalReportBytes(report));
     return report;
   });
@@ -7339,21 +7117,21 @@ var init_batch_state = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_ref.ts
-import { spawnSync as spawnSync8 } from "node:child_process";
+import { spawnSync as spawnSync6 } from "node:child_process";
 import {
   chmodSync,
-  lstatSync as lstatSync11,
-  mkdirSync as mkdirSync6,
-  mkdtempSync as mkdtempSync2,
+  lstatSync as lstatSync10,
+  mkdirSync as mkdirSync5,
+  mkdtempSync,
   readFileSync as readFileSync10,
   readlinkSync as readlinkSync2,
   rmSync as rmSync4,
   symlinkSync,
   unlinkSync,
-  writeFileSync as writeFileSync6
+  writeFileSync as writeFileSync5
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname as dirname6, join as join11 } from "node:path";
+import { dirname as dirname6, join as join9 } from "node:path";
 function parentBranchRef(slug) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug) || slug.includes("..") || slug.endsWith(".lock"))
     throw new Error("invalid Parent branch slug");
@@ -7375,7 +7153,7 @@ function isBatchRef(branch) {
   return typeof branch === "string" && branch.startsWith(BATCH_REF_PREFIX) && branch.length > BATCH_REF_PREFIX.length;
 }
 function run(root, args, options = {}) {
-  return spawnSync8("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+  return spawnSync6("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
     encoding: "utf8",
     input: options.input,
     stdio: ["pipe", "pipe", "pipe"],
@@ -7436,9 +7214,9 @@ function moveBatchRef(root, ref, from, to) {
     throw new Error(`batch_head_lineage_broken: ${ref} did not move from ${from} to ${to}: ${moved.stderr.trim() || "git update-ref failed"}`);
 }
 function withTemporaryIndex(root, commit, use) {
-  const directory = mkdtempSync2(join11(tmpdir(), "imm-batch-index-"));
+  const directory = mkdtempSync(join9(tmpdir(), "imm-batch-index-"));
   try {
-    const env = { GIT_INDEX_FILE: join11(directory, "index") };
+    const env = { GIT_INDEX_FILE: join9(directory, "index") };
     out(root, ["read-tree", commit], `failed to read the tree of ${commit}`, { env });
     return use(env);
   } finally {
@@ -7455,7 +7233,7 @@ function pathsDirtyAgainst(root, commit) {
 function ignoredPaths(root, paths) {
   if (paths.length === 0)
     return [];
-  const result = spawnSync8("git", ["-C", root, "check-ignore", "-z", "--stdin"], {
+  const result = spawnSync6("git", ["-C", root, "check-ignore", "-z", "--stdin"], {
     encoding: "utf8",
     input: `${paths.join("\x00")}\x00`,
     stdio: ["pipe", "pipe", "pipe"]
@@ -7492,22 +7270,22 @@ function entryAt(root, commit, path) {
   return match ? { mode: match[1], oid: match[2] } : null;
 }
 function blob(root, oid) {
-  const result = spawnSync8("git", ["-C", root, "cat-file", "blob", oid], { stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync6("git", ["-C", root, "cat-file", "blob", oid], { stdio: ["ignore", "pipe", "pipe"] });
   if (result.status !== 0)
     throw new Error(`failed to read blob ${oid}: ${result.stderr.toString().trim()}`);
   return result.stdout;
 }
 function hashOf(root, bytes) {
-  const result = spawnSync8("git", ["-C", root, "hash-object", "--stdin"], { input: bytes, stdio: ["pipe", "pipe", "pipe"] });
+  const result = spawnSync6("git", ["-C", root, "hash-object", "--stdin"], { input: bytes, stdio: ["pipe", "pipe", "pipe"] });
   if (result.status !== 0)
     throw new Error(`failed to hash a working-tree file: ${result.stderr.toString().trim()}`);
   return result.stdout.toString().trim();
 }
 function workingEntry(root, path) {
-  const full = join11(root, path);
+  const full = join9(root, path);
   let stat;
   try {
-    stat = lstatSync11(full);
+    stat = lstatSync10(full);
   } catch (error) {
     if (error.code === "ENOENT" || error.code === "ENOTDIR")
       return null;
@@ -7540,7 +7318,7 @@ function applyDeltaToWorkingTree(root, from, to, paths) {
     return { applied: [], conflicts };
   const applied = [];
   for (const path of paths) {
-    const full = join11(root, path);
+    const full = join9(root, path);
     const after = entryAt(root, to, path);
     if (sameEntry(workingEntry(root, path), after))
       continue;
@@ -7552,7 +7330,7 @@ function applyDeltaToWorkingTree(root, from, to, paths) {
           throw error;
       }
     } else {
-      mkdirSync6(dirname6(full), { recursive: true });
+      mkdirSync5(dirname6(full), { recursive: true });
       try {
         unlinkSync(full);
       } catch (error) {
@@ -7563,7 +7341,7 @@ function applyDeltaToWorkingTree(root, from, to, paths) {
       if (after.mode === "120000")
         symlinkSync(bytes.toString("utf8"), full);
       else {
-        writeFileSync6(full, bytes);
+        writeFileSync5(full, bytes);
         chmodSync(full, after.mode === "100755" ? 493 : 420);
       }
     }
@@ -7589,237 +7367,226 @@ var init_batch_ref = __esm(() => {
   };
 });
 
-// plugins/immune-brain/runtime/assurance/delivery_workspace.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
-import { createHash as createHash11 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync3, readFileSync as readFileSync11, readlinkSync as readlinkSync3, realpathSync as realpathSync9, rmSync as rmSync5 } from "node:fs";
-import { tmpdir as tmpdir2 } from "node:os";
-import { dirname as dirname7, isAbsolute as isAbsolute4, join as join12, parse, relative as relative3, resolve as resolve9, sep as sep4 } from "node:path";
-function removeTaskOwnedTree(root) {
-  const makeDirectoriesWritable = (path) => {
-    let stat;
-    try {
-      stat = lstatSync12(path);
-    } catch (error) {
-      if (error.code === "ENOENT")
-        return;
-      throw error;
-    }
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      return;
-    chmodSync2(path, stat.mode & 4095 | 448);
-    for (const name of readdirSync3(path))
-      makeDirectoriesWritable(join12(path, name));
-  };
-  makeDirectoriesWritable(root);
-  rmSync5(root, { recursive: true, force: true });
+// plugins/immune-brain/runtime/unattended/batch_worktrees.ts
+import { spawnSync as spawnSync7 } from "node:child_process";
+import { existsSync as existsSync6, lstatSync as lstatSync11, mkdirSync as mkdirSync6, mkdtempSync as mkdtempSync2, realpathSync as realpathSync8, rmdirSync, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join10 } from "node:path";
+function git2(root, args) {
+  const result = spawnSync7("git", ["-C", root, ...args], { encoding: "utf8" });
+  if (result.status !== 0)
+    throw new Error(`batch_worktree_failed: ${result.stderr.trim() || args.join(" ")}`);
+  return result.stdout.trim();
 }
-function isolatedGitEnv(extra = {}) {
-  const env = { ...process.env };
-  delete env.GIT_DIR;
-  delete env.GIT_WORK_TREE;
-  delete env.GIT_INDEX_FILE;
-  delete env.GIT_OBJECT_DIRECTORY;
-  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
-  return {
-    ...env,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_OPTIONAL_LOCKS: "0",
-    ...extra
-  };
+function worktreeDirectory(root) {
+  const common = realpathSync8(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+  const directory = join10(common, "imm", "worktrees");
+  mkdirSync6(directory, { recursive: true });
+  if (realpathSync8(directory) !== directory)
+    throw new Error("batch_worktree_failed: worktree directory contains a symlink");
+  return directory;
 }
-function git3(cwd, args, extra = {}) {
-  return execFileSync4("git", ["-c", "maintenance.auto=false", ...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: isolatedGitEnv(extra)
-  }).trim();
+function assertLaneWorktreeAvailable(root, slug, taskId) {
+  parentBranchRef(slug);
+  parentBranchRef(taskId);
+  const common = realpathSync8(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+  const path = join10(common, "imm", "worktrees", slug, taskId);
+  const branch = `refs/heads/imm-lane/${slug}/${taskId}`;
+  const found = spawnSync7("git", ["-C", root, "show-ref", "--verify", "--quiet", branch]);
+  const symbolic = spawnSync7("git", ["-C", root, "symbolic-ref", "--quiet", branch]);
+  if (lstatSync11(path, { throwIfNoEntry: false }) || found.status !== 1 || symbolic.status !== 1 || git2(root, ["worktree", "list", "--porcelain", "-z"]).split("\x00").includes(`worktree ${path}`))
+    throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
 }
-function assertTree(tree) {
-  if (!GIT_OBJECT_ID4.test(tree))
-    throw new DeliveryWorkspaceError("delivery tree has invalid identity");
-}
-function assertInside(root, candidate, label) {
-  const rel = relative3(root, candidate);
-  if (rel.startsWith(`..${sep4}`) || rel === ".." || isAbsolute4(rel))
-    throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
-}
-function resolvedSymlinkTarget(path) {
-  const target = readlinkSync3(path);
-  let current = isAbsolute4(target) ? parse(target).root : parse(path).root;
-  let pending = (isAbsolute4(target) ? target.split(sep4) : [...relative3(current, dirname7(path)).split(sep4), ...target.split(sep4)]).filter(Boolean);
-  let links = 0;
-  while (pending.length) {
-    const part = pending.shift();
-    if (part === ".")
-      continue;
-    if (part === "..") {
-      current = dirname7(current);
-      continue;
-    }
-    const next = join12(current, part);
-    try {
-      if (!lstatSync12(next).isSymbolicLink()) {
-        current = next;
-        continue;
-      }
-      if (++links > 40)
-        throw new DeliveryWorkspaceError("delivery symlink chain is too deep");
-      const nested = readlinkSync3(next);
-      if (isAbsolute4(nested))
-        current = parse(nested).root;
-      pending = [...nested.split(sep4).filter(Boolean), ...pending];
-    } catch (error) {
-      if (error.code !== "ENOENT")
-        throw error;
-      current = next;
-    }
-  }
-  return current;
-}
-function assertNoEscapingSymlinks(root, dir = root) {
-  const realRoot = realpathSync9(root);
-  for (const name of readdirSync3(dir)) {
-    const path = join12(dir, name);
-    const stat = lstatSync12(path);
-    if (stat.isSymbolicLink()) {
-      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative3(root, path)}`);
-    } else if (stat.isDirectory()) {
-      assertNoEscapingSymlinks(root, path);
-    }
-  }
-}
-function writeDeliveryTree(sourceRoot, snapshot) {
-  const indexDirectory = mkdtempSync3(join12(git3(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
+function createLaneWorktree(root, slug, taskId, head) {
+  assertLaneWorktreeAvailable(root, slug, taskId);
+  const branch = `imm-lane/${slug}/${taskId}`;
+  const directory = join10(worktreeDirectory(root), slug);
+  mkdirSync6(directory, { recursive: true });
+  if (realpathSync8(directory) !== directory)
+    throw new Error("batch_worktree_failed: Lane directory contains a symlink");
+  const path = join10(directory, taskId);
+  if (existsSync6(path))
+    throw new Error(`batch_worktree_failed: ${path} (${branch}) has no recorded Lane binding; resource retained`);
   try {
-    git3(sourceRoot, ["read-tree", snapshot.base_tree], {
-      GIT_INDEX_FILE: join12(indexDirectory, "index"),
-      GIT_DIR: join12(sourceRoot, ".git")
-    });
-    for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
-      if (entry.oid && entry.mode) {
-        git3(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
-          GIT_INDEX_FILE: join12(indexDirectory, "index"),
-          GIT_DIR: join12(sourceRoot, ".git")
-        });
-      } else {
-        git3(sourceRoot, ["update-index", "--force-remove", "--", path], {
-          GIT_INDEX_FILE: join12(indexDirectory, "index"),
-          GIT_DIR: join12(sourceRoot, ".git")
-        });
-      }
-    }
-    const next = git3(sourceRoot, ["write-tree"], {
-      GIT_INDEX_FILE: join12(indexDirectory, "index"),
-      GIT_DIR: join12(sourceRoot, ".git")
-    });
-    assertTree(next);
-    return next;
-  } finally {
-    rmSync5(indexDirectory, { recursive: true, force: true });
-  }
-}
-function workspaceFiles(root, dir = root, result = Object.create(null)) {
-  if (dir === root)
-    result["."] = `${lstatSync12(root).mode & 4095}:directory`;
-  for (const name of readdirSync3(dir).sort()) {
-    const path = join12(dir, name), rel = relative3(root, path);
-    const stat = lstatSync12(path);
-    if (stat.isSymbolicLink())
-      result[rel] = `link:${stat.mode & 4095}:${readlinkSync3(path)}`;
-    else if (stat.isDirectory()) {
-      result[rel] = `${stat.mode & 4095}:directory`;
-      workspaceFiles(root, path, result);
-    } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash11("sha256").update(readFileSync11(path)).digest("hex")}`;
-    else
-      throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
-  }
-  return result;
-}
-function workspaceSeal(root) {
-  return JSON.stringify(workspaceFiles(root));
-}
-function assertDeliveryClean(root, tree, seal, writablePaths = []) {
-  assertTree(tree);
-  if (seal === undefined) {
-    if (git3(root, ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"]))
-      throw new DeliveryWorkspaceError("delivery workspace was contaminated");
-    if (git3(root, ["rev-parse", "HEAD^{tree}"]) !== tree)
-      throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
-    return;
-  }
-  if (seal === "[]") {
-    for (const name of readdirSync3(root)) {
-      const stat = lstatSync12(join12(root, name));
-      if (!stat.isDirectory() || name !== ".git")
-        throw new DeliveryWorkspaceError("delivery workspace was contaminated");
-    }
-    return;
-  }
-  const expected = JSON.parse(seal);
-  for (const path of writablePaths) {
-    if (path === "." || path === ".git" || path.startsWith(".git/") || isAbsolute4(path) || path.split("/").includes("..") || Object.keys(expected).some((p) => p === path || p.startsWith(`${path}/`)))
-      throw new DeliveryWorkspaceError("delivery writable path overlaps protected inputs");
-  }
-  const current = workspaceFiles(root);
-  for (const [path, bytes] of Object.entries(expected))
-    if (current[path] !== bytes)
-      throw new DeliveryWorkspaceError("delivery protected input was contaminated");
-  for (const [path, bytes] of Object.entries(current)) {
-    if (Object.hasOwn(expected, path))
-      continue;
-    const permitted = writablePaths.some((p) => path === p || path.startsWith(`${p}/`) || bytes.endsWith(":directory") && p.startsWith(`${path}/`));
-    if (!permitted)
-      throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
-    if (bytes.startsWith("link:")) {
-      assertInside(realpathSync9(root), resolvedSymlinkTarget(join12(root, path)), "generated symlink");
-    }
-  }
-}
-function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir2()) {
-  assertTree(tree);
-  const dest = mkdtempSync3(join12(parent, "imm-delivery-"));
-  const cleanup = () => removeTaskOwnedTree(dest);
-  try {
-    mkdirSync7(dest, { recursive: true });
-    const commit = git3(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
-      GIT_DIR: join12(sourceRoot, ".git"),
-      GIT_AUTHOR_NAME: "Immune-Brain Assurance",
-      GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
-      GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
-      GIT_COMMITTER_NAME: "Immune-Brain Assurance",
-      GIT_COMMITTER_EMAIL: "assurance@immune-brain.local",
-      GIT_COMMITTER_DATE: "1970-01-01T00:00:00 +0000"
-    });
-    if (!GIT_OBJECT_ID4.test(commit))
-      throw new DeliveryWorkspaceError("delivery commit write failed");
-    git3(dest, ["init", "-q"]);
-    git3(dest, ["fetch", "--depth=1", `file://${resolve9(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
-    git3(dest, ["checkout", "-q", "delivery"]);
-    const got = git3(dest, ["rev-parse", "HEAD^{tree}"]);
-    if (got !== tree)
-      throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
-    assertNoEscapingSymlinks(dest);
-    const seal = workspaceSeal(dest);
-    assertDeliveryClean(dest, tree, seal);
-    return { root: dest, tree, seal, cleanup };
+    mkdirSync6(path);
   } catch (error) {
-    cleanup();
-    throw error;
+    throw new Error(`batch_worktree_failed: cannot exclusively reserve ${path}; resource retained`, { cause: error });
+  }
+  try {
+    git2(root, ["update-ref", "--no-deref", `refs/heads/${branch}`, head, "0".repeat(40)]);
+    git2(root, ["worktree", "add", path, branch]);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; unbound Lane reservation retained at ${path}`, { cause: error });
+  }
+  return path;
+}
+function copyLanePlanningInput(root, lane, taskId, kind) {
+  const read = observeEnrollmentTaskIntent(root, taskId);
+  const input = kind === "intent" ? { path: read.intent_ref.path, content: readSecureProjectFile(root, read.intent_ref.path) } : readBoundActiveSpec(root, read.intent);
+  if (!input)
+    return;
+  const parts = input.path.split("/");
+  let directory = lane;
+  for (const part of parts.slice(0, -1)) {
+    directory = join10(directory, part);
+    if (!existsSync6(directory))
+      mkdirSync6(directory);
+    if (!lstatSync11(directory).isDirectory() || lstatSync11(directory).isSymbolicLink())
+      throw new Error("batch_worktree_failed: planning directory is not a real directory");
+  }
+  const target = join10(lane, input.path);
+  const stat = lstatSync11(target, { throwIfNoEntry: false });
+  if (stat && (!stat.isFile() || stat.isSymbolicLink()))
+    throw new Error("batch_worktree_failed: planning input is not a regular file");
+  writeFileSync6(target, input.content);
+  git2(lane, ["add", "--", input.path]);
+}
+async function withParentWorktree(root, head, use) {
+  const path = mkdtempSync2(join10(worktreeDirectory(root), "verify-"));
+  rmdirSync(path);
+  git2(root, ["worktree", "add", "--detach", path, head]);
+  try {
+    return await use(path);
+  } finally {
+    git2(root, ["worktree", "remove", "--force", path]);
   }
 }
-var DeliveryWorkspaceError, GIT_OBJECT_ID4;
-var init_delivery_workspace = __esm(() => {
-  DeliveryWorkspaceError = class DeliveryWorkspaceError extends Error {
-    constructor(message) {
-      super(message);
-      this.name = "DeliveryWorkspaceError";
-    }
+var init_batch_worktrees = __esm(() => {
+  init_intent();
+  init_spec_binding();
+  init_storage();
+  init_batch_ref();
+});
+
+// plugins/immune-brain/runtime/unattended/batch_final_verification.ts
+import { delimiter as delimiter2, join as join11 } from "node:path";
+import { spawn, spawnSync as spawnSync8 } from "node:child_process";
+function parseFinalVerification(value) {
+  if (value === undefined || value === null)
+    return;
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_FINAL_VERIFICATION_COMMANDS)
+    throw new Error(`invalid final_verification: expected 1 to ${MAX_FINAL_VERIFICATION_COMMANDS} commands`);
+  return value.map((command) => {
+    if (typeof command !== "string" || !command.trim() || command.length > MAX_COMMAND_LENGTH || /[\0\n\r]/.test(command))
+      throw new Error("invalid final_verification: each command must be one non-empty line");
+    if (/[|&;<>`$(){}"'\\]/.test(command))
+      throw new Error("invalid final_verification: commands run without a shell and are split on spaces, so shell syntax and quoting are not allowed");
+    return command.trim().replace(/\s+/g, " ");
+  });
+}
+function parseFinalVerificationReport(value, commands) {
+  if (!value || typeof value !== "object")
+    throw new Error("invalid final verification result");
+  const report = value;
+  if (typeof report.passed !== "boolean" || !(report.head === null || typeof report.head === "string") || !(report.content_identity === undefined || typeof report.content_identity === "string") || !Array.isArray(report.results) || !report.results.length && !report.derived_checks?.length || report.results.some((result) => !result || typeof result.command !== "string" || typeof result.passed !== "boolean" || !(result.exit_code === null || Number.isInteger(result.exit_code)) || !(result.signal === null || typeof result.signal === "string") || !Number.isFinite(result.duration_ms) || result.duration_ms < 0 || result.passed !== (result.exit_code === 0 && result.signal === null)))
+    throw new Error("invalid final verification result");
+  if (report.results.length)
+    parseFinalVerification(report.results.map((result) => result.command));
+  if (report.passed && report.results.some((result) => !result.passed))
+    throw new Error("contradictory final verification result");
+  if (report.derived_checks !== undefined) {
+    if (!Array.isArray(report.derived_checks) || report.derived_checks.some((result) => !result || typeof result.id !== "string" || !result.invocation || typeof result.invocation.executable !== "string" || !Array.isArray(result.invocation.argv) || result.invocation.argv.some((arg) => typeof arg !== "string") || !(result.exit_code === null || Number.isInteger(result.exit_code)) || !(result.signal === null || typeof result.signal === "string") || !Number.isFinite(result.duration_ms) || result.duration_ms < 0 || result.passed !== (result.exit_code === 0 && result.signal === null)))
+      throw new Error("invalid derived verification result");
+    if (report.passed && report.derived_checks.some((result) => !result.passed))
+      throw new Error("contradictory derived verification result");
+  }
+  if (commands && JSON.stringify(report.results.map((result) => result.command)) !== JSON.stringify(commands))
+    throw new Error("final verification commands changed");
+  return report;
+}
+function reusableFinalVerification(observed, input) {
+  let report;
+  try {
+    report = parseFinalVerificationReport(observed, input.commands);
+  } catch {
+    return null;
+  }
+  if (!report.passed || report.head !== input.head || report.content_identity !== undefined)
+    return null;
+  const derived = report.derived_checks ?? [];
+  if (!sameJson(derived.map((item) => [item.id, item.invocation]), input.declared.map((item) => [item.id, item.check])))
+    return null;
+  return report;
+}
+function runOne(root, command, timeoutMs, invocation, dependencyRoot = root) {
+  const [executable, ...argv] = invocation ? [invocation.executable, ...invocation.argv] : command.split(" ");
+  const started = Date.now();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exitCode, signal) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ command, exit_code: exitCode, signal, passed: exitCode === 0 && signal === null, duration_ms: Date.now() - started });
+    };
+    const child = spawn(executable, argv, { cwd: root, stdio: "ignore", env: invocation ? { ...process.env, NODE_PATH: [join11(dependencyRoot, "node_modules"), process.env.NODE_PATH].filter(Boolean).join(delimiter2) } : process.env });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(null, "timeout");
+    }, timeoutMs);
+    child.once("error", (error) => finish(null, String(error.code ?? "spawn_failed")));
+    child.once("close", (code, signal) => finish(code, signal));
+  });
+}
+async function runFinalVerification(root, commands, options = {}) {
+  if (options.parent_head) {
+    return withParentWorktree(root, options.parent_head, (path) => runFinalVerification(path, commands, { timeoutMs: options.timeoutMs, dependencyRoot: root, declaration_head: options.declaration_head }));
+  }
+  const entries = options.declaration_head ? readDerivedFilesAt(root, options.declaration_head) : readDerivedFiles(root);
+  const verifiedCommands = commands.length === 0 && entries.length > 0 ? [] : parseFinalVerification([...commands]);
+  const runDerivedChecks = async () => {
+    const results = [];
+    for (const entry of entries)
+      results.push({
+        ...await runOne(root, JSON.stringify(entry.check), options.timeoutMs ?? DEFAULT_TIMEOUT_MS, entry.check, options.dependencyRoot),
+        id: entry.id,
+        invocation: entry.check
+      });
+    return results;
   };
-  GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+  const head = spawnSync8("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  if (options.scopes) {
+    const before = scopedContentIdentity(root, options.scopes);
+    const results = [];
+    for (const command of verifiedCommands)
+      results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+    const derived_checks = await runDerivedChecks();
+    const unchanged = scopedContentIdentity(root, options.scopes) === before;
+    return {
+      passed: [...results, ...derived_checks].every((result) => result.passed) && unchanged,
+      head: head.status === 0 ? head.stdout.trim() : null,
+      content_identity: before,
+      results,
+      ...derived_checks.length ? { derived_checks } : {}
+    };
+  }
+  const clean = () => {
+    const tracked = spawnSync8("git", ["-C", root, "diff", "--quiet", "HEAD"]);
+    const untracked = spawnSync8("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"], { encoding: "utf8" });
+    return tracked.status === 0 && untracked.status === 0 && untracked.stdout.length === 0;
+  };
+  const cleanBefore = clean();
+  const results = [];
+  for (const command of verifiedCommands)
+    results.push(await runOne(root, command, options.timeoutMs ?? DEFAULT_TIMEOUT_MS));
+  const derived_checks = await runDerivedChecks();
+  const after = spawnSync8("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const unchangedHead = head.status === 0 && after.status === 0 && head.stdout.trim() === after.stdout.trim();
+  const cleanAfter = clean();
+  return {
+    passed: [...results, ...derived_checks].every((result) => result.passed) && unchangedHead && cleanBefore && cleanAfter,
+    head: head.status === 0 ? head.stdout.trim() : null,
+    results,
+    ...derived_checks.length ? { derived_checks } : {}
+  };
+}
+var MAX_FINAL_VERIFICATION_COMMANDS = 8, MAX_COMMAND_LENGTH = 512, DEFAULT_TIMEOUT_MS, sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+var init_batch_final_verification = __esm(() => {
+  init_intent();
+  init_derived_files();
+  init_workspace_scope();
+  init_batch_worktrees();
+  DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 });
 
 // plugins/immune-brain/runtime/decision_model/contract.ts
@@ -8123,18 +7890,18 @@ var init_thresholds = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/config/project_identity.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
-import { realpathSync as realpathSync10 } from "node:fs";
-import { dirname as dirname8 } from "node:path";
-function git4(root, ...args) {
+import { execFileSync as execFileSync4 } from "node:child_process";
+import { realpathSync as realpathSync9 } from "node:fs";
+import { dirname as dirname7 } from "node:path";
+function git3(root, ...args) {
   try {
-    return execFileSync5("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return execFileSync4("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch {
     return null;
   }
 }
 function projectIdentity(root) {
-  const origin = git4(root, "remote", "get-url", "origin");
+  const origin = git3(root, "remote", "get-url", "origin");
   if (origin) {
     let host;
     let path;
@@ -8153,16 +7920,16 @@ function projectIdentity(root) {
     }
     return `${host}/${path.replace(/^\/+|\/+$/g, "").replace(/\.git$/, "")}`;
   }
-  const common = git4(root, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  return realpathSync10(common ? dirname8(common) : root);
+  const common = git3(root, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  return realpathSync9(common ? dirname7(common) : root);
 }
 var init_project_identity = () => {};
 
 // plugins/immune-brain/runtime/config/layered_config.ts
-import { execFileSync as execFileSync6 } from "node:child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync12 } from "node:fs";
+import { execFileSync as execFileSync5 } from "node:child_process";
+import { existsSync as existsSync7, readFileSync as readFileSync11 } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute as isAbsolute5, join as join13 } from "node:path";
+import { isAbsolute as isAbsolute4, join as join12 } from "node:path";
 function chooseReviewer(lanes) {
   const host = lanes.review_host.value;
   if (!host)
@@ -8177,11 +7944,11 @@ function resolveConfig(root, options = {}) {
     diagnostics.push({ code, severity, file, key_path, message: `${file}: ${key_path}: ${message}` });
   };
   const invalid = (file, key, message) => diag("config_invalid", "error", file, key, message);
-  const userPath = options.userConfigPath ?? join13(process.env.XDG_CONFIG_HOME && isAbsolute5(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join13(homedir(), ".config"), "immune-brain/config.json");
+  const userPath = options.userConfigPath ?? join12(process.env.XDG_CONFIG_HOME && isAbsolute4(process.env.XDG_CONFIG_HOME) ? process.env.XDG_CONFIG_HOME : join12(homedir(), ".config"), "immune-brain/config.json");
   const projectPath = ".imm/config.json";
   const tracked = (path) => {
     try {
-      execFileSync6("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" });
+      execFileSync5("git", ["ls-files", "--error-unmatch", "--", path], { cwd: root, stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -8191,7 +7958,7 @@ function resolveConfig(root, options = {}) {
     if (!existsSync7(path))
       return {};
     try {
-      const data = JSON.parse(readFileSync12(path, "utf8"));
+      const data = JSON.parse(readFileSync11(path, "utf8"));
       if (!object3(data)) {
         invalid(label, "$", "expected object");
         return null;
@@ -8214,7 +7981,7 @@ function resolveConfig(root, options = {}) {
     invalid(root, "project_key", "cannot determine project identity");
   }
   const user = read(userPath, userPath, "immune_brain/user_config/v1");
-  const project = tracked(projectPath) ? read(join13(root, projectPath), projectPath, "immune_brain/project_config/v1") : {};
+  const project = tracked(projectPath) ? read(join12(root, projectPath), projectPath, "immune_brain/project_config/v1") : {};
   const failed = new Set;
   const validKeys = (o, keys, file, path, section) => {
     for (const key of Object.keys(o))
@@ -8377,7 +8144,7 @@ function resolveConfig(root, options = {}) {
       for (const key of Object.keys(o))
         delete o[key];
   const legacy = (path, targets, used) => {
-    if (!existsSync7(join13(root, path)) || path === ".imm/decision-bindings.json" && !tracked(path))
+    if (!existsSync7(join12(root, path)) || path === ".imm/decision-bindings.json" && !tracked(path))
       return false;
     const where = targets.map((t) => `${t.layer} \`${t.key}\` in ${t.layer === "user" ? userPath : projectPath}`).join(" and ");
     diag(used ? "deprecated_config_source" : "legacy_source_ignored", "warning", path, targets[0].key, used ? `deprecated; move to ${where}` : `ignored because a newer layer sets this section; its replacement is ${where}`);
@@ -8388,7 +8155,7 @@ function resolveConfig(root, options = {}) {
   const useLegacyProfiles = !has(ud, "profiles") && !failed.has("decision_models");
   const useLegacyBindings = !failed.has("decision_models") && !has(ud, "default_profile") && !has(ud, "bindings") && !has(od, "default_profile") && !has(od, "bindings") && !has(pd, "egress");
   const readLegacy = (path, name) => {
-    const value = read(join13(root, path), path);
+    const value = read(join12(root, path), path);
     if (value === null) {
       failed.add(name);
       return {};
@@ -8502,7 +8269,7 @@ function resolveConfig(root, options = {}) {
     for (const file of ["AGENTS.md", "CLAUDE.md"])
       if (tracked(file)) {
         try {
-          for (const line of readFileSync12(join13(root, file), "utf8").split(/\r?\n/)) {
+          for (const line of readFileSync11(join12(root, file), "utf8").split(/\r?\n/)) {
             const match = regex.exec(line);
             if (match)
               return { value: match[1].trim().replace(/^`|`$/g, ""), file };
@@ -8556,6 +8323,239 @@ var init_git_integration_preference = __esm(() => {
   init_layered_config();
 });
 
+// plugins/immune-brain/runtime/assurance/delivery_workspace.ts
+import { execFileSync as execFileSync6 } from "node:child_process";
+import { createHash as createHash12 } from "node:crypto";
+import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync3, readFileSync as readFileSync12, readlinkSync as readlinkSync3, realpathSync as realpathSync10, rmSync as rmSync5 } from "node:fs";
+import { tmpdir as tmpdir2 } from "node:os";
+import { dirname as dirname8, isAbsolute as isAbsolute5, join as join13, parse, relative as relative3, resolve as resolve9, sep as sep4 } from "node:path";
+function removeTaskOwnedTree(root) {
+  const makeDirectoriesWritable = (path) => {
+    let stat;
+    try {
+      stat = lstatSync12(path);
+    } catch (error) {
+      if (error.code === "ENOENT")
+        return;
+      throw error;
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink())
+      return;
+    chmodSync2(path, stat.mode & 4095 | 448);
+    for (const name of readdirSync3(path))
+      makeDirectoriesWritable(join13(path, name));
+  };
+  makeDirectoriesWritable(root);
+  rmSync5(root, { recursive: true, force: true });
+}
+function isolatedGitEnv(extra = {}) {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_OBJECT_DIRECTORY;
+  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  return {
+    ...env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_OPTIONAL_LOCKS: "0",
+    ...extra
+  };
+}
+function git4(cwd, args, extra = {}) {
+  return execFileSync6("git", ["-c", "maintenance.auto=false", ...args], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    env: isolatedGitEnv(extra)
+  }).trim();
+}
+function assertTree(tree) {
+  if (!GIT_OBJECT_ID4.test(tree))
+    throw new DeliveryWorkspaceError("delivery tree has invalid identity");
+}
+function assertInside(root, candidate, label) {
+  const rel = relative3(root, candidate);
+  if (rel.startsWith(`..${sep4}`) || rel === ".." || isAbsolute5(rel))
+    throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
+}
+function resolvedSymlinkTarget(path) {
+  const target = readlinkSync3(path);
+  let current = isAbsolute5(target) ? parse(target).root : parse(path).root;
+  let pending = (isAbsolute5(target) ? target.split(sep4) : [...relative3(current, dirname8(path)).split(sep4), ...target.split(sep4)]).filter(Boolean);
+  let links = 0;
+  while (pending.length) {
+    const part = pending.shift();
+    if (part === ".")
+      continue;
+    if (part === "..") {
+      current = dirname8(current);
+      continue;
+    }
+    const next = join13(current, part);
+    try {
+      if (!lstatSync12(next).isSymbolicLink()) {
+        current = next;
+        continue;
+      }
+      if (++links > 40)
+        throw new DeliveryWorkspaceError("delivery symlink chain is too deep");
+      const nested = readlinkSync3(next);
+      if (isAbsolute5(nested))
+        current = parse(nested).root;
+      pending = [...nested.split(sep4).filter(Boolean), ...pending];
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        throw error;
+      current = next;
+    }
+  }
+  return current;
+}
+function assertNoEscapingSymlinks(root, dir = root) {
+  const realRoot = realpathSync10(root);
+  for (const name of readdirSync3(dir)) {
+    const path = join13(dir, name);
+    const stat = lstatSync12(path);
+    if (stat.isSymbolicLink()) {
+      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative3(root, path)}`);
+    } else if (stat.isDirectory()) {
+      assertNoEscapingSymlinks(root, path);
+    }
+  }
+}
+function writeDeliveryTree(sourceRoot, snapshot) {
+  const indexDirectory = mkdtempSync3(join13(git4(sourceRoot, ["rev-parse", "--absolute-git-dir"]), "imm-delivery-index-"));
+  try {
+    git4(sourceRoot, ["read-tree", snapshot.base_tree], {
+      GIT_INDEX_FILE: join13(indexDirectory, "index"),
+      GIT_DIR: join13(sourceRoot, ".git")
+    });
+    for (const [path, entry] of Object.entries(snapshot.changed_paths)) {
+      if (entry.oid && entry.mode) {
+        git4(sourceRoot, ["update-index", "--add", "--cacheinfo", `${entry.mode},${entry.oid},${path}`], {
+          GIT_INDEX_FILE: join13(indexDirectory, "index"),
+          GIT_DIR: join13(sourceRoot, ".git")
+        });
+      } else {
+        git4(sourceRoot, ["update-index", "--force-remove", "--", path], {
+          GIT_INDEX_FILE: join13(indexDirectory, "index"),
+          GIT_DIR: join13(sourceRoot, ".git")
+        });
+      }
+    }
+    const next = git4(sourceRoot, ["write-tree"], {
+      GIT_INDEX_FILE: join13(indexDirectory, "index"),
+      GIT_DIR: join13(sourceRoot, ".git")
+    });
+    assertTree(next);
+    return next;
+  } finally {
+    rmSync5(indexDirectory, { recursive: true, force: true });
+  }
+}
+function workspaceFiles(root, dir = root, result = Object.create(null)) {
+  if (dir === root)
+    result["."] = `${lstatSync12(root).mode & 4095}:directory`;
+  for (const name of readdirSync3(dir).sort()) {
+    const path = join13(dir, name), rel = relative3(root, path);
+    const stat = lstatSync12(path);
+    if (stat.isSymbolicLink())
+      result[rel] = `link:${stat.mode & 4095}:${readlinkSync3(path)}`;
+    else if (stat.isDirectory()) {
+      result[rel] = `${stat.mode & 4095}:directory`;
+      workspaceFiles(root, path, result);
+    } else if (stat.isFile())
+      result[rel] = `${stat.mode & 4095}:${createHash12("sha256").update(readFileSync12(path)).digest("hex")}`;
+    else
+      throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
+  }
+  return result;
+}
+function workspaceSeal(root) {
+  return JSON.stringify(workspaceFiles(root));
+}
+function assertDeliveryClean(root, tree, seal, writablePaths = []) {
+  assertTree(tree);
+  if (seal === undefined) {
+    if (git4(root, ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"]))
+      throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+    if (git4(root, ["rev-parse", "HEAD^{tree}"]) !== tree)
+      throw new DeliveryWorkspaceError("delivery workspace tree drifted from the frozen identity");
+    return;
+  }
+  if (seal === "[]") {
+    for (const name of readdirSync3(root)) {
+      const stat = lstatSync12(join13(root, name));
+      if (!stat.isDirectory() || name !== ".git")
+        throw new DeliveryWorkspaceError("delivery workspace was contaminated");
+    }
+    return;
+  }
+  const expected = JSON.parse(seal);
+  for (const path of writablePaths) {
+    if (path === "." || path === ".git" || path.startsWith(".git/") || isAbsolute5(path) || path.split("/").includes("..") || Object.keys(expected).some((p) => p === path || p.startsWith(`${path}/`)))
+      throw new DeliveryWorkspaceError("delivery writable path overlaps protected inputs");
+  }
+  const current = workspaceFiles(root);
+  for (const [path, bytes] of Object.entries(expected))
+    if (current[path] !== bytes)
+      throw new DeliveryWorkspaceError("delivery protected input was contaminated");
+  for (const [path, bytes] of Object.entries(current)) {
+    if (Object.hasOwn(expected, path))
+      continue;
+    const permitted = writablePaths.some((p) => path === p || path.startsWith(`${p}/`) || bytes.endsWith(":directory") && p.startsWith(`${path}/`));
+    if (!permitted)
+      throw new DeliveryWorkspaceError("delivery undeclared output was contaminated");
+    if (bytes.startsWith("link:")) {
+      assertInside(realpathSync10(root), resolvedSymlinkTarget(join13(root, path)), "generated symlink");
+    }
+  }
+}
+function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir2()) {
+  assertTree(tree);
+  const dest = mkdtempSync3(join13(parent, "imm-delivery-"));
+  const cleanup = () => removeTaskOwnedTree(dest);
+  try {
+    mkdirSync7(dest, { recursive: true });
+    const commit = git4(sourceRoot, ["commit-tree", tree, "-m", `delivery ${tree}`], {
+      GIT_DIR: join13(sourceRoot, ".git"),
+      GIT_AUTHOR_NAME: "Immune-Brain Assurance",
+      GIT_AUTHOR_EMAIL: "assurance@immune-brain.local",
+      GIT_AUTHOR_DATE: "1970-01-01T00:00:00 +0000",
+      GIT_COMMITTER_NAME: "Immune-Brain Assurance",
+      GIT_COMMITTER_EMAIL: "assurance@immune-brain.local",
+      GIT_COMMITTER_DATE: "1970-01-01T00:00:00 +0000"
+    });
+    if (!GIT_OBJECT_ID4.test(commit))
+      throw new DeliveryWorkspaceError("delivery commit write failed");
+    git4(dest, ["init", "-q"]);
+    git4(dest, ["fetch", "--depth=1", `file://${resolve9(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+    git4(dest, ["checkout", "-q", "delivery"]);
+    const got = git4(dest, ["rev-parse", "HEAD^{tree}"]);
+    if (got !== tree)
+      throw new DeliveryWorkspaceError("delivery materialization does not match the frozen tree");
+    assertNoEscapingSymlinks(dest);
+    const seal = workspaceSeal(dest);
+    assertDeliveryClean(dest, tree, seal);
+    return { root: dest, tree, seal, cleanup };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+var DeliveryWorkspaceError, GIT_OBJECT_ID4;
+var init_delivery_workspace = __esm(() => {
+  DeliveryWorkspaceError = class DeliveryWorkspaceError extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "DeliveryWorkspaceError";
+    }
+  };
+  GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
+});
+
 // plugins/immune-brain/runtime/kernel/acceptance_repeats.ts
 function acceptanceRepeatSeries(findings, latestRound) {
   const byKey = new Map;
@@ -8589,7 +8589,7 @@ function acceptanceRepeatSeries(findings, latestRound) {
 }
 
 // plugins/immune-brain/runtime/assurance/verification.ts
-import { createHash as createHash12, randomBytes } from "node:crypto";
+import { createHash as createHash13, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync7, spawn as spawn2 } from "node:child_process";
 import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync4, realpathSync as realpathSync11, statSync as statSync3 } from "node:fs";
 import { delimiter as delimiter3, isAbsolute as isAbsolute6, join as join14, relative as relative4, resolve as resolve10, sep as sep5 } from "node:path";
@@ -8629,7 +8629,7 @@ function identity(path) {
     const stat = statSync3(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash12("sha256").update(readFileSync13(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash13("sha256").update(readFileSync13(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
@@ -8851,7 +8851,7 @@ async function runFixedVerification(root, command, frozen, options) {
 }
 function findingsDigest(findings) {
   const normalized = findings.map((f) => JSON.stringify({ acceptance_id: f.acceptance_id, id: f.id, kind: f.kind, summary: f.summary }));
-  return `sha256:${createHash12("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
+  return `sha256:${createHash13("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
 }
 function baselineGit(root, args) {
   const env = {};
@@ -8977,7 +8977,7 @@ function createInvocationRegistry() {
 }
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync14 } from "node:fs";
 import { join as join15, dirname as dirname9 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -8994,7 +8994,7 @@ function rolePromptSearchDirs(moduleDir) {
   ];
 }
 function currentReviewContractHash() {
-  return `sha256:${createHash13("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
+  return `sha256:${createHash14("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
@@ -9036,7 +9036,7 @@ function buildRoleDelegationPacket(input) {
   ].join(`
 
 `);
-  const promptDigest = `sha256:${createHash13("sha256").update(prompt).digest("hex")}`;
+  const promptDigest = `sha256:${createHash14("sha256").update(prompt).digest("hex")}`;
   return {
     contract: "immune_brain/role_delegation/v1",
     role: input.role,
@@ -10007,10 +10007,10 @@ var init_canary_application = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
-import { createHash as createHash14 } from "node:crypto";
+import { createHash as createHash15 } from "node:crypto";
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
-  return createHash14("sha256").update(JSON.stringify(rest)).digest("hex");
+  return createHash15("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
@@ -10100,11 +10100,11 @@ var init_authority_port = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/review_packet.ts
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 import { isAbsolute as isAbsolute7 } from "node:path";
 import { readFileSync as readFileSync15 } from "node:fs";
 function packetDigest(content) {
-  return createHash15("sha256").update(content, "utf8").digest("hex");
+  return createHash16("sha256").update(content, "utf8").digest("hex");
 }
 function reviewPacketHandle(input) {
   if (!isAbsolute7(input.packet.path) || /[\r\n]/.test(input.packet.path) || !/^[a-f0-9]{64}$/.test(input.packet.sha256))
@@ -10159,7 +10159,7 @@ var init_review_packet = () => {};
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 import { execFileSync as execFileSync8 } from "node:child_process";
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 import {
   mkdtempSync as mkdtempSync4,
   rmSync as rmSync6,
@@ -10172,7 +10172,7 @@ import {
 import { tmpdir as tmpdir3 } from "node:os";
 import { join as join16 } from "node:path";
 function bundleDigest(bundle) {
-  return `sha256:${createHash16("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
+  return `sha256:${createHash17("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
 }
 function readIndexBlob(root, path, entry) {
   if (!entry.oid)
@@ -10335,7 +10335,7 @@ function reviewDeltaFields(root, delta, currentTree) {
   }
 }
 function manifestDigest(manifest) {
-  return `sha256:${createHash16("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
+  return `sha256:${createHash17("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
 function gitEvidenceBytes(root, args, extraEnv = {}) {
   return execFileSync8("git", args, {
@@ -10384,7 +10384,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash16("sha256").update(realpathSync12(root)).digest("hex").slice(0, 16);
+  return createHash17("sha256").update(realpathSync12(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -10467,7 +10467,7 @@ function publishInput(root, input) {
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
   const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
-  const recomputed = `sha256:${createHash16("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  const recomputed = `sha256:${createHash17("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
   if (Object.keys(snapshot.changed_paths).length === 0)
@@ -10565,7 +10565,7 @@ var init_review_evidence = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 import { execFileSync as execFileSync9 } from "node:child_process";
 import { existsSync as existsSync9 } from "node:fs";
 import { join as join17, resolve as resolve11 } from "node:path";
@@ -10788,7 +10788,7 @@ function createVerdictAuthority(options, registry = createMutationAuthorityRegis
         throw new Error("all-refuted Review requires recordVerification");
       const advisories = verdict.decision === "pass" ? reviewAdvisoryRecords(verdict) : [];
       const approval = verdict.decision === "pass" ? {
-        id: `approval-${snapshot.role}-${randomUUID4().slice(0, 8)}`,
+        id: `approval-${snapshot.role}-${randomUUID5().slice(0, 8)}`,
         kind: snapshot.role,
         authority_role: snapshot.role === "qa" ? "qa" : "reviewer",
         task_revision: snapshot.intent_revision,
@@ -10935,7 +10935,7 @@ var init_verdict_authority = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
-import { createHash as createHash17 } from "node:crypto";
+import { createHash as createHash18 } from "node:crypto";
 import { execFileSync as execFileSync10, spawnSync as spawnSync9 } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync17, realpathSync as realpathSync13, statSync as statSync5 } from "node:fs";
 import { dirname as dirname10, join as join18, sep as sep6 } from "node:path";
@@ -11009,7 +11009,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync5(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync17(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash18("sha256").update(readFileSync17(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -11040,7 +11040,7 @@ function watchBundleIdentity(path) {
     }
   };
 }
-var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash17("sha256").update(bytes).digest("hex")}`;
+var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash18("sha256").update(bytes).digest("hex")}`;
 var init_plugin_source_skew = __esm(() => {
   init_runtime_contracts();
   WORKSPACE_PLUGIN_DIR = join18("plugins", "immune-brain");
@@ -11115,7 +11115,7 @@ var init_lane_workspace = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
-import { createHash as createHash18, randomUUID as randomUUID5 } from "node:crypto";
+import { createHash as createHash19, randomUUID as randomUUID6 } from "node:crypto";
 import { execFileSync as execFileSync11 } from "node:child_process";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
@@ -11341,7 +11341,7 @@ function reviewTurnBudget(workload, changedPaths = 0, previousBudget = null) {
   return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash18("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash19("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function reviewDeltaLines(delta) {
   if (!delta)
@@ -11389,26 +11389,6 @@ function buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget, counterEv
     `REWORK shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"rework","findings":[{"id":"review-1","kind":"blocking","acceptance_id":"<id|null>","summary":"<one line>","evidence":{"trigger":"<concrete input or state → observable wrong result>","caller_chain":["<path-or-symbol>"],"violated":{"kind":"acceptance|security_boundary","ref":"<acceptance id or boundary>"}}}]}`,
     `INCOMPLETE shape: {"contract":"assurance_kernel/assurance_verdict/v2","role":"review","task_id":"${snapshot.task_id}","snapshot_digest":"${digest}","decision":"incomplete","inspected_paths":["<only changed paths actually inspected>"],"reason":"<non-empty single line>"}. If coverage cannot finish within the turn budget, return incomplete, never a coverage finding. Omit approval and findings entirely; inspected_paths must be a unique subset of changed paths.`,
     `REWORK verdicts must omit the approval field entirely; do not emit "approval": null. A rework carries only blocking findings, at least one; a note that blocks nothing is an advisory finding on a pass verdict, never on rework.`
-  ].join(`
-`);
-}
-function buildReviewPrompt(snapshot, evidencePath, turnBudget, counterEvidence) {
-  if (snapshot.role !== "review")
-    throw new Error("native review prompt requires review role");
-  const digest = snapshotDigest(snapshot);
-  const rolePacket = buildRoleDelegationPacket({
-    role: "code-review",
-    context: {
-      task_id: snapshot.task_id,
-      review_gate: "imm-code-review",
-      changed_files_signature: snapshot.diff_hash,
-      snapshot_digest: digest
-    }
-  });
-  return [
-    rolePacket.prompt,
-    ...STATIC_REVIEW_RULES,
-    buildReviewSnapshotPrompt(snapshot, evidencePath, turnBudget, counterEvidence)
   ].join(`
 `);
 }
@@ -11543,7 +11523,7 @@ function consumeReviewVerification(input) {
     verifier_model: dispatch.model,
     model_relation: dispatch.model_relation,
     verifier_actor: bound ? receipt.actorId : null,
-    result_sha256: bound ? `sha256:${createHash18("sha256").update(receipt.result).digest("hex")}` : null,
+    result_sha256: bound ? `sha256:${createHash19("sha256").update(receipt.result).digest("hex")}` : null,
     valid: parsed.valid,
     results: parsed.results,
     ...!parsed.valid ? { failure: input.failure ?? (releaseFailed || !receipt ? "dispatch_failed" : !bound ? "receipt_mismatch" : "malformed_output") } : {}
@@ -12028,7 +12008,7 @@ class AssuranceCoordinator {
     const refreshed = this.active(taskId);
     if (refreshed?.state === "running")
       return { state: "blocked", reason: `assurance operation ${refreshed.operation_id} is already running` };
-    const operationId = randomUUID5();
+    const operationId = randomUUID6();
     const operationGeneration = this.sessionGeneration;
     const operationController = new AbortController;
     const relayExternalAbort = () => operationController.abort(signal?.reason instanceof Error ? signal.reason : new Error("assurance operation cancelled"));
@@ -12316,7 +12296,6 @@ class AssuranceCoordinator {
           taskId,
           operationId,
           root: review.snapshot.root,
-          prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
           evidencePath: evidence.path,
           writePacket: evidence.writePacket,
@@ -12553,7 +12532,7 @@ class AssuranceCoordinator {
       return { state: "blocked", reason: receiptError.reason, recovery_action: receiptError.recovery_action };
     }
     const counterPath = prior.find((refutation) => refutation.anchor === finding.anchor).counter_path;
-    const decisionId = `user-decision-verifier-${randomUUID5()}`;
+    const decisionId = `user-decision-verifier-${randomUUID6()}`;
     const invocation = this.openInvocation(taskId);
     this.releaseReviewReservation(taskId, review);
     try {
@@ -12617,7 +12596,7 @@ Counter-path: ${counterPath}`
         verdictSha256: options.reviewer_verdict_sha256,
         reviewerModel: options.reviewer_model,
         offeredModels: options.offered_models ?? [],
-        operationId: randomUUID5(),
+        operationId: randomUUID6(),
         writePacket: review.evidence.writePacket,
         securityBoundaries
       });
@@ -12738,7 +12717,7 @@ Counter-path: ${counterPath}`
         const refutation = refutations[0];
         const finding = verdict.findings.find((item) => item.id === refutation.finding_id);
         exhaustedDispute = {
-          decision_id: `user-decision-verifier-${randomUUID5()}`,
+          decision_id: `user-decision-verifier-${randomUUID6()}`,
           finding: { id: finding.id, acceptance_id: finding.acceptance_id, summary: finding.summary, anchor: finding.anchor, evidence: finding.evidence },
           counter_path: refutation.counter_path,
           verdict_sha256: verdictSha256,
@@ -12981,7 +12960,7 @@ var init_coordinator = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/qa_findings.ts
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 function qaFindingId(acceptanceId, snapshotDigest) {
   return `qa-${acceptanceId}-${attemptRef(snapshotDigest)}`;
 }
@@ -12990,13 +12969,13 @@ function qaBaselineFindingId(checkId, snapshotDigest) {
 }
 function attemptRef(snapshotDigest) {
   const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
-  return `${digest8}-${randomUUID6().slice(0, 6)}`;
+  return `${digest8}-${randomUUID7().slice(0, 6)}`;
 }
 var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { createHash as createHash19 } from "node:crypto";
+import { createHash as createHash20 } from "node:crypto";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
@@ -13008,7 +12987,7 @@ function deliveryTreeForSnapshot(snapshot) {
     return snapshot.review_revision.review_tree;
   const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
-  const digest = `sha256:${createHash19("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+  const digest = `sha256:${createHash20("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
@@ -13060,7 +13039,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostic = (reason, stage) => [{
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/command`,
-      descriptor_digest: `sha256:${createHash19("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash20("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome: reason,
       elapsed_ms: 0,
@@ -13107,7 +13086,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
-      descriptor_digest: `sha256:${createHash19("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash20("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome,
       elapsed_ms: elapsed,
@@ -13180,8 +13159,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
-        environment: createHash19("sha256").update(environmentKey).digest("hex"),
-        command: createHash19("sha256").update(JSON.stringify(command)).digest("hex"),
+        environment: createHash20("sha256").update(environmentKey).digest("hex"),
+        command: createHash20("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
@@ -13266,7 +13245,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (findings.length)
     return { ...base, decision: "rework", findings };
   const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
-  const executionDigest = createHash19("sha256").update(JSON.stringify({
+  const executionDigest = createHash20("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
@@ -13909,96 +13888,6 @@ var init_batch_integration = __esm(() => {
   };
 });
 
-// plugins/immune-brain/runtime/unattended/batch_final_report.ts
-import { spawnSync as spawnSync13 } from "node:child_process";
-function git7(root, ...argv) {
-  return spawnSync13("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
-}
-function returnBatchToCoordinator(root, head, final) {
-  const { mode } = readGitIntegrationPreference(root);
-  if (mode === "manual")
-    return { mode, status: "manual", reason: null };
-  const blocked = (reason) => ({ mode, status: "blocked", reason });
-  if (!final?.passed || final.head !== head)
-    return blocked("final_verification_not_passed");
-  const branch = git7(root, "symbolic-ref", "--quiet", "HEAD");
-  if (branch.status !== 0)
-    return blocked("coordinator_branch_unavailable");
-  const status = git7(root, "status", "--porcelain", "--untracked-files=all");
-  if (status.status !== 0)
-    return blocked("coordinator_status_unreadable");
-  if (status.stdout.length)
-    return blocked("coordinator_working_tree_dirty");
-  if (git7(root, "merge-base", "--is-ancestor", "HEAD", head).status !== 0)
-    return blocked("coordinator_head_diverged");
-  const merge = git7(root, "merge", "--ff-only", "--no-edit", head);
-  if (merge.status !== 0)
-    return blocked(`coordinator_fast_forward_failed: ${merge.stderr.trim()}`);
-  return { mode, status: "fast_forwarded", reason: null };
-}
-async function buildBatchFinalReport(root, record) {
-  if (!isParentBranch(record.branch))
-    throw new Error("final report requires a Parent branch batch");
-  const head = expectedBatchHead(record);
-  const children = await withParentWorktree(root, head, async (path) => {
-    const floor = readRiskFloor(path);
-    return record.children.map((child) => {
-      const integrated = child.state === "integrated" || child.state === "released";
-      const audit = integrated ? readAuditTaskPair(path, child.task_id, child.lane?.run_id ?? undefined) : null;
-      if (integrated && (!audit || audit.proof.terminal_lifecycle !== "done" || audit.record.contract !== "assurance_kernel/task_record/v4"))
-        throw new Error(`final report missing settled evidence: ${child.task_id}`);
-      let intent;
-      if (audit)
-        intent = audit.record.intent_snapshot;
-      else {
-        const approved = record.intent_identities?.[child.task_id];
-        if (!approved)
-          throw new Error(`final report missing approved planning identity: ${child.task_id}`);
-        const planning = approved.intent_path === `docs/plans/${child.task_id}.intent.json` ? observeEnrollmentTaskIntent(root, child.task_id) : readTaskIntent(root, child.task_id, approved.intent_path);
-        const matches = approved.intent_authority_hash ? intentAuthorityHash(planning.intent) === approved.intent_authority_hash : planning.intent.revision === approved.intent_revision && planning.content_hash === approved.intent_content_hash;
-        if (!matches)
-          throw new Error(`final report planning evidence changed: ${child.task_id}`);
-        intent = planning.intent;
-      }
-      const qa = audit && "attestations" in audit.record ? [...audit.record.attestations].reverse().find((item) => item.kind === "qa" && item.task_revision === intent.revision && item.intent_content_hash === audit.record.intent_ref.content_hash) : undefined;
-      const parent = child.commit ? git7(path, "rev-parse", `${child.commit}^`) : null;
-      if (parent && parent.status !== 0)
-        throw new Error(`final report unreadable integration: ${child.task_id}`);
-      const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent.stdout.trim(), child.commit).changed_paths : null;
-      const outsideRoutine = paths ? routineAllowlistEscapes(intent, paths, floor) : [];
-      return {
-        task_id: child.task_id,
-        acceptance: intent.acceptance.map((item) => ({ id: item.id, qa: qa?.acceptance_results.find((result) => result.acceptance_id === item.id)?.status ?? null })),
-        beyond_estimate: paths?.filter((file) => !intent.scope_hint.some((scope) => pathMatchesScope(file, scope))) ?? null,
-        declared_risk: intent.risk,
-        projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
-        ...outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {},
-        redo_count: child.redo_grants ?? 0,
-        parked_reason: integrated ? null : child.reason,
-        ...child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}
-      };
-    });
-  });
-  return {
-    contract: "assurance_kernel/batch_final_report/v1",
-    head,
-    children,
-    final_verification: record.final_verification_result ?? null,
-    return_to_coordinator: { mode: readGitIntegrationPreference(root).mode, status: "blocked", reason: "return_pending" }
-  };
-}
-var init_batch_final_report = __esm(() => {
-  init_git_integration_preference();
-  init_storage();
-  init_intent();
-  init_completion();
-  init_risk_floor();
-  init_workspace_scope();
-  init_batch_preflight();
-  init_batch_ref();
-  init_batch_worktrees();
-});
-
 // plugins/immune-brain/runtime/local_initiative.ts
 import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
 import { resolve as resolve14 } from "node:path";
@@ -14081,7 +13970,7 @@ var init_local_initiative = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
-import { spawn as spawn3, spawnSync as spawnSync14 } from "node:child_process";
+import { spawn as spawn3, spawnSync as spawnSync13 } from "node:child_process";
 import { existsSync as existsSync11, readFileSync as readFileSync19, readdirSync as readdirSync6 } from "node:fs";
 import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep8 } from "node:path";
 function countLiteral(value, needle) {
@@ -15372,7 +15261,7 @@ __export(exports_batch_plan, {
   observeSingleTask: () => observeSingleTask,
   projectBatchPlan: () => projectBatchPlan
 });
-import { createHash as createHash20 } from "node:crypto";
+import { createHash as createHash21 } from "node:crypto";
 function specBindingReason(inspection) {
   if (inspection.missing.length > 0)
     return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
@@ -15552,7 +15441,7 @@ async function projectBatchPlan(root, initiativeSlug, input, readInitiative = ob
   }));
   if (!enrollable.length)
     throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash20("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  const planDigest = `sha256:${createHash21("sha256").update(stableStringify(enrollable)).digest("hex")}`;
   return {
     contract: "assurance_kernel/batch_plan/v1",
     initiative_slug: initiativeSlug,
@@ -15589,8 +15478,8 @@ var init_batch_plan = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync15 } from "node:child_process";
-import { createHash as createHash21, randomUUID as randomUUID7 } from "node:crypto";
+import { spawnSync as spawnSync14 } from "node:child_process";
+import { createHash as createHash22, randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants6,
   closeSync as closeSync6,
@@ -15608,7 +15497,7 @@ import { dirname as dirname12, join as join21 } from "node:path";
 function runBatchGitPreflight(input) {
   const { root, base_head: baseHead } = input;
   const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
-  const git = (args) => spawnSync15("git", ["-C", root, ...args], {
+  const git = (args) => spawnSync14("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -15707,7 +15596,7 @@ function scopeRefusal(cause, entries) {
   return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync15("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync14("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15744,13 +15633,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync15("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync14("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync15("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15760,7 +15649,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync15("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync14("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15769,13 +15658,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync15("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync14("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync15("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15785,7 +15674,7 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync15("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
@@ -15823,7 +15712,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
       throw new Error(`${relativePath} is a symlink`);
     }
   }
-  const tempPath = `${target}.${randomUUID7()}.tmp`;
+  const tempPath = `${target}.${randomUUID8()}.tmp`;
   let fd = null;
   try {
     fd = openSync6(tempPath, constants6.O_WRONLY | constants6.O_CREAT | constants6.O_EXCL, 384);
@@ -15892,7 +15781,7 @@ function assertReviewedDelivery(root, authoritative, scopeHint, taskId) {
     if (!record.git_base_head)
       throw new Error("batch commit requires a TaskRecord v4 git_base_head");
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, record.git_base_head, taskId);
-    const digest = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const digest = `sha256:${createHash22("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     if (digest !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
   }
@@ -15928,18 +15817,18 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (usesBranchDelivery(root, taskId)) {
-    const currentBranch = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    const currentBranch = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
     if (expectedBranch !== undefined && currentBranch.stdout.trim() !== expectedBranch)
       throw new Error("batch_head_lineage_broken: Lane branch changed before commit");
-    const head = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-    if (spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+    const head = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    if (spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
       throw new Error("batch_head_lineage_broken: Lane base is not an ancestor of HEAD");
     const flagged = getUnsupportedIndexFlags(root);
     if (flagged.length)
       throw scopeRefusal("unsupported_index_flags", flagged);
     assertReviewedDelivery(root, authoritative, scopeHint, taskId);
     const captured = captureGitTaskRevisionSnapshot(root, scopeHint, expectedHead, taskId);
-    const deliveryHash = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+    const deliveryHash = `sha256:${createHash22("sha256").update(JSON.stringify(captured)).digest("hex")}`;
     const paths = [...Object.keys(captured.changed_paths), auditPaths.record, auditPaths.proof];
     const message = `imm(${taskId}): ${goal.trim().split(/\r?\n/)[0]?.trim() || taskId}
 
@@ -15949,10 +15838,10 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     if (taskCommitRevisionIdentity(root, scopeHint, expectedHead, commit).diff_hash !== deliveryHash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
-    const moved = spawnSync15("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
+    const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
     if (moved.status !== 0)
       throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
-    const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
     if (indexed.status !== 0)
       throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
     return { commit };
@@ -15979,7 +15868,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     return { commit };
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -15988,7 +15877,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16007,7 +15896,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync15("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync14("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16022,7 +15911,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync15("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync14("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw scopeRefusal("staged_paths", stagedOutside.map((path) => ({ path })));
   }
   assertReviewedDelivery(root, authoritative, scopeHint, taskId);
@@ -16031,7 +15920,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
 
 ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}
 `;
-  const commitResult = spawnSync15("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync14("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -16040,7 +15929,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16048,7 +15937,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16086,13 +15975,13 @@ async function lookupBatchCommit(input) {
     if (!evidence || evidence.commit !== lane.lane_commit || evidence.parent_head !== lane.base_head)
       throw new Error("batch_head_lineage_broken: Lane delivery lacks matching production evidence");
     const common = (path) => {
-      const result = spawnSync15("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
+      const result = spawnSync14("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
       if (result.status !== 0)
         throw new Error("batch_head_lineage_broken: unreadable Lane repository");
       return realpathSync16(result.stdout.trim());
     };
-    const sourceParent = spawnSync15("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
-    const candidateParent = spawnSync15("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const sourceParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
+    const candidateParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = candidateParent.stdout.trim().split(/\s+/).filter(Boolean);
     if (common(lane.path) !== common(root) || sourceParent.status !== 0 || sourceParent.stdout.trim() !== lane.base_head || candidateParent.status !== 0 || parents.length !== 1 || !laneCandidateMatches({
       root,
@@ -16108,7 +15997,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && recordedCommit) {
-    const direct = spawnSync15("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync14("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -16121,7 +16010,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync15("git", [
+    const result = spawnSync14("git", [
       "-C",
       root,
       "log",
@@ -16159,7 +16048,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined && !isProgressRef(expectedBranch)) {
-    const currentBranchResult = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16176,7 +16065,7 @@ async function lookupBatchCommit(input) {
   requireMatchingSettledAudit(auditPair, adopted);
   const auditPaths = adopted.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, adopted.runId), proof: auditRunTerminalProofPath(taskId, adopted.runId) };
   for (const path of [auditPaths.record, auditPaths.proof]) {
-    const committed = spawnSync15("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     if (committed.status !== 0 || committed.stdout !== readSecureProjectFile(root, path))
       throw new Error(`batch_head_lineage_broken: committed terminal evidence differs for ${taskId}`);
   }
@@ -16185,13 +16074,13 @@ async function lookupBatchCommit(input) {
   if (lifecycle !== "done") {
     throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
   }
-  const parentsResult = spawnSync15("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
+  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
   const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
   let pendingLaneHead = null;
   let indexLaneDelivery = false;
   if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
-    const reachable = tip !== null && (tip === commit || spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
+    const reachable = tip !== null && (tip === commit || spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
     if (!reachable) {
       if (tip !== null && parents.length === 1 && parents[0] === tip)
         moveBatchRef(root, expectedBranch, tip, commit);
@@ -16199,12 +16088,12 @@ async function lookupBatchCommit(input) {
         throw new Error(`batch_head_lineage_broken: ${expectedBranch} at ${tip ?? "nothing"} diverged from adopted commit ${commit}`);
     }
   } else {
-    const currentHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+    const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const currentHead = currentHeadResult.stdout.trim();
     if (currentHeadResult.status !== 0)
       throw new Error("batch_head_lineage_broken: unreadable Lane HEAD");
     indexLaneDelivery = usesBranchDelivery(root, taskId) && evidence?.previous_head !== undefined;
-    if (currentHead !== commit && spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
+    if (currentHead !== commit && spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
       if (indexLaneDelivery && evidence?.previous_head === currentHead)
         pendingLaneHead = currentHead;
       else
@@ -16215,7 +16104,7 @@ async function lookupBatchCommit(input) {
   if (parentsResult.status !== 0 || parents.length !== 1 || retained && parents[0] !== retained.parent_head || expectedHead !== undefined && parents[0] !== expectedHead)
     throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead ?? "single-parent delivery"}`);
   const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint) ? authoritative.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-  const deltaResult = spawnSync15("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const deltaResult = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (deltaResult.status !== 0)
     throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
   const outside = deltaResult.stdout.split("\x00").filter((p) => p.length > 0 && !isPathAllowedForChild(p, taskId, usesBranchDelivery(root, taskId) || input.lane ? ["**"] : scopeHint));
@@ -16227,11 +16116,11 @@ async function lookupBatchCommit(input) {
     if (qa && taskCommitRevisionIdentity(root, scopeHint, parents[0], commit).diff_hash !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     if (pendingLaneHead !== null) {
-      const moved = spawnSync15("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
+      const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
       if (moved.status !== 0)
         throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     }
-    const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
     if (indexed.status !== 0)
       throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
   }
@@ -16244,13 +16133,13 @@ async function retainIntegratedLaneEvidence(input) {
       root: lane.path,
       taskId: input.taskId,
       batchId: input.batchId,
-      branch: spawnSync15("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
+      branch: spawnSync14("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
       expectedHead: lane.base_head
     });
-    const parent = spawnSync15("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = parent.stdout.trim().split(/\s+/).filter(Boolean);
     const tip = readBatchRef(input.root, input.branch);
-    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync15("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
+    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
       root: input.root,
       lane_base: lane.base_head,
       lane_commit: lane.lane_commit,
@@ -16270,7 +16159,7 @@ async function retainIntegratedLaneEvidence(input) {
   const landed = await lookupBatchCommit(input);
   if (!landed)
     throw new Error("batch_head_lineage_broken: missing integrated Lane delivery");
-  const parent = spawnSync15("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
+  const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
   if (parent.status !== 0)
     throw new Error("batch_head_lineage_broken: unreadable integrated parent");
   writeBatchCommitEvidence(input.root, {
@@ -16331,7 +16220,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
 async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
   if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
     throw new Error("Parent completion requires a non-empty, unique required Task list");
-  const headResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const headResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
   if (headResult.status !== 0)
     throw new Error("Parent completion requires a Git HEAD");
   const head = headResult.stdout.trim();
@@ -16375,7 +16264,7 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     return null;
   const native = readNativeParentFinalReport(root, initiativeSlug);
   const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((task) => task.task_id));
-  const planDigest = `sha256:${createHash21("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
+  const planDigest = `sha256:${createHash22("sha256").update(JSON.stringify(intents.map(({ task, intent }) => ({ task_id: task.task_id, blocked_by: task.blocked_by, intent: intent.content_hash })))).digest("hex")}`;
   const activeTask = readActiveClaimTaskId(root);
   const action = activeTask ? "drive" : proof.complete ? "complete" : "enroll";
   const ready = parent.tasks.find((task) => !blockedNativeTasks.includes(task.task_id) && !readSettledTaskEvidence(root, task.task_id) && task.blocked_by.every((id) => proof.integrated_task_ids.includes(id)));
@@ -16456,7 +16345,7 @@ async function advanceNativeParent(root, initiativeSlug, commands, readInitiativ
 function settledDeliveryInTree(root, commit, taskId, settled) {
   const paths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
   return [paths.record, paths.proof].every((path) => {
-    const committed = spawnSync15("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     try {
       return committed.status === 0 && committed.stdout === readSecureProjectFile(root, path);
     } catch {
@@ -16501,7 +16390,7 @@ async function integrateSettledCriticalSlices(root, initiativeSlug, readInitiati
       if (!live)
         throw new Error("cannot verify recovered critical integration HEAD");
       if (live === existing.commit && expectedBatchHead(batch) !== existing.commit) {
-        const predecessor = spawnSync15("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
+        const predecessor = spawnSync14("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
         if (predecessor.status !== 0 || predecessor.stdout.trim() !== expectedBatchHead(batch))
           throw new Error("recovered critical integration does not extend the exact Parent HEAD");
         batch = { ...batch, adopted_heads: [...batch.adopted_heads ?? [], { from: expectedBatchHead(batch), to: existing.commit }] };
@@ -16596,11 +16485,11 @@ var init_intent_readiness = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
-import { spawnSync as spawnSync16 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
 import { dirname as dirname13, join as join22 } from "node:path";
-function git8(root, args) {
-  const result = spawnSync16("git", ["-C", root, ...args], {
+function git7(root, args) {
+  const result = spawnSync15("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -16608,11 +16497,11 @@ function git8(root, args) {
   return { status: result.status, stdout: result.stdout ?? "" };
 }
 function blobOfFile(root, file) {
-  const hashed = git8(root, ["hash-object", "--no-filters", "--", file]);
+  const hashed = git7(root, ["hash-object", "--no-filters", "--", file]);
   return hashed.status === 0 ? hashed.stdout.trim() : null;
 }
 function blobAt(root, commit, path) {
-  const blob = git8(root, ["rev-parse", "--verify", "--quiet", `${commit}:${path}`]);
+  const blob = git7(root, ["rev-parse", "--verify", "--quiet", `${commit}:${path}`]);
   return blob.status === 0 ? blob.stdout.trim() : null;
 }
 function laneOrigin(root, record, path, blob) {
@@ -16626,7 +16515,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (existsSync13(join22(lane.path, path)) && blobOfFile(lane.path, join22(lane.path, path)) === blob)
       return child.task_id;
-    const commits = git8(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
+    const commits = git7(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
       continue;
     for (const commit of commits.stdout.split(`
@@ -16667,7 +16556,7 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
   mkdirSync10(join22(backupRoot, "files"), { recursive: true });
   const tracked = planned.filter((p) => p.kind === "modified").map((p) => p.path);
   if (tracked.length > 0) {
-    const diff = git8(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
+    const diff = git7(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
     writeFileSync10(join22(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
@@ -16686,7 +16575,7 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
       renameSync5(join22(root, path), join22(backupRoot, "files", path));
       continue;
     }
-    const restored = git8(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
+    const restored = git7(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
     if (restored.status !== 0)
       throw new Error(`failed to restore ${path} from HEAD; its bytes are backed up under ${backup}`);
   }
@@ -16698,9 +16587,9 @@ var init_batch_leak_restore = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync14, readdirSync as readdirSync8, readFileSync as readFileSync20 } from "node:fs";
-import { randomUUID as randomUUID8 } from "node:crypto";
+import { randomUUID as randomUUID9 } from "node:crypto";
 import { dirname as dirname14, join as join23 } from "node:path";
-import { spawnSync as spawnSync17 } from "node:child_process";
+import { spawnSync as spawnSync16 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
   return {
@@ -16834,7 +16723,7 @@ function parentBranchProvenance(root, slug, head, batchId) {
 }
 function classifyBatchLineage(input) {
   const { root, branch, expectedHead, childCommits } = input;
-  const run = (args) => spawnSync17("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const run = (args) => spawnSync16("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const broken = (reason) => ({
     kind: "broken",
     message: `batch_head_lineage_broken: ${reason}`
@@ -16903,7 +16792,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   if (currentTaskId !== taskId || !claim)
     return false;
   if (!isBatchRef(batchBranch)) {
-    const branch = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+    const branch = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
     if (branch !== batchBranch)
       return false;
   }
@@ -16959,7 +16848,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync17("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const statusProc = spawnSync16("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -17177,7 +17066,7 @@ async function projectPreflight(options, preparing) {
       return reject("batch_resource_collision", error instanceof Error ? error.message : String(error));
     }
   } else {
-    const branchExists = spawnSync17("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+    const branchExists = spawnSync16("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
     if (branchExists.status === 0 && !existingBatch)
       return reject("branch_already_exists", batchBranch);
   }
@@ -17261,7 +17150,7 @@ async function projectPreflight(options, preparing) {
       const scopeFailure = scopeEstimateFailure(root, read.intent);
       if (scopeFailure)
         throw new Error(scopeFailure);
-      if (spawnSync17("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
+      if (spawnSync16("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
         throw new Error("TaskIntent must be tracked");
       preparation = preparePiCanary(root, { task_id: initiativeSlug, now });
       if (!preparation.intent || preparation.intent.content_hash !== read.content_hash || !preparation.git_base_head || preparation.task_record_v3?.present || preparation.task_tombstone.present || preparation.backend_claim.present || preparation.workspace.current_working)
@@ -17355,7 +17244,7 @@ async function authorizeBatch(options) {
     is_resuming: isResuming
   } = projection;
   const existingBatch = projection.existing_batch;
-  const branchBefore = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchBefore = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch && expectedBatchHead(existingBatch) !== baseHead && classifyBatchLineage({
@@ -17379,7 +17268,7 @@ async function authorizeBatch(options) {
       reuseBlockers.push("batch_head_lineage_moved");
   }
   const reuseAuthorization = isResuming && reuseBlockers.length === 0;
-  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID8()}`;
+  const batchId = isResuming && existingBatch ? existingBatch.batch_id : `batch-${initiativeSlug}-${randomUUID9()}`;
   const facts = {
     ...projection.preparation ? { preparation: projection.preparation } : {},
     initiative_slug: initiativeSlug,
@@ -17451,7 +17340,7 @@ async function authorizeBatch(options) {
     if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
       return { outcome: "rejected", rejection: batchRejection("plan_changed") };
   }
-  const branchAfter = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchAfter = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
   const binding = {
@@ -17507,61 +17396,114 @@ var init_batch_preflight = __esm(() => {
   INITIATIVE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 });
 
+// plugins/immune-brain/runtime/unattended/batch_final_report.ts
+import { spawnSync as spawnSync17 } from "node:child_process";
+function git8(root, ...argv) {
+  return spawnSync17("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
+}
+function returnBatchToCoordinator(root, head, final) {
+  const { mode } = readGitIntegrationPreference(root);
+  if (mode === "manual")
+    return { mode, status: "manual", reason: null };
+  const blocked = (reason) => ({ mode, status: "blocked", reason });
+  if (!final?.passed || final.head !== head)
+    return blocked("final_verification_not_passed");
+  const branch = git8(root, "symbolic-ref", "--quiet", "HEAD");
+  if (branch.status !== 0)
+    return blocked("coordinator_branch_unavailable");
+  const status = git8(root, "status", "--porcelain", "--untracked-files=all");
+  if (status.status !== 0)
+    return blocked("coordinator_status_unreadable");
+  if (status.stdout.length)
+    return blocked("coordinator_working_tree_dirty");
+  if (git8(root, "merge-base", "--is-ancestor", "HEAD", head).status !== 0)
+    return blocked("coordinator_head_diverged");
+  const merge = git8(root, "merge", "--ff-only", "--no-edit", head);
+  if (merge.status !== 0)
+    return blocked(`coordinator_fast_forward_failed: ${merge.stderr.trim()}`);
+  return { mode, status: "fast_forwarded", reason: null };
+}
+async function buildBatchFinalReport(root, record) {
+  if (!isParentBranch(record.branch))
+    throw new Error("final report requires a Parent branch batch");
+  const head = expectedBatchHead(record);
+  const children = await withParentWorktree(root, head, async (path) => {
+    const floor = readRiskFloor(path);
+    return record.children.map((child) => {
+      const integrated = child.state === "integrated" || child.state === "released";
+      const audit = integrated ? readAuditTaskPair(path, child.task_id, child.lane?.run_id ?? undefined) : null;
+      if (integrated && (!audit || audit.proof.terminal_lifecycle !== "done" || audit.record.contract !== "assurance_kernel/task_record/v4"))
+        throw new Error(`final report missing settled evidence: ${child.task_id}`);
+      let intent;
+      if (audit)
+        intent = audit.record.intent_snapshot;
+      else {
+        const approved = record.intent_identities?.[child.task_id];
+        if (!approved)
+          throw new Error(`final report missing approved planning identity: ${child.task_id}`);
+        const planning = approved.intent_path === `docs/plans/${child.task_id}.intent.json` ? observeEnrollmentTaskIntent(root, child.task_id) : readTaskIntent(root, child.task_id, approved.intent_path);
+        const matches = approved.intent_authority_hash ? intentAuthorityHash(planning.intent) === approved.intent_authority_hash : planning.intent.revision === approved.intent_revision && planning.content_hash === approved.intent_content_hash;
+        if (!matches)
+          throw new Error(`final report planning evidence changed: ${child.task_id}`);
+        intent = planning.intent;
+      }
+      const qa = audit && "attestations" in audit.record ? [...audit.record.attestations].reverse().find((item) => item.kind === "qa" && item.task_revision === intent.revision && item.intent_content_hash === audit.record.intent_ref.content_hash) : undefined;
+      const parent = child.commit ? git8(path, "rev-parse", `${child.commit}^`) : null;
+      if (parent && parent.status !== 0)
+        throw new Error(`final report unreadable integration: ${child.task_id}`);
+      const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent.stdout.trim(), child.commit).changed_paths : null;
+      const outsideRoutine = paths ? routineAllowlistEscapes(intent, paths, floor) : [];
+      return {
+        task_id: child.task_id,
+        acceptance: intent.acceptance.map((item) => ({ id: item.id, qa: qa?.acceptance_results.find((result) => result.acceptance_id === item.id)?.status ?? null })),
+        beyond_estimate: paths?.filter((file) => !intent.scope_hint.some((scope) => pathMatchesScope(file, scope))) ?? null,
+        declared_risk: intent.risk,
+        projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
+        ...outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {},
+        redo_count: child.redo_grants ?? 0,
+        parked_reason: integrated ? null : child.reason,
+        ...child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}
+      };
+    });
+  });
+  return {
+    contract: "assurance_kernel/batch_final_report/v1",
+    head,
+    children,
+    final_verification: record.final_verification_result ?? null,
+    return_to_coordinator: { mode: readGitIntegrationPreference(root).mode, status: "blocked", reason: "return_pending" }
+  };
+}
+var init_batch_final_report = __esm(() => {
+  init_git_integration_preference();
+  init_storage();
+  init_intent();
+  init_completion();
+  init_risk_floor();
+  init_workspace_scope();
+  init_batch_preflight();
+  init_batch_ref();
+  init_batch_worktrees();
+});
+
 // plugins/immune-brain/runtime/antigravity/mcp_server.ts
-import { createInterface as createInterface2 } from "node:readline";
-import { stdin as stdin2, stdout as stdout2 } from "node:process";
-
-// plugins/immune-brain/runtime/claude/mcp_server.ts
-init_batch_preflight();
-init_batch_reasons();
-init_batch_state();
-import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync22 } from "node:fs";
-import { isAbsolute as isAbsolute12, join as join35 } from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { createInterface } from "node:readline";
-import { stdin, stdout } from "node:process";
+import { stdin as stdin2, stdout as stdout2 } from "node:process";
+import { tmpdir as tmpdir9 } from "node:os";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 
-// plugins/immune-brain/runtime/claude/capability.ts
-var MIN_CLAUDE_CODE_VERSION = "2.1.236";
-var HOST_ID = "claude-code";
-var CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
-function parseSemver(value) {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
-  if (!match)
-    return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function compareSemver(left, right) {
-  const a = parseSemver(left);
-  const b = parseSemver(right);
-  if (!a || !b)
-    throw new Error(`invalid semver: ${!a ? left : right}`);
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function probeHost(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.CLAUDE_CODE_VERSION ?? env.CLAUDE_CLI_VERSION;
-  if (!version)
-    return { ok: false, reason: "Claude Code version is unavailable" };
-  if (!parseSemver(version))
-    return { ok: false, reason: `Claude Code version is invalid: ${version}` };
-  if (compareSemver(version, MIN_CLAUDE_CODE_VERSION) < 0) {
-    return {
-      ok: false,
-      reason: `Claude Code ${version} is below the minimum supported ${MIN_CLAUDE_CODE_VERSION}`
-    };
-  }
-  if (platform !== "darwin" && platform !== "linux") {
-    return { ok: false, reason: `unsupported platform ${platform}; native Windows is out of scope` };
-  }
-  return { ok: true, version, platform };
-}
+// plugins/immune-brain/runtime/host-core/mcp_runtime.ts
+import { randomUUID as randomUUID10 } from "node:crypto";
+import { realpathSync as realpathSync18 } from "node:fs";
+import { isAbsolute as isAbsolute11 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { stdin, stdout } from "node:process";
 
 // plugins/immune-brain/runtime/plugin_version.ts
 var PLUGIN_VERSION = "8.1.0";
 
-// plugins/immune-brain/runtime/claude/interaction.ts
-import { createHash as createHash22, randomUUID as randomUUID9 } from "node:crypto";
+// plugins/immune-brain/runtime/host-core/interaction.ts
+import { createHash, randomUUID } from "node:crypto";
 
 // plugins/immune-brain/runtime/assurance/phase_entry.ts
 var RUN_ENTRY_REQUIRED = "run_entry_required";
@@ -17581,17 +17523,6 @@ var ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 var SKILL_MENTION = /(?<![A-Za-z0-9_-])(?:\/(?:immune-brain:|skill:)?|immune-brain:|skill:)(draw-up|clarify|drive)(?![A-Za-z0-9_-])/g;
 var EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
 var RAW = /^\/(\S+)/;
-function stripPrefix(name) {
-  for (const prefix of [PLUGIN_PREFIX, SKILL_PREFIX])
-    if (name.startsWith(prefix))
-      return name.slice(prefix.length);
-  return name;
-}
-function packagedPhaseSkill(name) {
-  const trimmed = name.trim();
-  const bare = stripPrefix(trimmed.startsWith("/") ? trimmed.slice(1) : trimmed);
-  return Object.hasOwn(PACKAGED, bare) ? bare : null;
-}
 function packaged(name) {
   return Object.hasOwn(PACKAGED, name) ? PACKAGED[name] : null;
 }
@@ -17699,7 +17630,7 @@ function phaseRefusalMessage(refusal) {
   return `${refusal.reason_code}: ${refusal.detail}; recovery: ${refusal.recovery_action}`;
 }
 
-// plugins/immune-brain/runtime/claude/interaction.ts
+// plugins/immune-brain/runtime/host-core/interaction.ts
 var PRIVILEGED_OPERATIONS = [
   "request_authorization",
   "approve_breaking_intent_revision",
@@ -17751,1724 +17682,210 @@ var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
 function entryTokenRequestId(token) {
   return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
-function confirmationRef(input) {
+function hostConfirmationRef(host, input) {
   const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
-  return `claude-${kind}-${createHash22("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
+  return `${host}-${kind}-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
-  return randomUUID9();
+  return randomUUID();
 }
 
-// plugins/immune-brain/runtime/claude/review_host.ts
-init_review_packet();
-import { createHash as createHash23 } from "node:crypto";
-import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
-import { basename as basename3, dirname as dirname15, isAbsolute as isAbsolute10, join as join24 } from "node:path";
-import { tmpdir as tmpdir5 } from "node:os";
-var AGENT_TOOL = "Agent";
-var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
+// plugins/immune-brain/runtime/host-core/mcp_runtime.ts
+init_batch_reasons();
 
-class MemoryHookEventLog {
-  events = [];
-  append(event) {
-    this.events.push(event);
-    return true;
-  }
-  list(sessionId) {
-    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-  }
-  sessions() {
-    return [...new Set(this.events.map((event) => event.sessionId))];
-  }
-  clear(sessionId) {
-    if (!sessionId) {
-      this.events.length = 0;
-      return;
-    }
-    for (let i = this.events.length - 1;i >= 0; i--) {
-      if (this.events[i].sessionId === sessionId)
-        this.events.splice(i, 1);
-    }
-  }
-}
-var CACHE_DIR = "immune-brain-claude";
-function sessionHash(sessionId) {
-  return createHash23("sha256").update(sessionId).digest("hex");
-}
-function cacheDir(root) {
-  return join24(root, CACHE_DIR);
-}
-function ownedByUs(stat) {
-  if (stat.isSymbolicLink())
-    return false;
-  const uid = process.getuid?.();
-  return uid === undefined || stat.uid === uid;
-}
-function ensurePrivateDir(dir) {
-  try {
-    const existing = lstatSync16(dir);
-    return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 511) === 448;
-  } catch (error) {
-    if (error.code !== "ENOENT")
-      return false;
-  }
-  try {
-    mkdirSync11(dir, { mode: 448 });
-  } catch {
-    return false;
-  }
-  try {
-    const created = lstatSync16(dir);
-    return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
-  } catch {
-    return false;
-  }
-}
-function appendPrivate(path, dir, line) {
-  if (!ensurePrivateDir(dir))
-    return false;
-  const flags = constants7.O_WRONLY | constants7.O_CREAT | constants7.O_APPEND | constants7.O_NOFOLLOW | constants7.O_NONBLOCK;
-  let fd;
-  try {
-    fd = openSync7(path, flags, 384);
-  } catch {
-    return false;
-  }
-  try {
-    const stat = fstatSync4(fd);
-    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
-      return false;
-    return writeSync(fd, line) === Buffer.byteLength(line);
-  } catch {
-    return false;
-  } finally {
-    closeSync7(fd);
-  }
-}
-function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
-  let fd;
-  try {
-    fd = openSync7(path, constants7.O_RDONLY | constants7.O_NOFOLLOW | constants7.O_NONBLOCK);
-  } catch {
-    return;
-  }
-  try {
-    const stat = fstatSync4(fd);
-    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
-      return;
-    if (stat.size > maxBytes)
-      return;
-    const buf = Buffer.alloc(stat.size);
-    readSync(fd, buf, 0, stat.size, 0);
-    return buf.toString("utf8");
-  } finally {
-    closeSync7(fd);
-  }
-}
-var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
-function parseAsyncAgentLaunch(result) {
-  let payload;
-  try {
-    payload = JSON.parse(result);
-  } catch {
-    return null;
-  }
-  if (!payload || typeof payload !== "object")
-    return null;
-  const obj = payload;
-  if (obj.isAsync !== true && obj.status !== "async_launched")
-    return null;
-  const agentId = typeof obj.agentId === "string" ? obj.agentId : "";
-  const outputFile = typeof obj.outputFile === "string" ? obj.outputFile : "";
-  if (!agentId || !outputFile)
-    return null;
-  const resolvedModel = typeof obj.resolvedModel === "string" && obj.resolvedModel.trim() ? obj.resolvedModel : undefined;
-  return { agentId, outputFile, ...resolvedModel ? { resolvedModel } : {} };
-}
-var HANDBACK_TOOL = "SubagentHandback";
-function readAgentTranscriptResult(transcript, agentId) {
-  let last = null;
-  for (const line of transcript.split(`
-`)) {
-    if (!line.trim())
-      continue;
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (row.type !== "assistant" || row.agentId !== agentId)
-      continue;
-    const message = row.message;
-    if (!message || typeof message !== "object")
-      continue;
-    const content = message.content;
-    if (!Array.isArray(content))
-      continue;
-    let text = "";
-    for (const block of content) {
-      if (!block || typeof block !== "object")
-        continue;
-      const part = block;
-      if (part.type === "text" && typeof part.text === "string")
-        text += part.text;
-      if (part.type === "tool_use" && part.name === HANDBACK_TOOL && part.input && typeof part.input === "object") {
-        const report = part.input.message;
-        if (typeof report === "string" && report.trim()) {
-          last = report;
-          text = "";
-        }
-      }
-    }
-    if (text.trim())
-      last = text;
-  }
-  return last;
-}
-function readAgentTranscript(path) {
-  let resolved;
-  try {
-    resolved = realpathSync17(path);
-  } catch {
-    return;
-  }
-  return readPrivate(resolved, MAX_TRANSCRIPT_BYTES);
-}
-var AGENT_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
-function readSyncAgentTranscript(post, stop) {
-  if (stop.agentTranscriptPath)
-    return readAgentTranscript(stop.agentTranscriptPath);
-  const session = post.transcriptPath;
-  if (!session || !isAbsolute10(session) || !AGENT_ID_PATTERN.test(post.agentId))
-    return;
-  const derived = join24(dirname15(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
-  return readAgentTranscript(derived);
-}
-function hookEventPath(sessionId, root = tmpdir5()) {
-  return join24(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
-}
-
-class FileHookEventLog {
-  root;
-  constructor(root = tmpdir5()) {
-    this.root = root;
-  }
-  append(event) {
-    const path = hookEventPath(event.sessionId, this.root);
-    return appendPrivate(path, dirname15(path), `${JSON.stringify(event)}
-`);
-  }
-  list(sessionId) {
-    if (sessionId)
-      return this.readSession(sessionId);
-    const dir = cacheDir(this.root);
-    if (!ensurePrivateDir(dir))
-      return [];
-    try {
-      return readdirSync9(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join24(dir, name)));
-    } catch {
-      return [];
-    }
-  }
-  sessions() {
-    const ids = new Set;
-    for (const event of this.list())
-      if (event.sessionId)
-        ids.add(event.sessionId);
-    return [...ids];
-  }
-  readFile(path) {
-    const text = readPrivate(path);
-    if (!text)
-      return [];
-    try {
-      return text.split(`
-`).filter(Boolean).map((line) => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-  readSession(sessionId) {
-    if (!ensurePrivateDir(cacheDir(this.root)))
-      return [];
-    return this.readFile(hookEventPath(sessionId, this.root));
-  }
-  clear(sessionId) {
-    if (!sessionId || !ensurePrivateDir(cacheDir(this.root)))
-      return;
-    const path = hookEventPath(sessionId, this.root);
-    try {
-      const stat = lstatSync16(path);
-      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
-        return;
-      rmSync9(path, { force: true });
-    } catch {}
-  }
-}
-function parseReviewMarker(prompt) {
-  if (typeof prompt !== "string")
-    return;
-  const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
-  if (match)
-    return { operationId: match[1], taskId: match[2] };
-}
-function bindsPrompt(prompt, pending) {
-  return prompt === undefined || prompt === pending.dispatchPrompt;
-}
-function bindsStart(event, pending) {
-  if (event.taskId && event.taskId !== pending.request.taskId)
-    return false;
-  if (!bindsPrompt(event.prompt, pending))
-    return false;
-  if (event.operationId)
-    return event.operationId === pending.request.operationId;
-  return event.prompt !== undefined;
-}
-
-class ClaudeReviewHost {
-  log;
-  host = "claude-code";
-  pending = new Map;
-  appliedBySession = new Map;
-  constructor(log = new MemoryHookEventLog) {
-    this.log = log;
-  }
-  prepareVerification(request) {
-    const reviewRequest = {
-      taskId: request.taskId,
-      operationId: request.operationId,
-      prompt: request.prompt,
-      snapshotPrompt: request.prompt,
-      evidencePath: "",
-      writePacket: request.writePacket,
-      maxTurns: 16
-    };
-    this.drain();
-    const cursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
-    const dispatchPrompt = verificationPacketHandle({
-      taskId: request.taskId,
-      operationId: request.operationId,
-      packet: request.writePacket(request.operationId, request.prompt)
-    });
-    this.pending.set(request.operationId, {
-      request: reviewRequest,
-      verifierModel: request.model,
-      dispatchPrompt,
-      initialCursors: new Map(cursors),
-      sessionCursors: new Map(cursors),
-      consumed: false
-    });
-    return { id: request.operationId, dispatch: { subagent_type: "immune-brain:immune-brain-review-verifier", model: request.model, prompt: dispatchPrompt } };
-  }
-  inspectVerification(reservation) {
-    const state = this.pending.get(reservation.id);
-    if (!state?.verifierModel)
-      return { ok: false, reason: "verifier reservation not found", release: true };
-    const result = this.inspectVerifier(reservation);
-    return result.ok ? { ok: true, receipt: { ...result.receipt, model: state.verifierModel } } : result;
-  }
-  observe(event) {
-    this.log.append(event);
-  }
-  drain() {
-    for (const sessionId of this.log.sessions()) {
-      const events = this.log.list(sessionId);
-      let start = this.appliedBySession.get(sessionId) ?? 0;
-      if (start > events.length)
-        start = 0;
-      let ended = false;
-      for (let i = start;i < events.length; i++) {
-        const event = events[i];
-        if (event.type === "SessionEnd") {
-          for (const [id, state] of this.pending) {
-            if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-              this.pending.delete(id);
-            }
-          }
-          for (const state of this.pending.values()) {
-            const current = state.initialCursors.get(sessionId) ?? 0;
-            if (i + 1 > current)
-              state.initialCursors.set(sessionId, i + 1);
-          }
-          if (i === events.length - 1) {
-            this.log.clear(event.sessionId);
-            ended = true;
-            this.appliedBySession.delete(event.sessionId);
-            break;
-          }
-          continue;
-        }
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
-            continue;
-          this.applyReviewEvent(event, state);
-        }
-      }
-      if (ended) {
-        this.appliedBySession.delete(sessionId);
-        for (const state of this.pending.values())
-          state.sessionCursors.delete(sessionId);
-      } else {
-        this.appliedBySession.set(sessionId, events.length);
-        for (const state of this.pending.values())
-          state.sessionCursors.set(sessionId, events.length);
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || !state.postEvent || state.postEvent.sessionId !== sessionId)
-            continue;
-          if (!state.startEvent || !state.stopEvent) {
-            const from = state.initialCursors.get(sessionId) ?? 0;
-            for (let j = from;j < events.length; j++) {
-              this.applyReviewEvent(events[j], state);
-              if (state.error)
-                break;
-            }
-          }
-        }
-      }
-    }
-  }
-  applyReviewEvent(event, state) {
-    if (state.error)
-      return;
-    if (event.type === "SubagentStart") {
-      if (!VERIFIER_AGENTS.includes(event.agent))
-        return;
-      if (event.operationId || event.prompt !== undefined) {
-        if (!bindsStart(event, state))
-          return;
-      }
-      if (state.postEvent) {
-        if (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId)
-          return;
-      }
-      if (state.stopEvent) {
-        if (event.sessionId !== state.stopEvent.sessionId || event.agentId !== state.stopEvent.agentId)
-          return;
-      }
-      if (!event.operationId && event.prompt === undefined && !state.postEvent && !state.stopEvent) {
-        return;
-      }
-      if (state.startEvent) {
-        if (state.startEvent === event)
-          return;
-        state.error = "reserved Review already has a native tool call";
-        return;
-      }
-      state.startEvent = event;
-      return;
-    }
-    if (event.type === "PostToolUse") {
-      if (event.toolName !== AGENT_TOOL)
-        return;
-      if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (!bindsPrompt(event.prompt, state))
-        return;
-      if (state.verifierModel && event.model !== state.verifierModel) {
-        state.error = "verifier model differs from reservation";
-        return;
-      }
-      if (state.startEvent && event.sessionId !== state.startEvent.sessionId)
-        return;
-      if (state.startEvent && event.agentId !== state.startEvent.agentId)
-        return;
-      if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId)
-        return;
-      if (state.stopEvent && event.agentId !== state.stopEvent.agentId)
-        return;
-      if (state.postEvent !== undefined) {
-        if (state.postEvent === event)
-          return;
-        state.error = "duplicate PostToolUse result observed for review reservation";
-        return;
-      }
-      state.postEvent = event;
-      return;
-    }
-    if (event.type === "SubagentStop") {
-      if (!VERIFIER_AGENTS.includes(event.agent))
-        return;
-      if (!event.agentId)
-        return;
-      if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (state.startEvent && (event.sessionId !== state.startEvent.sessionId || event.agentId !== state.startEvent.agentId))
-        return;
-      if (state.postEvent && (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId))
-        return;
-      if (!event.operationId && !state.startEvent && !state.postEvent) {
-        return;
-      }
-      if (state.stopEvent) {
-        if (state.stopEvent === event)
-          return;
-        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
-        return;
-      }
-      state.stopEvent = event;
-    }
-  }
-  inspectVerifier(reservation) {
-    this.drain();
-    const state = this.pending.get(reservation.id);
-    if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = verificationPacketError(state.dispatchPrompt);
-    if (packetError)
-      return { ok: false, reason: packetError, release: true };
-    if (state.consumed)
-      return { ok: false, reason: "review receipt already consumed", release: true };
-    if (state.error)
-      return { ok: false, reason: state.error, release: true };
-    if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-    }
-    if (state.startEvent.sessionId !== state.postEvent.sessionId || state.startEvent.sessionId !== state.stopEvent.sessionId || state.startEvent.agentId !== state.postEvent.agentId || state.startEvent.agentId !== state.stopEvent.agentId) {
-      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
-    }
-    const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
-    const launch = parseAsyncAgentLaunch(state.postEvent.result);
-    if (!launch) {
-      const transcript = readSyncAgentTranscript(state.postEvent, state.stopEvent);
-      if (transcript === undefined) {
-        return { ok: false, reason: "sync Agent transcript is not readable", release: false };
-      }
-      const report = readAgentTranscriptResult(transcript, state.postEvent.agentId);
-      if (!report?.trim()) {
-        return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
-      }
-      const syncModel = state.postEvent.model;
-      return { ok: true, receipt: { actorId, result: report, ...syncModel ? { model: syncModel } : {} } };
-    }
-    if (launch.agentId !== state.postEvent.agentId) {
-      return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
-    }
-    const transcript = readAgentTranscript(launch.outputFile);
-    if (transcript === undefined) {
-      return { ok: false, reason: "async Agent transcript is not readable", release: false };
-    }
-    const verdict = readAgentTranscriptResult(transcript, launch.agentId);
-    if (!verdict?.trim()) {
-      return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
-    }
-    const model = launch.resolvedModel ?? state.postEvent.model;
-    return { ok: true, receipt: { actorId, result: verdict, ...model ? { model } : {} } };
-  }
-  releaseReview(reservation) {
-    this.pending.delete(reservation.id);
-  }
-}
-function hookPath(value) {
-  return typeof value === "string" && value.trim() && isAbsolute10(value) ? value : undefined;
-}
-function parseHookStdin(raw) {
-  let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  const hookType = String(payload.hook_event_name ?? payload.type ?? "");
-  const sessionId = String(payload.session_id ?? payload.sessionId ?? process.env.CLAUDE_SESSION_ID ?? "");
-  if (!sessionId)
-    return null;
-  const agent = String(payload.agent_type ?? payload.agent ?? payload.subagent_type ?? "");
-  const agentId = String(payload.agent_id ?? payload.agentId ?? "");
-  const taskId = typeof payload.task_id === "string" ? payload.task_id : undefined;
-  const transcriptPath = hookPath(payload.transcript_path);
-  const agentTranscriptPath = hookPath(payload.agent_transcript_path);
-  const operationId = typeof payload.operation_id === "string" ? payload.operation_id : undefined;
-  let prompt = typeof payload.prompt === "string" ? payload.prompt : undefined;
-  if (!prompt && typeof payload.input === "object" && payload.input !== null) {
-    const inputObj = payload.input;
-    if (typeof inputObj.prompt === "string")
-      prompt = inputObj.prompt;
-  }
-  if (!prompt && typeof payload.tool_input === "object" && payload.tool_input !== null) {
-    const toolInputObj = payload.tool_input;
-    if (typeof toolInputObj.prompt === "string")
-      prompt = toolInputObj.prompt;
-  }
-  if (!prompt && typeof payload.tool_response === "object" && payload.tool_response !== null) {
-    const toolResponseObj = payload.tool_response;
-    if (typeof toolResponseObj.prompt === "string")
-      prompt = toolResponseObj.prompt;
-  }
-  let extractedOpId = operationId;
-  let extractedTaskId = taskId;
-  for (const candidate of [payload.input, payload.tool_input, payload.tool_response, payload.toolResponse, payload.response, payload.result]) {
-    if (candidate && typeof candidate === "object" && candidate !== null) {
-      const obj = candidate;
-      const nestedOp = typeof obj.operation_id === "string" ? obj.operation_id : typeof obj.operationId === "string" ? obj.operationId : undefined;
-      const nestedTask = typeof obj.task_id === "string" ? obj.task_id : typeof obj.taskId === "string" ? obj.taskId : undefined;
-      if (nestedOp) {
-        if (extractedOpId && extractedOpId !== nestedOp)
-          return null;
-        extractedOpId = nestedOp;
-      }
-      if (nestedTask) {
-        if (extractedTaskId && extractedTaskId !== nestedTask)
-          return null;
-        extractedTaskId = nestedTask;
-      }
-    }
-  }
-  if (prompt) {
-    const marker = parseReviewMarker(prompt.replace("<!-- immune-brain-verifier:operation_id=", "<!-- immune-brain:operation_id="));
-    if (marker) {
-      if (extractedOpId && extractedOpId !== marker.operationId)
-        return null;
-      if (extractedTaskId && extractedTaskId !== marker.taskId)
-        return null;
-      extractedOpId = marker.operationId;
-      extractedTaskId = marker.taskId;
-    }
-  }
-  if (hookType === "SubagentStart" || hookType === "SubagentStop") {
-    return {
-      type: hookType,
-      sessionId,
-      agent,
-      agentId,
-      taskId: extractedTaskId,
-      operationId: extractedOpId,
-      ...hookType === "SubagentStart" ? { prompt } : {},
-      ...hookType === "SubagentStop" ? {
-        ...transcriptPath ? { transcriptPath } : {},
-        ...agentTranscriptPath ? { agentTranscriptPath } : {}
-      } : {}
-    };
-  }
-  if (hookType === "PostToolUse") {
-    const toolName = String(payload.tool_name ?? payload.toolName ?? payload.tool ?? "");
-    const response = payload.tool_response ?? payload.toolResponse ?? payload.response ?? payload.result;
-    let result = typeof response === "string" ? response : JSON.stringify(response ?? "");
-    let extractedAgentId = agentId;
-    if (response && typeof response === "object" && response !== null) {
-      const respObj = response;
-      if (typeof respObj.agentId === "string" && respObj.agentId) {
-        if (extractedAgentId && extractedAgentId !== respObj.agentId)
-          return null;
-        extractedAgentId = respObj.agentId;
-      }
-      if (Array.isArray(respObj.content)) {
-        const textItem = respObj.content.find((c) => typeof c === "object" && c !== null && c.type === "text");
-        if (textItem && typeof textItem.text === "string") {
-          result = textItem.text;
-        }
-      }
-    }
-    return {
-      type: "PostToolUse",
-      sessionId,
-      agentId: extractedAgentId,
-      toolName,
-      result,
-      ...transcriptPath ? { transcriptPath } : {},
-      model: typeof payload.tool_input?.model === "string" ? payload.tool_input.model : undefined,
-      taskId: extractedTaskId,
-      operationId: extractedOpId,
-      prompt
-    };
-  }
-  if (hookType === "SessionEnd")
-    return { type: "SessionEnd", sessionId };
-  return null;
-}
-
-// plugins/immune-brain/runtime/claude/lane_guard.ts
-init_lane_workspace();
-import { lstatSync as lstatSync17, realpathSync as realpathSync18, rmSync as rmSync10 } from "node:fs";
-import { randomUUID as randomUUID10 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir6 } from "node:os";
-import { join as join26 } from "node:path";
-
-// plugins/immune-brain/runtime/assurance/active_task_notice.ts
-init_storage();
-init_batch_preflight();
-var MAX_SCOPE_ENTRIES = 12;
-async function activeTaskNotice(root) {
-  let taskId;
-  try {
-    taskId = readActiveClaimTaskId(root);
-  } catch {
-    return null;
-  }
-  if (!taskId)
-    return null;
-  let lifecycle = "unknown";
-  let artifactState = "unknown";
-  let scope = [];
-  try {
-    const record = readTaskRecordRaw(root, taskId).record;
-    if (record) {
-      lifecycle = record.lifecycle;
-      artifactState = record.artifact_state;
-      scope = [...record.intent_snapshot.scope_hint];
-    }
-  } catch {}
-  if (lifecycle === "done" || lifecycle === "stopped")
-    return null;
-  const shown = scope.slice(0, MAX_SCOPE_ENTRIES).join(", ") + (scope.length > MAX_SCOPE_ENTRIES ? ", ..." : "");
-  return [
-    `Immune-Brain: Managed task ${taskId} is active in this workspace (lifecycle ${lifecycle}, artifacts ${artifactState}).`,
-    "Ordinary input does not resume it, and another session may be running its assurance right now.",
-    `Before committing or modifying files inside its scope${shown ? ` (${shown})` : ""}, read its status and tell the user that this task is active and which obligation it is waiting on.`,
-    "Only an explicit drive entry continues it."
-  ].join(" ");
-}
-
-// plugins/immune-brain/runtime/assurance/run_continuation.ts
-init_workspace_scope();
-init_batch_schedule();
-init_batch_state();
-init_batch_plan();
-init_batch_git();
-init_coordinator();
-init_batch_preflight();
+// plugins/immune-brain/runtime/unattended/batch_lanes.ts
+init_batch_authority();
 init_intent();
-init_storage();
-import { createHash as createHash24 } from "node:crypto";
-var UNCHANGED_CONTINUATION_LIMIT = 1;
-var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
-function bindRun(binding) {
-  if (!binding.workspace || !binding.session_id || (binding.kind === "task" ? !binding.task_id || !binding.run_id : !binding.initiative_slug || binding.batch_id !== null && !binding.batch_id || !binding.plan_digest))
-    throw new Error("run continuation requires an exact session and committed run identity");
-  if (binding.kind === "parent" && binding.blocked_native_tasks !== undefined && (!Array.isArray(binding.blocked_native_tasks) || !binding.blocked_native_tasks.every((id) => typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id))))
-    throw new Error("invalid failed native task observations");
-  return { binding, progress_digest: null, unchanged_observations: 0, boundary_id: null };
-}
-function releasesRunBinding(prompt, phase) {
-  return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
-}
-function digest(value) {
-  return createHash24("sha256").update(JSON.stringify(value)).digest("hex");
-}
-function scopedSourceDigest(root, scope) {
-  const snapshot = captureGitWorkspaceSnapshot(root);
-  if (!snapshot)
-    throw new Error("cannot observe source progress without a Git workspace");
-  return digest(Object.entries(snapshot.dirty_files).filter(([path]) => scope.some((entry) => pathMatchesScope(path, entry))));
-}
-function finalProgress(report) {
-  return report ? {
-    passed: report.passed,
-    head: report.head,
-    results: report.results.map((result) => ({ command: result.command, passed: result.passed, exit_code: result.exit_code, signal: result.signal }))
-  } : null;
-}
-async function observeParentRun(binding, boundaryId, review = "unobserved", recoveryAction) {
-  const root = binding.workspace;
-  if (binding.batch_id === null) {
-    const facts = await observeNativeParent(root, binding.initiative_slug, undefined, binding.blocked_native_tasks);
-    if (!facts || facts.plan_digest !== binding.plan_digest)
-      throw new Error("native Parent plan identity changed");
-    let nextAction = ["verify", "repair"].includes(facts.action) ? `Call start_unattended_batch for ${binding.initiative_slug} with final_verification ${JSON.stringify(binding.final_verification ?? facts.native?.final_verification.results.map((result) => result.command) ?? [])}; if it fails, diagnose and canonically prepare/validate the stable original-goal repair before fresh native Enrollment` : facts.next_action;
-    let runnable = ["verify", "repair"].includes(facts.action) || facts.action === "enroll" && facts.task_id !== null;
-    let running = false;
-    let taskProgress = null;
-    if (facts.action === "drive" && facts.task_id) {
-      const status = await projectTaskStatus(root, facts.task_id);
-      const task = readTaskRecordRaw(root, facts.task_id).record;
-      if (status.error || !task || !status.projection.run_id)
-        throw new Error(status.error ?? "native Parent has no exact child run");
-      const source = scopedSourceDigest(root, task.intent_snapshot.scope_hint);
-      const decision = decideRunContinuation(bindRun({
-        kind: "task",
-        workspace: root,
-        session_id: binding.session_id,
-        task_id: facts.task_id,
-        run_id: status.projection.run_id
-      }), {
-        kind: "task",
-        workspace: root,
-        session_id: binding.session_id,
-        boundary_id: boundaryId,
-        status,
-        source_digest: source,
-        review,
-        recovery_action: recoveryAction
-      });
-      runnable = decision.action === "continue";
-      running = decision.action === "wait";
-      nextAction = decision.next_action ?? decision.reason;
-      taskProgress = decision.state.progress_digest;
-    }
-    if (facts.action === "repair" && (facts.native?.repair_tasks?.length ?? 0) >= 2) {
-      runnable = false;
-      nextAction = "Parent coordinator correction budget exhausted; request a user decision";
-    }
-    return {
-      kind: "parent",
-      workspace: root,
-      session_id: binding.session_id,
-      boundary_id: boundaryId,
-      initiative_slug: binding.initiative_slug,
-      batch_id: null,
-      plan_digest: facts.plan_digest,
-      progress_digest: digest({
-        proof: facts.proof,
-        action: facts.action,
-        repair_tasks: facts.native?.repair_tasks,
-        final: finalProgress(facts.native?.final_verification),
-        taskProgress
-      }),
-      all_required_integrated: facts.proof.missing_task_ids.length === 0,
-      final_passed: facts.proof.final_passed,
-      pending_repair: facts.action === "repair",
-      runnable,
-      executors_running: running,
-      next_action: nextAction,
-      blocked_reason: facts.proof.reason ?? undefined
-    };
-  }
-  const record = readAnyBatchRunState(root, binding.batch_id);
-  if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest)
-    throw new Error("Parent continuation has no matching persisted batch identity");
-  if (!isLaneBatchRecord(record))
-    throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
-  const plan = await observeInitiative(root, binding.initiative_slug);
-  const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map((child) => child.task_id));
-  let runnable = false;
-  let running = false;
-  let nextAction = `Call start_unattended_batch for ${binding.initiative_slug} to consume the current authorized handoff`;
-  let childProgress = null;
-  const activeTask = readActiveClaimTaskId(root);
-  const nativeTask = activeTask && !record.children.some((child) => child.task_id === activeTask) && (plan.tasks.some((child) => child.task_id === activeTask) || record.repair_tasks?.some((task) => task.task_id === activeTask));
-  const activeChild = nativeTask ? { task_id: activeTask } : record.children.find((child) => child.state === "enrolled" || child.state === "settled");
-  if (activeChild && nativeTask) {
-    const status = await projectTaskStatus(root, activeChild.task_id);
-    if (status.error)
-      throw new Error(status.error);
-    if (status.projection.lifecycle === "active" && status.projection.run_id) {
-      const task = readTaskRecordRaw(root, activeChild.task_id).record;
-      if (!task)
-        throw new Error("Parent's active child has no TaskRecord");
-      const source = scopedSourceDigest(root, task.intent_snapshot.scope_hint);
-      const taskBinding = bindRun({
-        kind: "task",
-        workspace: root,
-        session_id: binding.session_id,
-        task_id: activeChild.task_id,
-        run_id: status.projection.run_id
-      });
-      const decision = decideRunContinuation(taskBinding, {
-        kind: "task",
-        workspace: root,
-        session_id: binding.session_id,
-        boundary_id: boundaryId,
-        status,
-        source_digest: source,
-        review,
-        recovery_action: recoveryAction
-      });
-      runnable = decision.action === "continue";
-      running = decision.action === "wait";
-      nextAction = decision.next_action ?? decision.reason;
-      childProgress = decision.state.progress_digest;
-    } else if (status.projection.lifecycle === "done")
-      runnable = true;
-  } else {
-    const live = record.children.filter((child) => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(child.state));
-    running = live.length > 0;
-    const schedule = plan.tasks.map((task) => ({
-      task_id: task.task_id,
-      blocked_by: task.blocked_by,
-      scope_hint: readTaskIntent(root, task.task_id).intent.scope_hint,
-      state: completion.integrated_task_ids.includes(task.task_id) ? "committed" : record.children.find((child) => child.task_id === task.task_id)?.state ?? "needs_human"
-    }));
-    runnable = record.batch_state === "running" && (startableChildren(schedule, record.max_parallel).length > 0 || live.length > 0);
-    if (running && runnable)
-      nextAction = `Supervise the observed Lane Executor handoff for ${binding.initiative_slug}; use the Host's live-session wait/observation before resuming the batch, rather than repeatedly observing an unchanged batch`;
-  }
-  if (!activeChild && !running) {
-    for (const child of plan.tasks) {
-      if (binding.blocked_native_tasks?.includes(child.task_id))
-        continue;
-      if (record.children.some((candidate) => candidate.task_id === child.task_id) || completion.integrated_task_ids.includes(child.task_id))
-        continue;
-      const intent = readTaskIntent(root, child.task_id);
-      if (intent.intent.risk !== "critical")
-        continue;
-      if (readSettledTaskEvidence(root, child.task_id)?.proof.terminal_lifecycle === "done") {
-        runnable = true;
-        nextAction = `Call start_unattended_batch for ${binding.initiative_slug} to integrate the settled critical Slice and resume the intact ordinary batch authorization`;
-        break;
-      }
-      if (child.blocked_by.every((id) => completion.integrated_task_ids.includes(id))) {
-        runnable = true;
-        nextAction = `Invoke native single-task Enrollment for critical Slice ${child.task_id}; it consumes no ordinary batch slot. Drive its Loop to settlement, then resume Parent ${binding.initiative_slug}`;
-        break;
-      }
-    }
-  }
-  const failedFinal = record.final_verification_result?.passed === false && plan.tasks.every((child) => completion.integrated_task_ids.includes(child.task_id));
-  const pendingRepair = record.repair_tasks?.some((task) => !completion.integrated_task_ids.includes(task.task_id));
-  const exhausted = failedFinal && !activeChild && !pendingRepair && (record.repair_tasks?.length ?? 0) >= 2;
-  if (failedFinal && !activeChild)
-    nextAction = pendingRepair ? `Call start_unattended_batch for ${binding.initiative_slug} to integrate the settled repair and run recorded final verification again` : "Diagnose final verification, call prepareFinalRepairCandidate with the original goal, diagnosed minimum scope, recorded failure and spent repair count; canonically author/validate its stable candidate, then request fresh native Enrollment. Preserve settled deliveries";
-  if (exhausted)
-    nextAction = "Parent coordinator correction budget exhausted; resolve the final failure with a user decision before further repair Enrollment";
-  return {
-    kind: "parent",
-    workspace: root,
-    session_id: binding.session_id,
-    boundary_id: boundaryId,
-    initiative_slug: record.initiative_slug,
-    batch_id: record.batch_id,
-    plan_digest: record.plan_digest,
-    progress_digest: digest({
-      children: record.children.map((child) => ({ task_id: child.task_id, state: child.state, commit: child.commit })),
-      commits: record.commits,
-      completion,
-      childProgress,
-      final: finalProgress(record.final_verification_result)
-    }),
-    all_required_integrated: completion.missing_task_ids.length === 0,
-    final_passed: completion.final_passed,
-    pending_repair: failedFinal,
-    runnable: !exhausted && (runnable || failedFinal && !activeChild),
-    executors_running: running,
-    next_action: nextAction,
-    blocked_reason: completion.reason ?? undefined
-  };
-}
-function decideRunContinuation(previous, observation) {
-  const result = (action, reason, next_action, state = previous) => ({ action, reason, next_action, state });
-  const binding = previous.binding;
-  if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
-    return result("unbound", "Host session or workspace changed", null);
-  if (binding.kind !== observation.kind)
-    return result("pause", "run observation does not match the bound entry", null);
-  if (observation.host_failure)
-    return result("pause", observation.host_failure, null);
-  let progressDigest;
-  let nextAction;
-  let wait = false;
-  if (binding.kind === "parent" && observation.kind === "parent") {
-    if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest)
-      return result("pause", "batch identity changed; reread its authorized plan", null);
-    if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
-      return result("settled", "every required delivery is integrated and final verification passed", null);
-    if (!observation.runnable && !observation.executors_running)
-      return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action);
-    progressDigest = observation.progress_digest;
-    nextAction = observation.next_action;
-    wait = !observation.runnable && observation.executors_running;
-  } else if (binding.kind === "task" && observation.kind === "task") {
-    const { status } = observation;
-    const p = status.projection;
-    if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
-      return result("pause", status.error ?? "Kernel task/run identity changed", null);
-    if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
-      return result("settled", "Kernel terminal settlement confirmed", null);
-    if (p.lifecycle === "stopped" && status.claim === null)
-      return result("pause", "Kernel task stopped", null);
-    if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
-      return result("pause", "Kernel authority is missing or contradictory", null);
-    if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
-      return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
-    progressDigest = digest({
-      lifecycle: p.lifecycle,
-      artifact_state: p.artifact_state,
-      intent_content_hash: p.intent_content_hash,
-      diff_hash: p.diff_hash,
-      next_obligation: p.next_obligation,
-      fresh_acceptance_ids: [...p.fresh_acceptance_ids].sort(),
-      fresh_approval_kinds: [...p.fresh_approval_kinds].sort(),
-      blocking_finding_ids: [...p.blocking_finding_ids].sort(),
-      source_digest: observation.source_digest,
-      review: observation.review
-    });
-    if (p.next_obligation === "run_review") {
-      switch (observation.review) {
-        case "ready":
-          nextAction = "Invoke the exact reserved foreground reviewer once";
-          break;
-        case "running":
-          nextAction = "Await the observed foreground reviewer; do not dispatch another";
-          wait = true;
-          break;
-        case "returned":
-          nextAction = "Call submit_review immediately with the observed verdict before editing";
-          break;
-        case "rejected":
-          if (!observation.recovery_action)
-            return result("pause", "Review submission failed without an observed recovery action", null);
-          nextAction = observation.recovery_action;
-          break;
-        case "unobserved":
-          nextAction = "Call advance_assurance to recover or prepare the current Review reservation";
-          break;
-      }
-    } else if (status.warnings?.some((warning) => warning.code === "unstaged_scope_paths")) {
-      nextAction = "Finish the in-scope implementation and stage task-owned changes before advance_assurance";
-    } else {
-      switch (p.next_obligation) {
-        case "submit_assurance":
-        case "run_qa":
-          nextAction = "Complete in-scope implementation and focused checks, then call advance_assurance";
-          break;
-        case "resolve_findings":
-          nextAction = "Repair the open findings, verify, resolve them and call advance_assurance";
-          break;
-        case "complete":
-          nextAction = "Call advance_assurance to finish Kernel settlement";
-          break;
-        default:
-          return result("pause", "Kernel has no actionable obligation", null);
-      }
-    }
-  } else {
-    return result("pause", "run observation does not match the bound entry", null);
-  }
-  if (previous.boundary_id === observation.boundary_id)
-    return result("wait", "duplicate Host boundary", null);
-  const unchanged = wait ? previous.unchanged_observations : previous.progress_digest === progressDigest ? previous.unchanged_observations + 1 : 0;
-  const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
-  if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
-    return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
-  return result(wait ? "wait" : "continue", wait ? "observed foreground work is still running" : "authorized work remains", nextAction, state);
-}
+init_backend_claim();
+init_runtime_contracts();
+init_derived_files();
+init_batch_final_verification();
+init_batch_final_report();
+import { spawnSync as spawnSync20 } from "node:child_process";
+import { createHash as createHash23 } from "node:crypto";
+import { existsSync as existsSync15, realpathSync as realpathSync17 } from "node:fs";
+import { isAbsolute as isAbsolute10, join as join26 } from "node:path";
+import { readFileSync as readFileSync21 } from "node:fs";
 
-// plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants8, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join25 } from "node:path";
-var MAX_ALIAS_BYTES = 64 * 1024;
-function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
-  let fd;
-  try {
-    fd = openSync8(path, constants8.O_RDONLY | constants8.O_NONBLOCK);
-  } catch (error) {
-    if (isAbsent(error))
+// plugins/immune-brain/runtime/unattended/checkout_delivery.ts
+init_git_integration_preference();
+init_batch_preflight();
+import { spawnSync as spawnSync18 } from "node:child_process";
+import { lstatSync as lstatSync16 } from "node:fs";
+import { join as join24 } from "node:path";
+var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+function deliveredPaths(root, base, head) {
+  const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
+  if (raw.status !== 0)
+    return null;
+  const fields = raw.stdout.split("\x00").filter(Boolean);
+  const paths = [];
+  for (let i = 0;i + 1 < fields.length; i += 2) {
+    const meta = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(fields[i]);
+    if (!meta)
       return null;
-    throw error;
+    paths.push({ path: fields[i + 1], newMode: meta[2], newBlob: meta[4], deleted: meta[5] === "D" });
   }
-  try {
-    const stat = fstatSync5(fd);
-    if (!stat.isFile())
-      throw new Error(`alias is not a regular file: ${path}`);
-    if (stat.size > maxBytes)
-      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
-    const buf = Buffer.alloc(maxBytes + 1);
-    const read = readSync2(fd, buf, 0, buf.length, 0);
-    if (read > maxBytes)
-      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
-    return buf.toString("utf8", 0, read);
-  } finally {
-    closeSync8(fd);
-  }
+  return paths;
 }
-function localSkillExists(dir, name) {
-  try {
-    statSync6(join25(dir, name, "SKILL.md"));
-    return true;
-  } catch (error) {
-    return !isAbsent(error);
-  }
-}
-function isAbsent(error) {
-  const code = error.code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-
-// plugins/immune-brain/runtime/claude/lane_guard.ts
-var FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-var GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(start_unattended_batch|retire_stale_batch)$/;
-function denyPreToolUse(reason) {
-  return JSON.stringify({
-    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason }
-  });
-}
-function laneGuardHookOutput(payload) {
-  if (payload.hook_event_name !== "PreToolUse" || !FILE_TOOLS.has(String(payload.tool_name)))
-    return null;
-  const input = payload.tool_input ?? {};
-  const cwd = typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-  const refusal = laneWriteRefusal(cwd, input.file_path ?? input.notebook_path);
-  if (!refusal)
-    return null;
-  return denyPreToolUse(refusal);
-}
-async function activeTaskHookOutput(payload) {
-  if (payload.hook_event_name !== "UserPromptSubmit")
-    return null;
-  const cwd = typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-  const notice = await activeTaskNotice(cwd);
-  if (!notice)
-    return null;
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
-}
-function entryLogPath(sessionId, root) {
-  return join26(cacheDir(root), `${sessionHash(sessionId)}.entry`);
-}
-function admissionPath(toolUseId, root) {
-  return join26(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
-}
-function sessionIdOf(payload) {
-  return typeof payload.session_id === "string" ? payload.session_id : "";
-}
-function cwdOf(payload) {
-  return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-}
-function claudeLocalNames(cwd, home) {
-  const roots = [join26(cwd, ".claude"), join26(home, ".claude")];
-  return {
-    alias: (name) => {
-      for (const root of roots) {
-        const body = readAliasFile(join26(root, "commands", `${name}.md`));
-        if (body !== null)
-          return body;
-      }
-      return null;
-    },
-    skill: (name) => roots.some((root) => localSkillExists(join26(root, "skills"), name))
-  };
-}
-function readPhaseEntryState(sessionId, root = tmpdir6(), read = readPrivate) {
-  if (!sessionId)
-    return null;
-  const path = entryLogPath(sessionId, root);
-  try {
-    lstatSync17(path);
-  } catch (error) {
-    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
-  }
-  if (!ensurePrivateDir(cacheDir(root)))
-    return null;
-  let text;
-  try {
-    text = read(path);
-  } catch {
-    return null;
-  }
-  return text === undefined ? null : reducePhaseEntryLog(text);
-}
-function dropPrivate(path) {
-  try {
-    const stat = lstatSync17(path);
-    if (ownedByUs(stat) && stat.isFile())
-      rmSync10(path, { force: true });
-  } catch {}
-}
-function appendPhaseEntry(sessionId, line, root, locations) {
-  const path = entryLogPath(sessionId, root);
-  let recorded = false;
-  try {
-    recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), line);
-  } catch {}
-  if (!recorded)
-    dropPrivate(path);
-  return recorded;
-}
-function dropPhaseEntryLog(sessionId, root = tmpdir6()) {
-  if (sessionId)
-    dropPrivate(entryLogPath(sessionId, root));
-}
-function revokeEntryToken(sessionId, reason, root = tmpdir6()) {
-  if (sessionId && readPhaseEntryState(sessionId, root)?.token)
-    appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root, {});
-}
-function recordPhaseEntryPrompt(payload, locations = {}) {
-  if (payload.hook_event_name !== "UserPromptSubmit")
+function pathSatisfied(root, entry) {
+  const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
+  if (staged.status !== 0)
     return false;
-  const sessionId = sessionIdOf(payload);
-  if (!sessionId)
-    return false;
-  const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-  const recognized = recognizePhaseEntry(prompt, claudeLocalNames(cwdOf(payload), locations.home ?? homedir2()), "claude");
-  const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
-  let workspace = null;
-  if (entry === "run") {
-    try {
-      workspace = realpathSync18(cwdOf(payload));
-    } catch {}
-  }
-  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID10(), workspace } : undefined);
-  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir6(), locations);
-}
-function gatedOperation(payload) {
-  const toolName = String(payload.tool_name ?? "");
-  if (toolName === "Skill") {
-    const input = payload.tool_input ?? {};
-    const skill = typeof input.skill === "string" ? packagedPhaseSkill(input.skill) : null;
-    return skill ? { kind: "skill", skill } : null;
-  }
-  const mcp = GATED_MCP_TOOL.exec(toolName);
-  return mcp ? { kind: "tool", name: mcp[1] } : null;
-}
-function phaseEntryGateHookOutput(payload, locations = {}) {
-  if (payload.hook_event_name !== "PreToolUse")
-    return null;
-  const operation = gatedOperation(payload);
-  if (!operation)
-    return null;
-  if (operation.kind === "skill" && operation.skill !== "drive")
-    return null;
-  const root = locations.root ?? tmpdir6();
-  const sessionId = sessionIdOf(payload);
-  let state = null;
-  try {
-    state = readPhaseEntryState(sessionId, root, locations.read);
-  } catch {}
-  const admission = admitPhaseOperation(operation, state);
-  if (!admission.ok)
-    return denyPreToolUse(phaseRefusalMessage(admission));
-  if (operation.kind === "skill")
-    return null;
-  const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
-  let recorded = false;
-  try {
-    recorded = toolUseId !== "" && (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root), `${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}
-`);
-  } catch {}
-  if (recorded)
-    return null;
-  return denyPreToolUse(`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`);
-}
-function consumePhaseAdmission(toolUseId, operation, root = tmpdir6()) {
-  if (!toolUseId || !ensurePrivateDir(cacheDir(root)))
-    return false;
-  const path = admissionPath(toolUseId, root);
-  let text;
-  try {
-    text = readPrivate(path);
-  } catch {
-    return false;
-  }
-  if (text === undefined)
-    return false;
-  dropPrivate(path);
-  const lines = text.split(`
-`).filter(Boolean);
-  if (lines.length === 0)
-    return false;
-  const records = [];
-  for (const line of lines) {
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
+  if (entry.deleted) {
+    if (staged.stdout.length)
       return false;
-    }
-    if (record?.v !== 2 || record.operation !== operation || typeof record.session_id !== "string" || !record.session_id || !(record.entry_token === null || typeof record.entry_token === "string" && record.entry_token))
-      return false;
-    records.push({ session_id: record.session_id, entry_token: record.entry_token });
-  }
-  const [first] = records;
-  if (!records.every((record) => record.session_id === first.session_id && record.entry_token === first.entry_token))
-    return false;
-  let state = null;
-  try {
-    state = readPhaseEntryState(first.session_id, root);
-  } catch {}
-  if (!state?.run_live || state.token !== first.entry_token)
-    return false;
-  return { entry_token: state.token, workspace: state.workspace };
-}
-
-// plugins/immune-brain/runtime/claude/run_continuation.ts
-init_coordinator();
-init_storage();
-init_batch_state();
-import { existsSync as existsSync15, realpathSync as realpathSync19, lstatSync as lstatSync18, rmSync as rmSync11, renameSync as renameSync6, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
-import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join27 } from "node:path";
-import { tmpdir as tmpdir7 } from "node:os";
-
-// plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash25 } from "node:crypto";
-function extractVerdictJson(input) {
-  if (typeof input === "string") {
-    const first = input.indexOf("{");
-    const last = input.lastIndexOf("}");
-    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
-    if (!cleaned)
-      return null;
     try {
-      return JSON.parse(cleaned);
+      lstatSync16(join24(root, entry.path));
+      return false;
     } catch {
-      return null;
+      return true;
     }
   }
-  if (typeof input === "object" && input !== null && !Array.isArray(input))
-    return input;
-  return null;
-}
-function verdictFingerprint(raw) {
-  return JSON.stringify({
-    contract: raw.contract ?? null,
-    role: raw.role ?? null,
-    task_id: raw.task_id ?? null,
-    snapshot_digest: raw.snapshot_digest ?? null,
-    decision: raw.decision ?? null,
-    approval: raw.approval ?? null,
-    findings: raw.findings ?? null,
-    inspected_paths: raw.inspected_paths ?? null,
-    reason: raw.reason ?? null
-  });
-}
-function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash25("sha256").update(bytes).digest("hex")}`;
-}
-var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
-var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
-function withReviewRecovery(result, recovery_action) {
-  if (result.state !== "blocked" || result.code === "verdict_invalid")
-    return result;
-  return { ...result, recovery_action };
-}
-async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
-  if (coordinator.active(taskId)?.state === "settlement_unknown") {
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  }
-  const observed = inspect();
-  if (!observed.ok) {
-    if (observed.release)
-      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
-    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
-  }
-  const receiptBytes = observed.receipt.result;
-  const options = {
-    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
-    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
-    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
-    validateReceipt: () => {
-      const current = inspect();
-      if (!current.ok)
-        return {
-          reason: current.reason,
-          release: current.release,
-          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
-        };
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
-    }
-  };
-  if (verdictInput === undefined) {
-    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-    }
-    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
-  }
-  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
-  if (!parentValid)
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-  }
-  const parentJson = extractVerdictJson(verdictInput);
-  const receiptJson = extractVerdictJson(receiptBytes);
-  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
-  }
-  return coordinator.submitReview(taskId, ctx, verdictInput, options);
-}
-
-// plugins/immune-brain/runtime/claude/run_continuation.ts
-import { homedir as homedir3 } from "node:os";
-var MCP_TOOL = /^mcp__.*immune-brain.*__(\w+)$/;
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
-var MAX_METADATA_BYTES = 256 * 1024;
-var NATIVE_FAILURE_LIMIT = 3;
-var blank = () => ({
-  state: null,
-  sequence: 0,
-  review: "unobserved",
-  reviewer_prompt: null,
-  reviewer_call_id: null,
-  reviewer_agent_id: null,
-  recovery_action: null,
-  paused: null,
-  stop_blocks: 0,
-  native_failures: 0
-});
-var statePath2 = (sessionId, root) => join27(cacheDir(root), `${sessionHash(sessionId)}.continuation`);
-var callPath = (toolId, root) => join27(cacheDir(root), `${sessionHash(toolId)}.continuation-call`);
-function drop(path, root) {
-  if (!existsSync15(path))
-    return;
-  if (!ensurePrivateDir(cacheDir(root)))
-    return;
-  try {
-    const stat = lstatSync18(path);
-    if (stat.isFile() && ownedByUs(stat))
-      rmSync11(path);
-  } catch {}
-}
-function readLast(path) {
+  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
+    return false;
   let stat;
   try {
-    stat = lstatSync18(path);
-  } catch (error) {
-    if (error.code === "ENOENT")
-      return null;
-    throw error;
-  }
-  if (!stat.isFile() || !ownedByUs(stat))
-    throw new Error("unsafe continuation metadata");
-  const text = readPrivate(path, MAX_METADATA_BYTES);
-  if (text === undefined)
-    throw new Error("continuation metadata could not be read");
-  const lines = text.trim().split(`
-`);
-  return JSON.parse(lines.at(-1) ?? "null");
-}
-function readMetadata(sessionId, root) {
-  const value = readLast(statePath2(sessionId, root));
-  if (!value)
-    return blank();
-  value.native_failures ??= 0;
-  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !Number.isInteger(value.native_failures ?? 0) || (value.native_failures ?? 0) < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
-    throw new Error("invalid continuation metadata");
-  if (value.state) {
-    const { binding } = value.state;
-    if (!binding || binding.session_id !== sessionId || !Number.isInteger(value.state.unchanged_observations) || value.state.unchanged_observations < 0 || !(value.state.progress_digest === null || typeof value.state.progress_digest === "string") || !(value.state.boundary_id === null || typeof value.state.boundary_id === "string"))
-      throw new Error("invalid bound run metadata");
-    bindRun(binding);
-  }
-  return value;
-}
-function save(sessionId, root, value) {
-  const path = statePath2(sessionId, root);
-  const temporary = `${path}.${randomUUID11()}`;
-  if (!appendPrivate(temporary, cacheDir(root), JSON.stringify(value) + `
-`))
-    throw new Error("continuation metadata could not be written");
-  try {
-    renameSync6(temporary, path);
-  } finally {
-    drop(temporary, root);
-  }
-}
-function pauseRun(metadata, sessionId, root, reason) {
-  metadata.paused = reason;
-  save(sessionId, root, metadata);
-  revokeEntryToken(sessionId, "spent", root);
-}
-async function observeNativeFailure(metadata, correlation, root, reason) {
-  metadata.native_failures++;
-  if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
-    save(correlation.session_id, root, metadata);
-    return;
-  }
-  pauseRun(metadata, correlation.session_id, root, reason);
-}
-function readRunToolSession(toolId, operation, workspace, root = tmpdir7()) {
-  const record = readLast(callPath(toolId, root));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !readPhaseEntryState(record.session_id, root)?.run_live)
-    return null;
-  return record.session_id;
-}
-function selectedClaudeParent(toolId, workspace, slug, root = tmpdir7()) {
-  const call = readLast(callPath(toolId, root));
-  if (!call || call.workspace !== realpathSync19(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !readPhaseEntryState(call.session_id, root)?.run_live)
+    stat = lstatSync16(join24(root, entry.path));
+  } catch {
     return false;
-  const state = readMetadata(call.session_id, root).state;
-  return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
+  }
+  const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
+  if (worktreeMode !== entry.newMode)
+    return false;
+  const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
+  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
 }
-function stopBoundary(payload) {
-  if (typeof payload.transcript_path !== "string" || !payload.transcript_path)
-    return null;
-  const fd = openSync9(payload.transcript_path, "r");
-  try {
-    const stat = fstatSync6(fd);
-    if (!stat.isFile())
-      throw new Error("Stop transcript must be a regular file");
-    const bytes = Buffer.alloc(Math.min(stat.size, 256 * 1024));
-    readSync3(fd, bytes, 0, bytes.length, stat.size - bytes.length);
-    for (const line of bytes.toString("utf8").trim().split(`
-`).reverse()) {
-      let value;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (value.type === "assistant" && !value.isSidechain && typeof value.uuid === "string" && value.uuid)
-        return digestOfReviewerBytes(`${payload.transcript_path}
-${value.uuid}`);
-    }
-    return null;
-  } finally {
-    closeSync9(fd);
-  }
+function deliveryAlreadyApplied(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  if (mode === "auto")
+    return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
+  const paths = deliveredPaths(root, base, head);
+  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
 }
-function toolResponse(payload) {
-  const response = payload.tool_response;
-  if (Array.isArray(response)) {
-    const text = response.filter((item) => item?.type === "text" && typeof item.text === "string").map((item) => item.text).join("");
-    try {
-      return JSON.parse(text);
-    } catch {
-      return null;
-    }
+function deliverSingleTask(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  const blocked = (reason) => ({ mode, status: "blocked", reason });
+  const git = (...args) => gitIn(root, ...args);
+  if (deliveryAlreadyApplied(root, base, head))
+    return { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null };
+  const changed = deliveredPaths(root, base, head);
+  const dirty = porcelainEntries(root);
+  if (!changed || !dirty)
+    return blocked("coordinator_status_unreadable");
+  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
+  const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
+  if (overlaps.length)
+    return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+  if (mode === "auto") {
+    if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
+      return blocked("coordinator_branch_unavailable");
+    if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
+      return blocked("coordinator_head_diverged");
+    const merge = git("merge", "--ff-only", "--no-edit", head);
+    if (merge.status !== 0)
+      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+    return { mode, status: "fast_forwarded", reason: null };
   }
-  if (response && typeof response === "object" && !Array.isArray(response)) {
-    const object = response;
-    if (typeof object.state === "string")
-      return object;
-    if (Array.isArray(object.content)) {
-      const text = object.content.filter((item) => item?.type === "text" && typeof item.text === "string").map((item) => item.text).join("");
-      try {
-        return JSON.parse(text);
-      } catch {
-        return null;
-      }
-    }
-    return object;
-  }
-  if (typeof response === "string") {
-    try {
-      return JSON.parse(response);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-function warning(reason) {
-  return JSON.stringify({ systemMessage: `Immune-Brain run paused: ${reason}` });
-}
-async function runContinuationHookOutput(payload, root = tmpdir7()) {
-  const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
-  if (!sessionId)
-    return null;
-  const workspace = realpathSync19(typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
-  const event = String(payload.hook_event_name ?? "");
-  if (event === "SessionEnd") {
-    drop(statePath2(sessionId, root), root);
-    dropPhaseEntryLog(sessionId, root);
-    return null;
-  }
-  if (event === "UserPromptSubmit") {
-    const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
-    const entry = recognizePhaseEntry(prompt, claudeLocalNames(workspace, homedir3()), "claude");
-    if (releasesRunBinding(prompt, entry === "plan" ? "planner" : null) || entry === "run")
-      drop(statePath2(sessionId, root), root);
-    return null;
-  }
-  try {
-    const operation = MCP_TOOL.exec(String(payload.tool_name ?? ""))?.[1];
-    const toolId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
-    if (event === "PreToolUse" && operation && toolId && readPhaseEntryState(sessionId, root)?.run_live) {
-      const metadata = readMetadata(sessionId, root);
-      if (metadata.paused && NATIVE_OPERATIONS.has(operation))
-        return JSON.stringify({ hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: `Run paused: ${metadata.paused}; enter drive explicitly before another native gate`
-        } });
-      const input = payload.tool_input ?? {};
-      const correlation = {
-        session_id: sessionId,
-        workspace,
-        tool_use_id: toolId,
-        operation,
-        task_id: typeof input.task_id === "string" ? input.task_id : null
-      };
-      if (!appendPrivate(callPath(toolId, root), cacheDir(root), JSON.stringify(correlation) + `
-`))
-        throw new Error("tool correlation could not be recorded");
-      return null;
-    }
-    const metadata = readMetadata(sessionId, root);
-    if (metadata.paused)
-      return event === "Stop" ? warning(metadata.paused) : null;
-    if ((event === "PostToolUse" || event === "PostToolUseFailure") && operation && toolId) {
-      const correlated = readLast(callPath(toolId, root));
-      if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== operation || readRunToolSession(toolId, operation, workspace, root) !== sessionId)
-        return null;
-      drop(callPath(toolId, root), root);
-      if (event === "PostToolUseFailure") {
-        if (NATIVE_OPERATIONS.has(operation))
-          await observeNativeFailure(metadata, correlated, root, `${operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
-        else if (operation === "submit_review") {
-          metadata.review = "rejected";
-          save(sessionId, root, metadata);
-        }
-        return null;
-      }
-      const response = toolResponse(payload);
-      if (operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
-        if (metadata.state?.binding.kind !== "parent")
-          metadata.state = bindRun({
-            kind: "parent",
-            workspace,
-            session_id: sessionId,
-            batch_id: null,
-            initiative_slug: response.initiative_slug,
-            plan_digest: response.plan_digest,
-            final_verification: response.final_verification_commands
-          });
-      }
-      if (operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
-        const batch = readAnyBatchRunState(workspace, response.batch_id);
-        if (!batch)
-          throw new Error("batch receipt has no persisted identity");
-        if (metadata.state?.binding.kind !== "parent")
-          metadata.state = bindRun({
-            kind: "parent",
-            workspace,
-            session_id: sessionId,
-            batch_id: batch.batch_id,
-            initiative_slug: batch.initiative_slug,
-            plan_digest: batch.plan_digest
-          });
-      }
-      if (!metadata.state && correlated.task_id && operation === "status") {
-        const status = await projectTaskStatus(workspace, correlated.task_id);
-        if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
-          metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
-      }
-      if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
-        return null;
-      if (operation === "advance_assurance" && response?.state === "review_ready") {
-        const params = response.agent_params;
-        if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
-          metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
-          metadata.reviewer_call_id = null;
-          metadata.reviewer_agent_id = null;
-          metadata.review = "ready";
-        }
-      }
-      if (["advance_assurance", "submit_review"].includes(operation) && response?.state === "review_incomplete") {
-        pauseRun(metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
-        return null;
-      }
-      if (operation === "submit_review") {
-        if (response?.reason === "review_incomplete_retry") {
-          metadata.review = "unobserved";
-          metadata.reviewer_prompt = null;
-          metadata.reviewer_call_id = null;
-          metadata.recovery_action = null;
-        } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
-          metadata.review = "rejected";
-          const recovery = response?.recovery_action ?? response?.next_action;
-          metadata.recovery_action = typeof recovery === "string" ? recovery : null;
-        } else {
-          metadata.review = "unobserved";
-          metadata.reviewer_prompt = null;
-          metadata.reviewer_call_id = null;
-          metadata.recovery_action = null;
-        }
-      }
-      if (NATIVE_OPERATIONS.has(operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
-        await observeNativeFailure(metadata, correlated, root, `${operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
-      if (metadata.state)
-        save(sessionId, root, metadata);
-      return null;
-    }
-    if (payload.tool_name === "Agent" && metadata.state && metadata.reviewer_prompt) {
-      const input = payload.tool_input;
-      if (event === "PreToolUse" && typeof input?.prompt === "string" && digestOfReviewerBytes(input.prompt) === metadata.reviewer_prompt && toolId) {
-        if (metadata.reviewer_call_id) {
-          metadata.review = "rejected";
-        } else {
-          metadata.reviewer_call_id = toolId;
-          metadata.review = "running";
-        }
-        save(sessionId, root, metadata);
-      }
-      if ((event === "PostToolUse" || event === "PostToolUseFailure") && toolId === metadata.reviewer_call_id) {
-        const response = toolResponse(payload);
-        if (response?.isAsync === true || response?.status === "async_launched") {
-          metadata.reviewer_agent_id = typeof response.agentId === "string" ? response.agentId : null;
-        } else
-          metadata.review = "returned";
-        save(sessionId, root, metadata);
-      }
-    }
-    if (event === "SubagentStop" && metadata.reviewer_agent_id && payload.agent_id === metadata.reviewer_agent_id) {
-      metadata.review = "returned";
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (event !== "Stop" || !metadata.state)
-      return null;
-    if (!readPhaseEntryState(sessionId, root)?.run_live) {
-      drop(statePath2(sessionId, root), root);
-      return null;
-    }
-    if (metadata.state.binding.workspace !== workspace) {
-      drop(statePath2(sessionId, root), root);
-      return warning("workspace changed; enter drive explicitly in this workspace");
-    }
-    const boundary = stopBoundary(payload);
-    if (!boundary)
-      return null;
-    metadata.sequence++;
-    const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
-    let observation;
-    if (metadata.state.binding.kind === "parent")
-      observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
-    else {
-      const status = await projectTaskStatus(workspace, taskId);
-      const record = readTaskRecordRaw(workspace, taskId);
-      observation = {
-        kind: "task",
-        workspace,
-        session_id: sessionId,
-        boundary_id: boundary,
-        status,
-        source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
-        review: metadata.review,
-        recovery_action: metadata.recovery_action ?? undefined
-      };
-    }
-    const decision = decideRunContinuation(metadata.state, observation);
-    if (decision.action === "unbound" || decision.action === "settled") {
-      if (decision.action === "settled")
-        revokeEntryToken(sessionId, "spent", root);
-      drop(statePath2(sessionId, root), root);
-      return null;
-    }
-    if (decision.action === "wait") {
-      metadata.state = decision.state;
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (decision.action === "pause" && decision.stalled) {
-      metadata.state = decision.state;
-      metadata.stop_blocks = 0;
-      save(sessionId, root, metadata);
-      return null;
-    }
-    if (decision.state.progress_digest !== metadata.state.progress_digest || payload.stop_hook_active !== true)
-      metadata.stop_blocks = 0;
-    metadata.state = decision.state;
-    if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-      pauseRun(metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
-      return warning(metadata.paused);
-    }
-    metadata.stop_blocks++;
-    save(sessionId, root, metadata);
-    return JSON.stringify({ decision: "block", reason: `Explicit drive is bound to ${taskId}; Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}` });
-  } catch (error) {
-    return warning(`continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`);
-  }
+  if (!pending.length)
+    return { mode, status: "staged", reason: null };
+  const patch = spawnSync18("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
+  if (patch.status !== 0)
+    return blocked("checkout_delivery_conflict: cannot read delivery delta");
+  if (!patch.stdout.length)
+    return { mode, status: "staged", reason: null };
+  const apply = (check) => spawnSync18("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
+  const checked = apply(true);
+  if (checked.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+  const applied = apply(false);
+  if (applied.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+  return { mode, status: "staged", reason: null };
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_verdict_authority();
-init_verdict_authority();
+// plugins/immune-brain/runtime/unattended/lane_cleanup.ts
+import { spawnSync as spawnSync19 } from "node:child_process";
+var LANE_RETAINED_REASON = "batch_lane_retained";
+function exitProofCondition(generation, observation) {
+  if (!generation)
+    return "no Executor generation was supervised by the runtime, so no exit was observed";
+  if (generation.state === "interrupted")
+    return `Executor generation ${generation.generation} was interrupted`;
+  if (generation.state === "stopped_by_parent")
+    return `Executor generation ${generation.generation} was stopped by the Parent`;
+  if (generation.state !== "exited" || !generation.exit)
+    return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
+  const exit = observation ?? generation.exit;
+  if (exit.generation !== generation.generation)
+    return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
+  if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
+    return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
+  if (exit.code !== 0 || exit.signal !== null)
+    return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
+  return null;
+}
+function git9(cwd, ...args) {
+  return spawnSync19("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
+}
+function retainedLaneReason(condition) {
+  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
+}
+function cleanupSingleTaskLane(input) {
+  const retain = (condition) => ({ status: "retained", condition });
+  const proof = exitProofCondition(input.generation, input.observation);
+  if (proof)
+    return retain(proof);
+  const exit = input.observation ?? input.generation.exit;
+  const status = git9(input.lanePath, "status", "--porcelain", "--untracked-files=all");
+  if (status.status !== 0)
+    return retain("the Lane status is unreadable");
+  if (status.stdout.trim()) {
+    const paths = status.stdout.split(`
+`).filter(Boolean).map((line) => line.slice(3)).sort();
+    return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
+  }
+  const laneRef = `refs/heads/${input.laneBranch}`;
+  const laneTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
+  const parentTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
+  if (laneTip.status !== 0 || parentTip.status !== 0)
+    return retain("a Lane branch is unreadable");
+  if (git9(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
+    return retain(`the Lane branch carries commits that ${input.parentRef.replace("refs/heads/", "")} does not`);
+  const listed = git9(input.root, "worktree", "list", "--porcelain");
+  if (listed.status !== 0)
+    return retain("the worktree list is unreadable");
+  if (listed.stdout.split(`
+`).includes(`branch ${input.parentRef}`))
+    return retain(`${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree`);
+  const removed = git9(input.root, "worktree", "remove", input.lanePath);
+  if (removed.status !== 0)
+    return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
+  for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
+    const deleted = git9(input.root, "update-ref", "-d", ref, tip);
+    if (deleted.status !== 0)
+      return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
+  }
+  return {
+    status: "removed",
+    exit,
+    worktree: input.lanePath,
+    branches: [input.laneBranch, input.parentRef.replace("refs/heads/", "")]
+  };
+}
+
+// plugins/immune-brain/runtime/unattended/lane_decision.ts
+init_storage();
 init_layered_config();
-import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
-import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+init_batch_preflight();
+init_batch_reasons();
+init_batch_state();
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
 import { spawn as spawn4 } from "node:child_process";
-import { accessSync as accessSync3, constants as constants9 } from "node:fs";
-import { delimiter as delimiter4, join as join28 } from "node:path";
+import { accessSync as accessSync3, constants as constants7 } from "node:fs";
+import { delimiter as delimiter4, join as join25 } from "node:path";
 function chooseExecutor(layers, fallback) {
   const hostLayer = layers.findIndex((layer) => layer.executor_host !== undefined);
   const host = hostLayer < 0 ? fallback : layers[hostLayer].executor_host;
@@ -19528,9 +17945,9 @@ class LaneSupervisor {
       return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
     if (!handle && !input.stop) {
       const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
-      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join28(dir || ".", binaryName)).find((path) => {
+      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join25(dir || ".", binaryName)).find((path) => {
         try {
-          accessSync3(path, constants9.X_OK);
+          accessSync3(path, constants7.X_OK);
           return true;
         } catch {
           return false;
@@ -19705,314 +18122,265 @@ async function superviseLane(supervisor, input) {
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_coordinator();
-init_verification();
-init_review_evidence();
-init_assurance_projection();
-init_reducer();
-init_storage();
-init_intent();
-init_canary_application();
-init_authority_port();
-
-// plugins/immune-brain/runtime/kernel/enrollment_authority.ts
-var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
-function createEnrollmentAuthorityRegistry() {
-  return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
-    validateBinding(binding) {
-      const missing = [];
-      for (const [key, value] of Object.entries(binding)) {
-        if (value === undefined || value === null || value === "")
-          missing.push(key);
-      }
-      if (missing.length > 0)
-        throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
-    },
-    validateAndProject(state, expected) {
-      for (const key of Object.keys(expected)) {
-        if (state[key] !== expected[key])
-          throw new Error(`enrollment capability ${key} mismatch`);
-      }
-      return {
-        task_id: state.task_id,
-        intent_path: state.intent_path,
-        intent_revision: state.intent_revision,
-        intent_content_hash: state.intent_content_hash,
-        preparation_digest: state.preparation_digest,
-        actor_id: state.actor_id,
-        confirmation_ref: state.confirmation_ref,
-        issued_at: state.issued_at,
-        nonce: state.nonce
-      };
-    }
-  }, "enrollment");
-}
-
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_storage();
-init_workflow_autocommit();
-init_qa();
-init_workspace_scope();
-init_batch_reasons();
-
-// plugins/immune-brain/runtime/authorization_operation.ts
-function reviewRetryNotice(retry) {
-  return `Authorize exactly one additional Review of this frozen snapshot under contract ${retry.review_contract_hash}. Previous contract: ${retry.previous_contract_hash ?? "unknown (legacy history; contract change cannot be verified)"}. Preserve all incomplete history and QA; this does not approve Review or permit implementation changes.`;
-}
-function deriveAuthorizationOperation(input) {
-  if (input.readiness.state === "resolve_user_decision")
-    return { operation: "resolve-user-decision" };
-  if (input.readiness.state === "authorize_review_retry")
-    return { operation: "authorize-review-retry" };
-  if (input.readiness.state === "authorize_rework")
-    return { operation: "authorize-rework" };
-  if (input.readiness.blocked)
-    return { blocked: input.readiness.blocked };
-  return { blocked: "no unique host-derived authorization operation" };
-}
-
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_role_prompt_bridge();
-init_actor_identity();
-
-// plugins/immune-brain/runtime/staged_intent.ts
-import { execFileSync as execFileSync13 } from "node:child_process";
-import { readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join29 } from "node:path";
-function captureStagedIntent(root, relativePath) {
-  return {
-    path: relativePath,
-    bytes: readFileSync21(join29(root, relativePath)),
-    index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
-      cwd: root,
-      stdio: ["ignore", "pipe", "pipe"]
-    })
-  };
-}
-function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join29(root, snapshot.path), snapshot.bytes);
-  execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
-    cwd: root,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  if (snapshot.index_state.length > 0) {
-    execFileSync13("git", ["update-index", "-z", "--index-info"], {
-      cwd: root,
-      input: snapshot.index_state,
-      stdio: ["pipe", "ignore", "pipe"]
-    });
-  }
-  const restoredBytes = readFileSync21(join29(root, snapshot.path));
-  if (!restoredBytes.equals(snapshot.bytes)) {
-    throw new Error("failed to restore prior intent bytes");
-  }
-  const restoredIndex = execFileSync13("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
-    cwd: root,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  if (!restoredIndex.equals(snapshot.index_state)) {
-    throw new Error("failed to restore prior intent git index entry");
-  }
-}
-
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-init_coordinator();
-init_github_issue_tracker();
-init_backend_claim();
-init_batch_preflight();
-
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
 init_batch_preflight();
-
-// plugins/immune-brain/runtime/unattended/batch_lanes.ts
-init_batch_authority();
-init_intent();
+init_batch_state();
+init_layered_config();
 init_backend_claim();
-init_runtime_contracts();
-init_derived_files();
-init_batch_final_verification();
-init_batch_final_report();
-import { spawnSync as spawnSync20 } from "node:child_process";
-import { createHash as createHash26 } from "node:crypto";
-import { existsSync as existsSync16, realpathSync as realpathSync20 } from "node:fs";
-import { isAbsolute as isAbsolute11, join as join31 } from "node:path";
-import { readFileSync as readFileSync22 } from "node:fs";
-
-// plugins/immune-brain/runtime/unattended/checkout_delivery.ts
-init_git_integration_preference();
-init_batch_preflight();
-import { spawnSync as spawnSync18 } from "node:child_process";
-import { lstatSync as lstatSync19 } from "node:fs";
-import { join as join30 } from "node:path";
-var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
-function deliveredPaths(root, base, head) {
-  const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
-  if (raw.status !== 0)
-    return null;
-  const fields = raw.stdout.split("\x00").filter(Boolean);
-  const paths = [];
-  for (let i = 0;i + 1 < fields.length; i += 2) {
-    const meta = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(fields[i]);
-    if (!meta)
-      return null;
-    paths.push({ path: fields[i + 1], newMode: meta[2], newBlob: meta[4], deleted: meta[5] === "D" });
-  }
-  return paths;
+init_batch_plan();
+init_batch_git();
+init_batch_reasons();
+function batchQaFailureFacts(record) {
+  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
+  return {
+    qa_failure_count: failed.length,
+    last_qa_failure_at: failed.at(-1)?.at ?? null,
+    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
+  };
 }
-function pathSatisfied(root, entry) {
-  const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
-  if (staged.status !== 0)
-    return false;
-  if (entry.deleted) {
-    if (staged.stdout.length)
-      return false;
+async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
+  const candidate = findSettledBatchRecord(root, initiativeSlug);
+  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
+    return null;
+  const batch = readAnyBatchRunState(root, candidate.batch_id);
+  if (!batch || batch.final_verification_result?.passed !== true)
+    return null;
+  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
+  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
+  if (!proof.complete)
+    return null;
+  const last = parent.tasks.at(-1);
+  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
+  let sync = null;
+  if (last && tracker) {
+    if (!tombstone || tombstone.terminal_lifecycle !== "done")
+      throw new Error("Parent tracker synchronization requires exact terminal evidence");
     try {
-      lstatSync19(join30(root, entry.path));
-      return false;
+      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
     } catch {
-      return true;
+      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
     }
   }
-  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
-  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
-    return false;
-  let stat;
-  try {
-    stat = lstatSync19(join30(root, entry.path));
-  } catch {
-    return false;
-  }
-  const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
-  if (worktreeMode !== entry.newMode)
-    return false;
-  const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
-  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
-}
-function deliveryAlreadyApplied(root, base, head) {
-  const { mode } = readGitIntegrationPreference(root);
-  if (mode === "auto")
-    return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
-  const paths = deliveredPaths(root, base, head);
-  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
-}
-function deliverSingleTask(root, base, head) {
-  const { mode } = readGitIntegrationPreference(root);
-  const blocked = (reason) => ({ mode, status: "blocked", reason });
-  const git = (...args) => gitIn(root, ...args);
-  if (deliveryAlreadyApplied(root, base, head))
-    return { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null };
-  const changed = deliveredPaths(root, base, head);
-  const dirty = porcelainEntries(root);
-  if (!changed || !dirty)
-    return blocked("coordinator_status_unreadable");
-  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
-  const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
-  if (overlaps.length)
-    return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
-  if (mode === "auto") {
-    if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
-      return blocked("coordinator_branch_unavailable");
-    if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
-      return blocked("coordinator_head_diverged");
-    const merge = git("merge", "--ff-only", "--no-edit", head);
-    if (merge.status !== 0)
-      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
-    return { mode, status: "fast_forwarded", reason: null };
-  }
-  if (!pending.length)
-    return { mode, status: "staged", reason: null };
-  const patch = spawnSync18("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
-  if (patch.status !== 0)
-    return blocked("checkout_delivery_conflict: cannot read delivery delta");
-  if (!patch.stdout.length)
-    return { mode, status: "staged", reason: null };
-  const apply = (check) => spawnSync18("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
-  const checked = apply(true);
-  if (checked.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
-  const applied = apply(false);
-  if (applied.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
-  return { mode, status: "staged", reason: null };
-}
-
-// plugins/immune-brain/runtime/unattended/lane_cleanup.ts
-import { spawnSync as spawnSync19 } from "node:child_process";
-var LANE_RETAINED_REASON = "batch_lane_retained";
-function exitProofCondition(generation, observation) {
-  if (!generation)
-    return "no Executor generation was supervised by the runtime, so no exit was observed";
-  if (generation.state === "interrupted")
-    return `Executor generation ${generation.generation} was interrupted`;
-  if (generation.state === "stopped_by_parent")
-    return `Executor generation ${generation.generation} was stopped by the Parent`;
-  if (generation.state !== "exited" || !generation.exit)
-    return `Executor generation ${generation.generation} exit was never observed (unobservable)`;
-  const exit = observation ?? generation.exit;
-  if (exit.generation !== generation.generation)
-    return `the exit observation belongs to superseded generation ${exit.generation}; the current generation is ${generation.generation}`;
-  if (exit.pid !== generation.pid || exit.repository !== generation.repository || exit.lane_path !== generation.lane_path)
-    return `the exit observation of generation ${generation.generation} is not bound to this Executor process`;
-  if (exit.code !== 0 || exit.signal !== null)
-    return `Executor generation ${generation.generation} did not exit normally (${exit.signal ? `signal ${exit.signal}` : `code ${exit.code}`})`;
-  return null;
-}
-function git9(cwd, ...args) {
-  return spawnSync19("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
-}
-function retainedLaneReason(condition) {
-  return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
-}
-function cleanupSingleTaskLane(input) {
-  const retain = (condition) => ({ status: "retained", condition });
-  const proof = exitProofCondition(input.generation, input.observation);
-  if (proof)
-    return retain(proof);
-  const exit = input.observation ?? input.generation.exit;
-  const status = git9(input.lanePath, "status", "--porcelain", "--untracked-files=all");
-  if (status.status !== 0)
-    return retain("the Lane status is unreadable");
-  if (status.stdout.trim()) {
-    const paths = status.stdout.split(`
-`).filter(Boolean).map((line) => line.slice(3)).sort();
-    return retain(`the Lane has tracked modifications or untracked files: ${paths.join(", ")}`);
-  }
-  const laneRef = `refs/heads/${input.laneBranch}`;
-  const laneTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${laneRef}^{commit}`);
-  const parentTip = git9(input.root, "rev-parse", "--verify", "--quiet", `${input.parentRef}^{commit}`);
-  if (laneTip.status !== 0 || parentTip.status !== 0)
-    return retain("a Lane branch is unreadable");
-  if (git9(input.root, "merge-base", "--is-ancestor", laneTip.stdout.trim(), parentTip.stdout.trim()).status !== 0)
-    return retain(`the Lane branch carries commits that ${input.parentRef.replace("refs/heads/", "")} does not`);
-  const listed = git9(input.root, "worktree", "list", "--porcelain");
-  if (listed.status !== 0)
-    return retain("the worktree list is unreadable");
-  if (listed.stdout.split(`
-`).includes(`branch ${input.parentRef}`))
-    return retain(`${input.parentRef.replace("refs/heads/", "")} is checked out in a worktree`);
-  const removed = git9(input.root, "worktree", "remove", input.lanePath);
-  if (removed.status !== 0)
-    return retain(`the Lane worktree could not be removed: ${removed.stderr.trim()}`);
-  for (const [ref, tip] of [[laneRef, laneTip.stdout.trim()], [input.parentRef, parentTip.stdout.trim()]]) {
-    const deleted = git9(input.root, "update-ref", "-d", ref, tip);
-    if (deleted.status !== 0)
-      return retain(`${ref.replace("refs/heads/", "")} could not be removed: ${deleted.stderr.trim()}`);
-  }
-  return {
-    status: "removed",
-    exit,
-    worktree: input.lanePath,
-    branches: [input.laneBranch, input.parentRef.replace("refs/heads/", "")]
+  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
+  const report = {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: batch.batch_id,
+    initiative_slug: initiativeSlug,
+    batch_state: batch.batch_state,
+    children: batch.children,
+    commits: batch.commits,
+    final_verification: batch.final_verification_result,
+    ...sync ? { tracker: sync } : {},
+    ...retained.length ? { lane_refusals: retained } : {},
+    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
+    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
+    created_at: new Date().toISOString(),
+    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
   };
+  writeBatchRunReport(root, report);
+  return report;
+}
+async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
+  const existing = findExistingActiveBatch(root, taskId);
+  if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
+    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+  const record = existing.record;
+  if (record.executor_mode === "interactive")
+    return { state: "blocked", reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
+  const lane = record.children.find((child) => child.task_id === taskId)?.lane;
+  if (!lane)
+    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
+  const observation = await supervisor.run({
+    key: `${root}\x00${record.batch_id}`,
+    repository: root,
+    lanePath: lane.path,
+    taskId,
+    choice: { host: "pi", not_applied: [] },
+    pluginDir: "",
+    store: laneGenerationStore(root, record.batch_id),
+    baseline: "",
+    waitMs: 5000,
+    graceMs: 1000,
+    signal,
+    stop: true
+  });
+  const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+  const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
+  const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
+  return { state: "started", batch_id: record.batch_id, report: {
+    ...reportFromLane(parked),
+    ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
+    lane_supervision: { ...observation, not_applied: [] }
+  } };
+}
+function reportFromLane(record) {
+  return {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: record.batch_id,
+    initiative_slug: record.initiative_slug,
+    batch_state: record.batch_state,
+    max_parallel: record.max_parallel,
+    children: record.children,
+    commits: record.commits,
+    reason: null,
+    handoffs: [],
+    next_action: "Continue supervising the Lane.",
+    created_at: record.updated_at
+  };
+}
+function afterExecutorExit(advanced, observed) {
+  const decision = observed.lane_decision_required;
+  return {
+    ...advanced,
+    handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
+    ...decision ? { lane_decision_required: decision } : {},
+    next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
+    lane_supervision: observed.lane_supervision
+  };
+}
+async function superviseSingle(input, report) {
+  const options = input.supervision;
+  const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
+  if (!child?.lane)
+    return report;
+  const config = resolveConfig(input.root);
+  if (!config.lanes.valid)
+    return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
+  const active = config.lanes.active.value;
+  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+  const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
+  const store = laneGenerationStore(input.root, input.batch_id);
+  const observation = await superviseLane(options.supervisor, {
+    key: `${input.root}\x00${input.batch_id}`,
+    repository: input.root,
+    lanePath: child.lane.path,
+    taskId: child.task_id,
+    choice,
+    pluginDir: options.pluginDir,
+    store,
+    baseline: "",
+    waitMs: options.waitMs,
+    graceMs: 1000,
+    signal: options.signal,
+    stop: options.stop,
+    project: async () => {
+      const result = await input.kernel.projectTask(child.lane.path, child.task_id);
+      if (result.error !== null)
+        throw new Error(`batch_lane_unreadable: ${result.error}`);
+      return result.projection;
+    }
+  });
+  if (observation.reason === "lane_executor_no_progress") {
+    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
+    report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
+  } else if (observation.state === "stopped" && observation.exit) {
+    const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
+    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
+    report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
+  } else if (observation.state === "unavailable" || observation.state === "unobservable") {
+    report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
+  }
+  let decision = null;
+  if (observation.state === "exited" && !observation.reason) {
+    const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+    if (read.error === null)
+      decision = laneDecisionFacts(child.task_id, read.projection);
+  }
+  const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
+  const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
+  return {
+    ...report,
+    handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
+    ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
+    ...decision ? { lane_decision_required: decision } : {},
+    next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
+    lane_supervision: { ...observation, not_applied: choice.not_applied }
+  };
+}
+async function startBatch(input) {
+  const recorded = readAnyBatchRunState(input.root, input.batch_id);
+  const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
+  if (interactive)
+    input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
+  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
+    const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
+    if (!report)
+      throw new Error("lane_config_invalid");
+    return { ...report, batch_state: "rejected", reason: "lane_config_invalid" };
+  }
+  if (recorded && !isLaneBatchRecord(recorded)) {
+    const reason = batchReason("batch_record_shape_retired");
+    return {
+      contract: "assurance_kernel/batch_run_report/v1",
+      batch_id: recorded.batch_id,
+      initiative_slug: recorded.initiative_slug,
+      batch_state: "rejected",
+      children: recorded.children,
+      commits: recorded.commits,
+      reason: reason.reason,
+      next_action: reason.recovery_action,
+      created_at: input.now
+    };
+  }
+  try {
+    if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
+      const generation = laneGenerationStore(input.root, input.batch_id).read();
+      if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
+        const observed = await superviseSingle(input, reportFromLane(recorded));
+        if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
+          return observed;
+        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
+        return afterExecutorExit(advanced, observed);
+      }
+    }
+    const report = await runLaneBatch(input, recorded);
+    if (interactive) {
+      const child = report.children.find((c) => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
+      if (child?.lane) {
+        const read = await input.kernel.projectTask(child.lane.path, child.task_id);
+        if (read.error !== null)
+          throw new Error(`batch_lane_unreadable: ${read.error}`);
+        const decision = laneDecisionFacts(child.task_id, read.projection);
+        if (decision)
+          return {
+            ...report,
+            lane_decision_required: decision,
+            handoffs: report.handoffs.filter((h) => h.role !== "executor"),
+            next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.`
+          };
+      }
+      return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some((h) => h.role === "executor") ? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.` : report.next_action };
+    }
+    if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
+      const store = laneGenerationStore(input.root, input.batch_id);
+      const generation = store.read();
+      if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state))
+        store.update((value) => {
+          if (!value || value.generation !== generation.generation || value.state !== generation.state)
+            throw new Error("lane_executor_generation_changed");
+          return { ...value, no_progress: 0, handled_generation: value.generation };
+        });
+    }
+    if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
+      const observed = await superviseSingle(input, report);
+      if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
+        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
+        return afterExecutorExit(advanced, observed);
+      }
+      return observed;
+    }
+    return report;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
+      throw error;
+    if (!recorded)
+      throw error;
+    return laneRejectionReport(input, recorded, message, "settle the reported kernel store condition and retry in the current Host");
+  }
 }
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
-init_storage();
-init_layered_config();
-init_batch_preflight();
-init_batch_reasons();
-init_batch_state();
 function laneDecisionFacts(taskId, projection) {
   if (projection.lifecycle !== "active")
     return null;
@@ -20196,7 +18564,7 @@ function parseLaneOffers(value) {
       throw new Error("invalid lane_offers: unknown offer field");
     if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
       throw new Error("invalid lane_offers: task_id is not a valid task id");
-    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute11(path))
+    if (typeof path !== "string" || !path || path.length > MAX_PATH_LENGTH || path.includes("\x00") || !isAbsolute10(path))
       throw new Error("invalid lane_offers: path must be an absolute path");
     if (seen.has(taskId))
       throw new Error(`invalid lane_offers: duplicate offer for ${taskId}`);
@@ -20252,7 +18620,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join31(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync21(join26(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -20301,14 +18669,14 @@ function commonDir(root) {
   if (result.status !== 0 || !result.stdout)
     return null;
   try {
-    return realpathSync20(result.stdout);
+    return realpathSync17(result.stdout);
   } catch {
     return null;
   }
 }
 function resolveRealPath(path) {
   try {
-    return realpathSync20(path);
+    return realpathSync17(path);
   } catch {
     return null;
   }
@@ -20317,7 +18685,7 @@ function createDefaultLaneGitPort() {
   return {
     resolveRoot: (root) => resolveRealPath(root) ?? root,
     inspectLane(coordinatorRoot, lanePath) {
-      const real = existsSync16(lanePath) ? resolveRealPath(lanePath) : null;
+      const real = existsSync15(lanePath) ? resolveRealPath(lanePath) : null;
       const absent = {
         exists: real !== null,
         real_path: real,
@@ -20689,7 +19057,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join31(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join26(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -20862,7 +19230,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join31(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync15(join26(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -20905,7 +19273,7 @@ async function runLaneBatch(input, persisted) {
         task_id: request.task_id,
         kind: request.kind,
         text: request.text,
-        text_digest: `sha256:${createHash26("sha256").update(request.text).digest("hex")}`
+        text_digest: `sha256:${createHash23("sha256").update(request.text).digest("hex")}`
       }];
       persist();
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
@@ -21318,262 +19686,1873 @@ async function runLaneBatch(input, persisted) {
   return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
 }
 
-// plugins/immune-brain/runtime/unattended/batch_runner.ts
-init_batch_state();
-init_layered_config();
-init_backend_claim();
-init_batch_plan();
-init_batch_git();
-init_batch_reasons();
-function batchQaFailureFacts(record) {
-  const failed = record.history.filter((event) => event.type === "request_rework" && event.authority?.authority_kind === "qa");
-  return {
-    qa_failure_count: failed.length,
-    last_qa_failure_at: failed.at(-1)?.at ?? null,
-    recovery_findings: record.findings.filter((f) => f.status === "open").map((f) => ({ id: f.id, kind: f.kind, status: f.status, acceptance_id: f.acceptance_id }))
-  };
+// plugins/immune-brain/runtime/host-core/mcp_runtime.ts
+init_batch_final_verification();
+init_coordinator();
+init_storage();
+init_plugin_source_skew();
+init_assurance_projection();
+var MCP_PROTOCOL_VERSION = "2025-06-18";
+var TOOLS = [
+  { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
+  { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
+  { name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
+  { name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
+  { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
+  { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
+  { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
+  { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
+  { name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
+  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
+  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
+  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
+  { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
+];
+function listMcpTools() {
+  return TOOLS.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? {
+          initiative_slug: { type: "string" },
+          ...tool.name === "start_unattended_batch" ? {
+            task_id: { type: "string" },
+            stop: { type: "boolean" },
+            executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
+            executor_model: { type: "string", minLength: 1 },
+            executor_effort: { type: "string", minLength: 1 },
+            max_parallel: { type: "integer", minimum: 1 },
+            lane_offers: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { task_id: { type: "string" }, path: { type: "string" } },
+                required: ["task_id", "path"],
+                additionalProperties: false
+              }
+            },
+            final_verification: { type: "array", items: { type: "string" }, maxItems: 8 },
+            lane_instruction: {
+              type: "object",
+              properties: {
+                task_id: { type: "string" },
+                kind: { type: "string", enum: ["instruction", "correction"] },
+                text: { type: "string" },
+                session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] }
+              },
+              required: ["task_id", "text", "session_state"],
+              additionalProperties: false
+            }
+          } : {}
+        } : {
+          task_id: { type: "string" },
+          ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
+          ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+          ...tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {},
+          ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
+          ...tool.name === "submit_verification" ? { result: { type: "string" } } : {},
+          ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {},
+          ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
+        }
+      },
+      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+    },
+    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
+  }));
 }
-async function completedParentReport(root, initiativeSlug, readInitiative, tracker = createBatchTrackerPort(root, initiativeSlug)) {
-  const candidate = findSettledBatchRecord(root, initiativeSlug);
-  if (!candidate || !isLaneBatchRecord(candidate) || candidate.batch_state !== "completed")
-    return null;
-  const batch = readAnyBatchRunState(root, candidate.batch_id);
-  if (!batch || batch.final_verification_result?.passed !== true)
-    return null;
-  const parent = await (readInitiative ?? observeInitiative)(root, initiativeSlug);
-  const proof = await observeParentCompletion(root, initiativeSlug, parent.tasks.map((child) => child.task_id));
-  if (!proof.complete)
-    return null;
-  const last = parent.tasks.at(-1);
-  const tombstone = last ? await withBatchEvidence(root, batch.branch, expectedBatchHead(batch), (path) => readTaskTombstone(path, last.task_id)) : null;
-  let sync = null;
-  if (last && tracker) {
-    if (!tombstone || tombstone.terminal_lifecycle !== "done")
-      throw new Error("Parent tracker synchronization requires exact terminal evidence");
+function supportsElicitationProtocol(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= MCP_PROTOCOL_VERSION;
+}
+function withCompletionDelivery(taskId, result, root = process.cwd()) {
+  if (result?.state !== "completed")
+    return result;
+  try {
+    const record = readSettledTaskEvidence(root, taskId)?.record;
+    const diffHash = record?.attestations?.at(-1)?.diff_hash;
+    const settle = result.settle_commit;
+    return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash, settle?.committed ? settle.commit : undefined) } : result;
+  } catch {
+    return result;
+  }
+}
+function createMcpRuntime(profile, options = {}) {
+  const host = options.host ?? profile.createHost();
+  const defaultWorkspace = options.cwd ?? process.cwd();
+  const trustedClientNames = options.trustedClientNames ?? profile.trustedClientNames;
+  const serverInfo = options.serverInfo ?? profile.serverInfo;
+  const runtime = profile.createRuntime({
+    cwd: defaultWorkspace,
+    env: options.env ?? process.env,
+    parentHost: options.parentHost,
+    probeHost: options.probeHost,
+    host,
+    ports: options.ports,
+    authorityOverrides: options.authorityOverrides,
+    interactive: options.interactive,
+    requestConfirmation: options.requestConfirmation,
+    batchKernel: options.batchKernel,
+    batchGit: options.batchGit,
+    readInitiative: options.readInitiative
+  });
+  let negotiatedVersion;
+  let negotiatedInteractive = false;
+  let negotiatedRoots = false;
+  let rootsWorkspace;
+  let rootsProvider = options.rootsProvider;
+  const connectionId = randomUUID10();
+  const resolveWorkspace = async (meta, signal) => {
+    let workspace = typeof meta.workspace === "string" && isAbsolute11(meta.workspace) ? meta.workspace : undefined;
+    if (!workspace && rootsProvider && (negotiatedRoots || options.rootsProvider)) {
+      if (rootsWorkspace === undefined) {
+        let roots;
+        try {
+          roots = await rootsProvider(signal);
+        } catch {
+          roots = undefined;
+        }
+        rootsWorkspace = firstFileRootPath(roots) ?? null;
+      }
+      workspace = rootsWorkspace ?? undefined;
+    }
+    if (!workspace)
+      workspace = defaultWorkspace;
+    runtime.bindWorkspace(workspace);
+    return workspace;
+  };
+  const bundle = options.bundleIdentity ?? watchBundleIdentity(profile.bundlePath);
+  const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
+  const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => profile.consumePhaseAdmission(toolCallId, operation));
+  const sessionProbe = options.probeHost ?? profile.probeHost;
+  const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
+  const unversionedHostReason = () => {
+    const probe = probeNegotiatedHost(undefined);
+    return probe.ok ? "host version is unavailable" : probe.reason;
+  };
+  let hookSessionId = null;
+  const requireRunEntry = (operation, toolCallId, workspace, admissionId = toolCallId) => {
+    const correlated = profile.readRunToolSession(toolCallId, operation, workspace);
+    if (!options.consumePhaseAdmission && !correlated)
+      throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
+    const grant = consumeAdmission(admissionId, operation);
+    if (!grant)
+      throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
+    hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
+    if (grant === true || !grant.entry_token)
+      return;
+    let current = null;
     try {
-      sync = await tracker.markTerminal(root, { task_id: last.task_id, phase: "done", terminal_event_id: tombstone.terminal_event_id });
-    } catch {
-      sync = { status: "failed", message: "Local Parent completion proved; retry tracker synchronization on this Host" };
-    }
-  }
-  const retained = isLaneBatchRecord(batch) ? retainedLaneNotices(root, batch) : [];
-  const report = {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: batch.batch_id,
-    initiative_slug: initiativeSlug,
-    batch_state: batch.batch_state,
-    children: batch.children,
-    commits: batch.commits,
-    final_verification: batch.final_verification_result,
-    ...sync ? { tracker: sync } : {},
-    ...retained.length ? { lane_refusals: retained } : {},
-    reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
-    next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
-    created_at: new Date().toISOString(),
-    ...isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}
+      current = realpathSync18(workspace);
+    } catch {}
+    if (!current || grant.workspace !== current)
+      throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
+    return grant.entry_token;
   };
-  writeBatchRunReport(root, report);
-  return report;
-}
-async function stopSingleTaskSupervisor(supervisor, root, taskId, signal) {
-  const existing = findExistingActiveBatch(root, taskId);
-  if (!existing || existing.corrupt || !isLaneBatchRecord(existing.record) || existing.record.plan_source !== "single_task")
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const record = existing.record;
-  if (record.executor_mode === "interactive")
-    return { state: "blocked", reason: "lane_executor_interactive", recovery_action: "Close the Lane's Executor tab yourself; the Lane is retained." };
-  const lane = record.children.find((child) => child.task_id === taskId)?.lane;
-  if (!lane)
-    return { state: "blocked", reason: "lane_executor_not_running", recovery_action: "Inspect the task status in the current Host." };
-  const observation = await supervisor.run({
-    key: `${root}\x00${record.batch_id}`,
-    repository: root,
-    lanePath: lane.path,
-    taskId,
-    choice: { host: "pi", not_applied: [] },
-    pluginDir: "",
-    store: laneGenerationStore(root, record.batch_id),
-    baseline: "",
-    waitMs: 5000,
-    graceMs: 1000,
-    signal,
-    stop: true
-  });
-  const reason = laneGenerationStore(root, record.batch_id).read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-  const parked = observation.state === "stopped" && observation.exit && record.batch_state === "running" ? parkLaneForExecutor(root, record.batch_id, taskId, reason) : record;
-  const condition = observation.state === "stopped" ? exitProofCondition(laneGenerationStore(root, record.batch_id).read()) : null;
-  return { state: "started", batch_id: record.batch_id, report: {
-    ...reportFromLane(parked),
-    ...condition ? { lane_refusals: [{ task_id: taskId, path: lane.path, reason: retainedLaneReason(condition) }] } : {},
-    lane_supervision: { ...observation, not_applied: [] }
-  } };
-}
-function reportFromLane(record) {
+  const refuseSuppliedAuthority = (args) => {
+    if ("native_decision" in args)
+      throw new Error("native_decision cannot be supplied in tool arguments");
+    if ("entry_token" in args)
+      throw new Error("entry_token cannot be supplied in tool arguments");
+  };
   return {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: record.batch_id,
-    initiative_slug: record.initiative_slug,
-    batch_state: record.batch_state,
-    max_parallel: record.max_parallel,
-    children: record.children,
-    commits: record.commits,
-    reason: null,
-    handoffs: [],
-    next_action: "Continue supervising the Lane.",
-    created_at: record.updated_at
+    profile,
+    runtime,
+    host,
+    connectionId,
+    listTools: listMcpTools,
+    trustedClientNames,
+    serverInfo,
+    bindClientHandshake(identity) {
+      negotiatedVersion = identity.version || undefined;
+      negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
+      negotiatedRoots = identity.roots === true;
+      rootsWorkspace = undefined;
+      runtime.bindHostVersion(negotiatedVersion);
+    },
+    bindRootsProvider(provider) {
+      rootsProvider = provider;
+    },
+    clearRootsWorkspace() {
+      rootsWorkspace = undefined;
+    },
+    bindNativeConfirmation(port) {
+      runtime.bindNativeConfirmation(port);
+    },
+    sessionInteractive: () => negotiatedInteractive,
+    async callTool(name, args, meta = {}) {
+      const workspace = await resolveWorkspace(meta, meta.signal);
+      if (name !== "status" && bundle.stale())
+        throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
+      const observedSession = profile.readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
+      if (observedSession)
+        hookSessionId = observedSession;
+      if (name === "start_unattended_batch") {
+        if (Object.hasOwn(args, "lane_revision"))
+          throw new Error("unknown parameter: lane_revision");
+        const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
+        const task = typeof args.task_id === "string" ? args.task_id : "";
+        if (args.stop !== undefined && typeof args.stop !== "boolean")
+          throw new Error("stop must be a boolean");
+        if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code" && args.executor_host !== "antigravity")
+          throw new Error("invalid executor_host");
+        for (const key of ["executor_model", "executor_effort"])
+          if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key]))
+            throw new Error(`invalid ${key}`);
+        if (!!initiative === !!task)
+          return batchReason("batch_entry_ambiguous");
+        const initiativeSlug = task || initiative;
+        refuseSuppliedAuthority(args);
+        if (!negotiatedVersion)
+          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
+        if (!negotiatedInteractive) {
+          throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
+        }
+        const probe = probeNegotiatedHost();
+        if (!probe.ok)
+          throw new NativeAuthorityError("unsupported_host", probe.reason);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
+        const toolMeta = {
+          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+          toolCallId,
+          taskId: initiativeSlug,
+          initiativeSlug,
+          ...entryToken ? { entryToken } : {},
+          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+          signal: meta.signal
+        };
+        const laneOffers = parseLaneOffers(args.lane_offers);
+        const laneInstruction = parseLaneInstruction(args.lane_instruction);
+        const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
+        const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
+        return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
+          ...task ? { plan_source: "single_task" } : {},
+          ...args.stop === true ? { stop: true } : {},
+          executor: {
+            ...args.executor_host === "pi" || args.executor_host === "claude-code" || args.executor_host === "antigravity" ? { executor_host: args.executor_host } : {},
+            ...typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {},
+            ...typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}
+          },
+          ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
+          ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
+          ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
+          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
+        });
+      }
+      if (name === "retire_stale_batch") {
+        const initiativeSlug = String(args.initiative_slug ?? "");
+        if (!initiativeSlug)
+          throw new Error("initiative_slug is required");
+        refuseSuppliedAuthority(args);
+        if (!negotiatedVersion)
+          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
+        if (!negotiatedInteractive) {
+          throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
+        }
+        const probe = probeNegotiatedHost();
+        if (!probe.ok)
+          throw new NativeAuthorityError("unsupported_host", probe.reason);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
+        const toolMeta = {
+          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+          toolCallId,
+          taskId: initiativeSlug,
+          initiativeSlug,
+          ...entryToken ? { entryToken } : {},
+          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+          signal: meta.signal
+        };
+        return runtime.retireStaleBatch(initiativeSlug, toolMeta);
+      }
+      const taskId = String(args.task_id ?? "");
+      if (!taskId)
+        throw new Error("task_id is required");
+      refuseSuppliedAuthority(args);
+      if (name === "status") {
+        const result = { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId), loaded_bundle: { path: bundle.path, sha256_prefix: bundle.sha256?.slice(0, 12) ?? null } };
+        if (!bundle.stale())
+          return result;
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
+      }
+      if (!negotiatedVersion)
+        throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
+      if (!negotiatedInteractive && name !== "repair_authority_state") {
+        throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
+      }
+      const probe = probeNegotiatedHost();
+      if (!probe.ok)
+        throw new NativeAuthorityError("unsupported_host", probe.reason);
+      const toolMeta = {
+        sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+        toolCallId: meta.toolCallId ?? `call-${name}`,
+        taskId,
+        interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+        signal: meta.signal
+      };
+      if (name === "advance_assurance")
+        return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), workspace);
+      if (name === "submit_review") {
+        return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), workspace);
+      }
+      if (name === "submit_verification") {
+        if (args.result !== undefined && typeof args.result !== "string")
+          throw new Error("result must be a string");
+        return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result, toolMeta), workspace);
+      }
+      if (name === "revise_intent") {
+        if (!Object.hasOwn(args, "next_intent"))
+          throw new Error("next_intent is required");
+        return runtime.reviseIntent(taskId, args.next_intent);
+      }
+      if (name === "resolve_finding") {
+        if (typeof args.finding_id !== "string" || !args.finding_id)
+          throw new Error("finding_id is required");
+        return runtime.resolveFinding(taskId, args.finding_id);
+      }
+      if (name === "refute_finding") {
+        if (typeof args.finding_id !== "string" || !args.finding_id)
+          throw new Error("finding_id is required");
+        if (typeof args.attestation_id !== "string" || !args.attestation_id)
+          throw new Error("attestation_id is required");
+        return runtime.refuteFinding(taskId, args.finding_id, args.attestation_id);
+      }
+      if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
+        return runtime.authorize(taskId, name, toolMeta, args);
+      }
+      throw new Error(`unknown tool ${name}`);
+    },
+    observe: (event) => host.observe(event),
+    shutdown: () => runtime.shutdown(),
+    aborts: new Map
   };
 }
-function afterExecutorExit(advanced, observed) {
-  const decision = observed.lane_decision_required;
-  return {
-    ...advanced,
-    handoffs: advanced.handoffs.filter((h) => h.role !== "executor"),
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision ? observed.next_action : advanced.handoffs.some((h) => h.role === "executor") ? "Call start_unattended_batch again to continue the Lane." : advanced.next_action,
-    lane_supervision: observed.lane_supervision
-  };
+function hostCallIdentity(meta, key) {
+  if (!meta)
+    return;
+  const toolCallId = meta[key];
+  return typeof toolCallId === "string" && toolCallId ? { toolCallId, admissionId: toolCallId } : undefined;
 }
-async function superviseSingle(input, report) {
-  const options = input.supervision;
-  const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
-  if (!child?.lane)
-    return report;
-  const config = resolveConfig(input.root);
-  if (!config.lanes.valid)
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-  const active = config.lanes.active.value;
-  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-  const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
-  const store = laneGenerationStore(input.root, input.batch_id);
-  const observation = await superviseLane(options.supervisor, {
-    key: `${input.root}\x00${input.batch_id}`,
-    repository: input.root,
-    lanePath: child.lane.path,
-    taskId: child.task_id,
-    choice,
-    pluginDir: options.pluginDir,
-    store,
-    baseline: "",
-    waitMs: options.waitMs,
-    graceMs: 1000,
-    signal: options.signal,
-    stop: options.stop,
-    project: async () => {
-      const result = await input.kernel.projectTask(child.lane.path, child.task_id);
-      if (result.error !== null)
-        throw new Error(`batch_lane_unreadable: ${result.error}`);
-      return result.projection;
-    }
-  });
-  if (observation.reason === "lane_executor_no_progress") {
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, "lane_executor_no_progress");
-    report = { ...reportFromLane(parked), reason: batchReason("lane_executor_no_progress").reason, next_action: batchReason("lane_executor_no_progress").recovery_action };
-  } else if (observation.state === "stopped" && observation.exit) {
-    const reason = store.read()?.state === "interrupted" ? "lane_executor_interrupted" : "lane_executor_stopped";
-    const parked = parkLaneForExecutor(input.root, input.batch_id, child.task_id, reason);
-    report = { ...reportFromLane(parked), reason, next_action: "Inspect the Lane and resume with a fresh drive entry." };
-  } else if (observation.state === "unavailable" || observation.state === "unobservable") {
-    report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
-  }
-  let decision = null;
-  if (observation.state === "exited" && !observation.reason) {
-    const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-    if (read.error === null)
-      decision = laneDecisionFacts(child.task_id, read.projection);
-  }
-  const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
-  const condition = observation.reason === "lane_executor_no_progress" ? "the Executor exited twice without Kernel progress" : exitProofCondition(store.read());
-  return {
-    ...report,
-    handoffs: report.handoffs.filter((handoff) => handoff.role !== "executor"),
-    ...kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {},
-    ...decision ? { lane_decision_required: decision } : {},
-    next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` : observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." : observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action : observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
-    lane_supervision: { ...observation, not_applied: choice.not_applied }
-  };
+function metaWorkspacePath(meta) {
+  const paths = meta?.["antigravity.google/workspace_paths"];
+  if (!Array.isArray(paths) || typeof paths[0] !== "string")
+    return;
+  const first = paths[0].trim();
+  return first && isAbsolute11(first) ? first : undefined;
 }
-async function startBatch(input) {
-  const recorded = readAnyBatchRunState(input.root, input.batch_id);
-  const interactive = recorded ? isLaneBatchRecord(recorded) && recorded.executor_mode === "interactive" : input.executor_mode === "interactive";
-  if (interactive)
-    input = { ...input, executor_mode: "interactive", supervision: undefined, lane_exit_observation: null };
-  if (input.plan_source === "single_task" && input.supervision && !input.supervision.stop && !resolveConfig(input.root).lanes.valid) {
-    const report = recorded && isLaneBatchRecord(recorded) ? reportFromLane(recorded) : null;
-    if (!report)
-      throw new Error("lane_config_invalid");
-    return { ...report, batch_state: "rejected", reason: "lane_config_invalid" };
+function firstFileRootPath(roots) {
+  for (const root of roots ?? []) {
+    const uri = root?.uri;
+    if (typeof uri !== "string" || !uri.startsWith("file://"))
+      continue;
+    try {
+      const path = fileURLToPath3(uri);
+      if (isAbsolute11(path))
+        return path;
+    } catch {}
   }
-  if (recorded && !isLaneBatchRecord(recorded)) {
-    const reason = batchReason("batch_record_shape_retired");
+  return;
+}
+function rpcError(error) {
+  if (error instanceof NativeAuthorityError) {
     return {
-      contract: "assurance_kernel/batch_run_report/v1",
-      batch_id: recorded.batch_id,
-      initiative_slug: recorded.initiative_slug,
-      batch_state: "rejected",
-      children: recorded.children,
-      commits: recorded.commits,
-      reason: reason.reason,
-      next_action: reason.recovery_action,
-      created_at: input.now
+      code: -32000,
+      message: error.message,
+      data: { reason_code: error.reasonCode, recovery_action: error.recoveryAction }
     };
   }
+  return { code: -32000, message: error instanceof Error ? error.message : String(error) };
+}
+function encodeMessage(message) {
+  return Buffer.from(`${JSON.stringify(message)}
+`);
+}
+async function handleJsonRpc(message, mcp) {
+  if (message.method === "initialize") {
+    const params = message.params ?? {};
+    const trustedClient = mcp.trustedClientNames.includes(String(params.clientInfo?.name ?? ""));
+    const elicitation = params.capabilities?.elicitation;
+    const roots = params.capabilities?.roots;
+    mcp.bindClientHandshake({
+      version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
+      protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
+      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
+      roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots)
+    });
+    return {
+      jsonrpc: "2.0",
+      id: message.id ?? null,
+      result: {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        serverInfo: {
+          name: mcp.serverInfo.name,
+          version: PLUGIN_VERSION,
+          contract: mcp.profile.contract,
+          minimumHostVersion: mcp.serverInfo.minimumHostVersion
+        },
+        capabilities: { tools: {} }
+      }
+    };
+  }
+  if (message.method === "notifications/initialized")
+    return null;
+  if (message.method === "notifications/roots/list_changed") {
+    mcp.clearRootsWorkspace();
+    return null;
+  }
+  if (message.method === "notifications/cancelled") {
+    const requestId = message.params?.requestId;
+    if (requestId !== undefined)
+      mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
+    return null;
+  }
+  if (message.method === "tools/list") {
+    return { jsonrpc: "2.0", id: message.id ?? null, result: { tools: mcp.listTools() } };
+  }
+  if (message.method === "tools/call") {
+    const params = message.params ?? {};
+    const requestId = message.id ?? `anon-${Date.now()}`;
+    const ac = new AbortController;
+    mcp.aborts.set(requestId, ac);
+    try {
+      const name = String(params.name ?? "");
+      const interactive = mcp.sessionInteractive();
+      if (isPrivilegedOperation(name) && !interactive) {
+        throw new NativeAuthorityError("unsupported_host", mcp.profile.elicitationUnavailableRefusal);
+      }
+      const identity = mcp.profile.resolveHostCall ? mcp.profile.resolveHostCall(name, params._meta, message.id ?? "stdio") : hostCallIdentity(params._meta, mcp.profile.toolCallIdMetaKey);
+      if (isPrivilegedOperation(name) && !identity) {
+        throw new NativeAuthorityError("correlation_missing", mcp.profile.correlationMissingRefusal);
+      }
+      const sessionId = mcp.connectionId;
+      const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
+      const result = await mcp.callTool(name, params.arguments ?? {}, {
+        sessionId,
+        toolCallId,
+        ...identity?.admissionId ? { admissionId: identity.admissionId } : {},
+        workspace: metaWorkspacePath(params._meta),
+        interactive,
+        requiresUserInteraction: isPrivilegedOperation(name),
+        signal: ac.signal
+      });
+      return {
+        jsonrpc: "2.0",
+        id: message.id ?? null,
+        result: { content: [{ type: "text", text: JSON.stringify(result) }] }
+      };
+    } catch (error) {
+      return {
+        jsonrpc: "2.0",
+        id: message.id ?? null,
+        error: rpcError(error)
+      };
+    } finally {
+      mcp.aborts.delete(requestId);
+    }
+  }
+  if (message.id === undefined)
+    return null;
+  return { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: `unknown method ${message.method}` } };
+}
+async function writeReply(output, reply) {
+  const payload = encodeMessage(reply);
+  await new Promise((resolve, reject) => {
+    if (!output.writable) {
+      reject(new Error("output stream is not writable"));
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      output.off("drain", onDrain);
+      output.off("error", onError);
+      output.off("close", onClose);
+    };
+    const onDrain = () => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const onClose = () => {
+      if (settled)
+        return;
+      settled = true;
+      cleanup();
+      reject(new Error("output stream closed before write drained"));
+    };
+    output.once("error", onError);
+    output.once("close", onClose);
+    const ok = output.write(payload, (error) => {
+      if (settled)
+        return;
+      if (error) {
+        settled = true;
+        cleanup();
+        reject(error);
+      }
+    });
+    if (ok) {
+      settled = true;
+      cleanup();
+      resolve();
+      return;
+    }
+    output.once("drain", onDrain);
+  });
+}
+function elicitationParams(input) {
+  if (input.operation === "retire_stale_batch") {
+    const d = input.batchDisposition;
+    const details = [
+      `Operation: retire_stale_batch`,
+      `Initiative: ${input.initiativeSlug}`,
+      d ? `Batch: ${d.batch_id}` : null,
+      d ? `Batch state: ${d.batch_state}` : null,
+      d ? `Batch branch: ${d.batch_branch}` : null,
+      d ? `Plan digest: ${d.plan_digest}` : null,
+      d ? `Recorded child commits: ${d.recorded_commits}` : null,
+      d ? `Children (${d.children.length}):
+${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`).join(`
+`)}` : null,
+      "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
+      "A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
+      "After retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative."
+    ].filter(Boolean);
+    return {
+      mode: "form",
+      message: `Retire this stale batch record for ${input.initiativeSlug}?
+
+${details.join(`
+`)}`,
+      requestedSchema: { type: "object", properties: {} }
+    };
+  }
+  if (input.operation === "start_unattended_batch") {
+    const b = input.batchDetails;
+    if (b?.parent_final_verification) {
+      const lines = [
+        `Operation: start_unattended_batch (native Parent final verification; no batch run is started)`,
+        `Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
+        input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+        `Parent Tasks (${b.children.length}):
+${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join(`
+`)}`,
+        `Final verification commands run in this workspace outside Host permission:
+${(b.final_verification ?? []).map((command) => `  - ${command}`).join(`
+`)}`
+      ].filter(Boolean);
+      return {
+        mode: "form",
+        message: `Authorize this Parent final verification for ${input.initiativeSlug}?
+
+${lines.join(`
+`)}`,
+        requestedSchema: { type: "object", properties: {} }
+      };
+    }
+    const details = [
+      `Operation: start_unattended_batch`,
+      `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
+      b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
+      input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+      input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
+      input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
+      input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
+      b?.children ? `Ordered children (${b.children.length}):
+${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join(`
+`)}` : null,
+      b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
+${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
+`)}` : null,
+      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
+      b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
+      b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):
+${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
+`)}` : null,
+      b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
+${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
+`)}` : null,
+      b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null
+    ].filter(Boolean);
+    return {
+      mode: "form",
+      message: `Authorize this unattended batch run for ${input.initiativeSlug}?
+
+${details.join(`
+`)}`,
+      requestedSchema: { type: "object", properties: {} }
+    };
+  }
+  if (input.verifierDispute) {
+    const dispute = input.verifierDispute;
+    return {
+      mode: "form",
+      message: `Resolve this Review verifier dispute for ${input.taskId}.
+
+Claim: ${dispute.claim}
+Trigger: ${dispute.trigger}
+Caller chain: ${dispute.caller_chain.join(" → ")}
+Counter-path: ${dispute.counter_path}`,
+      requestedSchema: { type: "object", properties: { choice: { type: "string", title: "Decision", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] } }, required: ["choice"] }
+    };
+  }
+  if (input.reworkExits) {
+    const exits = input.reworkExits;
+    const exitValues = [
+      "grant_rounds",
+      ...exits.accept_residual_risk ? ["accept_residual_risk"] : [],
+      "replan"
+    ];
+    return {
+      mode: "form",
+      message: `Choose how to resolve this replan boundary for ${input.taskId}.
+
+${[
+        `Operation: ${input.operation}`,
+        `Task: ${input.taskId}`,
+        input.risk ? `Risk: ${input.risk}` : null,
+        input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+        ...reworkExitLines(exits)
+      ].filter(Boolean).join(`
+`)}`,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          exit: { type: "string", title: "Exit", enum: exitValues, default: "grant_rounds" },
+          rounds: {
+            type: "integer",
+            title: "Further Review rounds (grant_rounds)",
+            minimum: exits.grant_rounds.min,
+            maximum: exits.grant_rounds.max,
+            default: exits.grant_rounds.min
+          },
+          ...exits.accept_residual_risk ? { reason: { type: "string", title: "Reason for accepting residual risk (accept_residual_risk)" } } : {}
+        },
+        required: ["exit"]
+      }
+    };
+  }
+  const details = [
+    `Operation: ${input.operation}`,
+    `Task: ${input.taskId}`,
+    input.risk ? `Risk: ${input.risk}` : null,
+    input.intentRevision !== undefined ? `Intent revision: ${input.intentRevision}` : null,
+    input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
+    input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+    input.gitBaseNotice,
+    input.reviewRetryNotice
+  ].filter(Boolean);
+  return {
+    mode: "form",
+    message: `Authorize this exact Immune-Brain operation?
+
+${details.join(`
+`)}`,
+    requestedSchema: { type: "object", properties: {} }
+  };
+}
+async function serveStdio(profile, options = {}) {
+  const { input = stdin, output = stdout, runtime, exit = (code) => {
+    process.exit(code);
+  }, ...runtimeOptions } = options;
+  const mcp = runtime ?? createMcpRuntime(profile, { cwd: process.cwd(), ...runtimeOptions });
+  let buffer = Buffer.alloc(0);
+  let accepting = true;
+  let requestSequence = 0;
+  const inFlight = new Set;
+  const pending = new Map;
+  let chain = Promise.resolve();
+  let callChain = Promise.resolve();
+  const rejectPending = (error) => {
+    for (const item of pending.values())
+      item.reject(error);
+    pending.clear();
+  };
+  mcp.bindNativeConfirmation(async (input) => {
+    if (!accepting)
+      throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
+    if (input.signal?.aborted)
+      throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+    const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
+    let abortListener;
+    const response = new Promise((resolve, reject) => {
+      pending.set(requestId, { resolve, reject });
+      abortListener = () => {
+        pending.delete(requestId);
+        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+      };
+      input.signal?.addEventListener("abort", abortListener, { once: true });
+    });
+    try {
+      await writeReply(output, {
+        jsonrpc: "2.0",
+        id: requestId,
+        method: "elicitation/create",
+        params: elicitationParams(input)
+      });
+      const reply = await response;
+      if (reply.error) {
+        if (reply.error.code === -32601) {
+          throw new NativeAuthorityError("unsupported_host", profile.elicitationRejectedRefusal);
+        }
+        throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
+      }
+      const result = reply.result;
+      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
+      if (action !== "accept" && action !== "decline" && action !== "cancel") {
+        throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
+      }
+      let reworkChoice;
+      let verifierChoice;
+      if (action === "accept" && input.verifierDispute) {
+        const content = result.content;
+        if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
+        verifierChoice = content.choice;
+      } else if (action === "accept" && input.reworkExits) {
+        const parsed = parseReworkChoice(input.reworkExits, result.content);
+        if (!parsed) {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+        }
+        reworkChoice = parsed;
+      } else if (action === "accept") {
+        const content = result.content;
+        const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+        const valid = keys !== null && keys.length === 0;
+        if (!valid) {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+        }
+      }
+      return {
+        decision: action,
+        requestId,
+        ...reworkChoice ? { reworkChoice } : {},
+        ...verifierChoice ? { verifierChoice } : {}
+      };
+    } finally {
+      pending.delete(requestId);
+      if (abortListener)
+        input.signal?.removeEventListener("abort", abortListener);
+    }
+  });
+  mcp.bindRootsProvider(async (signal) => {
+    if (!accepting)
+      return;
+    const requestId = `immune-brain:roots:${mcp.connectionId}:${++requestSequence}`;
+    let abortListener;
+    const response = new Promise((resolve, reject) => {
+      pending.set(requestId, { resolve, reject });
+      abortListener = () => {
+        pending.delete(requestId);
+        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+      };
+      signal?.addEventListener("abort", abortListener, { once: true });
+    });
+    try {
+      await writeReply(output, { jsonrpc: "2.0", id: requestId, method: "roots/list", params: {} });
+      const reply = await response;
+      const roots = reply.error ? undefined : reply.result?.roots;
+      return Array.isArray(roots) ? roots : undefined;
+    } catch {
+      return;
+    } finally {
+      pending.delete(requestId);
+      if (abortListener)
+        signal?.removeEventListener("abort", abortListener);
+    }
+  });
+  const runCall = (parsed) => {
+    const task = callChain.then(() => handleJsonRpc(parsed, mcp)).then(async (reply) => {
+      if (reply)
+        await writeReply(output, reply);
+    }).catch(() => {
+      executeShutdown(1);
+    });
+    callChain = task;
+    inFlight.add(task);
+    task.finally(() => inFlight.delete(task));
+  };
+  const routeResponse = (obj) => {
+    const id = typeof obj.id === "string" ? obj.id : "";
+    const waiter = id ? pending.get(id) : undefined;
+    if (waiter) {
+      pending.delete(id);
+      const hasResult = Object.hasOwn(obj, "result");
+      const hasError = Object.hasOwn(obj, "error");
+      if (obj.jsonrpc !== "2.0" || obj.method !== undefined || hasResult === hasError) {
+        waiter.reject(new NativeAuthorityError("correlation_missing", "malformed MCP elicitation response"));
+      } else {
+        waiter.resolve(obj);
+      }
+      return true;
+    }
+    return obj.method === undefined && obj.id !== undefined;
+  };
+  const drainStdio = async () => {
+    while (true) {
+      const newline = buffer.indexOf(`
+`);
+      if (newline < 0)
+        return;
+      const body = buffer.subarray(0, newline).toString("utf8").trim();
+      buffer = buffer.subarray(newline + 1);
+      if (!body)
+        continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+        continue;
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
+        continue;
+      }
+      const obj = parsed;
+      if (routeResponse(obj))
+        continue;
+      if (obj.jsonrpc !== "2.0") {
+        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: jsonrpc must be '2.0'" } });
+        continue;
+      }
+      if (routeResponse(obj))
+        continue;
+      if (typeof obj.method !== "string" || !obj.method) {
+        const id = obj.id !== undefined && (typeof obj.id === "string" || typeof obj.id === "number") ? obj.id : null;
+        await writeReply(output, { jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid Request: missing method" } });
+        continue;
+      }
+      if (obj.id !== undefined && typeof obj.id !== "string" && typeof obj.id !== "number" && obj.id !== null) {
+        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: invalid id type" } });
+        continue;
+      }
+      if (obj.method === "tools/call" && obj.id === undefined) {
+        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: tools/call requires an id" } });
+        continue;
+      }
+      const rpc = parsed;
+      if (rpc.method === "notifications/cancelled") {
+        const requestId = rpc.params?.requestId;
+        if (typeof requestId === "string" && pending.has(requestId)) {
+          pending.get(requestId)?.reject(new NativeAuthorityError("user_cancelled", "native interaction was cancelled"));
+          pending.delete(requestId);
+        } else if (requestId !== undefined) {
+          mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
+        }
+        continue;
+      }
+      if (rpc.method === "tools/call") {
+        if (!accepting) {
+          if (rpc.id !== undefined)
+            await writeReply(output, { jsonrpc: "2.0", id: rpc.id, error: { code: -32000, message: "stdio closed" } });
+          continue;
+        }
+        runCall(rpc);
+        continue;
+      }
+      const reply = await handleJsonRpc(rpc, mcp);
+      if (reply)
+        await writeReply(output, reply);
+    }
+  };
+  let resolveStdio = () => {};
+  let shutdownPromise = null;
+  const executeShutdown = (code = 0) => {
+    if (shutdownPromise)
+      return shutdownPromise;
+    shutdownPromise = (async () => {
+      accepting = false;
+      for (const ac of mcp.aborts.values())
+        ac.abort(new Error("stdio closed"));
+      rejectPending(new NativeAuthorityError("user_cancelled", "MCP connection closed during native interaction"));
+      await Promise.race([
+        Promise.allSettled([...inFlight]),
+        new Promise((resolve) => setTimeout(resolve, 200))
+      ]);
+      await mcp.shutdown();
+      if (output.writable && typeof output.end === "function") {
+        await new Promise((cb) => output.end(() => cb()));
+      }
+      process.exitCode = code;
+      exit(code);
+      resolveStdio();
+    })();
+    return shutdownPromise;
+  };
+  await new Promise((resolve) => {
+    resolveStdio = resolve;
+    output.on("error", () => {
+      executeShutdown(1);
+    });
+    output.on("close", () => {
+      executeShutdown(0);
+    });
+    input.on("data", (chunk) => {
+      if (!accepting)
+        return;
+      chain = chain.then(async () => {
+        if (!accepting)
+          return;
+        buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+        await drainStdio();
+      }).catch(() => {
+        executeShutdown(1);
+      });
+    });
+    input.on("end", () => {
+      chain.then(() => executeShutdown(0));
+    });
+    input.on("close", () => {
+      chain.then(() => executeShutdown(0));
+    });
+    input.on("error", () => {
+      executeShutdown(1);
+    });
+  });
+}
+function runMcpEntry(profile, entrySuffixes) {
+  const entry = process.argv[1] ?? "";
+  if (!entrySuffixes.some((suffix) => entry.endsWith(suffix)))
+    return;
+  if (process.argv.includes("--hook"))
+    profile.dispatchHook();
+  else
+    serveStdio(profile);
+}
+
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+import { existsSync as existsSync16, lstatSync as lstatSync18, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync9 } from "node:fs";
+init_coordinator();
+init_storage();
+init_batch_state();
+import { join as join28 } from "node:path";
+
+// plugins/immune-brain/runtime/assurance/run_continuation.ts
+init_workspace_scope();
+init_batch_schedule();
+init_batch_state();
+init_batch_plan();
+init_batch_git();
+init_coordinator();
+init_batch_preflight();
+init_intent();
+init_storage();
+function releasesRunBinding(prompt, phase) {
+  return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
+}
+
+// plugins/immune-brain/runtime/assurance/review_mediation.ts
+import { createHash as createHash24 } from "node:crypto";
+function extractVerdictJson(input) {
+  if (typeof input === "string") {
+    const first = input.indexOf("{");
+    const last = input.lastIndexOf("}");
+    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
+    if (!cleaned)
+      return null;
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof input === "object" && input !== null && !Array.isArray(input))
+    return input;
+  return null;
+}
+function verdictFingerprint(raw) {
+  return JSON.stringify({
+    contract: raw.contract ?? null,
+    role: raw.role ?? null,
+    task_id: raw.task_id ?? null,
+    snapshot_digest: raw.snapshot_digest ?? null,
+    decision: raw.decision ?? null,
+    approval: raw.approval ?? null,
+    findings: raw.findings ?? null,
+    inspected_paths: raw.inspected_paths ?? null,
+    reason: raw.reason ?? null
+  });
+}
+function digestOfReviewerBytes(bytes) {
+  return `sha256:${createHash24("sha256").update(bytes).digest("hex")}`;
+}
+var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
+var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
+var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
+function withReviewRecovery(result, recovery_action) {
+  if (result.state !== "blocked" || result.code === "verdict_invalid")
+    return result;
+  return { ...result, recovery_action };
+}
+async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
+  if (coordinator.active(taskId)?.state === "settlement_unknown") {
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  }
+  const observed = inspect();
+  if (!observed.ok) {
+    if (observed.release)
+      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
+    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
+  }
+  const receiptBytes = observed.receipt.result;
+  const options = {
+    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
+    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
+    validateReceipt: () => {
+      const current = inspect();
+      if (!current.ok)
+        return {
+          reason: current.reason,
+          release: current.release,
+          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
+        };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
+    }
+  };
+  if (verdictInput === undefined) {
+    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+    }
+    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
+  }
+  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+  if (!parentValid)
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+  }
+  const parentJson = extractVerdictJson(verdictInput);
+  const receiptJson = extractVerdictJson(receiptBytes);
+  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
+  }
+  return coordinator.submitReview(taskId, ctx, verdictInput, options);
+}
+
+// plugins/immune-brain/runtime/host-core/private_file.ts
+import { createHash as createHash25 } from "node:crypto";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync17, mkdirSync as mkdirSync11, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { join as join27 } from "node:path";
+function sessionHash(sessionId) {
+  return createHash25("sha256").update(sessionId).digest("hex");
+}
+function cacheDir(root, cacheName) {
+  return join27(root, cacheName);
+}
+function ownedByUs(stat) {
+  if (stat.isSymbolicLink())
+    return false;
+  const uid = process.getuid?.();
+  return uid === undefined || stat.uid === uid;
+}
+function ensurePrivateDir(dir) {
   try {
-    if (input.plan_source === "single_task" && input.supervision && recorded && isLaneBatchRecord(recorded) && recorded.batch_state === "running") {
-      const generation = laneGenerationStore(input.root, input.batch_id).read();
-      if (generation && ["starting", "running", "unobservable", "exited"].includes(generation.state)) {
-        const observed = await superviseSingle(input, reportFromLane(recorded));
-        if (observed.reason || observed.lane_supervision?.state !== "exited" || input.supervision.stop)
-          return observed;
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-    }
-    const report = await runLaneBatch(input, recorded);
-    if (interactive) {
-      const child = report.children.find((c) => (c.state === "enrolled" || c.state === "needs_human") && c.lane);
-      if (child?.lane) {
-        const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-        if (read.error !== null)
-          throw new Error(`batch_lane_unreadable: ${read.error}`);
-        const decision = laneDecisionFacts(child.task_id, read.projection);
-        if (decision)
-          return {
-            ...report,
-            lane_decision_required: decision,
-            handoffs: report.handoffs.filter((h) => h.role !== "executor"),
-            next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.`
-          };
-      }
-      return { ...report, next_action: report.batch_state === "running" && report.reason === null && report.handoffs.some((h) => h.role === "executor") ? `Run ${input.initiative_slug} in its existing Herdr tab, creating one only when no live tab exists. Resume inside Herdr; re-enter start_unattended_batch with task_id ${input.initiative_slug} and no initiative_slug.` : report.next_action };
-    }
-    if (input.plan_source === "single_task" && input.supervision && recorded?.batch_state === "needs_human" && report.batch_state === "running") {
-      const store = laneGenerationStore(input.root, input.batch_id);
-      const generation = store.read();
-      if (generation && ["exited", "stopped_by_parent", "interrupted"].includes(generation.state))
-        store.update((value) => {
-          if (!value || value.generation !== generation.generation || value.state !== generation.state)
-            throw new Error("lane_executor_generation_changed");
-          return { ...value, no_progress: 0, handled_generation: value.generation };
-        });
-    }
-    if (input.plan_source === "single_task" && input.supervision && report.handoffs.some((h) => h.role === "executor")) {
-      const observed = await superviseSingle(input, report);
-      if (!observed.reason && observed.lane_supervision?.state === "exited" && !input.supervision.stop) {
-        const advanced = await runLaneBatch({ ...input, lane_exit_observation: observed.lane_supervision?.exit ?? null }, readAnyBatchRunState(input.root, input.batch_id));
-        return afterExecutorExit(advanced, observed);
-      }
-      return observed;
-    }
-    return report;
+    const existing = lstatSync17(dir);
+    return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 511) === 448;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/retired file-store|kernel store|CAS mismatch|store is busy|locked/i.test(message))
-      throw error;
-    if (!recorded)
-      throw error;
-    return laneRejectionReport(input, recorded, message, "settle the reported kernel store condition and retry in the current Host");
+    if (error.code !== "ENOENT")
+      return false;
+  }
+  try {
+    mkdirSync11(dir, { mode: 448 });
+  } catch {
+    return false;
+  }
+  try {
+    const created = lstatSync17(dir);
+    return created.isDirectory() && ownedByUs(created) && (created.mode & 511) === 448;
+  } catch {
+    return false;
   }
 }
+function appendPrivate(path, dir, line) {
+  if (!ensurePrivateDir(dir))
+    return false;
+  const flags = constants8.O_WRONLY | constants8.O_CREAT | constants8.O_APPEND | constants8.O_NOFOLLOW | constants8.O_NONBLOCK;
+  let fd;
+  try {
+    fd = openSync7(path, flags, 384);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return false;
+    return writeSync(fd, line) === Buffer.byteLength(line);
+  } catch {
+    return false;
+  } finally {
+    closeSync7(fd);
+  }
+}
+function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
+  let fd;
+  try {
+    fd = openSync7(path, constants8.O_RDONLY | constants8.O_NOFOLLOW | constants8.O_NONBLOCK);
+  } catch {
+    return;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return;
+    if (stat.size > maxBytes)
+      return;
+    const buf = Buffer.alloc(stat.size);
+    readSync(fd, buf, 0, stat.size, 0);
+    return buf.toString("utf8");
+  } finally {
+    closeSync7(fd);
+  }
+}
+
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+var MAX_METADATA_BYTES = 256 * 1024;
+var AUTOMATED_STOP_OBLIGATIONS = ["run_qa", "run_review", "submit_assurance", "resolve_findings"];
+var callPath = (host, toolId, root) => join28(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+function readLast(path) {
+  let stat;
+  try {
+    stat = lstatSync18(path);
+  } catch (error) {
+    if (error.code === "ENOENT")
+      return null;
+    throw error;
+  }
+  if (!stat.isFile() || !ownedByUs(stat))
+    throw new Error("unsafe continuation metadata");
+  if (stat.size > MAX_METADATA_BYTES)
+    return null;
+  const text = readPrivate(path, MAX_METADATA_BYTES);
+  if (text === undefined)
+    throw new Error("continuation metadata could not be read");
+  const lines = text.trim().split(`
+`);
+  return JSON.parse(lines.at(-1) ?? "null");
+}
+function readSessionToolCall(host, root, toolId, operation, workspace) {
+  const record = readLast(callPath(host, toolId, root));
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync19(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
+    return null;
+  return record.session_id;
+}
+function decideAutomatedStop(taskId, projection) {
+  if (projection.lifecycle !== "active")
+    return {};
+  if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0)
+    return {};
+  if (!AUTOMATED_STOP_OBLIGATIONS.includes(projection.next_obligation))
+    return {};
+  return { decision: "continue", reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.` };
+}
+
+// plugins/immune-brain/runtime/host-core/hook_event_log.ts
+import { lstatSync as lstatSync19, readdirSync as readdirSync9, rmSync as rmSync10 } from "node:fs";
+import { dirname as dirname15, join as join29 } from "node:path";
+import { tmpdir as tmpdir5 } from "node:os";
+class MemoryHookEventLog {
+  events = [];
+  append(event) {
+    this.events.push(event);
+    return true;
+  }
+  list(sessionId) {
+    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
+  }
+  sessions() {
+    return [...new Set(this.events.map((event) => event.sessionId))];
+  }
+  clear(sessionId) {
+    if (!sessionId) {
+      this.events.length = 0;
+      return;
+    }
+    for (let i = this.events.length - 1;i >= 0; i--) {
+      if (this.events[i].sessionId === sessionId)
+        this.events.splice(i, 1);
+    }
+  }
+}
+function hookEventPath(cacheName, sessionId, root = tmpdir5()) {
+  return join29(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+}
+
+class FileHookEventLog {
+  cacheName;
+  root;
+  constructor(cacheName, root = tmpdir5()) {
+    this.cacheName = cacheName;
+    this.root = root;
+  }
+  append(event) {
+    const path = hookEventPath(this.cacheName, event.sessionId, this.root);
+    return appendPrivate(path, dirname15(path), `${JSON.stringify(event)}
+`);
+  }
+  list(sessionId) {
+    if (sessionId)
+      return this.readSession(sessionId);
+    const dir = cacheDir(this.root, this.cacheName);
+    if (!ensurePrivateDir(dir))
+      return [];
+    try {
+      return readdirSync9(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join29(dir, name)));
+    } catch {
+      return [];
+    }
+  }
+  sessions() {
+    const ids = new Set;
+    for (const event of this.list())
+      if (event.sessionId)
+        ids.add(event.sessionId);
+    return [...ids];
+  }
+  readFile(path) {
+    const text = readPrivate(path);
+    if (!text)
+      return [];
+    try {
+      return text.split(`
+`).filter(Boolean).map((line) => JSON.parse(line));
+    } catch {
+      return [];
+    }
+  }
+  readSession(sessionId) {
+    if (!ensurePrivateDir(cacheDir(this.root, this.cacheName)))
+      return [];
+    return this.readFile(hookEventPath(this.cacheName, sessionId, this.root));
+  }
+  clear(sessionId) {
+    if (!sessionId || !ensurePrivateDir(cacheDir(this.root, this.cacheName)))
+      return;
+    const path = hookEventPath(this.cacheName, sessionId, this.root);
+    try {
+      const stat = lstatSync19(path);
+      if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
+        return;
+      rmSync10(path, { force: true });
+    } catch {}
+  }
+}
+
+// plugins/immune-brain/runtime/host-core/verifier_observation.ts
+init_review_packet();
+
+class VerifierObservation {
+  profile;
+  log;
+  pending = new Map;
+  constructor(profile, log) {
+    this.profile = profile;
+    this.log = log;
+  }
+  prepare(request) {
+    this.drain();
+    const initialCursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
+    const dispatchPrompt = verificationPacketHandle({
+      taskId: request.taskId,
+      operationId: request.operationId,
+      packet: request.writePacket(request.operationId, request.prompt)
+    });
+    this.pending.set(request.operationId, { request, dispatchPrompt, initialCursors });
+    return { id: request.operationId, dispatch: this.profile.dispatch({ dispatchPrompt, model: request.model }) };
+  }
+  observe(event) {
+    this.log.append(event);
+  }
+  inspect(reservation) {
+    this.drain();
+    const state = this.pending.get(reservation.id);
+    if (!state)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const packetError = verificationPacketError(state.dispatchPrompt);
+    if (packetError)
+      return { ok: false, reason: packetError, release: true };
+    if (state.error)
+      return { ok: false, reason: state.error, release: true };
+    if (!state.start)
+      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
+    const { start, result, stop } = state;
+    if (!result?.event.result.trim() || this.profile.terminal === "result+stop" && !stop) {
+      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
+    }
+    if (start.sessionId !== result.sessionId || start.event.agentId !== result.event.agentId || stop !== undefined && (start.sessionId !== stop.sessionId || start.event.agentId !== stop.event.agentId)) {
+      return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
+    }
+    const resolved = this.profile.resolveResult({
+      agentId: start.event.agentId,
+      start: start.event,
+      result: result.event,
+      ...stop ? { stop: stop.event } : {},
+      host: { start: start.host, result: result.host, ...stop ? { stop: stop.host } : {} }
+    });
+    if (!resolved.ok)
+      return { ok: false, reason: resolved.reason, release: resolved.release };
+    return {
+      ok: true,
+      receipt: { actorId: `${this.profile.actorPrefix}:${start.event.agentId}`, result: resolved.result, model: state.request.model }
+    };
+  }
+  release(reservation) {
+    this.pending.delete(reservation.id);
+  }
+  drain() {
+    for (const sessionId of this.log.sessions()) {
+      const events = this.log.list(sessionId);
+      for (let index = 0;index < events.length; index++) {
+        const host = events[index];
+        const event = this.profile.decode(host);
+        if (!event)
+          continue;
+        if (event.type === "session_end") {
+          this.endSession(sessionId, index, events.length);
+          continue;
+        }
+        for (const state of this.pending.values())
+          this.consider(state, sessionId, index, event, host);
+      }
+      for (const state of this.pending.values())
+        this.reconsider(state, sessionId, events);
+    }
+  }
+  consider(state, sessionId, index, event, host) {
+    if (state.error || event.type === "session_end")
+      return;
+    if (index < (state.initialCursors.get(sessionId) ?? 0))
+      return;
+    this.apply(state, sessionId, index, event, host);
+  }
+  reconsider(state, sessionId, events) {
+    if (state.error || !state.result)
+      return;
+    if (state.start && (this.profile.terminal === "result" || state.stop))
+      return;
+    for (let index = state.initialCursors.get(sessionId) ?? 0;index < events.length; index++) {
+      const host = events[index];
+      const event = this.profile.decode(host);
+      if (!event || event.type === "session_end")
+        continue;
+      this.apply(state, sessionId, index, event, host);
+      if (state.error)
+        return;
+    }
+  }
+  apply(state, sessionId, index, event, host) {
+    const { request } = state;
+    if (event.type === "start") {
+      if (this.applied(state.start, sessionId, index))
+        return;
+      if (!this.profile.verifierAgents.includes(event.agent ?? ""))
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.prompt !== undefined && event.prompt !== state.dispatchPrompt)
+        return;
+      if (state.result && (event.sessionId !== state.result.sessionId || event.agentId !== state.result.event.agentId))
+        return;
+      if (state.stop && (event.sessionId !== state.stop.sessionId || event.agentId !== state.stop.event.agentId))
+        return;
+      if (event.operationId === undefined && event.prompt === undefined && !state.result && !state.stop)
+        return;
+      if (state.start) {
+        state.error = "reserved Review already has a native tool call";
+        return;
+      }
+      state.start = { sessionId, index, event, host };
+      return;
+    }
+    if (event.type === "result") {
+      if (this.applied(state.result, sessionId, index))
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.prompt !== undefined && event.prompt !== state.dispatchPrompt)
+        return;
+      if (state.start && (event.sessionId !== state.start.sessionId || event.agentId !== state.start.event.agentId))
+        return;
+      if (state.stop && (event.sessionId !== state.stop.sessionId || event.agentId !== state.stop.event.agentId))
+        return;
+      if (event.operationId === undefined && event.prompt === undefined && !state.start)
+        return;
+      if (event.model !== undefined && event.model !== request.model) {
+        state.error = "verifier model differs from reservation";
+        return;
+      }
+      if (state.result) {
+        state.error = "duplicate PostToolUse result observed for review reservation";
+        return;
+      }
+      state.result = { sessionId, index, event, host };
+      return;
+    }
+    if (event.type === "stop") {
+      if (this.applied(state.stop, sessionId, index))
+        return;
+      if (!this.profile.verifierAgents.includes(event.agent ?? ""))
+        return;
+      if (event.taskId !== undefined && event.taskId !== request.taskId)
+        return;
+      if (event.operationId !== undefined && event.operationId !== request.operationId)
+        return;
+      if (event.operationId === undefined && !state.start && !state.result)
+        return;
+      if (state.stop) {
+        state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
+        return;
+      }
+      state.stop = { sessionId, index, event, host };
+    }
+  }
+  applied(applied, sessionId, index) {
+    return applied?.sessionId === sessionId && applied.index === index;
+  }
+  endSession(sessionId, index, size) {
+    for (const [id, state] of this.pending) {
+      if (state.start?.sessionId === sessionId || state.result?.sessionId === sessionId || state.stop?.sessionId === sessionId) {
+        this.pending.delete(id);
+      }
+    }
+    for (const state of this.pending.values()) {
+      const current = state.initialCursors.get(sessionId) ?? 0;
+      if (index + 1 > current)
+        state.initialCursors.set(sessionId, index + 1);
+    }
+    if (index + 1 === size)
+      this.log.clear(sessionId);
+  }
+}
+
+// plugins/immune-brain/runtime/antigravity/review_host.ts
+import { tmpdir as tmpdir6 } from "node:os";
+var VERIFIER_AGENT = "immune-brain-review-verifier";
+var ANTIGRAVITY_CACHE_DIR = "immune-brain-antigravity";
+function antigravityHookEventLog(root = tmpdir6()) {
+  return new FileHookEventLog(ANTIGRAVITY_CACHE_DIR, root);
+}
+var ANTIGRAVITY_VERIFIER_PROFILE = {
+  verifierAgents: [VERIFIER_AGENT],
+  terminal: "result",
+  actorPrefix: "antigravity",
+  dispatch: ({ dispatchPrompt, model }) => ({
+    TypeName: VERIFIER_AGENT,
+    Role: "Review Verifier",
+    Prompt: dispatchPrompt,
+    Model: model
+  }),
+  decode: (event) => event,
+  resolveResult: (observed) => ({ ok: true, result: observed.result.result })
+};
+
+class AntigravityReviewHost {
+  host = "antigravity";
+  observation;
+  constructor(log = new MemoryHookEventLog) {
+    this.observation = new VerifierObservation(ANTIGRAVITY_VERIFIER_PROFILE, log);
+  }
+  prepareVerification(request) {
+    return this.observation.prepare(request);
+  }
+  inspectVerification(reservation) {
+    return this.observation.inspect(reservation);
+  }
+  observe(event) {
+    this.observation.observe(event);
+  }
+  releaseReview(reservation) {
+    this.observation.release(reservation);
+  }
+}
+
+// plugins/immune-brain/runtime/antigravity/lane_guard.ts
+init_lane_workspace();
+import { lstatSync as lstatSync20, realpathSync as realpathSync20, rmSync as rmSync11, writeFileSync as writeFileSync11, readFileSync as readFileSync22 } from "node:fs";
+import { randomUUID as randomUUID11 } from "node:crypto";
+import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
+import { join as join31 } from "node:path";
+
+// plugins/immune-brain/runtime/assurance/alias_file.ts
+import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
+import { join as join30 } from "node:path";
+var MAX_ALIAS_BYTES = 64 * 1024;
+function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
+  let fd;
+  try {
+    fd = openSync8(path, constants9.O_RDONLY | constants9.O_NONBLOCK);
+  } catch (error) {
+    if (isAbsent(error))
+      return null;
+    throw error;
+  }
+  try {
+    const stat = fstatSync5(fd);
+    if (!stat.isFile())
+      throw new Error(`alias is not a regular file: ${path}`);
+    if (stat.size > maxBytes)
+      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
+    const buf = Buffer.alloc(maxBytes + 1);
+    const read = readSync2(fd, buf, 0, buf.length, 0);
+    if (read > maxBytes)
+      throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
+    return buf.toString("utf8", 0, read);
+  } finally {
+    closeSync8(fd);
+  }
+}
+function localSkillExists(dir, name) {
+  try {
+    statSync6(join30(dir, name, "SKILL.md"));
+    return true;
+  } catch (error) {
+    return !isAbsent(error);
+  }
+}
+function isAbsent(error) {
+  const code = error.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+// plugins/immune-brain/runtime/antigravity/lane_guard.ts
+var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
+var GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
+var LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
+var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+function gatedOperation(toolName, args) {
+  const direct = GATED_MCP_TOOL.exec(toolName);
+  if (direct)
+    return direct[1];
+  if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
+    return null;
+  const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
+  return lazy ? lazy[1] : null;
+}
+function entryLogPath(sessionId, root) {
+  return join31(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+}
+function admissionPath(toolUseId, root) {
+  return join31(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+}
+function dropPrivate(path) {
+  try {
+    rmSync11(path, { force: true });
+  } catch {}
+}
+function antigravityLocalNames(cwd, home) {
+  const roots = [join31(cwd, ".agents"), join31(home, ".agents"), join31(home, ".gemini/config")];
+  return {
+    alias: (name) => {
+      for (const root of roots) {
+        const body = readAliasFile(join31(root, "commands", `${name}.md`));
+        if (body !== null)
+          return body;
+      }
+      return null;
+    },
+    skill: (name) => roots.some((root) => localSkillExists(join31(root, "skills"), name))
+  };
+}
+function readPhaseEntryState(sessionId, root = tmpdir7()) {
+  if (!sessionId)
+    return null;
+  const path = entryLogPath(sessionId, root);
+  try {
+    lstatSync20(path);
+  } catch (error) {
+    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
+  }
+  if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
+    return null;
+  try {
+    const text = readFileSync22(path, "utf8");
+    return reducePhaseEntryLog(text);
+  } catch {
+    return null;
+  }
+}
+function appendPhaseEntry(sessionId, line, root) {
+  const path = entryLogPath(sessionId, root);
+  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+  try {
+    writeFileSync11(path, line + `
+`, { flag: "a", mode: 384 });
+    return true;
+  } catch {
+    dropPrivate(path);
+    return false;
+  }
+}
+function dropPhaseEntryLog(sessionId, root = tmpdir7()) {
+  if (sessionId)
+    dropPrivate(entryLogPath(sessionId, root));
+}
+function revokeEntryToken(sessionId, reason, root = tmpdir7()) {
+  if (sessionId && readPhaseEntryState(sessionId, root)?.token)
+    appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root);
+}
+function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
+  if (!conversationId)
+    return false;
+  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
+  const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+  let workspace = null;
+  if (entry === "run") {
+    try {
+      workspace = realpathSync20(cwd);
+    } catch {}
+  }
+  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID11(), workspace } : undefined);
+  return appendPhaseEntry(conversationId, line, locations.root ?? tmpdir7());
+}
+function consumePhaseAdmission(toolCallId, operation, root = tmpdir7()) {
+  const path = admissionPath(toolCallId, root);
+  try {
+    const text = readFileSync22(path, "utf8");
+    dropPrivate(path);
+    const parsed = JSON.parse(text);
+    if (parsed.operation !== operation)
+      return null;
+    if (typeof parsed.conversation !== "string" || !parsed.conversation)
+      return null;
+    const state = readPhaseEntryState(parsed.conversation, root);
+    if (!state?.run_live || state.token !== parsed.token)
+      return null;
+    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
+  } catch {
+    return null;
+  }
+}
+function antigravityPreInvocationHook(payload, locations = {}) {
+  const prompt = payload.lastUserInput ?? "";
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  return { injectSteps: [], terminationBehavior: "" };
+}
+function antigravityPreToolUseHook(payload, locations = {}) {
+  const toolName = payload.toolCall.name;
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  if (FILE_TOOLS.has(toolName)) {
+    const filePath = payload.toolCall.args.Path ?? payload.toolCall.args.file_path ?? payload.toolCall.args.path;
+    const refusal = laneWriteRefusal(cwd, filePath);
+    if (refusal) {
+      return { decision: "deny", reason: refusal };
+    }
+  }
+  const gated = gatedOperation(toolName, payload.toolCall.args ?? {});
+  if (gated) {
+    const root = locations.root ?? tmpdir7();
+    const state = readPhaseEntryState(payload.conversationId, root);
+    const opName = { kind: "tool", name: gated };
+    const admission = admitPhaseOperation(opName, state);
+    if (!admission.ok) {
+      return { decision: "force_ask", reason: phaseRefusalMessage(admission) };
+    }
+    if (payload.stepIdx === undefined) {
+      return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
+    }
+    const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
+    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
+    ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+    writeFileSync11(admissionPath(toolUseId, root), admitLine, { mode: 384 });
+    return { decision: "allow" };
+  }
+  return { decision: "allow" };
+}
+
+// plugins/immune-brain/runtime/antigravity/run_continuation.ts
+init_batch_preflight();
+init_coordinator();
+async function antigravityRunContinuationHook(payload) {
+  const workspace = payload.workspacePaths?.[0] ?? process.cwd();
+  const taskId = readActiveClaimTaskId(workspace);
+  if (!taskId) {
+    return {};
+  }
+  let status;
+  try {
+    status = await projectTaskStatus(workspace, taskId);
+  } catch {
+    return {};
+  }
+  if (!status || status.error || !status.projection) {
+    return {};
+  }
+  return decideAutomatedStop(taskId, status.projection);
+}
+
+// plugins/immune-brain/runtime/antigravity/capability.ts
+var MIN_ANTIGRAVITY_VERSION = "0.1.0";
+var HOST_ID = "antigravity";
+var CORE_CONTRACT = "assurance_kernel/host_adapter/antigravity/v1";
+var SUPPORTED_PLATFORMS = ["darwin", "linux"];
+function parseSemver(value) {
+  const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
+  if (!match)
+    return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function compareSemver(left, right) {
+  const a = parseSemver(left);
+  const b = parseSemver(right);
+  if (!a || !b)
+    throw new Error(`invalid semver: ${!a ? left : right}`);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+function probeHost(env = process.env, platform = process.platform, hostVersion) {
+  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
+  if (!version)
+    return { ok: false, reason: "Antigravity version is unavailable" };
+  if (!parseSemver(version))
+    return { ok: false, reason: `Antigravity version is invalid: ${version}` };
+  if (compareSemver(version, MIN_ANTIGRAVITY_VERSION) < 0) {
+    return { ok: false, reason: `Antigravity version ${version} is older than minimum supported ${MIN_ANTIGRAVITY_VERSION}` };
+  }
+  if (!SUPPORTED_PLATFORMS.includes(platform)) {
+    return { ok: false, reason: `platform ${platform} is unsupported` };
+  }
+  return { ok: true, host: HOST_ID, version, platform };
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
+init_verdict_authority();
+init_layered_config();
+import { existsSync as existsSync19, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
+import { execFileSync as execFileSync15 } from "node:child_process";
+import { dirname as dirname17, join as join35, resolve as resolve16 } from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+init_coordinator();
+init_verification();
+init_review_evidence();
+init_assurance_projection();
+init_reducer();
+init_storage();
+init_intent();
+init_canary_application();
+init_authority_port();
+
+// plugins/immune-brain/runtime/kernel/enrollment_authority.ts
+var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
+function createEnrollmentAuthorityRegistry() {
+  return createCapabilityRegistry(ENROLLMENT_CAPABILITY_BRAND, {
+    validateBinding(binding) {
+      const missing = [];
+      for (const [key, value] of Object.entries(binding)) {
+        if (value === undefined || value === null || value === "")
+          missing.push(key);
+      }
+      if (missing.length > 0)
+        throw new Error(`enrollment capability binding is incomplete: ${missing.join(", ")}`);
+    },
+    validateAndProject(state, expected) {
+      for (const key of Object.keys(expected)) {
+        if (state[key] !== expected[key])
+          throw new Error(`enrollment capability ${key} mismatch`);
+      }
+      return {
+        task_id: state.task_id,
+        intent_path: state.intent_path,
+        intent_revision: state.intent_revision,
+        intent_content_hash: state.intent_content_hash,
+        preparation_digest: state.preparation_digest,
+        actor_id: state.actor_id,
+        confirmation_ref: state.confirmation_ref,
+        issued_at: state.issued_at,
+        nonce: state.nonce
+      };
+    }
+  }, "enrollment");
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
+init_storage();
+init_workflow_autocommit();
+init_qa();
+init_workspace_scope();
+init_batch_reasons();
+
+// plugins/immune-brain/runtime/authorization_operation.ts
+function reviewRetryNotice(retry) {
+  return `Authorize exactly one additional Review of this frozen snapshot under contract ${retry.review_contract_hash}. Previous contract: ${retry.previous_contract_hash ?? "unknown (legacy history; contract change cannot be verified)"}. Preserve all incomplete history and QA; this does not approve Review or permit implementation changes.`;
+}
+function deriveAuthorizationOperation(input) {
+  if (input.readiness.state === "resolve_user_decision")
+    return { operation: "resolve-user-decision" };
+  if (input.readiness.state === "authorize_review_retry")
+    return { operation: "authorize-review-retry" };
+  if (input.readiness.state === "authorize_rework")
+    return { operation: "authorize-rework" };
+  if (input.readiness.blocked)
+    return { blocked: input.readiness.blocked };
+  return { blocked: "no unique host-derived authorization operation" };
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
+init_role_prompt_bridge();
+init_actor_identity();
+
+// plugins/immune-brain/runtime/staged_intent.ts
+import { execFileSync as execFileSync13 } from "node:child_process";
+import { readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join32 } from "node:path";
+function captureStagedIntent(root, relativePath) {
+  return {
+    path: relativePath,
+    bytes: readFileSync23(join32(root, relativePath)),
+    index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
+      cwd: root,
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+  };
+}
+function restoreStagedIntent(root, snapshot) {
+  writeFileSync12(join32(root, snapshot.path), snapshot.bytes);
+  execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (snapshot.index_state.length > 0) {
+    execFileSync13("git", ["update-index", "-z", "--index-info"], {
+      cwd: root,
+      input: snapshot.index_state,
+      stdio: ["pipe", "ignore", "pipe"]
+    });
+  }
+  const restoredBytes = readFileSync23(join32(root, snapshot.path));
+  if (!restoredBytes.equals(snapshot.bytes)) {
+    throw new Error("failed to restore prior intent bytes");
+  }
+  const restoredIndex = execFileSync13("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (!restoredIndex.equals(snapshot.index_state)) {
+    throw new Error("failed to restore prior intent git index entry");
+  }
+}
+
+// plugins/immune-brain/runtime/host-core/runtime.ts
+init_coordinator();
+init_github_issue_tracker();
+init_backend_claim();
+init_batch_preflight();
 
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_batch_git();
@@ -21948,7 +21927,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join32 } from "node:path";
+import { join as join33 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -21968,7 +21947,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join32(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join33(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -22134,7 +22113,7 @@ function runEntryManifest(children, readIntent) {
   };
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
+// plugins/immune-brain/runtime/host-core/runtime.ts
 init_batch_state();
 init_batch_authority();
 init_batch_git();
@@ -22145,10 +22124,10 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
-import { createHash as createHash27 } from "node:crypto";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync13 } from "node:fs";
+import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname16, join as join34 } from "node:path";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -22204,7 +22183,7 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join34(dir || ".", name)).find((path) => {
     try {
       accessSync4(path, constants10.X_OK);
       return true;
@@ -22216,14 +22195,14 @@ function reviewBinary(host) {
 function git10(root, argv) {
   return execFileSync14("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
-function digest2(bytes) {
-  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+function digest(bytes) {
+  return `sha256:${createHash26("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
     head: git10(root, ["rev-parse", "HEAD"]).trim(),
-    index: digest2(git10(root, ["ls-files", "-s"])),
-    worktree: digest2(git10(root, ["diff", "--binary", "HEAD"]))
+    index: digest(git10(root, ["ls-files", "-s"])),
+    worktree: digest(git10(root, ["diff", "--binary", "HEAD"]))
   };
 }
 function treeChanged(root, recorded) {
@@ -22266,19 +22245,19 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = realpathSync21(mkdtempSync6(join33(tmpdir8(), "imm-cli-review-")));
+    const directory = realpathSync21(mkdtempSync6(join34(tmpdir8(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join33(directory, "packet.md");
-    const script = join33(directory, "review.sh");
-    const output = join33(directory, `review-output-${request.operationId}.txt`);
-    const exitFile = join33(directory, `review-exit-${request.operationId}`);
+    const packet = join34(directory, "packet.md");
+    const script = join34(directory, "review.sh");
+    const output = join34(directory, `review-output-${request.operationId}.txt`);
+    const exitFile = join34(directory, `review-exit-${request.operationId}`);
     const contractHash = currentReviewContractHash();
-    writeFileSync12(packet, `review_contract_hash: ${contractHash}
+    writeFileSync13(packet, `review_contract_hash: ${contractHash}
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const readDirs = [...new Set([directory, dirname16(request.evidencePath)])];
     const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
-    writeFileSync12(script, [
+    writeFileSync13(script, [
       "#!/bin/sh",
       `cd ${shellQuote(root)} || exit 1`,
       `out=${shellQuote(output)}`,
@@ -22330,10 +22309,10 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    const status = Number.parseInt(readFileSync23(reservation.exitFile, "utf8").trim(), 10);
+    const status = Number.parseInt(readFileSync24(reservation.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
-    const bytes = existsSync18(reservation.output) ? readFileSync23(reservation.output, "utf8") : "";
+    const bytes = existsSync18(reservation.output) ? readFileSync24(reservation.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
@@ -22358,11 +22337,11 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
   }
 }
 
-// plugins/immune-brain/runtime/claude/kernel_ports.ts
-var CLAUDE_LANE_WAIT_MS = 500;
-function claudeLaneWaitMs(env) {
+// plugins/immune-brain/runtime/host-core/runtime.ts
+var LANE_WAIT_MS = 500;
+function laneWaitMs(env) {
   const limit = Number(env.MCP_TOOL_TIMEOUT);
-  return Number.isFinite(limit) && limit > 0 ? Math.min(CLAUDE_LANE_WAIT_MS, Math.floor(limit / 2)) : CLAUDE_LANE_WAIT_MS;
+  return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
 }
 function diffSnapshotOf(root, record) {
   return taskDeliveryIdentity(root, record);
@@ -22375,7 +22354,7 @@ function readTaskIntentForRecord(root, taskId) {
   const record = readTaskRecordRaw(root, taskId).record;
   return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
-async function submitClaudeReview(host, coordinator, ctx, taskId, verdictInput) {
+async function submitHostReview(host, coordinator, ctx, taskId, verdictInput) {
   return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
 function settledKernelResult(result) {
@@ -22431,7 +22410,8 @@ function throwIfCancelled(signal) {
 }
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
-class ClaudeRuntime {
+class HostRuntime {
+  profile;
   laneSupervisor = new LaneSupervisor;
   parentHost;
   host;
@@ -22451,28 +22431,30 @@ class ClaudeRuntime {
   batchGit;
   batchTracker;
   readInitiative;
-  constructor(options) {
+  constructor(profile, options) {
+    this.profile = profile;
     this.cwd = options.cwd;
     this.options = options;
     this.env = options.env ?? process.env;
     this.interactive = options.interactive ?? true;
-    this.parentHost = options.parentHost ?? "claude-code";
+    this.parentHost = options.parentHost ?? profile.hostId;
     this.requestConfirmation = options.requestConfirmation;
     this.batchKernel = options.batchKernel;
     this.batchGit = options.batchGit;
     this.batchTracker = options.batchTracker;
     this.readInitiative = options.readInitiative;
-    this.host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
+    this.host = options.host ?? profile.createHost();
     this.reviewHost = new CliReviewHost(this.host);
     this.coordinator = new AssuranceCoordinator({
       ...this.createKernelPorts(),
       ...options.ports,
       host: this.reviewHost,
-      confirmationReference: ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`
+      confirmationReference: this.actorConfirmationRef
     }, options.authorityOverrides);
   }
+  actorConfirmationRef = ({ actorId }) => `${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`;
   observe(event) {
-    this.host.observe(event);
+    this.profile.observe(this.host, event);
   }
   bindWorkspace(cwd) {
     this.cwd = cwd;
@@ -22481,7 +22463,7 @@ class ClaudeRuntime {
     this.hostVersion = version || undefined;
   }
   probeHost() {
-    return (this.options.probeHost ?? probeHost)(this.env, process.platform, this.hostVersion);
+    return (this.options.probeHost ?? this.profile.probeHost)(this.env, process.platform, this.hostVersion);
   }
   bindNativeConfirmation(port) {
     this.requestConfirmation = port;
@@ -22495,7 +22477,7 @@ class ClaudeRuntime {
   createKernelPorts() {
     return {
       host: this.reviewHost,
-      confirmationReference: ({ actorId }) => `claude:${actorId}`,
+      confirmationReference: this.actorConfirmationRef,
       projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
       readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
       readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
@@ -22533,7 +22515,7 @@ class ClaudeRuntime {
       throw gate.error;
     const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
     return {
-      confirmation_ref: confirmationRef({
+      confirmation_ref: this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: result.requestId,
@@ -22555,7 +22537,7 @@ class ClaudeRuntime {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal), meta);
   }
   async submitReview(taskId, verdictInput, meta) {
-    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitClaudeReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
+    return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await submitHostReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput)), meta?.signal), meta);
   }
   async submitVerification(taskId, result, meta) {
     return this.closeOutBatchChild(taskId, withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
@@ -22575,9 +22557,9 @@ class ClaudeRuntime {
     if (!slug)
       return result;
     try {
-      if (!selectedClaudeParent(meta.toolCallId, this.cwd, slug))
+      if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync19(join34(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync19(join35(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -22638,7 +22620,7 @@ class ClaudeRuntime {
     const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot ? findLaneRelayTarget(this.cwd, taskId) : null;
     if (!relayed)
       return this.authorizeInRoot(taskId, operation, meta, extra);
-    const laneRuntime = new ClaudeRuntime({
+    const laneRuntime = this.profile.laneRuntime({
       ...this.options,
       cwd: relayed.lane_path,
       laneRoot: true,
@@ -22660,9 +22642,9 @@ class ClaudeRuntime {
         apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
-        parentHost: "claude-code",
-        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
-        waitMs: claudeLaneWaitMs(this.env),
+        parentHost: this.parentHost,
+        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
+        waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
       return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
@@ -22730,7 +22712,7 @@ class ClaudeRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join34(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join35(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22743,7 +22725,7 @@ class ClaudeRuntime {
       if (sidecar && nextIntent) {
         if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
-        writeFileSync13(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync14(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
@@ -22871,12 +22853,12 @@ class ClaudeRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join34(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
+    const sidecar = join35(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync14(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
         execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
@@ -23132,7 +23114,7 @@ class ClaudeRuntime {
           request_id: confirmationResult.requestId
         };
       },
-      confirmationRef: ({ batch_id, request_id }) => confirmationRef({
+      confirmationRef: ({ batch_id, request_id }) => this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: request_id ?? `resumed-${batch_id}`,
@@ -23188,8 +23170,8 @@ class ClaudeRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname17(fileURLToPath3(import.meta.url)), "../.."),
-        waitMs: claudeLaneWaitMs(this.env),
+        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
+        waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
         request: options.executor
@@ -23296,7 +23278,7 @@ class ClaudeRuntime {
           return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
         return { kind: "confirmed", request_id: confirmationResult.requestId };
       },
-      confirmationRef: ({ request_id, plan_digest }) => confirmationRef({
+      confirmationRef: ({ request_id, plan_digest }) => this.profile.confirmationRef({
         connectionId: meta.sessionId,
         toolCallId: meta.toolCallId,
         requestId: request_id,
@@ -23313,368 +23295,113 @@ class ClaudeRuntime {
   }
 }
 
-// plugins/immune-brain/runtime/claude/mcp_server.ts
-init_batch_final_verification();
-init_coordinator();
-init_storage();
-init_plugin_source_skew();
-init_assurance_projection();
-var MCP_PROTOCOL_VERSION = "2025-06-18";
-var TOOLS = [
-  { name: "status", description: "Read the Kernel Assurance Projection for an exact task.", privileged: false },
-  { name: "advance_assurance", description: "Advance frozen Assurance through deterministic QA and Review reservation.", privileged: false },
-  { name: "submit_review", description: "Submit the Review verdict; omit the verdict to apply the correlated reviewer receipt, or relay the reviewer's structured verdict for fingerprint comparison.", privileged: false },
-  { name: "submit_verification", description: "Submit the reserved verifier result; omit result to use the Host-observed receipt.", privileged: false },
-  { name: "request_authorization", description: "Apply exact literal-user authorization.", privileged: true },
-  { name: "revise_intent", description: "Apply a compatible TaskIntent revision.", privileged: false },
-  { name: "approve_breaking_intent_revision", description: "Approve a breaking TaskIntent revision.", privileged: true },
-  { name: "stop", description: "Stop the active task with literal-user authority.", privileged: true },
-  { name: "start_unattended_batch", description: "Start an unattended Lane batch for an Initiative or a single TaskIntent under the literal-user drive entry.", privileged: true },
-  { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
-  { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
-  { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
-  { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
-];
-function listMcpTools() {
-  return TOOLS.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: {
-      type: "object",
-      properties: {
-        ...tool.name === "start_unattended_batch" || tool.name === "retire_stale_batch" ? {
-          initiative_slug: { type: "string" },
-          ...tool.name === "start_unattended_batch" ? {
-            task_id: { type: "string" },
-            stop: { type: "boolean" },
-            executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
-            executor_model: { type: "string", minLength: 1 },
-            executor_effort: { type: "string", minLength: 1 },
-            max_parallel: { type: "integer", minimum: 1 },
-            lane_offers: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: { task_id: { type: "string" }, path: { type: "string" } },
-                required: ["task_id", "path"],
-                additionalProperties: false
-              }
-            },
-            final_verification: { type: "array", items: { type: "string" }, maxItems: 8 },
-            lane_instruction: {
-              type: "object",
-              properties: {
-                task_id: { type: "string" },
-                kind: { type: "string", enum: ["instruction", "correction"] },
-                text: { type: "string" },
-                session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] }
-              },
-              required: ["task_id", "text", "session_state"],
-              additionalProperties: false
-            }
-          } : {}
-        } : {
-          task_id: { type: "string" },
-          ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
-          ...tool.name === "stop" ? { reason: { type: "string" } } : {},
-          ...tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {},
-          ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
-          ...tool.name === "submit_verification" ? { result: { type: "string" } } : {},
-          ...tool.name === "resolve_finding" ? { finding_id: { type: "string" } } : {},
-          ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
-        }
-      },
-      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
-    },
-    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
-  }));
-}
-function supportsElicitationProtocol(value) {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= MCP_PROTOCOL_VERSION;
-}
-function withCompletionDelivery(taskId, result, root = process.cwd()) {
-  if (result?.state !== "completed")
-    return result;
-  try {
-    const record = readSettledTaskEvidence(root, taskId)?.record;
-    const diffHash = record?.attestations?.at(-1)?.diff_hash;
-    const settle = result.settle_commit;
-    return typeof diffHash === "string" ? { ...result, delivery: deliveryOf(diffHash, settle?.committed ? settle.commit : undefined) } : result;
-  } catch {
-    return result;
+// plugins/immune-brain/runtime/antigravity/kernel_ports.ts
+var ANTIGRAVITY_PROFILE = {
+  hostId: "antigravity",
+  createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
+  observe: (host, event) => host.observe(event),
+  probeHost,
+  confirmationRef: (input) => hostConfirmationRef("antigravity", input),
+  laneRuntime: (options) => new HostRuntime(ANTIGRAVITY_PROFILE, options),
+  selectedParent: () => false
+};
+
+class AntigravityRuntime {
+  runtime;
+  constructor(options) {
+    this.runtime = new HostRuntime(ANTIGRAVITY_PROFILE, options);
+  }
+  get host() {
+    return this.runtime.host;
+  }
+  get coordinator() {
+    return this.runtime.coordinator;
+  }
+  observe(event) {
+    this.runtime.observe(event);
+  }
+  observeAntigravity(event) {
+    this.runtime.observe(event);
+  }
+  bindWorkspace(cwd) {
+    this.runtime.bindWorkspace(cwd);
+  }
+  bindHostVersion(version) {
+    this.runtime.bindHostVersion(version);
+  }
+  bindNativeConfirmation(port) {
+    this.runtime.bindNativeConfirmation(port);
+  }
+  shutdown() {
+    return this.runtime.shutdown();
+  }
+  kernelPorts() {
+    return this.runtime.kernelPorts();
+  }
+  status(...args) {
+    return this.runtime.status(...args);
+  }
+  advance(...args) {
+    return this.runtime.advance(...args);
+  }
+  submitReview(...args) {
+    return this.runtime.submitReview(...args);
+  }
+  submitVerification(...args) {
+    return this.runtime.submitVerification(...args);
+  }
+  reviseIntent(...args) {
+    return this.runtime.reviseIntent(...args);
+  }
+  resolveFinding(...args) {
+    return this.runtime.resolveFinding(...args);
+  }
+  refuteFinding(...args) {
+    return this.runtime.refuteFinding(...args);
+  }
+  authorize(...args) {
+    return this.runtime.authorize(...args);
+  }
+  startUnattendedBatch(...args) {
+    return this.runtime.startUnattendedBatch(...args);
+  }
+  retireStaleBatch(...args) {
+    return this.runtime.retireStaleBatch(...args);
   }
 }
-function createMcpRuntime(options = {}) {
-  const host = options.host ?? new ClaudeReviewHost(new FileHookEventLog);
-  const defaultWorkspace = options.cwd ?? process.cwd();
-  const trustedClientNames = options.trustedClientNames ?? [HOST_ID];
-  const serverInfo = options.serverInfo ?? { name: HOST_ID, minimumHostVersion: MIN_CLAUDE_CODE_VERSION };
-  const runtime = new ClaudeRuntime({
-    cwd: defaultWorkspace,
-    env: options.env ?? process.env,
-    parentHost: options.parentHost,
-    probeHost: options.probeHost,
-    host,
-    ports: options.ports,
-    authorityOverrides: options.authorityOverrides,
-    interactive: options.interactive,
-    requestConfirmation: options.requestConfirmation,
-    batchKernel: options.batchKernel,
-    batchGit: options.batchGit,
-    readInitiative: options.readInitiative
-  });
-  let negotiatedVersion;
-  let negotiatedInteractive = false;
-  let negotiatedRoots = false;
-  let rootsWorkspace;
-  let rootsProvider = options.rootsProvider;
-  const connectionId = randomUUID12();
-  const resolveWorkspace = async (meta, signal) => {
-    let workspace = typeof meta.workspace === "string" && isAbsolute12(meta.workspace) ? meta.workspace : undefined;
-    if (!workspace && rootsProvider && (negotiatedRoots || options.rootsProvider)) {
-      if (rootsWorkspace === undefined) {
-        let roots;
-        try {
-          roots = await rootsProvider(signal);
-        } catch {
-          roots = undefined;
-        }
-        rootsWorkspace = firstFileRootPath(roots) ?? null;
-      }
-      workspace = rootsWorkspace ?? undefined;
-    }
-    if (!workspace)
-      workspace = defaultWorkspace;
-    runtime.bindWorkspace(workspace);
-    return workspace;
-  };
-  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
-  const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
-  const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
-  const resolveHostCall = (operation, meta, messageId) => {
-    if (options.parentHost === "antigravity") {
-      const conversation = meta?.["antigravity.google/conversation_id"];
-      if (typeof conversation !== "string" || !conversation)
-        return;
-      const step = metaProgressStep(meta);
-      return { toolCallId: String(messageId), ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
-    }
-    const identity = hostCallIdentity(meta);
-    return identity ? { toolCallId: identity.toolCallId, admissionId: identity.toolCallId } : undefined;
-  };
-  const correlationMissingMessage = options.parentHost === "antigravity" ? "antigravity.google/conversation_id metadata is missing" : "canonical claudecode/toolUseId metadata is missing";
-  const sessionProbe = options.probeHost ?? probeHost;
-  const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
-  const unversionedHostReason = () => {
-    const probe = probeNegotiatedHost(undefined);
-    return probe.ok ? "host version is unavailable" : probe.reason;
-  };
-  let hookSessionId = null;
-  const requireRunEntry = (operation, toolCallId, workspace, admissionId = toolCallId) => {
-    const correlated = readRunToolSession(toolCallId, operation, workspace);
-    if (!options.consumePhaseAdmission && !correlated)
-      throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
-    const grant = consumeAdmission(admissionId, operation);
-    if (!grant)
-      throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-    hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
-    if (grant === true || !grant.entry_token)
+
+// plugins/immune-brain/runtime/antigravity/mcp_server.ts
+var antigravityContinuationHost = (root) => ({
+  cache_name: ANTIGRAVITY_CACHE_DIR,
+  entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
+  revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
+  drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root)
+});
+var ANTIGRAVITY_MCP_PROFILE = {
+  serverInfo: { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION },
+  contract: CORE_CONTRACT,
+  trustedClientNames: ["antigravity-client", "antigravity"],
+  toolCallIdMetaKey: "claudecode/toolUseId",
+  correlationMissingRefusal: "antigravity.google/conversation_id metadata is missing",
+  resolveHostCall: (operation, meta, messageId) => {
+    const conversation = meta?.["antigravity.google/conversation_id"];
+    if (typeof conversation !== "string" || !conversation)
       return;
-    let current = null;
-    try {
-      current = realpathSync22(workspace);
-    } catch {}
-    if (!current || grant.workspace !== current)
-      throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
-    return grant.entry_token;
-  };
-  const refuseSuppliedAuthority = (args) => {
-    if ("native_decision" in args)
-      throw new Error("native_decision cannot be supplied in tool arguments");
-    if ("entry_token" in args)
-      throw new Error("entry_token cannot be supplied in tool arguments");
-  };
-  return {
-    runtime,
-    host,
-    connectionId,
-    listTools: listMcpTools,
-    resolveHostCall,
-    correlationMissingMessage,
-    trustedClientNames,
-    serverInfo,
-    bindClientHandshake(identity) {
-      negotiatedVersion = identity.version || undefined;
-      negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
-      negotiatedRoots = identity.roots === true;
-      rootsWorkspace = undefined;
-      runtime.bindHostVersion(negotiatedVersion);
-    },
-    bindRootsProvider(provider) {
-      rootsProvider = provider;
-    },
-    clearRootsWorkspace() {
-      rootsWorkspace = undefined;
-    },
-    bindNativeConfirmation(port) {
-      runtime.bindNativeConfirmation(port);
-    },
-    sessionInteractive: () => negotiatedInteractive,
-    async callTool(name, args, meta = {}) {
-      const workspace = await resolveWorkspace(meta, meta.signal);
-      if (name !== "status" && bundle.stale())
-        throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-      const observedSession = readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
-      if (observedSession)
-        hookSessionId = observedSession;
-      if (name === "start_unattended_batch") {
-        if (Object.hasOwn(args, "lane_revision"))
-          throw new Error("unknown parameter: lane_revision");
-        const initiative = typeof args.initiative_slug === "string" ? args.initiative_slug : "";
-        const task = typeof args.task_id === "string" ? args.task_id : "";
-        if (args.stop !== undefined && typeof args.stop !== "boolean")
-          throw new Error("stop must be a boolean");
-        if (args.executor_host !== undefined && args.executor_host !== "pi" && args.executor_host !== "claude-code" && args.executor_host !== "antigravity")
-          throw new Error("invalid executor_host");
-        for (const key of ["executor_model", "executor_effort"])
-          if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key]))
-            throw new Error(`invalid ${key}`);
-        if (!!initiative === !!task)
-          return batchReason("batch_entry_ambiguous");
-        const initiativeSlug = task || initiative;
-        refuseSuppliedAuthority(args);
-        if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-        if (!negotiatedInteractive) {
-          throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-        }
-        const probe = probeNegotiatedHost();
-        if (!probe.ok)
-          throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const toolCallId = meta.toolCallId ?? `call-${name}`;
-        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-        const toolMeta = {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId,
-          taskId: initiativeSlug,
-          initiativeSlug,
-          ...entryToken ? { entryToken } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        };
-        const laneOffers = parseLaneOffers(args.lane_offers);
-        const laneInstruction = parseLaneInstruction(args.lane_instruction);
-        const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
-        const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
-        return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
-          ...task ? { plan_source: "single_task" } : {},
-          ...args.stop === true ? { stop: true } : {},
-          executor: {
-            ...args.executor_host === "pi" || args.executor_host === "claude-code" || args.executor_host === "antigravity" ? { executor_host: args.executor_host } : {},
-            ...typeof args.executor_model === "string" ? { executor_model: args.executor_model } : {},
-            ...typeof args.executor_effort === "string" ? { executor_effort: args.executor_effort } : {}
-          },
-          ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
-          ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
-          ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
-          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
-        });
-      }
-      if (name === "retire_stale_batch") {
-        const initiativeSlug = String(args.initiative_slug ?? "");
-        if (!initiativeSlug)
-          throw new Error("initiative_slug is required");
-        refuseSuppliedAuthority(args);
-        if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-        if (!negotiatedInteractive) {
-          throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-        }
-        const probe = probeNegotiatedHost();
-        if (!probe.ok)
-          throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const toolCallId = meta.toolCallId ?? `call-${name}`;
-        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-        const toolMeta = {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId,
-          taskId: initiativeSlug,
-          initiativeSlug,
-          ...entryToken ? { entryToken } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        };
-        return runtime.retireStaleBatch(initiativeSlug, toolMeta);
-      }
-      const taskId = String(args.task_id ?? "");
-      if (!taskId)
-        throw new Error("task_id is required");
-      refuseSuppliedAuthority(args);
-      if (name === "status") {
-        const result = { plugin_version: PLUGIN_VERSION, ...await runtime.status(taskId), loaded_bundle: { path: bundle.path, sha256_prefix: bundle.sha256?.slice(0, 12) ?? null } };
-        if (!bundle.stale())
-          return result;
-        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
-        return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
-      }
-      if (!negotiatedVersion)
-        throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-      if (!negotiatedInteractive && name !== "repair_authority_state") {
-        throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-      }
-      const probe = probeNegotiatedHost();
-      if (!probe.ok)
-        throw new NativeAuthorityError("unsupported_host", probe.reason);
-      const toolMeta = {
-        sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-        toolCallId: meta.toolCallId ?? `call-${name}`,
-        taskId,
-        interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-        signal: meta.signal
-      };
-      if (name === "advance_assurance")
-        return withCompletionDelivery(taskId, await runtime.advance(taskId, toolMeta.signal, toolMeta), workspace);
-      if (name === "submit_review") {
-        return withCompletionDelivery(taskId, await runtime.submitReview(taskId, Object.hasOwn(args, "verdict") ? args.verdict : undefined, toolMeta), workspace);
-      }
-      if (name === "submit_verification") {
-        if (args.result !== undefined && typeof args.result !== "string")
-          throw new Error("result must be a string");
-        return withCompletionDelivery(taskId, await runtime.submitVerification(taskId, args.result, toolMeta), workspace);
-      }
-      if (name === "revise_intent") {
-        if (!Object.hasOwn(args, "next_intent"))
-          throw new Error("next_intent is required");
-        return runtime.reviseIntent(taskId, args.next_intent);
-      }
-      if (name === "resolve_finding") {
-        if (typeof args.finding_id !== "string" || !args.finding_id)
-          throw new Error("finding_id is required");
-        return runtime.resolveFinding(taskId, args.finding_id);
-      }
-      if (name === "refute_finding") {
-        if (typeof args.finding_id !== "string" || !args.finding_id)
-          throw new Error("finding_id is required");
-        if (typeof args.attestation_id !== "string" || !args.attestation_id)
-          throw new Error("attestation_id is required");
-        return runtime.refuteFinding(taskId, args.finding_id, args.attestation_id);
-      }
-      if (name === "request_authorization" || name === "approve_breaking_intent_revision" || name === "stop" || name === "repair_authority_state") {
-        return runtime.authorize(taskId, name, toolMeta, args);
-      }
-      throw new Error(`unknown tool ${name}`);
-    },
-    observe: (event) => host.observe(event),
-    shutdown: () => runtime.shutdown(),
-    aborts: new Map
-  };
-}
-function hostCallIdentity(meta) {
-  if (!meta)
-    return;
-  const toolCallId = meta["claudecode/toolUseId"];
-  return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
-}
+    const step = metaProgressStep(meta);
+    return { toolCallId: String(messageId), ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
+  },
+  elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
+  elicitationRejectedRefusal: "Claude Code rejected MCP elicitation/create",
+  probeHost,
+  createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
+  createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,
+  consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
+  readRunToolSession: (toolCallId, operation, workspace) => readSessionToolCall(antigravityContinuationHost(tmpdir9()), tmpdir9(), toolCallId, operation, workspace),
+  dispatchHook: runHook,
+  bundlePath: fileURLToPath5(import.meta.url)
+};
+var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(ANTIGRAVITY_MCP_PROFILE, options);
+var serveStdio2 = (options = {}) => serveStdio(ANTIGRAVITY_MCP_PROFILE, options);
 function metaProgressStep(meta) {
   const token = meta?.progressToken;
   if (typeof token !== "string")
@@ -23682,1195 +23409,25 @@ function metaProgressStep(meta) {
   const match = /:(\d+)$/.exec(token);
   return match ? Number(match[1]) : null;
 }
-function metaWorkspacePath(meta) {
-  const paths = meta?.["antigravity.google/workspace_paths"];
-  if (!Array.isArray(paths) || typeof paths[0] !== "string")
+function appendSubagentStart(toolCall, payload) {
+  if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent")
     return;
-  const first = paths[0].trim();
-  return first && isAbsolute12(first) ? first : undefined;
-}
-function firstFileRootPath(roots) {
-  for (const root of roots ?? []) {
-    const uri = root?.uri;
-    if (typeof uri !== "string" || !uri.startsWith("file://"))
-      continue;
-    try {
-      const path = fileURLToPath4(uri);
-      if (isAbsolute12(path))
-        return path;
-    } catch {}
-  }
-  return;
-}
-function rpcError(error) {
-  if (error instanceof NativeAuthorityError) {
-    return {
-      code: -32000,
-      message: error.message,
-      data: { reason_code: error.reasonCode, recovery_action: error.recoveryAction }
-    };
-  }
-  return { code: -32000, message: error instanceof Error ? error.message : String(error) };
-}
-function encodeMessage(message) {
-  return Buffer.from(`${JSON.stringify(message)}
-`);
-}
-async function handleJsonRpc(message, mcp = createMcpRuntime()) {
-  if (message.method === "initialize") {
-    const params = message.params ?? {};
-    const trustedClient = mcp.trustedClientNames.includes(String(params.clientInfo?.name ?? ""));
-    const elicitation = params.capabilities?.elicitation;
-    const roots = params.capabilities?.roots;
-    mcp.bindClientHandshake({
-      version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
-      protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
-      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
-      roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots)
-    });
-    return {
-      jsonrpc: "2.0",
-      id: message.id ?? null,
-      result: {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        serverInfo: {
-          name: mcp.serverInfo.name,
-          version: PLUGIN_VERSION,
-          contract: CORE_CONTRACT,
-          minimumHostVersion: mcp.serverInfo.minimumHostVersion
-        },
-        capabilities: { tools: {} }
-      }
-    };
-  }
-  if (message.method === "notifications/initialized")
-    return null;
-  if (message.method === "notifications/roots/list_changed") {
-    mcp.clearRootsWorkspace();
-    return null;
-  }
-  if (message.method === "notifications/cancelled") {
-    const requestId = message.params?.requestId;
-    if (requestId !== undefined)
-      mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
-    return null;
-  }
-  if (message.method === "tools/list") {
-    return { jsonrpc: "2.0", id: message.id ?? null, result: { tools: mcp.listTools() } };
-  }
-  if (message.method === "tools/call") {
-    const params = message.params ?? {};
-    const requestId = message.id ?? `anon-${Date.now()}`;
-    const ac = new AbortController;
-    mcp.aborts.set(requestId, ac);
-    try {
-      const name = String(params.name ?? "");
-      const interactive = mcp.sessionInteractive();
-      if (isPrivilegedOperation(name) && !interactive) {
-        throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
-      }
-      const identity = mcp.resolveHostCall(name, params._meta, message.id ?? "stdio");
-      if (isPrivilegedOperation(name) && !identity) {
-        throw new NativeAuthorityError("correlation_missing", mcp.correlationMissingMessage);
-      }
-      const sessionId = mcp.connectionId;
-      const toolCallId = identity?.toolCallId ?? String(message.id ?? "stdio");
-      const result = await mcp.callTool(name, params.arguments ?? {}, {
-        sessionId,
-        toolCallId,
-        ...identity?.admissionId ? { admissionId: identity.admissionId } : {},
-        workspace: metaWorkspacePath(params._meta),
-        interactive,
-        requiresUserInteraction: isPrivilegedOperation(name),
-        signal: ac.signal
-      });
-      return {
-        jsonrpc: "2.0",
-        id: message.id ?? null,
-        result: { content: [{ type: "text", text: JSON.stringify(result) }] }
-      };
-    } catch (error) {
-      return {
-        jsonrpc: "2.0",
-        id: message.id ?? null,
-        error: rpcError(error)
-      };
-    } finally {
-      mcp.aborts.delete(requestId);
-    }
-  }
-  if (message.id === undefined)
-    return null;
-  return { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: `unknown method ${message.method}` } };
-}
-async function writeReply(output, reply) {
-  const payload = encodeMessage(reply);
-  await new Promise((resolve, reject) => {
-    if (!output.writable) {
-      reject(new Error("output stream is not writable"));
-      return;
-    }
-    let settled = false;
-    const cleanup = () => {
-      output.off("drain", onDrain);
-      output.off("error", onError);
-      output.off("close", onClose);
-    };
-    const onDrain = () => {
-      if (settled)
-        return;
-      settled = true;
-      cleanup();
-      resolve();
-    };
-    const onError = (error) => {
-      if (settled)
-        return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const onClose = () => {
-      if (settled)
-        return;
-      settled = true;
-      cleanup();
-      reject(new Error("output stream closed before write drained"));
-    };
-    output.once("error", onError);
-    output.once("close", onClose);
-    const ok = output.write(payload, (error) => {
-      if (settled)
-        return;
-      if (error) {
-        settled = true;
-        cleanup();
-        reject(error);
-      }
-    });
-    if (ok) {
-      settled = true;
-      cleanup();
-      resolve();
-      return;
-    }
-    output.once("drain", onDrain);
-  });
-}
-function elicitationParams(input) {
-  if (input.operation === "retire_stale_batch") {
-    const d = input.batchDisposition;
-    const details = [
-      `Operation: retire_stale_batch`,
-      `Initiative: ${input.initiativeSlug}`,
-      d ? `Batch: ${d.batch_id}` : null,
-      d ? `Batch state: ${d.batch_state}` : null,
-      d ? `Batch branch: ${d.batch_branch}` : null,
-      d ? `Plan digest: ${d.plan_digest}` : null,
-      d ? `Recorded child commits: ${d.recorded_commits}` : null,
-      d ? `Children (${d.children.length}):
-${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`).join(`
-`)}` : null,
-      "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.",
-      "A child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.",
-      "After retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative."
-    ].filter(Boolean);
-    return {
-      mode: "form",
-      message: `Retire this stale batch record for ${input.initiativeSlug}?
-
-${details.join(`
-`)}`,
-      requestedSchema: { type: "object", properties: {} }
-    };
-  }
-  if (input.operation === "start_unattended_batch") {
-    const b = input.batchDetails;
-    if (b?.parent_final_verification) {
-      const lines = [
-        `Operation: start_unattended_batch (native Parent final verification; no batch run is started)`,
-        `Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
-        input.planDigest ? `Plan digest: ${input.planDigest}` : null,
-        `Parent Tasks (${b.children.length}):
-${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join(`
-`)}`,
-        `Final verification commands run in this workspace outside Host permission:
-${(b.final_verification ?? []).map((command) => `  - ${command}`).join(`
-`)}`
-      ].filter(Boolean);
-      return {
-        mode: "form",
-        message: `Authorize this Parent final verification for ${input.initiativeSlug}?
-
-${lines.join(`
-`)}`,
-        requestedSchema: { type: "object", properties: {} }
-      };
-    }
-    const details = [
-      `Operation: start_unattended_batch`,
-      `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
-      b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
-      input.planDigest ? `Plan digest: ${input.planDigest}` : null,
-      input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
-      input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
-      input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
-      b?.children ? `Ordered children (${b.children.length}):
-${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join(`
-`)}` : null,
-      b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
-${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
-`)}` : null,
-      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
-      b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
-      b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):
-${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
-`)}` : null,
-      b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
-${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
-`)}` : null,
-      b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null
-    ].filter(Boolean);
-    return {
-      mode: "form",
-      message: `Authorize this unattended batch run for ${input.initiativeSlug}?
-
-${details.join(`
-`)}`,
-      requestedSchema: { type: "object", properties: {} }
-    };
-  }
-  if (input.verifierDispute) {
-    const dispute = input.verifierDispute;
-    return {
-      mode: "form",
-      message: `Resolve this Review verifier dispute for ${input.taskId}.
-
-Claim: ${dispute.claim}
-Trigger: ${dispute.trigger}
-Caller chain: ${dispute.caller_chain.join(" → ")}
-Counter-path: ${dispute.counter_path}`,
-      requestedSchema: { type: "object", properties: { choice: { type: "string", title: "Decision", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] } }, required: ["choice"] }
-    };
-  }
-  if (input.reworkExits) {
-    const exits = input.reworkExits;
-    const exitValues = [
-      "grant_rounds",
-      ...exits.accept_residual_risk ? ["accept_residual_risk"] : [],
-      "replan"
-    ];
-    return {
-      mode: "form",
-      message: `Choose how to resolve this replan boundary for ${input.taskId}.
-
-${[
-        `Operation: ${input.operation}`,
-        `Task: ${input.taskId}`,
-        input.risk ? `Risk: ${input.risk}` : null,
-        input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
-        ...reworkExitLines(exits)
-      ].filter(Boolean).join(`
-`)}`,
-      requestedSchema: {
-        type: "object",
-        properties: {
-          exit: { type: "string", title: "Exit", enum: exitValues, default: "grant_rounds" },
-          rounds: {
-            type: "integer",
-            title: "Further Review rounds (grant_rounds)",
-            minimum: exits.grant_rounds.min,
-            maximum: exits.grant_rounds.max,
-            default: exits.grant_rounds.min
-          },
-          ...exits.accept_residual_risk ? { reason: { type: "string", title: "Reason for accepting residual risk (accept_residual_risk)" } } : {}
-        },
-        required: ["exit"]
-      }
-    };
-  }
-  const details = [
-    `Operation: ${input.operation}`,
-    `Task: ${input.taskId}`,
-    input.risk ? `Risk: ${input.risk}` : null,
-    input.intentRevision !== undefined ? `Intent revision: ${input.intentRevision}` : null,
-    input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
-    input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
-    input.gitBaseNotice,
-    input.reviewRetryNotice
-  ].filter(Boolean);
-  return {
-    mode: "form",
-    message: `Authorize this exact Immune-Brain operation?
-
-${details.join(`
-`)}`,
-    requestedSchema: { type: "object", properties: {} }
+  if (typeof payload.stepIdx !== "number")
+    return;
+  const args = toolCall.args ?? {};
+  const event = {
+    type: "start",
+    sessionId: String(payload.conversationId ?? ""),
+    agent: typeof args.TypeName === "string" ? args.TypeName : "",
+    agentId: String(payload.stepIdx),
+    ...typeof args.Prompt === "string" ? { prompt: args.Prompt } : {},
+    ...typeof args.Model === "string" ? { model: args.Model } : {}
   };
-}
-async function serveStdio(options = {}) {
-  const input = options.input ?? stdin;
-  const output = options.output ?? stdout;
-  const mcp = options.runtime ?? createMcpRuntime({ cwd: process.cwd() });
-  const exit = options.exit ?? ((code) => {
-    process.exit(code);
-  });
-  let buffer = Buffer.alloc(0);
-  let accepting = true;
-  let requestSequence = 0;
-  const inFlight = new Set;
-  const pending = new Map;
-  let chain = Promise.resolve();
-  let callChain = Promise.resolve();
-  const rejectPending = (error) => {
-    for (const item of pending.values())
-      item.reject(error);
-    pending.clear();
-  };
-  mcp.bindNativeConfirmation(async (input) => {
-    if (!accepting)
-      throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
-    if (input.signal?.aborted)
-      throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
-    const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
-    let abortListener;
-    const response = new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject });
-      abortListener = () => {
-        pending.delete(requestId);
-        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
-      };
-      input.signal?.addEventListener("abort", abortListener, { once: true });
-    });
-    try {
-      await writeReply(output, {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "elicitation/create",
-        params: elicitationParams(input)
-      });
-      const reply = await response;
-      if (reply.error) {
-        if (reply.error.code === -32601) {
-          throw new NativeAuthorityError("unsupported_host", "Claude Code rejected MCP elicitation/create");
-        }
-        throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
-      }
-      const result = reply.result;
-      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
-      if (action !== "accept" && action !== "decline" && action !== "cancel") {
-        throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
-      }
-      let reworkChoice;
-      let verifierChoice;
-      if (action === "accept" && input.verifierDispute) {
-        const content = result.content;
-        if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
-        verifierChoice = content.choice;
-      } else if (action === "accept" && input.reworkExits) {
-        const parsed = parseReworkChoice(input.reworkExits, result.content);
-        if (!parsed) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
-        }
-        reworkChoice = parsed;
-      } else if (action === "accept") {
-        const content = result.content;
-        const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
-        const valid = keys !== null && keys.length === 0;
-        if (!valid) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
-        }
-      }
-      return {
-        decision: action,
-        requestId,
-        ...reworkChoice ? { reworkChoice } : {},
-        ...verifierChoice ? { verifierChoice } : {}
-      };
-    } finally {
-      pending.delete(requestId);
-      if (abortListener)
-        input.signal?.removeEventListener("abort", abortListener);
-    }
-  });
-  mcp.bindRootsProvider(async (signal) => {
-    if (!accepting)
-      return;
-    const requestId = `immune-brain:roots:${mcp.connectionId}:${++requestSequence}`;
-    let abortListener;
-    const response = new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject });
-      abortListener = () => {
-        pending.delete(requestId);
-        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
-      };
-      signal?.addEventListener("abort", abortListener, { once: true });
-    });
-    try {
-      await writeReply(output, { jsonrpc: "2.0", id: requestId, method: "roots/list", params: {} });
-      const reply = await response;
-      const roots = reply.error ? undefined : reply.result?.roots;
-      return Array.isArray(roots) ? roots : undefined;
-    } catch {
-      return;
-    } finally {
-      pending.delete(requestId);
-      if (abortListener)
-        signal?.removeEventListener("abort", abortListener);
-    }
-  });
-  const runCall = (parsed) => {
-    const task = callChain.then(() => handleJsonRpc(parsed, mcp)).then(async (reply) => {
-      if (reply)
-        await writeReply(output, reply);
-    }).catch(() => {
-      executeShutdown(1);
-    });
-    callChain = task;
-    inFlight.add(task);
-    task.finally(() => inFlight.delete(task));
-  };
-  const routeResponse = (obj) => {
-    const id = typeof obj.id === "string" ? obj.id : "";
-    const waiter = id ? pending.get(id) : undefined;
-    if (waiter) {
-      pending.delete(id);
-      const hasResult = Object.hasOwn(obj, "result");
-      const hasError = Object.hasOwn(obj, "error");
-      if (obj.jsonrpc !== "2.0" || obj.method !== undefined || hasResult === hasError) {
-        waiter.reject(new NativeAuthorityError("correlation_missing", "malformed MCP elicitation response"));
-      } else {
-        waiter.resolve(obj);
-      }
-      return true;
-    }
-    return obj.method === undefined && obj.id !== undefined;
-  };
-  const drainStdio = async () => {
-    while (true) {
-      const newline = buffer.indexOf(`
-`);
-      if (newline < 0)
-        return;
-      const body = buffer.subarray(0, newline).toString("utf8").trim();
-      buffer = buffer.subarray(newline + 1);
-      if (!body)
-        continue;
-      let parsed;
-      try {
-        parsed = JSON.parse(body);
-      } catch {
-        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
-        continue;
-      }
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
-        continue;
-      }
-      const obj = parsed;
-      if (routeResponse(obj))
-        continue;
-      if (obj.jsonrpc !== "2.0") {
-        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: jsonrpc must be '2.0'" } });
-        continue;
-      }
-      if (routeResponse(obj))
-        continue;
-      if (typeof obj.method !== "string" || !obj.method) {
-        const id = obj.id !== undefined && (typeof obj.id === "string" || typeof obj.id === "number") ? obj.id : null;
-        await writeReply(output, { jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid Request: missing method" } });
-        continue;
-      }
-      if (obj.id !== undefined && typeof obj.id !== "string" && typeof obj.id !== "number" && obj.id !== null) {
-        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: invalid id type" } });
-        continue;
-      }
-      if (obj.method === "tools/call" && obj.id === undefined) {
-        await writeReply(output, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request: tools/call requires an id" } });
-        continue;
-      }
-      const rpc = parsed;
-      if (rpc.method === "notifications/cancelled") {
-        const requestId = rpc.params?.requestId;
-        if (typeof requestId === "string" && pending.has(requestId)) {
-          pending.get(requestId)?.reject(new NativeAuthorityError("user_cancelled", "native interaction was cancelled"));
-          pending.delete(requestId);
-        } else if (requestId !== undefined) {
-          mcp.aborts.get(requestId)?.abort(new Error("notifications/cancelled"));
-        }
-        continue;
-      }
-      if (rpc.method === "tools/call") {
-        if (!accepting) {
-          if (rpc.id !== undefined)
-            await writeReply(output, { jsonrpc: "2.0", id: rpc.id, error: { code: -32000, message: "stdio closed" } });
-          continue;
-        }
-        runCall(rpc);
-        continue;
-      }
-      const reply = await handleJsonRpc(rpc, mcp);
-      if (reply)
-        await writeReply(output, reply);
-    }
-  };
-  let resolveStdio = () => {};
-  let shutdownPromise = null;
-  const executeShutdown = (code = 0) => {
-    if (shutdownPromise)
-      return shutdownPromise;
-    shutdownPromise = (async () => {
-      accepting = false;
-      for (const ac of mcp.aborts.values())
-        ac.abort(new Error("stdio closed"));
-      rejectPending(new NativeAuthorityError("user_cancelled", "MCP connection closed during native interaction"));
-      await Promise.race([
-        Promise.allSettled([...inFlight]),
-        new Promise((resolve) => setTimeout(resolve, 200))
-      ]);
-      await mcp.shutdown();
-      if (output.writable && typeof output.end === "function") {
-        await new Promise((cb) => output.end(() => cb()));
-      }
-      process.exitCode = code;
-      exit(code);
-      resolveStdio();
-    })();
-    return shutdownPromise;
-  };
-  await new Promise((resolve) => {
-    resolveStdio = resolve;
-    output.on("error", () => {
-      executeShutdown(1);
-    });
-    output.on("close", () => {
-      executeShutdown(0);
-    });
-    input.on("data", (chunk) => {
-      if (!accepting)
-        return;
-      chain = chain.then(async () => {
-        if (!accepting)
-          return;
-        buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
-        await drainStdio();
-      }).catch(() => {
-        executeShutdown(1);
-      });
-    });
-    input.on("end", () => {
-      chain.then(() => executeShutdown(0));
-    });
-    input.on("close", () => {
-      chain.then(() => executeShutdown(0));
-    });
-    input.on("error", () => {
-      executeShutdown(1);
-    });
-  });
+  antigravityHookEventLog().append(event);
 }
 async function runHook() {
   const lines = [];
-  const rl = createInterface({ input: stdin });
-  for await (const line of rl)
-    lines.push(line);
-  const raw = lines.join(`
-`);
-  let payload = null;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    payload = null;
-  }
-  if (payload?.hook_event_name === "PreToolUse") {
-    const decision = laneGuardHookOutput(payload) ?? phaseEntryGateHookOutput(payload) ?? await runContinuationHookOutput(payload);
-    if (decision)
-      process.stdout.write(`${decision}
-`);
-    return;
-  }
-  if (payload?.hook_event_name === "UserPromptSubmit") {
-    recordPhaseEntryPrompt(payload);
-    await runContinuationHookOutput(payload);
-    const notice = await activeTaskHookOutput(payload);
-    if (notice)
-      process.stdout.write(`${notice}
-`);
-    return;
-  }
-  if (payload) {
-    const continuation = await runContinuationHookOutput(payload);
-    if (continuation)
-      process.stdout.write(`${continuation}
-`);
-  }
-  const event = parseHookStdin(raw);
-  if (!event)
-    return;
-  const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-  if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join35(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync20(batchesDir) && readdirSync10(batchesDir).some((file) => {
-      if (!file.endsWith(".json") || file.endsWith(".report.json"))
-        return false;
-      try {
-        const batch = readAnyBatchRunState(cwd, file.slice(0, -5));
-        return batch !== null && !isTerminalBatchState(batch.batch_state);
-      } catch (error) {
-        if (error instanceof BatchRuntimeTooOldError)
-          return true;
-        throw error;
-      }
-    });
-    if (!activeBatch)
-      return;
-  }
-  new FileHookEventLog().append(event);
-}
-var entry = process.argv[1] ?? "";
-if (entry.endsWith("/claude/mcp_server.ts") || entry.endsWith("/claude/mcp-server.mjs")) {
-  if (process.argv.includes("--hook"))
-    runHook();
-  else
-    serveStdio();
-}
-
-// plugins/immune-brain/runtime/antigravity/review_host.ts
-init_review_packet();
-import { createHash as createHash28 } from "node:crypto";
-import { mkdirSync as mkdirSync12, readdirSync as readdirSync11, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
-import { join as join36 } from "node:path";
-import { tmpdir as tmpdir9 } from "node:os";
-var VERIFIER_AGENT = "immune-brain-review-verifier";
-var SUBAGENT_TOOL = "invoke_subagent";
-
-class MemoryHookEventLog2 {
-  events = [];
-  append(event) {
-    this.events.push(event);
-    return true;
-  }
-  list(sessionId) {
-    return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-  }
-  sessions() {
-    return [...new Set(this.events.map((event) => event.sessionId))];
-  }
-  clear(sessionId) {
-    if (!sessionId) {
-      this.events.length = 0;
-      return;
-    }
-    for (let i = this.events.length - 1;i >= 0; i--) {
-      if (this.events[i].sessionId === sessionId)
-        this.events.splice(i, 1);
-    }
-  }
-}
-var CACHE_DIR2 = "immune-brain-antigravity";
-function sessionHash2(sessionId) {
-  return createHash28("sha256").update(sessionId).digest("hex");
-}
-function cacheDir2(root) {
-  return join36(root, CACHE_DIR2);
-}
-function ensurePrivateDir2(dir) {
-  try {
-    mkdirSync12(dir, { recursive: true, mode: 448 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-class FileHookEventLog2 {
-  root;
-  constructor(root = tmpdir9()) {
-    this.root = root;
-  }
-  dir() {
-    const path = cacheDir2(this.root);
-    ensurePrivateDir2(path);
-    return path;
-  }
-  file(sessionId) {
-    return join36(this.dir(), `${sessionHash2(sessionId)}.events.jsonl`);
-  }
-  append(event) {
-    try {
-      const line = JSON.stringify(event) + `
-`;
-      writeFileSync14(this.file(event.sessionId), line, { flag: "a", mode: 384 });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  list(sessionId) {
-    if (!sessionId) {
-      const results = [];
-      for (const session of this.sessions())
-        results.push(...this.list(session));
-      return results;
-    }
-    try {
-      const content = readFileSync25(this.file(sessionId), "utf8");
-      return content.trim().split(`
-`).filter(Boolean).map((line) => JSON.parse(line));
-    } catch {
-      return [];
-    }
-  }
-  sessions() {
-    try {
-      const files = readdirSync11(this.dir());
-      return files.filter((f) => f.endsWith(".events.jsonl")).map((f) => f.replace(/\.events\.jsonl$/, ""));
-    } catch {
-      return [];
-    }
-  }
-  clear(sessionId) {
-    if (sessionId) {
-      try {
-        rmSync13(this.file(sessionId), { force: true });
-      } catch {}
-    } else {
-      try {
-        rmSync13(this.dir(), { recursive: true, force: true });
-      } catch {}
-    }
-  }
-}
-function bindsPrompt2(prompt, state) {
-  if (prompt === undefined)
-    return true;
-  return prompt.trim() === state.dispatchPrompt.trim();
-}
-
-class AntigravityReviewHost {
-  log;
-  host = "antigravity";
-  pending = new Map;
-  appliedBySession = new Map;
-  constructor(log = new MemoryHookEventLog2) {
-    this.log = log;
-  }
-  prepareVerification(request) {
-    const reviewRequest = {
-      taskId: request.taskId,
-      operationId: request.operationId,
-      prompt: request.prompt,
-      snapshotPrompt: request.prompt,
-      evidencePath: "",
-      writePacket: request.writePacket,
-      maxTurns: 16
-    };
-    this.drain();
-    const cursors = new Map(this.log.sessions().map((sessionId) => [sessionId, this.log.list(sessionId).length]));
-    const dispatchPrompt = verificationPacketHandle({
-      taskId: request.taskId,
-      operationId: request.operationId,
-      packet: request.writePacket(request.operationId, request.prompt)
-    });
-    this.pending.set(request.operationId, {
-      request: reviewRequest,
-      verifierModel: request.model,
-      dispatchPrompt,
-      initialCursors: new Map(cursors),
-      sessionCursors: new Map(cursors),
-      consumed: false
-    });
-    return {
-      id: request.operationId,
-      dispatch: {
-        TypeName: VERIFIER_AGENT,
-        Role: "Review Verifier",
-        Prompt: dispatchPrompt,
-        Model: request.model
-      }
-    };
-  }
-  inspectVerification(reservation) {
-    const state = this.pending.get(reservation.id);
-    if (!state?.verifierModel)
-      return { ok: false, reason: "verifier reservation not found", release: true };
-    const result = this.inspectVerifier(reservation);
-    if (!result.ok)
-      return result;
-    return {
-      ok: true,
-      receipt: {
-        actorId: result.receipt.actorId,
-        result: result.receipt.result,
-        model: state.verifierModel
-      }
-    };
-  }
-  observe(event) {
-    this.log.append(event);
-  }
-  drain() {
-    for (const sessionId of this.log.sessions()) {
-      const events = this.log.list(sessionId);
-      let start = this.appliedBySession.get(sessionId) ?? 0;
-      if (start > events.length)
-        start = 0;
-      let ended = false;
-      for (let i = start;i < events.length; i++) {
-        const event = events[i];
-        if (event.type === "SessionEnd") {
-          for (const [id, state] of this.pending) {
-            if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-              this.pending.delete(id);
-            }
-          }
-          for (const state of this.pending.values()) {
-            const current = state.initialCursors.get(sessionId) ?? 0;
-            if (i + 1 > current)
-              state.initialCursors.set(sessionId, i + 1);
-          }
-          if (i === events.length - 1) {
-            this.log.clear(event.sessionId);
-            ended = true;
-            this.appliedBySession.delete(event.sessionId);
-            break;
-          }
-          continue;
-        }
-        for (const state of this.pending.values()) {
-          if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0))
-            continue;
-          this.applyReviewEvent(event, state);
-        }
-      }
-      if (ended) {
-        this.appliedBySession.delete(sessionId);
-        for (const state of this.pending.values())
-          state.sessionCursors.delete(sessionId);
-      } else {
-        this.appliedBySession.set(sessionId, events.length);
-        for (const state of this.pending.values())
-          state.sessionCursors.set(sessionId, events.length);
-      }
-    }
-  }
-  applyReviewEvent(event, state) {
-    if (state.error)
-      return;
-    if (event.type === "SubagentStart") {
-      if (event.agent !== VERIFIER_AGENT)
-        return;
-      if (event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if (!bindsPrompt2(event.prompt, state))
-        return;
-      if (state.startEvent && state.startEvent !== event) {
-        state.error = "reserved Review already has a native tool call";
-        return;
-      }
-      state.startEvent = event;
-      return;
-    }
-    if (event.type === "PostToolUse") {
-      if (event.toolName !== SUBAGENT_TOOL)
-        return;
-      if (event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if (event.taskId && event.taskId !== state.request.taskId)
-        return;
-      if (!bindsPrompt2(event.prompt, state))
-        return;
-      if (state.verifierModel && event.model && event.model !== state.verifierModel) {
-        state.error = "verifier model differs from reservation";
-        return;
-      }
-      if (state.postEvent !== undefined && state.postEvent !== event) {
-        state.error = "duplicate PostToolUse result observed for review reservation";
-        return;
-      }
-      state.postEvent = event;
-      return;
-    }
-    if (event.type === "SubagentStop") {
-      if (event.agent !== VERIFIER_AGENT)
-        return;
-      if (event.operationId && event.operationId !== state.request.operationId)
-        return;
-      if (state.stopEvent && state.stopEvent !== event) {
-        state.error = "duplicate SubagentStop observed for review reservation";
-        return;
-      }
-      state.stopEvent = event;
-    }
-  }
-  inspectVerifier(reservation) {
-    this.drain();
-    const state = this.pending.get(reservation.id);
-    if (!state)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    const packetError = verificationPacketError(state.dispatchPrompt);
-    if (packetError)
-      return { ok: false, reason: packetError, release: true };
-    if (state.consumed)
-      return { ok: false, reason: "review receipt already consumed", release: true };
-    if (state.error)
-      return { ok: false, reason: state.error, release: true };
-    if (!state.startEvent)
-      return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-    if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-      return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-    }
-    const actorId = `antigravity:${state.startEvent.agentId || reservation.id}`;
-    return {
-      ok: true,
-      receipt: {
-        actorId,
-        result: state.postEvent.result,
-        ...state.postEvent.model ? { model: state.postEvent.model } : {}
-      }
-    };
-  }
-  releaseReview(reservation) {
-    this.pending.delete(reservation.id);
-  }
-}
-
-// plugins/immune-brain/runtime/antigravity/lane_guard.ts
-init_lane_workspace();
-import { lstatSync as lstatSync20, realpathSync as realpathSync23, rmSync as rmSync14, writeFileSync as writeFileSync15, readFileSync as readFileSync26 } from "node:fs";
-import { randomUUID as randomUUID13 } from "node:crypto";
-import { homedir as homedir4, tmpdir as tmpdir10 } from "node:os";
-import { join as join37 } from "node:path";
-var FILE_TOOLS2 = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
-var GATED_MCP_TOOL2 = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
-var LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
-var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
-function gatedOperation2(toolName, args) {
-  const direct = GATED_MCP_TOOL2.exec(toolName);
-  if (direct)
-    return direct[1];
-  if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
-    return null;
-  const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
-  return lazy ? lazy[1] : null;
-}
-function entryLogPath2(sessionId, root) {
-  return join37(cacheDir2(root), `${sessionHash2(sessionId)}.entry`);
-}
-function admissionPath2(toolUseId, root) {
-  return join37(cacheDir2(root), `${sessionHash2(toolUseId)}.admit`);
-}
-function dropPrivate2(path) {
-  try {
-    rmSync14(path, { force: true });
-  } catch {}
-}
-function antigravityLocalNames(cwd, home) {
-  const roots = [join37(cwd, ".agents"), join37(home, ".agents"), join37(home, ".gemini/config")];
-  return {
-    alias: (name) => {
-      for (const root of roots) {
-        const body = readAliasFile(join37(root, "commands", `${name}.md`));
-        if (body !== null)
-          return body;
-      }
-      return null;
-    },
-    skill: (name) => roots.some((root) => localSkillExists(join37(root, "skills"), name))
-  };
-}
-function readPhaseEntryState2(sessionId, root = tmpdir10()) {
-  if (!sessionId)
-    return null;
-  const path = entryLogPath2(sessionId, root);
-  try {
-    lstatSync20(path);
-  } catch (error) {
-    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
-  }
-  if (!ensurePrivateDir2(cacheDir2(root)))
-    return null;
-  try {
-    const text = readFileSync26(path, "utf8");
-    return reducePhaseEntryLog(text);
-  } catch {
-    return null;
-  }
-}
-function appendPhaseEntry2(sessionId, line, root) {
-  const path = entryLogPath2(sessionId, root);
-  ensurePrivateDir2(cacheDir2(root));
-  try {
-    writeFileSync15(path, line + `
-`, { flag: "a", mode: 384 });
-    return true;
-  } catch {
-    dropPrivate2(path);
-    return false;
-  }
-}
-function recordPhaseEntryPrompt2(conversationId, prompt, cwd, locations = {}) {
-  if (!conversationId)
-    return false;
-  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir4()), "antigravity");
-  const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
-  let workspace = null;
-  if (entry === "run") {
-    try {
-      workspace = realpathSync23(cwd);
-    } catch {}
-  }
-  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID13(), workspace } : undefined);
-  return appendPhaseEntry2(conversationId, line, locations.root ?? tmpdir10());
-}
-function consumePhaseAdmission2(toolCallId, operation, root = tmpdir10()) {
-  const path = admissionPath2(toolCallId, root);
-  try {
-    const text = readFileSync26(path, "utf8");
-    dropPrivate2(path);
-    const parsed = JSON.parse(text);
-    if (parsed.operation !== operation)
-      return null;
-    if (typeof parsed.conversation !== "string" || !parsed.conversation)
-      return null;
-    const state = readPhaseEntryState2(parsed.conversation, root);
-    if (!state?.run_live || state.token !== parsed.token)
-      return null;
-    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
-  } catch {
-    return null;
-  }
-}
-function antigravityPreInvocationHook(payload, locations = {}) {
-  const prompt = payload.lastUserInput ?? "";
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  recordPhaseEntryPrompt2(payload.conversationId, prompt, cwd, locations);
-  return { injectSteps: [], terminationBehavior: "" };
-}
-function antigravityPreToolUseHook(payload, locations = {}) {
-  const toolName = payload.toolCall.name;
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  if (FILE_TOOLS2.has(toolName)) {
-    const filePath = payload.toolCall.args.Path ?? payload.toolCall.args.file_path ?? payload.toolCall.args.path;
-    const refusal = laneWriteRefusal(cwd, filePath);
-    if (refusal) {
-      return { decision: "deny", reason: refusal };
-    }
-  }
-  const gated = gatedOperation2(toolName, payload.toolCall.args ?? {});
-  if (gated) {
-    const root = locations.root ?? tmpdir10();
-    const state = readPhaseEntryState2(payload.conversationId, root);
-    const opName = { kind: "tool", name: gated };
-    const admission = admitPhaseOperation(opName, state);
-    if (!admission.ok) {
-      return { decision: "force_ask", reason: phaseRefusalMessage(admission) };
-    }
-    if (payload.stepIdx === undefined) {
-      return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
-    }
-    const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
-    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
-    ensurePrivateDir2(cacheDir2(root));
-    writeFileSync15(admissionPath2(toolUseId, root), admitLine, { mode: 384 });
-    return { decision: "allow" };
-  }
-  return { decision: "allow" };
-}
-
-// plugins/immune-brain/runtime/antigravity/run_continuation.ts
-init_batch_preflight();
-init_coordinator();
-async function antigravityRunContinuationHook(payload) {
-  const workspace = payload.workspacePaths?.[0] ?? process.cwd();
-  const taskId = readActiveClaimTaskId(workspace);
-  if (!taskId) {
-    return {};
-  }
-  let status;
-  try {
-    status = await projectTaskStatus(workspace, taskId);
-  } catch {
-    return {};
-  }
-  if (!status || status.error || !status.projection) {
-    return {};
-  }
-  const projection = status.projection;
-  if (projection.lifecycle !== "active") {
-    return {};
-  }
-  if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0) {
-    return {};
-  }
-  const automatedObligations = [
-    "run_qa",
-    "run_review",
-    "submit_assurance",
-    "resolve_findings"
-  ];
-  if (automatedObligations.includes(projection.next_obligation)) {
-    return {
-      decision: "continue",
-      reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.`
-    };
-  }
-  return {};
-}
-
-// plugins/immune-brain/runtime/antigravity/capability.ts
-var MIN_ANTIGRAVITY_VERSION = "0.1.0";
-var HOST_ID2 = "antigravity";
-var SUPPORTED_PLATFORMS = ["darwin", "linux"];
-function parseSemver2(value) {
-  const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
-  if (!match)
-    return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function compareSemver2(left, right) {
-  const a = parseSemver2(left);
-  const b = parseSemver2(right);
-  if (!a || !b)
-    throw new Error(`invalid semver: ${!a ? left : right}`);
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function probeHost2(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
-  if (!version)
-    return { ok: false, reason: "Antigravity version is unavailable" };
-  if (!parseSemver2(version))
-    return { ok: false, reason: `Antigravity version is invalid: ${version}` };
-  if (compareSemver2(version, MIN_ANTIGRAVITY_VERSION) < 0) {
-    return { ok: false, reason: `Antigravity version ${version} is older than minimum supported ${MIN_ANTIGRAVITY_VERSION}` };
-  }
-  if (!SUPPORTED_PLATFORMS.includes(platform)) {
-    return { ok: false, reason: `platform ${platform} is unsupported` };
-  }
-  return { ok: true, host: HOST_ID2, version, platform };
-}
-
-// plugins/immune-brain/runtime/antigravity/mcp_server.ts
-function createAntigravityMcpRuntime(options = {}) {
-  const host = options.host ?? new AntigravityReviewHost(new FileHookEventLog2);
-  return createMcpRuntime({
-    ...options,
-    parentHost: "antigravity",
-    probeHost: options.probeHost ?? probeHost2,
-    host,
-    consumePhaseAdmission: options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission2(toolCallId, operation)),
-    trustedClientNames: options.trustedClientNames ?? ["antigravity-client", "antigravity"],
-    serverInfo: options.serverInfo ?? { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION }
-  });
-}
-async function serveStdio2(options = {}) {
-  const { input, output, exit, ...runtimeOptions } = options;
-  await serveStdio({ input, output, exit, runtime: createAntigravityMcpRuntime(runtimeOptions) });
-}
-async function runHook2() {
-  const lines = [];
-  const rl = createInterface2({ input: stdin2, terminal: false });
+  const rl = createInterface({ input: stdin2, terminal: false });
   for await (const line of rl)
     lines.push(line);
   const raw = lines.join(`
@@ -24894,21 +23451,22 @@ async function runHook2() {
         const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
         const result = typeof payload.result === "string" ? payload.result : "";
         const event = {
-          type: "PostToolUse",
+          type: "result",
           sessionId: String(payload.conversationId ?? ""),
           agentId: String(payload.stepIdx ?? ""),
-          toolName: "invoke_subagent",
           result,
-          model,
-          prompt
+          ...model ? { model } : {},
+          ...prompt ? { prompt } : {}
         };
-        new FileHookEventLog2().append(event);
+        antigravityHookEventLog().append(event);
       }
       stdout2.write(`{}
 `);
       return;
     }
     const result = antigravityPreToolUseHook(payload);
+    if (result.decision === "allow")
+      appendSubagentStart(toolCall, payload);
     stdout2.write(JSON.stringify(result) + `
 `);
     return;
@@ -24928,15 +23486,9 @@ async function runHook2() {
   stdout2.write(`{}
 `);
 }
-var entry2 = process.argv[1] ?? "";
-if (entry2.endsWith("/antigravity/mcp_server.ts") || entry2.endsWith("/antigravity/mcp-server.mjs")) {
-  if (process.argv.includes("--hook"))
-    runHook2();
-  else
-    serveStdio2();
-}
+runMcpEntry(ANTIGRAVITY_MCP_PROFILE, ["/antigravity/mcp_server.ts", "/antigravity/mcp-server.mjs"]);
 export {
   createAntigravityMcpRuntime,
-  runHook2 as runHook,
+  runHook,
   serveStdio2 as serveStdio
 };

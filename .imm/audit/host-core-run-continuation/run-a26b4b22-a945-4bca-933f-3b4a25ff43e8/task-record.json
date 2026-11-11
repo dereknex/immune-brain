@@ -1,0 +1,145 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-core-run-continuation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-core-run-continuation",
+    "goal": "Issue #414 slice S5 (Spec docs/specs/host-neutral-adapter-core.spec.md, D9, D11). Run continuation session state (metadata persistence, tool-call correlation, pause, native failure counter, binding migration) moves to plugins/immune-brain/runtime/host-core/run_continuation_session.ts driven by typed events, and the Antigravity Stop decision moves to host-core as a pure function over the task projection with unchanged semantics. claude/run_continuation.ts and antigravity/run_continuation.ts keep only payload parsing and output rendering. Behavior preserved; no user-visible change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S5 AC1 (BR-REQ-3; D9). Done looks like: Claude Code Stop continuation behaves as before while its state machine lives in host-core. Seam: tests/claude-run-continuation.test.ts. Positive: a bound run with an automated next step continues at Stop. Negative: after three native failures (NATIVE_FAILURE_LIMIT) the run pauses with the 'Immune-Brain run paused' system message; a tool-call correlation recorded in one workspace is not returned by readRunToolSession for another workspace. Bound: a session metadata file larger than 256 KiB is treated as blank. Structural: runtime/claude/run_continuation.ts defines none of readMetadata, save, pauseRun or observeNativeFailure.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -nE 'function (readMetadata|save|pauseRun|observeNativeFailure)\\\\b' plugins/immune-brain/runtime/claude/run_continuation.ts && bun test tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S5 AC2 (BR-REQ-3; D9, D11). Done looks like: the Antigravity Stop hook decides exactly as before from a host-core function. Seam: tests/antigravity-assurance-conformance.test.ts describe 'Run Continuation Hook'. Positive: an active claim whose projection is active with next_obligation 'run_qa' returns decision 'continue' with a reason naming the task id and 'run_qa'. Negative: next_obligation 'resolve_user_decision', an open user decision count of 1, a lifecycle other than 'active', and a workspace with no active claim each return {}. Bound: a next_obligation outside run_qa, run_review, submit_assurance and resolve_findings returns {}. Structural: runtime/antigravity/run_continuation.ts no longer lists the automated obligations.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n 'run_review' plugins/immune-brain/runtime/antigravity/run_continuation.ts && bun test tests/antigravity-assurance-conformance.test.ts -t 'Run Continuation Hook'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-core-run-continuation.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/host-core-run-continuation.intent.json",
+      "docs/specs/host-neutral-adapter-core.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/claude-run-continuation.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-core-run-continuation.intent.json",
+    "content_hash": "sha256:da663bef1068f8529705398d1feef18075417ea32ac83adb377a27c9f99cdfaf"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:da663bef1068f8529705398d1feef18075417ea32ac83adb377a27c9f99cdfaf",
+  "git_base_head": "cac086160f5906b76ef41bad67b9eaf539f49d13",
+  "attestations": [
+    {
+      "id": "approval-qa-69a3408a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:da663bef1068f8529705398d1feef18075417ea32ac83adb377a27c9f99cdfaf",
+      "diff_hash": "sha256:0eef28538e798bc84ec30acf56cc7c08e4cc687732fc1e1f3345d35ab8fbb0b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:4f1abe3162d982223e20e7d30f7f294624d7a8c149a4a9e6599bc84512db4eb7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:4f1abe3162d982223e20e7d30f7f294624d7a8c149a4a9e6599bc84512db4eb7"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:4f1abe3162d982223e20e7d30f7f294624d7a8c149a4a9e6599bc84512db4eb7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-03011377",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:da663bef1068f8529705398d1feef18075417ea32ac83adb377a27c9f99cdfaf",
+      "diff_hash": "sha256:0eef28538e798bc84ec30acf56cc7c08e4cc687732fc1e1f3345d35ab8fbb0b4",
+      "actor_id": "cli:pi:b542d846-ab3d-4f25-bdd4-d3489d02e022",
+      "summary": "Medium blast radius (run-continuation state machine moved to host-core; no persisted shape change): provenance verified, both adapters are now thin parsing/rendering shells, the 256 KiB blank-read and decideAutomatedStop rules match AC1/AC2 and are pinned at the named seams.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "cac086160f5906b76ef41bad67b9eaf539f49d13",
+        "review_commit": "39ee5e7c5a68fd20807da927019043d4d24f3d16",
+        "review_tree": "3926cfed23ddb5ba7d2558c345df1d8b4bc53524",
+        "manifest_digest": "sha256:6256bc0dd7ac9927f68b0066aa726f0acc1559943d74b0ed63031e6395fe7ea4"
+      },
+      "reviewer_verdict_sha256": "sha256:63d4ffdb572b0e544ba40744fc4fba1e87d94cb87acd603e1858d65bb676b5d9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-core-run-continuation:2026-11-10T13:02:52.839Z",
+      "at": "2026-11-10T13:02:52.839Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-core-run-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:host-core-run-continuation:2026-11-10T13:03:12.810Z",
+      "at": "2026-11-10T13:03:12.810Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-69a3408a\naction_v2_sha256:428683b2461e1b953cc89259320a768099f38332c288b1f36c72b1e0d24bdac9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3d6857c6b8cb3e20",
+        "issued_at": "2026-11-10T13:03:12.810Z"
+      }
+    },
+    {
+      "id": "record_approval:host-core-run-continuation:2026-11-10T13:06:34.662Z",
+      "at": "2026-11-10T13:06:34.662Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-03011377\naction_v2_sha256:405c2ee7b344bb8d4f031445f69a3a196b28b4ee77db1f3cac1d018199c87758",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:b542d846-ab3d-4f25-bdd4-d3489d02e022",
+        "confirmation_ref": "pi-confirm-54474b55d58e07bb",
+        "issued_at": "2026-11-10T13:06:34.662Z"
+      },
+      "review_started_at": "2026-11-10T13:03:15.801Z",
+      "review_submitted_at": "2026-11-10T13:06:34.018Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:host-core-run-continuation:2026-11-10T13:06:36.587Z",
+      "at": "2026-11-10T13:06:36.587Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8422c9f195bd91310b85f4a0df33f540bb95674f15f00af62edbe96134a4eb5a"
+    }
+  ]
+}

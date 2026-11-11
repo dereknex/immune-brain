@@ -1,0 +1,163 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-core-runtime-composition",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-core-runtime-composition",
+    "goal": "Issue #414 slice S3 (Spec docs/specs/host-neutral-adapter-core.spec.md, D2, D7). The host-neutral body of ClaudeRuntime moves to plugins/immune-brain/runtime/host-core/runtime.ts as HostRuntime configured by a HostRuntimeProfile (host id, native confirmation reference, AssuranceHostPort and its observe, probe, lane relay factory); ClaudeRuntime and AntigravityRuntime each compose it and neither extends the other. NativeAuthorityError is defined once in host-core/interaction.ts. The host-to-host baseline drops the kernel_ports and interaction edges, leaving only antigravity/mcp_server -> claude/mcp_server. Behavior preserved; no user-visible change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S3 AC1 (BR-REQ-5; D2, D7). Done looks like: no adapter runtime extends another and the boundary baseline loses two edges. Seam: tests/runtime-layering-boundary.test.ts over the real sources. Positive: BASELINE has exactly one entry, 'plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server', and the observed edges equal it. Negative: a fixture edge outside the baseline is reported unexpected, and no file under plugins/immune-brain/runtime contains 'extends ClaudeRuntime'. Bound: a baseline entry with no observed import is reported stale.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -rn 'extends ClaudeRuntime' plugins/immune-brain/runtime && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S3 AC2 (BR-REQ-5; D7). Done looks like: both runtimes are the same HostRuntime with different profiles. Seam: tests/dual-host-assurance-conformance.test.ts describe 'runtime composition', constructing ClaudeRuntime and AntigravityRuntime over isolated repositories with the same scripted task. Positive: driving each through enrollment, QA and review_ready yields equal Kernel projections apart from the Host identity, which is 'claude-code' and 'antigravity' respectively, each with its own native confirmation reference; an Antigravity verifier event passed to observeAntigravity reaches that runtime's ReviewHost. Negative: a native refusal raised by either runtime is an instance of the NativeAuthorityError exported by runtime/host-core/interaction.ts and keeps its error code. Bound: exactly one file under plugins/immune-brain/runtime declares class NativeAuthorityError, and it is runtime/host-core/interaction.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test \\\"$(grep -rl 'class NativeAuthorityError' plugins/immune-brain/runtime)\\\" = plugins/immune-brain/runtime/host-core/interaction.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'runtime composition'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec S3 AC3 (BR-REQ-5; D7). Done looks like: existing callers of ClaudeRuntime and AntigravityRuntime keep working with at most import changes. Seam: the existing runtime suites tests/claude-host-authority.test.ts, tests/antigravity-assurance-conformance.test.ts and tests/claude-batch-authority.test.ts. Positive: their enrollment, QA, Review and batch tests pass. Negative: their existing refusal tests (for example run_entry_required and probe refusals) still refuse with the same codes. Bound: the AntigravityRuntime host probe tests still observe the Antigravity probe, not the Claude one.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-core-runtime-composition.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/host-core-runtime-composition.intent.json",
+      "docs/specs/host-neutral-adapter-core.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/interaction.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/interaction.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/interaction.ts",
+      "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/interaction.ts",
+      "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/host-core/interaction.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-core-runtime-composition.intent.json",
+    "content_hash": "sha256:67ddb49dcd3d8d728688023adb231d9fa81e4103792b6c8f10bd38e13c49cbf3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:67ddb49dcd3d8d728688023adb231d9fa81e4103792b6c8f10bd38e13c49cbf3",
+  "git_base_head": "d9204739d5ed2a65855cd9bad61806df0da7f09b",
+  "attestations": [
+    {
+      "id": "approval-qa-bb4ef945",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:67ddb49dcd3d8d728688023adb231d9fa81e4103792b6c8f10bd38e13c49cbf3",
+      "diff_hash": "sha256:49bf2d9ba12226c41de8cd928c3c85f24e5fbe2cfd6a9808d02816963b264ff6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:c4d8c9f2a6811cba6eb72285904f4a95020f1df76361f78974b1c848b4534035",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c4d8c9f2a6811cba6eb72285904f4a95020f1df76361f78974b1c848b4534035"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c4d8c9f2a6811cba6eb72285904f4a95020f1df76361f78974b1c848b4534035"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:c4d8c9f2a6811cba6eb72285904f4a95020f1df76361f78974b1c848b4534035"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-e6c7b5b8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:67ddb49dcd3d8d728688023adb231d9fa81e4103792b6c8f10bd38e13c49cbf3",
+      "diff_hash": "sha256:49bf2d9ba12226c41de8cd928c3c85f24e5fbe2cfd6a9808d02816963b264ff6",
+      "actor_id": "cli:pi:7387a455-9c24-419e-ae3f-6bb9f8ccd455",
+      "summary": "Both adapters compose the profile-driven HostRuntime, the boundary baseline and shared-error tests satisfy AC1–AC3; blast radius medium across runtime composition, authority plumbing and bundled entrypoints, with no persisted-shape migration.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d9204739d5ed2a65855cd9bad61806df0da7f09b",
+        "review_commit": "506d846b7698465014ee011c72594d9f878335f8",
+        "review_tree": "90f13fdc2b00f66035b47245837cead405d5ea6c",
+        "manifest_digest": "sha256:01ff8cd4db5a02af977d9196427a4f654ad62bfb18fe331e3c241b1d8c0a3cb3"
+      },
+      "reviewer_verdict_sha256": "sha256:c513ebb77c520afc97321500f60f6a76ff21adc814d0b23da28e1942cf4301a6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-core-runtime-composition:2026-11-10T16:07:21.573Z",
+      "at": "2026-11-10T16:07:21.573Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-core-runtime-composition.intent.json"
+    },
+    {
+      "id": "record_approval:host-core-runtime-composition:2026-11-10T16:10:27.504Z",
+      "at": "2026-11-10T16:10:27.504Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-bb4ef945\naction_v2_sha256:c60b7036419cd42e2b684f9227d0b1811836cb6613006f796dd8b0db1eaf2131",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-33c046314ccff13c",
+        "issued_at": "2026-11-10T16:10:27.504Z"
+      }
+    },
+    {
+      "id": "record_approval:host-core-runtime-composition:2026-11-10T16:14:15.817Z",
+      "at": "2026-11-10T16:14:15.817Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-e6c7b5b8\naction_v2_sha256:29e54f95c90f1b2fe9896ae9c0700526b8d9784555a11272aa98f8a4d1538faa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:7387a455-9c24-419e-ae3f-6bb9f8ccd455",
+        "confirmation_ref": "pi-confirm-294a2315ccd0bb75",
+        "issued_at": "2026-11-10T16:14:15.817Z"
+      },
+      "review_started_at": "2026-11-10T16:10:32.379Z",
+      "review_submitted_at": "2026-11-10T16:14:14.215Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:host-core-runtime-composition:2026-11-10T16:14:18.914Z",
+      "at": "2026-11-10T16:14:18.914Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:c3cf7559a7cb1fcfd1c4eeefe973525dc929bc2207200330f89fcee5e68ffb2b"
+    }
+  ]
+}

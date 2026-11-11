@@ -5,6 +5,8 @@
 // 2. Host adapters never import each other, except the exact-edge ratchet
 //    baseline below, owned by #414. Deleting an edge there is forced when the
 //    import is removed (stale entry), and adding one fails (unexpected).
+// 3. The Kernel and the assurance layer never import the host-neutral core
+//    (docs/adr/0038-host-neutral-adapter-core.md D1, D2), which the adapters may.
 
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -21,12 +23,12 @@ const HOSTS: Record<string, string> = {
 	pi: "plugins/immune-brain/.pi-extension",
 };
 
-/** D1: the host-to-host edges on main, each owned by #414; S4 retired the Pi -> claude/review_host edge. */
-const BASELINE: Array<{ edge: string; owner: "#414" }> = [
-	{ edge: "plugins/immune-brain/runtime/antigravity/kernel_ports.ts -> plugins/immune-brain/runtime/claude/kernel_ports", owner: "#414" },
-	{ edge: "plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server", owner: "#414" },
-	{ edge: "plugins/immune-brain/runtime/antigravity/interaction.ts -> plugins/immune-brain/runtime/claude/interaction", owner: "#414" },
-];
+/** D1: the host-neutral core every adapter may depend on and no inner layer may. */
+const HOST_CORE_DIR = "plugins/immune-brain/runtime/host-core";
+const INNER_LAYERS = ["plugins/immune-brain/runtime/kernel", "plugins/immune-brain/runtime/assurance"];
+
+/** D2: S4 retired the last host-to-host import (`antigravity/mcp_server -> claude/mcp_server`), so the #414 ratchet baseline is pinned empty: every host-to-host import now fails. */
+const BASELINE: Array<{ edge: string; owner: "#414" }> = [];
 
 interface SourceFile {
 	path: string; // repository-relative, posix separators
@@ -59,6 +61,18 @@ function innerLayerViolations(files: SourceFile[], hostMap: Record<string, strin
 	for (const file of files) {
 		if (hostOf(file.path, hostMap) !== null) continue;
 		for (const target of importedTargets(file)) if (hostOf(target, hostMap) !== null) violations.push(`${file.path} -> ${target}`);
+	}
+	return violations;
+}
+
+/** D2: imports from the Kernel or the assurance layer that land inside host-core. */
+function coreImporterViolations(files: SourceFile[]): string[] {
+	const violations: string[] = [];
+	for (const file of files) {
+		if (!INNER_LAYERS.some((dir) => file.path.startsWith(`${dir}/`))) continue;
+		for (const target of importedTargets(file)) {
+			if (target === HOST_CORE_DIR || target.startsWith(`${HOST_CORE_DIR}/`)) violations.push(`${file.path} -> ${target}`);
+		}
 	}
 	return violations;
 }
@@ -134,8 +148,8 @@ describe("runtime layering boundary", () => {
 	});
 
 	test("AC2: observed host-to-host edges equal the baseline", () => {
-		expect(BASELINE).toHaveLength(3);
-		expect(BASELINE.every(({ owner }) => owner === "#414")).toBe(true);
+		expect(BASELINE).toEqual([]);
+		expect(hostToHostEdges(real, HOSTS)).toEqual([]);
 		const { unexpected, stale } = compareEdges(
 			hostToHostEdges(real, HOSTS),
 			BASELINE.map(({ edge }) => edge),
@@ -146,14 +160,19 @@ describe("runtime layering boundary", () => {
 	test("AC2: a fixture edge outside the baseline is unexpected; adapter imports of core modules and npm packages are not edges", () => {
 		const fixture: SourceFile[] = [
 			{ path: "plugins/immune-brain/runtime/antigravity/new_thing.ts", source: 'import { q } from "../claude/queue";' },
+			{ path: "plugins/immune-brain/.pi-extension/report.ts", source: 'import { r } from "../runtime/antigravity/report";' },
 			{
 				path: "plugins/immune-brain/.pi-extension/ok.ts",
 				source: 'import { a } from "../../runtime/assurance/x";\nimport { b } from "typebox";\nimport { c } from "./sibling";',
 			},
 		];
 		const edges = hostToHostEdges(fixture, HOSTS);
-		expect(edges).toEqual(["plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue"]);
+		expect(edges).toEqual([
+			"plugins/immune-brain/.pi-extension/report.ts -> plugins/immune-brain/runtime/antigravity/report",
+			"plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue",
+		]);
 		expect(compareEdges(edges, BASELINE.map(({ edge }) => edge)).unexpected).toEqual([
+			"plugins/immune-brain/.pi-extension/report.ts -> plugins/immune-brain/runtime/antigravity/report",
 			"plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue",
 		]);
 	});
@@ -211,6 +230,53 @@ describe("runtime layering boundary", () => {
 		expect(collectImportSpecifiers('await import(runtimePath("storage"));')).toEqual([
 			{ form: "import-call", specifier: null, argument: 'runtimePath("storage")', line: 1 },
 		]);
+	});
+
+	describe("host-core boundary", () => {
+		test("AC2: the Kernel and the assurance layer import nothing from host-core", () => {
+			expect(coreImporterViolations(real)).toEqual([]);
+		});
+
+		test("AC2: at least one file of each adapter imports host-core", () => {
+			const importers = real
+				.filter((file) => importedTargets(file).some((target) => target.startsWith(`${HOST_CORE_DIR}/`)))
+				.map((file) => file.path);
+			expect(importers.some((path) => path.startsWith(`${HOSTS.claude}/`))).toBe(true);
+			expect(importers.some((path) => path.startsWith(`${HOSTS.antigravity}/`))).toBe(true);
+		});
+
+		test("AC2: a Kernel or assurance import of host-core is reported, and host-core may not import an adapter", () => {
+			const fixture: SourceFile[] = [
+				{ path: "plugins/immune-brain/runtime/assurance/x.ts", source: 'import { a } from "../host-core/y";' },
+				{ path: "plugins/immune-brain/runtime/kernel/z.ts", source: 'import { b } from "../host-core/w";' },
+				{ path: "plugins/immune-brain/runtime/host-core/a.ts", source: 'import { c } from "../claude/b";' },
+			];
+			expect(coreImporterViolations(fixture)).toEqual([
+				"plugins/immune-brain/runtime/assurance/x.ts -> plugins/immune-brain/runtime/host-core/y",
+				"plugins/immune-brain/runtime/kernel/z.ts -> plugins/immune-brain/runtime/host-core/w",
+			]);
+			expect(innerLayerViolations(fixture, HOSTS)).toEqual([
+				"plugins/immune-brain/runtime/host-core/a.ts -> plugins/immune-brain/runtime/claude/b",
+			]);
+		});
+
+		test("AC2: an adapter import of host-core is no violation and no host-to-host edge", () => {
+			const fixture: SourceFile[] = [
+				{ path: "plugins/immune-brain/runtime/claude/c.ts", source: 'import { e } from "../host-core/e";' },
+				{ path: "plugins/immune-brain/runtime/antigravity/d.ts", source: 'import { e } from "../host-core/e";' },
+			];
+			expect(coreImporterViolations(fixture)).toEqual([]);
+			expect(innerLayerViolations(fixture, HOSTS)).toEqual([]);
+			expect(hostToHostEdges(fixture, HOSTS)).toEqual([]);
+			expect(BASELINE).toEqual([]);
+		});
+	});
+
+	test("AC1: no adapter runtime inherits another adapter's class", () => {
+		const inheriting = real
+			.filter((file) => file.path.startsWith(`${RUNTIME_DIR}/`) && file.source.includes("extends ClaudeRuntime"))
+			.map((file) => file.path);
+		expect(inheriting).toEqual([]);
 	});
 
 	test("the path resolver covers upward relative forms and leaves bare specifiers alone", () => {

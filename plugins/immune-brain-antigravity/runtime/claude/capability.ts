@@ -3,7 +3,9 @@ export const HOST_ID = "claude-code" as const;
 export const CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
 export const SUPPORTED_PLATFORMS = ["darwin", "linux"] as const;
 
-export type PermissionMode = "manual" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk";
+import type { PermissionMode } from "../host-core/runtime";
+
+export type { PermissionMode };
 
 export type HostProbe =
 	| { ok: true; version: string; platform: string }

@@ -151,7 +151,7 @@ describe("Host adapter intent resolution parity", () => {
 	// `intent_ref.path`. A bare `readTaskIntent(root, taskId)` in an adapter is the
 	// exact shape of the original defect, so it stays banned at the source level.
 	const adapters = [
-		"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+		"plugins/immune-brain/runtime/host-core/runtime.ts",
 		"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 	];
 

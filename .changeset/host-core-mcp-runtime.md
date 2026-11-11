@@ -1,0 +1,5 @@
+---
+"immune-brain": patch
+---
+
+One host-neutral MCP stdio runtime now serves both Hosts: `plugins/immune-brain/runtime/host-core/mcp_runtime.ts` holds `createMcpRuntime`, `handleJsonRpc` and `serveStdio`, configured by an `McpHostProfile` (serverInfo and contract, trusted client names, the tool-call correlation meta key and its refusal, the elicitation refusals, the probe, the runtime factory, the phase admission, the run-session correlation reader, the hook dispatcher and the bundle path). `claude/mcp_server.ts` and `antigravity/mcp_server.ts` keep only their profile, `--hook` dispatch and entrypoint guard, so the Antigravity adapter no longer imports the Claude one and the host-to-host baseline in `tests/runtime-layering-boundary.test.ts` is empty; the layering reference states that zero baseline. The Antigravity MCP server now composes `AntigravityRuntime` through its profile instead of the Claude runtime wrapper. #429 per-call workspace resolution (`_meta` workspace, then the first `file://` root, then the server's own workspace) is preserved, as are the tool surface, the correlation refusals and every Kernel outcome. No user-visible change (#414 S4).

@@ -30,7 +30,7 @@ import {
 	generateVerifierDefinition,
 } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
-import { sessionHash } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { hookEventPath } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 
 const ROOT = resolve(import.meta.dir, "..");
 const ARTIFACT = resolve(ROOT, ANTIGRAVITY_ROOT);
@@ -266,15 +266,15 @@ describe("Antigravity hook dispatch and observation", () => {
 			toolCall: { name: "call_mcp_tool", args: { ServerName: "someone-else", ToolName: "start_unattended_batch", Arguments: {} } } }))
 			.toEqual({ decision: "allow" });
 
-		// PostToolUse keeps its empty response and appends the observed subagent result.
+		// PostToolUse keeps its empty response and appends the observed subagent
+		// result as this Host's terminal event in the shared host-core log.
 		expect(hook({ conversationId, stepIdx: 4, lastUserInput: "review it", workspacePaths: [workspace], result: "subagent says yes",
 			toolCall: { name: "invoke_subagent", args: { Model: "model-x", Prompt: "review the change" } } })).toEqual({});
-		const events = join(env.TMPDIR, "immune-brain-antigravity", `${sessionHash(conversationId)}.events.jsonl`);
+		const events = hookEventPath("immune-brain-antigravity", conversationId, env.TMPDIR);
 		expect(JSON.parse(readFileSync(events, "utf8").trim())).toMatchObject({
-			type: "PostToolUse",
+			type: "result",
 			sessionId: conversationId,
 			agentId: "4",
-			toolName: "invoke_subagent",
 			result: "subagent says yes",
 			model: "model-x",
 			prompt: "review the change",

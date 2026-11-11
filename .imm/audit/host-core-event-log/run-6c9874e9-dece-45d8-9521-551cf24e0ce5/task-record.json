@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-core-event-log",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-core-event-log",
+    "goal": "Issue #414 slice S1 (Spec docs/specs/host-neutral-adapter-core.spec.md, D1, D2, D3, D4, D12, D13). ADR 0038 records the neutral layer plugins/immune-brain/runtime/host-core/ with dependency direction kernel <- assurance <- host-core <- adapters, and docs/reference/layering-rules.md names it. One HookEventLog (memory and file) and one private-file helper set in host-core serve the Claude Code and Antigravity adapters, which keep no copy. Antigravity --hook appends a start event for an allowed invoke_subagent PreToolUse. The boundary test refuses kernel/ or assurance/ imports of host-core. Verifier state machines, runtimes, the MCP runtime and run continuation are otherwise unchanged. No user-visible change: internal seam.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S1 AC1 (BR-REQ-1, BR-DEC-1; D1, D12). Done looks like: a maintainer finds the host-core layer, its dependency direction and its ADR from the layering reference. Seam: tests/layering-rules-contract.test.ts over the real files. Positive: docs/adr/0038-host-neutral-adapter-core.md exists and contains 'runtime/host-core'; the reference's Dependency Rule section contains 'plugins/immune-brain/runtime/host-core/' and links ADR 0038. Negative: the reference no longer contains 'four-edge' (the observed baseline has three edges) and its Enforcement section pins no edge count. Bound: the packaged copies under plugins/immune-brain/dist/docs/reference/ and plugins/immune-brain-antigravity/dist/docs/reference/ stay byte-equal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q 'runtime/host-core' docs/adr/0038-host-neutral-adapter-core.md && bun test tests/layering-rules-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S1 AC2 (BR-REQ-1, BR-DEC-1; D1, D2). Done looks like: an import from the Kernel or the assurance layer into host-core fails the boundary test, and adapters may depend on host-core. Seam: tests/runtime-layering-boundary.test.ts, tests whose names contain 'host-core'. Positive: the real sources contain no runtime/kernel/ or runtime/assurance/ file importing a runtime/host-core/ module, and at least one runtime/claude/ and one runtime/antigravity/ file import runtime/host-core/. Negative (fixtures): runtime/assurance/x.ts importing '../host-core/y' and runtime/kernel/z.ts importing '../host-core/w' are both reported; runtime/host-core/a.ts importing '../claude/b' is reported by the inner-layer rule. Bound: runtime/claude/c.ts and runtime/antigravity/d.ts importing '../host-core/e' are reported by neither rule nor counted as host-to-host edges, and the three-entry BASELINE is unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"-t\",\n      \"host-core\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec S1 AC3 (BR-REQ-2; D3). Done looks like: both Hosts' hook event logs and private-file helpers are one implementation with the Claude file behavior. Seam: tests/dual-host-assurance-conformance.test.ts describe 'shared hook event log', parameterized over the file log each adapter constructs, each over an isolated temp root. Positive: two events appended for session 's1' and one for 's2' list in append order per session; sessions() returns the session ids 's1' and 's2', not file hashes; files land under <root>/immune-brain-claude and <root>/immune-brain-antigravity respectively; clear('s1') removes only s1's events. Negative: when <root>/<cache name> is a symlink to another directory, append returns false and nothing is written through the link, for both Hosts; a session file with mode 0644 lists no events. Bound: MemoryHookEventLog lists the same events as the file log for the same append and clear sequence. Structural: no file directly under runtime/claude/ or runtime/antigravity/ declares class FileHookEventLog, class MemoryHookEventLog, or a function named ensurePrivateDir, appendPrivate, readPrivate, sessionHash or ownedByUs.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -nE 'class (File|Memory)HookEventLog|function (ensurePrivateDir|appendPrivate|readPrivate|sessionHash|ownedByUs)\\\\b' plugins/immune-brain/runtime/claude/*.ts plugins/immune-brain/runtime/antigravity/*.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'shared hook event log'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec S1 AC4 (BR-REQ-8, BR-DEC-3; D4). Done looks like: real Antigravity hook dispatch records the verifier start and its result in the real event log. Seam: tests/antigravity-assurance-conformance.test.ts describe 'hook dispatch writes subagent events', spawning `bun plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook` with TMPDIR set to a temp directory and the payload on stdin, then reading the adapter's file log over that root. Positive: PreToolUse {toolCall: {name: 'invoke_subagent', args: {TypeName: 'immune-brain-review-verifier', Prompt: 'p', Model: 'm'}}, stepIdx: 7, conversationId: 'c'} then PostToolUse with stepIdx 7 and result 'r' list for session 'c' as a start event (agent 'immune-brain-review-verifier', agentId '7', prompt 'p') followed by a result event (agentId '7', result 'r'); the PreToolUse stdout is {\"decision\":\"allow\"} as before; toolCall.name 'Subagent' behaves the same. Negative: a PreToolUse for 'edit_file', and an invoke_subagent PreToolUse without stepIdx, append nothing. Bound: a PostToolUse with no earlier PreToolUse is still appended as a result event.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"hook dispatch writes subagent events\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-core-event-log.md",
+      "CONTEXT.md",
+      "docs/adr/0038-host-neutral-adapter-core.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/host-core-event-log.intent.json",
+      "docs/reference/layering-rules.md",
+      "docs/specs/host-neutral-adapter-core.spec.md",
+      "package.json",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/review_host.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/hook_event_log.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/private_file.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/antigravity/review_host.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/claude/review_host.ts",
+      "plugins/immune-brain/runtime/claude/run_continuation.ts",
+      "plugins/immune-brain/runtime/host-core/hook_event_log.ts",
+      "plugins/immune-brain/runtime/host-core/private_file.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/layering-rules-contract.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "scope_size_reason": "The ADR, the layering reference and its boundary test must land with the first host-core code (ADR 0035 Decision 3, Spec D12); the new layer also needs its package.json files entry and two not-yet-derived Antigravity runtime copies, and the five importers of the moved helpers change only their import lines.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-core-event-log.intent.json",
+    "content_hash": "sha256:da1c7d2dff67cc1ee95817da028de18152d057d2e325dbc77bf8f78f628bddcf"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:da1c7d2dff67cc1ee95817da028de18152d057d2e325dbc77bf8f78f628bddcf",
+  "git_base_head": "a6aa54a8609ce8709489c71b2e15d26506baec98",
+  "attestations": [
+    {
+      "id": "approval-qa-149676e8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:da1c7d2dff67cc1ee95817da028de18152d057d2e325dbc77bf8f78f628bddcf",
+      "diff_hash": "sha256:7365ff24f7096f8ed2065bae508669499f045b30832548dfe5bcb19b6e66ae4e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:e348cf93ed23b59438f3b4fc6ea7e00e11aa0a8ce17af2c55a815aab0df66d0f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e348cf93ed23b59438f3b4fc6ea7e00e11aa0a8ce17af2c55a815aab0df66d0f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e348cf93ed23b59438f3b4fc6ea7e00e11aa0a8ce17af2c55a815aab0df66d0f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e348cf93ed23b59438f3b4fc6ea7e00e11aa0a8ce17af2c55a815aab0df66d0f"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:e348cf93ed23b59438f3b4fc6ea7e00e11aa0a8ce17af2c55a815aab0df66d0f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7403faaf",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:da1c7d2dff67cc1ee95817da028de18152d057d2e325dbc77bf8f78f628bddcf",
+      "diff_hash": "sha256:7365ff24f7096f8ed2065bae508669499f045b30832548dfe5bcb19b6e66ae4e",
+      "actor_id": "cli:pi:8854f975-49d0-45f6-bd04-3614d7b00797",
+      "summary": "AC1–AC4 are satisfied on the frozen revision; blast radius medium across the shared host-core event-log/private-file storage and persisted Antigravity log format, both adapter hook dispatchers, generated bundles, and layering documentation.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a6aa54a8609ce8709489c71b2e15d26506baec98",
+        "review_commit": "d8d417737e954d496e128e2f5e6f044b77263637",
+        "review_tree": "8b92ca20fdb7b02df4008c5b83347140b8170110",
+        "manifest_digest": "sha256:64abffc907b566792df839207c681799316b7f81825f02f35593a80b164c38fb"
+      },
+      "reviewer_verdict_sha256": "sha256:bc4ff594c9f7279f6e4118e59482c2f16f859490c178d992e1ff1991e245281e"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-core-event-log:2026-11-10T08:34:55.450Z",
+      "at": "2026-11-10T08:34:55.450Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-core-event-log.intent.json"
+    },
+    {
+      "id": "record_approval:host-core-event-log:2026-11-10T08:35:11.211Z",
+      "at": "2026-11-10T08:35:11.211Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-149676e8\naction_v2_sha256:9cbc673a1c2bc5c8ab33c30c6a15ed487b0bec3c937be1cf671ed5f7447429f8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-06b6cad506f06ea7",
+        "issued_at": "2026-11-10T08:35:11.211Z"
+      }
+    },
+    {
+      "id": "record_approval:host-core-event-log:2026-11-10T08:44:35.755Z",
+      "at": "2026-11-10T08:44:35.755Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7403faaf\naction_v2_sha256:0b83591da03c3f92c0f559d324e4555716a1b9d2b7d8e961a3dae8128f04736b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:8854f975-49d0-45f6-bd04-3614d7b00797",
+        "confirmation_ref": "pi-confirm-2b9a11a1ee43c41c",
+        "issued_at": "2026-11-10T08:44:35.755Z"
+      },
+      "review_started_at": "2026-11-10T08:35:16.436Z",
+      "review_submitted_at": "2026-11-10T08:44:34.280Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:host-core-event-log:2026-11-10T08:44:39.984Z",
+      "at": "2026-11-10T08:44:39.984Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:071fa1902906b7bdd70fe572dfae96906e53163a483b9d1142a4ebda836604d6"
+    }
+  ]
+}

@@ -1,6 +1,16 @@
+// Antigravity Stop hook: payload parsing and rendering only. The decision is a
+// host-core function over the task projection (Spec
+// docs/specs/host-neutral-adapter-core.spec.md D9, D11).
+//
+// Interface: `antigravityRunContinuationHook`.
+// Invariants: an active claim's projection decides whether Stop continues; a
+// user-only wait always allows stop; a workspace without an active claim is untouched.
+// Side Effects: reads the active claim and the Kernel projection.
+// Verification: `bun test tests/antigravity-assurance-conformance.test.ts -t 'Run Continuation Hook'`.
+
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
 import { projectTaskStatus } from "../assurance/coordinator";
-import type { AssuranceObligation } from "../kernel/types";
+import { decideAutomatedStop } from "../host-core/run_continuation_session";
 import type { AntigravityStopPayload } from "./lane_guard";
 
 export async function antigravityRunContinuationHook(
@@ -24,35 +34,5 @@ export async function antigravityRunContinuationHook(
 		return {};
 	}
 
-	const projection = status.projection;
-	if (projection.lifecycle !== "active") {
-		return {};
-	}
-
-	// If waiting on user, allow stop
-	if (
-		projection.next_obligation === "resolve_user_decision" ||
-		projection.next_obligation === "revise_intent" ||
-		projection.open_user_decision_count > 0 ||
-		projection.unresolved_user_decision_ids.length > 0
-	) {
-		return {};
-	}
-
-	// Automated obligations that should continue the loop
-	const automatedObligations: AssuranceObligation[] = [
-		"run_qa",
-		"run_review",
-		"submit_assurance",
-		"resolve_findings",
-	];
-
-	if (automatedObligations.includes(projection.next_obligation)) {
-		return {
-			decision: "continue",
-			reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.`,
-		};
-	}
-
-	return {};
+	return decideAutomatedStop(taskId, status.projection);
 }

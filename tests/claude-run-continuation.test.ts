@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
@@ -8,6 +8,7 @@ import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordina
 import { NO_PHASE_ENTRY } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, readPhaseEntryState, recordPhaseEntryPrompt } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
+import { sessionHash } from "../plugins/immune-brain/runtime/host-core/private_file";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 function fixture() {
@@ -141,6 +142,19 @@ describe("Claude run continuation", () => {
 			expect(readPhaseEntryState("hook-session", h.root)?.run_live).toBe(false);
 			await h.enter(); await fail(); await fail();
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
+		} finally { h.dispose(); }
+	});
+
+	test("session metadata past the 256 KiB bound is treated as blank (D9)", async () => {
+		const h = fixture(); try {
+			await h.enter();
+			expect(JSON.parse((await h.stop())!).decision).toBe("block");
+			const path = join(h.root, "immune-brain-claude", `${sessionHash("hook-session")}.continuation`);
+			expect(existsSync(path)).toBe(true);
+			// Still valid metadata, only past the bound: the size alone decides the blank read, not a parse fault.
+			const metadata = JSON.parse(readFileSync(path, "utf8").trim());
+			writeFileSync(path, JSON.stringify({ ...metadata, pad: "x".repeat(256 * 1024) }) + "\n");
+			expect(await h.stop()).toBeNull();
 		} finally { h.dispose(); }
 	});
 

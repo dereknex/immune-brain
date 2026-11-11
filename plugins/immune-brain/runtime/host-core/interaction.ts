@@ -1,0 +1,177 @@
+// Host-neutral native-gate vocabulary (Issue #414 slice S3, Spec
+// docs/specs/host-neutral-adapter-core.spec.md D7). One `NativeAuthorityError`
+// and one privileged-operation table serve both adapters; a Host contributes
+// only its own confirmation-reference prefix.
+//
+// Interface: `PRIVILEGED_OPERATIONS`, `isPrivilegedOperation`,
+// `NativeAuthorityError`, `evaluateNativeGate`, `hostConfirmationRef`,
+// `entryTokenRequestId`, `enrollmentNonce`, the native confirmation types.
+// Invariants: only an exact native decision authorizes; a reference names the
+// kind of literal-user act it binds.
+// Side Effects: none; this module builds values and errors.
+// Verification: `bun test tests/dual-host-assurance-conformance.test.ts -t 'runtime composition'`.
+
+import { createHash, randomUUID } from "node:crypto";
+import { PHASE_ENTRY_RECOVERY } from "../assurance/phase_entry";
+import type { ReworkChoice, ReworkExitsReadiness } from "../kernel/assurance_projection";
+
+export const PRIVILEGED_OPERATIONS = [
+	"request_authorization",
+	"approve_breaking_intent_revision",
+	"stop",
+	"start_unattended_batch",
+	"retire_stale_batch",
+] as const;
+
+export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
+export type NativeDecision = "accept" | "decline" | "cancel";
+export type NativeFailureCode =
+	| "interaction_not_opened"
+	| "user_denied"
+	| "user_cancelled"
+	| "correlation_missing"
+	| "unsupported_host"
+	| "workspace_changed"
+	| "run_entry_required"
+	| "phase_entry_required"
+	| "plugin_bundle_stale";
+
+const RECOVERY_ACTIONS: Record<NativeFailureCode, string> = {
+	interaction_not_opened: "retry through a fresh native gate in the current Host",
+	user_denied: "wait for a fresh literal-user request",
+	user_cancelled: "wait for a fresh literal-user request",
+	correlation_missing: "retry through a fresh native gate in the current Host",
+	unsupported_host: "upgrade to a supported Claude Code version and retry in the current Host",
+	workspace_changed: "review the current workspace and retry through a fresh native gate",
+	plugin_bundle_stale: "reconnect the immune-brain MCP server (/mcp, then reconnect immune-brain) so it loads the current bundle, then retry in the current Host",
+	...PHASE_ENTRY_RECOVERY,
+};
+
+export class NativeAuthorityError extends Error {
+	constructor(
+		readonly reasonCode: NativeFailureCode,
+		detail: string,
+		readonly recoveryAction = RECOVERY_ACTIONS[reasonCode],
+	) {
+		super(`${reasonCode}: ${detail}; recovery: ${recoveryAction}`);
+		this.name = "NativeAuthorityError";
+	}
+}
+
+export function isPrivilegedOperation(operation: string): operation is PrivilegedOperation {
+	return (PRIVILEGED_OPERATIONS as readonly string[]).includes(operation);
+}
+
+export function privilegedAnnotations(): Record<string, unknown> {
+	return { destructiveHint: true };
+}
+
+export interface NativeGateInput {
+	operation: string;
+	interactive: boolean;
+	decision?: NativeDecision;
+}
+
+export type NativeGateResult =
+	| { ok: true }
+	| { ok: false; error: NativeAuthorityError };
+
+export function evaluateNativeGate(input: NativeGateInput): NativeGateResult {
+	if (!isPrivilegedOperation(input.operation)) return { ok: true };
+	if (!input.interactive) return { ok: false, error: new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable") };
+	if (input.decision === "decline") return { ok: false, error: new NativeAuthorityError("user_denied", "native interaction declined") };
+	if (input.decision === "cancel") return { ok: false, error: new NativeAuthorityError("user_cancelled", "native interaction cancelled") };
+	if (input.decision !== "accept") return { ok: false, error: new NativeAuthorityError("interaction_not_opened", "native interaction returned no decision") };
+	return { ok: true };
+}
+
+export interface NativeConfirmationInput {
+	operation: PrivilegedOperation;
+	taskId?: string;
+	initiativeSlug?: string;
+	toolCallId: string;
+	risk?: string;
+	intentRevision?: number;
+	intentContentHash?: string;
+	bindingDigest?: string;
+	gitBaseNotice?: string;
+	planDigest?: string;
+	/** Present only for a replan boundary: the exits the user chooses between. */
+	reworkExits?: ReworkExitsReadiness;
+	verifierDispute?: { claim: string; trigger: string; caller_chain: string[]; counter_path: string };
+	reviewRetryNotice?: string;
+	batchDetails?: {
+		initiative_slug: string;
+		batch_branch: string;
+		children: Array<{ task_id: string; slice_id: string; risk?: string }>;
+		excluded: Array<{ task_id: string; slice_id: string; reason: string }>;
+		budget?: { max_children: number; qa_failure_limit: number };
+		final_verification?: string[];
+		/** Present only for a native Parent: no batch is started and no commit is made, only the final commands run. */
+		parent_final_verification?: Record<string, never>;
+		/** Present only when the run uses Lanes. */
+		lane_mode?: {
+			max_parallel: number;
+			parallel_groups: string[][];
+			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
+			final_verification?: string[];
+		};
+	};
+	/** Present only for a batch disposition: the record the user is asked to retire. */
+	batchDisposition?: {
+		batch_id: string;
+		batch_state: string;
+		batch_branch: string;
+		plan_digest: string;
+		recorded_commits: number;
+		children: Array<{ task_id: string; slice_id: string; state: string; commit: string | null; lane_branch: string | null; kernel_lifecycle: "done" | "stopped" | null }>;
+	};
+	signal?: AbortSignal;
+}
+
+export interface NativeConfirmationResult {
+	decision: NativeDecision;
+	requestId: string;
+	/** Present only when the request offered `reworkExits` and the user accepted. */
+	reworkChoice?: ReworkChoice;
+	verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
+}
+
+export type NativeConfirmationPort = (input: NativeConfirmationInput) => Promise<NativeConfirmationResult>;
+
+/** ADR 0025: the request id an entry token stands in for, in place of an elicitation's. */
+export const ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
+export function entryTokenRequestId(token: string): string {
+	return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
+}
+
+/** The exact facts one Kernel-bound confirmation reference binds. */
+export interface ConfirmationRefInput {
+	connectionId: string;
+	toolCallId: string;
+	requestId: string;
+	operation: string;
+	taskId?: string;
+	initiativeSlug?: string;
+	intentRevision?: number;
+	intentContentHash?: string;
+	bindingDigest?: string;
+	planDigest?: string;
+}
+
+/**
+ * The Kernel-bound reference of one confirmation, named by the Host that
+ * recorded it. A reference backed by an entry token rather than an elicitation
+ * is named `entry` so the record shows which kind of literal-user act it binds.
+ */
+export function hostConfirmationRef(host: string, input: ConfirmationRefInput): string {
+	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+	return `${host}-${kind}-${createHash("sha256")
+		.update(`${input.connectionId}\0${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.taskId ?? ""}\0${input.initiativeSlug ?? ""}\0${input.intentRevision ?? ""}\0${input.intentContentHash ?? ""}\0${input.bindingDigest ?? ""}\0${input.planDigest ?? ""}`)
+		.digest("hex")
+		.slice(0, 16)}`;
+}
+
+export function enrollmentNonce(): string {
+	return randomUUID();
+}

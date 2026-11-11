@@ -4,7 +4,7 @@ import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assuran
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -16,15 +16,24 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-brain/runtime/kernel/storage";
 import { PassThrough } from "node:stream";
-import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
+import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
+import { HostRuntime } from "../plugins/immune-brain/runtime/host-core/runtime";
+import { NativeAuthorityError } from "../plugins/immune-brain/runtime/host-core/interaction";
+import { MemoryHookEventLog, type HookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 import { ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
+import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { MIN_ANTIGRAVITY_VERSION } from "../plugins/immune-brain/runtime/antigravity/capability";
+import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
+import type { AssuranceHostPort, HostReviewReservation } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { BATCH_REASONS, batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { batchTopologyDigest, prepareBatchRunState, writeBatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { computeBatchPlanDigest } from "../plugins/immune-brain/runtime/kernel/batch_authority";
@@ -2060,7 +2069,7 @@ describe("dual-host assurance conformance", () => {
 	test("the shared batch reason table is the only producer of gate prose", () => {
 		const adapterSources = [
 			readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8"),
-			readFileSync(resolve("plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+			readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8"),
 		];
 		const keys = Object.keys(BATCH_REASONS) as Array<keyof typeof BATCH_REASONS>;
 		expect(keys.length).toBeGreaterThan(20);
@@ -2348,7 +2357,7 @@ describe("dual-host assurance conformance", () => {
 		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
 		for (const path of [
 			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
-			"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+			"plugins/immune-brain/runtime/host-core/runtime.ts",
 		]) {
 			const source = readFileSync(resolve(path), "utf8");
 			expect({ path, shared: source.includes("authorizeBatch") }).toEqual({ path, shared: true });
@@ -2372,8 +2381,8 @@ describe("dual-host assurance conformance", () => {
 				requestConfirmation: async () => ({ decision: "accept", requestId: "r-tracker-gate" }),
 			});
 			const reads: string[] = [];
-			const status = runtime.status.bind(runtime);
-			runtime.status = async (taskId: string) => {
+			const status = runtime.runtime.status.bind(runtime.runtime);
+			runtime.runtime.status = async (taskId: string) => {
 				reads.push(taskId);
 				return status(taskId);
 			};
@@ -2460,7 +2469,7 @@ describe("dual-host assurance conformance", () => {
 
 			// Both Hosts settle through the one shared step.
 			for (const path of [
-				"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+				"plugins/immune-brain/runtime/host-core/runtime.ts",
 				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
 			]) {
 				expect({ path, shared: readFileSync(resolve(path), "utf8").includes("projectTerminalTrackerState") }).toEqual({
@@ -2588,3 +2597,488 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 	} as unknown as AssuranceCoordinatorPorts;
 	return { ports, applied };
 }
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S1 AC3 (D3): one event log
+// implementation, constructed by each adapter over its own cache directory.
+describe("shared hook event log", () => {
+	interface LogEvent {
+		type: "SubagentStart" | "PostToolUse";
+		sessionId: string;
+		agent?: string;
+		agentId: string;
+		toolName?: string;
+		result?: string;
+	}
+
+	/** The two Host vocabularies both carry these variants, so one fixture drives both. */
+	const HOSTS: Array<{ host: string; cacheName: string; make: (root: string) => HookEventLog<LogEvent> }> = [
+		{ host: "claude-code", cacheName: "immune-brain-claude", make: (root) => claudeHookEventLog(root) as unknown as HookEventLog<LogEvent> },
+		{ host: "antigravity", cacheName: "immune-brain-antigravity", make: (root) => antigravityHookEventLog(root) as unknown as HookEventLog<LogEvent> },
+	];
+
+	const start = (sessionId: string, agentId: string): LogEvent => ({ type: "SubagentStart", sessionId, agentId, agent: "immune-brain-review-verifier" });
+	const result = (sessionId: string, agentId: string, text: string): LogEvent => ({ type: "PostToolUse", sessionId, agentId, toolName: "invoke_subagent", result: text });
+
+	function scratchRoot(): string {
+		return mkdtempSync(join(tmpdir(), "shared-hook-log-"));
+	}
+
+	for (const { host, cacheName, make } of HOSTS) {
+		test(`${host}: events list per session in append order under its own cache directory`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(true);
+				expect(log.append(result("s1", "a1", "first"))).toBe(true);
+				expect(log.append(start("s2", "a2"))).toBe(true);
+				expect(log.list("s1").map((event) => event.agentId)).toEqual(["a1", "a1"]);
+				expect(log.list("s2").map((event) => event.agentId)).toEqual(["a2"]);
+				expect(log.sessions().sort()).toEqual(["s1", "s2"]); // order across sessions is unspecified (directory order)
+				expect(existsSync(join(root, cacheName))).toBe(true);
+				expect(readdirSync(root)).toEqual([cacheName]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: clear removes only the named session`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				log.append(start("s1", "a1"));
+				log.append(result("s1", "a1", "first"));
+				log.append(start("s2", "a2"));
+				log.clear("s1");
+				expect(log.list("s1")).toEqual([]);
+				expect(log.list("s2").map((event) => event.agentId)).toEqual(["a2"]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: append refuses a cache directory that is a symlink to another directory`, () => {
+			const root = scratchRoot();
+			const outside = mkdtempSync(join(tmpdir(), "shared-hook-log-outside-"));
+			try {
+				symlinkSync(outside, join(root, cacheName));
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(false);
+				expect(readdirSync(outside)).toEqual([]);
+				expect(log.list("s1")).toEqual([]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(outside, { recursive: true, force: true });
+			}
+		});
+
+		test(`${host}: a session file with a non-private mode lists no events`, () => {
+			const root = scratchRoot();
+			try {
+				const log = make(root);
+				expect(log.append(start("s1", "a1"))).toBe(true);
+				const dir = join(root, cacheName);
+				const file = join(dir, readdirSync(dir)[0] ?? "");
+				chmodSync(file, 0o644);
+				expect(log.list("s1")).toEqual([]);
+				expect(log.sessions()).toEqual([]);
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
+		});
+	}
+
+	test("the in-memory log lists what the file log lists for the same append and clear sequence", () => {
+		const root = scratchRoot();
+		try {
+			const memory = new MemoryHookEventLog<LogEvent>();
+			const file = claudeHookEventLog(root) as unknown as HookEventLog<LogEvent>;
+			for (const log of [memory, file]) {
+				log.append(start("s1", "a1"));
+				log.append(result("s1", "a1", "first"));
+				log.append(start("s2", "a2"));
+				log.clear("s1");
+			}
+			expect(memory.list()).toEqual(file.list());
+			expect(memory.sessions()).toEqual(file.sessions());
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S2 AC1 (BR-REQ-2, BR-REQ-6;
+// D5): both Hosts settle a verifier receipt through one state machine, so the
+// same evidence produces the same outcomes on either Host.
+describe("verifier observation", () => {
+	const TRANSCRIPTS = reviewerTranscripts();
+	afterAll(() => TRANSCRIPTS.cleanup());
+
+	const TASK = "verifier-task";
+	const OPERATION = "verifier-operation";
+	const MODEL = "verifier-model";
+	const RESULT = "reviewer result bytes";
+
+	interface Driver {
+		host: AssuranceHostPort;
+		start(sessionId: string, agentId: string, prompt: string, agent?: string): void;
+		result(sessionId: string, agentId: string, text: string, prompt: string, model?: string): void;
+		stop(sessionId: string, agentId: string, agent?: string): void;
+		end(sessionId: string): void;
+	}
+
+	interface HostSpec {
+		label: string;
+		prefix: string;
+		verifier: string;
+		make(): Driver;
+		dispatchPrompt(reservation: HostReviewReservation): string;
+		/** This Host's terminal events for one correlated dispatch. */
+		terminate(driver: Driver, sessionId: string, agentId: string, prompt: string, model?: string): void;
+	}
+
+	function claudeHost(): Driver {
+		const host = new ClaudeReviewHost();
+		const verifier = "immune-brain-review-verifier";
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "SubagentStart", sessionId, agent, agentId, prompt, operationId: OPERATION }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({
+				type: "PostToolUse", sessionId, agentId, toolName: "Agent", result: text, model, prompt, operationId: OPERATION,
+				transcriptPath: TRANSCRIPTS.sessionTranscriptPath(agentId, text),
+			}),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "SubagentStop", sessionId, agent, agentId, operationId: OPERATION }),
+			end: (sessionId) => host.observe({ type: "SessionEnd", sessionId }),
+		};
+	}
+
+	function antigravityHost(): Driver {
+		const host = new AntigravityReviewHost();
+		const verifier = "immune-brain-review-verifier";
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "start", sessionId, agentId, agent, prompt }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({ type: "result", sessionId, agentId, result: text, model, prompt }),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "stop", sessionId, agentId, agent }),
+			end: (sessionId) => host.observe({ type: "session_end", sessionId }),
+		};
+	}
+
+	const HOST_SPECS: HostSpec[] = [
+		{
+			label: "claude-code", prefix: "claude", verifier: "immune-brain-review-verifier", make: claudeHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { prompt: string }).prompt,
+			// PostToolUse carries the result and SubagentStop ends the dispatch.
+			terminate: (driver, sessionId, agentId, prompt, model) => {
+				driver.result(sessionId, agentId, RESULT, prompt, model);
+				driver.stop(sessionId, agentId);
+			},
+		},
+		{
+			label: "antigravity", prefix: "antigravity", verifier: "immune-brain-review-verifier", make: antigravityHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { Prompt: string }).Prompt,
+			// BR-SCN-1: PostToolUse is terminal here, so no stop event follows.
+			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
+		},
+	];
+
+	for (const spec of HOST_SPECS) {
+		const prepare = (driver: Driver): HostReviewReservation => {
+			expect(driver.host.prepareVerification).toBeDefined();
+			return driver.host.prepareVerification!({
+				taskId: TASK, operationId: OPERATION, prompt: "verifier prompt", model: MODEL, writePacket: writeTestReviewPacket,
+			});
+		};
+		const inspect = (driver: Driver, reservation: HostReviewReservation) => {
+			expect(driver.host.inspectVerification).toBeDefined();
+			return driver.host.inspectVerification!(reservation);
+		};
+
+		test(`${spec.label}: a bound start and its terminal events settle one receipt`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+			expect(prompt).toContain(OPERATION);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			expect(inspect(driver, reservation)).toEqual({
+				ok: true,
+				receipt: { actorId: `${spec.prefix}:agent-1`, result: RESULT, model: MODEL },
+			});
+		});
+
+		test(`${spec.label}: no start event leaves the reservation unobserved and releases it`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a start naming another agent leaves the reservation unobserved`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			// Appended last: the evidence is complete before the foreign start lands.
+			driver.start("session-1", "agent-1", prompt, "immune-brain-reviewer");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a terminal event whose model differs from the reservation is refused`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt, "other-model");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "verifier model differs from reservation", release: true });
+		});
+
+		test(`${spec.label}: a second distinct result is a duplicate`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			driver.result("session-1", "agent-1", "a second reviewer result", prompt);
+
+			const refused = inspect(driver, reservation);
+			expect(refused.ok).toBe(false);
+			if (refused.ok) throw new Error("a duplicate result settled a receipt");
+			expect(refused.reason).toContain("duplicate");
+			expect(refused.release).toBe(true);
+		});
+
+		test(`${spec.label}: a SessionEnd for the bound session retires the reservation`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			driver.end("session-1");
+
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
+		});
+
+		test(`${spec.label}: a start without its terminal keeps the reservation until the terminal lands`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toEqual({
+				ok: false, reason: "foreground Agent terminal event order is incomplete", release: false,
+			});
+
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toMatchObject({ ok: true, receipt: { actorId: `${spec.prefix}:agent-1` } });
+		});
+	}
+});
+
+describe("runtime composition", () => {
+	/** An isolated repository with one scripted TaskIntent whose check passes. */
+	function compositionRepo(taskId: string): string {
+		const root = mkdtempSync(join(tmpdir(), "imm-runtime-composition-"));
+		mkdirSync(join(root, "docs/plans"), { recursive: true });
+		mkdirSync(join(root, "src"), { recursive: true });
+		mkdirSync(join(root, ".imm/state"), { recursive: true });
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1", task_id: taskId, owner: "user",
+			goal: "share one runtime between two Hosts",
+			acceptance: [{
+				id: "acc-1", assertion: "the scripted check passes",
+				verification: JSON.stringify({
+					contract: "assurance_kernel/verification_descriptor/v2",
+					command: { executable: "sh", argv: ["-c", "true"], cwd: ".", timeout_ms: 30_000, max_output_bytes: 8_192 },
+					environment: { prepare: null, writable_paths: [] },
+				}),
+			}],
+			scope_hint: [`docs/plans/${taskId}.intent.json`, "src/task.ts"],
+			risk: "material", revision: 1,
+		};
+		writeFileSync(join(root, "docs/plans", `${taskId}.intent.json`), `${JSON.stringify(intent, null, 2)}\n`);
+		writeFileSync(join(root, "src/task.ts"), "export const delivered = false;\n");
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+		// D11: the Review CLI dispatcher needs a resolved review profile, exactly as
+		// the project-owned-verification fixture does.
+		writeFileSync(join(root, ".imm/config.json"), `${JSON.stringify({ contract: "immune_brain/project_config/v1", lanes: { review_host: "pi" } })}\n`);
+		execFileSync("git", ["init", "-q"], { cwd: root });
+		execFileSync("git", ["add", "-A"], { cwd: root });
+		execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "fixture"], { cwd: root });
+		return root;
+	}
+
+	/** Enroll, deliver the in-scope change, freeze and run QA through the runtime itself. */
+	async function driveToReview(taskId: string, root: string, runtime: ClaudeRuntime | AntigravityRuntime) {
+		await enrollTaskForTest(root, taskId);
+		writeFileSync(join(root, "src/task.ts"), "export const delivered = true;\n");
+		execFileSync("git", ["add", "--", "src/task.ts"], { cwd: root });
+		const advanced = await runtime.advance(taskId);
+		if (advanced.state !== "review_ready") throw new Error(`expected review_ready, got ${JSON.stringify(advanced)}`);
+		const status = await runtime.status(taskId);
+		if (status.error) throw new Error(`status failed: ${status.error}`);
+		return status;
+	}
+
+	test("both Hosts compose one HostRuntime and yield the same Kernel projection", async () => {
+		const taskId = "composition-task";
+		const claudeRoot = compositionRepo(taskId);
+		const antigravityRoot = compositionRepo(taskId);
+		const claude = new ClaudeRuntime({ cwd: claudeRoot, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
+		const antigravity = new AntigravityRuntime({ cwd: antigravityRoot, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
+		try {
+			// One implementation, two profiles: the same class carries both Hosts.
+			expect(claude.runtime).toBeInstanceOf(HostRuntime);
+			expect(antigravity.runtime).toBeInstanceOf(HostRuntime);
+			expect(claude.runtime.profile.hostId).toBe("claude-code");
+			expect(antigravity.runtime.profile.hostId).toBe("antigravity");
+			expect(claude.host.host).toBe("claude-code");
+			expect(antigravity.host.host).toBe("antigravity");
+
+			const claudeStatus = await driveToReview(taskId, claudeRoot, claude);
+			const antigravityStatus = await driveToReview(taskId, antigravityRoot, antigravity);
+
+			// The repository-identity fields differ (two checkouts, two Git bases); every
+			// Kernel fact derived from the scripted task is identical.
+			const neutral = (projection: Record<string, unknown>) => {
+				const { run_id: _run, record_revision: _record, workspace_revision: _workspace, diff_hash: _diff, ...rest } = projection;
+				return rest;
+			};
+			expect(claudeStatus.projection.next_obligation).toBe("run_review");
+			expect(claudeStatus.projection.artifact_state).toBe("frozen");
+			expect(neutral(antigravityStatus.projection)).toEqual(neutral(claudeStatus.projection));
+
+			// Each Host records its own native confirmation reference.
+			const facts = { connectionId: "s", toolCallId: "t", requestId: "nested", operation: "stop", taskId };
+			expect(claude.runtime.profile.confirmationRef(facts)).toMatch(/^claude-confirm-[0-9a-f]{16}$/);
+			expect(antigravity.runtime.profile.confirmationRef(facts)).toMatch(/^antigravity-confirm-[0-9a-f]{16}$/);
+		} finally {
+			await claude.shutdown();
+			await antigravity.shutdown();
+			rmSync(claudeRoot, { recursive: true, force: true });
+			rmSync(antigravityRoot, { recursive: true, force: true });
+		}
+	}, 120_000);
+
+	test("an Antigravity verifier event reaches that runtime's ReviewHost", () => {
+		const log = new MemoryHookEventLog<AntigravityHookEvent>();
+		const runtime = new AntigravityRuntime({ cwd: process.cwd(), host: new AntigravityReviewHost(log), interactive: false });
+		runtime.observeAntigravity({ type: "start", sessionId: "conv-1", agent: "agent-7", agentId: "1", prompt: "dispatch" });
+		expect(log.list("conv-1")).toMatchObject([{ type: "start", sessionId: "conv-1", agent: "agent-7", agentId: "1" }]);
+	});
+
+	test("a native refusal from either runtime is the shared NativeAuthorityError", async () => {
+		const root = mkdtempSync(join(tmpdir(), "imm-runtime-refusal-"));
+		const claude = new ClaudeRuntime({ cwd: root, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
+		const antigravity = new AntigravityRuntime({ cwd: root, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
+		try {
+			const meta = (toolCallId: string): ToolMeta => ({ taskId: "probe-initiative", sessionId: "s", toolCallId, interactive: true });
+			for (const [host, runtime] of [["claude-code", claude], ["antigravity", antigravity]] as const) {
+				const refusal = await runtime.retireStaleBatch("probe-initiative", meta("probe-call")).catch((error: unknown) => error);
+				expect({ host, shared: refusal instanceof NativeAuthorityError, code: (refusal as NativeAuthorityError).reasonCode })
+					.toEqual({ host, shared: true, code: "interaction_not_opened" });
+			}
+			// Bound: one declaration serves both adapters.
+			const declaring = readdirSync(join(process.cwd(), "plugins/immune-brain/runtime"), { recursive: true })
+				.map(String).map((path) => path.split("\\").join("/"))
+				.filter((path) => path.endsWith(".ts") && readFileSync(join(process.cwd(), "plugins/immune-brain/runtime", path), "utf8").includes("class NativeAuthorityError"));
+			expect(declaring).toEqual(["host-core/interaction.ts"]);
+		} finally {
+			await claude.shutdown();
+			await antigravity.shutdown();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S4 AC2 (BR-REQ-4; D8). One
+// MCP stdio runtime answers both Hosts, each through its own profile: the
+// profile supplies the identity, the trusted client names, the correlation key
+// and the probe, so no adapter machinery is duplicated.
+describe("MCP host profile", () => {
+	const initialize = (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		clientInfo: { name: string; version: string },
+	) => handleJsonRpc({
+		jsonrpc: "2.0",
+		id: "init",
+		method: "initialize",
+		params: { protocolVersion: "2025-06-18", clientInfo, capabilities: { elicitation: {} } },
+	}, mcp as ReturnType<typeof createMcpRuntimeUngated>);
+
+	const initializeInfo = async (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		clientInfo: { name: string; version: string },
+	): Promise<Record<string, unknown>> => {
+		const reply = await initialize(mcp, clientInfo);
+		return (reply?.result as { serverInfo: Record<string, unknown> }).serverInfo;
+	};
+
+	const refusal = async (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		name: string,
+	): Promise<Record<string, unknown> | undefined> => {
+		const reply = await handleJsonRpc({ jsonrpc: "2.0", id: name, method: "tools/call", params: { name, arguments: { task_id: "profile-task" } } }, mcp as ReturnType<typeof createMcpRuntimeUngated>);
+		return reply?.error?.data;
+	};
+
+	test("each Host's profile answers initialize with its own serverInfo", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		expect(await initializeInfo(claude, { name: "claude-code", version: "2.1.236" }))
+			.toMatchObject({ name: "claude-code", minimumHostVersion: MIN_CLAUDE_CODE_VERSION });
+
+		for (const clientInfo of [{ name: "antigravity-client", version: "v1.0.0" }, { name: "antigravity", version: "1.0.0" }]) {
+			const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+			expect(await initializeInfo(antigravity, clientInfo))
+				.toMatchObject({ name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION });
+		}
+	});
+
+	test("each Host binds the negotiated version for its own probe", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "claude-code", version: "2.1.100" });
+		expect(await refusal(claude, "advance_assurance")).toMatchObject({ reason_code: "unsupported_host" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "below", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, claude))?.error?.message)
+			.toStartWith("unsupported_host: Claude Code 2.1.100 is below the minimum supported 2.1.236");
+
+		const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(antigravity, { name: "antigravity-client", version: "v0.0.9" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "below", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, antigravity))?.error?.message)
+			.toStartWith("unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0");
+	});
+
+	test("an untrusted client name binds no version, so each Host refuses with its own probe reason", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "untrusted-client", version: "2.1.236" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "untrusted", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, claude))?.error?.message)
+			.toStartWith("unsupported_host: Claude Code version is unavailable");
+
+		const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: { ANTIGRAVITY_VERSION: "1.0.0" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(antigravity, { name: "untrusted-client", version: "v1.0.0" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "untrusted", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, antigravity))?.error?.message)
+			.toStartWith("unsupported_host: Antigravity version is unavailable");
+	});
+
+	test("a Claude gated call without claudecode/toolUseId metadata is refused as correlation_missing", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "claude-code", version: "2.1.236" });
+		const reply = await handleJsonRpc({
+			jsonrpc: "2.0",
+			id: "gated",
+			method: "tools/call",
+			params: { name: "start_unattended_batch", arguments: { initiative_slug: "profile-initiative" } },
+		}, claude);
+		expect(reply?.error?.data).toEqual({ reason_code: "correlation_missing", recovery_action: "retry through a fresh native gate in the current Host" });
+	});
+});

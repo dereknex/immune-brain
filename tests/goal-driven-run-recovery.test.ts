@@ -5,7 +5,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { ClaudeReviewHost, MemoryHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
+import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
+import type { ClaudeHookEvent } from "../plugins/immune-brain/runtime/claude/review_host";
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 import { advanceNativeParent, recordParentRepair } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -29,7 +31,7 @@ describe("native repair recovery round trip", () => {
  it("requires a fresh gate, preserves original delivery, settles the repair before Parent success", async () => {
   const root = mkdtempSync(join(tmpdir(), "gdr-repair-roundtrip-"));
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
-  const host = new ClaudeReviewHost(new MemoryHookEventLog());
+  const host = new ClaudeReviewHost(new MemoryHookEventLog<ClaudeHookEvent>());
   let decision: "accept" | "decline" = "accept", gates = 0;
   const inputs: Array<Record<string, any>> = [];
   const runtime = new ClaudeRuntime({ cwd: root, host, interactive: true,

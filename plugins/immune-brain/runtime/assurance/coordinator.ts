@@ -1754,7 +1754,6 @@ export class AssuranceCoordinator {
 					taskId,
 					operationId,
 					root: review.snapshot.root,
-					prompt: buildReviewPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
 					snapshotPrompt: buildReviewSnapshotPrompt(review.snapshot, evidence.path, turnBudget, counterEvidence),
 					evidencePath: evidence.path,
 					writePacket: evidence.writePacket,

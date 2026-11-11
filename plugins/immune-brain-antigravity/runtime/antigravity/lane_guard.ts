@@ -18,7 +18,8 @@ import {
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
-import { cacheDir, ensurePrivateDir, sessionHash } from "./review_host";
+import { cacheDir, ensurePrivateDir, sessionHash } from "../host-core/private_file";
+import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 const GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
@@ -107,11 +108,11 @@ export interface AntigravityStopPayload {
 }
 
 function entryLogPath(sessionId: string, root: string): string {
-	return join(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+	return join(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 
 function admissionPath(toolUseId: string, root: string): string {
-	return join(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+	return join(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 
 function dropPrivate(path: string): void {
@@ -142,7 +143,7 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir()): PhaseEn
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "ENOENT" ? NO_PHASE_ENTRY : null;
 	}
-	if (!ensurePrivateDir(cacheDir(root))) return null;
+	if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) return null;
 	try {
 		const text = readFileSync(path, "utf8");
 		return reducePhaseEntryLog(text);
@@ -153,7 +154,7 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir()): PhaseEn
 
 function appendPhaseEntry(sessionId: string, line: string, root: string): boolean {
 	const path = entryLogPath(sessionId, root);
-	ensurePrivateDir(cacheDir(root));
+	ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
 	try {
 		writeFileSync(path, line + "\n", { flag: "a", mode: 0o600 });
 		return true;
@@ -249,7 +250,7 @@ export function antigravityPreToolUseHook(
 		}
 		const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
 		const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
-		ensurePrivateDir(cacheDir(root));
+		ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
 		writeFileSync(admissionPath(toolUseId, root), admitLine, { mode: 0o600 });
 		return { decision: "allow" };
 	}
