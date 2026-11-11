@@ -61,10 +61,19 @@ command surface the Parent runs, not only an interface.
    herdr-core has its own adapter (`runtime/session/herdr_core_provider.ts`)
    on the `hc` CLI, selectable only by name; the Loop contract does not use it
    until a live run with each Executor Host passes.
-6. **Behavior is unchanged in this step.** The Parent still closes no tab and
-   stops no session, still answers no dialog, and still treats Kernel
-   projections as the only progress signal. `imm-session` offers no `close` verb;
-   adopting the Executor close rule is a later change to the Loop contract.
+6. **Behavior is unchanged in this step, except the close rule (S1).** The
+   Parent stops no session, answers no dialog, and treats Kernel projections as
+   the only progress signal. It closes only a session it created whose child is
+   integrated: the batch runner decides that rule (`lane_session_close` on
+   `start_unattended_batch`: integrated child, audit pair reachable from the
+   batch head, not closed before), records the close in `session_closes` before
+   answering, and `imm-session close` requires that record. The Lane and its
+   branch stay; closing a session is not releasing a Lane. #426's original rule
+   also required a Lane release handoff, which Parent-branch batches never issue
+   (ADR 0027 retains Lanes for the user), so the rule rests on integration and
+   the audit pair instead. `session_closes` is an optional record field that
+   changes no existing field's meaning, as `interventions` before it, so it needs
+   no contract bump under ADR 0029.
 7. **Not a generic Host registry and not the framework #220 rejected.**
    ADR 0004 Decision 5 forbids a Host registry or automatic dispatcher. Provider
    selection here chooses where one already-decided Executor session runs; it

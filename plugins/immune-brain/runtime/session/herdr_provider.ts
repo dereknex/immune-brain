@@ -21,7 +21,7 @@
 import { randomBytes } from "node:crypto";
 import { parseJson, pick, runCommand, type ExecResult } from "./exec";
 import {
-	closeProofRefusal,
+	closeRecordRefusal,
 	instructionRefusal,
 	isSessionState,
 	refuse,
@@ -29,7 +29,7 @@ import {
 	SUPERVISED_SESSION_PROTOCOL,
 	validateCreateInput,
 	type AwaitResult,
-	type CloseProof,
+	type CloseRecord,
 	type ExecutorHostKind,
 	type Observation,
 	type OutputSource,
@@ -346,10 +346,10 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (closed.code !== 0) return refuse("provider_error", `herdr pane close failed: ${failure(closed)}`, handle);
 			return { ok: true };
 		},
-		async closeSession(handle, proof: CloseProof) {
+		async closeSession(handle, record: CloseRecord) {
 			const found = await own(handle);
 			if (isRefusal(found)) return found;
-			const unproven = closeProofRefusal(handle, proof);
+			const unproven = closeRecordRefusal(handle, record);
 			if (unproven) return unproven;
 			const closed = await run(HERDR_CLI.tabClose(found.ids.tab));
 			if (isRefusal(closed)) return closed;

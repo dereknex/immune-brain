@@ -81,7 +81,7 @@ import {
 } from "../unattended/batch_runner";
 import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../unattended/batch_state";
@@ -900,7 +900,7 @@ export class ClaudeRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
 	): Promise<ClaudeBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -908,7 +908,7 @@ export class ClaudeRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest },
 	): Promise<ClaudeBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -1215,6 +1215,7 @@ export class ClaudeRuntime {
 						max_parallel: options.max_parallel,
 						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+						...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
 					}
 				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),

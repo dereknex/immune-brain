@@ -26,7 +26,7 @@ A provider missing any of these, or implementing another port protocol, is refus
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
-| `closeSession` | Owned handle and every Executor close fact: created by the Parent, child integrated, release handoff issued, audit pair reachable on the batch branch, close recorded | Session resources released | `close_unproven` naming each unmet fact; `imm-session` offers no close verb until the close rule is adopted by the Loop contract |
+| `closeSession` | Owned handle (the Parent created it) and the batch runner's accepted close record (`task_id`, `recorded_at`): the runner's `decideLaneSessionClose` admits only an integrated child whose audit pair is reachable from the batch head, once, and records the close in `session_closes` before answering | Session resources released, recorded; the Lane and its branch untouched | Missing or malformed record: `close_unproven`, nothing closed. The rule no longer waits for a Lane release handoff: Parent-branch batches never issue one, since Lanes are retained for the user (ADR 0027) |
 | `reconcile` | The caller's own handles | The last known state of each | A foreign handle is listed `unknown` with `refused: not_owned`; there is no "all sessions" listing |
 
 ### Optional capabilities
@@ -60,6 +60,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   observe <handle>
   read <handle> [--source visible|scrollback]
   stop <handle>
+  close <handle> --task <task_id> --recorded-at <lane_session_close.recorded_at>
   reconcile <handle>...
 ```
 

@@ -2148,6 +2148,48 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 	});
 });
 
+describe("Executor close rule for Lane sessions (#426 S1)", () => {
+	it("records a session close only for an integrated child whose audit pair is on the batch head, once, and leaves the Lane in place", async () => {
+		const { decideLaneSessionClose, parseLaneSessionClose } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel, { git: laneGitWithAudit() });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const close = async (task_id: string) =>
+				lanes(await startBatch({ ...args, lane_session_close: parseLaneSessionClose({ task_id }) }));
+			const running = await close("task-a");
+			expect(running.lane_session_close).toMatchObject({ task_id: "task-a", accepted: false, recorded_at: null });
+			expect(running.lane_session_close!.reason).toContain("not integrated; its session stays for the user");
+			expect((await close("task-z")).lane_session_close!.reason).toContain("task-z has no Lane");
+			expect(running.session_closes).toBeUndefined();
+
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const integrated = lanes(await startBatch(args));
+			expect(integrated.children[0]!.state).toBe("integrated");
+			// Without the audit pair on the batch head the rule refuses, whatever the child state says.
+			expect(decideLaneSessionClose({ ...integrated, session_closes: undefined } as never, { task_id: "task-a" }, () => false))
+				.toBe("task-a's audit pair is not reachable from the batch head");
+			const accepted = await close("task-a");
+			expect(accepted.lane_session_close).toEqual({ task_id: "task-a", accepted: true, reason: null, recorded_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) });
+			expect(accepted.session_closes).toEqual([{ at: accepted.lane_session_close!.recorded_at, task_id: "task-a" }]);
+			const again = await close("task-a");
+			expect(again.lane_session_close!.accepted).toBe(false);
+			expect(again.lane_session_close!.reason).toContain("already recorded");
+			expect(again.session_closes).toHaveLength(1);
+			// Closing a session removes no Lane.
+			expect(existsSync(laneA)).toBe(true);
+			expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
+			expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
 describe("coordinator correction when the rework budget is exhausted (#196)", () => {
 	it("hands the child to the coordinator up to twice, each time to a new session, then parks it with its own reason while a sibling integrates", async () => {
 		const { parseLaneInstruction, CORRECTION_LIMIT_REACHED } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");

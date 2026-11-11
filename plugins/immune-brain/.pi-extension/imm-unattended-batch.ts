@@ -37,7 +37,7 @@ import { advancePiTask, piEntryToken, piRunEntryRefusal, readTaskIntentForRecord
 import { runEntryManifest, type RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, type LaneInstructionRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, parseLaneSessionClose, type LaneInstructionRequest, type LaneSessionCloseRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
 	prepareBatchPreflight,
@@ -134,6 +134,8 @@ export interface PiBatchExecutionOptions {
 	final_verification?: string[];
 	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
 	lane_instruction?: LaneInstructionRequest;
+	/** Lane mode: the Executor close rule for an integrated child's session, recorded before the close. */
+	lane_session_close?: LaneSessionCloseRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
@@ -429,6 +431,7 @@ async function executePreparedPiBatch(
 					max_parallel: options.max_parallel,
 					...(options.plan_source ? {} : { tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug) }),
 					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+					...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
 				}
 			: {}),
 		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
@@ -568,10 +571,11 @@ export default function (
 				text: Type.String(),
 				session_state: Type.Union([Type.Literal("idle"), Type.Literal("working"), Type.Literal("blocked"), Type.Literal("done")]),
 			}, { additionalProperties: false })),
+			lane_session_close: Type.Optional(Type.Object({ task_id: Type.String() }, { additionalProperties: false })),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -608,6 +612,7 @@ export default function (
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = params.final_verification?.length === 0 ? undefined : parseFinalVerification(params.final_verification);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
+			const laneSessionClose = parseLaneSessionClose(params.lane_session_close);
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
@@ -620,6 +625,7 @@ export default function (
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+				...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				readInitiative: dependencies.readInitiative,

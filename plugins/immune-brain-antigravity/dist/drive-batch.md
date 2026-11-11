@@ -498,10 +498,19 @@ the user which tab and `task_id` Herdr cannot classify. A
 `provider_error` or `timeout` proves nothing about delivery; inspect the session
 with `imm-session observe` before repeating a command.
 
-The Parent only creates: it closes no tab, including the tabs it created, and
-every tab stays open for the user to read and close. It splits no pane and
-creates no workspace. The Parent never invokes `herdr` itself, and outside
-Herdr it never invokes `imm-session`.
+The Parent closes a tab only under the Executor close rule, and only one it
+created: when a report shows a child `integrated` and the wait has returned that
+session `idle`, `done` or `exited`, the Parent calls `start_unattended_batch`
+with `lane_session_close` (`task_id`). The runner accepts only an integrated
+child whose audit pair is reachable from the batch head and whose session close
+was not recorded before, records the close, and answers
+`lane_session_close.accepted` with `recorded_at`; only then does the Parent run
+`imm-session close <handle> --provider herdr --task <task_id> --recorded-at <recorded_at>`.
+A refused close leaves the tab open. Every other tab (a parked, failed,
+stopped or not yet integrated child's, and any tab the Parent did not create)
+stays open for the user to read and close. Closing a session removes no Lane and
+no branch. It splits no pane and creates no workspace. The Parent never invokes
+`herdr` itself, and outside Herdr it never invokes `imm-session`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -512,8 +521,8 @@ the Parent starts it once more; after a second end without Kernel progress, or
 when the report shows the child waiting on a user decision or an open Review
 reservation, it stops relaunching and reports that child to the user while its
 siblings continue. The Parent stops no session: when the report shows a child
-parked or settled while its session is still working, the Parent tells the user
-which tab and `task_id` to close. A session that stays open changes no Kernel
+parked, or settled without integration, while its session is still working, the
+Parent tells the user which tab and `task_id` to close. A session that stays open changes no Kernel
 or batch state, so the next report states what remains. Handles are not
 authority: after an interruption
 the Parent calls `start_unattended_batch` first and launches only for the

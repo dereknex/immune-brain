@@ -558,6 +558,8 @@ describe("unattended batch contract text", () => {
 			// final verification commands, and coordinator instructions (retro #195, #200, #201).
 			"restores",
 			"interventions",
+			// Lane sessions the coordinator closed under the Executor close rule (#426 S1).
+			"session_closes",
 			"final_verification",
 			// The recorded verification outcome and the bounded Parent repair tasks it produced.
 			"final_verification_result",

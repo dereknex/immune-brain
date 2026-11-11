@@ -6873,6 +6873,8 @@ function validateLaneRecordShape(value, batchId) {
   }
   if (record.interventions !== undefined && (!Array.isArray(record.interventions) || record.interventions.some((i) => typeof i !== "object" || i === null || typeof i.task_id !== "string" || i.kind !== "instruction" && i.kind !== "correction" || typeof i.text !== "string" || typeof i.text_digest !== "string")))
     throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+  if (record.session_closes !== undefined && (!Array.isArray(record.session_closes) || record.session_closes.some((c) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at))))
+    throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
   if (record.revision_delegation !== undefined && (!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" || !isCanonicalTimestamp(record.revision_delegation.confirmation_time)))
     throw new Error(`batch run state ${batchId} has an invalid revision_delegation`);
   if (record.delegated_revisions !== undefined && (!Array.isArray(record.delegated_revisions) || record.delegated_revisions.some((r) => !isObject(r) || typeof r.task_id !== "string" || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.intent_content_hash) || typeof r.confirmation_ref !== "string" || !r.confirmation_ref.startsWith(`delegated-batch:${batchId}@`) || !isCanonicalTimestamp(r.at))))
@@ -20129,6 +20131,42 @@ function decideLaneInstruction(record, request) {
     return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle or done session`;
   return null;
 }
+function parseLaneSessionClose(value) {
+  if (value === undefined || value === null)
+    return;
+  if (typeof value !== "object" || Array.isArray(value))
+    throw new Error("invalid lane_session_close: expected an object");
+  const { task_id: taskId, ...rest } = value;
+  if (Object.keys(rest).length > 0)
+    throw new Error("invalid lane_session_close: unknown field");
+  if (typeof taskId !== "string" || !TASK_ID_PATTERN2.test(taskId))
+    throw new Error("invalid lane_session_close: task_id is not a valid task id");
+  return { task_id: taskId };
+}
+function decideLaneSessionClose(record, request, auditReachable) {
+  const child = record.children.find((c) => c.task_id === request.task_id);
+  if (!child || !child.lane)
+    return `${request.task_id} has no Lane in this batch`;
+  if (child.state !== "integrated")
+    return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
+  if (record.session_closes?.some((c) => c.task_id === request.task_id))
+    return `${request.task_id}'s session close is already recorded`;
+  if (!auditReachable(request.task_id))
+    return `${request.task_id}'s audit pair is not reachable from the batch head`;
+  return null;
+}
+function applyLaneSessionClose(input, record, lanes, persist) {
+  const request = input.lane_session_close;
+  if (!request)
+    return;
+  const head = expectedBatchHead(record);
+  const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
+  if (refusal)
+    return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
+  record.session_closes = [...record.session_closes ?? [], { at: input.now, task_id: request.task_id }];
+  persist();
+  return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
+}
 var MAX_COORDINATOR_CORRECTIONS = 2;
 var CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
 var LANE_CONTRACT_MISMATCH = "batch_lane_contract_mismatch";
@@ -20443,6 +20481,8 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...record.final_report ? { final_report: record.final_report } : {},
     ...record.interventions?.length ? { interventions: record.interventions } : {},
     ...extra.instruction ? { lane_instruction: extra.instruction } : {},
+    ...record.session_closes?.length ? { session_closes: record.session_closes } : {},
+    ...extra.sessionClose ? { lane_session_close: extra.sessionClose } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
     next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked" ? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.` : TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),
@@ -20587,10 +20627,14 @@ async function runLaneBatch(input, persisted) {
       const tracker = record.batch_state === "completed" ? await closeIntegratedIssues(input, record, () => {
         record = writeBatchLaneRunState(input.root, record);
       }) : [];
+      const sessionClose = applyLaneSessionClose(input, record, lanes, () => {
+        record = writeBatchLaneRunState(input.root, record);
+      });
       return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
         handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
         refusals: retainedLaneNotices(input.root, record, lanes),
-        tracker
+        tracker,
+        sessionClose
       });
     }
     if (record.batch_state === "needs_human") {
@@ -20796,6 +20840,7 @@ async function runLaneBatch(input, persisted) {
       instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
     }
   }
+  const sessionClose = applyLaneSessionClose(input, record, lanes, persist);
   const refusals = [];
   let parkedMessage = null;
   const reviewOpen = [];
@@ -21104,7 +21149,7 @@ async function runLaneBatch(input, persisted) {
           record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
           record.batch_state = "needs_human";
           persist();
-          return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...final ? { final } : {} });
+          return finalizeLane(input.root, record, delivery.reason, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...final ? { final } : {} });
         }
         persist();
         const outcome = cleanupSingleTaskLane({
@@ -21128,6 +21173,7 @@ async function runLaneBatch(input, persisted) {
       refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
       tracker,
       instruction,
+      sessionClose,
       ...final ? { final } : {}
     });
   }
@@ -21173,7 +21219,7 @@ async function runLaneBatch(input, persisted) {
     record.final_report = await buildBatchFinalReport(input.root, record);
     record.final_report.return_to_coordinator.reason = "children_not_integrated";
     persist();
-    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction });
+    return finalizeLane(input.root, record, reloadRequired, "Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.", { handoffs, refusals, tracker, instruction, sessionClose });
   }
   if (!inFlight.length && (!startable.length || overBudget)) {
     const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
@@ -21183,7 +21229,7 @@ async function runLaneBatch(input, persisted) {
       record.final_report.return_to_coordinator.reason = "children_not_integrated";
     }
     persist();
-    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction });
+    return finalizeLane(input.root, record, parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"), "", { refusals, tracker, instruction, sessionClose });
   }
   if (!overBudget && !isParentBranch(record.branch)) {
     for (const taskId of startable) {
@@ -21198,9 +21244,9 @@ async function runLaneBatch(input, persisted) {
     }
   }
   if (reviewOpen.length > 0) {
-    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction });
+    return laneReport(record, reviewOpen.length === 1 ? `child ${reviewOpen[0]} holds an open Review reservation` : `children ${reviewOpen.join(", ")} hold open Review reservations`, "Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.", { handoffs, refusals, tracker, instruction, sessionClose });
   }
-  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction });
+  return laneReport(record, null, handoffs.some((h) => h.role === "coordinator") ? "For each coordinator handoff, read every round's findings in that Lane, start a new Lane session and send one design-level correction as lane_instruction kind correction; run the other handoffs as usual." : handoffs.some((h) => h.role === "lane-steward" && h.action === "provision") ? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers." : "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.", { handoffs, refusals, tracker, instruction, sessionClose });
 }
 
 // plugins/immune-brain/runtime/unattended/batch_runner.ts
@@ -23089,7 +23135,8 @@ class ClaudeRuntime {
       ...options.max_parallel !== undefined ? {
         max_parallel: options.max_parallel,
         ...options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) },
-        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}
+        ...options.lane_instruction ? { lane_instruction: options.lane_instruction } : {},
+        ...options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}
       } : {},
       ...options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}
     });
@@ -23247,6 +23294,12 @@ function listMcpTools() {
                 session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] }
               },
               required: ["task_id", "text", "session_state"],
+              additionalProperties: false
+            },
+            lane_session_close: {
+              type: "object",
+              properties: { task_id: { type: "string" } },
+              required: ["task_id"],
               additionalProperties: false
             }
           } : {}
@@ -23426,6 +23479,7 @@ function createMcpRuntime(options = {}) {
         };
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
+        const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
         const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
         const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
         return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
@@ -23439,7 +23493,8 @@ function createMcpRuntime(options = {}) {
           ...maxParallel !== undefined ? { max_parallel: maxParallel } : {},
           ...laneOffers !== undefined ? { lane_offers: laneOffers } : {},
           ...finalVerification !== undefined ? { final_verification: finalVerification } : {},
-          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}
+          ...laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {},
+          ...laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}
         });
       }
       if (name === "retire_stale_batch") {

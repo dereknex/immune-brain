@@ -2,14 +2,14 @@
 // unit tests. It models the port's semantics, not any real provider.
 
 import {
-	closeProofRefusal,
+	closeRecordRefusal,
 	instructionRefusal,
 	refuse,
 	resumeRefusal,
 	SUPERVISED_SESSION_PROTOCOL,
 	validateCreateInput,
 	type AwaitResult,
-	type CloseProof,
+	type CloseRecord,
 	type CreateSessionInput,
 	type SessionHandle,
 	type SessionState,
@@ -144,10 +144,10 @@ export function createFakeSessionProvider(): { port: SupervisedSessionPort; cont
 			notify();
 			return { ok: true };
 		},
-		async closeSession(handle, proof: CloseProof) {
+		async closeSession(handle, record: CloseRecord) {
 			const session = owned(handle);
 			if (!session) return notOwned(handle);
-			const unproven = closeProofRefusal(handle, proof);
+			const unproven = closeRecordRefusal(handle, record);
 			if (unproven) return unproven;
 			session.closed = true;
 			session.exited = true;

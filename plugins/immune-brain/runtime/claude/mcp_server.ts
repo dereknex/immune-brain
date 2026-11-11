@@ -21,7 +21,7 @@ import { ClaudeReviewHost, FileHookEventLog, parseHookStdin } from "./review_hos
 import { activeTaskHookOutput, consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool, type PhaseAdmissionGrant } from "./lane_guard";
 import { readRunToolSession, runContinuationHookOutput } from "./run_continuation";
 import { ClaudeRuntime, type ToolMeta } from "./kernel_ports";
-import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
+import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
 import type { AssuranceHostPort } from "../assurance/host_port";
 import { deliveryOf, type AssuranceCoordinatorPorts } from "../assurance/coordinator";
@@ -84,6 +84,12 @@ export function listMcpTools() {
 											session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] },
 										},
 										required: ["task_id", "text", "session_state"],
+										additionalProperties: false,
+									},
+									lane_session_close: {
+										type: "object",
+										properties: { task_id: { type: "string" } },
+										required: ["task_id"],
 										additionalProperties: false,
 									},
 								}
@@ -320,6 +326,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
+				const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
 				const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
@@ -334,6 +341,7 @@ export function createMcpRuntime(options: McpRuntimeOptions = {}) {
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+					...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				});
 			}
 			if (name === "retire_stale_batch") {

@@ -54,7 +54,7 @@ describe("herdr-core adapter command spelling", () => {
 		if (!first.ok || !second.ok) throw new Error("create refused");
 		const before = hcCalls(stateFile).length;
 		await port.stopSession(first.handle);
-		await port.closeSession(second.handle, { created_by_parent: true, child_integrated: true, release_handoff_issued: true, audit_pair_reachable: true, record: "r" });
+		await port.closeSession(second.handle, { task_id: "slice-a", recorded_at: "2026-11-11T08:00:00.000Z" });
 		expect(hcCalls(stateFile).slice(before).filter(call => call[0] !== "get")).toEqual([
 			["interrupt", "t1", "--json"],
 			["kill", "t1", "--json"],

@@ -86,14 +86,18 @@ export type CloseResult = { ok: true } | Refusal;
 export type ReconcileEntry = { handle: SessionHandle } & Observation & { refused?: RefusalCode };
 export type ReconcileResult = { ok: true; sessions: ReconcileEntry[] } | Refusal;
 
-/** The Executor close rule. Every fact must hold; they are Kernel and batch facts, not provider facts. */
-export interface CloseProof {
-	created_by_parent: boolean;
-	child_integrated: boolean;
-	release_handoff_issued: boolean;
-	audit_pair_reachable: boolean;
-	/** Where the close is recorded (batch report entry, tick report). */
-	record: string;
+/**
+ * The Executor close rule's record. The batch runner decides the rule from
+ * Kernel and batch facts (the child is integrated, its audit pair is reachable
+ * from the batch head, its session was not closed before) and records the
+ * close before it happens; its accepted `lane_session_close` answer carries
+ * these two fields. The provider adds the third fact: the handle is its own,
+ * so only a session the Parent created closes.
+ */
+export interface CloseRecord {
+	task_id: string;
+	/** `lane_session_close.recorded_at` from the batch report. */
+	recorded_at: string;
 }
 
 export interface SupervisedSessionPort {
@@ -117,7 +121,7 @@ export interface SupervisedSessionPort {
 	/** Reports `unknown` when no state is available; never invents `idle` or `done`. */
 	observeState(handle: SessionHandle): Promise<ObserveResult>;
 	stopSession(handle: SessionHandle): Promise<StopResult>;
-	closeSession(handle: SessionHandle, proof: CloseProof): Promise<CloseResult>;
+	closeSession(handle: SessionHandle, record: CloseRecord): Promise<CloseResult>;
 	/** Lists only the handles the caller owns; there is no "all sessions" listing. */
 	reconcile(owned: SessionHandle[]): Promise<ReconcileResult>;
 
@@ -192,16 +196,14 @@ export function resumeRefusal(handle: SessionHandle, observed: Observation): Ref
 	return refuse("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
 }
 
-/** The Executor close rule, checked before any provider is asked to close. */
-export function closeProofRefusal(handle: SessionHandle, proof: CloseProof): Refusal | null {
+/** The close record must be the runner's: a task id and a canonical timestamp. */
+export function closeRecordRefusal(handle: SessionHandle, record: CloseRecord | undefined): Refusal | null {
 	const unmet: string[] = [];
-	if (proof.created_by_parent !== true) unmet.push("created_by_parent");
-	if (proof.child_integrated !== true) unmet.push("child_integrated");
-	if (proof.release_handoff_issued !== true) unmet.push("release_handoff_issued");
-	if (proof.audit_pair_reachable !== true) unmet.push("audit_pair_reachable");
-	if (typeof proof.record !== "string" || proof.record.trim() === "") unmet.push("record");
+	if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id)) unmet.push("task_id");
+	const at = record?.recorded_at;
+	if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at) unmet.push("recorded_at");
 	if (unmet.length === 0) return null;
-	return refuse("close_unproven", `close rule not met: ${unmet.join(", ")}`, handle);
+	return refuse("close_unproven", `no accepted lane_session_close record: ${unmet.join(", ")}; ask start_unattended_batch first`, handle);
 }
 
 export function validateCreateInput(input: CreateSessionInput): Refusal | null {

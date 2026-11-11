@@ -211,6 +211,16 @@ export interface LaneIntervention {
 }
 
 /**
+ * The coordinator closed the Lane session of an integrated child (ADR 0038,
+ * Executor close rule). Recorded before the Parent closes it; carries no
+ * session identity, only which child and when.
+ */
+export interface LaneSessionClose {
+	at: string;
+	task_id: string;
+}
+
+/**
  * Lane-mode batch state. A serial batch never writes this contract; a v1
  * record is never upgraded. Every v1-gated reader skips it by contract.
  */
@@ -252,6 +262,8 @@ export interface BatchLaneRunStateRecord {
 	 * own behavior afterwards.
 	 */
 	interventions?: LaneIntervention[];
+	/** Every Lane session the coordinator closed, recorded before the close. Absent until one happens. */
+	session_closes?: LaneSessionClose[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
@@ -766,6 +778,12 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+	if (
+		record.session_closes !== undefined &&
+		(!Array.isArray(record.session_closes) ||
+			record.session_closes.some((c: unknown) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at)))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
 	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
 	if (record.revision_delegation !== undefined &&
 		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
@@ -1157,6 +1175,10 @@ export interface BatchLaneRunReport {
 	interventions?: LaneIntervention[];
 	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
 	reseals?: BatchLaneRunStateRecord["reseals"];
+	/** Lane sessions the coordinator closed (see BatchLaneRunStateRecord.session_closes). */
+	session_closes?: LaneSessionClose[];
+	/** This tick's decision on the Parent's `lane_session_close`: close the session only when accepted. */
+	lane_session_close?: { task_id: string; accepted: boolean; reason: string | null; recorded_at: string | null };
 	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */

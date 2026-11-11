@@ -11,7 +11,7 @@ import { herdrCoreSubject } from "./helpers/fake-herdr-core";
 import {
 	admitSessionProvider,
 	REQUIRED_CAPABILITIES,
-	type CloseProof,
+	type CloseRecord,
 	type SessionHandle,
 	type SupervisedSessionPort,
 } from "../plugins/immune-brain/runtime/session/supervised_session_port";
@@ -24,7 +24,7 @@ function fakeSubject(): Subject {
 const SUBJECTS: Array<[string, () => Subject]> = [["fake", fakeSubject], ["herdr", () => herdrSubject()], ["herdr-core", () => herdrCoreSubject()]];
 
 const INPUT = { cwd: "/lanes/slice-a", label: "slice-a", host: "claude-code" as const, hostArgs: ["--plugin-dir", "/p"], entry: "/immune-brain:drive slice-a" };
-const PROOF: CloseProof = { created_by_parent: true, child_integrated: true, release_handoff_issued: true, audit_pair_reachable: true, record: "batch report: slice-a closed" };
+const PROOF: CloseRecord = { task_id: "slice-a", recorded_at: "2026-11-11T08:00:00.000Z" };
 
 async function created(port: SupervisedSessionPort): Promise<SessionHandle> {
 	const result = await port.createSession(INPUT);
@@ -163,12 +163,12 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		]) expect(result).toMatchObject({ ok: false, code: "not_owned" });
 	});
 
-	it("refuses to close until every Executor close fact holds, naming the unmet ones", async () => {
+	it("refuses to close without the runner's accepted close record, naming what is missing", async () => {
 		const { port } = start();
 		const handle = await created(port);
-		const refused = await port.closeSession(handle, { ...PROOF, child_integrated: false, record: "" });
+		const refused = await port.closeSession(handle, { task_id: "", recorded_at: "yesterday" });
 		expect(refused).toMatchObject({ ok: false, code: "close_unproven" });
-		if (!refused.ok) expect(refused.reason).toBe("close rule not met: child_integrated, record");
+		if (!refused.ok) expect(refused.reason).toStartWith("no accepted lane_session_close record: task_id, recorded_at");
 		expect(await port.closeSession(handle, PROOF)).toEqual({ ok: true });
 	});
 

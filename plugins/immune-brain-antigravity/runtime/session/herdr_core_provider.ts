@@ -17,7 +17,7 @@
 import { randomBytes } from "node:crypto";
 import { parseJson, parseVersion, pick, runCommand, versionAtLeast, type CommandExec, type ExecResult } from "./exec";
 import {
-	closeProofRefusal,
+	closeRecordRefusal,
 	instructionRefusal,
 	isSessionState,
 	refuse,
@@ -316,10 +316,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (killed.code !== 0 && hcErrorKind(killed) !== "finished") return refuse("provider_error", `hc kill failed: ${failure(killed)}`, handle);
 			return { ok: true };
 		},
-		async closeSession(handle, proof) {
+		async closeSession(handle, record) {
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			const unproven = closeProofRefusal(handle, proof);
+			const unproven = closeRecordRefusal(handle, record);
 			if (unproven) return unproven;
 			if (pick(found.terminal, ["state"]) !== "finished") {
 				const killed = await hc(HC_CLI.kill(found.ids.address));

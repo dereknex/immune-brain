@@ -158,6 +158,7 @@ export interface StartBatchInput {
 	 * never sent to a blocked or working session.
 	 */
 	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
+	lane_session_close?: import("./batch_lanes").LaneSessionCloseRequest;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */

@@ -3,8 +3,8 @@
 // Every verb names its provider explicitly; nothing is auto-detected and no
 // provider stands in for another. Each call admits the provider, probes it,
 // then runs one verb and prints one JSON object. Exit 0 on success, 1 on a
-// port refusal (the JSON names it), 2 on a usage error. There is no `close`
-// verb: the Parent closes no session until the Executor close rule lands.
+// port refusal (the JSON names it), 2 on a usage error. `close` takes the
+// record of a close the batch runner accepted under the Executor close rule.
 
 import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
 import { createHerdrSessionProvider } from "./herdr_provider";
@@ -24,7 +24,7 @@ export interface CliOutcome {
 	returncode: number;
 }
 
-export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "read", "stop", "reconcile"] as const;
+export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "read", "stop", "close", "reconcile"] as const;
 
 const USAGE = [
 	"imm-session <verb> --provider herdr|herdr-core [options]",
@@ -35,6 +35,7 @@ const USAGE = [
 	"  observe <handle>",
 	"  read <handle> [--source visible|scrollback]",
 	"  stop <handle>",
+	"  close <handle> --task <task_id> --recorded-at <lane_session_close.recorded_at>",
 	"  reconcile <handle>...",
 ].join("\n");
 
@@ -54,7 +55,7 @@ function emit<T extends { ok: boolean }>(result: T): CliOutcome {
 
 interface Parsed { positional: string[]; flags: Map<string, string>; env: Record<string, string>; rest: string[] }
 
-const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source"]);
+const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source", "--task", "--recorded-at"]);
 
 function parse(args: string[]): Parsed | string {
 	const positional: string[] = [];
@@ -93,7 +94,6 @@ export async function runSessionCli(
 	resolve: typeof resolveSessionProvider = resolveSessionProvider,
 ): Promise<CliOutcome> {
 	const [verb, ...tail] = args;
-	if (verb === "close") return usage("imm-session offers no close: the Parent closes no session");
 	if (!verb || !(SESSION_VERBS as readonly string[]).includes(verb)) return usage(`unknown verb ${JSON.stringify(verb ?? "")}`);
 	const parsed = parse(tail);
 	if (typeof parsed === "string") return usage(parsed);
@@ -170,6 +170,14 @@ export async function runSessionCli(
 			const bad = needHandle();
 			if (bad) return bad;
 			return emit(await provider.stopSession(handle));
+		}
+		case "close": {
+			const bad = needHandle();
+			if (bad) return bad;
+			const task = flags.get("--task");
+			const recordedAt = flags.get("--recorded-at");
+			if (!task || !recordedAt) return usage("close needs --task and --recorded-at from an accepted lane_session_close");
+			return emit(await provider.closeSession(handle, { task_id: task, recorded_at: recordedAt }));
 		}
 		case "reconcile":
 			if (positional.length === 0) return usage("reconcile needs at least one handle");

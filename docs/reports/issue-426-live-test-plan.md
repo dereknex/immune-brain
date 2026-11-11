@@ -135,3 +135,12 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 2. 按结果修改代码：O1、O2、K1，以及任何与参考文档不符的命令写法或返回形状（只改 adapter 的命令表与解析）。
 3. 更新 `docs/reference/supervised-session-port.md` 的准入矩阵：只把 G1–G4 全过、三类对话框都报 `blocked` 的 Host 标为 core 上准入。
 4. 至少有一个 Host 在 herdr-core 上准入之后，再设计 Loop 契约里显式选择 herdr-core 的配置项（不自动探测），并对它做阶段 C。
+
+## 补充用例：S1 Executor 关闭权
+
+| 用例 | 步骤 | 期望 |
+| --- | --- | --- |
+| S1-a 未集成不关 | child 仍在运行时，Parent 调 `start_unattended_batch` 带 `lane_session_close: {task_id}` | `accepted: false`，原因含 “not integrated”；tab 不关 |
+| S1-b 集成后关闭 | child `integrated` 且等待返回 `idle`/`done`/`exited` 后，同一请求得到 `accepted: true` 与 `recorded_at`；再执行 `imm-session close <handle> --provider herdr --task <task_id> --recorded-at <recorded_at>` | 只关这个 tab；batch report 的 `session_closes` 含该 child；Lane 目录与分支仍在 |
+| S1-c 重复与伪造 | 再请求一次；以及不带或伪造 `--recorded-at` 直接 `imm-session close` | 第二次 `accepted: false`（already recorded）；伪造记录得 `close_unproven`，什么都不关 |
+| S1-d herdr-core | 同 S1-b，`--provider herdr-core` | 终端先 `kill` 后 `rm`，`hc ls --all` 中不再有它 |
