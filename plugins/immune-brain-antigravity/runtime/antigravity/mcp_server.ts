@@ -1,40 +1,74 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
-import type { Readable, Writable } from "node:stream";
-import { createMcpRuntime, serveStdio as serveSharedStdio, type McpRuntimeOptions } from "../claude/mcp_server";
-import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "./review_host";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import {
+	createMcpRuntime as createHostMcpRuntime,
+	runMcpEntry,
+	serveStdio as serveHostStdio,
+	type McpHostProfile,
+	type McpRuntime,
+	type McpRuntimeOptions,
+	type ServeStdioOptions,
+} from "../host-core/mcp_runtime";
+import { readSessionToolCall, type RunContinuationHost } from "../host-core/run_continuation_session";
+import { AntigravityReviewHost, antigravityHookEventLog, ANTIGRAVITY_CACHE_DIR, type AntigravityHookEvent } from "./review_host";
 import {
 	antigravityPreInvocationHook,
 	antigravityPreToolUseHook,
+	consumePhaseAdmission,
+	dropPhaseEntryLog,
+	readPhaseEntryState,
+	revokeEntryToken,
 	type AntigravityPreInvocationPayload,
 	type AntigravityPreToolUsePayload,
 	type AntigravityStopPayload,
 } from "./lane_guard";
 import { antigravityRunContinuationHook } from "./run_continuation";
-import { MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
+import { CORE_CONTRACT, MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
+import { AntigravityRuntime } from "./kernel_ports";
 
-export function createAntigravityMcpRuntime(options: McpRuntimeOptions = {}) {
-	const host = options.host ?? new AntigravityReviewHost(antigravityHookEventLog());
-	return createMcpRuntime({
-		...options,
-		parentHost: "antigravity",
-		probeHost: options.probeHost ?? probeHost,
-		host,
-		// Antigravity reports itself as `antigravity-client` (CLI 1.5.3)
-		// and `antigravity`, with a `v`-prefixed version.
-		trustedClientNames: options.trustedClientNames ?? ["antigravity-client", "antigravity"],
-		serverInfo: options.serverInfo ?? { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION },
-	});
-}
+/**
+ * The Antigravity continuation store, built from this adapter's own phase-entry
+ * ports. Antigravity records no tool-call correlation, so no gated call resolves
+ * a Hook session here.
+ */
+const antigravityContinuationHost = (root: string): RunContinuationHost => ({
+	cache_name: ANTIGRAVITY_CACHE_DIR,
+	entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
+	revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
+	drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root),
+});
 
-export async function serveStdio(
-	options: McpRuntimeOptions & { input?: Readable; output?: Writable; exit?: (code: number) => void } = {},
-): Promise<void> {
-	const { input, output, exit, ...runtimeOptions } = options;
-	// The shared bidirectional transport can serve `roots/list`; the readline
-	// loop this replaced could not issue server-to-client requests.
-	await serveSharedStdio({ input, output, exit, runtime: createAntigravityMcpRuntime(runtimeOptions) });
-}
+/** The Antigravity composition root: every Antigravity-specific fact the shared MCP server needs. */
+const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
+	serverInfo: { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION },
+	contract: CORE_CONTRACT,
+	// Antigravity reports itself as `antigravity-client` (CLI 1.5.3)
+	// and `antigravity`, with a `v`-prefixed version.
+	trustedClientNames: ["antigravity-client", "antigravity"],
+	toolCallIdMetaKey: "claudecode/toolUseId",
+	correlationMissingRefusal: "canonical claudecode/toolUseId metadata is missing",
+	elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
+	elicitationRejectedRefusal: "Claude Code rejected MCP elicitation/create",
+	probeHost,
+	createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
+	createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,
+	consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
+	readRunToolSession: (toolCallId, operation, workspace) =>
+		readSessionToolCall(antigravityContinuationHost(tmpdir()), tmpdir(), toolCallId, operation, workspace),
+	dispatchHook: runHook,
+	bundlePath: fileURLToPath(import.meta.url),
+};
+
+export const createAntigravityMcpRuntime = (options: McpRuntimeOptions = {}): McpRuntime =>
+	createHostMcpRuntime(ANTIGRAVITY_MCP_PROFILE, options);
+
+/**
+ * The shared bidirectional transport can serve `roots/list`; the readline loop
+ * this replaced could not issue server-to-client requests.
+ */
+export const serveStdio = (options: ServeStdioOptions = {}): Promise<void> => serveHostStdio(ANTIGRAVITY_MCP_PROFILE, options);
 
 /** Append the start event for a subagent dispatch that may complete the same `stepIdx`. */
 function appendSubagentStart(toolCall: { name: string; args?: Record<string, unknown> }, payload: Record<string, unknown>): void {
@@ -118,10 +152,6 @@ export async function runHook(): Promise<void> {
 	stdout.write("{}\n");
 }
 
-const entry = process.argv[1] ?? "";
 // Only this module's own entrypoint starts the Antigravity server: the bundle
 // also contains the Claude module entrypoint, which must not start here.
-if (entry.endsWith("/antigravity/mcp_server.ts") || entry.endsWith("/antigravity/mcp-server.mjs")) {
-	if (process.argv.includes("--hook")) void runHook();
-	else void serveStdio();
-}
+runMcpEntry(ANTIGRAVITY_MCP_PROFILE, ["/antigravity/mcp_server.ts", "/antigravity/mcp-server.mjs"]);

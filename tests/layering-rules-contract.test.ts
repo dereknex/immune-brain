@@ -47,11 +47,15 @@ describe("layering reference", () => {
 		expect(between(reference, "## Enforcement", "\n## ")).toContain("tests/runtime-layering-boundary.test.ts");
 	});
 
-	it("names the #414 ratchet baseline without pinning an edge count", () => {
+	it("states the empty #414 ratchet baseline without pinning an edge count", () => {
 		const enforcement = between(reference, "## Enforcement", "\n## ");
 		expect(enforcement).toContain("tests/runtime-layering-boundary.test.ts");
 		expect(enforcement).toContain("#414");
-		// The observed baseline has three edges; a count in the prose drifts from it.
+		// D2: after S4 the baseline is pinned at zero, so no remaining edge is named.
+		expect(enforcement).toContain("baseline is empty");
+		expect(enforcement).toContain("every host-to-host import fails");
+		expect(enforcement).not.toContain("mcp_server");
+		// The observed baseline has no edges; a count in the prose would drift from it.
 		expect(reference).not.toMatch(/\b(?:one|two|three|four|five|six)-edge\b/);
 		expect(reference).not.toContain("kernel_ports.ts:115");
 		expect(reference).not.toContain("#413");

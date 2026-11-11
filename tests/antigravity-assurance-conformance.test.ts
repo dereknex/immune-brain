@@ -704,7 +704,7 @@ describe("Antigravity Harness Conformance", () => {
 			// The shared guard for AC1: every workspace-scoped read in `callTool`
 			// after the reported call sites uses the workspace resolved for that
 			// call, never the server's startup directory.
-			const source = readFileSync(join(import.meta.dir, "../plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8");
+			const source = readFileSync(join(import.meta.dir, "../plugins/immune-brain/runtime/host-core/mcp_runtime.ts"), "utf8");
 			const from = source.indexOf("\t\tasync callTool(");
 			const body = source.slice(from, source.indexOf("\n\t\tobserve:", from));
 			expect(body.length).toBeGreaterThan(0);

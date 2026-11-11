@@ -57,7 +57,7 @@ Share code between adapters through composition and neutral modules, never inher
 
 ## Enforcement
 
-The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It refuses an inner-layer import of a host adapter, an adapter import of another adapter, and a `runtime/kernel/` or `runtime/assurance/` import of `runtime/host-core/`. The host-to-host imports that remain are an exact ratchet baseline owned by #414: a new import fails, and a baseline entry whose import is gone fails as stale.
+The Dependency Rule is enforced by `tests/runtime-layering-boundary.test.ts`. It refuses an inner-layer import of a host adapter, an adapter import of another adapter, and a `runtime/kernel/` or `runtime/assurance/` import of `runtime/host-core/`. The host-to-host ratchet baseline is empty since #414 closed its last edge: every host-to-host import fails, and a baseline entry reintroduced for one fails as stale.
 
 The third rule is recorded by ADR 0038 (`docs/adr/0038-host-neutral-adapter-core.md` in the source repository).
 

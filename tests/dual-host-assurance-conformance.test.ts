@@ -26,7 +26,9 @@ import { CliReviewHost } from "../plugins/immune-brain/runtime/assurance/cli_rev
 import { installCliReviewer, runReservedReview } from "./helpers/cli-reviewer";
 import { ClaudeRuntime, settledKernelResult, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
-import { probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { MIN_CLAUDE_CODE_VERSION, probeHost } from "../plugins/immune-brain/runtime/claude/capability";
+import { MIN_ANTIGRAVITY_VERSION } from "../plugins/immune-brain/runtime/antigravity/capability";
+import { createAntigravityMcpRuntime } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import { createMcpRuntime as createMcpRuntimeUngated, handleJsonRpc, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { PHASE_ENTRY_RECOVERY, RUN_ENTRY_REQUIRED } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 import { consumePhaseAdmission, laneGuardHookOutput, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
@@ -2996,5 +2998,87 @@ describe("runtime composition", () => {
 			await antigravity.shutdown();
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S4 AC2 (BR-REQ-4; D8). One
+// MCP stdio runtime answers both Hosts, each through its own profile: the
+// profile supplies the identity, the trusted client names, the correlation key
+// and the probe, so no adapter machinery is duplicated.
+describe("MCP host profile", () => {
+	const initialize = (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		clientInfo: { name: string; version: string },
+	) => handleJsonRpc({
+		jsonrpc: "2.0",
+		id: "init",
+		method: "initialize",
+		params: { protocolVersion: "2025-06-18", clientInfo, capabilities: { elicitation: {} } },
+	}, mcp as ReturnType<typeof createMcpRuntimeUngated>);
+
+	const initializeInfo = async (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		clientInfo: { name: string; version: string },
+	): Promise<Record<string, unknown>> => {
+		const reply = await initialize(mcp, clientInfo);
+		return (reply?.result as { serverInfo: Record<string, unknown> }).serverInfo;
+	};
+
+	const refusal = async (
+		mcp: ReturnType<typeof createMcpRuntimeUngated> | ReturnType<typeof createAntigravityMcpRuntime>,
+		name: string,
+	): Promise<Record<string, unknown> | undefined> => {
+		const reply = await handleJsonRpc({ jsonrpc: "2.0", id: name, method: "tools/call", params: { name, arguments: { task_id: "profile-task" } } }, mcp as ReturnType<typeof createMcpRuntimeUngated>);
+		return reply?.error?.data;
+	};
+
+	test("each Host's profile answers initialize with its own serverInfo", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		expect(await initializeInfo(claude, { name: "claude-code", version: "2.1.236" }))
+			.toMatchObject({ name: "claude-code", minimumHostVersion: MIN_CLAUDE_CODE_VERSION });
+
+		for (const clientInfo of [{ name: "antigravity-client", version: "v1.0.0" }, { name: "antigravity", version: "1.0.0" }]) {
+			const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+			expect(await initializeInfo(antigravity, clientInfo))
+				.toMatchObject({ name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION });
+		}
+	});
+
+	test("each Host binds the negotiated version for its own probe", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "claude-code", version: "2.1.100" });
+		expect(await refusal(claude, "advance_assurance")).toMatchObject({ reason_code: "unsupported_host" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "below", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, claude))?.error?.message)
+			.toStartWith("unsupported_host: Claude Code 2.1.100 is below the minimum supported 2.1.236");
+
+		const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: {}, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(antigravity, { name: "antigravity-client", version: "v0.0.9" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "below", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, antigravity))?.error?.message)
+			.toStartWith("unsupported_host: Antigravity version v0.0.9 is older than minimum supported 0.1.0");
+	});
+
+	test("an untrusted client name binds no version, so each Host refuses with its own probe reason", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "untrusted-client", version: "2.1.236" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "untrusted", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, claude))?.error?.message)
+			.toStartWith("unsupported_host: Claude Code version is unavailable");
+
+		const antigravity = createAntigravityMcpRuntime({ cwd: process.cwd(), env: { ANTIGRAVITY_VERSION: "1.0.0" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(antigravity, { name: "untrusted-client", version: "v1.0.0" });
+		expect((await handleJsonRpc({ jsonrpc: "2.0", id: "untrusted", method: "tools/call", params: { name: "advance_assurance", arguments: { task_id: "profile-task" } } }, antigravity))?.error?.message)
+			.toStartWith("unsupported_host: Antigravity version is unavailable");
+	});
+
+	test("a Claude gated call without claudecode/toolUseId metadata is refused as correlation_missing", async () => {
+		const claude = createMcpRuntimeUngated({ cwd: process.cwd(), env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true, consumePhaseAdmission: () => false });
+		await initialize(claude, { name: "claude-code", version: "2.1.236" });
+		const reply = await handleJsonRpc({
+			jsonrpc: "2.0",
+			id: "gated",
+			method: "tools/call",
+			params: { name: "start_unattended_batch", arguments: { initiative_slug: "profile-initiative" } },
+		}, claude);
+		expect(reply?.error?.data).toEqual({ reason_code: "correlation_missing", recovery_action: "retry through a fresh native gate in the current Host" });
 	});
 });

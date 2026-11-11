@@ -27,10 +27,8 @@ const HOSTS: Record<string, string> = {
 const HOST_CORE_DIR = "plugins/immune-brain/runtime/host-core";
 const INNER_LAYERS = ["plugins/immune-brain/runtime/kernel", "plugins/immune-brain/runtime/assurance"];
 
-/** D1: the host-to-host edges on main, each owned by #414; S3 retired the kernel_ports and interaction edges, and S4 retired the Pi -> claude/review_host edge. */
-const BASELINE: Array<{ edge: string; owner: "#414" }> = [
-	{ edge: "plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server", owner: "#414" },
-];
+/** D2: S4 retired the last host-to-host import (`antigravity/mcp_server -> claude/mcp_server`), so the #414 ratchet baseline is pinned empty: every host-to-host import now fails. */
+const BASELINE: Array<{ edge: string; owner: "#414" }> = [];
 
 interface SourceFile {
 	path: string; // repository-relative, posix separators
@@ -150,8 +148,8 @@ describe("runtime layering boundary", () => {
 	});
 
 	test("AC2: observed host-to-host edges equal the baseline", () => {
-		expect(BASELINE).toHaveLength(1);
-		expect(BASELINE.every(({ owner }) => owner === "#414")).toBe(true);
+		expect(BASELINE).toEqual([]);
+		expect(hostToHostEdges(real, HOSTS)).toEqual([]);
 		const { unexpected, stale } = compareEdges(
 			hostToHostEdges(real, HOSTS),
 			BASELINE.map(({ edge }) => edge),
@@ -162,14 +160,19 @@ describe("runtime layering boundary", () => {
 	test("AC2: a fixture edge outside the baseline is unexpected; adapter imports of core modules and npm packages are not edges", () => {
 		const fixture: SourceFile[] = [
 			{ path: "plugins/immune-brain/runtime/antigravity/new_thing.ts", source: 'import { q } from "../claude/queue";' },
+			{ path: "plugins/immune-brain/.pi-extension/report.ts", source: 'import { r } from "../runtime/antigravity/report";' },
 			{
 				path: "plugins/immune-brain/.pi-extension/ok.ts",
 				source: 'import { a } from "../../runtime/assurance/x";\nimport { b } from "typebox";\nimport { c } from "./sibling";',
 			},
 		];
 		const edges = hostToHostEdges(fixture, HOSTS);
-		expect(edges).toEqual(["plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue"]);
+		expect(edges).toEqual([
+			"plugins/immune-brain/.pi-extension/report.ts -> plugins/immune-brain/runtime/antigravity/report",
+			"plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue",
+		]);
 		expect(compareEdges(edges, BASELINE.map(({ edge }) => edge)).unexpected).toEqual([
+			"plugins/immune-brain/.pi-extension/report.ts -> plugins/immune-brain/runtime/antigravity/report",
 			"plugins/immune-brain/runtime/antigravity/new_thing.ts -> plugins/immune-brain/runtime/claude/queue",
 		]);
 	});
@@ -265,7 +268,7 @@ describe("runtime layering boundary", () => {
 			expect(coreImporterViolations(fixture)).toEqual([]);
 			expect(innerLayerViolations(fixture, HOSTS)).toEqual([]);
 			expect(hostToHostEdges(fixture, HOSTS)).toEqual([]);
-			expect(BASELINE).toHaveLength(1);
+			expect(BASELINE).toEqual([]);
 		});
 	});
 
