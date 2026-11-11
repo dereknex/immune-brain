@@ -2633,7 +2633,7 @@ describe("shared hook event log", () => {
 				expect(log.append(start("s2", "a2"))).toBe(true);
 				expect(log.list("s1").map((event) => event.agentId)).toEqual(["a1", "a1"]);
 				expect(log.list("s2").map((event) => event.agentId)).toEqual(["a2"]);
-				expect(log.sessions()).toEqual(["s1", "s2"]);
+				expect(log.sessions().sort()).toEqual(["s1", "s2"]); // order across sessions is unspecified (directory order)
 				expect(existsSync(join(root, cacheName))).toBe(true);
 				expect(readdirSync(root)).toEqual([cacheName]);
 			} finally {
