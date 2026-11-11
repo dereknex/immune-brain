@@ -7823,7 +7823,7 @@ var init_delivery_workspace = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/decision_model/thresholds.ts
-var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, A18_EVENT_PREFILTER, A19_OWNER_COMMENT_INTENT, A20_ISSUE_DUPLICATE_PAIR, POINT_REGISTRY;
+var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A14_AMBIGUOUS_USER_INTENT, A15_TASK_GRANULARITY, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, A18_EVENT_PREFILTER, A19_OWNER_COMMENT_INTENT, A20_ISSUE_DUPLICATE_PAIR, POINT_REGISTRY;
 var init_thresholds = __esm(() => {
   A1_REVIEW_FINDING_PRESCREEN = {
     id: "a1_review_finding_prescreen",
@@ -7864,6 +7864,32 @@ var init_thresholds = __esm(() => {
     },
     instructions: "Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
     threshold_set: { version: "a15/v0", values: null }
+  };
+  A14_AMBIGUOUS_USER_INTENT = {
+    id: "a14_ambiguous_user_intent",
+    question_type: "choice",
+    input_category: "pr_comment",
+    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+    criteria: {
+      clear_single_task: "The comment requests one change that one Lane can make",
+      needs_initiative_decomposition: "The comment requests work that must be split into several tasks first",
+      needs_clarification: "The comment's intent is too ambiguous to act on"
+    },
+    instructions: "Given a review comment on a daemon pull request, which option best describes what its author is asking for?",
+    threshold_set: { version: "a14-intent/v0", values: null }
+  };
+  A15_TASK_GRANULARITY = {
+    id: "a15_task_granularity",
+    question_type: "choice",
+    input_category: "issue_text",
+    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+    criteria: {
+      clear_single_task: "The issue is one task an agent can implement as written",
+      needs_initiative_decomposition: "The issue describes work that must be split into several tasks first",
+      needs_clarification: "The issue is too under-specified to plan"
+    },
+    instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
+    threshold_set: { version: "a15-granularity/v0", values: null }
   };
   A16_REVISIT_CHAIN_CLASS = {
     id: "a16_revisit_chain_class",
@@ -7946,6 +7972,8 @@ var init_thresholds = __esm(() => {
     [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
     [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
     [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
+    [A14_AMBIGUOUS_USER_INTENT.id]: A14_AMBIGUOUS_USER_INTENT,
+    [A15_TASK_GRANULARITY.id]: A15_TASK_GRANULARITY,
     [A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
     [A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
     [A18_EVENT_PREFILTER.id]: A18_EVENT_PREFILTER,

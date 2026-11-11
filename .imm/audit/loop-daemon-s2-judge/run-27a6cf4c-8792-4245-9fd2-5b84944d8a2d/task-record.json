@@ -1,0 +1,321 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s2-judge",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s2-judge",
+    "goal": "Deliver the 4-tier judgement ladder, deterministic code guards (G1-G10), closed 15-handler catalogue, decision-model points (a14, a15, a18, a19, a20), and loop_decision_record/v1 emission under S2 (D2, BR-SCN-1) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "Source BR-REQ-2, BR-SCN-1; meet S2 and D2 in docs/specs/loop-daemon.spec.md: deterministic code guards G1-G10, rule matchers, and decision_model points (a14_ambiguous_user_intent, a15_task_granularity, a18_event_prefilter, a19_owner_comment_intent, a20_issue_duplicate_pair) select exclusively from the closed 15-handler catalogue, reject forged HTML markers from unverified actors (G7) and no-touch paths (G3), and emit assurance_kernel/loop_decision_record/v1 records during imm-loop tick --dry-run.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s2-judge.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/decision_model/prompts/a18_event_prefilter.md",
+      "plugins/immune-brain/runtime/decision_model/prompts/a19_owner_comment_intent.md",
+      "plugins/immune-brain/runtime/decision_model/prompts/a20_issue_duplicate_pair.md",
+      "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+      "plugins/immune-brain/runtime/loop_daemon/decision_record.ts",
+      "plugins/immune-brain/runtime/loop_daemon/guards.ts",
+      "plugins/immune-brain/runtime/loop_daemon/handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "tests/loop-daemon-boundary.test.ts",
+      "tests/loop-daemon-judge.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s2-judge.intent.json",
+    "content_hash": "sha256:9d92eccb2de1b7d4129f43261fdf9b13f47e5d961f404c9c229c5a5a6d5c6fb3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:9d92eccb2de1b7d4129f43261fdf9b13f47e5d961f404c9c229c5a5a6d5c6fb3",
+  "git_base_head": "c2ad6c543c18a75fed3399062ee3d8acb71caa2b",
+  "attestations": [
+    {
+      "id": "approval-qa-201313a1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d92eccb2de1b7d4129f43261fdf9b13f47e5d961f404c9c229c5a5a6d5c6fb3",
+      "diff_hash": "sha256:a9d9f7b8dd4f85a5868ed35b479819955da276cd8f6c4335dd3af1501aec507d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:d337198e85c869c506434b95aec15cd7744df454c9612a88fc5c41508ac6a97c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:d337198e85c869c506434b95aec15cd7744df454c9612a88fc5c41508ac6a97c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-5b33b59c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d92eccb2de1b7d4129f43261fdf9b13f47e5d961f404c9c229c5a5a6d5c6fb3",
+      "diff_hash": "sha256:3a08ca129d076d264f602524bed4439f1ccca19f6d4f0660feb87310ed0ed7b7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e296c6810ddb57956e6c2ca79c8da3eaf01059970c9d1fe15a9e28db7c8bc50a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e296c6810ddb57956e6c2ca79c8da3eaf01059970c9d1fe15a9e28db7c8bc50a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a1068e0f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:9d92eccb2de1b7d4129f43261fdf9b13f47e5d961f404c9c229c5a5a6d5c6fb3",
+      "diff_hash": "sha256:3a08ca129d076d264f602524bed4439f1ccca19f6d4f0660feb87310ed0ed7b7",
+      "actor_id": "cli:pi:b3ab581c-3ae5-48e3-a6fb-ff6937c91cfe",
+      "summary": "Blast radius medium: new judgement ladder (judgement/guards/decision_record), cli.ts tick wiring and new decision-model points satisfy S2-AC1 — G7 rejects forged markers fail-closed, G3 escalates no-touch paths, dry-run emits loop_decision_record/v1 with zero mutations, and BR-SCN-1 is asserted at the test-file seams with host-attested QA passing; unchanged spec docs/specs/loop-daemon.spec.md (S2/D2, BR-SCN-1) read solely as the acceptance's referenced assertions.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c2ad6c543c18a75fed3399062ee3d8acb71caa2b",
+        "review_commit": "7a0bf2a7c1c5cd36eddb6530f10a5d294a8cae4a",
+        "review_tree": "f9723d53c0b0303e9221cc1c868d3439cf0dbaf1",
+        "manifest_digest": "sha256:8af1e0bb8f53ff242970785461355e079ed7187d2d7d14ef906b9b77a5200557"
+      },
+      "reviewer_verdict_sha256": "sha256:635881880abd9f5c81410835ef9efcd94483efd94086ad3c0696e4f01ab14fb0"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-63bce6e8aeda-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The production CLI never wires createDecisionModelClassifier, so real dry-run ticks cannot evaluate any Tier-2 decision-model point.",
+      "anchor": "sha256:8920955524b6597750ce011165c850b6e2d3997326a9372a47a0af088c308f91",
+      "evidence": {
+        "trigger": "Run `imm-loop tick --dry-run` with an unlabelled E1 issue and configured a18/a15 bindings → the executable calls runLoopDaemonCli without options.classify, classifyPoint returns no_binding, and the decision is a tier-3 baseline triage_issue with no classification instead of invoking the configured decision-model points.",
+        "caller_chain": [
+          "plugins/immune-brain/bin/imm-loop",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:judgeEvents",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:classifyPoint"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-63bce6e8aeda-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Tier 2 substitutes a14_pr_comment_triage and a15_issue_triage for the acceptance-named a14_ambiguous_user_intent and a15_task_granularity points and never handles the required task-granularity choices.",
+      "anchor": "sha256:03414620e11651e270ba2c0a05b711525fce4936ebf02ac36083bf893d0ace56",
+      "evidence": {
+        "trigger": "An E1 issue whose required a15_task_granularity classification is clear_single_task, needs_initiative_decomposition, or needs_clarification → triageIssue instead requests a15_issue_triage and switches only on ready_for_agent, needs_spec, and duplicate, so the named point is never evaluated and its outcomes cannot select the specified judgement; E10 likewise requests a14_pr_comment_triage rather than a14_ambiguous_user_intent.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:judgeTier2",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:triageIssue",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:classifyPrComment",
+          "tests/loop-daemon-judge.test.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-63bce6e8aeda-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "G7 fails open when allowed_actors is omitted, which is the production CLI's current configuration, allowing non-allowlisted collaborators to authorize marker-driven handlers.",
+      "anchor": "sha256:4a3f132b8ea65da0b02db20ab5055fc6a53bedee47ad55f2abb756fd756cf6e2",
+      "evidence": {
+        "trigger": "An E4_PLAN_APPROVED event with author `mallory`, author_association `COLLABORATOR`, and a forged plan-digest marker, judged through the production CLI facts → isVerifiedActor treats the empty default allowlist as unrestricted, G7 does not block, and Tier 1 emits enroll_and_drive for a login that is not in loop.allowed_actors.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+          "plugins/immune-brain/runtime/loop_daemon/guards.ts:isVerifiedActor",
+          "plugins/immune-brain/runtime/loop_daemon/guards.ts:evaluateGuards",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:matchTier1"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-63bce6e8aeda-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S2-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "G8 also fails open when no expected digest or revision is supplied, so the production tick accepts unbound approval and lane-reply markers.",
+      "anchor": "sha256:740062f59929b021e3e99487688f2271bd0771d3fac3778c7fdf9d9091ee1553",
+      "evidence": {
+        "trigger": "An otherwise verified E4_PLAN_APPROVED event carrying plan_digest `sha256:forged` while no published expected_plan_digest exists, as in the production CLI facts → evaluateGuards records G8 as unblocked with `no digest or revision to compare`, and matchTier1 emits enroll_and_drive instead of rejecting the approval for lacking an exact published-digest match.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+          "plugins/immune-brain/runtime/loop_daemon/guards.ts:evaluateGuards",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:judgeEvent",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:matchTier1"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S2-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s2-judge:2026-11-11T15:58:43.970Z",
+      "at": "2026-11-11T15:58:43.970Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s2-judge.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s2-judge:2026-11-11T15:58:51.311Z",
+      "at": "2026-11-11T15:58:51.311Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-201313a1\naction_v2_sha256:3d375122a739e7655fa5a5865b056de1e8a2b264aaeb147a8c9fb32e4a2656c7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-8dd5580776034b61",
+        "issued_at": "2026-11-11T15:58:51.311Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s2-judge:2026-11-11T16:04:40.208Z",
+      "at": "2026-11-11T16:04:40.208Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:4f96d47bff77c206957082e4a0fbaf26d59bc8f08188f6aceb7aaae135334f7b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:ee709448-7791-48ec-9efd-437851607b07",
+        "confirmation_ref": "pi-confirm-01c425d5e986cb1b",
+        "issued_at": "2026-11-11T16:04:40.208Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c2ad6c543c18a75fed3399062ee3d8acb71caa2b",
+        "review_commit": "c114f91f21ba6beda4fb01861d4cbff175c9b380",
+        "review_tree": "0883f37e25ef31770e11c474afa11088a233f9f2",
+        "manifest_digest": "sha256:1466f25cbe9fa4df5742f46c6e28b0d813d51a5e4955ec0916656f6a6f162f53"
+      },
+      "review_started_at": "2026-11-11T15:58:53.457Z",
+      "review_submitted_at": "2026-11-11T16:04:39.650Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s2-judge:2026-11-11T16:10:48.977Z",
+      "at": "2026-11-11T16:10:48.977Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-63bce6e8aeda-1-review-1\naction_v2_sha256:0bd7c7f612ce7711f8aca32fa1e3c9d9f211d03f4e82577dcc2d5909045c9bfe"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s2-judge:2026-11-11T16:10:57.523Z",
+      "at": "2026-11-11T16:10:57.523Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-63bce6e8aeda-3-review-3\naction_v2_sha256:16b9ee2448e4d8a1a9c0706d9e5e9f3ddb3eac226992b5d5bdcd503ace410136"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s2-judge:2026-11-11T16:11:10.077Z",
+      "at": "2026-11-11T16:11:10.077Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-63bce6e8aeda-4-review-4\naction_v2_sha256:afa00e4e9a963783d553a000b863489190288b1cb312b910d1417247270f1d07"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s2-judge:2026-11-11T16:11:21.779Z",
+      "at": "2026-11-11T16:11:21.779Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-63bce6e8aeda-2-review-2\naction_v2_sha256:652f8a0b948acec8cfc3f5986ede505121114a6ae7b9ce2fc87d56c079b8eae2"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s2-judge:2026-11-11T16:11:31.568Z",
+      "at": "2026-11-11T16:11:31.568Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s2-judge.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s2-judge:2026-11-11T16:11:38.955Z",
+      "at": "2026-11-11T16:11:38.955Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5b33b59c\naction_v2_sha256:142ab558b83f6112b3ec399b0ff24e2850e35f17cbec5a2b974069567494387f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-fd748ceeb27984c4",
+        "issued_at": "2026-11-11T16:11:38.955Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s2-judge:2026-11-11T16:14:33.621Z",
+      "at": "2026-11-11T16:14:33.621Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a1068e0f\naction_v2_sha256:337b4ad277ec60d36d544ef2626d662904e04f59a6a5ffc77ca8aeed742bf7d9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:b3ab581c-3ae5-48e3-a6fb-ff6937c91cfe",
+        "confirmation_ref": "pi-confirm-0b6a40900290b605",
+        "issued_at": "2026-11-11T16:14:33.621Z"
+      },
+      "review_started_at": "2026-11-11T16:11:41.856Z",
+      "review_submitted_at": "2026-11-11T16:14:32.914Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:loop-daemon-s2-judge:2026-11-11T16:14:35.696Z",
+      "at": "2026-11-11T16:14:35.696Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5408194ef5709c1e708b46fd043c1ae833bdcbf112d0f694018c99b190abb9eb"
+    }
+  ]
+}

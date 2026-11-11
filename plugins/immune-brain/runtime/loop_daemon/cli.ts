@@ -17,10 +17,15 @@ import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import type { GhTransport } from "../github_issue_tracker.ts";
+import { readNoTouch } from "../no_touch.ts";
+import { buildDecisionRecord } from "./decision_record.ts";
+import { type GuardFacts, eventTarget } from "./guards.ts";
+import { type ClassifyFn, createDecisionModelClassifier, judgeEvents } from "./judgement.ts";
 import { acquireDaemonLock, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
 import {
+	appendLoopDecision,
 	appendLoopEvent,
 	deleteLease,
 	initLoopState,
@@ -49,6 +54,10 @@ export async function runLoopDaemonCli(
 		snapshotOverride?: ObservationInput;
 		lockHeld?: boolean;
 		singleIteration?: boolean;
+		/** Decision-model seam; production runs resolve the user's point bindings. */
+		classify?: ClassifyFn;
+		/** Facts the caller owns (budget, leases, identity posture, retry cap). */
+		guardFacts?: Partial<GuardFacts>;
 	},
 ): Promise<CliOutput> {
 	const absoluteRoot = resolve(root);
@@ -281,11 +290,45 @@ Options:
 				}
 			}
 
+			const recordedAt = new Date().toISOString();
+			let declaredNoTouch: string[];
+			try {
+				declaredNoTouch = readNoTouch(absoluteRoot);
+			} catch (error: any) {
+				return {
+					stdout: "",
+					stderr: `Error: unreadable no-touch declaration: ${error?.message || String(error)}\n`,
+					returncode: 1,
+				};
+			}
+
+			const facts: GuardFacts = {
+				paused: state.paused,
+				no_touch_paths: declaredNoTouch,
+				active_leases: state.active_leases,
+				// S3 replaces this with the same-UID inspection; degraded fails policy_auto closed.
+				identity_posture: "degraded",
+				...options?.guardFacts,
+			};
+
+			const judgements = await judgeEvents(obs.events, { facts, classify: options?.classify });
+			const decisions = obs.events.map((event, index) =>
+				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
+			);
+
+			if (!isDryRun) {
+				for (const decision of decisions) {
+					appendLoopDecision(stateDir, decision);
+				}
+			}
+
 			const outputPayload = {
 				contract: "assurance_kernel/loop_tick_result/v1",
 				dry_run: isDryRun,
 				events: obs.events,
 				events_count: obs.events.length,
+				decisions,
+				decisions_count: decisions.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -294,9 +337,11 @@ Options:
 				return { stdout: jsonOutput(outputPayload), stderr: "", returncode: 0 };
 			}
 
-			const summary = `Tick completed (${isDryRun ? "DRY-RUN" : "LIVE"}): observed ${obs.events.length} events\n` +
+			const summary = `Tick completed (${isDryRun ? "DRY-RUN" : "LIVE"}): observed ${obs.events.length} events, recorded ${decisions.length} decisions\n` +
 				obs.events.map((e) => `  [${e.kind}] ${e.event_id}`).join("\n") +
-				(obs.events.length > 0 ? "\n" : "");
+				(obs.events.length > 0 ? "\n" : "") +
+				decisions.map((d) => `  -> ${d.handler} (tier ${d.tier}) ${d.event_id}: ${d.reason}`).join("\n") +
+				(decisions.length > 0 ? "\n" : "");
 
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
@@ -361,8 +406,13 @@ Options:
 	};
 }
 
+// The executable composes the decision-model seam; a library caller injects its
+// own `classify`, and an absent one leaves Tier 2 at its deterministic baseline.
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
-	const result = await runLoopDaemonCli(process.argv.slice(2));
+	const root = process.cwd();
+	const result = await runLoopDaemonCli(process.argv.slice(2), root, {
+		classify: createDecisionModelClassifier(root),
+	});
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);
 	process.exit(result.returncode);
