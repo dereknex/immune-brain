@@ -14,12 +14,15 @@ import {
 import { readSessionToolCall, type RunContinuationHost } from "../host-core/run_continuation_session";
 import { AntigravityReviewHost, antigravityHookEventLog, ANTIGRAVITY_CACHE_DIR, type AntigravityHookEvent } from "./review_host";
 import {
+	antigravityPostToolUseHook,
 	antigravityPreInvocationHook,
-	antigravityPreToolUseHook,
+	antigravityPreToolUseHookAsync,
+	consumeNativeConfirmation,
 	consumePhaseAdmission,
 	dropPhaseEntryLog,
 	readPhaseEntryState,
 	revokeEntryToken,
+	type AntigravityPostToolUsePayload,
 	type AntigravityPreInvocationPayload,
 	type AntigravityPreToolUsePayload,
 	type AntigravityStopPayload,
@@ -62,6 +65,10 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 	probeHost,
 	createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
 	createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,
+	// ADR 0004: Antigravity opens literal-user confirmations through its native
+	// `PreToolUse` `force_ask` channel and consumes the step-correlated grant here,
+	// never through server-initiated MCP `elicitation/create`.
+	requestConfirmation: (input) => consumeNativeConfirmation(input),
 	consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
 	readRunToolSession: (toolCallId, operation, workspace) =>
 		readSessionToolCall(antigravityContinuationHost(tmpdir()), tmpdir(), toolCallId, operation, workspace),
@@ -69,14 +76,36 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 	bundlePath: fileURLToPath(import.meta.url),
 };
 
-export const createAntigravityMcpRuntime = (options: McpRuntimeOptions = {}): McpRuntime =>
-	createHostMcpRuntime(ANTIGRAVITY_MCP_PROFILE, options);
+export interface AntigravityMcpRuntimeOptions extends McpRuntimeOptions {
+	/** Private store root for PreToolUse native confirmation grants; defaults to `os.tmpdir()`. */
+	confirmationStoreRoot?: string;
+}
+
+export interface AntigravityServeStdioOptions extends ServeStdioOptions {
+	/** Private store root for PreToolUse native confirmation grants; defaults to `os.tmpdir()`. */
+	confirmationStoreRoot?: string;
+}
+
+function withConfirmationStore<T extends McpRuntimeOptions>(options: T & { confirmationStoreRoot?: string }): T {
+	const { confirmationStoreRoot, ...rest } = options;
+	if (!confirmationStoreRoot) return rest as T;
+	return {
+		...rest,
+		requestConfirmation: rest.requestConfirmation ?? ((input) => consumeNativeConfirmation(input, confirmationStoreRoot)),
+		consumePhaseAdmission:
+			rest.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation, confirmationStoreRoot)),
+	} as T;
+}
+
+export const createAntigravityMcpRuntime = (options: AntigravityMcpRuntimeOptions = {}): McpRuntime =>
+	createHostMcpRuntime(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
 
 /**
- * The shared bidirectional transport can serve `roots/list`; the readline loop
- * this replaced could not issue server-to-client requests.
+ * The shared bidirectional transport can serve `roots/list`; `ANTIGRAVITY_MCP_PROFILE`
+ * keeps its Hook-backed `requestConfirmation` port instead of `elicitation/create`.
  */
-export const serveStdio = (options: ServeStdioOptions = {}): Promise<void> => serveHostStdio(ANTIGRAVITY_MCP_PROFILE, options);
+export const serveStdio = (options: AntigravityServeStdioOptions = {}): Promise<void> =>
+	serveHostStdio(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
 
 /**
  * The step index Antigravity appends to a call's `progressToken` (E4): the final
@@ -144,13 +173,14 @@ export async function runHook(): Promise<void> {
 				};
 				antigravityHookEventLog().append(event);
 			}
+			antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload);
 			stdout.write("{}\n");
 			return;
 		}
 
 		// PreToolUse: an allowed subagent dispatch is the start event of the call
 		// the matching PostToolUse terminates (Spec D4).
-		const result = antigravityPreToolUseHook(payload as unknown as AntigravityPreToolUsePayload);
+		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload);
 		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
 		stdout.write(JSON.stringify(result) + "\n");
 		return;

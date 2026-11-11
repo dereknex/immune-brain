@@ -19749,7 +19749,12 @@ function listMcpTools() {
         } : {
           task_id: { type: "string" },
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
-          ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+          ...tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {},
+          ...tool.name === "request_authorization" ? {
+            choice: { type: "string", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] },
+            exit: { type: "string", enum: ["grant_rounds", "accept_residual_risk", "replan"] },
+            rounds: { type: "integer", minimum: 1 }
+          } : {},
           ...tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {},
           ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
           ...tool.name === "submit_verification" ? { result: { type: "string" } } : {},
@@ -19791,7 +19796,7 @@ function createMcpRuntime(profile, options = {}) {
     ports: options.ports,
     authorityOverrides: options.authorityOverrides,
     interactive: options.interactive,
-    requestConfirmation: options.requestConfirmation,
+    requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
     batchKernel: options.batchKernel,
     batchGit: options.batchGit,
     readInitiative: options.readInitiative
@@ -19865,7 +19870,7 @@ function createMcpRuntime(profile, options = {}) {
     serverInfo,
     bindClientHandshake(identity) {
       negotiatedVersion = identity.version || undefined;
-      negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
+      negotiatedInteractive = identity.interactive && (Boolean(profile.requestConfirmation) || supportsElicitationProtocol(identity.protocolVersion));
       negotiatedRoots = identity.roots === true;
       rootsWorkspace = undefined;
       runtime.bindHostVersion(negotiatedVersion);
@@ -19916,6 +19921,8 @@ function createMcpRuntime(profile, options = {}) {
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId,
+          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+          workspace,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -19958,6 +19965,8 @@ function createMcpRuntime(profile, options = {}) {
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId,
+          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+          workspace,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -19988,6 +19997,8 @@ function createMcpRuntime(profile, options = {}) {
       const toolMeta = {
         sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
         toolCallId: meta.toolCallId ?? `call-${name}`,
+        ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+        workspace,
         taskId,
         interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
         signal: meta.signal
@@ -20078,7 +20089,7 @@ async function handleJsonRpc(message, mcp) {
     mcp.bindClientHandshake({
       version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
       protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
-      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
+      interactive: trustedClient && (Boolean(mcp.profile.requestConfirmation) || elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation)),
       roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots)
     });
     return {
@@ -20378,73 +20389,75 @@ async function serveStdio(profile, options = {}) {
       item.reject(error);
     pending.clear();
   };
-  mcp.bindNativeConfirmation(async (input) => {
-    if (!accepting)
-      throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
-    if (input.signal?.aborted)
-      throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
-    const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
-    let abortListener;
-    const response = new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject });
-      abortListener = () => {
-        pending.delete(requestId);
-        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
-      };
-      input.signal?.addEventListener("abort", abortListener, { once: true });
-    });
-    try {
-      await writeReply(output, {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "elicitation/create",
-        params: elicitationParams(input)
+  if (!profile.requestConfirmation && !options.requestConfirmation) {
+    mcp.bindNativeConfirmation(async (input) => {
+      if (!accepting)
+        throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
+      if (input.signal?.aborted)
+        throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+      const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
+      let abortListener;
+      const response = new Promise((resolve, reject) => {
+        pending.set(requestId, { resolve, reject });
+        abortListener = () => {
+          pending.delete(requestId);
+          reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+        };
+        input.signal?.addEventListener("abort", abortListener, { once: true });
       });
-      const reply = await response;
-      if (reply.error) {
-        if (reply.error.code === -32601) {
-          throw new NativeAuthorityError("unsupported_host", profile.elicitationRejectedRefusal);
+      try {
+        await writeReply(output, {
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "elicitation/create",
+          params: elicitationParams(input)
+        });
+        const reply = await response;
+        if (reply.error) {
+          if (reply.error.code === -32601) {
+            throw new NativeAuthorityError("unsupported_host", profile.elicitationRejectedRefusal);
+          }
+          throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
         }
-        throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
-      }
-      const result = reply.result;
-      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
-      if (action !== "accept" && action !== "decline" && action !== "cancel") {
-        throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
-      }
-      let reworkChoice;
-      let verifierChoice;
-      if (action === "accept" && input.verifierDispute) {
-        const content = result.content;
-        if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
-        verifierChoice = content.choice;
-      } else if (action === "accept" && input.reworkExits) {
-        const parsed = parseReworkChoice(input.reworkExits, result.content);
-        if (!parsed) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+        const result = reply.result;
+        const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
+        if (action !== "accept" && action !== "decline" && action !== "cancel") {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
         }
-        reworkChoice = parsed;
-      } else if (action === "accept") {
-        const content = result.content;
-        const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
-        const valid = keys !== null && keys.length === 0;
-        if (!valid) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+        let reworkChoice;
+        let verifierChoice;
+        if (action === "accept" && input.verifierDispute) {
+          const content = result.content;
+          if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
+          verifierChoice = content.choice;
+        } else if (action === "accept" && input.reworkExits) {
+          const parsed = parseReworkChoice(input.reworkExits, result.content);
+          if (!parsed) {
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+          }
+          reworkChoice = parsed;
+        } else if (action === "accept") {
+          const content = result.content;
+          const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+          const valid = keys !== null && keys.length === 0;
+          if (!valid) {
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+          }
         }
+        return {
+          decision: action,
+          requestId,
+          ...reworkChoice ? { reworkChoice } : {},
+          ...verifierChoice ? { verifierChoice } : {}
+        };
+      } finally {
+        pending.delete(requestId);
+        if (abortListener)
+          input.signal?.removeEventListener("abort", abortListener);
       }
-      return {
-        decision: action,
-        requestId,
-        ...reworkChoice ? { reworkChoice } : {},
-        ...verifierChoice ? { verifierChoice } : {}
-      };
-    } finally {
-      pending.delete(requestId);
-      if (abortListener)
-        input.signal?.removeEventListener("abort", abortListener);
-    }
-  });
+    });
+  }
   mcp.bindRootsProvider(async (signal) => {
     if (!accepting)
       return;
@@ -21185,14 +21198,189 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync20, realpathSync as realpathSync20, rmSync as rmSync11, writeFileSync as writeFileSync11, readFileSync as readFileSync22 } from "node:fs";
+import { existsSync as existsSync20, lstatSync as lstatSync20, readdirSync as readdirSync10, readFileSync as readFileSync25, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync14 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
-import { join as join31 } from "node:path";
+import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
+import { join as join35 } from "node:path";
+init_batch_final_verification();
+init_batch_preflight();
+init_batch_git();
+init_batch_plan();
+init_batch_state();
+
+// plugins/immune-brain/runtime/unattended/batch_disposition.ts
+init_storage();
+init_storage_paths();
+init_batch_reasons();
+init_batch_preflight();
+init_batch_state();
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join30 } from "node:path";
+var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
+var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
+var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
+var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
+function kernelLifecycleOf(root, taskId) {
+  try {
+    if (readActiveClaimTaskId(root) === taskId)
+      return null;
+    return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
+function laneChildLifecycleOf(root, child) {
+  const lane = child.lane;
+  if (!lane)
+    return kernelLifecycleOf(root, child.task_id);
+  try {
+    if (!existsSync17(join30(lane.path, KERNEL_DB_RELATIVE)))
+      return null;
+    if (readActiveClaimTaskId(lane.path) === child.task_id)
+      return null;
+    const runId = localRunId(lane.path, child.task_id);
+    if (runId === null)
+      return kernelLifecycleOf(root, child.task_id);
+    if (lane.run_id && runId !== lane.run_id)
+      return null;
+    return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
+function childEvidenceOf(root, record) {
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      state: child.state,
+      commit: child.commit,
+      lane_branch: child.lane?.branch ?? null,
+      kernel_lifecycle: laneChildLifecycleOf(root, child)
+    }));
+  return record.children.map((child) => ({
+    task_id: child.task_id,
+    slice_id: child.slice_id,
+    state: child.state,
+    commit: child.commit,
+    lane_branch: null,
+    kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
+  }));
+}
+function inFlightChildOf(root, record) {
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
+  return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
+}
+function readStaleBatchLookup(root, initiativeSlug) {
+  const found = findExistingActiveBatch(root, initiativeSlug);
+  if (found === null) {
+    const settled = findSettledBatchRecord(root, initiativeSlug);
+    if (settled)
+      return { kind: "terminal", batch_id: settled.batch_id };
+    return { kind: "none" };
+  }
+  if (found.corrupt)
+    return { kind: "corrupt", path: found.path, ...found.newer_contract ? { newer_contract: found.newer_contract } : {} };
+  const record = found.record;
+  if (isTerminalBatchState(record.batch_state))
+    return { kind: "terminal", batch_id: record.batch_id };
+  const inFlight = inFlightChildOf(root, record);
+  if (inFlight)
+    return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
+  return {
+    kind: "retirable",
+    record,
+    facts: {
+      batch_id: record.batch_id,
+      initiative_slug: record.initiative_slug,
+      batch_state: record.batch_state,
+      plan_digest: record.plan_digest,
+      branch: record.branch ?? `imm/${record.initiative_slug}`,
+      base_head: record.base_head,
+      confirmation_time: record.confirmation_time,
+      recorded_commits: [...record.commits],
+      children: childEvidenceOf(root, record)
+    }
+  };
+}
+async function retireStaleBatch(options) {
+  const { root, initiative_slug: initiativeSlug, now } = options;
+  const lookup = readStaleBatchLookup(root, initiativeSlug);
+  if (lookup.kind === "none")
+    return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
+  if (lookup.kind === "corrupt")
+    return { outcome: "rejected", rejection: lookup.newer_contract ? batchReason("batch_runtime_too_old", new BatchRuntimeTooOldError(lookup.path, lookup.newer_contract).detail) : batchReason("batch_state_unreadable", lookup.path) };
+  if (lookup.kind === "terminal")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_absent", `batch ${lookup.batch_id} already reached a terminal state`)
+    };
+  if (lookup.kind === "in_flight")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_in_flight", `batch ${lookup.batch_id}, child ${lookup.task_id}`)
+    };
+  const { record, facts } = lookup;
+  const expected = readSecureProjectBytes(root, batchStatePath(record.batch_id));
+  const decision = await options.gate(facts);
+  if (decision.kind === "host_rejection")
+    return { outcome: "host_rejection", value: decision.value };
+  if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+    return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
+  const retired = { ...record, batch_state: "superseded" };
+  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+  const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
+  const retirement = options.confirmationRef ? {
+    retirement: {
+      confirmation_ref: options.confirmationRef({
+        batch_id: record.batch_id,
+        plan_digest: record.plan_digest,
+        request_id: decision.request_id
+      }),
+      plan_digest: record.plan_digest
+    }
+  } : {};
+  const stored = replaceAnyBatchRunState(root, expected, retired, () => {
+    if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+      throw new Error("batch state changed before the disposition was applied");
+  });
+  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    max_parallel: stored.max_parallel,
+    children: stored.children,
+    commits: stored.commits,
+    reason,
+    handoffs: [],
+    ...retirement,
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  }) : writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    children: stored.children,
+    commits: stored.commits,
+    reason,
+    ...retirement,
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  });
+  return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
+}
+
+// plugins/immune-brain/runtime/antigravity/lane_guard.ts
+init_layered_config();
+init_assurance_projection();
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
 import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join30 } from "node:path";
+import { join as join31 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
@@ -21220,7 +21408,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join30(dir, name, "SKILL.md"));
+    statSync6(join31(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -21231,212 +21419,12 @@ function isAbsent(error) {
   return code === "ENOENT" || code === "ENOTDIR";
 }
 
-// plugins/immune-brain/runtime/antigravity/lane_guard.ts
-var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
-var GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
-var LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
-var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
-function gatedOperation(toolName, args) {
-  const direct = GATED_MCP_TOOL.exec(toolName);
-  if (direct)
-    return direct[1];
-  if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
-    return null;
-  const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
-  return lazy ? lazy[1] : null;
-}
-function entryLogPath(sessionId, root) {
-  return join31(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
-}
-function admissionPath(toolUseId, root) {
-  return join31(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
-}
-function dropPrivate(path) {
-  try {
-    rmSync11(path, { force: true });
-  } catch {}
-}
-function antigravityLocalNames(cwd, home) {
-  const roots = [join31(cwd, ".agents"), join31(home, ".agents"), join31(home, ".gemini/config")];
-  return {
-    alias: (name) => {
-      for (const root of roots) {
-        const body = readAliasFile(join31(root, "commands", `${name}.md`));
-        if (body !== null)
-          return body;
-      }
-      return null;
-    },
-    skill: (name) => roots.some((root) => localSkillExists(join31(root, "skills"), name))
-  };
-}
-function readPhaseEntryState(sessionId, root = tmpdir7()) {
-  if (!sessionId)
-    return null;
-  const path = entryLogPath(sessionId, root);
-  try {
-    lstatSync20(path);
-  } catch (error) {
-    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
-  }
-  if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
-    return null;
-  try {
-    const text = readFileSync22(path, "utf8");
-    return reducePhaseEntryLog(text);
-  } catch {
-    return null;
-  }
-}
-function appendPhaseEntry(sessionId, line, root) {
-  const path = entryLogPath(sessionId, root);
-  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-  try {
-    writeFileSync11(path, line + `
-`, { flag: "a", mode: 384 });
-    return true;
-  } catch {
-    dropPrivate(path);
-    return false;
-  }
-}
-function dropPhaseEntryLog(sessionId, root = tmpdir7()) {
-  if (sessionId)
-    dropPrivate(entryLogPath(sessionId, root));
-}
-function revokeEntryToken(sessionId, reason, root = tmpdir7()) {
-  if (sessionId && readPhaseEntryState(sessionId, root)?.token)
-    appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root);
-}
-function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
-  if (!conversationId)
-    return false;
-  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
-  const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
-  let workspace = null;
-  if (entry === "run") {
-    try {
-      workspace = realpathSync20(cwd);
-    } catch {}
-  }
-  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID11(), workspace } : undefined);
-  return appendPhaseEntry(conversationId, line, locations.root ?? tmpdir7());
-}
-function consumePhaseAdmission(toolCallId, operation, root = tmpdir7()) {
-  const path = admissionPath(toolCallId, root);
-  try {
-    const text = readFileSync22(path, "utf8");
-    dropPrivate(path);
-    const parsed = JSON.parse(text);
-    if (parsed.operation !== operation)
-      return null;
-    if (typeof parsed.conversation !== "string" || !parsed.conversation)
-      return null;
-    const state = readPhaseEntryState(parsed.conversation, root);
-    if (!state?.run_live || state.token !== parsed.token)
-      return null;
-    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
-  } catch {
-    return null;
-  }
-}
-function antigravityPreInvocationHook(payload, locations = {}) {
-  const prompt = payload.lastUserInput ?? "";
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
-  return { injectSteps: [], terminationBehavior: "" };
-}
-function antigravityPreToolUseHook(payload, locations = {}) {
-  const toolName = payload.toolCall.name;
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  if (FILE_TOOLS.has(toolName)) {
-    const filePath = payload.toolCall.args.Path ?? payload.toolCall.args.file_path ?? payload.toolCall.args.path;
-    const refusal = laneWriteRefusal(cwd, filePath);
-    if (refusal) {
-      return { decision: "deny", reason: refusal };
-    }
-  }
-  const gated = gatedOperation(toolName, payload.toolCall.args ?? {});
-  if (gated) {
-    const root = locations.root ?? tmpdir7();
-    const state = readPhaseEntryState(payload.conversationId, root);
-    const opName = { kind: "tool", name: gated };
-    const admission = admitPhaseOperation(opName, state);
-    if (!admission.ok) {
-      return { decision: "force_ask", reason: phaseRefusalMessage(admission) };
-    }
-    if (payload.stepIdx === undefined) {
-      return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
-    }
-    const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
-    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
-    ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-    writeFileSync11(admissionPath(toolUseId, root), admitLine, { mode: 384 });
-    return { decision: "allow" };
-  }
-  return { decision: "allow" };
-}
-
-// plugins/immune-brain/runtime/antigravity/run_continuation.ts
-init_batch_preflight();
-init_coordinator();
-async function antigravityRunContinuationHook(payload) {
-  const workspace = payload.workspacePaths?.[0] ?? process.cwd();
-  const taskId = readActiveClaimTaskId(workspace);
-  if (!taskId) {
-    return {};
-  }
-  let status;
-  try {
-    status = await projectTaskStatus(workspace, taskId);
-  } catch {
-    return {};
-  }
-  if (!status || status.error || !status.projection) {
-    return {};
-  }
-  return decideAutomatedStop(taskId, status.projection);
-}
-
-// plugins/immune-brain/runtime/antigravity/capability.ts
-var MIN_ANTIGRAVITY_VERSION = "0.1.0";
-var HOST_ID = "antigravity";
-var CORE_CONTRACT = "assurance_kernel/host_adapter/antigravity/v1";
-var SUPPORTED_PLATFORMS = ["darwin", "linux"];
-function parseSemver(value) {
-  const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
-  if (!match)
-    return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-function compareSemver(left, right) {
-  const a = parseSemver(left);
-  const b = parseSemver(right);
-  if (!a || !b)
-    throw new Error(`invalid semver: ${!a ? left : right}`);
-  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-}
-function probeHost(env = process.env, platform = process.platform, hostVersion) {
-  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
-  if (!version)
-    return { ok: false, reason: "Antigravity version is unavailable" };
-  if (!parseSemver(version))
-    return { ok: false, reason: `Antigravity version is invalid: ${version}` };
-  if (compareSemver(version, MIN_ANTIGRAVITY_VERSION) < 0) {
-    return { ok: false, reason: `Antigravity version ${version} is older than minimum supported ${MIN_ANTIGRAVITY_VERSION}` };
-  }
-  if (!SUPPORTED_PLATFORMS.includes(platform)) {
-    return { ok: false, reason: `platform ${platform} is unsupported` };
-  }
-  return { ok: true, host: HOST_ID, version, platform };
-}
-
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync19, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname17, join as join35, resolve as resolve16 } from "node:path";
+import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 init_coordinator();
 init_verification();
@@ -21510,12 +21498,12 @@ init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
-import { readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
+import { readFileSync as readFileSync22, writeFileSync as writeFileSync11 } from "node:fs";
 import { join as join32 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync23(join32(root, relativePath)),
+    bytes: readFileSync22(join32(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -21523,7 +21511,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync12(join32(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join32(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -21535,7 +21523,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync23(join32(root, snapshot.path));
+  const restoredBytes = readFileSync22(join32(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -21920,172 +21908,6 @@ function createBatchKernelPort(input) {
   };
 }
 
-// plugins/immune-brain/runtime/unattended/batch_disposition.ts
-init_storage();
-init_storage_paths();
-init_batch_reasons();
-init_batch_preflight();
-init_batch_state();
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join33 } from "node:path";
-var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
-var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
-var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
-var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
-var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
-function kernelLifecycleOf(root, taskId) {
-  try {
-    if (readActiveClaimTaskId(root) === taskId)
-      return null;
-    return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
-  } catch {
-    return null;
-  }
-}
-function laneChildLifecycleOf(root, child) {
-  const lane = child.lane;
-  if (!lane)
-    return kernelLifecycleOf(root, child.task_id);
-  try {
-    if (!existsSync17(join33(lane.path, KERNEL_DB_RELATIVE)))
-      return null;
-    if (readActiveClaimTaskId(lane.path) === child.task_id)
-      return null;
-    const runId = localRunId(lane.path, child.task_id);
-    if (runId === null)
-      return kernelLifecycleOf(root, child.task_id);
-    if (lane.run_id && runId !== lane.run_id)
-      return null;
-    return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
-  } catch {
-    return null;
-  }
-}
-function childEvidenceOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
-    return record.children.map((child) => ({
-      task_id: child.task_id,
-      slice_id: child.slice_id,
-      state: child.state,
-      commit: child.commit,
-      lane_branch: child.lane?.branch ?? null,
-      kernel_lifecycle: laneChildLifecycleOf(root, child)
-    }));
-  return record.children.map((child) => ({
-    task_id: child.task_id,
-    slice_id: child.slice_id,
-    state: child.state,
-    commit: child.commit,
-    lane_branch: null,
-    kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
-  }));
-}
-function inFlightChildOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
-    return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
-  return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
-}
-function readStaleBatchLookup(root, initiativeSlug) {
-  const found = findExistingActiveBatch(root, initiativeSlug);
-  if (found === null) {
-    const settled = findSettledBatchRecord(root, initiativeSlug);
-    if (settled)
-      return { kind: "terminal", batch_id: settled.batch_id };
-    return { kind: "none" };
-  }
-  if (found.corrupt)
-    return { kind: "corrupt", path: found.path, ...found.newer_contract ? { newer_contract: found.newer_contract } : {} };
-  const record = found.record;
-  if (isTerminalBatchState(record.batch_state))
-    return { kind: "terminal", batch_id: record.batch_id };
-  const inFlight = inFlightChildOf(root, record);
-  if (inFlight)
-    return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
-  return {
-    kind: "retirable",
-    record,
-    facts: {
-      batch_id: record.batch_id,
-      initiative_slug: record.initiative_slug,
-      batch_state: record.batch_state,
-      plan_digest: record.plan_digest,
-      branch: record.branch ?? `imm/${record.initiative_slug}`,
-      base_head: record.base_head,
-      confirmation_time: record.confirmation_time,
-      recorded_commits: [...record.commits],
-      children: childEvidenceOf(root, record)
-    }
-  };
-}
-async function retireStaleBatch(options) {
-  const { root, initiative_slug: initiativeSlug, now } = options;
-  const lookup = readStaleBatchLookup(root, initiativeSlug);
-  if (lookup.kind === "none")
-    return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
-  if (lookup.kind === "corrupt")
-    return { outcome: "rejected", rejection: lookup.newer_contract ? batchReason("batch_runtime_too_old", new BatchRuntimeTooOldError(lookup.path, lookup.newer_contract).detail) : batchReason("batch_state_unreadable", lookup.path) };
-  if (lookup.kind === "terminal")
-    return {
-      outcome: "rejected",
-      rejection: batchReason("stale_batch_absent", `batch ${lookup.batch_id} already reached a terminal state`)
-    };
-  if (lookup.kind === "in_flight")
-    return {
-      outcome: "rejected",
-      rejection: batchReason("stale_batch_in_flight", `batch ${lookup.batch_id}, child ${lookup.task_id}`)
-    };
-  const { record, facts } = lookup;
-  const expected = readSecureProjectBytes(root, batchStatePath(record.batch_id));
-  const decision = await options.gate(facts);
-  if (decision.kind === "host_rejection")
-    return { outcome: "host_rejection", value: decision.value };
-  if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
-    return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
-  const retired = { ...record, batch_state: "superseded" };
-  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-  const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
-  const retirement = options.confirmationRef ? {
-    retirement: {
-      confirmation_ref: options.confirmationRef({
-        batch_id: record.batch_id,
-        plan_digest: record.plan_digest,
-        request_id: decision.request_id
-      }),
-      plan_digest: record.plan_digest
-    }
-  } : {};
-  const stored = replaceAnyBatchRunState(root, expected, retired, () => {
-    if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
-      throw new Error("batch state changed before the disposition was applied");
-  });
-  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: stored.batch_id,
-    initiative_slug: stored.initiative_slug,
-    batch_state: stored.batch_state,
-    max_parallel: stored.max_parallel,
-    children: stored.children,
-    commits: stored.commits,
-    reason,
-    handoffs: [],
-    ...retirement,
-    next_action: RETIRE_NEXT_ACTION,
-    created_at: now
-  }) : writeBatchRunReport(root, {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: stored.batch_id,
-    initiative_slug: stored.initiative_slug,
-    batch_state: stored.batch_state,
-    children: stored.children,
-    commits: stored.commits,
-    reason,
-    ...retirement,
-    next_action: RETIRE_NEXT_ACTION,
-    created_at: now
-  });
-  return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
-}
-
 // plugins/immune-brain/runtime/unattended/run_entry_manifest.ts
 function manifestVerification(verification) {
   try {
@@ -22124,10 +21946,10 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync13 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync20, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
-import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname16, join as join34 } from "node:path";
+import { tmpdir as tmpdir7 } from "node:os";
+import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -22183,7 +22005,7 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join34(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
     try {
       accessSync4(path, constants10.X_OK);
       return true;
@@ -22245,19 +22067,19 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = realpathSync21(mkdtempSync6(join34(tmpdir8(), "imm-cli-review-")));
+    const directory = realpathSync20(mkdtempSync6(join33(tmpdir7(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join34(directory, "packet.md");
-    const script = join34(directory, "review.sh");
-    const output = join34(directory, `review-output-${request.operationId}.txt`);
-    const exitFile = join34(directory, `review-exit-${request.operationId}`);
+    const packet = join33(directory, "packet.md");
+    const script = join33(directory, "review.sh");
+    const output = join33(directory, `review-output-${request.operationId}.txt`);
+    const exitFile = join33(directory, `review-exit-${request.operationId}`);
     const contractHash = currentReviewContractHash();
-    writeFileSync13(packet, `review_contract_hash: ${contractHash}
+    writeFileSync12(packet, `review_contract_hash: ${contractHash}
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const readDirs = [...new Set([directory, dirname16(request.evidencePath)])];
     const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
-    writeFileSync13(script, [
+    writeFileSync12(script, [
       "#!/bin/sh",
       `cd ${shellQuote(root)} || exit 1`,
       `out=${shellQuote(output)}`,
@@ -22309,10 +22131,10 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    const status = Number.parseInt(readFileSync24(reservation.exitFile, "utf8").trim(), 10);
+    const status = Number.parseInt(readFileSync23(reservation.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
-    const bytes = existsSync18(reservation.output) ? readFileSync24(reservation.output, "utf8") : "";
+    const bytes = existsSync18(reservation.output) ? readFileSync23(reservation.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
@@ -22333,7 +22155,7 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
       return;
     }
     this.reservations.delete(reservation.id);
-    rmSync12(owned.directory, { recursive: true, force: true });
+    rmSync11(owned.directory, { recursive: true, force: true });
   }
 }
 
@@ -22496,7 +22318,11 @@ class HostRuntime {
       return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
     if (!this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-    return this.requestConfirmation(input);
+    return this.requestConfirmation({
+      ...input,
+      ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+      ...meta.workspace ? { workspace: meta.workspace } : {}
+    });
   }
   async gate(operation, meta, binding = {}) {
     throwIfCancelled(meta.signal);
@@ -22559,7 +22385,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync19(join35(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync19(join34(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -22712,7 +22538,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join35(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join34(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -22725,7 +22551,7 @@ class HostRuntime {
       if (sidecar && nextIntent) {
         if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
-        writeFileSync14(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync13(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
@@ -22853,12 +22679,12 @@ class HostRuntime {
     const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
     const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
     const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join35(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
+    const sidecar = join34(ctx.cwd, priorIntent.intent_ref.path);
+    const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
     const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
     try {
       if (priorBytes) {
-        writeFileSync14(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
         execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
           cwd: ctx.cwd,
@@ -23295,6 +23121,39 @@ class HostRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/antigravity/capability.ts
+var MIN_ANTIGRAVITY_VERSION = "0.1.0";
+var HOST_ID = "antigravity";
+var CORE_CONTRACT = "assurance_kernel/host_adapter/antigravity/v1";
+var SUPPORTED_PLATFORMS = ["darwin", "linux"];
+function parseSemver(value) {
+  const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value.trim());
+  if (!match)
+    return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+function compareSemver(left, right) {
+  const a = parseSemver(left);
+  const b = parseSemver(right);
+  if (!a || !b)
+    throw new Error(`invalid semver: ${!a ? left : right}`);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+}
+function probeHost(env = process.env, platform = process.platform, hostVersion) {
+  const version = hostVersion ?? env.ANTIGRAVITY_VERSION ?? env.AGY_VERSION;
+  if (!version)
+    return { ok: false, reason: "Antigravity version is unavailable" };
+  if (!parseSemver(version))
+    return { ok: false, reason: `Antigravity version is invalid: ${version}` };
+  if (compareSemver(version, MIN_ANTIGRAVITY_VERSION) < 0) {
+    return { ok: false, reason: `Antigravity version ${version} is older than minimum supported ${MIN_ANTIGRAVITY_VERSION}` };
+  }
+  if (!SUPPORTED_PLATFORMS.includes(platform)) {
+    return { ok: false, reason: `platform ${platform} is unsupported` };
+  }
+  return { ok: true, host: HOST_ID, version, platform };
+}
+
 // plugins/immune-brain/runtime/antigravity/kernel_ports.ts
 var ANTIGRAVITY_PROFILE = {
   hostId: "antigravity",
@@ -23370,6 +23229,732 @@ class AntigravityRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/antigravity/lane_guard.ts
+var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
+var PRIVILEGED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+var LAZY_PRIVILEGED_TOOL = /^(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
+var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+function isGatedTool(operation) {
+  return operation === "start_unattended_batch" || operation === "retire_stale_batch";
+}
+function extractPrivilegedCall(toolName, args) {
+  if (toolName === "call_mcp_tool") {
+    if (!IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
+      return null;
+    const lazy = LAZY_PRIVILEGED_TOOL.exec(String(args.ToolName ?? ""));
+    if (!lazy)
+      return null;
+    const raw = args.Arguments;
+    const opArgs = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+    return { operation: lazy[1], opArgs };
+  }
+  const direct = PRIVILEGED_MCP_TOOL.exec(toolName);
+  if (!direct)
+    return null;
+  return { operation: direct[1], opArgs: args };
+}
+function formatReworkChoiceSummary(choice) {
+  if (choice.exit === "grant_rounds")
+    return `grant_rounds (rounds=${choice.rounds})`;
+  if (choice.exit === "accept_residual_risk")
+    return `accept_residual_risk (reason=${JSON.stringify(choice.reason)})`;
+  return "replan";
+}
+function formatAntigravityConfirmationReason(input, choices = {}) {
+  if (input.operation === "retire_stale_batch") {
+    const d = input.batchDisposition;
+    const details = [
+      `Operation: retire_stale_batch`,
+      `Initiative: ${input.initiativeSlug}`,
+      d ? `Batch: ${d.batch_id}` : null,
+      d ? `Batch state: ${d.batch_state}` : null,
+      d ? `Batch branch: ${d.batch_branch}` : null,
+      d ? `Plan digest: ${d.plan_digest}` : null,
+      d ? `Recorded child commits: ${d.recorded_commits}` : null,
+      d ? `Children (${d.children.length}):
+${d.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`).join(`
+`)}` : null,
+      "Retiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured."
+    ].filter(Boolean);
+    return `Retire this stale batch record for ${input.initiativeSlug}?
+
+${details.join(`
+`)}`;
+  }
+  if (input.operation === "start_unattended_batch") {
+    const b = input.batchDetails;
+    if (b?.parent_final_verification) {
+      const lines = [
+        `Operation: start_unattended_batch (native Parent final verification; no batch run is started)`,
+        `Initiative: ${input.initiativeSlug ?? b.initiative_slug}`,
+        input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+        `Parent Tasks (${b.children.length}):
+${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join(`
+`)}`,
+        `Final verification commands run in this workspace outside Host permission:
+${(b.final_verification ?? []).map((command) => `  - ${command}`).join(`
+`)}`
+      ].filter(Boolean);
+      return `Authorize this Parent final verification for ${input.initiativeSlug ?? b.initiative_slug}?
+
+${lines.join(`
+`)}`;
+    }
+    const details = [
+      `Operation: start_unattended_batch`,
+      `Initiative: ${input.initiativeSlug ?? b?.initiative_slug}`,
+      b?.batch_branch ? `Batch branch: ${b.batch_branch}` : null,
+      input.planDigest ? `Plan digest: ${input.planDigest}` : null,
+      input.intentRevision !== undefined ? `TaskIntent revision: ${input.intentRevision}` : null,
+      input.intentContentHash ? `TaskIntent content hash: ${input.intentContentHash}` : null,
+      input.bindingDigest ? `Preparation digest: ${input.bindingDigest}` : null,
+      b?.children ? `Ordered children (${b.children.length}):
+${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join(`
+`)}` : null,
+      b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):
+${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join(`
+`)}` : null,
+      b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
+      b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
+      b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):
+${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join(`
+`)}` : null,
+      b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):
+${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join(`
+`)}` : null,
+      b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,
+      b?.re_confirmation_required?.length ? `Re-confirmation required: ${b.re_confirmation_required.join(", ")}` : null,
+      b?.recovery ?? null
+    ].filter(Boolean);
+    return `Authorize this unattended batch run for ${input.initiativeSlug ?? b?.initiative_slug}?
+
+${details.join(`
+`)}`;
+  }
+  if (input.verifierDispute) {
+    const dispute = input.verifierDispute;
+    const lines = [
+      `Operation: ${input.operation}`,
+      `Task: ${input.taskId}`,
+      `Proposed decision: ${choices.verifierChoice ?? "unspecified"}`,
+      input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+      `Claim: ${dispute.claim}`,
+      `Trigger: ${dispute.trigger}`,
+      `Caller chain: ${dispute.caller_chain.join(" → ")}`,
+      `Counter-path: ${dispute.counter_path}`
+    ].filter(Boolean);
+    return `Resolve this Review verifier dispute for ${input.taskId}?
+
+${lines.join(`
+`)}`;
+  }
+  if (input.reworkExits) {
+    const lines = [
+      `Operation: ${input.operation}`,
+      `Task: ${input.taskId}`,
+      `Proposed exit: ${choices.reworkChoice ? formatReworkChoiceSummary(choices.reworkChoice) : "unspecified"}`,
+      input.risk ? `Risk: ${input.risk}` : null,
+      input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+      ...reworkExitLines(input.reworkExits)
+    ].filter(Boolean);
+    return `Authorize this replan-boundary exit for ${input.taskId}?
+
+${lines.join(`
+`)}`;
+  }
+  const details = [
+    `Operation: ${input.operation}`,
+    `Task: ${input.taskId}`,
+    input.risk ? `Risk: ${input.risk}` : null,
+    input.intentRevision !== undefined ? `Intent revision: ${input.intentRevision}` : null,
+    input.intentContentHash ? `Intent hash: ${input.intentContentHash}` : null,
+    input.bindingDigest ? `Binding digest: ${input.bindingDigest}` : null,
+    input.gitBaseNotice,
+    input.reviewRetryNotice
+  ].filter(Boolean);
+  return `Authorize this exact Immune-Brain operation?
+
+${details.join(`
+`)}`;
+}
+function entryLogPath(sessionId, root) {
+  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+}
+function admissionPath(toolUseId, root) {
+  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+}
+function parseAdmissionId(admissionId) {
+  const match = /^(.+):(\d+):([a-z_]+)$/.exec(admissionId);
+  if (!match)
+    return null;
+  const [, conversation, stepRaw, opRaw] = match;
+  if (!conversation || !isPrivilegedOperation(opRaw))
+    return null;
+  const stepIdx = Number(stepRaw);
+  if (!Number.isSafeInteger(stepIdx) || stepIdx < 0)
+    return null;
+  return { conversation, stepIdx, operation: opRaw };
+}
+function confirmationPath(conversation, admissionId, root) {
+  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
+}
+function dropPrivate(path) {
+  try {
+    rmSync12(path, { force: true });
+  } catch {}
+}
+function dropConversationConfirmations(conversationId, root) {
+  if (!conversationId)
+    return;
+  const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+  if (!existsSync20(dir))
+    return;
+  const prefix = `${sessionHash(conversationId)}.`;
+  try {
+    for (const file of readdirSync10(dir)) {
+      if (file.startsWith(prefix) && file.endsWith(".confirm")) {
+        dropPrivate(join35(dir, file));
+      }
+    }
+  } catch {}
+}
+function antigravityLocalNames(cwd, home) {
+  const roots = [join35(cwd, ".agents"), join35(home, ".agents"), join35(home, ".gemini/config")];
+  return {
+    alias: (name) => {
+      for (const root of roots) {
+        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        if (body !== null)
+          return body;
+      }
+      return null;
+    },
+    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+  };
+}
+function readPhaseEntryState(sessionId, root = tmpdir8()) {
+  if (!sessionId)
+    return null;
+  const path = entryLogPath(sessionId, root);
+  try {
+    lstatSync20(path);
+  } catch (error) {
+    return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
+  }
+  if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
+    return null;
+  try {
+    const text = readFileSync25(path, "utf8");
+    return reducePhaseEntryLog(text);
+  } catch {
+    return null;
+  }
+}
+function appendPhaseEntry(sessionId, line, root) {
+  const path = entryLogPath(sessionId, root);
+  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+  try {
+    writeFileSync14(path, line + `
+`, { flag: "a", mode: 384 });
+    return true;
+  } catch {
+    dropPrivate(path);
+    return false;
+  }
+}
+function dropPhaseEntryLog(sessionId, root = tmpdir8()) {
+  if (sessionId)
+    dropPrivate(entryLogPath(sessionId, root));
+}
+function revokeEntryToken(sessionId, reason, root = tmpdir8()) {
+  if (sessionId && readPhaseEntryState(sessionId, root)?.token)
+    appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root);
+}
+function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
+  if (!conversationId)
+    return false;
+  const storeRoot = locations.root ?? tmpdir8();
+  dropConversationConfirmations(conversationId, storeRoot);
+  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
+  const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+  let workspace = null;
+  if (entry === "run") {
+    try {
+      workspace = realpathSync21(cwd);
+    } catch {}
+  }
+  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID11(), workspace } : undefined);
+  return appendPhaseEntry(conversationId, line, storeRoot);
+}
+function consumePhaseAdmission(toolCallId, operation, root = tmpdir8()) {
+  const path = admissionPath(toolCallId, root);
+  try {
+    const text = readFileSync25(path, "utf8");
+    dropPrivate(path);
+    const parsed = JSON.parse(text);
+    if (parsed.operation !== operation)
+      return null;
+    if (typeof parsed.conversation !== "string" || !parsed.conversation)
+      return null;
+    const state = readPhaseEntryState(parsed.conversation, root);
+    if (!state?.run_live || state.token !== parsed.token)
+      return null;
+    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
+  } catch {
+    return null;
+  }
+}
+function writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, input, root, choices = {}) {
+  const requestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID11()}`;
+  const grant = {
+    request_id: requestId,
+    conversation,
+    step_idx: stepIdx,
+    operation: input.operation,
+    workspace,
+    ...input.taskId !== undefined ? { task_id: input.taskId } : {},
+    ...input.initiativeSlug !== undefined ? { initiative_slug: input.initiativeSlug } : {},
+    ...input.intentRevision !== undefined ? { intent_revision: input.intentRevision } : {},
+    ...input.intentContentHash !== undefined ? { intent_content_hash: input.intentContentHash } : {},
+    ...input.bindingDigest !== undefined ? { binding_digest: input.bindingDigest } : {},
+    ...input.planDigest !== undefined ? { plan_digest: input.planDigest } : {},
+    ...input.batchDisposition ? { batch_id: input.batchDisposition.batch_id, disposition_plan_digest: input.batchDisposition.plan_digest } : {},
+    ...choices.reworkChoice ? { rework_choice: choices.reworkChoice } : {},
+    ...choices.verifierChoice ? { verifier_choice: choices.verifierChoice } : {}
+  };
+  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+  writeFileSync14(confirmationPath(conversation, admissionId, root), JSON.stringify(grant), { mode: 384 });
+  return requestId;
+}
+async function consumeNativeConfirmation(input, root = tmpdir8()) {
+  if (input.signal?.aborted) {
+    throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+  }
+  const parsedId = input.admissionId ? parseAdmissionId(input.admissionId) : null;
+  if (!parsedId || !input.admissionId) {
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing (step correlation unavailable)");
+  }
+  const path = confirmationPath(parsedId.conversation, input.admissionId, root);
+  let grant;
+  try {
+    const raw = readFileSync25(path, "utf8");
+    dropPrivate(path);
+    grant = JSON.parse(raw);
+  } catch {
+    dropPrivate(path);
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
+  }
+  if (grant.conversation !== parsedId.conversation || grant.step_idx !== parsedId.stepIdx || grant.operation !== input.operation || typeof grant.request_id !== "string" || !grant.request_id) {
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse confirmation grant does not match this operation");
+  }
+  let currentWorkspace = null;
+  try {
+    if (input.workspace)
+      currentWorkspace = realpathSync21(input.workspace);
+  } catch {}
+  if (!currentWorkspace || grant.workspace !== currentWorkspace) {
+    throw new NativeAuthorityError("workspace_changed", "workspace changed after PreToolUse native confirmation");
+  }
+  if ((grant.task_id ?? undefined) !== (input.taskId ?? undefined) || (grant.initiative_slug ?? undefined) !== (input.initiativeSlug ?? undefined)) {
+    throw new NativeAuthorityError("workspace_changed", "target task or initiative changed after PreToolUse native confirmation");
+  }
+  if ((grant.plan_digest ?? undefined) !== (input.planDigest ?? undefined) || (grant.binding_digest ?? undefined) !== (input.bindingDigest ?? undefined) || (grant.intent_revision ?? undefined) !== (input.intentRevision ?? undefined) || (grant.intent_content_hash ?? undefined) !== (input.intentContentHash ?? undefined) || (grant.batch_id ?? undefined) !== (input.batchDisposition?.batch_id ?? undefined) || (grant.disposition_plan_digest ?? undefined) !== (input.batchDisposition?.plan_digest ?? undefined) || Boolean(grant.verifier_choice) !== Boolean(input.verifierDispute) || Boolean(grant.rework_choice) !== Boolean(input.reworkExits)) {
+    throw new NativeAuthorityError("workspace_changed", "plan or authority binding changed after PreToolUse native confirmation");
+  }
+  return {
+    decision: "accept",
+    requestId: grant.request_id,
+    ...grant.rework_choice ? { reworkChoice: grant.rework_choice } : {},
+    ...grant.verifier_choice ? { verifierChoice: grant.verifier_choice } : {}
+  };
+}
+function antigravityPreInvocationHook(payload, locations = {}) {
+  const prompt = payload.lastUserInput ?? "";
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  return { injectSteps: [], terminationBehavior: "" };
+}
+function antigravityPostToolUseHook(payload, locations = {}) {
+  if (payload.stepIdx === undefined || !payload.conversationId)
+    return;
+  const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
+  if (!call)
+    return;
+  const root = locations.root ?? tmpdir8();
+  const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+  dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
+  if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
+    dropPrivate(admissionPath(admissionId, root));
+  }
+}
+function evaluatePreToolUseSync(payload, locations = {}) {
+  const toolName = payload.toolCall.name;
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  if (FILE_TOOLS.has(toolName)) {
+    const filePath = payload.toolCall.args.Path ?? payload.toolCall.args.file_path ?? payload.toolCall.args.path;
+    const refusal = laneWriteRefusal(cwd, filePath);
+    if (refusal) {
+      return { done: true, result: { decision: "deny", reason: refusal } };
+    }
+  }
+  const call = extractPrivilegedCall(toolName, payload.toolCall.args ?? {});
+  if (!call) {
+    return { done: true, result: { decision: "allow" } };
+  }
+  const root = locations.root ?? tmpdir8();
+  if (isGatedTool(call.operation)) {
+    const state = readPhaseEntryState(payload.conversationId, root);
+    const opName = { kind: "tool", name: call.operation };
+    const admission = admitPhaseOperation(opName, state);
+    if (!admission.ok) {
+      return { done: true, result: { decision: "force_ask", reason: phaseRefusalMessage(admission) } };
+    }
+    if (payload.stepIdx === undefined) {
+      return {
+        done: true,
+        result: { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" }
+      };
+    }
+    const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+    const admitLine = JSON.stringify({
+      operation: call.operation,
+      token: state?.token,
+      workspace: state?.workspace,
+      conversation: payload.conversationId
+    });
+    ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+    writeFileSync14(admissionPath(admissionId, root), admitLine, { mode: 384 });
+    return { done: false, call, state, root, cwd, stepIdx: payload.stepIdx, admissionId };
+  }
+  const taskId = typeof call.opArgs.task_id === "string" ? call.opArgs.task_id : "";
+  if (!taskId || "native_decision" in call.opArgs || "entry_token" in call.opArgs) {
+    return { done: true, result: { decision: "allow" } };
+  }
+  if (call.operation === "approve_breaking_intent_revision" && !call.opArgs.next_intent) {
+    return { done: true, result: { decision: "allow" } };
+  }
+  if (payload.stepIdx === undefined) {
+    return {
+      done: true,
+      result: { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; native confirmation cannot be correlated" }
+    };
+  }
+  const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+  return { done: false, call, state: null, root, cwd, stepIdx: payload.stepIdx, admissionId };
+}
+async function prepareBatchConfirmation(conversationId, sync, locations) {
+  const { call, cwd, root, stepIdx, admissionId } = sync;
+  const opArgs = call.opArgs;
+  if (Object.hasOwn(opArgs, "lane_revision"))
+    return { decision: "allow" };
+  const initiative = typeof opArgs.initiative_slug === "string" ? opArgs.initiative_slug : "";
+  const task = typeof opArgs.task_id === "string" ? opArgs.task_id : "";
+  if (opArgs.stop !== undefined && typeof opArgs.stop !== "boolean")
+    return { decision: "allow" };
+  if (opArgs.stop === true)
+    return { decision: "allow" };
+  if (opArgs.executor_host !== undefined && opArgs.executor_host !== "pi" && opArgs.executor_host !== "claude-code" && opArgs.executor_host !== "antigravity") {
+    return { decision: "allow" };
+  }
+  for (const key of ["executor_model", "executor_effort"]) {
+    if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key])) {
+      return { decision: "allow" };
+    }
+  }
+  if (!!initiative === !!task)
+    return { decision: "allow" };
+  if ("native_decision" in opArgs || "entry_token" in opArgs)
+    return { decision: "allow" };
+  let workspaceRealpath;
+  try {
+    workspaceRealpath = realpathSync21(cwd);
+  } catch {
+    return { decision: "allow" };
+  }
+  const initiativeSlug = task || initiative;
+  const planSource = task ? "single_task" : undefined;
+  const readInitiative = planSource === "single_task" ? observeSingleTask : locations.readInitiative ?? observeInitiative;
+  let maxParallel;
+  let finalVerification;
+  try {
+    const laneOffers = parseLaneOffers(opArgs.lane_offers);
+    const laneInstruction = parseLaneInstruction(opArgs.lane_instruction);
+    maxParallel = task ? 1 : resolveLaneParallel(cwd, initiativeSlug, parseMaxParallel(opArgs.max_parallel), laneOffers, laneInstruction);
+    finalVerification = Array.isArray(opArgs.final_verification) && opArgs.final_verification.length === 0 ? undefined : parseFinalVerification(opArgs.final_verification);
+  } catch {
+    return { decision: "allow" };
+  }
+  if (planSource && !resolveConfig(cwd).lanes.valid)
+    return { decision: "allow" };
+  const existing = findExistingActiveBatch(cwd, initiativeSlug);
+  if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record))
+    return { decision: "allow" };
+  const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(cwd, initiativeSlug);
+  if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== planSource) {
+    return { decision: "allow" };
+  }
+  if (!planSource && !existing && integrationBatch && isLaneBatchRecord(integrationBatch) && integrationBatch.batch_state === "completed") {
+    try {
+      const confirmed = await readConfirmedBatchTopology(cwd, integrationBatch, locations.readInitiative);
+      if (integrationBatch.final_verification_result?.passed === true) {
+        const proof = await observeParentCompletion(cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
+        if (proof.complete)
+          return { decision: "allow" };
+      }
+    } catch {}
+  }
+  if (!planSource) {
+    const nativeFacts = await observeNativeParent(cwd, initiativeSlug, locations.readInitiative);
+    if (nativeFacts) {
+      const recordedCommands = nativeFacts.native?.final_verification.results.map((result) => result.command);
+      if (finalVerification && recordedCommands && JSON.stringify(finalVerification) !== JSON.stringify(recordedCommands)) {
+        return { decision: "allow" };
+      }
+      const finalCommands = recordedCommands ?? finalVerification;
+      if (["verify", "repair"].includes(nativeFacts.action) && nativeFacts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
+        const confirmInput = {
+          operation: "start_unattended_batch",
+          initiativeSlug,
+          toolCallId: admissionId,
+          planDigest: nativeFacts.plan_digest,
+          batchDetails: {
+            initiative_slug: initiativeSlug,
+            batch_branch: "",
+            children: nativeFacts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
+            excluded: [],
+            final_verification: finalCommands,
+            parent_final_verification: {}
+          }
+        };
+        writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
+        return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+      }
+      return { decision: "allow" };
+    }
+  }
+  const now = new Date().toISOString();
+  const preflight = await prepareBatchPreflight({
+    root: cwd,
+    initiative_slug: initiativeSlug,
+    plan_source: planSource,
+    now,
+    readInitiative,
+    max_parallel: maxParallel
+  });
+  if (!preflight.ok)
+    return { decision: "allow" };
+  if (!preflight.projection.is_resuming && !planSource && !finalVerification?.length)
+    return { decision: "allow" };
+  if (maxParallel !== undefined && !preflight.projection.is_resuming && laneRuntimeContractRefusal(cwd)) {
+    return { decision: "allow" };
+  }
+  const authorization = await authorizeBatch({
+    root: cwd,
+    initiative_slug: initiativeSlug,
+    now,
+    projection: preflight.projection,
+    readInitiative,
+    nonce: "antigravity-pretooluse-probe",
+    gate: async (facts) => ({ kind: "host_rejection", value: facts }),
+    confirmationRef: () => "antigravity-pretooluse-probe"
+  });
+  if (authorization.outcome !== "host_rejection") {
+    return { decision: "allow" };
+  }
+  const facts = authorization.value;
+  const confirmInput = {
+    operation: "start_unattended_batch",
+    initiativeSlug,
+    toolCallId: admissionId,
+    planDigest: preflight.projection.plan_digest,
+    ...facts.preparation?.intent ? {
+      intentRevision: facts.preparation.intent.revision,
+      intentContentHash: facts.preparation.intent.content_hash,
+      bindingDigest: facts.preparation.digest
+    } : {},
+    batchDetails: {
+      initiative_slug: facts.initiative_slug,
+      batch_branch: facts.batch_branch,
+      children: facts.children.map((child) => ({
+        task_id: child.task_id,
+        slice_id: child.slice_id,
+        risk: child.risk
+      })),
+      excluded: facts.excluded.map((child) => ({
+        task_id: child.task_id,
+        slice_id: child.slice_id,
+        reason: child.reason
+      })),
+      budget: facts.budget,
+      ...finalVerification ? { final_verification: finalVerification } : {},
+      ...maxParallel !== undefined ? {
+        lane_mode: {
+          max_parallel: maxParallel,
+          parallel_groups: facts.parallel_groups,
+          serialized: facts.scope_conflicts,
+          ...finalVerification ? { final_verification: finalVerification } : {}
+        }
+      } : {},
+      ...facts.reuse_blockers.length > 0 ? {
+        re_confirmation_required: facts.reuse_blockers,
+        recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
+      } : {}
+    }
+  };
+  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
+  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+}
+async function prepareRetireConfirmation(conversationId, sync) {
+  const { call, state, cwd, root, stepIdx, admissionId } = sync;
+  if (state?.token)
+    return { decision: "allow" };
+  const initiativeSlug = typeof call.opArgs.initiative_slug === "string" ? call.opArgs.initiative_slug : "";
+  if (!initiativeSlug || "native_decision" in call.opArgs || "entry_token" in call.opArgs) {
+    return { decision: "allow" };
+  }
+  let workspaceRealpath;
+  try {
+    workspaceRealpath = realpathSync21(cwd);
+  } catch {
+    return { decision: "allow" };
+  }
+  const lookup = readStaleBatchLookup(cwd, initiativeSlug);
+  if (lookup.kind !== "retirable")
+    return { decision: "allow" };
+  const facts = lookup.facts;
+  const confirmInput = {
+    operation: "retire_stale_batch",
+    initiativeSlug,
+    toolCallId: admissionId,
+    batchDisposition: {
+      batch_id: facts.batch_id,
+      batch_state: facts.batch_state,
+      batch_branch: facts.branch,
+      plan_digest: facts.plan_digest,
+      recorded_commits: facts.recorded_commits.length,
+      children: facts.children.map((child) => ({
+        task_id: child.task_id,
+        slice_id: child.slice_id,
+        state: child.state,
+        commit: child.commit,
+        lane_branch: child.lane_branch,
+        kernel_lifecycle: child.kernel_lifecycle
+      }))
+    }
+  };
+  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
+  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+}
+async function prepareTaskAuthorityConfirmation(conversationId, sync) {
+  const { call, cwd, root, stepIdx, admissionId } = sync;
+  const taskId = String(call.opArgs.task_id ?? "");
+  if (!existsSync20(join35(cwd, ".imm")))
+    return { decision: "allow" };
+  let workspaceRealpath;
+  try {
+    workspaceRealpath = realpathSync21(cwd);
+  } catch {
+    return { decision: "allow" };
+  }
+  let captured = null;
+  const probeRuntime = new AntigravityRuntime({
+    cwd,
+    env: {},
+    interactive: true,
+    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
+    requestConfirmation: async (input) => {
+      captured = input;
+      return { decision: "cancel", requestId: "antigravity-pretooluse-probe" };
+    }
+  });
+  try {
+    await probeRuntime.authorize(taskId, call.operation, { sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true }, call.opArgs);
+  } catch {} finally {
+    await probeRuntime.shutdown();
+  }
+  if (!captured)
+    return { decision: "allow" };
+  const confirmInput = captured;
+  let verifierChoice;
+  if (confirmInput.verifierDispute) {
+    const rawChoice = call.opArgs.choice;
+    if (rawChoice !== "accept_verifier_dispute" && rawChoice !== "dismiss_verifier_dispute") {
+      return {
+        decision: "deny",
+        reason: `request_authorization for ${taskId} requires choice ("accept_verifier_dispute" or "dismiss_verifier_dispute") to resolve the Review verifier dispute.
+
+Claim: ${confirmInput.verifierDispute.claim}
+Counter-path: ${confirmInput.verifierDispute.counter_path}`
+      };
+    }
+    verifierChoice = rawChoice;
+  }
+  let reworkChoice;
+  if (confirmInput.reworkExits) {
+    const parsed = parseReworkChoice(confirmInput.reworkExits, {
+      ...call.opArgs.exit !== undefined ? { exit: call.opArgs.exit } : {},
+      ...call.opArgs.rounds !== undefined ? { rounds: call.opArgs.rounds } : {},
+      ...call.opArgs.reason !== undefined ? { reason: call.opArgs.reason } : {}
+    });
+    if (!parsed) {
+      const exits = ["grant_rounds", ...confirmInput.reworkExits.accept_residual_risk ? ["accept_residual_risk"] : [], "replan"];
+      return {
+        decision: "deny",
+        reason: `request_authorization for ${taskId} requires a valid exit (${exits.join(", ")}) to resolve the replan boundary.
+
+${reworkExitLines(confirmInput.reworkExits).join(`
+`)}`
+      };
+    }
+    reworkChoice = parsed;
+  }
+  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
+    verifierChoice,
+    reworkChoice
+  });
+  return {
+    decision: "force_ask",
+    reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice })
+  };
+}
+async function antigravityPreToolUseHookAsync(payload, locations = {}) {
+  const sync = evaluatePreToolUseSync(payload, locations);
+  if (sync.done)
+    return sync.result;
+  try {
+    if (sync.call.operation === "start_unattended_batch") {
+      return await prepareBatchConfirmation(payload.conversationId, sync, locations);
+    }
+    if (sync.call.operation === "retire_stale_batch") {
+      return await prepareRetireConfirmation(payload.conversationId, sync);
+    }
+    return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
+  } catch {
+    return { decision: "allow" };
+  }
+}
+
+// plugins/immune-brain/runtime/antigravity/run_continuation.ts
+init_batch_preflight();
+init_coordinator();
+async function antigravityRunContinuationHook(payload) {
+  const workspace = payload.workspacePaths?.[0] ?? process.cwd();
+  const taskId = readActiveClaimTaskId(workspace);
+  if (!taskId) {
+    return {};
+  }
+  let status;
+  try {
+    status = await projectTaskStatus(workspace, taskId);
+  } catch {
+    return {};
+  }
+  if (!status || status.error || !status.projection) {
+    return {};
+  }
+  return decideAutomatedStop(taskId, status.projection);
+}
+
 // plugins/immune-brain/runtime/antigravity/mcp_server.ts
 var antigravityContinuationHost = (root) => ({
   cache_name: ANTIGRAVITY_CACHE_DIR,
@@ -23395,13 +23980,24 @@ var ANTIGRAVITY_MCP_PROFILE = {
   probeHost,
   createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
   createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,
+  requestConfirmation: (input) => consumeNativeConfirmation(input),
   consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
   readRunToolSession: (toolCallId, operation, workspace) => readSessionToolCall(antigravityContinuationHost(tmpdir9()), tmpdir9(), toolCallId, operation, workspace),
   dispatchHook: runHook,
   bundlePath: fileURLToPath5(import.meta.url)
 };
-var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(ANTIGRAVITY_MCP_PROFILE, options);
-var serveStdio2 = (options = {}) => serveStdio(ANTIGRAVITY_MCP_PROFILE, options);
+function withConfirmationStore(options) {
+  const { confirmationStoreRoot, ...rest } = options;
+  if (!confirmationStoreRoot)
+    return rest;
+  return {
+    ...rest,
+    requestConfirmation: rest.requestConfirmation ?? ((input) => consumeNativeConfirmation(input, confirmationStoreRoot)),
+    consumePhaseAdmission: rest.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation, confirmationStoreRoot))
+  };
+}
+var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
+var serveStdio2 = (options = {}) => serveStdio(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
 function metaProgressStep(meta) {
   const token = meta?.progressToken;
   if (typeof token !== "string")
@@ -23460,11 +24056,12 @@ async function runHook() {
         };
         antigravityHookEventLog().append(event);
       }
+      antigravityPostToolUseHook(payload);
       stdout2.write(`{}
 `);
       return;
     }
-    const result = antigravityPreToolUseHook(payload);
+    const result = await antigravityPreToolUseHookAsync(payload);
     if (result.decision === "allow")
       appendSubagentStart(toolCall, payload);
     stdout2.write(JSON.stringify(result) + `

@@ -457,7 +457,11 @@ export class HostRuntime {
 			return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
 		if (!this.requestConfirmation)
 			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-		return this.requestConfirmation(input);
+		return this.requestConfirmation({
+			...input,
+			...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
+			...(meta.workspace ? { workspace: meta.workspace } : {}),
+		});
 	}
 
 	private async gate(operation: string, meta: ToolMeta, binding: {
