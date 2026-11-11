@@ -121,14 +121,9 @@ export async function runHook(): Promise<void> {
 
 	if (!payload) return;
 
-	// PreInvocation: has lastUserInput or invocationNum
-	if ("invocationNum" in payload || "lastUserInput" in payload) {
-		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
-	}
-
-	// Tool hook: has toolCall
+	// D1: the payload's own shape decides the response, most specific first. A tool
+	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
+	// PreInvocation; a Stop marker outranks the PreInvocation marker.
 	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
 		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
 
@@ -164,6 +159,13 @@ export async function runHook(): Promise<void> {
 	// Stop hook: has terminationReason or executionNum
 	if ("terminationReason" in payload || "executionNum" in payload) {
 		const result = await antigravityRunContinuationHook(payload as unknown as AntigravityStopPayload);
+		stdout.write(JSON.stringify(result) + "\n");
+		return;
+	}
+
+	// PreInvocation: has lastUserInput or invocationNum
+	if ("invocationNum" in payload || "lastUserInput" in payload) {
+		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
 		stdout.write(JSON.stringify(result) + "\n");
 		return;
 	}

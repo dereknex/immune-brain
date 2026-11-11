@@ -23442,12 +23442,6 @@ async function runHook() {
   }
   if (!payload)
     return;
-  if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = antigravityPreInvocationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
   if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
     const toolCall = payload.toolCall;
     if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
@@ -23479,6 +23473,12 @@ async function runHook() {
   }
   if ("terminationReason" in payload || "executionNum" in payload) {
     const result = await antigravityRunContinuationHook(payload);
+    stdout2.write(JSON.stringify(result) + `
+`);
+    return;
+  }
+  if ("invocationNum" in payload || "lastUserInput" in payload) {
+    const result = antigravityPreInvocationHook(payload);
     stdout2.write(JSON.stringify(result) + `
 `);
     return;
