@@ -1,6 +1,6 @@
 # Issue #426 本地验证计划
 
-被测版本：分支 `claude/affectionate-pascal-prxbzx`，提交 `3bc4b29d` 或之后。用途：在真实的 Herdr、herdr-core 与三个 Executor Host 上，验证 #426 的全部交付（Supervised Session Port、S0–S4、verification CLI 阶段）。本文件可从头到尾照做；用例的来由与判定依据见 `docs/reports/issue-426-live-test-plan.md`，结论回写到 `docs/reports/issue-426-herdr-provider-probe.md`。
+被测版本：分支 `claude/affectionate-pascal-prxbzx`，提交 `8802d75b` 或之后（第三轮；第二轮用的是 `3bc4b29d`）。用途：在真实的 Herdr、herdr-core 与三个 Executor Host 上，验证 #426 的全部交付（Supervised Session Port、S0–S4、verification CLI 阶段）。本文件可从头到尾照做；用例的来由与判定依据见 `docs/reports/issue-426-live-test-plan.md`，结论回写到 `docs/reports/issue-426-herdr-provider-probe.md`。
 
 总耗时约 6–7 小时，分 6 轮。第 5 轮（herdr-core）可选。任何一轮触发“停止条件”时，先停下，把证据交回修复，再继续。
 
@@ -16,6 +16,23 @@
 | R3 | Loop 端到端 | C、C-1、C-3、S1 | 120 分钟 | R1 |
 | R4 | Review / verifier / advisory 走会话 | S4-a/b、S3-a–d、S2-a–c | 90 分钟 | R3 |
 | R5 | herdr-core（可选） | B1–B12、S1-d | 90 分钟 | R0 |
+
+### 0.1 第三轮：只跑这些（约 3.5 小时）
+
+第二轮已确认的项（K1、O1、C-2、`--env`、G3 权限框、G5）不必重跑。第三轮验证第二轮之后的修复（`docs/reports/issue-426-herdr-provider-probe.md`“修复（第二轮实测之后）”）以及 R3、R4 中没能进入的部分：
+
+| 顺序 | 用例 | 验证的修复 | 位置 |
+| --- | --- | --- | --- |
+| 1 | R0 2.1（更新到新提交）、2.5（新建仓库 L） | — | §2 |
+| 2 | A5 登录框（只测 Claude） | F1：不再 `provider_error`，改为 `attention`，tab 保留 | §5 |
+| 3 | 6.1 单任务 Lane 加 S1-a、S1-b、S1-c | F6、F2：集成那次就记录关闭，`close` 核对 batch record | §6.1 |
+| 4 | 6.4 连续新 batch | F7：第一个 batch 之后的 batch 都能起来 | §6.4 |
+| 5 | 6.2 并行 batch | C-3、多 handle await、S1 关两个 tab | §6.2 |
+| 6 | 6.3 C-1 | 进程级单副本认领 | §6.3 |
+| 7 | R4 全部 | S2、S3、S4 走会话 | §7 |
+| 8 | R5 的 B2、B3、B13、B14、S1-d（在 Herdr 内） | herdr-core 观看 tab | §8 |
+
+全程留意第 3 节新增的 Parent 停止条件。
 
 通过标准（全部来自 #426 §6）：
 
@@ -143,6 +160,8 @@ material() {  # material <id>：需要 Review 的任务
 - `imm-session` 输出的 JSON 字段与本文期望不一致（例如没有 `handle`、`state` 不在五种状态内）。
 - Parent 的会话里出现直接执行 `herdr tab|agent|pane` 的命令。
 - Kernel 结算出现预期之外的 `stopped` 或批次 `failed`。
+- Parent 在自己的会话或 checkout 里动手实现子任务，或执行 `git reset`、`git branch -D`、`git worktree remove`、`git worktree prune`（契约已禁止；即使只是“打算”执行也记下原话）。
+- 任何新 batch 的 child 以 `batch_worktree_failed … no recorded Lane binding` 或 `does not match its recorded reservation` 停住（F7）。
 
 ## 4. R1：Herdr TUI 会话层回归
 
@@ -167,7 +186,7 @@ R1 结束时用 `herdr tab list --workspace "$HERDR_WORKSPACE_ID"` 截一份清�
 | 用例 | 步骤 | 期望 |
 | --- | --- | --- |
 | A4 权限框 | 对 Claude 以及“已改为需确认”的 Pi 或 Antigravity：在 trusted 目录 create，entry 为 `Use your shell tool to run: touch imm-probe-permission.txt, then reply DONE.`；create 返回后立刻在后台挂等待并在另一循环里打点：<br>`($IMM await "$HD" --provider herdr; date +%s.%N) > $EV/A4-await.txt &`<br>`while :; do s=$($IMM observe "$HD" --provider herdr \| jq -r .state); echo "$(date +%s.%N) $s" >> $EV/A4-observe.log; [ "$s" = blocked ] && break; sleep 0.5; done` | await 返回 `blocked`；`A4-await.txt` 的时间戳减去 `A4-observe.log` 中第一次 `blocked` 的时间 ≤ 5 秒；你拒绝权限后会话回到 `working` 或 `idle` |
-| A5 登录框 | Claude：`D=$(mktemp -d)`，create 加 `--env CLAUDE_CONFIG_DIR=$D`；Pi：加 `--env PI_CODING_AGENT_DIR=$(mktemp -d)`。Antigravity 若没有安全的隔离方式，记“未测”并写明原因 | create 返回 `entry_submitted: false`、`blocked`（同时证明 `--env` 生效）；若 Host 正常启动没有登录框，说明环境变量未传到 Host，记失败 |
+| A5 登录框 | Claude：`D=$(mktemp -d)`，create 加 `--env CLAUDE_CONFIG_DIR=$D`；Pi：加 `--env PI_CODING_AGENT_DIR=$(mktemp -d)`。Antigravity 若没有安全的隔离方式，记“未测”并写明原因 | 理想结果是 `entry_submitted: false`、`blocked`。第二轮 Claude 得到的是 `provider_error`（Herdr 把 entry 打进了登录框，`agent_prompt_stalled`）；修复后（F1）应返回 `ok: true`、`entry_submitted: false`、`state: "unknown"`、`attention` 含 `do not send the entry again`，tab 保留、登录框仍在。截图记下 entry 文本是否出现在登录框里。仍得 `provider_error` 即失败。若 Host 正常启动没有登录框，说明环境变量未传到 Host，记失败 |
 
 ## 6. R3：Loop 端到端（仓库 L）
 
@@ -178,7 +197,7 @@ R1 结束时用 `herdr tab list --workspace "$HERDR_WORKSPACE_ID"` 截一份清�
 1. `routine probe-c1 c1`。
 2. Pi 作 Parent（加载本分支 package），在 Pi 里执行 `/skill:drive probe-c1`。
 3. 期望：原生确认门打开一次，你确认；Parent 调 `imm-session create --provider herdr ...`，出现一个不抢焦点的新 tab；Parent **在前台**运行带 `--timeout-ms 600000` 的 `imm-session await`（C-3：Pi 不能后台唤醒）；Executor 完成后 Parent 重新进入，Kernel 结算 `done`。
-4. S1：child 为 `integrated` 后，Parent 应调用 `start_unattended_batch` 带 `lane_session_close`，得到 `accepted: true` 与 `recorded_at`，再执行 `imm-session close ... --task probe-c1 --recorded-at ...`。期望该 tab 被关闭；`~/imm-probe/L/.imm/state/batches/` 下的 report 中 `session_closes` 含 `probe-c1`；Lane 目录与 `imm-lane/...` 分支仍在（`git worktree list`、`git branch -a`）。
+4. S1（流程已改，F6）：把 child 集成的那一次 `start_unattended_batch` 返回的 report 里已带 `session_closes: [{"task_id":"probe-c1","at":"…"}]`，batch 可能同时已 `completed`；Parent **不再**重新进入 batch 去请求关闭，而是在协调 checkout（`~/imm-probe/L`）里直接执行 `imm-session close <handle> --provider herdr --batch <batch_id> --task probe-c1 --recorded-at <at>`。期望：该 tab 被关闭；`jq .session_closes ~/imm-probe/L/.imm/state/batches/<batch_id>.json` 含 `probe-c1`；Lane 目录与 `imm-lane/...` 分支仍在（`git worktree list`、`git branch -a`）。若 Parent 仍去请求 `lane_session_close` 并得到 `batch_parent_branch_exists`，记失败。
 5. 证据：保存 Parent 的会话记录到 `$EV/C1-parent.txt`，执行 `grep -nE 'herdr (tab|agent|pane) ' $EV/C1-parent.txt`，期望**无输出**（G5）。
 
 再用 **Claude Code** 作 Parent（`claude --plugin-dir $IB/plugins/immune-brain`，执行 `/immune-brain:drive probe-c2`，先 `routine probe-c2 c2`），期望 Parent 以**后台命令**挂 `imm-session await`。
@@ -190,14 +209,16 @@ S1 补充：
 | 用例 | 步骤 | 期望 |
 | --- | --- | --- |
 | S1-a | 在 probe-c2 运行中（child 未集成）让 Parent 尝试关闭：直接对 Parent 说“现在对 probe-c2 请求 lane_session_close” | `accepted: false`，原因含 `not integrated`；tab 未关 |
-| S1-c | 集成并关闭后，再让 Parent 请求一次；再手动执行 `$IMM close <handle> --provider herdr --task probe-c2 --recorded-at now` | 第二次 `already recorded`；手动伪造得 `close_unproven`，什么都不关 |
+| S1-b | probe-c2 集成后，记下 report 的 `batch_id` 与 `session_closes[0].at` | 不需要额外请求，`session_closes` 已含 `probe-c2`；Parent 按第 4 步关闭 |
+| S1-c | 关闭**之前**，在 `~/imm-probe/L` 手动执行三次伪造：① `$IMM close <handle> --provider herdr --task probe-c2 --recorded-at <at>`（缺 `--batch`）；② 加 `--batch <batch_id>`，但 `--recorded-at 2020-01-01T00:00:00.000Z`；③ 正确的 `--batch` 与 `--recorded-at`，但 `--task probe-c1`（另一个任务） | ① 退出码 2（用法错误）；② ③ 都是 `close_unproven`，原因含 `records no session close`；三次 tab 都还在。之后让 Parent 按第 4 步关闭成功 |
+| S1-e | 再对同一个 batch 说一次“对 probe-c2 请求 lane_session_close”（只在 batch 还在 `running` 时可做；已 `completed` 则记“不适用”） | 返回 `accepted: true`，`recorded_at` 与 `session_closes` 中已有的 `at` 相同，不新增记录 |
 
 ### 6.2 并行 batch（C-3）
 
 1. 在 `.imm/config.json` 的 `lanes` 加 `"max_parallel": 2` 并提交。
 2. 在 Claude Code Parent 中执行 `/immune-brain:draw-up`，要求生成一个**本地** Initiative，包含两个互不依赖的 routine slice：在 `a.txt` 写入 `alpha`、在 `b.txt` 写入 `beta`。
 3. 执行 `/immune-brain:drive <initiative>`。
-4. 期望：同时出现两个 Executor tab；Parent 的 `imm-session await` 一次带上两个 handle，返回的 JSON 含先变化那个会话的 `handle`；全部集成后两个 tab 都按 S1 关闭。
+4. 期望：同时出现两个 Executor tab；Parent 的 `imm-session await` 一次带上两个 handle，返回的 JSON 含先变化那个会话的 `handle`；每个 child 集成的那次 report 都在 `session_closes` 里加上它，Parent 用 `close --batch` 逐个关闭两个 tab，不重新进入已完成的 batch。
 5. 结束后执行 `ps aux | grep -E 'herdr agent wait|pane wait-output' | grep -v grep`，期望**无输出**。
 6. 用 Pi 作 Parent 重复第 3–5 步（新 Initiative），期望 Pi 在前台分轮等待。
 
@@ -205,8 +226,18 @@ S1 补充：
 
 1. 让 Pi 在**用户级**安装一份本分支的 Immune-Brain package（与 2.2 的加载方式并存）。
 2. 用 Pi 作 Parent，从本地目录加载插件，跑 `routine probe-c4 c4`。
-3. 期望：Executor 不退出；Executor tab 中出现一次提示“Immune-Brain is already loaded from …; the copy at … was not loaded”；任务正常结算。
-4. 完成后卸载用户级那份。
+3. 期望：Executor **不加** `-ne -ns` 也能启动，不出现 `Failed to load extension … conflicts with …`，不退出（第二轮这里失败，现已改为按进程认领）；Executor tab 中出现一次提示“Immune-Brain is already loaded from <-e 的目录>; the copy at <用户级 package 目录> was not loaded”；任务正常结算。若仍报 conflicts，记下完整报错，并记下 `pi --version` 与用户级 package 的安装路径。
+4. 再在一个普通 shell 里直接执行 `pi -e $IB`（同时装有用户级那份），看启动时是否只出现上面那一次提示、`/skill:drive` 是否可用。
+5. 完成后卸载用户级那份。
+
+### 6.4 F7：连续新 batch
+
+第二轮里，第一个 batch 之后的 batch 都在约 30 秒后把 child 停在 `needs_human`，原因是 `batch_worktree_failed … no recorded Lane binding`。现在 runtime 会先把 Lane 预留写进 batch record，再创建 worktree 和分支。
+
+1. 6.1 完成后，不清理 Lane，接着依次执行 `routine probe-f7a f7a`、`routine probe-f7b f7b`，各跑一次 drive。
+2. 每次 drive 期间另开一个 shell，在第一个 Executor tab 出现之前与之后各执行一次 `jq '.children[] | {task_id, state, lane, lane_reservation}' ~/imm-probe/L/.imm/state/batches/<batch_id>.json`（`<batch_id>` 取最新的那个文件）。
+3. 期望：两次 batch 都进入 `enrolled` 并结算；出现 tab 之前可能看到 `lane_reservation`（`lane: null`），绑定之后 `lane_reservation` 消失、`lane` 有值；任何时候都没有 `batch_worktree_failed`。
+4. 若某次仍停在 `needs_human`：保存 record 原文、`git worktree list --porcelain`、`git for-each-ref refs/heads/imm-lane`，以及 Parent 会话里那次 `start_unattended_batch` 的完整返回，**这就是定位依据**。
 
 ## 7. R4：Review、verifier、advisory 走会话（仓库 L）
 
@@ -237,7 +268,7 @@ S1 补充：
 
 ## 8. R5：herdr-core（可选）
 
-只在打算启用 herdr-core 时做。在 Herdr 外或 Herdr 内的普通 shell 中设置隔离环境：
+只在打算启用 herdr-core 时做。第三轮在 **Herdr 内**（`imm-probe` workspace 的 pane）执行，这样才能验证观看 tab；B14 的最后一步换到 Herdr 外。设置隔离环境：
 
 ```sh
 export HC_SESSION=imm-probe
@@ -248,8 +279,10 @@ mkdir -p "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_RUNTIME_DIR" && chmod 700 "$
 | 用例 | 步骤 | 期望 |
 | --- | --- | --- |
 | B1 准入 | `rec B1 $IMM probe --provider herdr-core`；`hc schema --json \| jq .info` | `ok: true`；version ≥ 0.1.19；description 含 `Protocol generation 1` |
-| B2 正常一轮 | 同 A2，`--provider herdr-core`；另存 `hc get <address> --json` | `hc ls` 多一个终端，标签 `imm-session=<token>`；create 返回 `entry_submitted: true`；observe 的 provenance 为 `reported`；stop 后终端为 `finished` |
-| B3 workspace trust | 同 A3 | Claude：30 秒后返回 `entry_submitted: false`、`state: "unknown"`，`attention` 含 `hc attach <address>`；终端保留；在 `hc attach` 中接受 trust 后 `--resume` 提交 entry（G3 对 Claude 记失败，属已知）。Pi / Antigravity：首报 `blocked` 则通过 |
+| B2 正常一轮 | 同 A2，`--provider herdr-core`；另存 `hc get <address> --json` | `hc ls` 多一个终端，标签 `imm-session=<token>`；create 返回 `entry_submitted: true` 与 `viewer: {"opened": true}`；`imm-probe` 里多一个**不抢焦点**的 tab，名为 `probe-a2 (hc <address>)`，里面是 `hc attach` 显示的 Host 界面，能看到 entry 被执行；observe 的 provenance 为 `reported`；stop 后终端为 `finished` |
+| B3 workspace trust | 同 A3 | Claude：30 秒后返回 `entry_submitted: false`、`state: "unknown"`，`attention` 含 `in its viewer tab`；观看 tab 里能直接看到 trust 对话框，并可在其中回答；回答后 `--resume` 提交 entry（G3 对 Claude 记失败，属已知）。Pi / Antigravity：首报 `blocked` 则通过 |
+| B13 观看 tab 的去留 | 对 B2 的会话：① 手动关掉观看 tab，再 `rec B13 $IMM attach "$HD" --provider herdr-core`；② 在新观看 tab 里按 `hc attach` 的分离键（见 `hc attach --help`）分离；③ 再 attach 一次后执行 `$IMM stop "$HD" --provider herdr-core` | ① 返回 `ok: true`，又出现一个不抢焦点的观看 tab，会话不受影响；② 分离后记下 tab 是否自动关闭（`&& exit`）以及 `hc attach` 的退出码（`echo $?` 需在关闭前看到，否则记“已关闭”）；③ 会话结束后观看 tab 是否自动关闭。三项都只记录现象，不判失败 |
+| B14 归属与 Herdr 外 | 对 B9 的自建终端执行 `$IMM attach herdr-core:<address>/guessed --provider herdr-core`；对 Herdr 会话执行 `$IMM attach <A2 的 handle> --provider herdr`；到 **Herdr 外**的终端（同样设置隔离环境）跑一次 B2 的 create | 前者 `not_owned`，不开 tab；中者 `provider_unavailable`；Herdr 外的 create 结果里**没有** `viewer` 字段，也不开任何 tab |
 | B4 权限框 | 同 A4，`--provider herdr-core`；另存 `hc get --json` 的 `status` | `blocked`，`status` 含 `kind: "permission"`，≤ 5 秒 |
 | B5 登录框 | 同 A5 | `blocked`；或返回 `entry_submitted: false` 加 `attention`（该 Host 不报登录状态，在 core 上不准入） |
 | B6 首次上报 | B2 期间每 0.2 秒 `hc get <address> --json \| jq .status` | 首报为 `idle`，记录距 `hc run` 的秒数 |
@@ -259,7 +292,7 @@ mkdir -p "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_RUNTIME_DIR" && chmod 700 "$
 | B10 无上报 | 对 Pi 加 `--env PI_PROGRAM_STATUS=0`，或对 Antigravity 加 `--env AGY_CLI_OSC7501=off` | 30 秒后 `entry_submitted: false`、`unknown`、带 `attention`；entry 未发送；终端保留 |
 | B11 长等待 | 让一个会话工作超过 3 分钟（entry：“Run `sleep 200` with your shell tool, then reply DONE.”，批准权限），执行不带 `--timeout-ms` 的 await | 跨过 core 的 180 秒周期返回后继续等，直到真正变化才返回 |
 | B12 已结束终端的 resume | B2 会话 stop 之后执行 `create --resume` | `state_refused`，原因含 `create a new session`；`hc ls` 无新终端 |
-| S1-d | 用 `hc` 跑一次 R3 的单任务 Lane 不可行（Loop 契约尚未启用 herdr-core），改为直接验证：对 B2 的 handle 执行 `$IMM close <handle> --provider herdr-core --task probe-x --recorded-at 2020-01-01T00:00:00.000Z` | 终端先被 kill 再被 rm，`hc ls --all` 中不再出现 |
+| S1-d | Loop 契约尚未启用 herdr-core，改为用一份手写的 batch record 直接验证 `close` 的核对：<br>`R=$(mktemp -d); mkdir -p $R/.imm/state/batches`<br>先不写 record，执行 `$IMM close <B2 的新 handle> --provider herdr-core --batch probe-x --task probe-x --recorded-at 2020-01-01T00:00:00.000Z --root $R`；<br>再 `echo '{"batch_id":"probe-x","session_closes":[{"task_id":"probe-x","at":"2020-01-01T00:00:00.000Z"}]}' > $R/.imm/state/batches/probe-x.json`，重复同一命令 | 第一次 `close_unproven`，终端仍在；第二次终端先被 kill 再被 rm，`hc ls --all` 中不再出现，它的观看 tab 随之结束 |
 
 收尾：`hc ls --all` 列出的测试终端逐个 `hc kill`、`hc rm`，最后 `HC_SESSION=imm-probe hc server stop`（只停隔离的 core）。
 
@@ -272,4 +305,4 @@ mkdir -p "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$XDG_RUNTIME_DIR" && chmod 700 "$
 
 ## 10. 交回的内容
 
-打包 `~/imm-probe/evidence/`（`versions.txt`、`timeline.log`、各 `*.json`、`results.md`、Parent 会话记录、`S2c-raw.json`），以及每轮遇到的意外现象的文字说明。收到后会：把结果写进 `issue-426-herdr-provider-probe.md`，逐条标明此前“仅源码核对”的结论被证实或推翻；修复发现的问题；按结果更新 `supervised-session-port.md` 的准入矩阵。
+打包 `~/imm-probe/evidence/`（`versions.txt`、`timeline.log`、各 `*.json`、`results.md`、Parent 会话记录、`S2c-raw.json`；第三轮另含 6.4 的 record 快照、A5 与 B3 的截图），以及每轮遇到的意外现象的文字说明。收到后会：把结果写进 `issue-426-herdr-provider-probe.md`，逐条标明此前“仅源码核对”的结论被证实或推翻；修复发现的问题；按结果更新 `supervised-session-port.md` 的准入矩阵。

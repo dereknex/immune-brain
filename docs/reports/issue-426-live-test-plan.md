@@ -143,9 +143,18 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | 用例 | 步骤 | 期望 |
 | --- | --- | --- |
 | S1-a 未集成不关 | child 仍在运行时，Parent 调 `start_unattended_batch` 带 `lane_session_close: {task_id}` | `accepted: false`，原因含 “not integrated”；tab 不关 |
-| S1-b 集成后关闭 | child `integrated` 且等待返回 `idle`/`done`/`exited` 后，同一请求得到 `accepted: true` 与 `recorded_at`；再执行 `imm-session close <handle> --provider herdr --task <task_id> --recorded-at <recorded_at>` | 只关这个 tab；batch report 的 `session_closes` 含该 child；Lane 目录与分支仍在 |
-| S1-c 重复与伪造 | 再请求一次；以及不带或伪造 `--recorded-at` 直接 `imm-session close` | 第二次 `accepted: false`（already recorded）；伪造记录得 `close_unproven`，什么都不关 |
-| S1-d herdr-core | 同 S1-b，`--provider herdr-core` | 终端先 `kill` 后 `rm`，`hc ls --all` 中不再有它 |
+| S1-b 集成后关闭 | 集成该 child 的那次 report 已带 `session_closes`（F6，2026-11-11 起；batch 可能同时已完成）；等待返回 `idle`/`done`/`exited` 后，在协调 checkout 执行 `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>` | 只关这个 tab；`session_closes` 含该 child；Lane 目录与分支仍在；Parent 不重新进入已完成的 batch |
+| S1-c 重复与伪造 | 再请求一次 `lane_session_close`；以及缺 `--batch`、`at` 不符或 `task_id` 不在 record 里时直接 `imm-session close` | 再请求返回同一条记录（`accepted: true`，同一 `recorded_at`）；缺 `--batch` 是用法错误，其余 `close_unproven`（F2：核对 `.imm/state/batches/<batch_id>.json`），什么都不关 |
+| S1-d herdr-core | 用手写 record 与 `--root` 执行 S1-b 的 `close`，`--provider herdr-core` | 无 record 时 `close_unproven`；有 record 时终端先 `kill` 后 `rm`，`hc ls --all` 中不再有它 |
+
+## 补充用例：第二轮之后的修复（2026-11-11）
+
+| 用例 | 步骤 | 期望 |
+| --- | --- | --- |
+| F7 连续 batch | 第一个 batch 之后，在同一仓库再启动两个新 batch | 都能进入 `enrolled`；绑定前 record 里可能有 `lane_reservation`，绑定后消失；不出现 `batch_worktree_failed` |
+| F1 登录框 | Herdr 上 Claude 隔离 `CLAUDE_CONFIG_DIR` | `entry_submitted: false`、`unknown`、`attention`，tab 保留，不再是 `provider_error` |
+| C-1 两份副本 | 用户级装一份，再 `-e` 本地目录启动 Pi Executor | 不加 `-ne -ns` 也不报 conflicts；只提示一次 |
+| 观看 tab | Herdr 内创建 herdr-core 会话；关掉观看 tab 后 `imm-session attach` | 自动出现不抢焦点的 `hc attach` tab，`viewer.opened: true`；attach 再开一个；Herdr 外不开、结果无 `viewer` |
 
 ## 补充用例：S4 Review 会话传输与 S2 advisory 会话
 
