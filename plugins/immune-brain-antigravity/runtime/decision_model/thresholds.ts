@@ -90,6 +90,52 @@ export const A17_REVIEW_FINDING_KIND: ApplicationPoint = {
 	threshold_set: { version: "a17/v0", values: null },
 };
 
+export const A18_EVENT_PREFILTER: ApplicationPoint = {
+	id: "a18_event_prefilter",
+	question_type: "choice",
+	input_category: "session_event",
+	options: ["actionable", "ignore"],
+	criteria: {
+		actionable: "The event requires daemon action or triage",
+		ignore: "The event is noisy, informational, or requires no action",
+	},
+	instructions:
+		"Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
+	threshold_set: { version: "a18/v0", values: null },
+};
+
+export const A19_OWNER_COMMENT_INTENT: ApplicationPoint = {
+	id: "a19_owner_comment_intent",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["approve_plan", "request_plan_revision", "answer_lane_decision", "command", "discussion"],
+	criteria: {
+		approve_plan: "The owner intends to approve the proposed plan",
+		request_plan_revision: "The owner requests changes or revision to the proposed plan",
+		answer_lane_decision: "The owner answers an in-Lane decision or clarification question",
+		command: "The owner issues a direct daemon command",
+		discussion: "General discussion not requiring execution",
+	},
+	instructions:
+		"Given a comment from a verified repository owner, which option best describes the author's intent?",
+	threshold_set: { version: "a19/v0", values: null },
+};
+
+export const A20_ISSUE_DUPLICATE_PAIR: ApplicationPoint = {
+	id: "a20_issue_duplicate_pair",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["duplicate", "related", "unrelated"],
+	criteria: {
+		duplicate: "The candidate issue describes the same underlying problem as the existing issue",
+		related: "The candidate issue is related but addresses a different problem",
+		unrelated: "The candidate issue is unrelated to the existing issue",
+	},
+	instructions:
+		"Given two GitHub issues, which option best describes their relationship?",
+	threshold_set: { version: "a20/v0", values: null },
+};
+
 export const POINT_REGISTRY: PointRegistry = {
 	[A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
 	[A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
@@ -97,4 +143,7 @@ export const POINT_REGISTRY: PointRegistry = {
 	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
 	[A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
 	[A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
+	[A18_EVENT_PREFILTER.id]: A18_EVENT_PREFILTER,
+	[A19_OWNER_COMMENT_INTENT.id]: A19_OWNER_COMMENT_INTENT,
+	[A20_ISSUE_DUPLICATE_PAIR.id]: A20_ISSUE_DUPLICATE_PAIR,
 };

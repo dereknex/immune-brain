@@ -4,6 +4,11 @@ status: accepted
 
 # Unattended Initiative Batch Run
 
+**Status update:** amended by [ADR 0039](0039-loop-daemon.md). Enrollment
+confirmation gains sources `confirmation_source: "user_session" | "tracker_approval" | "policy_auto"`,
+and `.imm/risk-floor.json` path-glob risk elevation is evaluated before
+`policy_auto` admission.
+
 ## Context
 
 Executing a multi-TaskIntent Initiative required repeated manual enrollment and
@@ -68,6 +73,11 @@ the enrolled TaskIntent.
    request, resolves a user decision, or creates, switches, or deletes a Git
    worktree, and default `imm-run` behavior is unchanged when the batch tool is
    not invoked.
+7. Under [ADR 0039](0039-loop-daemon.md), Enrollment confirmation extends beyond
+   interactive `user_session` to accept `tracker_approval` (verified owner comment
+   `/approve <plan-digest>` or `<intent-hash>`) and `policy_auto` (for routine
+   tasks under tracked configuration where effective risk after evaluating
+   `.imm/risk-floor.json` path globs remains `routine` and touches no no-touch paths).
 
 ## Rejected Alternatives
 

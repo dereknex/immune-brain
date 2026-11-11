@@ -2,9 +2,10 @@
 // reasons, the provider adapter seam and the result envelope (Spec
 // docs/specs/decision-model-core.spec.md D2, D4, D5).
 //
-// This module is offline tooling. Nothing under plugins/immune-brain imports
-// it, and it imports nothing from there (ADR 0006: the runtime never invokes
-// a model).
+// Authority path files (runtime/kernel/, runtime/assurance/, runtime/unattended/,
+// runtime/claude/, .pi-extension/) never import this module (ADR 0006, ADR 0039
+// Decision 3). The Loop daemon judging module imports it for offline and online
+// event triage and classification (ADR 0039).
 
 /** Categories any configured provider may receive. `issue_text` is public: the repository is public (A15, BR-DEC-6). */
 export const NON_SENSITIVE_CATEGORIES = ["pr_comment", "issue_text", "command_text", "session_event"] as const;
@@ -60,6 +61,30 @@ export interface ApplicationPoint {
 }
 
 export type PointRegistry = Readonly<Record<string, ApplicationPoint>>;
+
+/** Registered application point IDs (Spec D6; loop-daemon.spec.md D1). */
+export const APPLICATION_POINTS = [
+	"a1_review_finding_prescreen",
+	"a4_finding_equivalence",
+	"a14_pr_comment_triage",
+	"a15_issue_triage",
+	"a16_revisit_chain_class",
+	"a17_review_finding_kind",
+	"a18_event_prefilter",
+	"a19_owner_comment_intent",
+	"a20_issue_duplicate_pair",
+] as const;
+export type ApplicationPointId = (typeof APPLICATION_POINTS)[number];
+
+export function isApplicationPointId(value: unknown): value is ApplicationPointId {
+	return typeof value === "string" && (APPLICATION_POINTS as readonly string[]).includes(value);
+}
+
+export function assertApplicationPointId(value: unknown): asserts value is ApplicationPointId {
+	if (!isApplicationPointId(value)) {
+		throw new Error(`unknown application point "${String(value)}"`);
+	}
+}
 
 export type ProbabilityMap = Record<string, number>;
 
@@ -161,3 +186,16 @@ export interface DecideDeps extends AdapterDeps {
 export function unavailable(reason: UnavailableReason, detail: string): Unavailable {
 	return { status: "unavailable", reason, detail };
 }
+
+export {
+	POINT_REGISTRY,
+	A1_REVIEW_FINDING_PRESCREEN,
+	A4_FINDING_EQUIVALENCE,
+	A14_PR_COMMENT_TRIAGE,
+	A15_ISSUE_TRIAGE,
+	A16_REVISIT_CHAIN_CLASS,
+	A17_REVIEW_FINDING_KIND,
+	A18_EVENT_PREFILTER,
+	A19_OWNER_COMMENT_INTENT,
+	A20_ISSUE_DUPLICATE_PAIR,
+} from "./thresholds.ts";
