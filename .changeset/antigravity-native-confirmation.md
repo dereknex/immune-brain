@@ -1,0 +1,5 @@
+---
+"immune-brain": patch
+---
+
+Antigravity privileged operations now confirm through Antigravity's native `PreToolUse` `force_ask` channel instead of server-initiated MCP `elicitation/create`, which Antigravity CLI cancels after ~30 seconds without opening a native prompt (ADR 0004). `antigravityPreToolUseHookAsync` prepares the operation's `NativeConfirmationInput` (batch preflight/retire or task-level `request_authorization`, `approve_breaking_intent_revision` with temporary sidecar staging restored before returning, `stop`, and `repair_authority_state`), persists a step-correlated single-use `.confirm` grant in the private Antigravity cache, and returns `{"decision":"force_ask","reason":"..."}`; `PostToolUse` clears unused grants when the user rejects or cancels, and `ANTIGRAVITY_MCP_PROFILE.requestConfirmation` consumes the matching grant once during `tools/call` while failing closed (`interaction_not_opened` or `workspace_changed`) on unconfirmed calls, replays, or post-confirmation binding drift. Claude Code's MCP `elicitation/create` confirmation channel is unchanged.

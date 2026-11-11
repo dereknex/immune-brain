@@ -19763,7 +19763,12 @@ function listMcpTools() {
         } : {
           task_id: { type: "string" },
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
-          ...tool.name === "stop" ? { reason: { type: "string" } } : {},
+          ...tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {},
+          ...tool.name === "request_authorization" ? {
+            choice: { type: "string", enum: ["accept_verifier_dispute", "dismiss_verifier_dispute"] },
+            exit: { type: "string", enum: ["grant_rounds", "accept_residual_risk", "replan"] },
+            rounds: { type: "integer", minimum: 1 }
+          } : {},
           ...tool.name === "request_authorization" || tool.name === "approve_breaking_intent_revision" || tool.name === "stop" ? { record_revision: { type: "string" } } : {},
           ...tool.name === "submit_review" ? { verdict: { type: "object" } } : {},
           ...tool.name === "submit_verification" ? { result: { type: "string" } } : {},
@@ -19805,7 +19810,7 @@ function createMcpRuntime(profile, options = {}) {
     ports: options.ports,
     authorityOverrides: options.authorityOverrides,
     interactive: options.interactive,
-    requestConfirmation: options.requestConfirmation,
+    requestConfirmation: options.requestConfirmation ?? profile.requestConfirmation,
     batchKernel: options.batchKernel,
     batchGit: options.batchGit,
     readInitiative: options.readInitiative
@@ -19879,7 +19884,7 @@ function createMcpRuntime(profile, options = {}) {
     serverInfo,
     bindClientHandshake(identity) {
       negotiatedVersion = identity.version || undefined;
-      negotiatedInteractive = identity.interactive && supportsElicitationProtocol(identity.protocolVersion);
+      negotiatedInteractive = identity.interactive && (Boolean(profile.requestConfirmation) || supportsElicitationProtocol(identity.protocolVersion));
       negotiatedRoots = identity.roots === true;
       rootsWorkspace = undefined;
       runtime.bindHostVersion(negotiatedVersion);
@@ -19930,6 +19935,8 @@ function createMcpRuntime(profile, options = {}) {
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId,
+          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+          workspace,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -19972,6 +19979,8 @@ function createMcpRuntime(profile, options = {}) {
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
           toolCallId,
+          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+          workspace,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -20002,6 +20011,8 @@ function createMcpRuntime(profile, options = {}) {
       const toolMeta = {
         sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
         toolCallId: meta.toolCallId ?? `call-${name}`,
+        ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+        workspace,
         taskId,
         interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
         signal: meta.signal
@@ -20092,7 +20103,7 @@ async function handleJsonRpc(message, mcp) {
     mcp.bindClientHandshake({
       version: trustedClient && typeof params.clientInfo?.version === "string" ? params.clientInfo.version : "",
       protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : undefined,
-      interactive: trustedClient && elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation),
+      interactive: trustedClient && (Boolean(mcp.profile.requestConfirmation) || elicitation !== null && typeof elicitation === "object" && !Array.isArray(elicitation)),
       roots: trustedClient && roots !== null && typeof roots === "object" && !Array.isArray(roots)
     });
     return {
@@ -20392,73 +20403,75 @@ async function serveStdio(profile, options = {}) {
       item.reject(error);
     pending.clear();
   };
-  mcp.bindNativeConfirmation(async (input) => {
-    if (!accepting)
-      throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
-    if (input.signal?.aborted)
-      throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
-    const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
-    let abortListener;
-    const response = new Promise((resolve, reject) => {
-      pending.set(requestId, { resolve, reject });
-      abortListener = () => {
-        pending.delete(requestId);
-        reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
-      };
-      input.signal?.addEventListener("abort", abortListener, { once: true });
-    });
-    try {
-      await writeReply(output, {
-        jsonrpc: "2.0",
-        id: requestId,
-        method: "elicitation/create",
-        params: elicitationParams(input)
+  if (!profile.requestConfirmation && !options.requestConfirmation) {
+    mcp.bindNativeConfirmation(async (input) => {
+      if (!accepting)
+        throw new NativeAuthorityError("interaction_not_opened", "MCP connection is closed");
+      if (input.signal?.aborted)
+        throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+      const requestId = `immune-brain:elicitation:${mcp.connectionId}:${++requestSequence}`;
+      let abortListener;
+      const response = new Promise((resolve, reject) => {
+        pending.set(requestId, { resolve, reject });
+        abortListener = () => {
+          pending.delete(requestId);
+          reject(new NativeAuthorityError("user_cancelled", "Tool call was cancelled"));
+        };
+        input.signal?.addEventListener("abort", abortListener, { once: true });
       });
-      const reply = await response;
-      if (reply.error) {
-        if (reply.error.code === -32601) {
-          throw new NativeAuthorityError("unsupported_host", profile.elicitationRejectedRefusal);
+      try {
+        await writeReply(output, {
+          jsonrpc: "2.0",
+          id: requestId,
+          method: "elicitation/create",
+          params: elicitationParams(input)
+        });
+        const reply = await response;
+        if (reply.error) {
+          if (reply.error.code === -32601) {
+            throw new NativeAuthorityError("unsupported_host", profile.elicitationRejectedRefusal);
+          }
+          throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
         }
-        throw new NativeAuthorityError("correlation_missing", `MCP elicitation failed: ${reply.error.message}`);
-      }
-      const result = reply.result;
-      const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
-      if (action !== "accept" && action !== "decline" && action !== "cancel") {
-        throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
-      }
-      let reworkChoice;
-      let verifierChoice;
-      if (action === "accept" && input.verifierDispute) {
-        const content = result.content;
-        if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
-        verifierChoice = content.choice;
-      } else if (action === "accept" && input.reworkExits) {
-        const parsed = parseReworkChoice(input.reworkExits, result.content);
-        if (!parsed) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+        const result = reply.result;
+        const action = typeof result === "object" && result !== null && !Array.isArray(result) ? result.action : undefined;
+        if (action !== "accept" && action !== "decline" && action !== "cancel") {
+          throw new NativeAuthorityError("correlation_missing", "MCP elicitation returned an invalid action");
         }
-        reworkChoice = parsed;
-      } else if (action === "accept") {
-        const content = result.content;
-        const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
-        const valid = keys !== null && keys.length === 0;
-        if (!valid) {
-          throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+        let reworkChoice;
+        let verifierChoice;
+        if (action === "accept" && input.verifierDispute) {
+          const content = result.content;
+          if (!content || typeof content !== "object" || Array.isArray(content) || Object.keys(content).length !== 1 || !["accept_verifier_dispute", "dismiss_verifier_dispute"].includes(String(content.choice)))
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the verifier dispute schema");
+          verifierChoice = content.choice;
+        } else if (action === "accept" && input.reworkExits) {
+          const parsed = parseReworkChoice(input.reworkExits, result.content);
+          if (!parsed) {
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested exit schema");
+          }
+          reworkChoice = parsed;
+        } else if (action === "accept") {
+          const content = result.content;
+          const keys = typeof content === "object" && content !== null && !Array.isArray(content) ? Object.keys(content) : null;
+          const valid = keys !== null && keys.length === 0;
+          if (!valid) {
+            throw new NativeAuthorityError("correlation_missing", "MCP elicitation accept content did not match the requested schema");
+          }
         }
+        return {
+          decision: action,
+          requestId,
+          ...reworkChoice ? { reworkChoice } : {},
+          ...verifierChoice ? { verifierChoice } : {}
+        };
+      } finally {
+        pending.delete(requestId);
+        if (abortListener)
+          input.signal?.removeEventListener("abort", abortListener);
       }
-      return {
-        decision: action,
-        requestId,
-        ...reworkChoice ? { reworkChoice } : {},
-        ...verifierChoice ? { verifierChoice } : {}
-      };
-    } finally {
-      pending.delete(requestId);
-      if (abortListener)
-        input.signal?.removeEventListener("abort", abortListener);
-    }
-  });
+    });
+  }
   mcp.bindRootsProvider(async (signal) => {
     if (!accepting)
       return;
@@ -23555,7 +23568,11 @@ class HostRuntime {
       return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
     if (!this.requestConfirmation)
       throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
-    return this.requestConfirmation(input);
+    return this.requestConfirmation({
+      ...input,
+      ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+      ...meta.workspace ? { workspace: meta.workspace } : {}
+    });
   }
   async gate(operation, meta, binding = {}) {
     throwIfCancelled(meta.signal);

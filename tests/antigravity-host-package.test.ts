@@ -283,6 +283,61 @@ describe("Antigravity hook dispatch and observation", () => {
 		// Stop markers win over the PreInvocation marker in the same payload.
 		expect(hook({ conversationId, executionNum: 1, terminationReason: "done", lastUserInput: "stop now", workspacePaths: [scratchDir("idle")] })).toEqual({});
 	});
+
+	it("returns native force_ask confirmation from packaged PreToolUse on a real TaskIntent workspace", () => {
+		const copy = relocate();
+		const preHooks = JSON.parse(readFileSync(join(copy, "hooks.json"), "utf8"))["immune-brain"].PreToolUse as Array<{
+			hooks?: Array<{ timeout?: number }>;
+		}>;
+		expect(preHooks[0]?.hooks?.[0]?.timeout).toBe(120);
+
+		const repo = scratchDir("confirm-repo");
+		mkdirSync(join(repo, "docs/plans"), { recursive: true });
+		writeFileSync(join(repo, ".gitignore"), ".imm/state/\n");
+		writeFileSync(
+			join(repo, "docs/plans/pkg-task.intent.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "pkg-task",
+				owner: "user",
+				goal: "confirm via packaged hook",
+				acceptance: [{
+					id: "AC1",
+					assertion: "packaged hook prepares confirmation",
+					verification: JSON.stringify({
+						contract: "assurance_kernel/verification_descriptor/v2",
+						command: { executable: "sh", argv: ["-c", "exit 0"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 4_096 },
+						environment: { prepare: null, writable_paths: [] },
+					}),
+				}],
+				scope_hint: ["docs/plans"],
+				risk: "routine",
+				revision: 1,
+			})}\n`,
+		);
+		spawnSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "add", "-A"], { cwd: repo });
+		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "fixture"], { cwd: repo });
+
+		const env = isolatedEnv();
+		const hook = hookRunner(copy, env);
+		const conversationId = "conv-pkg-confirm";
+		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive pkg-task", workspacePaths: [repo] }))
+			.toEqual({ injectSteps: [], terminationBehavior: "" });
+		const confirm = hook({
+			conversationId,
+			stepIdx: 2,
+			lastUserInput: "start lane",
+			workspacePaths: [repo],
+			toolCall: {
+				name: "call_mcp_tool",
+				args: { ServerName: "immune-brain_immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "pkg-task" } },
+			},
+		});
+		expect(confirm.decision).toBe("force_ask");
+		expect(String(confirm.reason)).toContain("Authorize this unattended batch run for pkg-task?");
+		expect(String(confirm.reason)).toContain("Preparation digest:");
+	});
 });
 
 describe("Antigravity relocatable closure (AC3)", () => {

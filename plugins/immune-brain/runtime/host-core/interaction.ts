@@ -90,6 +90,10 @@ export interface NativeConfirmationInput {
 	taskId?: string;
 	initiativeSlug?: string;
 	toolCallId: string;
+	/** Step-correlated admission identity, when the Host correlates confirmation via `PreToolUse`. */
+	admissionId?: string;
+	/** Resolved absolute workspace for this call, verified when consuming a Hook confirmation grant. */
+	workspace?: string;
 	risk?: string;
 	intentRevision?: number;
 	intentContentHash?: string;
@@ -116,6 +120,8 @@ export interface NativeConfirmationInput {
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
 			final_verification?: string[];
 		};
+		re_confirmation_required?: string[];
+		recovery?: string;
 	};
 	/** Present only for a batch disposition: the record the user is asked to retire. */
 	batchDisposition?: {

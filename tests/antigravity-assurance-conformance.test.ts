@@ -15,6 +15,7 @@ import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/ho
 import {
 	antigravityPreInvocationHook,
 	antigravityPreToolUseHook,
+	antigravityPreToolUseHookAsync,
 	consumePhaseAdmission,
 	readPhaseEntryState,
 	type GatedTool,
@@ -999,9 +1000,10 @@ describe("Antigravity Harness Conformance", () => {
 		}, 60_000);
 	});
 
-	// Spec antigravity-tool-hook-and-mcp-correlation AC3 (D6): the other privileged
-	// operations reach their existing native gate from Antigravity conversation
-	// metadata, and neither create nor consume batch admission.
+	// Spec antigravity-tool-hook-and-mcp-correlation AC3 (D6) + ADR 0004: privileged
+	// operations open Antigravity's native `PreToolUse` `force_ask` confirmation gate
+	// rather than MCP `elicitation/create`, consume a step-correlated single-use grant,
+	// fail closed on replay or post-confirmation drift, and never manufacture batch admission.
 	describe("Antigravity privileged native gates", () => {
 		const TASK = "native-gate-task";
 		const scratch: string[] = [];
@@ -1022,16 +1024,16 @@ describe("Antigravity Harness Conformance", () => {
 			command: { executable: "sh", argv: ["-c", "exit 0"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 4_096 },
 			environment: { prepare: null, writable_paths: [] },
 		});
-		const intentPath = (root: string) => join(root, "docs/plans", `${TASK}.intent.json`);
-		function writeIntent(root: string, goal: string, revision: number): void {
+		const intentPath = (root: string, taskId = TASK) => join(root, "docs/plans", `${taskId}.intent.json`);
+		function writeIntent(root: string, goal: string, revision: number, taskId = TASK): void {
 			mkdirSync(join(root, "docs/plans"), { recursive: true });
-			writeFileSync(intentPath(root), `${JSON.stringify({
+			writeFileSync(intentPath(root, taskId), `${JSON.stringify({
 				contract: "assurance_kernel/task_intent/v1",
-				task_id: TASK,
+				task_id: taskId,
 				owner: "user",
 				goal,
 				acceptance: [{ id: "AC1", assertion: "the native gate is reached", verification: verification() }],
-				scope_hint: ["docs/plans"],
+				scope_hint: ["docs/plans", "base.txt"],
 				risk: "routine",
 				revision,
 			})}\n`);
@@ -1051,7 +1053,7 @@ describe("Antigravity Harness Conformance", () => {
 		}
 
 		/** One open user decision, so `request_authorization` has a derived operation. */
-		function recordUserDecision(root: string): void {
+		function recordUserDecision(root: string, id = "user-decision-1"): void {
 			const record = readTaskRecordRaw(root, TASK).record;
 			if (!record) throw new Error("the fixture task is not enrolled");
 			createCanaryApplication(createTestMutationRegistry()).execute({
@@ -1059,12 +1061,12 @@ describe("Antigravity Harness Conformance", () => {
 				task_id: TASK,
 				prior_intent_token: readTaskIntent(root, TASK, record.intent_ref.path, record.intent_snapshot).token,
 				operation: { op: "record_finding", actor_id: "literal-user",
-					finding: { id: "user-decision-1", kind: "unresolved_user_decision", acceptance_id: null, summary: "the user must choose" } },
+					finding: { id, kind: "unresolved_user_decision", acceptance_id: null, summary: "the user must choose" } },
 			});
 		}
 
-		/** One Antigravity stdio connection, with a line reader for replies and elicitations. */
-		function wire(root: string) {
+		/** One Antigravity stdio connection backed by an isolated confirmation store. */
+		function wire(root: string, store: string, extraOptions: Parameters<typeof serveAntigravityStdio>[0] = {}) {
 			const input = new PassThrough();
 			const output = new PassThrough();
 			const replies: Record<string, any>[] = [];
@@ -1084,78 +1086,238 @@ describe("Antigravity Harness Conformance", () => {
 			});
 			const next = () => replies.length ? Promise.resolve(replies.shift()!) : new Promise<Record<string, any>>((resolve) => waiters.push(resolve));
 			const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
-			void serveAntigravityStdio({ input, output, cwd: root, env: {}, interactive: true, exit: () => undefined });
+			void serveAntigravityStdio({
+				input,
+				output,
+				cwd: root,
+				env: {},
+				interactive: true,
+				confirmationStoreRoot: store,
+				exit: () => undefined,
+				...extraOptions,
+			});
 			return { input, send, next };
 		}
 
 		const conversationId = "conv-gate-1";
-		const meta = (root: string) => ({ "antigravity.google/conversation_id": conversationId, "antigravity.google/workspace_paths": [root] });
-		async function initialize(server: ReturnType<typeof wire>): Promise<void> {
+		const meta = (root: string, step?: number) => ({
+			"antigravity.google/conversation_id": conversationId,
+			"antigravity.google/workspace_paths": [root],
+			...(step === undefined ? {} : { progressToken: `antigravity-hook:${step}` }),
+		});
+		async function initialize(server: ReturnType<typeof wire>, capabilities: Record<string, unknown> = { elicitation: {} }): Promise<void> {
 			server.send({ jsonrpc: "2.0", id: "init", method: "initialize",
-				params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.0.0" }, capabilities: { elicitation: {} } } });
+				params: { protocolVersion: "2025-06-18", clientInfo: { name: "antigravity-client", version: "v1.5.5" }, capabilities } });
 			expect((await server.next()).result.serverInfo).toMatchObject({ name: "antigravity" });
 		}
-		/** Send one privileged call and return the native gate it opened. */
-		async function holdGate(server: ReturnType<typeof wire>, id: string, name: string, args: Record<string, unknown>, root: string) {
-			server.send({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args, _meta: meta(root) } });
-			const elicitation = await server.next();
-			expect(elicitation).toMatchObject({ jsonrpc: "2.0", method: "elicitation/create" });
-			return elicitation.id as string;
-		}
 
-		it("request_authorization reaches its gate without Claude metadata and a decline writes nothing", async () => {
+		it("request_authorization opens PreToolUse force_ask without MCP elicitation, refuses unconfirmed/replayed calls, and resolves once", async () => {
 			const root = await enrolledRoot();
-			const server = wire(root);
+			const store = temp("store");
+			const server = wire(root, store);
 			await initialize(server);
 			recordUserDecision(root);
 			const before = readTaskRecordRaw(root, TASK).revision;
-			const gate = await holdGate(server, "auth-1", "request_authorization", { task_id: TASK }, root);
-			server.send({ jsonrpc: "2.0", id: gate, result: { action: "decline" } });
-			expect(JSON.stringify(await server.next())).toContain("user_denied");
+
+			// Without PreToolUse confirmation, tools/call never sends elicitation/create and fails closed.
+			server.send({ jsonrpc: "2.0", id: "auth-unconfirmed", method: "tools/call",
+				params: { name: "request_authorization", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
+			const unconfirmed = await server.next();
+			expect(unconfirmed.method).toBeUndefined();
+			expect(unconfirmed).toMatchObject({ id: "auth-unconfirmed", error: { data: { reason_code: "interaction_not_opened" } } });
 			expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+
+			// PreToolUse returns force_ask with prepared task and digest details.
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 5,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: TASK } },
+				},
+			}, { root: store });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(hookRes.reason).toContain(`Task: ${TASK}`);
+			expect(hookRes.reason).toContain("Binding digest:");
+
+			// Approving force_ask executes that exact step once and resolves the finding.
+			server.send({ jsonrpc: "2.0", id: "auth-1", method: "tools/call",
+				params: { name: "request_authorization", arguments: { task_id: TASK }, _meta: meta(root, 5) } });
+			const accepted = await server.next();
+			expect(accepted.error).toBeUndefined();
+			const finding = readTaskRecordRaw(root, TASK).record?.findings.find((item) => item.id === "user-decision-1");
+			expect(finding?.status).toBe("resolved");
+
+			// Replaying the same step fails closed because the confirmation grant is single-use.
+			recordUserDecision(root, "user-decision-2");
+			const afterFirst = readTaskRecordRaw(root, TASK).revision;
+			server.send({ jsonrpc: "2.0", id: "auth-replay", method: "tools/call",
+				params: { name: "request_authorization", arguments: { task_id: TASK }, _meta: meta(root, 5) } });
+			expect(await server.next()).toMatchObject({ id: "auth-replay", error: { data: { reason_code: "interaction_not_opened" } } });
+			expect(readTaskRecordRaw(root, TASK).revision).toBe(afterFirst);
 			server.input.end();
 		}, 30_000);
 
-		it("approve_breaking_intent_revision reaches its gate and a decline restores the staged intent", async () => {
+		it("approve_breaking_intent_revision keeps staged sidecar intact during PreToolUse, refuses post-confirmation drift, and commits once confirmed", async () => {
 			const root = await enrolledRoot();
-			const server = wire(root);
+			const store = temp("store");
+			const server = wire(root, store);
 			await initialize(server);
 			const before = readTaskRecordRaw(root, TASK).revision;
-			const original = readFileSync(intentPath(root), "utf8");
-			const next = { contract: "assurance_kernel/task_intent/v1", task_id: TASK, owner: "user", goal: "a different goal",
-				acceptance: [{ id: "AC1", assertion: "the native gate is reached", verification: verification() }],
-				scope_hint: ["docs/plans"], risk: "routine", revision: 2 };
-			const gate = await holdGate(server, "breaking-1", "approve_breaking_intent_revision", { task_id: TASK, next_intent: next }, root);
-			server.send({ jsonrpc: "2.0", id: gate, result: { action: "decline" } });
-			expect(JSON.stringify(await server.next())).toContain("user_denied");
+			const originalBytes = readFileSync(intentPath(root), "utf8");
+			const originalStage = git(root, "ls-files", "--stage", "--", `docs/plans/${TASK}.intent.json`);
+			const next = { contract: "assurance_kernel/task_intent/v1", task_id: TASK, owner: "user", goal: "reach the native gate",
+				acceptance: [{ id: "AC1", assertion: "a revised breaking acceptance assertion", verification: verification() }],
+				scope_hint: ["docs/plans", "base.txt"], risk: "routine", revision: 2 };
+
+			// PreToolUse prepares the breaking revision digest and restores both file bytes and index entry.
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 7,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain_immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
+				},
+			}, { root: store });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(hookRes.reason).toContain("Operation: approve_breaking_intent_revision");
+			expect(hookRes.reason).toContain("Intent revision: 2");
+			expect(readFileSync(intentPath(root), "utf8")).toBe(originalBytes);
+			expect(git(root, "ls-files", "--stage", "--", `docs/plans/${TASK}.intent.json`)).toBe(originalStage);
 			expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
-			expect(readFileSync(intentPath(root), "utf8")).toBe(original);
+
+			// Modifying an in-scope file after PreToolUse invalidates the confirmed binding digest.
+			writeFileSync(join(root, "base.txt"), "drifted after force_ask\n");
+			git(root, "add", "--", "base.txt");
+			server.send({ jsonrpc: "2.0", id: "breaking-drift", method: "tools/call",
+				params: { name: "approve_breaking_intent_revision", arguments: { task_id: TASK, next_intent: next }, _meta: meta(root, 7) } });
+			expect(await server.next()).toMatchObject({ id: "breaking-drift", error: { data: { reason_code: "workspace_changed" } } });
+			expect(readTaskRecordRaw(root, TASK).revision).toBe(before);
+			expect(readFileSync(intentPath(root), "utf8")).toBe(originalBytes);
+
+			// Restore clean state, confirm a fresh step, and commit the breaking revision.
+			writeFileSync(join(root, "base.txt"), "base\n");
+			git(root, "add", "--", "base.txt");
+			const freshHook = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 8,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
+				},
+			}, { root: store });
+			expect(freshHook.decision).toBe("force_ask");
+			server.send({ jsonrpc: "2.0", id: "breaking-ok", method: "tools/call",
+				params: { name: "approve_breaking_intent_revision", arguments: { task_id: TASK, next_intent: next }, _meta: meta(root, 8) } });
+			expect((await server.next()).error).toBeUndefined();
+			expect(readTaskRecordRaw(root, TASK).record?.intent_snapshot.acceptance[0]?.assertion).toBe("a revised breaking acceptance assertion");
 			server.input.end();
 		}, 30_000);
 
-		it("stop reaches its gate, refuses an uncorrelated call, and never manufactures batch admission", async () => {
+		it("stop opens force_ask without elicitation capability, refuses uncorrelated calls, and never manufactures batch admission", async () => {
 			const root = await enrolledRoot();
-			const server = wire(root);
-			await initialize(server);
+			const store = temp("store");
+			const server = wire(root, store);
+			// Even when a client omits capabilities.elicitation, Antigravity's Hook gate remains authoritative.
+			await initialize(server, {});
 			// No Host conversation: refused before any gate opens.
 			server.send({ jsonrpc: "2.0", id: "uncorrelated", method: "tools/call",
 				params: { name: "stop", arguments: { task_id: TASK }, _meta: { "antigravity.google/workspace_paths": [root] } } });
 			expect(await server.next()).toMatchObject({ error: { data: { reason_code: "correlation_missing" } } });
-			// A lazy native-gate operation is not a gated batch operation: it admits nothing.
+
+			// Neither empty nor confirmed non-batch privileged hooks manufacture a batch admission.
 			expect(antigravityPreToolUseHook({ conversationId, stepIdx: 3, workspacePaths: [root],
-				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: {} } } }))
+				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: {} } } }, { root: store }))
 				.toEqual({ decision: "allow" });
+			const stopHook = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 4,
+				workspacePaths: [root],
+				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: TASK } } },
+			}, { root: store });
+			expect(stopHook.decision).toBe("force_ask");
+			expect(stopHook.reason).toContain("Operation: stop");
+
 			server.send({ jsonrpc: "2.0", id: "batch-1", method: "tools/call",
-				params: { name: "start_unattended_batch", arguments: { task_id: TASK },
-					_meta: { ...meta(root), progressToken: "antigravity-hook:3" } } });
+				params: { name: "start_unattended_batch", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
 			expect(await server.next()).toMatchObject({ error: { data: { reason_code: "run_entry_required" } } });
-			// One accept stops the task exactly once.
-			const gate = await holdGate(server, "stop-1", "stop", { task_id: TASK }, root);
-			server.send({ jsonrpc: "2.0", id: gate, result: { action: "accept", content: {} } });
+
+			// Step 4's stop grant was untouched by the rejected batch call and stops the task once.
+			server.send({ jsonrpc: "2.0", id: "stop-1", method: "tools/call",
+				params: { name: "stop", arguments: { task_id: TASK }, _meta: meta(root, 4) } });
 			expect(JSON.stringify(await server.next())).not.toContain("error");
 			expect(readTaskRecordRaw(root, TASK).record).toBeNull();
 			server.input.end();
 		}, 30_000);
+
+		it("start_unattended_batch opens PreToolUse force_ask for a new batch and skips re-prompting when resuming an intact batch", async () => {
+			const root = temp("batch-gate");
+			const store = temp("batch-store");
+			const SLUG = "loop-initiative";
+			const CHILD = "loop-s0";
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeIntent(root, "deliver child slice", 1, CHILD);
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "fixture");
+
+			const readInitiative = async () => ({
+				contract: "immune_brain/github_initiative_observation/v1" as const,
+				initiative_id: SLUG,
+				issue_number: 100,
+				tasks: [{ task_id: CHILD, slice_id: "S0", issue_number: 101, blocked_by: [] }],
+			});
+
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${SLUG}`, workspacePaths: [root] }, { root: store, home: store });
+			const batchArgs = { initiative_slug: SLUG, max_parallel: 1, final_verification: ["true"] };
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 10,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: batchArgs },
+				},
+			}, { root: store, readInitiative });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(hookRes.reason).toContain(`Authorize this unattended batch run for ${SLUG}?`);
+			expect(hookRes.reason).toContain(`${CHILD} (S0)`);
+			expect(hookRes.reason).toContain("Plan digest: sha256:");
+
+			const server = wire(root, store, {
+				readInitiative,
+				batchKernel: {
+					advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }),
+				},
+			});
+			await initialize(server);
+			server.send({ jsonrpc: "2.0", id: "batch-start-1", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: batchArgs, _meta: meta(root, 10) } });
+			const startedReply = await server.next();
+			expect(startedReply.method).toBeUndefined();
+			expect(startedReply.error).toBeUndefined();
+			const started = JSON.parse(startedReply.result.content[0].text);
+			expect(started.state).toBe("started");
+
+			// While the batch remains running with unchanged plan/branch/HEAD, PreToolUse allows resumption without re-prompting.
+			const batchRecordPath = join(root, ".imm/state/batches", `${started.batch_id}.json`);
+			const persisted = JSON.parse(readFileSync(batchRecordPath, "utf8"));
+			writeFileSync(batchRecordPath, `${JSON.stringify({ ...persisted, batch_state: "running" }, null, 2)}\n`);
+			const resumeHook = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 11,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: SLUG } },
+				},
+			}, { root: store, readInitiative });
+			expect(resumeHook).toEqual({ decision: "allow" });
+			server.input.end();
+		}, 60_000);
 	});
 
 describe("hook dispatch writes subagent events", () => {
