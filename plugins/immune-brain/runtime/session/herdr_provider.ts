@@ -31,6 +31,8 @@ import {
 	type AwaitResult,
 	type CloseRecord,
 	type ExecutorHostKind,
+	type RunCommandInput,
+	type RunCommandResult,
 	type Observation,
 	type OutputSource,
 	type Refusal,
@@ -73,10 +75,14 @@ export const HERDR_CLI = {
 		...(timeoutMs ? ["--timeout", String(timeoutMs)] : []),
 	],
 	get: (pane: string) => ["agent", "get", pane],
-	read: (pane: string, source: OutputSource) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped"],
+	read: (pane: string, source: OutputSource, lines?: number) => ["pane", "read", pane, "--source", source === "visible" ? "visible" : "recent-unwrapped", ...(lines ? ["--lines", String(lines)] : [])],
 	sendKeys: (pane: string, key: string) => ["agent", "send-keys", pane, key],
 	paneClose: (pane: string) => ["pane", "close", pane],
 	tabClose: (tab: string) => ["tab", "close", tab],
+	// `pane run` submits a command line to the pane's shell; `pane wait-output`
+	// returns once the unwrapped recent output matches (CLI reference 0.9.5).
+	paneRun: (pane: string, command: string) => ["pane", "run", pane, command],
+	waitOutput: (pane: string, regex: string) => ["pane", "wait-output", pane, "--regex", regex, "--source", "recent", "--lines", "400"],
 } as const;
 
 export type HerdrExecResult = ExecResult;
@@ -113,6 +119,23 @@ export function decodeHerdrHandle(handle: SessionHandle): HerdrIds | null {
 /** The tab label suffix that marks a session's tab as this session's. */
 export function herdrTokenMark(token: string): string {
 	return `[imm:${token}]`;
+}
+
+/** POSIX single-quoting for one shell word. */
+export function shellWord(value: string): string {
+	return /^[A-Za-z0-9_./:=@%+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command line typed into the pane: the command, then a sentinel with its
+ * exit status. `printf` assembles the sentinel at run time, so the echoed
+ * command line never contains `IMM_<token>_DONE` and cannot match the wait.
+ */
+export function sentinelCommand(argv: string[], token: string): { line: string; regex: string } {
+	return {
+		line: `${argv.map(shellWord).join(" ")}; printf 'IMM_%s_%s_%s\\n' ${token} DONE "$?"`,
+		regex: `IMM_${token}_DONE_[0-9]+`,
+	};
 }
 
 /**
@@ -314,12 +337,12 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			if (code && EXITED_CODES.has(code)) return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
 			return refuse("provider_error", `herdr agent wait failed: ${failure(result)}`, handle);
 		},
-		async readOutput(handle, source) {
+		async readOutput(handle, source, readOptions) {
 			const found = await own(handle);
 			if (isRefusal(found)) return found;
 			if (found.gone) return refuse("state_refused", "the session's pane is gone; there is no output to read", handle);
 			const ids = found.ids;
-			const result = await run(HERDR_CLI.read(ids.pane, source));
+			const result = await run(HERDR_CLI.read(ids.pane, source, readOptions?.lines));
 			if (isRefusal(result)) return result;
 			if (result.code !== 0) return refuse("provider_error", `herdr pane read failed: ${failure(result)}`, handle);
 			// `pane read` prints the terminal text itself, not JSON.
@@ -373,6 +396,34 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 				sessions.push({ handle, ...current });
 			}
 			return { ok: true, sessions };
+		},
+		async runCommand(input: RunCommandInput): Promise<RunCommandResult> {
+			if (!input.cwd) return refuse("invalid_input", "cwd is required");
+			if (!input.label || input.label.length > 32) return refuse("invalid_input", "label must be 1 to 32 characters");
+			if (input.argv.length === 0) return refuse("invalid_input", "argv is empty");
+			if (!workspace) return refuse("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
+			const token = randomBytes(6).toString("hex");
+			const created = await run(HERDR_CLI.tabCreate(workspace, input.cwd, `${input.label} ${herdrTokenMark(token)}`, input.env));
+			if (isRefusal(created)) return created;
+			if (created.code !== 0) return refuse("start_failed", `herdr tab create failed: ${failure(created)}`);
+			const json = parseJson(created.stdout);
+			const tab = pick(json, ["result", "tab", "tab_id"]);
+			const pane = pick(json, ["result", "root_pane", "pane_id"]);
+			if (typeof tab !== "string" || typeof pane !== "string" || !tab || !pane) {
+				return refuse("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
+			}
+			const handle = encodeHerdrHandle({ workspace, tab, pane, token });
+			const { line, regex } = sentinelCommand(input.argv, token);
+			const ran = await run(HERDR_CLI.paneRun(pane, line));
+			if (isRefusal(ran)) return { ...ran, handle };
+			if (ran.code !== 0) return refuse("start_failed", `herdr pane run failed: ${failure(ran)}`, handle);
+			const waited = await run(HERDR_CLI.waitOutput(pane, regex));
+			if (isRefusal(waited)) return { ...waited, handle };
+			if (waited.code !== 0) return refuse("provider_error", `herdr pane wait-output failed; the command may still run in its tab: ${failure(waited)}`, handle);
+			const matched = String(pick(parseJson(waited.stdout), ["result", "matched_line"]) ?? waited.stdout);
+			const status = new RegExp(`IMM_${token}_DONE_([0-9]+)`).exec(matched);
+			if (!status) return refuse("provider_error", "herdr pane wait-output returned no exit status", handle);
+			return { ok: true, handle, exit_code: Number(status[1]) };
 		},
 		async sendKeys(handle, key) {
 			const found = await own(handle);

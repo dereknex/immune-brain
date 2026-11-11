@@ -7,6 +7,7 @@
 // record of a close the batch runner accepted under the Executor close rule.
 
 import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
+import { extractMarkedResult } from "./marked_result";
 import { createHerdrSessionProvider } from "./herdr_provider";
 import {
 	admitSessionProvider,
@@ -24,16 +25,17 @@ export interface CliOutcome {
 	returncode: number;
 }
 
-export const SESSION_VERBS = ["probe", "create", "send", "await", "observe", "read", "stop", "close", "reconcile"] as const;
+export const SESSION_VERBS = ["probe", "create", "run", "send", "await", "observe", "read", "stop", "close", "reconcile"] as const;
 
 const USAGE = [
 	"imm-session <verb> --provider herdr|herdr-core [options]",
 	"  probe",
 	"  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [--env KEY=VALUE]... [-- <host arguments>]",
+	"  run --cwd <dir> --label <name> [--env KEY=VALUE]... -- <command> [args...]   (waits; prints exit_code)",
 	"  send <handle> --text <instruction>",
 	"  await <handle>... [--timeout-ms <ms>]   (several handles: the first transition, with its handle)",
 	"  observe <handle>",
-	"  read <handle> [--source visible|scrollback]",
+	"  read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]",
 	"  stop <handle>",
 	"  close <handle> --task <task_id> --recorded-at <lane_session_close.recorded_at>",
 	"  reconcile <handle>...",
@@ -55,7 +57,7 @@ function emit<T extends { ok: boolean }>(result: T): CliOutcome {
 
 interface Parsed { positional: string[]; flags: Map<string, string>; env: Record<string, string>; rest: string[] }
 
-const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source", "--task", "--recorded-at"]);
+const VALUE_FLAGS = new Set(["--provider", "--cwd", "--label", "--host", "--entry", "--resume", "--text", "--timeout-ms", "--source", "--task", "--recorded-at", "--lines", "--extract"]);
 
 function parse(args: string[]): Parsed | string {
 	const positional: string[] = [];
@@ -98,8 +100,8 @@ export async function runSessionCli(
 	const parsed = parse(tail);
 	if (typeof parsed === "string") return usage(parsed);
 	const { positional, flags, env: hostEnv, rest } = parsed;
-	if (rest.length > 0 && verb !== "create") return usage("only create takes host arguments after --");
-	if (Object.keys(hostEnv).length > 0 && verb !== "create") return usage("only create takes --env");
+	if (rest.length > 0 && verb !== "create" && verb !== "run") return usage("only create and run take arguments after --");
+	if (Object.keys(hostEnv).length > 0 && verb !== "create" && verb !== "run") return usage("only create and run take --env");
 
 	const port = resolve(flags.get("--provider"), env);
 	if ("ok" in port && port.ok === false) return emit(port);
@@ -129,6 +131,14 @@ export async function runSessionCli(
 				...(resume ? { resume } : {}),
 				...(Object.keys(hostEnv).length > 0 ? { env: hostEnv } : {}),
 			}));
+		}
+		case "run": {
+			if (positional.length > 0) return usage("run takes the command after --");
+			const cwd = flags.get("--cwd");
+			const label = flags.get("--label");
+			if (!cwd || !label || rest.length === 0) return usage("run needs --cwd, --label and a command after --");
+			if (!provider.runCommand) return emit(refuse("provider_unavailable", `provider ${provider.provider} cannot run a command in a session`));
+			return emit(await provider.runCommand({ cwd, label, argv: rest, ...(Object.keys(hostEnv).length > 0 ? { env: hostEnv } : {}) }));
 		}
 		case "send": {
 			const bad = needHandle();
@@ -164,7 +174,14 @@ export async function runSessionCli(
 			if (bad) return bad;
 			const source = flags.get("--source") ?? "visible";
 			if (source !== "visible" && source !== "scrollback") return usage("--source must be visible or scrollback");
-			return emit(await provider.readOutput(handle, source as OutputSource));
+			const rawLines = flags.get("--lines");
+			if (rawLines !== undefined && !/^[1-9]\d{0,4}$/.test(rawLines)) return usage("--lines must be a whole number from 1 to 99999");
+			const extract = flags.get("--extract");
+			if (extract !== undefined && extract !== "advisory") return usage("--extract supports advisory only");
+			const read = await provider.readOutput(handle, source as OutputSource, rawLines ? { lines: Number(rawLines) } : undefined);
+			// `result` is the advisory child's marked result; null means result_untrusted.
+			if (extract && read.ok) return emit({ ...read, result: extractMarkedResult(read.text) });
+			return emit(read);
 		}
 		case "stop": {
 			const bad = needHandle();

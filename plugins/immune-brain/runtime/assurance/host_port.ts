@@ -54,7 +54,7 @@ export interface HostReviewReservation {
  */
 export class ReviewPreparationError extends Error {
 	constructor(
-		readonly code: "review_profile_required" | "review_host_unavailable",
+		readonly code: "review_profile_required" | "review_host_unavailable" | "review_transport_unavailable",
 		message: string,
 		readonly recovery_action: string,
 	) {

@@ -96,5 +96,24 @@ if (group === "agent" && verb === "wait") {
 }
 if (group === "agent" && verb === "send-keys") { hosted(args[0]).keys.push(...args.slice(1)); save(state); ok({}); }
 if (group === "pane" && verb === "read") text(pane(args[0]).output);
+if (group === "pane" && verb === "run") {
+	// Runs the typed command line in the tab's cwd, as the pane's shell would.
+	const target = pane(args[0]);
+	const { spawnSync } = await import("node:child_process");
+	const shell = spawnSync("sh", ["-c", args[1]], { cwd: target.cwd, encoding: "utf8", env: { ...process.env, ...Object.fromEntries((target.env ?? []).map((pair) => pair.split(/=(.*)/s).slice(0, 2))) } });
+	target.output += `$ ${args[1]}\n${shell.stdout}${shell.stderr}`;
+	save(state);
+	ok({});
+}
+if (group === "pane" && verb === "wait-output") {
+	const pattern = new RegExp(flag(args, "--regex"));
+	for (;;) {
+		const current = load().panes?.[args[0]];
+		if (!current || current.closed) fail("pane_not_found");
+		const line = current.output.split("\n").find((each) => pattern.test(each));
+		if (line !== undefined) ok({ pane_id: args[0], matched_line: line, read: { text: current.output } });
+		await Bun.sleep(20);
+	}
+}
 if (group === "pane" && verb === "close") { pane(args[0]).closed = true; save(state); ok({}); }
 fail("unknown_command", `fake herdr does not model: ${argv.join(" ")}`);

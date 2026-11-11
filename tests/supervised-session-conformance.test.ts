@@ -206,6 +206,6 @@ describe("Supervised Session Port admission", () => {
 		const { port } = createFakeSessionProvider();
 		const admitted = admitSessionProvider(port);
 		expect(admitted).toMatchObject({ ok: true });
-		if (admitted.ok) expect(admitted.missing_optional).toEqual(["waitForState", "subscribeEvents", "snapshot", "manageWorktree", "reportState", "attachSession"]);
+		if (admitted.ok) expect(admitted.missing_optional).toEqual(["waitForState", "subscribeEvents", "snapshot", "manageWorktree", "reportState", "attachSession", "runCommand"]);
 	});
 });

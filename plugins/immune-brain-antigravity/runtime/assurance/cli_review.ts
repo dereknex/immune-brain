@@ -13,7 +13,8 @@ import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import {
@@ -91,6 +92,26 @@ interface ReviewTreeState {
 	worktree: string;
 }
 
+/**
+ * The `imm-session` wrapper for `lanes.review_transport: herdr`. It names its
+ * provider; outside Herdr it fails closed rather than falling back to a process.
+ */
+function reviewSessionRunner(env: NodeJS.ProcessEnv = process.env): string {
+	if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
+		throw new ReviewPreparationError("review_transport_unavailable",
+			"lanes.review_transport is herdr but this Review is not prepared inside Herdr",
+			"Run the Lane inside Herdr, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+	}
+	let dir = dirname(fileURLToPath(import.meta.url));
+	for (let level = 0; level < 5; level++) {
+		const candidate = join(dir, "bin", "imm-session");
+		if (existsSync(candidate)) return candidate;
+		dir = dirname(dir);
+	}
+	throw new ReviewPreparationError("review_transport_unavailable",
+		"imm-session is not shipped beside this runtime", "Reinstall the plugin, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+}
+
 function git(root: string, argv: string[]): string {
 	return execFileSync("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
@@ -160,6 +181,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		if (!executable) throw new ReviewPreparationError("review_host_unavailable",
 			`review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`,
 			`Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+		const transport = resolveConfig(root).lanes.review_transport?.value ?? "process";
+		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
 		const tree = reviewTreeState(root);
 
 		const directory = mkdtempSync(join(tmpdir(), "imm-cli-review-"));
@@ -185,6 +208,11 @@ export class CliReviewHost implements AssuranceHostPort {
 		].join("\n"), { encoding: "utf8", mode: 0o755 });
 		chmodSync(script, 0o755);
 
+		// S4 (#426): the same script, in a Herdr tab the user can watch; the verdict
+		// still comes from the output and exit files, never from the tab.
+		const reviewCommand = sessionRunner
+			? [sessionRunner, "run", "--provider", "herdr", "--cwd", root, "--label", `review ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ")
+			: `sh ${script}`;
 		const actorId = `cli:${profile.host}:${request.operationId}`;
 		this.reservations.set(request.operationId, {
 			taskId: request.taskId, operationId: request.operationId, root,
@@ -192,8 +220,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		});
 		return {
 			id: request.operationId,
-			dispatch: { review_command: `sh ${script}`, review_profile: profile },
-			review_command: `sh ${script}`,
+			dispatch: { review_command: reviewCommand, review_profile: profile },
+			review_command: reviewCommand,
 			review_profile: profile,
 			review_actor_id: actorId,
 		};

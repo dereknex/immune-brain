@@ -169,6 +169,49 @@ contract mismatch (`review_contract_mismatch`), or a changed tree
 (`review_tree_changed`, over HEAD, the index and tracked content) releases it
 without a Review round.
 
+## Advisory Child In A Supervised Session
+
+Supervised Session Port (ADR 0038, #426 S2). This applies only when
+`lanes.advisory_transport` resolves to `herdr` and `imm-session probe --provider
+herdr` succeeds; otherwise the in-process dispatch above applies, and nothing is
+detected or substituted. It applies to `advisory-reviewer` and `arch-explorer`
+alone: `qa`, `ui-review`, findings verification and the authority Review keep
+their own transports. Eligibility, authorization, trigger matching, the
+candidate budget and result synthesis are unchanged; only where the child runs
+and how its text returns differ.
+
+1. Create the child's session, which opens a tab the user can watch:
+   `imm-session create --provider herdr --cwd <repository or Lane> --label <role> --host <Parent Host> --entry "<dispatch text> <instruction>" -- <host arguments>`.
+   The dispatch text is the same bounded packet an in-process child receives
+   (role, objective, path shard, `boundary: advisory-only`). `<instruction>` is
+   the fixed sentence `ADVISORY_RESULT_INSTRUCTION` in
+   `runtime/session/marked_result.ts`: it asks for a closing block between a line
+   `IMM-ADVISORY-` + `BEGIN` and a line `IMM-ADVISORY-` + `END`, spelled in parts so
+   the echoed prompt is never a result. On Claude Code the host arguments are
+   `--tools Read,Grep,Glob --permission-mode dontAsk`, which bound the session to
+   the role's read-only allowlist; on Pi and Antigravity the boundary stays the
+   prompt contract, as for their in-process children.
+2. Wait in the foreground with `imm-session await <handle> --provider herdr
+   --timeout-ms <the child's remaining budget>`. `blocked` is a dialog the user
+   answers; the Parent sends it nothing and reports it.
+3. Read the result with `imm-session read <handle> --provider herdr --source
+   scrollback --lines 2000 --extract advisory`. Its `result` is the child's
+   output. `result: null` (no complete marked block), a `timeout` or `exited`
+   is `result_untrusted`: the output is discarded and never retried
+   automatically, exactly as a failed in-process child.
+4. A follow-up question to the same child, within the same budget, goes through
+   `imm-session send <handle> --provider herdr --text "<question> <instruction>"`,
+   then steps 2 and 3 again.
+5. When the result is consumed, stop the child's session with
+   `imm-session stop <handle> --provider herdr`. An advisory session is the
+   Parent's own and holds no Lane; the Lane rules that keep Executor sessions
+   open do not apply to it.
+
+The screen is read only for this marked result; the child's progress, tool
+calls and any other text are for people. A result read this way carries no more
+authority than an in-process child's: advisory only, never a QA closure, a
+Review verdict or a workflow write.
+
 ## Scheduling And Visibility
 
 1. Planning、repository exploration、specialist advisory Review 和 work probe 必须 foreground 执行。Parent launches one child at a time，消费 direct terminal result，并在每个结果后 re-evaluates the remaining dispatch budget；不得把多个 foreground Agent 假定为并发 batch。

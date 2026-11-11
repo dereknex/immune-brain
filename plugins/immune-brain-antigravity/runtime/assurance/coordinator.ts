@@ -497,7 +497,7 @@ function reviewReadyDispatch(reservation: HostReviewReservation): {
 	return { review_command: reservation.review_command, review_profile: reservation.review_profile };
 }
 
-function reviewDispatchFailure(error: unknown): { code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string } | undefined {
+function reviewDispatchFailure(error: unknown): { code?: ReviewPreparationError["code"]; recovery_action?: string } | undefined {
 	return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
 }
 
@@ -529,7 +529,7 @@ export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	 * The Kernel obligation stays `run_review`, nothing was lost, and the same
 	 * deterministic revision can be rebuilt on the next advance.
 	 */
-	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: ReviewPreparationError["code"]; recovery_action?: string }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string }
 	| { state: "completed" }
@@ -577,7 +577,7 @@ export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
 	| { state: "awaiting_user"; operation: "review"; operation_id: string; decision_id: string; reason: string }
 	| ReviewIncompleteResult
 	| { state: "rework"; operation: "review"; operation_id: string; summary: string; convergence?: ReworkConvergence[] }
-	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string }
+	| { state: "review_preparation_failed"; operation: "review"; operation_id: string; reason: string; code?: ReviewPreparationError["code"]; recovery_action?: string }
 	| { state: "completed" }
 	| { state: "settlement_unknown"; operation: "qa" | "review"; operation_id: string; reason: string }
 	| { state: "blocked"; reason: string; code?: "verdict_invalid"; recovery_action?: string });
@@ -2200,7 +2200,7 @@ export class AssuranceCoordinator {
 		taskId: string,
 		operationId: string,
 		reason: string,
-		failure?: { code?: "review_profile_required" | "review_host_unavailable"; recovery_action?: string },
+		failure?: { code?: ReviewPreparationError["code"]; recovery_action?: string },
 	): Extract<AssuranceAdvanceResult, { state: "review_preparation_failed" }> {
 		const reservation = this.reviewReservations.get(taskId);
 		if (reservation) this.releaseReviewReservation(taskId, reservation);

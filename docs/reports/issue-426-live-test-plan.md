@@ -144,3 +144,14 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | S1-b 集成后关闭 | child `integrated` 且等待返回 `idle`/`done`/`exited` 后，同一请求得到 `accepted: true` 与 `recorded_at`；再执行 `imm-session close <handle> --provider herdr --task <task_id> --recorded-at <recorded_at>` | 只关这个 tab；batch report 的 `session_closes` 含该 child；Lane 目录与分支仍在 |
 | S1-c 重复与伪造 | 再请求一次；以及不带或伪造 `--recorded-at` 直接 `imm-session close` | 第二次 `accepted: false`（already recorded）；伪造记录得 `close_unproven`，什么都不关 |
 | S1-d herdr-core | 同 S1-b，`--provider herdr-core` | 终端先 `kill` 后 `rm`，`hc ls --all` 中不再有它 |
+
+## 补充用例：S4 Review 会话传输与 S2 advisory 会话
+
+| 用例 | 步骤 | 期望 |
+| --- | --- | --- |
+| S4-a | 在 Herdr 内的 Lane 里，项目配置 `lanes.review_transport: herdr`，让一个 material 任务走到 `review_ready` | `review_command` 以 `.../bin/imm-session' 'run' '--provider' 'herdr'` 开头；执行后出现一个标签为 `review <task_id> [imm:<token>]` 的新 tab，里面能看到 reviewer 运行；命令返回 `{"ok":true,"exit_code":0}` 后 `submit_review` 正常结算 |
+| S4-b | 同一配置，在 Herdr 外推进 | `review_preparation_failed`，`code: review_transport_unavailable`，QA 已结算、不产生 Review 轮次 |
+| S4-c | 记录 `pane wait-output` 在真实 Herdr 中是否也匹配命令行回显 | 不应匹配（sentinel 由 `printf` 运行时拼出）；若匹配，`exit_code` 会在命令结束前返回 |
+| S2-a | 项目配置 `lanes.advisory_transport: herdr`，让 Parent 触发一次 `advisory-reviewer` | Parent 按协议 `imm-session create` → `await` → `read --source scrollback --lines 2000 --extract advisory`，`result` 非空并被当作 advisory 结论使用；之后 `stop` 关闭该会话 |
+| S2-b | 让 advisory 子任务不输出标记块（例如中途打断） | `result: null`，Parent 按 `result_untrusted` 丢弃，不自动重试 |
+| S2-c | 在 Claude Code 的真实 TUI 中，看 `IMM-ADVISORY-BEGIN/END` 行被渲染后的样子 | 抽取仍得到正文；若 TUI 把标记行折行或加前缀导致抽取失败，记录实际形状以修正 `marked_result.ts` |

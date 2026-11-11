@@ -382,6 +382,12 @@ hash; the skill compares it with its own and answers
 `REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
 install carries different rules. The process writes its output under a temporary
 name and its exit status last, so a present exit file marks a complete output.
+With `lanes.review_transport: herdr` the returned `review_command` instead runs
+that same script through `imm-session run --provider herdr` in a new Herdr tab
+the user can watch (#426 S4); it still exits once the script has, and the
+output and exit files remain the only result. Outside Herdr that setting makes
+Review preparation fail with `review_transport_unavailable` and its recovery
+action; it never falls back to a hidden process.
 Releasing the reservation removes the packet, the script and the output with the
 evidence directory; the manifest bytes remain unchanged. A finished review
 releases its reservation without a Review round when the process exits non-zero

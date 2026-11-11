@@ -30,3 +30,7 @@ The Executor close rule (#426 S1): `start_unattended_batch` accepts
 `lane_session_close`, records the close of an integrated child's session in
 the batch record's `session_closes`, and `imm-session close` closes that
 session only with the accepted record. Lanes and branches are not removed.
+Two opt-in Lane settings put work in watched Herdr sessions (#426 S4, S2):
+`lanes.review_transport: herdr` runs the authority Review's script through
+`imm-session run`, and `lanes.advisory_transport: herdr` runs advisory children
+in a session whose marked result `imm-session read --extract advisory` returns.

@@ -198,6 +198,7 @@
         "plugins/immune-brain-antigravity/runtime/session/fake_provider.ts",
         "plugins/immune-brain-antigravity/runtime/session/herdr_core_provider.ts",
         "plugins/immune-brain-antigravity/runtime/session/herdr_provider.ts",
+        "plugins/immune-brain-antigravity/runtime/session/marked_result.ts",
         "plugins/immune-brain-antigravity/runtime/session/supervised_session_port.ts",
         "plugins/immune-brain-antigravity/runtime/staged_intent.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/batch_disposition.ts",

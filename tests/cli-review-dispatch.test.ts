@@ -644,3 +644,46 @@ describe("default profile required", () => {
 		expect((await claudeAdvance(root, ROOT_ENV, "routine")).state).toBe("completed");
 	});
 });
+
+// --- #426 S4: the review script in a supervised session ------------------
+
+describe("review transport (#426 S4)", () => {
+	const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE"] as const;
+	const saved = Object.fromEntries(HERDR_KEYS.map((key) => [key, process.env[key]]));
+	afterEach(() => { for (const key of HERDR_KEYS) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } });
+
+	test("outside Herdr a herdr transport fails closed with one recovery action, after QA", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		onPath(fakeReviewer(heredoc(JSON.stringify(passVerdict(kernel.snapshot)))));
+		delete process.env.HERDR_ENV;
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_transport_unavailable" });
+		expect((ready as { recovery_action: string }).recovery_action).toContain("lanes.review_transport");
+		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
+		expect(reviewsOf(kernel)).toHaveLength(0);
+	});
+
+	test("inside Herdr the same script runs in a tab and its output bytes settle the Review", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		const verdict = passVerdict(kernel.snapshot);
+		const state = join(scratchDir("herdr"), "state.json");
+		writeFileSync(state, JSON.stringify({ protocol: 22, panes: {} }));
+		Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state });
+		onPath([fakeReviewer(heredoc(JSON.stringify(verdict))), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		const command = reviewReadyCommand(ready as { state: string; review_command?: string });
+		expect(command).toMatch(/bin\/imm-session' 'run' '--provider' 'herdr' '--cwd' '\S+' '--label' 'review cli-review-task' '--' 'sh' '\S+review\.sh'$/);
+
+		const ran = spawnSync("sh", ["-c", command], { encoding: "utf8" });
+		expect(JSON.parse(ran.stdout)).toMatchObject({ ok: true, exit_code: 0 });
+		const herdr = JSON.parse(readFileSync(state, "utf8"));
+		expect(herdr.calls.map((call: string[]) => call.slice(0, 2).join(" "))).toEqual(["api schema", "tab create", "pane run", "pane wait-output"]);
+		expect(herdr.calls.some((call: string[]) => call[0] === "pane" && call[1] === "run")).toBe(true);
+
+		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect(settled).toMatchObject({ state: "completed" });
+		expect(reviewsOf(kernel)).toHaveLength(1);
+	});
+});

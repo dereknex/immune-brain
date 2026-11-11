@@ -42,6 +42,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `manageWorktree` | The Lane's own provisioning (`lane-steward`) |
 | `reportState` | Provider detection only; a provider whose only state source is self-report must declare it in the admission matrix |
 | `attachSession` | No effect on Parent scheduling |
+| `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
 `structuredResult` is reserved and unfilled: verdicts return through the file protocol, and a provider that fills it is refused.
 
@@ -58,7 +59,8 @@ imm-session <verb> --provider herdr|herdr-core [options]
   send <handle> --text <instruction>
   await <handle>... [--timeout-ms <ms>]
   observe <handle>
-  read <handle> [--source visible|scrollback]
+  run --cwd <dir> --label <name> [--env KEY=VALUE]... -- <command> [args...]
+  read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
   stop <handle>
   close <handle> --task <task_id> --recorded-at <lane_session_close.recorded_at>
   reconcile <handle>...
@@ -85,6 +87,7 @@ Every spelling and response shape below is checked against the Herdr 0.9.5 CLI r
 | `closeSession` | `tab close <tab>`; a `confirmation_required` answer is a `provider_error` |
 | `reconcile` | `agent get` per owned handle |
 | `sendKeys` | `agent send-keys <pane> <key>` |
+| `runCommand` | `tab create` as for `createSession` (token label, `--env`), `pane run <pane> "<command>; printf 'IMM_%s_%s_%s\\n' <token> DONE \"$?\""`, then `pane wait-output <pane> --regex 'IMM_<token>_DONE_[0-9]+' --source recent --lines 400`; the status is read from `.result.matched_line`. `printf` assembles the sentinel at run time, so the echoed command line never matches. The tab stays open for the user |
 | `snapshot` | Not wired; Herdr offers `api snapshot`, to adopt with event subscriptions |
 | `waitForState`, `subscribeEvents`, `manageWorktree`, `attachSession` | Not implemented in this adapter; degrade as above |
 | `reportState` | Not applicable: Herdr TUI state is `detected` |
@@ -118,8 +121,8 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
 | executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity` | Executor Host at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, which report OSC 7501 natively after a feature probe core answers; admitted only after a live run shows `blocked` for every dialog kind (permission, workspace trust, sign-in). An older Host has no state on core. No Immune-Brain integration is needed; should a Host drop native support, one would live in the herdr-core adapter |
-| authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
-| advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
+| authority | create, await with a reliable completion signal, file-protocol verdict | The authority Review's script may run in a session through `runCommand` when `lanes.review_transport: herdr` (#426 S4): its completion signal is the command's exit status and the verdict stays the script's output and exit files. Findings verification (the #284 verifier) is not admitted (S3) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
+| advisory | create, send, read (scrollback with `--extract advisory`), observe, stop | Admitted when `lanes.advisory_transport: herdr` (#426 S2; `subagent-dispatch-protocol.md` "Advisory Child In A Supervised Session"); experimental, opt-in | Same OSC 7501 condition as executor |
 
 Measured 2026-11-10 (`docs/reports/issue-426-herdr-provider-probe.md`): no Executor Host is admitted on `herdr-core` yet. Claude Code 2.1.322 shows the workspace trust dialog without reporting any status for 30 s, so `create` is `start_failed`, not `blocked`; Pi 1.5.0 and Antigravity CLI 1.5.3 have not been observed on the permission or sign-in dialog. On `herdr`, all three Hosts pass G1, G2 and G4, and G3 is measured for workspace trust only. Both roles on `herdr-core` therefore stay unadmitted until a live run reports `blocked` for every dialog kind.
 

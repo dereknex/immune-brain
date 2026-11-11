@@ -133,6 +133,38 @@ describe("Executor Host coverage", () => {
 	});
 });
 
+describe("Herdr adapter runCommand (#426 S4)", () => {
+	it("runs the command in a token-marked tab and returns its real exit status", async () => {
+		const { port, stateFile } = subject();
+		const cwd = mkdtempSync(join(tmpdir(), "imm-run-"));
+		try {
+			const result = await port.runCommand!({ cwd, label: "review t", argv: ["sh", "-c", "echo \"it's here\" > out.txt; exit 3"] });
+			expect(result).toMatchObject({ ok: true, exit_code: 3 });
+			expect(readFileSync(join(cwd, "out.txt"), "utf8")).toBe("it's here\n");
+			const calls = herdrCalls(stateFile);
+			expect(calls[0][7]).toMatch(/^review t \[imm:[0-9a-f]{12}\]$/);
+			// The typed line carries no literal sentinel, so its echo cannot end the wait.
+			const typed = calls.find((call) => call[1] === "run")![3];
+			const regex = calls.find((call) => call[1] === "wait-output")![4];
+			expect(new RegExp(regex).test(typed)).toBe(false);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("is offered through imm-session run, and refused by a provider without it", async () => {
+		const { env } = subject();
+		const cwd = mkdtempSync(join(tmpdir(), "imm-run-"));
+		try {
+			const out = await runSessionCli(["run", "--provider", "herdr", "--cwd", cwd, "--label", "x", "--", "true"], env);
+			expect(JSON.parse(out.stdout)).toMatchObject({ ok: true, exit_code: 0 });
+			expect((await runSessionCli(["run", "--provider", "herdr", "--cwd", cwd, "--label", "x"], env)).returncode).toBe(2);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("Herdr adapter ownership (K1)", () => {
 	/** Adds a tab and pane of the user's own to the stand-in, in the Parent's workspace. */
 	const userPane = (stateFile: string, label: string) => {

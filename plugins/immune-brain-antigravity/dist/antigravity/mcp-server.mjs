@@ -8158,13 +8158,13 @@ function resolveConfig(root, options = {}) {
   validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
   validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
   validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-  const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"];
+  const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport"];
   validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
   validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
   const validateLane = (o, file, path) => {
     validKeys(o, laneKeys, file, path, "lanes");
     for (const [k, v] of Object.entries(o)) {
-      const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : true;
+      const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : k === "review_transport" ? v === "process" || v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
       if (!ok) {
         invalid(file, `${path}.${k}`, "invalid value");
         failed.add("lanes");
@@ -8364,14 +8364,14 @@ function resolveConfig(root, options = {}) {
       diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer");
       projectValue = undefined;
     }
-    lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [key === "max_parallel" ? 1 : undefined, "default"]);
+    lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [LANE_DEFAULTS[key], "default"]);
   }
   if (failed.has("lanes")) {
     lanes.active = leaf(null, "default");
     lanes.profiles = leaf({}, "default");
     lanes.project_defaults = leaf({}, "default");
     for (const key of laneKeys)
-      lanes[key] = leaf(key === "max_parallel" ? 1 : null, "default");
+      lanes[key] = leaf(LANE_DEFAULTS[key] ?? null, "default");
   }
   const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
   const bindings = {};
@@ -8426,13 +8426,14 @@ function resolveConfig(root, options = {}) {
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
   return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS;
 var init_layered_config = __esm(() => {
   init_config();
   init_contract();
   init_thresholds();
   init_project_identity();
   envName = /^[A-Z_][A-Z0-9_]*$/;
+  LANE_DEFAULTS = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
 });
 
 // plugins/immune-brain/runtime/git_integration_preference.ts
@@ -17405,7 +17406,7 @@ init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
 import { isAbsolute as isAbsolute12, join as join35 } from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
 
@@ -19349,8 +19350,8 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname16, join as join34, resolve as resolve16 } from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
 import { spawn as spawn4 } from "node:child_process";
@@ -22079,7 +22080,8 @@ import { execFileSync as execFileSync14 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, join as join33 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
+import { fileURLToPath as fileURLToPath3 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -22137,6 +22139,19 @@ function reviewBinary(host) {
     }
   }) ?? null;
 }
+function reviewSessionRunner(env = process.env) {
+  if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
+    throw new ReviewPreparationError("review_transport_unavailable", "lanes.review_transport is herdr but this Review is not prepared inside Herdr", "Run the Lane inside Herdr, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+  }
+  let dir = dirname16(fileURLToPath3(import.meta.url));
+  for (let level = 0;level < 5; level++) {
+    const candidate = join33(dir, "bin", "imm-session");
+    if (existsSync18(candidate))
+      return candidate;
+    dir = dirname16(dir);
+  }
+  throw new ReviewPreparationError("review_transport_unavailable", "imm-session is not shipped beside this runtime", "Reinstall the plugin, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+}
 function git10(root, argv) {
   return execFileSync14("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
@@ -22189,6 +22204,8 @@ class CliReviewHost {
     const executable = reviewBinary(profile.host);
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+    const transport = resolveConfig(root).lanes.review_transport?.value ?? "process";
+    const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
     const tree = reviewTreeState(root);
     const directory = mkdtempSync6(join33(tmpdir8(), "imm-cli-review-"));
     chmodSync5(directory, 493);
@@ -22215,6 +22232,7 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     ].join(`
 `), { encoding: "utf8", mode: 493 });
     chmodSync5(script, 493);
+    const reviewCommand = sessionRunner ? [sessionRunner, "run", "--provider", "herdr", "--cwd", root, "--label", `review ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ") : `sh ${script}`;
     const actorId = `cli:${profile.host}:${request.operationId}`;
     this.reservations.set(request.operationId, {
       taskId: request.taskId,
@@ -22229,8 +22247,8 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     });
     return {
       id: request.operationId,
-      dispatch: { review_command: `sh ${script}`, review_profile: profile },
-      review_command: `sh ${script}`,
+      dispatch: { review_command: reviewCommand, review_profile: profile },
+      review_command: reviewCommand,
       review_profile: profile,
       review_actor_id: actorId
     };
@@ -22584,7 +22602,7 @@ class ClaudeRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: "claude-code",
-        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal
       });
@@ -23111,7 +23129,7 @@ class ClaudeRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname16(fileURLToPath3(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -23378,7 +23396,7 @@ function createMcpRuntime(options = {}) {
     runtime.bindWorkspace(workspace);
     return workspace;
   };
-  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath4(import.meta.url));
+  const bundle = options.bundleIdentity ?? watchBundleIdentity(fileURLToPath5(import.meta.url));
   const staleBundleMessage = () => `this MCP server started from ${bundle.path}, which changed on disk after startup; it still runs the old bundle`;
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation));
   const sessionProbe = options.probeHost ?? probeHost;
@@ -23604,7 +23622,7 @@ function firstFileRootPath(roots) {
     if (typeof uri !== "string" || !uri.startsWith("file://"))
       continue;
     try {
-      const path = fileURLToPath4(uri);
+      const path = fileURLToPath5(uri);
       if (isAbsolute12(path))
         return path;
     } catch {}

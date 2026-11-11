@@ -78,6 +78,15 @@ export type InstructionResult = ({ ok: true } & Observation) | Refusal;
  * `events_lost`: the provider dropped events; reconcile before acting.
  */
 export type Transition = "changed" | "exited" | "timeout" | "events_lost";
+export interface RunCommandInput {
+	cwd: string;
+	/** A short human label, at most 32 characters. */
+	label: string;
+	argv: string[];
+	env?: Record<string, string>;
+}
+export type RunCommandResult = { ok: true; handle: SessionHandle; exit_code: number } | Refusal;
+
 export interface AwaitOptions { timeoutMs?: number; signal?: AbortSignal }
 export type AwaitResult = ({ ok: true; transition: Transition } & Observation) | Refusal;
 export type ReadResult = { ok: true; text: string; source: OutputSource } | Refusal;
@@ -117,7 +126,7 @@ export interface SupervisedSessionPort {
 	 */
 	awaitTransition(handle: SessionHandle, options?: AwaitOptions): Promise<AwaitResult>;
 	/** For people to read. Never Kernel progress evidence. */
-	readOutput(handle: SessionHandle, source: OutputSource): Promise<ReadResult>;
+	readOutput(handle: SessionHandle, source: OutputSource, options?: { lines?: number }): Promise<ReadResult>;
 	/** Reports `unknown` when no state is available; never invents `idle` or `done`. */
 	observeState(handle: SessionHandle): Promise<ObserveResult>;
 	stopSession(handle: SessionHandle): Promise<StopResult>;
@@ -133,6 +142,12 @@ export interface SupervisedSessionPort {
 	manageWorktree?(action: "create" | "open" | "remove", path: string): Promise<StopResult>;
 	reportState?(handle: SessionHandle, state: SessionState): Promise<StopResult>;
 	attachSession?(handle: SessionHandle): Promise<StopResult>;
+	/**
+	 * Runs one command (not an agent) in a new session the user can watch, and
+	 * returns once it has finished, with its exit status. The command's own
+	 * files are the result; the session's output is for people only.
+	 */
+	runCommand?(input: RunCommandInput): Promise<RunCommandResult>;
 	/** Reserved and unfilled: verdicts return through the file protocol. */
 	readonly structuredResult?: never;
 }
@@ -156,6 +171,7 @@ export const OPTIONAL_CAPABILITIES = [
 	"manageWorktree",
 	"reportState",
 	"attachSession",
+	"runCommand",
 ] as const;
 
 export type OptionalCapability = (typeof OPTIONAL_CAPABILITIES)[number];

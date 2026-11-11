@@ -115,3 +115,48 @@ rather than its socket protocol.
   that only the Herdr adapter spawns `herdr`.
 - The `herdr`-spelling assertions in the Loop contract tests become `imm-session`
   assertions; the guarantees they protect are unchanged.
+
+## Addendum: #426 S2, S3 and S4 (2026-11-11)
+
+**S4, the authority Review's transport.** `lanes.review_transport` is `process`
+(default) or `herdr`. With `herdr`, `CliReviewHost` returns a `review_command`
+that runs the same review script through `imm-session run --provider herdr`, in a
+Herdr tab the user can watch; the port gained the optional `runCommand`
+capability for it (a command, not an agent, with its exit status). The verdict
+still comes only from the script's output and exit files (ADR 0037), so receipt,
+release and the tree guard are unchanged. Outside Herdr the setting fails Review
+preparation with `review_transport_unavailable`; it never falls back to a hidden
+process. `runtime/assurance` still imports nothing from `runtime/session`: the
+transport lives in the command string alone.
+
+**S2, advisory children.** `lanes.advisory_transport` is `subagent` (default) or
+`herdr`. With `herdr`, `advisory-reviewer` and `arch-explorer` run in a Herdr
+session and their result returns through the session output, as chosen on
+2026-11-11: the child ends with a marked block, `imm-session read --extract
+advisory` extracts it deterministically (`runtime/session/marked_result.ts`), and
+no complete block is `result_untrusted`. The markers are spelled in parts in the
+dispatch text, so the echoed prompt is never a result. The protocol lives in
+`docs/reference/subagent-dispatch-protocol.md`.
+
+**S3, the #284 verifier in an authority session: deferred, and why #284 does not
+have to finish first.** Three facts, checked against this branch:
+
+1. #426 named #284's two review timestamps as S3's prerequisite. They are
+   delivered: the coordinator records `review_started_at` and
+   `review_submitted_at` per round, and verification records `dispatched_at` and
+   `submitted_at` (`runtime/assurance/coordinator.ts`,
+   `runtime/kernel/validation.ts`).
+2. What #284 still lacks is the labelled baseline that decides whether the
+   verifier is turned on. That decides the verifier's rollout, not its transport;
+   a pilot can run in a throwaway repository with `review_verifier: on`.
+3. The real blocker is the transport itself. Findings verification is still a
+   Host subagent with receipt-bound observation (ADR 0017; ADR 0037 Decision 9
+   kept it so), so there is no process to put in a session. S3 needs a
+   verification CLI stage first, the counterpart of ADR 0037 for
+   `prepareVerification`: a packet, a script, output and exit files. S4's
+   `runCommand` then carries it unchanged.
+
+So S3 is ordered after a verification CLI stage, not after #284's baseline.
+Doing it now would add a session path that runs only when `review_verifier` is
+on, a setting nothing in this repository enables, so it would ship untested end
+to end.

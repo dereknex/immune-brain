@@ -49,6 +49,7 @@ describe("Supervised Session Port boundary", () => {
 			`${SESSION}/fake_provider.ts`,
 			`${SESSION}/herdr_core_provider.ts`,
 			`${SESSION}/herdr_provider.ts`,
+			`${SESSION}/marked_result.ts`,
 			`${SESSION}/supervised_session_port.ts`,
 		]);
 		const outside = session.flatMap(file => targets(file.path, file.source)

@@ -291,10 +291,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 				return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
 			}
 		},
-		async readOutput(handle, source) {
+		async readOutput(handle, source, readOptions) {
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : SCROLLBACK_LINES));
+			const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
 			if (isRefusal(result)) return result;
 			if (result.code !== 0) return refuse("provider_error", `hc read failed: ${failure(result)}`, handle);
 			const text = pick(parseJson(result.stdout), ["text"]);

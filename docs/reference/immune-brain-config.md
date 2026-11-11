@@ -83,7 +83,7 @@ request; the Parent or the Planner applies them on top of the resolved files.
 | Kind | Keys | Order |
 |---|---|---|
 | personal | `decision_models.default_profile`, `decision_models.bindings.<point>`, `lanes.active` | request → user per-project → user |
-| personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort`, `lanes.review_host`, `lanes.review_model`, `lanes.review_effort` | request → selected user Lane profile → project `lanes` → default |
+| personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort`, `lanes.review_host`, `lanes.review_model`, `lanes.review_effort`, `lanes.review_transport`, `lanes.advisory_transport` | request → selected user Lane profile → project `lanes` → default |
 | repository fact | `initiative_carrier` | request → project → user per-project → user → none (the Planner asks) |
 | policy | `git_integration` | project → default (`manual`) |
 | policy | `decision_models.enabled_points` | project → default (every registered point) |
@@ -102,6 +102,11 @@ request; the Parent or the Planner applies them on top of the resolved files.
   `runtime/config/layered_config.ts` turns the resolved keys into one review
   profile `{ host, model?, effort? }`, or `null` when no `review_host` resolves.
   A review model may equal the executor model: no distinctness rule applies.
+- `review_transport` is `process` (default) or `herdr`; `advisory_transport` is
+  `subagent` (default) or `herdr`. Each names a Supervised Session Port provider
+  (ADR 0038, #426 S4 and S2): `herdr` runs the authority Review's script, or an
+  advisory child, in a Herdr tab. Nothing is detected: the default stays in
+  effect until a layer sets `herdr`, and `herdr` outside Herdr fails closed.
 
 ## Inspecting the Effective Configuration
 
