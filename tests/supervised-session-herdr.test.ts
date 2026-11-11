@@ -346,16 +346,31 @@ describe("imm-session CLI", () => {
 		expect((await runSessionCli(["await", first.handle, first.handle, "--provider", "herdr"], env)).returncode).toBe(2);
 	});
 
-	it("closes only with the record of an accepted lane_session_close (S1)", async () => {
+	// S1 + F2: the proof is the batch's own run state, not a well-formed pair of flags.
+	it("closes only a session whose close the batch record lists (S1, F2)", async () => {
 		const { port, env, stateFile } = subject();
 		const created = await port.createSession(INPUT);
 		if (!created.ok) throw new Error(created.reason);
-		expect((await runSessionCli(["close", created.handle, "--provider", "herdr"], env)).returncode).toBe(2);
-		const forged = await runSessionCli(["close", created.handle, "--provider", "herdr", "--task", "slice-a", "--recorded-at", "now"], env);
-		expect(JSON.parse(forged.stdout)).toMatchObject({ ok: false, code: "close_unproven" });
-		const closed = await runSessionCli(["close", created.handle, "--provider", "herdr", "--task", "slice-a", "--recorded-at", "2020-01-01T00:00:00.000Z"], env);
-		expect(JSON.parse(closed.stdout)).toEqual({ ok: true });
-		expect(acting(herdrCalls(stateFile)).at(-1)).toEqual(["tab", "close", "t1"]);
+		const root = mkdtempSync(join(tmpdir(), "imm-session-close-"));
+		const at = "2020-01-01T00:00:00.000Z";
+		const writeRecord = (closes: unknown[]) => {
+			mkdirSync(join(root, ".imm/state/batches"), { recursive: true });
+			writeFileSync(join(root, ".imm/state/batches/batch-one.json"), JSON.stringify({ batch_id: "batch-one", session_closes: closes }));
+		};
+		const close = (...extra: string[]) => runSessionCli(["close", created.handle, "--provider", "herdr", ...extra], env, undefined, root);
+		const refusal = async (...extra: string[]) => JSON.parse((await close(...extra)).stdout);
+		try {
+			expect((await close("--task", "slice-a", "--recorded-at", at)).returncode).toBe(2);
+			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", "now")).toMatchObject({ ok: false, code: "close_unproven" });
+			// Well-formed but unrecorded: no record file, then a record without this close.
+			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
+			writeRecord([{ task_id: "slice-b", at }, { task_id: "slice-a", at: "2020-01-02T00:00:00.000Z" }]);
+			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toMatchObject({ ok: false, code: "close_unproven" });
+			expect(acting(herdrCalls(stateFile)).some((c) => c[1] === "close")).toBe(false);
+			writeRecord([{ task_id: "slice-a", at }]);
+			expect(await refusal("--batch", "batch-one", "--task", "slice-a", "--recorded-at", at)).toEqual({ ok: true });
+			expect(acting(herdrCalls(stateFile)).at(-1)).toEqual(["tab", "close", "t1"]);
+		} finally { rmSync(root, { recursive: true, force: true }); }
 	});
 
 	it("drives create, observe and await through the packaged wrapper", () => {

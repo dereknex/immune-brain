@@ -62,7 +62,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   run --cwd <dir> --label <name> [--env KEY=VALUE]... -- <command> [args...]
   read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
   stop <handle>
-  close <handle> --task <task_id> --recorded-at <lane_session_close.recorded_at>
+  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]
   reconcile <handle>...
 ```
 

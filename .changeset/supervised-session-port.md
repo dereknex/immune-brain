@@ -26,10 +26,13 @@ On herdr-core, an Executor Host that reports no status at startup (Claude Code
 shows workspace trust that way) keeps its terminal and returns
 `entry_submitted: false` with an `attention` text, so the user can answer and
 the Parent resumes, instead of failing the session.
-The Executor close rule (#426 S1): `start_unattended_batch` accepts
-`lane_session_close`, records the close of an integrated child's session in
-the batch record's `session_closes`, and `imm-session close` closes that
-session only with the accepted record. Lanes and branches are not removed.
+The Executor close rule (#426 S1): the batch runner records the close of an
+integrated child's session in the batch record's `session_closes` at the tick
+that integrates it (`lane_session_close` on `start_unattended_batch` returns
+that record), and `imm-session close --batch` closes only a session that record
+lists. Lanes and branches are not removed. A Lane the runtime creates is
+reserved in the batch record first, so a tick stopped between creating and
+binding it is resumed rather than parked.
 Two opt-in Lane settings put work in watched Herdr sessions (#426 S4, S2):
 `lanes.review_transport: herdr` runs the authority Review's script through
 `imm-session run`, and `lanes.advisory_transport: herdr` runs advisory children

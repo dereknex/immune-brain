@@ -217,7 +217,6 @@ export function decideLaneSessionClose(
 	const child = record.children.find((c) => c.task_id === request.task_id);
 	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
 	if (child.state !== "integrated") return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
-	if (record.session_closes?.some((c) => c.task_id === request.task_id)) return `${request.task_id}'s session close is already recorded`;
 	if (!auditReachable(request.task_id)) return `${request.task_id}'s audit pair is not reachable from the batch head`;
 	return null;
 }
@@ -235,12 +234,31 @@ function applyLaneSessionClose(
 ): BatchLaneRunReport["lane_session_close"] {
 	const request = input.lane_session_close;
 	if (!request) return undefined;
+	// Already recorded, by an earlier request or by the integrating tick: the same record again.
+	const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
+	if (recorded) return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
 	const head = expectedBatchHead(record);
 	const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
 	if (refusal) return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
 	record.session_closes = [...(record.session_closes ?? []), { at: input.now, task_id: request.task_id }];
 	persist();
 	return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
+}
+
+/**
+ * Records the close of every Lane session the close rule now allows, at the tick
+ * that makes it allowed (issue #426 F6). A finished batch admits no further
+ * entry, so the Parent could not otherwise ask after the last integration; it
+ * reads `session_closes` from the report instead. Recording allows a close; it
+ * closes nothing, and the Lane and its branch stay.
+ */
+function recordClosableSessions(input: StartBatchInput, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort, persist: () => void): void {
+	const head = expectedBatchHead(record);
+	const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) &&
+		decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
+	if (!due.length) return;
+	record.session_closes = [...(record.session_closes ?? []), ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
+	persist();
 }
 
 /** How many design-level coordinator corrections one child may receive. */
@@ -1357,6 +1375,7 @@ export async function runLaneBatch(
 
 	// Close each integrated child's Issue now that its commit is on the batch branch.
 	const tracker = await closeIntegratedIssues(input, record, persist);
+	recordClosableSessions(input, record, lanes, persist);
 
 	// New records create their Lanes but never remove them; legacy records still admit offered paths.
 	refusals.push(...retainedLaneNotices(input.root, record, lanes));

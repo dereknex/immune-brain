@@ -503,14 +503,16 @@ the user which tab and `task_id` Herdr cannot classify. A
 with `imm-session observe` before repeating a command.
 
 The Parent closes a tab only under the Executor close rule, and only one it
-created: when a report shows a child `integrated` and the wait has returned that
-session `idle`, `done` or `exited`, the Parent calls `start_unattended_batch`
-with `lane_session_close` (`task_id`). The runner accepts only an integrated
-child whose audit pair is reachable from the batch head and whose session close
-was not recorded before, records the close, and answers
-`lane_session_close.accepted` with `recorded_at`; only then does the Parent run
-`imm-session close <handle> --provider herdr --task <task_id> --recorded-at <recorded_at>`.
-A refused close leaves the tab open. Every other tab (a parked, failed,
+created. At the tick that integrates a child whose audit pair is reachable from
+the batch head, the runner records that session's close in the report's
+`session_closes` (`task_id`, `at`); the record is there even when that tick
+finishes the batch, so the Parent never re-enters a finished batch to ask.
+Once the wait has returned that session `idle`, `done` or `exited`, the Parent
+runs `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`
+from the coordinator checkout; `imm-session` reads the batch record and closes
+only a session it lists. `start_unattended_batch` with `lane_session_close`
+(`task_id`) still answers for a running batch: the same record if one exists,
+a refusal otherwise. A refused close leaves the tab open. Every other tab (a parked, failed,
 stopped or not yet integrated child's, and any tab the Parent did not create)
 stays open for the user to read and close. Closing a session removes no Lane and
 no branch. It splits no pane and creates no workspace. The Parent never invokes

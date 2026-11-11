@@ -2149,7 +2149,7 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 });
 
 describe("Executor close rule for Lane sessions (#426 S1)", () => {
-	it("records a session close only for an integrated child whose audit pair is on the batch head, once, and leaves the Lane in place", async () => {
+	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", async () => {
 		const { decideLaneSessionClose, parseLaneSessionClose } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
 		const fx = fixture();
 		try {
@@ -2170,16 +2170,15 @@ describe("Executor close rule for Lane sessions (#426 S1)", () => {
 			kernel.frozen.add("task-a");
 			const integrated = lanes(await startBatch(args));
 			expect(integrated.children[0]!.state).toBe("integrated");
+			// F6: the integrating tick records the close itself; a finished batch needs no further entry.
+			expect(integrated.session_closes).toEqual([{ at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), task_id: "task-a" }]);
 			// Without the audit pair on the batch head the rule refuses, whatever the child state says.
 			expect(decideLaneSessionClose({ ...integrated, session_closes: undefined } as never, { task_id: "task-a" }, () => false))
 				.toBe("task-a's audit pair is not reachable from the batch head");
-			const accepted = await close("task-a");
-			expect(accepted.lane_session_close).toEqual({ task_id: "task-a", accepted: true, reason: null, recorded_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) });
-			expect(accepted.session_closes).toEqual([{ at: accepted.lane_session_close!.recorded_at, task_id: "task-a" }]);
+			// Asking again returns the same record; nothing is recorded twice.
 			const again = await close("task-a");
-			expect(again.lane_session_close!.accepted).toBe(false);
-			expect(again.lane_session_close!.reason).toContain("already recorded");
-			expect(again.session_closes).toHaveLength(1);
+			expect(again.lane_session_close).toEqual({ task_id: "task-a", accepted: true, reason: null, recorded_at: integrated.session_closes![0]!.at });
+			expect(again.session_closes).toEqual(integrated.session_closes);
 			// Closing a session removes no Lane.
 			expect(existsSync(laneA)).toBe(true);
 			expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);

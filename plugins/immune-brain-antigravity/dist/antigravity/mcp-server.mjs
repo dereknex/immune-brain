@@ -20199,8 +20199,6 @@ function decideLaneSessionClose(record, request, auditReachable) {
     return `${request.task_id} has no Lane in this batch`;
   if (child.state !== "integrated")
     return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
-  if (record.session_closes?.some((c) => c.task_id === request.task_id))
-    return `${request.task_id}'s session close is already recorded`;
   if (!auditReachable(request.task_id))
     return `${request.task_id}'s audit pair is not reachable from the batch head`;
   return null;
@@ -20209,6 +20207,9 @@ function applyLaneSessionClose(input, record, lanes, persist) {
   const request = input.lane_session_close;
   if (!request)
     return;
+  const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
+  if (recorded)
+    return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
   const head = expectedBatchHead(record);
   const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
   if (refusal)
@@ -20216,6 +20217,14 @@ function applyLaneSessionClose(input, record, lanes, persist) {
   record.session_closes = [...record.session_closes ?? [], { at: input.now, task_id: request.task_id }];
   persist();
   return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
+}
+function recordClosableSessions(input, record, lanes, persist) {
+  const head = expectedBatchHead(record);
+  const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) && decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
+  if (!due.length)
+    return;
+  record.session_closes = [...record.session_closes ?? [], ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
+  persist();
 }
 var MAX_COORDINATOR_CORRECTIONS = 2;
 var CORRECTION_LIMIT_REACHED = "batch_correction_limit_reached";
@@ -21116,6 +21125,7 @@ async function runLaneBatch(input, persisted) {
     }
   }
   const tracker = await closeIntegratedIssues(input, record, persist);
+  recordClosableSessions(input, record, lanes, persist);
   refusals.push(...retainedLaneNotices(input.root, record, lanes));
   const offers = [...input.lane_offers ?? []];
   let skewAcknowledged;

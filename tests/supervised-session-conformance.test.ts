@@ -168,7 +168,7 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		const handle = await created(port);
 		const refused = await port.closeSession(handle, { task_id: "", recorded_at: "yesterday" });
 		expect(refused).toMatchObject({ ok: false, code: "close_unproven" });
-		if (!refused.ok) expect(refused.reason).toStartWith("no accepted lane_session_close record: task_id, recorded_at");
+		if (!refused.ok) expect(refused.reason).toStartWith("no recorded session close: task_id, recorded_at");
 		expect(await port.closeSession(handle, PROOF)).toEqual({ ok: true });
 	});
 

@@ -64,10 +64,12 @@ command surface the Parent runs, not only an interface.
 6. **Behavior is unchanged in this step, except the close rule (S1).** The
    Parent stops no session, answers no dialog, and treats Kernel projections as
    the only progress signal. It closes only a session it created whose child is
-   integrated: the batch runner decides that rule (`lane_session_close` on
-   `start_unattended_batch`: integrated child, audit pair reachable from the
-   batch head, not closed before), records the close in `session_closes` before
-   answering, and `imm-session close` requires that record. The Lane and its
+   integrated: the batch runner decides that rule (integrated child, audit pair
+   reachable from the batch head) and records the close in `session_closes` at
+   the tick that integrates the child, since a finished batch admits no further
+   entry (`lane_session_close` on `start_unattended_batch` returns the same
+   record); `imm-session close --batch` reads the batch record and closes only
+   a session it lists. The Lane and its
    branch stay; closing a session is not releasing a Lane. #426's original rule
    also required a Lane release handoff, which Parent-branch batches never issue
    (ADR 0027 retains Lanes for the user), so the rule rests on integration and

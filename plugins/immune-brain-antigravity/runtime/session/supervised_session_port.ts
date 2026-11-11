@@ -98,14 +98,14 @@ export type ReconcileResult = { ok: true; sessions: ReconcileEntry[] } | Refusal
 /**
  * The Executor close rule's record. The batch runner decides the rule from
  * Kernel and batch facts (the child is integrated, its audit pair is reachable
- * from the batch head, its session was not closed before) and records the
- * close before it happens; its accepted `lane_session_close` answer carries
- * these two fields. The provider adds the third fact: the handle is its own,
- * so only a session the Parent created closes.
+ * from the batch head) and records the close in `session_closes` at the tick
+ * that integrates the child. `imm-session close` checks these two fields
+ * against that record before calling the provider; the provider adds the third
+ * fact: the handle is its own, so only a session the Parent created closes.
  */
 export interface CloseRecord {
 	task_id: string;
-	/** `lane_session_close.recorded_at` from the batch report. */
+	/** `session_closes[].at` from the batch record. */
 	recorded_at: string;
 }
 
@@ -219,7 +219,7 @@ export function closeRecordRefusal(handle: SessionHandle, record: CloseRecord | 
 	const at = record?.recorded_at;
 	if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at) unmet.push("recorded_at");
 	if (unmet.length === 0) return null;
-	return refuse("close_unproven", `no accepted lane_session_close record: ${unmet.join(", ")}; ask start_unattended_batch first`, handle);
+	return refuse("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
 }
 
 export function validateCreateInput(input: CreateSessionInput): Refusal | null {
