@@ -1,5 +1,7 @@
 # Issue #426 实测方案：Supervised Session Port 的 Herdr 与 herdr-core provider
 
+> 执行请按 `docs/reports/issue-426-local-validation-plan.md`：它把本文件的全部用例排成可直接执行的 6 轮。本文件保留用例来由与判定依据。
+
 日期：2026-11-10。对象：分支 `claude/affectionate-pascal-prxbzx`（提交 `0fe3f41a` 起）。目的：在真实运行时上确认 `docs/reports/issue-426-herdr-provider-probe.md` 中只做过源码与文档核对的结论，并给出 herdr-core 能否被 Loop 契约启用的依据（D2）。
 
 ## 0. 通过标准
