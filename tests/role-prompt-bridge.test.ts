@@ -357,13 +357,15 @@ describe("internal role-prompt bridge", () => {
 		for (const fragment of [
 			"| Either Host, inside Herdr (`HERDR_ENV=1`) |",
 			"the first matching row applies, and the user is not asked to choose",
-			'herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd <lane_path> --label <name> --no-focus',
-			"Without `--workspace` the tab lands in whichever workspace has focus",
-			"herdr agent start <name> --kind <kind> --pane <pane_id> -- <host arguments>",
-			'herdr agent prompt <pane_id> "<drive entry> <task_id>" --wait --until working --until blocked --timeout 30000',
+			// The Herdr command spelling moved behind the Supervised Session Port
+			// (ADR 0038); tests/supervised-session-herdr.test.ts asserts it.
+			'imm-session create --provider herdr --cwd <lane_path> --label <name> --host <executor_host> --entry "<drive entry> <task_id>" -- <host arguments>',
+			"in the Parent's own Herdr workspace without taking focus",
+			"Resolve `../bin/imm-session` from this packaged contract",
 			"names it `/immune-brain:drive`",
-			"Supervise with `herdr agent wait <pane_id>` as a Host background command",
-			"Start it only after step 4 reported `working`",
+			"Supervise with `imm-session await <handle> --provider herdr` as a Host background command",
+			"Start it only after the create reported `entry_submitted: true` and `state: \"working\"`",
+			"a `blocked` or `working` session is refused (`state_refused`) and receives nothing",
 			"The Parent sends that tab no keys and no prompt",
 			"a relaunch submits the entry again in the same tab instead of creating another",
 			"The Parent adds no permission or trust option of its own",
@@ -371,7 +373,7 @@ describe("internal role-prompt bridge", () => {
 			"The Parent stops no session",
 			"the Parent removes no Lane and dispatches no one to remove it",
 			"It splits no pane and creates no workspace",
-			"Outside Herdr the Parent never invokes `herdr`",
+			"The Parent never invokes `herdr` itself, and outside Herdr it never invokes `imm-session`",
 			// The tab path changes how a session is obtained, not what counts as progress.
 			"never from the session's output or exit status",
 		]) {
@@ -393,8 +395,9 @@ describe("internal role-prompt bridge", () => {
 			"a higher layer overrides that host, report the model or effort as `not_applied` and drop it",
 			"`request`, `user`, `user:project`, `project`, `legacy:<path>` or `default`",
 			"the `lanes` section fails validation (`lanes.valid: false`), start no batch",
-			"the Parent does not fall back to the other one",
-			"Passed as `--effort <level>` to `claude-code` and as `--thinking <level>` to `pi`",
+			"the Parent does not fall back to another one",
+			"`claude-code`, `pi` or `antigravity`",
+			"Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi`",
 			"display one non-blocking line with each selected value and its per-field source",
 			"On a resume the recorded `max_parallel` stands",
 			"those that [Lane Preferences](#lane-preferences) resolved for model and effort",

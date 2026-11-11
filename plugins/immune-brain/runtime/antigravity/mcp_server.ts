@@ -48,7 +48,15 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 	// and `antigravity`, with a `v`-prefixed version.
 	trustedClientNames: ["antigravity-client", "antigravity"],
 	toolCallIdMetaKey: "claudecode/toolUseId",
-	correlationMissingRefusal: "canonical claudecode/toolUseId metadata is missing",
+	correlationMissingRefusal: "antigravity.google/conversation_id metadata is missing",
+	// D4: Antigravity names the conversation, and the step its `progressToken`
+	// ends with keys the admission the Hook wrote for that step.
+	resolveHostCall: (operation, meta, messageId) => {
+		const conversation = meta?.["antigravity.google/conversation_id"];
+		if (typeof conversation !== "string" || !conversation) return undefined;
+		const step = metaProgressStep(meta);
+		return { toolCallId: String(messageId), ...(step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` }) };
+	},
 	elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
 	elicitationRejectedRefusal: "Claude Code rejected MCP elicitation/create",
 	probeHost,
@@ -69,6 +77,17 @@ export const createAntigravityMcpRuntime = (options: McpRuntimeOptions = {}): Mc
  * this replaced could not issue server-to-client requests.
  */
 export const serveStdio = (options: ServeStdioOptions = {}): Promise<void> => serveHostStdio(ANTIGRAVITY_MCP_PROFILE, options);
+
+/**
+ * The step index Antigravity appends to a call's `progressToken` (E4): the final
+ * `:<decimal>` suffix. The token's prefix is evidence, never a session credential.
+ */
+function metaProgressStep(meta: Record<string, unknown> | undefined): number | null {
+	const token = meta?.progressToken;
+	if (typeof token !== "string") return null;
+	const match = /:(\d+)$/.exec(token);
+	return match ? Number(match[1]) : null;
+}
 
 /** Append the start event for a subagent dispatch that may complete the same `stepIdx`. */
 function appendSubagentStart(toolCall: { name: string; args?: Record<string, unknown> }, payload: Record<string, unknown>): void {

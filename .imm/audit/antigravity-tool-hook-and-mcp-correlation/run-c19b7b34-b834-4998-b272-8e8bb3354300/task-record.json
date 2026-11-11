@@ -1,0 +1,162 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-tool-hook-and-mcp-correlation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-tool-hook-and-mcp-correlation",
+    "goal": "Issue #469 (Spec docs/specs/antigravity-tool-hook-and-mcp-correlation.spec.md). Repair the complete Antigravity native tool chain: dispatch mixed tool/lastUserInput payloads to PreToolUse or PostToolUse before PreInvocation, observe invoke_subagent results, admit Immune-Brain lazy call_mcp_tool operations, replace Claude-only tool metadata with Antigravity conversation-scoped correlation, and preserve literal-user entry, workspace, native confirmation, single-use admission, and Claude compatibility. Keep Herdr process supervision unchanged.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 (BR-REQ-1; D1). Done looks like: Antigravity native tools execute without a PreInvocation-shaped protojson response and subagent completion is observable. Seam: tests/antigravity-host-package.test.ts describe \"Antigravity hook dispatch and observation\", exercising the packaged bundle. Positive: PreToolUse with lastUserInput and write_file or call_mcp_tool returns {decision:\"allow\"}; PostToolUse with invoke_subagent, result, stepIdx, and lastUserInput returns {} and appends the existing event; Stop still wins over PreInvocation. Negative: a pure PreInvocation payload retains injectSteps output and an unrelated lazy ServerName receives ordinary allow without admission. Bound: the canonical matcher includes call_mcp_tool and no tool payload returns injectSteps.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"-t\",\n      \"Antigravity hook dispatch and observation\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 (BR-DEC-1; D3, D5). Done looks like: one admitted Antigravity batch operation reaches its authorized confirmation path with no Claude metadata and cannot be replayed or consumed by another conversation. Seam: tests/antigravity-assurance-conformance.test.ts describe \"Antigravity privileged MCP correlation\". Positive: after a literal-user drive and matching lazy PreToolUse, start_unattended_batch and retire_stale_batch with antigravity.google/conversation_id, workspace_paths, and progressToken whose numeric suffix equals hook stepIdx succeed once through their existing authority path even though stepIdx differs from JSON-RPC message.id; two sequential calls receive distinct step admissions. Negative: missing/empty or different conversation, missing/malformed or wrong-step progressToken, replay, and workspace mismatch refuse. Bound: an unrelated lazy call creates no admission, and the admitted conversation becomes the runtime Hook session rather than the transport connection ID.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"Antigravity privileged MCP correlation\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 (BR-REQ-3; D6). Done looks like: every privileged Antigravity tool reaches its existing native-authority path using Host conversation metadata, not claudecode/toolUseId. Seam: tests/antigravity-assurance-conformance.test.ts describe \"Antigravity privileged native gates\". Positive: request_authorization, approve_breaking_intent_revision, and stop with valid interactive Antigravity conversation metadata reach elicitation without Claude metadata. Negative: missing conversation identity refuses before elicitation, and decline/cancel performs no protected mutation. Bound: these three operations neither create nor consume start/retire batch admission, and an actual batch start still requires AC2 admission.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"Antigravity privileged native gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec AC4 (BR-OUT-1; D4, D7). Done looks like: generated packages are current and Claude/Pi behavior and Herdr supervision remain unchanged. Seam: focused tests in tests/claude-host-authority.test.ts, tests/antigravity-host-package.test.ts, and tests/runtime-layering-boundary.test.ts plus both existing build --check commands. Positive: Claude accepts its established exact claudecode/toolUseId correlation and both generated bundles match fresh builds. Negative: Claude still rejects a privileged call without claudecode/toolUseId. Bound: no new cross-adapter import appears, the existing cross-adapter baseline passes, and no Herdr or supervised-session file changes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/claude-host-authority.test.ts tests/antigravity-host-package.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-tool-hook-and-mcp-correlation.md",
+      "docs/plans/antigravity-tool-hook-and-mcp-correlation.intent.json",
+      "docs/specs/antigravity-tool-hook-and-mcp-correlation.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/hooks.json",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/claude-host-authority.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-tool-hook-and-mcp-correlation.intent.json",
+    "content_hash": "sha256:d2b5c550a5120dca78485adf8a4fa1f051435462f7b72214dbff3a3b84c6a7e7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d2b5c550a5120dca78485adf8a4fa1f051435462f7b72214dbff3a3b84c6a7e7",
+  "git_base_head": "d24b764bde37e127a986af1ad1bde5c73846269d",
+  "attestations": [
+    {
+      "id": "approval-qa-f6cd4981",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d2b5c550a5120dca78485adf8a4fa1f051435462f7b72214dbff3a3b84c6a7e7",
+      "diff_hash": "sha256:d658581d31ae415fb4e3f376bd9bee9b2c63469d990f6a00ab922f20bb6eeb7d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:af684a6e50ad21773953996bf3ffa6dffd590aaa5699811aaf32fac2f6f58180",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af684a6e50ad21773953996bf3ffa6dffd590aaa5699811aaf32fac2f6f58180"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af684a6e50ad21773953996bf3ffa6dffd590aaa5699811aaf32fac2f6f58180"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af684a6e50ad21773953996bf3ffa6dffd590aaa5699811aaf32fac2f6f58180"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:af684a6e50ad21773953996bf3ffa6dffd590aaa5699811aaf32fac2f6f58180"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-da4074ea",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d2b5c550a5120dca78485adf8a4fa1f051435462f7b72214dbff3a3b84c6a7e7",
+      "diff_hash": "sha256:d658581d31ae415fb4e3f376bd9bee9b2c63469d990f6a00ab922f20bb6eeb7d",
+      "actor_id": "cli:pi:2aa13f92-6516-42ec-a9a5-edca4621aba6",
+      "summary": "Pass: the frozen revision satisfies AC1–AC4 with fail-closed conversation/step admission, preserved Claude correlation, and focused seam coverage; medium blast radius across the shared MCP authority path, Antigravity hook/admission store, and both generated runtime bundles.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d24b764bde37e127a986af1ad1bde5c73846269d",
+        "review_commit": "ef2a4f821bf77834b00698c5c2abc99c488887fb",
+        "review_tree": "860c885e1c033ba470a2fa9e2ccbdeeecde3d545",
+        "manifest_digest": "sha256:ccf02bf4c3b97b8a3e7ee61545819907d5cab024332980f25e2420c217185bd5"
+      },
+      "reviewer_verdict_sha256": "sha256:5f110ff63c667b3e826990224a41464c084c2212ebe0e96f10be444d554e4647"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:antigravity-tool-hook-and-mcp-correlation:2026-11-10T13:33:50.967Z",
+      "at": "2026-11-10T13:33:50.967Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-tool-hook-and-mcp-correlation.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-tool-hook-and-mcp-correlation:2026-11-10T13:35:01.366Z",
+      "at": "2026-11-10T13:35:01.366Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f6cd4981\naction_v2_sha256:1ed4bdeba880fae378f6b47b931156d77616ea1664e067b3c12a401c0a3a8d23",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-7285cd000e4d8115",
+        "issued_at": "2026-11-10T13:35:01.366Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-tool-hook-and-mcp-correlation:2026-11-10T13:37:25.353Z",
+      "at": "2026-11-10T13:37:25.353Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-da4074ea\naction_v2_sha256:cce2f7915d690ac57a344c7d5af705295cc4d92ec81fc79b446a71c0d3763a0f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:2aa13f92-6516-42ec-a9a5-edca4621aba6",
+        "confirmation_ref": "pi-confirm-38b5433296385d7c",
+        "issued_at": "2026-11-10T13:37:25.353Z"
+      },
+      "review_started_at": "2026-11-10T13:35:05.174Z",
+      "review_submitted_at": "2026-11-10T13:37:24.215Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:antigravity-tool-hook-and-mcp-correlation:2026-11-10T13:37:28.418Z",
+      "at": "2026-11-10T13:37:28.418Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:613ec1da9e0aae0aa1db779bf479cfd982c98b92202f6b600b8cb7457fa89871"
+    }
+  ]
+}

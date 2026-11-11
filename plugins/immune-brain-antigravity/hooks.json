@@ -8,7 +8,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "edit_file|write_file|invoke_subagent|Subagent|mcp__.*immune-brain.*__.*",
+        "matcher": "edit_file|write_file|invoke_subagent|Subagent|call_mcp_tool|mcp__.*immune-brain.*__.*",
         "hooks": [
           {
             "type": "command",

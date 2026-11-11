@@ -183,8 +183,8 @@ worktrees read no configuration of their own.
   Host type with that Host's default model and effort.
 - `max_parallel` is passed as `max_parallel` and turns lane mode on. A resumed
   batch keeps the value it recorded.
-- `executor_host` is `claude-code` or `pi`. Every Lane uses it, with no fallback
-  to the other Host.
+- `executor_host` is `claude-code`, `pi` or `antigravity`. Every Lane uses it,
+  with no fallback to another Host.
 - A request may name a profile and state single fields, such as "use `cheap`,
   but max parallel 3", for that batch only. The Parent shows each value with its
   source.
@@ -233,6 +233,41 @@ The reader fails closed:
 `risk.floor_invalid`. A TaskRecord keeps the risk it was enrolled with; changing
 the declaration does not re-grade a task that is already enrolled. ADR 0023
 records the decision.
+
+## Routine Allowlist
+
+A TaskIntent that declares `risk: "routine"` settles after deterministic QA,
+without Review. The project can make that declaration checkable by listing, in
+one tracked file `.imm/routine-classes.json`, the paths where it may stand:
+
+```json
+{
+  "contract": "assurance_kernel/routine_classes/v1",
+  "classes": [{ "id": "docs-only", "paths": ["README.md", "docs/solutions"] }]
+}
+```
+
+- Each class has a kebab-case `id` and literal, normalized, project-relative
+  path prefixes with forward slashes and no wildcard.
+- The check runs on the actual diff, not on `scope_hint`. When any changed path
+  of a `routine` task (its own TaskIntent and bound Spec excluded) lies outside
+  every class, the task is raised to `material`, so it needs Review. Nothing is
+  refused and no gate opens.
+- The list only raises. It never lowers a risk and leaves `material` and
+  `critical` declarations and the risk floor as they are. An empty `classes`
+  list lets no `routine` declaration stand on a change.
+- The Planner may use the list to suggest `routine`; only the settlement check
+  decides.
+
+The reader fails closed the same way the risk floor reader does: no file means
+no allowlist, an untrusted file makes every task `critical`, and
+`.imm/routine-classes.json` itself is always `critical`.
+
+`imm-kernel inspect --json` reports the declared class ids as
+`risk.routine_classes` and the paths that raised a `routine` task as
+`risk.outside_routine_allowlist`; the Review manifest and each child of a batch
+final report list the same paths as `outside_routine_allowlist` next to
+`beyond_estimate` when there are any. ADR 0038 records the decision.
 
 ## Git Integration
 

@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "8.0.0",
+  "version": "8.1.0",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
@@ -91,6 +91,7 @@
     "plugins/immune-brain/runtime/plugin_source_skew.ts",
     "plugins/immune-brain/runtime/assurance",
     "plugins/immune-brain/runtime/unattended",
+    "plugins/immune-brain/runtime/session",
     "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/antigravity",
     "plugins/immune-brain/runtime/host-core",

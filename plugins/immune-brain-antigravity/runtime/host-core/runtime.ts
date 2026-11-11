@@ -1366,4 +1366,6 @@ export interface ToolMeta {
 	signal?: AbortSignal;
 	/** Absolute workspace resolved for this call from Host metadata or MCP roots. */
 	workspace?: string;
+	/** The admission the Host correlated with this exact call, when it is not the display call id. */
+	admissionId?: string;
 }

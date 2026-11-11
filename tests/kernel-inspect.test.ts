@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
+import { ROUTINE_CLASSES_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/routine_classes";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 
 const roots: string[] = [];
@@ -88,9 +89,11 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.resolved).toBeNull();
 		expect(output.risk.floor_applied).toBe(false);
 		expect(output.risk.matching_scope_entries).toEqual([]);
-		// No declaration: only the declaration's own path is floored.
-		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH]);
+		// No declaration: only the declarations' own paths are floored.
+		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH, ROUTINE_CLASSES_DECLARATION_PATH]);
 		expect(output.risk.floor_invalid).toBeNull();
+		expect(output.risk.routine_classes).toBeNull();
+		expect(output.risk.outside_routine_allowlist).toEqual([]);
 		expect(output.unobservable).toEqual({
 			capability: "unobservable",
 			rehearsal: "unobservable",
@@ -136,7 +139,7 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.resolved).toBe("material");
 		expect(output.risk.floor_applied).toBe(true);
 		expect(output.risk.matching_scope_entries).toEqual(["plugins/immune-brain/runtime/kernel/intent.ts"]);
-		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH, "plugins/immune-brain/runtime/kernel"]);
+		expect(output.risk.floor_prefixes).toEqual([RISK_FLOOR_DECLARATION_PATH, ROUTINE_CLASSES_DECLARATION_PATH, "plugins/immune-brain/runtime/kernel"]);
 		expect(output.unobservable.capability).toBe("unobservable");
 	});
 
@@ -174,6 +177,34 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.resolved).toBe("routine");
 		expect(output.risk.floor_applied).toBe(false);
 		expect(output.risk.matching_scope_entries).toEqual([]);
+	});
+
+	it("raises a routine task whose delivery leaves the routine allowlist and names the paths", () => {
+		const root = tempRoot();
+		writeFileSync(join(root, ROUTINE_CLASSES_DECLARATION_PATH), `${JSON.stringify({
+			contract: "assurance_kernel/routine_classes/v1",
+			classes: [{ id: "docs-only", paths: ["docs/guide"] }],
+		})}\n`);
+		// The estimate reaches src, so the scope alone keeps the routine declaration.
+		writeClaimedTask(root, "inspect-routine-allowlist", ["docs/guide/intro.md", "src/feature.ts"]);
+		mkdirSync(join(root, "docs/guide"), { recursive: true });
+		writeFileSync(join(root, "docs/guide/intro.md"), "intro\n");
+		execFileSync("git", ["add", "docs/guide"], { cwd: root });
+		const inside = JSON.parse(runKernelCommand(["inspect", "--json"], root).stdout);
+		expect(inside.risk.routine_classes).toEqual(["docs-only"]);
+		expect(inside.risk.resolved).toBe("routine");
+		expect(inside.risk.outside_routine_allowlist).toEqual([]);
+		expect(inside.assurance.projection.missing_approval_kinds).toEqual(["qa"]);
+
+		mkdirSync(join(root, "src"), { recursive: true });
+		writeFileSync(join(root, "src/feature.ts"), "export {};\n");
+		execFileSync("git", ["add", "src"], { cwd: root });
+		const outside = JSON.parse(runKernelCommand(["inspect", "--json"], root).stdout);
+		expect(outside.risk.declared).toBe("routine");
+		expect(outside.risk.resolved).toBe("material");
+		expect(outside.risk.floor_applied).toBe(true);
+		expect(outside.risk.outside_routine_allowlist).toEqual(["src/feature.ts"]);
+		expect(outside.assurance.projection.missing_approval_kinds).toEqual(["qa", "review"]);
 	});
 
 	it("does not interpret a retired claim file as authority", () => {

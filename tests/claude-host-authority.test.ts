@@ -430,6 +430,43 @@ describe("claude host authority", () => {
 		expect(readTaskRecordRaw(cancelled.root, cancelled.taskId).record?.lifecycle).toBe("active");
 	});
 
+	// Spec antigravity-tool-hook-and-mcp-correlation AC4: Claude keeps its exact
+	// tool-use correlation, and Antigravity's conversation metadata is not a
+	// substitute for it.
+	test("Claude refuses a privileged call without its exact tool-use correlation", async () => {
+		const taskId = "wire-correlation-required";
+		const fixture = authorityFixtureRoot(taskId);
+		await enrollTaskForTest(fixture.root, taskId);
+		const input = new PassThrough();
+		const output = new PassThrough();
+		const next = jsonLineReader(output);
+		void serveStdio({
+			input,
+			output,
+			runtime: createMcpRuntimeUngated({ cwd: fixture.root, env: ENV }),
+			exit: () => undefined,
+		});
+		const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
+		send({
+			jsonrpc: "2.0",
+			id: "init",
+			method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		});
+		await next();
+		for (const meta of [undefined, {}, { "antigravity.google/conversation_id": "conv-claude-impostor" }]) {
+			send({
+				jsonrpc: "2.0",
+				id: `outer-${Math.random().toString(16).slice(2)}`,
+				method: "tools/call",
+				params: { name: "stop", arguments: { task_id: taskId }, ...(meta ? { _meta: meta } : {}) },
+			});
+			expect(await next()).toMatchObject({ error: { data: { reason_code: "correlation_missing" } } });
+		}
+		input.end();
+		expect(readTaskRecordRaw(fixture.root, taskId).record?.lifecycle).toBe("active");
+	});
+
 	test("stdio output stream error terminates serveStdio and rejects pending elicitation", async () => {
 		const taskId = "wire-output-disconnect";
 		const fixture = authorityFixtureRoot(taskId);

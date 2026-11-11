@@ -1075,10 +1075,125 @@ var init_types = __esm(() => {
   MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 });
 
-// plugins/immune-brain/runtime/kernel/risk_floor.ts
+// plugins/immune-brain/runtime/kernel/tracked_declaration.ts
 import { execFileSync } from "node:child_process";
 import { lstatSync as lstatSync4, readFileSync as readFileSync4, realpathSync as realpathSync3 } from "node:fs";
 import { join as join2 } from "node:path";
+function readTrackedDeclaration(root, path, maxBytes) {
+  const invalid = (reason) => ({ kind: "invalid", reason });
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync3(root);
+  } catch {
+    return { kind: "absent" };
+  }
+  const target = join2(canonicalRoot, path);
+  let present = false;
+  try {
+    const stat = lstatSync4(target);
+    if (!stat.isFile())
+      return invalid(`${path} is not a regular file`);
+    if (stat.size > maxBytes)
+      return invalid(`${path} exceeds ${Math.floor(maxBytes / 1024)} KiB`);
+    present = true;
+  } catch (error) {
+    if (error.code !== "ENOENT" && error.code !== "ENOTDIR")
+      return invalid(`${path} cannot be read`);
+  }
+  let pending;
+  try {
+    pending = execFileSync("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored", "--", path], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch {
+    return present ? invalid(`${path} cannot be checked against Git`) : { kind: "absent" };
+  }
+  if (pending.length > 0)
+    return invalid(`${path} has changes that are not committed`);
+  try {
+    const entry = execFileSync("git", ["ls-tree", "HEAD", "--", path], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (!entry)
+      return present ? invalid(`${path} is not committed`) : { kind: "absent" };
+    if (!present || !/^100(?:644|755) blob /.test(entry))
+      return invalid(`${path} does not match a committed regular file`);
+    const bytes = readFileSync4(target);
+    const committed = execFileSync("git", ["show", `HEAD:${path}`], { cwd: canonicalRoot, maxBuffer: maxBytes, stdio: ["ignore", "pipe", "pipe"] });
+    if (!bytes.equals(committed))
+      return invalid(`${path} differs from its committed bytes`);
+    return { kind: "present", value: JSON.parse(bytes.toString("utf8")) };
+  } catch (error) {
+    return present ? invalid(error instanceof Error ? error.message : String(error)) : { kind: "absent" };
+  }
+}
+var init_tracked_declaration = () => {};
+
+// plugins/immune-brain/runtime/kernel/routine_classes.ts
+function parsePaths(value, label) {
+  if (!Array.isArray(value))
+    throw new Error(`${label} must be an array of path prefixes`);
+  return value.map((entry, index) => {
+    if (typeof entry !== "string" || entry.length === 0 || entry.length > 512)
+      throw new Error(`${label}[${index}] must be a non-empty string of at most 512 characters`);
+    if (/[\0-\x1f\x7f\\*?]/.test(entry))
+      throw new Error(`${label}[${index}] must be a literal forward-slash path prefix`);
+    if (entry.startsWith("/") || entry.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))
+      throw new Error(`${label}[${index}] must be a normalized project-relative path`);
+    return entry;
+  });
+}
+function parseRoutineClasses(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    throw new Error("routine classes declaration must be a JSON object");
+  const value = raw;
+  if (value.contract !== ROUTINE_CLASSES_CONTRACT)
+    throw new Error(`routine classes declaration contract must equal ${ROUTINE_CLASSES_CONTRACT}`);
+  for (const key of Object.keys(value))
+    if (key !== "contract" && key !== "classes")
+      throw new Error(`routine classes declaration field ${key} is not known`);
+  if (!Array.isArray(value.classes))
+    throw new Error("classes must be an array");
+  const seen = new Set;
+  return value.classes.map((entry, index) => {
+    const label = `classes[${index}]`;
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+      throw new Error(`${label} must be an object`);
+    const item = entry;
+    for (const key of Object.keys(item))
+      if (key !== "id" && key !== "paths")
+        throw new Error(`${label}.${key} is not a known field`);
+    if (typeof item.id !== "string" || !CLASS_ID.test(item.id))
+      throw new Error(`${label}.id must be a lowercase kebab-case identifier`);
+    if (seen.has(item.id))
+      throw new Error(`${label}.id ${item.id} is repeated`);
+    seen.add(item.id);
+    return { id: item.id, paths: parsePaths(item.paths, `${label}.paths`) };
+  });
+}
+function readRoutineAllowlist(root) {
+  const read = readTrackedDeclaration(root, ROUTINE_CLASSES_DECLARATION_PATH, ROUTINE_CLASSES_MAX_BYTES);
+  if (read.kind === "absent")
+    return NO_ROUTINE_ALLOWLIST;
+  if (read.kind === "invalid")
+    return { classes: null, invalid: read.reason };
+  try {
+    return { classes: parseRoutineClasses(read.value), invalid: null };
+  } catch (error) {
+    return { classes: null, invalid: error instanceof Error ? error.message : String(error) };
+  }
+}
+function pathsOutsideRoutineClasses(changedPaths, classes) {
+  if (classes === null)
+    return [];
+  const prefixes = classes.flatMap((item) => item.paths);
+  return changedPaths.filter((path) => !prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`)));
+}
+var ROUTINE_CLASSES_DECLARATION_PATH = ".imm/routine-classes.json", ROUTINE_CLASSES_CONTRACT = "assurance_kernel/routine_classes/v1", ROUTINE_CLASSES_MAX_BYTES, CLASS_ID, NO_ROUTINE_ALLOWLIST;
+var init_routine_classes = __esm(() => {
+  init_tracked_declaration();
+  ROUTINE_CLASSES_MAX_BYTES = 64 * 1024;
+  CLASS_ID = /^[a-z][a-z0-9-]{0,63}$/;
+  NO_ROUTINE_ALLOWLIST = { classes: null, invalid: null };
+});
+
+// plugins/immune-brain/runtime/kernel/risk_floor.ts
 function invalidFloor(reason) {
   return { material: EMPTY_TIER, critical: EMPTY_TIER, invalid: reason };
 }
@@ -1127,47 +1242,23 @@ function parseRiskFloor(raw) {
   };
 }
 function readRiskFloor(root) {
-  let canonicalRoot;
-  try {
-    canonicalRoot = realpathSync3(root);
-  } catch {
-    return NO_RISK_FLOOR;
+  const read = readTrackedDeclaration(root, RISK_FLOOR_DECLARATION_PATH, RISK_FLOOR_MAX_BYTES);
+  let floor;
+  if (read.kind === "absent")
+    floor = NO_RISK_FLOOR;
+  else if (read.kind === "invalid")
+    return invalidFloor(read.reason);
+  else {
+    try {
+      floor = parseRiskFloor(read.value);
+    } catch (error) {
+      return invalidFloor(error instanceof Error ? error.message : String(error));
+    }
   }
-  const target = join2(canonicalRoot, RISK_FLOOR_DECLARATION_PATH);
-  let present = false;
-  try {
-    const stat = lstatSync4(target);
-    if (!stat.isFile())
-      return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} is not a regular file`);
-    if (stat.size > RISK_FLOOR_MAX_BYTES)
-      return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} exceeds 64 KiB`);
-    present = true;
-  } catch (error) {
-    if (error.code !== "ENOENT" && error.code !== "ENOTDIR")
-      return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} cannot be read`);
-  }
-  let pending;
-  try {
-    pending = execFileSync("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored", "--", RISK_FLOOR_DECLARATION_PATH], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    return present ? invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} cannot be checked against Git`) : NO_RISK_FLOOR;
-  }
-  if (pending.length > 0)
-    return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} has changes that are not committed`);
-  try {
-    const entry = execFileSync("git", ["ls-tree", "HEAD", "--", RISK_FLOOR_DECLARATION_PATH], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (!entry)
-      return present ? invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} is not committed`) : NO_RISK_FLOOR;
-    if (!present || !/^100(?:644|755) blob /.test(entry))
-      return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} does not match a committed regular file`);
-    const bytes = readFileSync4(target);
-    const committed = execFileSync("git", ["show", `HEAD:${RISK_FLOOR_DECLARATION_PATH}`], { cwd: canonicalRoot, maxBuffer: RISK_FLOOR_MAX_BYTES, stdio: ["ignore", "pipe", "pipe"] });
-    if (!bytes.equals(committed))
-      return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} differs from its committed bytes`);
-    return parseRiskFloor(JSON.parse(bytes.toString("utf8")));
-  } catch (error) {
-    return present ? invalidFloor(error instanceof Error ? error.message : String(error)) : NO_RISK_FLOOR;
-  }
+  const routine = readRoutineAllowlist(root);
+  if (routine.invalid !== null)
+    return invalidFloor(`${ROUTINE_CLASSES_DECLARATION_PATH}: ${routine.invalid}`);
+  return routine.classes === null ? floor : { ...floor, routine: routine.classes };
 }
 function segmentMatches(e, s) {
   if (e === "*")
@@ -1242,7 +1333,7 @@ function pathBeneath(path, prefixes) {
 function scopeEntryRiskFloor(entry, floor) {
   if (floor.invalid !== null)
     return "critical";
-  if (entryReachesFile(entry, RISK_FLOOR_DECLARATION_PATH) || entryTouches(entry, floor.critical.paths))
+  if (SELF_CRITICAL_DECLARATIONS.some((file) => entryReachesFile(entry, file)) || entryTouches(entry, floor.critical.paths))
     return "critical";
   if (entryTouches(entry, floor.material.paths))
     return "material";
@@ -1263,11 +1354,16 @@ function scopeRiskFloor(scopeHint, floor) {
 function changedPathRiskFloor(changedPaths, floor) {
   if (floor.invalid !== null)
     return "critical";
-  if (changedPaths.some((path) => pathBeneath(path, [RISK_FLOOR_DECLARATION_PATH, NO_TOUCH_DECLARATION_PATH, ...floor.critical.paths, ...floor.critical.changed_only])))
+  if (changedPaths.some((path) => pathBeneath(path, [...SELF_CRITICAL_DECLARATIONS, NO_TOUCH_DECLARATION_PATH, ...floor.critical.paths, ...floor.critical.changed_only])))
     return "critical";
   if (changedPaths.some((path) => pathBeneath(path, [...floor.material.paths, ...floor.material.changed_only])))
     return "material";
+  if (outsideRoutineAllowlist(changedPaths, floor).length > 0)
+    return "material";
   return null;
+}
+function outsideRoutineAllowlist(changedPaths, floor) {
+  return pathsOutsideRoutineClasses(changedPaths, floor.routine ?? null);
 }
 function raiseRisk(declared, floor) {
   return floor !== null && RISK_RANK[declared] < RISK_RANK[floor] ? floor : declared;
@@ -1276,11 +1372,14 @@ function applyScopeRiskFloor(intent, floor) {
   const risk = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor));
   return risk === intent.risk ? intent : { ...intent, risk };
 }
-var RISK_FLOOR_DECLARATION_PATH = ".imm/risk-floor.json", NO_TOUCH_DECLARATION_PATH = "docs/agents/no-touch.json", RISK_FLOOR_CONTRACT = "assurance_kernel/risk_floor/v1", RISK_FLOOR_MAX_BYTES, RISK_RANK, FLOORED_TIERS, EMPTY_TIER, NO_RISK_FLOOR;
+var RISK_FLOOR_DECLARATION_PATH = ".imm/risk-floor.json", NO_TOUCH_DECLARATION_PATH = "docs/agents/no-touch.json", RISK_FLOOR_CONTRACT = "assurance_kernel/risk_floor/v1", RISK_FLOOR_MAX_BYTES, RISK_RANK, FLOORED_TIERS, SELF_CRITICAL_DECLARATIONS, EMPTY_TIER, NO_RISK_FLOOR;
 var init_risk_floor = __esm(() => {
+  init_routine_classes();
+  init_tracked_declaration();
   RISK_FLOOR_MAX_BYTES = 64 * 1024;
   RISK_RANK = { routine: 0, material: 1, critical: 2 };
   FLOORED_TIERS = ["material", "critical"];
+  SELF_CRITICAL_DECLARATIONS = [RISK_FLOOR_DECLARATION_PATH, ROUTINE_CLASSES_DECLARATION_PATH];
   EMPTY_TIER = { paths: [], changed_only: [] };
   NO_RISK_FLOOR = { material: EMPTY_TIER, critical: EMPTY_TIER, invalid: null };
 });
@@ -2930,12 +3029,20 @@ function asTaskDiffSnapshot(value) {
     return { diff_hash: value };
   return { diff_hash: value.diff_hash, changed_paths: value.changed_paths };
 }
+function riskBearingPaths(intent, changedPaths) {
+  if (!inspectSpecBinding(intent).ok)
+    return changedPaths;
+  const excluded = ownSidecarPaths(intent);
+  return changedPaths.filter((path) => !excluded.has(path));
+}
 function resolveProjectedRisk(intent, changedPaths = [], floor = NO_RISK_FLOOR) {
   const risk = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor));
-  if (!inspectSpecBinding(intent).ok)
-    return classifyTaskRisk(changedPaths, risk, floor);
-  const excluded = ownSidecarPaths(intent);
-  return classifyTaskRisk(changedPaths.filter((path) => !excluded.has(path)), risk, floor);
+  return classifyTaskRisk(riskBearingPaths(intent, changedPaths), risk, floor);
+}
+function routineAllowlistEscapes(intent, changedPaths = [], floor = NO_RISK_FLOOR) {
+  if (raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, floor)) !== "routine")
+    return [];
+  return outsideRoutineAllowlist(riskBearingPaths(intent, changedPaths), floor);
 }
 function hasDistinctAuthorityAssignment(required, candidates, index = 0, usedActors = new Set) {
   if (index >= required.length)
@@ -10369,6 +10476,7 @@ function publishInput(root, input) {
 }
 function captureReviewManifest(root, input) {
   const { snapshot, revision } = publishInput(root, input);
+  const outsideRoutine = input.intent ? routineAllowlistEscapes(input.intent, Object.keys(snapshot.changed_paths), readRiskFloor(root)).sort(compareRevisionPaths) : [];
   const unsigned = {
     contract: "assurance_kernel/review_manifest/v5",
     task_id: input.taskId,
@@ -10381,6 +10489,7 @@ function captureReviewManifest(root, input) {
     review_ref: revision.review_ref,
     changed_paths: snapshot.changed_paths,
     beyond_estimate: Object.keys(snapshot.changed_paths).filter((path) => !snapshot.scope.some((entry) => pathMatchesScope(path, entry))).sort(compareRevisionPaths),
+    ...outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {},
     diff_hash: revision.diff_hash,
     outcomes: Object.fromEntries(Object.entries(input.outcomes).map(([id, outcome]) => [id, { ...outcome }])),
     record_revision: input.recordRevision,
@@ -10436,6 +10545,8 @@ function assertReviewArtifact(path) {
 }
 var MAX_REVIEW_BUNDLE_BYTES, reviewUtf8, GIT_OBJECT_ID5, REVIEW_MODES, GIT_COMMIT_ID2, REVIEW_TASK_ID, REVISION_DIFF_HASH, REVIEW_REF_NAMESPACE = "refs/immune-brain/reviews", SNAPSHOT_IDENTITY, REVIEW_DELTA_FROM_ROUND = 3;
 var init_review_evidence = __esm(() => {
+  init_completion();
+  init_risk_floor();
   init_review_packet();
   init_workspace_scope();
   init_storage();
@@ -10515,6 +10626,7 @@ async function ensureReviewRevision(root, taskId, projection) {
     lifecycle: projection.projection.lifecycle,
     artifactState: projection.projection.artifact_state,
     risk: record.intent_snapshot.risk,
+    intent: record.intent_snapshot,
     outcomes: qaOutcomes(record),
     delta: reviewDeltaInput(record)
   });
@@ -10563,6 +10675,7 @@ async function buildAssuranceSnapshot(root, taskId, role, projection, readRecord
     lifecycle: projection.projection.lifecycle,
     artifactState: projection.projection.artifact_state,
     risk: intent.risk,
+    intent,
     outcomes: qaOutcomes(record.record),
     delta: reviewDeltaInput(record.record)
   }) : null;
@@ -17339,12 +17452,14 @@ async function buildBatchFinalReport(root, record) {
       if (parent && parent.status !== 0)
         throw new Error(`final report unreadable integration: ${child.task_id}`);
       const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent.stdout.trim(), child.commit).changed_paths : null;
+      const outsideRoutine = paths ? routineAllowlistEscapes(intent, paths, floor) : [];
       return {
         task_id: child.task_id,
         acceptance: intent.acceptance.map((item) => ({ id: item.id, qa: qa?.acceptance_results.find((result) => result.acceptance_id === item.id)?.status ?? null })),
         beyond_estimate: paths?.filter((file) => !intent.scope_hint.some((scope) => pathMatchesScope(file, scope))) ?? null,
         declared_risk: intent.risk,
         projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
+        ...outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {},
         redo_count: child.redo_grants ?? 0,
         parked_reason: integrated ? null : child.reason,
         ...child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}
@@ -17385,7 +17500,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import { stdin, stdout } from "node:process";
 
 // plugins/immune-brain/runtime/plugin_version.ts
-var PLUGIN_VERSION = "8.0.0";
+var PLUGIN_VERSION = "8.1.0";
 
 // plugins/immune-brain/runtime/host-core/interaction.ts
 import { createHash, randomUUID } from "node:crypto";
@@ -19716,14 +19831,14 @@ function createMcpRuntime(profile, options = {}) {
     return probe.ok ? "host version is unavailable" : probe.reason;
   };
   let hookSessionId = null;
-  const requireRunEntry = (operation, toolCallId, workspace) => {
+  const requireRunEntry = (operation, toolCallId, workspace, admissionId = toolCallId) => {
     const correlated = profile.readRunToolSession(toolCallId, operation, workspace);
     if (!options.consumePhaseAdmission && !correlated)
       throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
-    const grant = consumeAdmission(toolCallId, operation);
+    const grant = consumeAdmission(admissionId, operation);
     if (!grant)
       throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-    hookSessionId = correlated ?? hookSessionId;
+    hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
     if (grant === true || !grant.entry_token)
       return;
     let current = null;
@@ -19796,10 +19911,11 @@ function createMcpRuntime(profile, options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
+          toolCallId,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -19837,10 +19953,11 @@ function createMcpRuntime(profile, options = {}) {
         const probe = probeNegotiatedHost();
         if (!probe.ok)
           throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+        const toolCallId = meta.toolCallId ?? `call-${name}`;
+        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
         const toolMeta = {
           sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId: meta.toolCallId ?? `call-${name}`,
+          toolCallId,
           taskId: initiativeSlug,
           initiativeSlug,
           ...entryToken ? { entryToken } : {},
@@ -19916,7 +20033,7 @@ function hostCallIdentity(meta, key) {
   if (!meta)
     return;
   const toolCallId = meta[key];
-  return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
+  return typeof toolCallId === "string" && toolCallId ? { toolCallId, admissionId: toolCallId } : undefined;
 }
 function metaWorkspacePath(meta) {
   const paths = meta?.["antigravity.google/workspace_paths"];
@@ -20005,7 +20122,7 @@ async function handleJsonRpc(message, mcp) {
       if (isPrivilegedOperation(name) && !interactive) {
         throw new NativeAuthorityError("unsupported_host", mcp.profile.elicitationUnavailableRefusal);
       }
-      const identity = hostCallIdentity(params._meta, mcp.profile.toolCallIdMetaKey);
+      const identity = mcp.profile.resolveHostCall ? mcp.profile.resolveHostCall(name, params._meta, message.id ?? "stdio") : hostCallIdentity(params._meta, mcp.profile.toolCallIdMetaKey);
       if (isPrivilegedOperation(name) && !identity) {
         throw new NativeAuthorityError("correlation_missing", mcp.profile.correlationMissingRefusal);
       }
@@ -20014,6 +20131,7 @@ async function handleJsonRpc(message, mcp) {
       const result = await mcp.callTool(name, params.arguments ?? {}, {
         sessionId,
         toolCallId,
+        ...identity?.admissionId ? { admissionId: identity.admissionId } : {},
         workspace: metaWorkspacePath(params._meta),
         interactive,
         requiresUserInteraction: isPrivilegedOperation(name),
@@ -21116,6 +21234,17 @@ function isAbsent(error) {
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 var GATED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch)$/;
+var LAZY_GATED_TOOL = /^(start_unattended_batch|retire_stale_batch)$/;
+var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+function gatedOperation(toolName, args) {
+  const direct = GATED_MCP_TOOL.exec(toolName);
+  if (direct)
+    return direct[1];
+  if (toolName !== "call_mcp_tool" || !IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
+    return null;
+  const lazy = LAZY_GATED_TOOL.exec(String(args.ToolName ?? ""));
+  return lazy ? lazy[1] : null;
+}
 function entryLogPath(sessionId, root) {
   return join31(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
@@ -21201,7 +21330,12 @@ function consumePhaseAdmission(toolCallId, operation, root = tmpdir7()) {
     const parsed = JSON.parse(text);
     if (parsed.operation !== operation)
       return null;
-    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null };
+    if (typeof parsed.conversation !== "string" || !parsed.conversation)
+      return null;
+    const state = readPhaseEntryState(parsed.conversation, root);
+    if (!state?.run_live || state.token !== parsed.token)
+      return null;
+    return { entry_token: parsed.token ?? null, workspace: parsed.workspace ?? null, session_id: parsed.conversation };
   } catch {
     return null;
   }
@@ -21222,9 +21356,8 @@ function antigravityPreToolUseHook(payload, locations = {}) {
       return { decision: "deny", reason: refusal };
     }
   }
-  const match = GATED_MCP_TOOL.exec(toolName);
-  if (match) {
-    const gated = match[1];
+  const gated = gatedOperation(toolName, payload.toolCall.args ?? {});
+  if (gated) {
     const root = locations.root ?? tmpdir7();
     const state = readPhaseEntryState(payload.conversationId, root);
     const opName = { kind: "tool", name: gated };
@@ -21236,7 +21369,7 @@ function antigravityPreToolUseHook(payload, locations = {}) {
       return { decision: "deny", reason: "Tool invocation identity (stepIdx) is missing; admission cannot be recorded" };
     }
     const toolUseId = `${payload.conversationId}:${payload.stepIdx}:${gated}`;
-    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace });
+    const admitLine = JSON.stringify({ operation: gated, token: state?.token, workspace: state?.workspace, conversation: payload.conversationId });
     ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
     writeFileSync11(admissionPath(toolUseId, root), admitLine, { mode: 384 });
     return { decision: "allow" };
@@ -23249,7 +23382,14 @@ var ANTIGRAVITY_MCP_PROFILE = {
   contract: CORE_CONTRACT,
   trustedClientNames: ["antigravity-client", "antigravity"],
   toolCallIdMetaKey: "claudecode/toolUseId",
-  correlationMissingRefusal: "canonical claudecode/toolUseId metadata is missing",
+  correlationMissingRefusal: "antigravity.google/conversation_id metadata is missing",
+  resolveHostCall: (operation, meta, messageId) => {
+    const conversation = meta?.["antigravity.google/conversation_id"];
+    if (typeof conversation !== "string" || !conversation)
+      return;
+    const step = metaProgressStep(meta);
+    return { toolCallId: String(messageId), ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
+  },
   elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
   elicitationRejectedRefusal: "Claude Code rejected MCP elicitation/create",
   probeHost,
@@ -23262,6 +23402,13 @@ var ANTIGRAVITY_MCP_PROFILE = {
 };
 var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(ANTIGRAVITY_MCP_PROFILE, options);
 var serveStdio2 = (options = {}) => serveStdio(ANTIGRAVITY_MCP_PROFILE, options);
+function metaProgressStep(meta) {
+  const token = meta?.progressToken;
+  if (typeof token !== "string")
+    return null;
+  const match = /:(\d+)$/.exec(token);
+  return match ? Number(match[1]) : null;
+}
 function appendSubagentStart(toolCall, payload) {
   if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent")
     return;

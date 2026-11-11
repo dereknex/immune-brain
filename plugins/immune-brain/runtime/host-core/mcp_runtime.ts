@@ -52,6 +52,14 @@ export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
+	/** The Host conversation the admission belongs to, when the Host names it outright (D5). */
+	session_id?: string | null;
+}
+
+/** One `tools/call`'s Host identity: the display/audit call id and the admission key. */
+export interface HostCallIdentity {
+	toolCallId: string;
+	admissionId?: string;
 }
 
 /** What only a Host knows about its MCP connection; each adapter's composition root supplies one. */
@@ -66,6 +74,12 @@ export interface McpHostProfile {
 	readonly toolCallIdMetaKey: string;
 	/** The refusal when a privileged call carries no tool-call id. */
 	readonly correlationMissingRefusal: string;
+	/**
+	 * D4: the Host's identity rule for one `tools/call`, when the call id alone is
+	 * not the admission key. Absent, `toolCallIdMetaKey` names both. `undefined`
+	 * means the call names no Host session, so a privileged call refuses.
+	 */
+	readonly resolveHostCall?: (operation: string, meta: Record<string, unknown> | undefined, messageId: string | number | null) => HostCallIdentity | undefined;
 	/** The refusal when the connected client offers no interactive elicitation. */
 	readonly elicitationUnavailableRefusal: string;
 	/** The refusal when the Host rejects `elicitation/create`. */
@@ -297,13 +311,16 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 	// session's entry token, which stands in for the native gate only in the
 	// workspace the token was minted for.
 	let hookSessionId: string | null = null;
-	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string): string | undefined => {
+	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string, admissionId = toolCallId): string | undefined => {
 		const correlated = profile.readRunToolSession(toolCallId, operation, workspace);
 		if (!options.consumePhaseAdmission && !correlated)
 			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
-		const grant = consumeAdmission(toolCallId, operation);
+		const grant = consumeAdmission(admissionId, operation);
 		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-		hookSessionId = correlated ?? hookSessionId;
+		// D5: admission identity and the display/audit call id are separate. An
+		// admission that names its own conversation makes that conversation this
+		// run's Hook session, not the transport connection.
+		hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
 		if (grant === true || !grant.entry_token) return undefined;
 		let current: string | null = null;
 		try { current = realpathSync(workspace); } catch { /* an unresolvable workspace refuses */ }
@@ -363,10 +380,11 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+				const toolCallId = meta.toolCallId ?? `call-${name}`;
+				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId: meta.toolCallId ?? `call-${name}`,
+					toolCallId,
 					taskId: initiativeSlug,
 					initiativeSlug,
 					...(entryToken ? { entryToken } : {}),
@@ -402,10 +420,11 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				}
 				const probe = probeNegotiatedHost();
 				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const entryToken = requireRunEntry(name, meta.toolCallId ?? `call-${name}`, workspace);
+				const toolCallId = meta.toolCallId ?? `call-${name}`;
+				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
 				const toolMeta: ToolMeta = {
 					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId: meta.toolCallId ?? `call-${name}`,
+					toolCallId,
 					taskId: initiativeSlug,
 					initiativeSlug,
 					...(entryToken ? { entryToken } : {}),
@@ -490,10 +509,10 @@ export interface JsonRpc {
 	error?: { code: number; message: string; data?: Record<string, unknown> };
 }
 
-function hostCallIdentity(meta: Record<string, unknown> | undefined, key: string): { toolCallId: string } | undefined {
+function hostCallIdentity(meta: Record<string, unknown> | undefined, key: string): HostCallIdentity | undefined {
 	if (!meta) return undefined;
 	const toolCallId = meta[key];
-	return typeof toolCallId === "string" && toolCallId ? { toolCallId } : undefined;
+	return typeof toolCallId === "string" && toolCallId ? { toolCallId, admissionId: toolCallId } : undefined;
 }
 
 /**
@@ -600,7 +619,9 @@ export async function handleJsonRpc(message: JsonRpc, mcp: McpRuntime): Promise<
 			if (isPrivilegedOperation(name) && !interactive) {
 				throw new NativeAuthorityError("unsupported_host", mcp.profile.elicitationUnavailableRefusal);
 			}
-			const identity = hostCallIdentity(params._meta, mcp.profile.toolCallIdMetaKey);
+			const identity = mcp.profile.resolveHostCall
+				? mcp.profile.resolveHostCall(name, params._meta, message.id ?? "stdio")
+				: hostCallIdentity(params._meta, mcp.profile.toolCallIdMetaKey);
 			if (isPrivilegedOperation(name) && !identity) {
 				throw new NativeAuthorityError("correlation_missing", mcp.profile.correlationMissingRefusal);
 			}
@@ -609,6 +630,7 @@ export async function handleJsonRpc(message: JsonRpc, mcp: McpRuntime): Promise<
 			const result = await mcp.callTool(name, params.arguments ?? {}, {
 				sessionId,
 				toolCallId,
+				...(identity?.admissionId ? { admissionId: identity.admissionId } : {}),
 				workspace: metaWorkspacePath(params._meta),
 				interactive,
 				requiresUserInteraction: isPrivilegedOperation(name),
