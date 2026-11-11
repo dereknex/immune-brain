@@ -233,3 +233,38 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
 | F6 | `lane_session_close` 的契约顺序不可执行 | `dist/drive-batch.md:502-512`、`batch_lanes.ts` 的 parent-branch 检查 |
 | F7 | 新 batch 的 Lane 创建自锁，不可自愈 | `batch_lanes.ts:1363-1400`、`batch_worktrees.ts:27-37` |
 | C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | `.pi-extension/single-copy.ts` |
+
+## 修复（第二轮实测之后，2026-11-11）
+
+按 F7 → F6、F2 → C-1 → F1 与 Parent 约束的顺序修复；每项都先写出在旧代码上失败的测试。
+
+### F7：Lane 创建自锁（修复，`51c9e77d`）
+
+- 成因：parent-branch batch 的 tick 先建 worktree 与 `imm-lane/<slug>/<task>`，到 admission 才写绑定。中间任何一处停下都会留下“有资源无绑定”：admission 时 `canStartTask` 的二次检查、`decideLaneAdmission` 拒绝、子任务预算 `break`，或 tick 被中断。下一次 tick 的 `assertLaneWorktreeAvailable` 只能把它当冲突，并 park 子任务。实测没有留下第一次 tick 的证据，具体是哪一处无法确认，但这些路径都会导致同一结果。
+- 修复：创建前先把 `lane_reservation`（path、branch、base_head）写进 batch record（`batch_state.ts` 新增可选字段，只允许出现在 `pending`、`needs_human`、`skipped_blocked` 且没有 `lane` 的子任务上）。下一次 tick 由 `ensureReservedLaneWorktree`（`batch_worktrees.ts`）补建或接管，前提是资源仍与预留一致：分支在预留的 base 上，且就检出在预留的 worktree 里。分支被移动、被另一个分支检出、路径里有用户文件、分支是 symbolic ref、目录含 symlink，都拒绝并原样保留。绑定时清除预留。没有预留的孤儿仍然拒绝。
+- 测试：`tests/single-task-lane-batch.test.ts`“adopts a Lane created by a tick that stopped before binding it”（第一次 tick 的 admission 二次检查拒绝，第二次 tick 接管同一路径；旧代码上失败）；`tests/batch-parent-branch.test.ts` 覆盖在预留、目录、分支、worktree 四个点中断后的续建，以及五种不一致时拒绝且不改动资源。
+
+### F6、F2：关闭流程（修复，`51afbb0a`）
+
+- F6：在集成子任务的那一次 tick 里，runner 自己把可关闭的 session 记进 `session_closes`（子任务已 `integrated`，审计对可从 batch head 到达）。这次 tick 即使结束了 batch，记录也已在 report 里，Parent 不必再进入已完成的 batch。`lane_session_close` 对已记录的子任务返回同一条记录，不再以“already recorded”拒绝。
+- F2：`imm-session close` 必须带 `--batch <batch_id>`，从协调 checkout（或 `--root`）读取 `.imm/state/batches/<batch_id>.json`，只有记录里列出了同一 `task_id` 和 `at` 才关闭。`runtime/session` 只读文件，仍不 import batch runtime。
+- 测试：`tests/unattended-batch-lanes.test.ts`（集成 tick 的 report 已带 `session_closes`，再次请求返回同一记录）；`tests/supervised-session-herdr.test.ts`（无记录文件、记录里没有这条关闭、`at` 不同，都是 `close_unproven`，且不调用 `tab close`）。
+
+### C-1：按进程认领（修复）
+
+- 更正成因：上一版的认领表是 `single-copy.ts` 模块级的 `WeakMap`。两份插件副本是两个模块实例，各有一张表，互相看不见；所以无论按 loader 还是按其他作用域认领都会失效。实测里两份副本又由不同 loader 载入，结果还是一样。
+- 修复：认领放到 `globalThis[Symbol.for("immune-brain.pi-extension.copy-owner")]`，每份副本拼写相同的键，所以按进程共享。规则不变：第一份目录拥有，同目录重载照常，其他活目录的副本不注册并提示一次，原目录消失时接管。`tests/pi-canary-packed-loader.test.ts` 在载入打包副本前清掉同进程里源码副本的认领，结束后再恢复。
+- 测试：`tests/pi-extension-single-copy.test.ts` 新增“临时目录里的另一份 `single-copy.ts` 模块实例看见同一认领”，以及另一个 loader 也零注册。
+
+### F1 缓解与 Parent 约束（缓解）
+
+- F1：`create` 提交 entry 时，Herdr 返回 `agent_prompt_stalled` 现在映射为 `entry_submitted: false`、`unknown`、`attention`，tab 保留。`attention` 说明 entry 可能已打进对话框，用户看过之前不要重发。`send` 仍是 `provider_error`。登录框仍不报 `blocked`，所以 Claude Code 的 executor 角色在 `herdr` 上继续不准入。
+- Parent 约束（`dist/drive-batch.md`）：
+  - Parent 只协调，不在自己的会话或 checkout 里实现、编辑或测试子任务。
+  - 被拒绝时按 recovery action 处理或告诉用户，不 reset、rebase 或移动任何 branch，不删除或 prune worktree、branch。
+  - “没有活跃 claim”是 Kernel 事实，不是缺 TaskIntent。
+  - `herdr` 上的 `attention` 在用户回答后，先问用户 entry 是否已被 Host 接收，再决定是否重发。
+
+### 仍需实测
+
+R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显式 `-e` 加已安装 package），以及 F1 的 `attention` 在 Herdr 登录框下的真实表现。

@@ -108,6 +108,19 @@ describe("Herdr adapter command spelling", () => {
 	});
 });
 
+describe("an entry stalled in a dialog (#426 F1)", () => {
+	it("keeps the tab and asks the user to look, instead of failing, when Herdr reports the entry stalled", async () => {
+		const { port, stateFile } = subject({ stall_prompt: true });
+		const created = await port.createSession(INPUT);
+		expect(created).toMatchObject({ ok: true, entry_submitted: false, state: "unknown", provenance: "none" });
+		if (!created.ok) throw new Error(created.reason);
+		expect(created.attention).toContain("do not send the entry again");
+		expect(acting(herdrCalls(stateFile)).some((call) => call[1] === "close")).toBe(false);
+		// An instruction to a running session is not an entry: its stall stays a refusal.
+		expect(await port.sendInstruction(created.handle, "next")).toMatchObject({ ok: false });
+	});
+});
+
 describe("Executor Host coverage", () => {
 	it.each([["claude-code", "claude"], ["pi", "pi"], ["antigravity", "agy"]] as const)("starts a %s Executor as Herdr kind %s", async (host, kind) => {
 		const { port, stateFile } = subject();

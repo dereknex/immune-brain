@@ -39,6 +39,7 @@ import {
 	type SessionHandle,
 	type SessionState,
 	type SupervisedSessionPort,
+	type CreateSessionResult,
 } from "./supervised_session_port";
 
 /** Herdr socket protocol versions this adapter is pinned to (Herdr TUI 0.9.x). */
@@ -158,6 +159,8 @@ export function herdrErrorCode(result: HerdrExecResult): string | undefined {
 }
 
 const EXITED_CODES = new Set(["pane_not_found", "agent_not_running", "agent_not_found"]);
+/** An entry Herdr typed but the agent never took up (`agent_prompt_stalled`). */
+const STALLED = Symbol("entry stalled");
 /** `agent get` on a pane whose shell no longer hosts the agent. */
 const HOST_GONE_CODES = new Set(["agent_not_running", "agent_not_found"]);
 
@@ -226,14 +229,31 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 		if (result.code !== 0) return { state: "unknown", provenance: "none" };
 		return detected(parseHerdrState(result.stdout));
 	};
-	const submit = async (handle: SessionHandle, pane: string, text: string): Promise<Observation | Refusal> => {
+	function submit(handle: SessionHandle, pane: string, text: string): Promise<Observation | Refusal>;
+	function submit(handle: SessionHandle, pane: string, text: string, entry: true): Promise<Observation | Refusal | typeof STALLED>;
+	async function submit(handle: SessionHandle, pane: string, text: string, entry = false): Promise<Observation | Refusal | typeof STALLED> {
 		const result = await run(HERDR_CLI.prompt(pane, text, promptTimeoutMs));
 		if (isRefusal(result)) return result;
+		if (entry && herdrErrorCode(result) === "agent_prompt_stalled") return STALLED;
 		// Herdr itself refuses a blocked agent before writing anything.
 		if (herdrErrorCode(result) === "agent_blocked") return refuse("state_refused", "session is blocked; Herdr sent nothing", handle);
 		// A failed, stalled or timed-out submission proves nothing about delivery.
 		if (result.code !== 0) return refuse("provider_error", `herdr agent prompt failed; inspect the session state before repeating: ${failure(result)}`, handle);
 		return detected(parseHerdrState(result.stdout));
+	}
+	/**
+	 * Submits a new or resumed session's entry. A sign-in or selection dialog is
+	 * not reported as `blocked` (#426 F1): Herdr sees the agent idle, types the
+	 * entry into the dialog and then reports `agent_prompt_stalled`. That is not a
+	 * failed session, so it keeps its tab and says what the user must look at;
+	 * the entry is not proven delivered and must not be sent again unseen.
+	 */
+	const submitEntry = async (handle: SessionHandle, pane: string, text: string): Promise<CreateSessionResult> => {
+		const after = await submit(handle, pane, text, true);
+		if (after === STALLED) return { ok: true, handle, entry_submitted: false, state: "unknown", provenance: "none",
+			attention: "The Executor Host never started working on its entry: a dialog (such as sign-in or a selection) may hold the terminal, and the entry text may now sit in it. Ask the user to look at this tab and answer the dialog, then resume this session; do not send the entry again before the user has seen it." };
+		if (isRefusal(after)) return after;
+		return { ok: true, handle, entry_submitted: true, ...after };
 	};
 	/** Starts the Host in the pane; a result means stop here (dialog or failure), null means go on to submit. */
 	const startHost = async (handle: SessionHandle, pane: string, label: string, host: ExecutorHostKind, hostArgs: string[]) => {
@@ -284,9 +304,7 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 					const refused = resumeRefusal(handle, current);
 					if (refused) return refused;
 				}
-				const after = await submit(handle, pane, input.entry);
-				if (isRefusal(after)) return after;
-				return { ok: true, handle, entry_submitted: true, ...after };
+				return submitEntry(handle, pane, input.entry);
 			}
 			if (!workspace) return refuse("provider_unavailable", "HERDR_WORKSPACE_ID is not set");
 			const token = randomBytes(6).toString("hex");
@@ -302,9 +320,7 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 			const handle = encodeHerdrHandle({ workspace, tab, pane, token });
 			const started = await startHost(handle, pane, input.label, input.host, input.hostArgs);
 			if (started) return started;
-			const after = await submit(handle, pane, input.entry);
-			if (isRefusal(after)) return after;
-			return { ok: true, handle, entry_submitted: true, ...after };
+			return submitEntry(handle, pane, input.entry);
 		},
 		async sendInstruction(handle, text) {
 			if (!text.trim()) return refuse("invalid_input", "instruction text is empty", handle);

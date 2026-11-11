@@ -76,6 +76,8 @@ if (group === "agent" && verb === "prompt") {
 	const target = hosted(args[0]);
 	if (target.state === "blocked") fail("agent_blocked");
 	target.prompts.push(args[1]);
+	// agent_prompt_stalled: a dialog Herdr reads as idle took the text and nothing started (#426 F1).
+	if (state.stall_prompt) { save(state); fail("agent_prompt_stalled"); }
 	target.state = state.after_prompt ?? "working";
 	save(state);
 	ok(agent(args[0]));

@@ -393,6 +393,17 @@ with a runtime-owned Executor keep that process until settlement; never add a ta
 For a single-task user decision, follow [Parent decision relay](#single-task-lane)
 and resume the existing tab after the native decision is applied.
 
+The Parent coordinates; it never does a child's work. An `executor` handoff is
+started in that child's Lane session as below, never implemented, edited or
+tested in the Parent's own session or checkout. A refused or rejected report is
+answered with its recovery action or reported to the user: the Parent never
+resets, rebases or moves a Parent or Lane branch, and never removes or prunes a
+worktree or a branch (`git reset`, `git branch -D`, `git worktree remove` and
+`git worktree prune` are the user's). A child with no active claim is a Kernel
+fact the report explains through its next obligation, not a missing TaskIntent:
+the Parent does not search `.imm/` or ask the user for requirements because of
+it.
+
 Inside Herdr the Parent drives each Lane session through the
 [Supervised Session Port](docs/reference/supervised-session-port.md) with
 `imm-session --provider herdr`; the runtime and the `lane-steward` never do.
@@ -439,7 +450,10 @@ sign-in, a permission request, a question, or a native confirmation such as an
 Intent revision gate. A create may also report `entry_submitted: false` with
 state `unknown` and an `attention` text: the Host reported nothing at startup,
 which some Hosts do while they show a dialog; the Parent relays that text and
-treats the session exactly like a blocked one. The Parent sends that tab no keys
+treats the session exactly like a blocked one. On `herdr` that text can also
+mean Herdr typed the entry into a sign-in or selection dialog it did not see as
+blocked, so after the user has answered, the Parent asks whether the Executor
+Host took up the entry before resubmitting it. The Parent sends that tab no keys
 and no prompt, and never answers such a dialog for the user. As soon as the
 wait returns `blocked`, or the create returned `entry_submitted: false`, it
 tells the user which tab and `task_id` is waiting and what the dialog asks,

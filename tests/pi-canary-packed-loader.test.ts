@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { INTERNAL_SKILL_NAMES, publicSkillNames } from "./helpers/public-skills.ts";
+import { COPY_CLAIM_KEY } from "../plugins/immune-brain/.pi-extension/single-copy";
 
 const ROOT = resolve(__dirname, "..");
 const RETIRED_PROGRESS_FILES = [
@@ -131,7 +132,13 @@ describe("packed artifact loader", () => {
 					agentDir,
 					settingsManager,
 				});
-				await loader.reload();
+				// One copy per process (#426 C-1): this process may already run the
+				// source checkout's copy, which would rightly keep the packed one out.
+				const claims = globalThis as unknown as Record<symbol, unknown>;
+				const copyOwner = claims[COPY_CLAIM_KEY];
+				delete claims[COPY_CLAIM_KEY];
+				try { await loader.reload(); }
+				finally { claims[COPY_CLAIM_KEY] = copyOwner; }
 				const extensions = loader.getExtensions().extensions;
 				const paths = extensions.map(
 					(e: { path?: string; resolvedPath?: string }) => e.path ?? e.resolvedPath ?? "",
