@@ -5144,7 +5144,8 @@ function preparePiCanary(root, input) {
     workspace,
     digest: ""
   };
-  preparation.digest = `sha256:${sha256Hex2(stableStringify2(preparation))}`;
+  const { generated_at: _observedAt, ...bound } = preparation;
+  preparation.digest = `sha256:${sha256Hex2(stableStringify2(bound))}`;
   return preparation;
 }
 var SOURCE_PATH, GIT_OBJECT_ID2;
@@ -13634,8 +13635,9 @@ function buildCandidate(input) {
       const changed = gitOut(delivery.root, ["diff", "--name-only", "-z", "HEAD"], "inspect generated delta").split("\x00").filter(Boolean);
       const untracked = gitOut(delivery.root, ["ls-files", "--others", "--exclude-standard", "-z"], "inspect generated files").split("\x00").filter(Boolean);
       const delta = [...changed, ...untracked];
-      if (delta.some((path) => !outputs.has(path)))
-        throw new Error("generate changed an undeclared output");
+      const undeclared = delta.filter((path) => !outputs.has(path));
+      if (undeclared.length)
+        throw new Error(`generate changed an undeclared output: ${undeclared.slice(0, 5).join(", ")}${undeclared.length > 5 ? ` (+${undeclared.length - 5} more)` : ""}`);
       if (delta.length)
         gitOut(delivery.root, ["--literal-pathspecs", "add", "-A", "--", ...delta], "stage regenerated outputs");
       const generatedTree = gitOut(delivery.root, ["write-tree"], "write regenerated tree").trim();

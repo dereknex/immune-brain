@@ -191,7 +191,12 @@ export function preparePiCanary(root: string, input: PiCanaryPrepareInput): PiCa
 		workspace,
 		digest: "",
 	};
-	preparation.digest = `sha256:${sha256Hex(stableStringify(preparation))}`;
+	// The digest binds owner state only. `generated_at` is observation metadata:
+	// a gate whose confirmation and consumption run in different processes (the
+	// Antigravity PreToolUse hook and the MCP call) recomputes at a different
+	// instant and must still match while the owners are unchanged.
+	const { generated_at: _observedAt, ...bound } = preparation;
+	preparation.digest = `sha256:${sha256Hex(stableStringify(bound))}`;
 	return preparation;
 }
 

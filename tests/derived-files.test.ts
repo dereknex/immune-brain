@@ -95,7 +95,7 @@ describe("derived files", () => {
 		["index-only source bytes", { indexOnly: "blob" }], ["index-only source mode", { indexOnly: "mode" }]] as const)
 		test(`rejects ${name} without advancing the Parent`, () => {
 			const fx = diverge(options);
-			expect(() => buildCandidate(fx.input)).toThrow("indexOnly" in options ? "undeclared tree entry" : "batch_integration_conflict");
+			expect(() => buildCandidate(fx.input)).toThrow("indexOnly" in options ? "undeclared tree entry" : "undeclaredWrite" in options ? "undeclared output: a.txt" : "batch_integration_conflict");
 			expect(git(fx.root, "rev-parse", "HEAD")).toBe(fx.head);
 			expect(git(fx.root, "status", "--porcelain")).toBe("");
 		});
