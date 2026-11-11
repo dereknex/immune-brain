@@ -44,6 +44,7 @@ function expectV4Manifest(output: string): void {
 		"imm-kernel",
 		"imm-plan",
 		"imm-tracker",
+		"imm-session",
 	]);
 	expect(manifest.retired).toBeUndefined();
 }

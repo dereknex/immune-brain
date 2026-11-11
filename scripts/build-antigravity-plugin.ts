@@ -368,7 +368,7 @@ export function artifactClosureErrors(artifact: string): string[] {
 				}
 			}
 		}
-		if (/^bin\/imm-(kernel|plan|tracker)$/.test(path)) {
+		if (/^bin\/imm-(kernel|plan|tracker|session)$/.test(path)) {
 			const target = /"\$PLUGIN_ROOT\/([^"]+)"/.exec(readFileSync(absolute, "utf8"));
 			if (!target) errors.push(`${path}: wrapper has no runtime target`);
 			else requireFile(resolve(base, target[1]), `${path} runtime`);

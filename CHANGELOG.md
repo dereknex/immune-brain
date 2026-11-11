@@ -1,5 +1,42 @@
 # Changelog
 
+## 8.1.0
+
+### Minor Changes
+
+- [#457](https://github.com/dereknex/immune-brain/pull/457) [`cc567b1`](https://github.com/dereknex/immune-brain/commit/cc567b1c9100630aa4b7d9268f00726e0f4d14df) Thanks [@dereknex](https://github.com/dereknex)! - A project can list where a `routine` risk declaration may stand in `.imm/routine-classes.json`. When a `routine` task's actual diff leaves every listed class, the Kernel raises it to `material`, so it needs Review; nothing is refused and no gate opens. An untrusted list makes every task `critical`, and the file itself is always `critical`. `imm-kernel inspect --json` reports `risk.routine_classes` and `risk.outside_routine_allowlist`, and the Review manifest lists the escaping paths. Without the file nothing changes. ADR 0038 records the decision; this repository pilots a `docs-only` class.
+
+- [#470](https://github.com/dereknex/immune-brain/pull/470) [`22420e6`](https://github.com/dereknex/immune-brain/commit/22420e69287ad767311c88c10893ed42e32d5be8) Thanks [@dereknex](https://github.com/dereknex)! - Inside Herdr the Parent now drives each Lane Executor session through the new
+  `imm-session` command and the Supervised Session Port (ADR 0038) instead of
+  spelling `herdr` commands itself. The Herdr adapter keeps the same tabs, focus
+  rule, dialog handling and event-driven wait, pins Herdr protocol 22, and fails
+  closed when Herdr is unavailable. Kernel and batch behavior are unchanged.
+  Antigravity is now a Herdr Executor Host (kind `agy`) alongside Claude Code and
+  Pi, matching the hosts the Lane configuration already accepts.
+  `imm-session --provider herdr-core` adds a herdr-core adapter on the `hc` CLI;
+  the Loop contract does not use it yet.
+
+### Patch Changes
+
+- [#470](https://github.com/dereknex/immune-brain/pull/470) [`15445df`](https://github.com/dereknex/immune-brain/commit/15445df942cdceb669d20df61dea2af2bfe361fe) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity native tools work again on v8.0.0. A hook payload that carries
+  `lastUserInput` alongside `toolCall` is dispatched as a tool instead of a
+  `PreInvocation`, so `PreToolUse`/`PostToolUse` answer correctly and
+  `invoke_subagent` completion is observed again.
+
+  The lazy `call_mcp_tool` form is now matched by the canonical `PreToolUse`
+  matcher and admitted only when it targets Immune-Brain; other lazy servers stay
+  an ordinary allow. A privileged Antigravity batch call no longer needs Claude
+  metadata: it is correlated by `antigravity.google/conversation_id` plus the
+  `progressToken` step suffix that matches the Hook's `stepIdx`, and consuming
+  that admission revalidates the conversation's live entry token and workspace.
+  The admitted conversation becomes the runtime Hook session instead of the
+  transport connection id. Claude Code keeps its exact
+  `claudecode/toolUseId` correlation, and Herdr process supervision is unchanged.
+
+- [#471](https://github.com/dereknex/immune-brain/pull/471) [`b078ade`](https://github.com/dereknex/immune-brain/commit/b078ade02c0716069473ef01609ceba49fab2e57) Thanks [@dereknex](https://github.com/dereknex)! - The packaged `docs/reference/supervised-session-port.md` now matches its source,
+  so the installed Claude and Antigravity artifacts carry the measured
+  `herdr-core` admission status instead of the pre-measurement text.
+
 ## 8.0.0
 
 ### Major Changes

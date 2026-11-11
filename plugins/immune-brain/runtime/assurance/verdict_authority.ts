@@ -122,6 +122,7 @@ export async function ensureReviewRevision(
 		lifecycle: projection.projection.lifecycle,
 		artifactState: projection.projection.artifact_state,
 		risk: record.intent_snapshot.risk,
+		intent: record.intent_snapshot,
 		// The same outcomes the Review snapshot is built from. A preflight stand-in
 		// only matched the settled QA attestation because deterministic QA happens to
 		// write that exact summary, so the submit-time digest comparison held by
@@ -206,6 +207,7 @@ export async function buildAssuranceSnapshot(
 				lifecycle: projection.projection.lifecycle,
 				artifactState: projection.projection.artifact_state,
 				risk: intent.risk,
+				intent,
 				outcomes: qaOutcomes(record.record),
 				delta: reviewDeltaInput(record.record),
 			})

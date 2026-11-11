@@ -1,11 +1,11 @@
-// Project-declared risk floor (ADR 0023).
+// Project-declared risk floor (ADR 0023) and routine allowlist (ADR 0038).
 // The paths that force a higher task risk are data the project owns, read from
-// one tracked file. This module owns the declaration format, its fail-closed
-// reader and the two path policies. It must not import intent/storage/reducer.
+// tracked files. This module owns the floor declaration format, the composed
+// fail-closed reader and the path policies. It must not import
+// intent/storage/reducer.
 
-import { execFileSync } from "node:child_process";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { pathsOutsideRoutineClasses, readRoutineAllowlist, ROUTINE_CLASSES_DECLARATION_PATH, type RoutineClass } from "./routine_classes";
+import { readTrackedDeclaration } from "./tracked_declaration";
 import type { TaskIntentV1, TaskRisk } from "./types";
 
 export const RISK_FLOOR_DECLARATION_PATH = ".imm/risk-floor.json";
@@ -29,14 +29,19 @@ export interface RiskFloorTier {
 }
 
 /**
- * `invalid` carries the reason the declaration could not be trusted; a floor
- * with a reason raises every task to `critical`.
+ * `invalid` carries the reason a declaration could not be trusted; a floor
+ * with a reason raises every task to `critical`. `routine` is the project's
+ * routine allowlist (ADR 0038); absent or null means none is declared.
  */
 export interface RiskFloor {
 	material: RiskFloorTier;
 	critical: RiskFloorTier;
 	invalid: string | null;
+	routine?: readonly RoutineClass[] | null;
 }
+
+/** Declaration files whose own path is always `critical`. */
+const SELF_CRITICAL_DECLARATIONS = [RISK_FLOOR_DECLARATION_PATH, ROUTINE_CLASSES_DECLARATION_PATH] as const;
 
 const EMPTY_TIER: RiskFloorTier = { paths: [], changed_only: [] };
 
@@ -92,58 +97,27 @@ export function parseRiskFloor(raw: unknown): RiskFloor {
 }
 
 /**
- * Read the project's declaration. Never throws: a missing file is no floor, and
- * a file that is not a tracked, committed, regular, valid document is an invalid
- * floor. An uncommitted declaration is not trusted, so an edit made beside a
- * task cannot lower that task's floor.
+ * Read the project's declarations: the floor itself and the routine allowlist
+ * (ADR 0038). Never throws: a missing file is no floor, and a file that is not
+ * a tracked, committed, regular, valid document is an invalid floor. An
+ * uncommitted declaration is not trusted, so an edit made beside a task cannot
+ * lower that task's floor. An untrusted allowlist invalidates the whole floor.
  */
 export function readRiskFloor(root: string): RiskFloor {
-	let canonicalRoot: string;
-	try {
-		canonicalRoot = realpathSync(root);
-	} catch {
-		return NO_RISK_FLOOR;
+	const read = readTrackedDeclaration(root, RISK_FLOOR_DECLARATION_PATH, RISK_FLOOR_MAX_BYTES);
+	let floor: RiskFloor;
+	if (read.kind === "absent") floor = NO_RISK_FLOOR;
+	else if (read.kind === "invalid") return invalidFloor(read.reason);
+	else {
+		try {
+			floor = parseRiskFloor(read.value);
+		} catch (error) {
+			return invalidFloor(error instanceof Error ? error.message : String(error));
+		}
 	}
-	const target = join(canonicalRoot, RISK_FLOOR_DECLARATION_PATH);
-	let present = false;
-	try {
-		const stat = lstatSync(target);
-		if (!stat.isFile()) return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} is not a regular file`);
-		if (stat.size > RISK_FLOOR_MAX_BYTES) return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} exceeds 64 KiB`);
-		present = true;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTDIR")
-			return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} cannot be read`);
-	}
-	let pending: string;
-	try {
-		pending = execFileSync(
-			"git",
-			["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored", "--", RISK_FLOOR_DECLARATION_PATH],
-			{ cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-		);
-	} catch {
-		// Outside a Git repository nothing vouches for the file.
-		return present ? invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} cannot be checked against Git`) : NO_RISK_FLOOR;
-	}
-	if (pending.length > 0)
-		return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} has changes that are not committed`);
-	try {
-		const entry = execFileSync("git", ["ls-tree", "HEAD", "--", RISK_FLOOR_DECLARATION_PATH],
-			{ cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-		if (!entry) return present ? invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} is not committed`) : NO_RISK_FLOOR;
-		if (!present || !/^100(?:644|755) blob /.test(entry))
-			return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} does not match a committed regular file`);
-		const bytes = readFileSync(target);
-		const committed = execFileSync("git", ["show", `HEAD:${RISK_FLOOR_DECLARATION_PATH}`],
-			{ cwd: canonicalRoot, maxBuffer: RISK_FLOOR_MAX_BYTES, stdio: ["ignore", "pipe", "pipe"] });
-		// Index flags can hide changes from status; compare the bytes we parse.
-		if (!bytes.equals(committed))
-			return invalidFloor(`${RISK_FLOOR_DECLARATION_PATH} differs from its committed bytes`);
-		return parseRiskFloor(JSON.parse(bytes.toString("utf8")));
-	} catch (error) {
-		return present ? invalidFloor(error instanceof Error ? error.message : String(error)) : NO_RISK_FLOOR;
-	}
+	const routine = readRoutineAllowlist(root);
+	if (routine.invalid !== null) return invalidFloor(`${ROUTINE_CLASSES_DECLARATION_PATH}: ${routine.invalid}`);
+	return routine.classes === null ? floor : { ...floor, routine: routine.classes };
 }
 
 function segmentMatches(e: string, s: string): boolean {
@@ -222,7 +196,7 @@ function pathBeneath(path: string, prefixes: readonly string[]): boolean {
 /** The tier one scope entry is raised to, or null. The declaration's own path is always critical. */
 export function scopeEntryRiskFloor(entry: string, floor: RiskFloor): TaskRisk | null {
 	if (floor.invalid !== null) return "critical";
-	if (entryReachesFile(entry, RISK_FLOOR_DECLARATION_PATH) || entryTouches(entry, floor.critical.paths)) return "critical";
+	if (SELF_CRITICAL_DECLARATIONS.some((file) => entryReachesFile(entry, file)) || entryTouches(entry, floor.critical.paths)) return "critical";
 	if (entryTouches(entry, floor.material.paths)) return "material";
 	return null;
 }
@@ -240,15 +214,25 @@ export function scopeRiskFloor(scopeHint: readonly string[], floor: RiskFloor): 
 	return highest(scopeHint.map((entry) => scopeEntryRiskFloor(entry, floor)));
 }
 
-/** The tier a set of concrete changed paths is raised to, or null. */
+/**
+ * The tier a set of concrete changed paths is raised to, or null. A changed
+ * path outside a declared routine allowlist raises to `material` (ADR 0038);
+ * raising never lowers, so this only bites a task still declared `routine`.
+ */
 export function changedPathRiskFloor(changedPaths: readonly string[], floor: RiskFloor): TaskRisk | null {
 	if (floor.invalid !== null) return "critical";
 	if (changedPaths.some((path) =>
-		pathBeneath(path, [RISK_FLOOR_DECLARATION_PATH, NO_TOUCH_DECLARATION_PATH, ...floor.critical.paths, ...floor.critical.changed_only])))
+		pathBeneath(path, [...SELF_CRITICAL_DECLARATIONS, NO_TOUCH_DECLARATION_PATH, ...floor.critical.paths, ...floor.critical.changed_only])))
 		return "critical";
 	if (changedPaths.some((path) => pathBeneath(path, [...floor.material.paths, ...floor.material.changed_only])))
 		return "material";
+	if (outsideRoutineAllowlist(changedPaths, floor).length > 0) return "material";
 	return null;
+}
+
+/** The changed paths no declared routine class covers; empty when none is declared. */
+export function outsideRoutineAllowlist(changedPaths: readonly string[], floor: RiskFloor): string[] {
+	return pathsOutsideRoutineClasses(changedPaths, floor.routine ?? null);
 }
 
 /**
@@ -258,7 +242,7 @@ export function changedPathRiskFloor(changedPaths: readonly string[], floor: Ris
  */
 export function touchesChangedPathFloor(entry: string, floor: RiskFloor): boolean {
 	if (floor.invalid !== null) return true;
-	return entryReachesFile(entry, RISK_FLOOR_DECLARATION_PATH) || entryTouches(entry, [
+	return SELF_CRITICAL_DECLARATIONS.some((file) => entryReachesFile(entry, file)) || entryTouches(entry, [
 		...floor.critical.paths,
 		...floor.critical.changed_only,
 		...floor.material.paths,
@@ -283,5 +267,5 @@ export function floorMatchingScopeEntries(scopeHint: readonly string[], floor: R
 
 /** Every prefix that raises a scope, for the `inspect` and `intent` reports. */
 export function floorScopePrefixes(floor: RiskFloor): string[] {
-	return [RISK_FLOOR_DECLARATION_PATH, ...floor.critical.paths, ...floor.material.paths];
+	return [...SELF_CRITICAL_DECLARATIONS, ...floor.critical.paths, ...floor.material.paths];
 }

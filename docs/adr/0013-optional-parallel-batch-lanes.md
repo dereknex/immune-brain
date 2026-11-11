@@ -153,6 +153,15 @@ batch record (it would add the execution lifecycle ADR 0005 keeps out of the
 runtime, and a recorded session can be stale where a Kernel claim cannot), and
 having the runtime spawn Hosts (§3 and ADR 0005 §6 stand).
 
+## Revision 2026-11-10: sessions through the Supervised Session Port
+
+[ADR 0038](0038-supervised-session-port.md) moves the Herdr command surface
+out of the Parent's Loop contract into one runtime adapter behind the
+Supervised Session Port. The Parent still owns every session and calls the port
+through `imm-session`; the batch runtime, the Host adapters and the
+`lane-steward` still drive no session, and no session identity enters the batch
+record.
+
 ## Rejected Alternatives
 
 - **Several active runs in one Authority Store.** It would touch every
