@@ -19,10 +19,14 @@ Every new batch uses runtime-created Lanes. Fixed Parent/Lane names do not prove
 ownership: a same-tip Parent can be reused only with a validated matching batch
 record at its recorded delivery tip. A settled record proves resource provenance,
 not authorization for new work. Existing unbound Lane paths or branches are
-collisions, even when clean and at the requested base. Creation is exclusive;
-if interrupted before the binding is persisted, retain the orphan and refuse
-automatic adoption. After binding, resume revalidates the recorded Lane path,
-branch and Git lineage instead of treating its location as proof of ownership.
+collisions, even when clean and at the requested base. Creation is exclusive,
+and the runtime records the Lane's path, branch and base in the batch record
+before creating anything; a later tick completes or adopts only resources that
+still match that reservation (the reserved branch at the reserved base, checked
+out in the reserved worktree) and refuses anything else. An unreserved orphan
+is retained and never adopted. After binding, resume revalidates the recorded
+Lane path, branch and Git lineage instead of treating its location as proof of
+ownership.
 No collision authorizes deletion, overwriting, renaming or resetting user resources.
 
 Before confirmation, select capacity

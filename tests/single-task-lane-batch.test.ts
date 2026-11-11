@@ -358,6 +358,24 @@ describe("single-task Lane delivery", () => {
 		expect(report.children[0]!.state).toBe("needs_human");
 	});
 
+	// Issue #426 F7: a tick that created the Lane but stopped before binding it used to park
+	// the next tick with "no recorded Lane binding". The reservation is persisted first now.
+	it("adopts a Lane created by a tick that stopped before binding it", async () => {
+		const f = owned();
+		const answers = [true, false];
+		(f.kernel as { canStartTask?: (id: string) => Promise<boolean> }).canStartTask = async () => answers.shift() ?? true;
+		const first = laneReport(await startBatch(f.args()));
+		expect(first.children[0]!.state).toBe("pending");
+		const held = readAnyBatchRunState(f.repo, BATCH_ID) as { children: Array<{ lane: unknown; lane_reservation?: { path: string } }> };
+		expect(held.children[0]!.lane).toBeNull();
+		const reserved = held.children[0]!.lane_reservation!.path;
+		expect(git(f.repo, "worktree", "list", "--porcelain")).toContain(`worktree ${reserved}`);
+		const second = laneReport(await startBatch(f.args()));
+		expect(second.children[0]!.state).toBe("enrolled");
+		expect(second.children[0]!.lane!.path).toBe(reserved);
+		expect((readAnyBatchRunState(f.repo, BATCH_ID) as { children: Array<{ lane_reservation?: unknown }> }).children[0]!.lane_reservation).toBeUndefined();
+	});
+
 	it("integrates the settled delivery onto imm/<task_id> with identical per-path content", async () => {
 		const f = owned();
 		// The first tick creates the Lane and enrolls the child; the Parent ref starts at base.

@@ -36,7 +36,7 @@ import {
 	type IntegrationCheckChild,
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
-import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree } from "./batch_worktrees";
+import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree, ensureReservedLaneWorktree, plannedLane } from "./batch_worktrees";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { withBatchEvidence } from "./batch_git";
@@ -1372,7 +1372,20 @@ export async function runLaneBatch(
 				if (!runtime.admit) break;
 				skewAcknowledged = runtime.acknowledged;
 			}
-			try { offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, expectedBatchHead(record)) }); }
+			try {
+				// F7: the record holds the reservation before any resource exists, so a
+				// tick interrupted before admission is resumed here, not refused as a collision.
+				const reserved = record.children.find((c) => c.task_id === taskId)?.lane_reservation;
+				if (reserved) offers.push({ task_id: taskId, path: ensureReservedLaneWorktree(input.root, reserved) });
+				else {
+					const planned = plannedLane(input.root, record.initiative_slug, taskId);
+					assertLaneWorktreeAvailable(input.root, record.initiative_slug, taskId);
+					const reservation = { path: planned.path, branch: planned.branch, base_head: expectedBatchHead(record) };
+					record.children = record.children.map((c) => (c.task_id === taskId ? { ...c, lane_reservation: reservation } : c));
+					persist();
+					offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, reservation.base_head) });
+				}
+			}
 			catch (error) { parkChild(taskId, error instanceof Error ? error.message : String(error)); }
 		}
 	}
@@ -1404,8 +1417,11 @@ export async function runLaneBatch(
 		// The child budget stops new admissions only; in-flight Lanes finish.
 		if (consumedSlots(record) >= record.budget.max_children) break;
 		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
-		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane,
-			...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) } : c));
+		record.children = record.children.map((c) => {
+			if (c.task_id !== child.task_id) return c;
+			const { lane_reservation: _reserved, ...rest } = c;
+			return { ...rest, state: "lane_admitted", lane, ...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) };
+		});
 		persist();
 		const failed = await enrollInLane(child.task_id);
 		if (failed) return failed;

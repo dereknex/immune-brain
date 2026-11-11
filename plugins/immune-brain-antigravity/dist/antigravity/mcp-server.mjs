@@ -6141,8 +6141,8 @@ var init_workspace_scope = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_worktrees.ts
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { existsSync as existsSync4, lstatSync as lstatSync9, mkdirSync as mkdirSync4, mkdtempSync, realpathSync as realpathSync8, rmdirSync, writeFileSync as writeFileSync4 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync4, lstatSync as lstatSync9, mkdirSync as mkdirSync4, mkdtempSync, readdirSync as readdirSync3, realpathSync as realpathSync8, rmdirSync, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname4, join as join7 } from "node:path";
 function git2(root, args) {
   const result = spawnSync6("git", ["-C", root, ...args], { encoding: "utf8" });
   if (result.status !== 0)
@@ -6188,6 +6188,51 @@ function createLaneWorktree(root, slug, taskId, head) {
     git2(root, ["worktree", "add", path, branch]);
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}; unbound Lane reservation retained at ${path}`, { cause: error });
+  }
+  return path;
+}
+function plannedLane(root, slug, taskId) {
+  parentBranchRef(slug);
+  parentBranchRef(taskId);
+  return { path: join7(worktreeDirectory(root), slug, taskId), branch: `imm-lane/${slug}/${taskId}` };
+}
+function ensureReservedLaneWorktree(root, reservation) {
+  const { path, branch, base_head: head } = reservation;
+  const ref = `refs/heads/${branch}`;
+  const refused = (why) => new Error(`batch_worktree_failed: ${path} (${ref}) does not match its recorded reservation: ${why}; resource retained`);
+  const listed = git2(root, ["worktree", "list", "--porcelain", "-z"]).split("\x00");
+  const registered = listed.includes(`worktree ${path}`);
+  if (spawnSync6("git", ["-C", root, "symbolic-ref", "--quiet", ref], { encoding: "utf8" }).status === 0)
+    throw refused("its branch is a symbolic ref");
+  const tip = spawnSync6("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
+  const branchTip = tip.status === 0 ? tip.stdout.trim() : null;
+  if (registered) {
+    if (branchTip === null)
+      throw refused("its branch is missing");
+    const checkedOut = spawnSync6("git", ["-C", path, "symbolic-ref", "--quiet", "HEAD"], { encoding: "utf8" });
+    const laneHead = spawnSync6("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" });
+    if (checkedOut.stdout.trim() !== ref)
+      throw refused("another branch is checked out");
+    if (laneHead.stdout.trim() !== head || branchTip !== head)
+      throw refused("it moved off its reserved base");
+    return path;
+  }
+  const entry = lstatSync9(path, { throwIfNoEntry: false });
+  if (entry && (!entry.isDirectory() || entry.isSymbolicLink() || readdirSync3(path).length > 0))
+    throw refused("its path holds something else");
+  if (branchTip !== null && branchTip !== head)
+    throw refused("its branch moved off the reserved base");
+  mkdirSync4(dirname4(path), { recursive: true });
+  if (realpathSync8(dirname4(path)) !== dirname4(path))
+    throw refused("its directory contains a symlink");
+  if (!entry)
+    mkdirSync4(path);
+  try {
+    if (branchTip === null)
+      git2(root, ["update-ref", "--no-deref", ref, head, "0".repeat(40)]);
+    git2(root, ["worktree", "add", path, branch]);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; reserved Lane retained at ${path}`, { cause: error });
   }
   return path;
 }
@@ -6363,11 +6408,11 @@ var init_batch_final_verification = __esm(() => {
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
 import { existsSync as existsSync5, readFileSync as readFileSync9 } from "node:fs";
-import { dirname as dirname4, join as join9, resolve as resolve8 } from "node:path";
+import { dirname as dirname5, join as join9, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 function runningRuntimeSource() {
   try {
-    return dirname4(fileURLToPath(import.meta.url));
+    return dirname5(fileURLToPath(import.meta.url));
   } catch {
     return "unknown";
   }
@@ -6609,7 +6654,7 @@ var init_batch_reasons = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_state.ts
 import { existsSync as existsSync6, mkdirSync as mkdirSync5, openSync as openSync5, closeSync as closeSync5, writeFileSync as writeFileSync5, renameSync as renameSync3, lstatSync as lstatSync10, constants as constants3, rmSync as rmSync3 } from "node:fs";
 import { createHash as createHash10, randomUUID as randomUUID3 } from "node:crypto";
-import { dirname as dirname5, join as join10 } from "node:path";
+import { dirname as dirname6, join as join10 } from "node:path";
 function classifyBatchRunStateContract(contract) {
   if (contract === "assurance_kernel/batch_run_state/v1")
     return "v1";
@@ -6753,7 +6798,7 @@ function parseBatchRunState(raw, batchId) {
 }
 function ensureSecureDirectory2(root, relative) {
   const target = join10(root, relative);
-  const parent = dirname5(target);
+  const parent = dirname6(target);
   if (!existsSync6(parent))
     mkdirSync5(parent, { recursive: true });
   if (existsSync6(target)) {
@@ -6767,10 +6812,10 @@ function ensureSecureDirectory2(root, relative) {
 }
 function writeFileAtomically(root, relative, bytes) {
   const target = join10(root, relative);
-  const targetDir = dirname5(target);
+  const targetDir = dirname6(target);
   const stats = lstatSync10(targetDir);
   if (!stats.isDirectory())
-    throw new Error(`${dirname5(relative)} is not a directory`);
+    throw new Error(`${dirname6(relative)} is not a directory`);
   const tempPath = `${target}.${randomUUID3()}.tmp`;
   let fd = null;
   try {
@@ -6927,6 +6972,9 @@ function validateLaneRecordShape(value, batchId) {
     const gate = child.runtime_reload;
     if (gate !== undefined && (!isObject(gate) || !isCommit(gate.commit) || !isHash(gate.parent_bundle) || gate.state !== "required" && gate.state !== "acknowledged"))
       throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_reload`);
+    const reservation = child.lane_reservation;
+    if (reservation !== undefined && (!isObject(reservation) || Object.keys(reservation).sort().join() !== "base_head,branch,path" || typeof reservation.path !== "string" || !reservation.path || typeof reservation.branch !== "string" || !reservation.branch || !isCommit(reservation.base_head) || !["pending", "needs_human", "skipped_blocked"].includes(child.state) || child.lane !== null))
+      throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane_reservation`);
     const lane = child.lane;
     if (lane !== null) {
       if (typeof lane !== "object" || typeof lane.path !== "string" || !lane.path || typeof lane.branch !== "string" || !lane.branch || typeof lane.base_head !== "string" || !lane.base_head || lane.lane_commit !== null && typeof lane.lane_commit !== "string" || lane.run_id !== undefined && lane.run_id !== null && (typeof lane.run_id !== "string" || !lane.run_id))
@@ -7248,7 +7296,7 @@ import {
   writeFileSync as writeFileSync6
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname as dirname6, join as join11 } from "node:path";
+import { dirname as dirname7, join as join11 } from "node:path";
 function parentBranchRef(slug) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug) || slug.includes("..") || slug.endsWith(".lock"))
     throw new Error("invalid Parent branch slug");
@@ -7447,7 +7495,7 @@ function applyDeltaToWorkingTree(root, from, to, paths) {
           throw error;
       }
     } else {
-      mkdirSync6(dirname6(full), { recursive: true });
+      mkdirSync6(dirname7(full), { recursive: true });
       try {
         unlinkSync(full);
       } catch (error) {
@@ -7487,9 +7535,9 @@ var init_batch_ref = __esm(() => {
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { createHash as createHash11 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync3, readFileSync as readFileSync11, readlinkSync as readlinkSync3, realpathSync as realpathSync9, rmSync as rmSync5 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync4, readFileSync as readFileSync11, readlinkSync as readlinkSync3, realpathSync as realpathSync9, rmSync as rmSync5 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { dirname as dirname7, isAbsolute as isAbsolute4, join as join12, parse, relative as relative3, resolve as resolve9, sep as sep4 } from "node:path";
+import { dirname as dirname8, isAbsolute as isAbsolute4, join as join12, parse, relative as relative3, resolve as resolve9, sep as sep4 } from "node:path";
 function removeTaskOwnedTree(root) {
   const makeDirectoriesWritable = (path) => {
     let stat;
@@ -7503,7 +7551,7 @@ function removeTaskOwnedTree(root) {
     if (!stat.isDirectory() || stat.isSymbolicLink())
       return;
     chmodSync2(path, stat.mode & 4095 | 448);
-    for (const name of readdirSync3(path))
+    for (const name of readdirSync4(path))
       makeDirectoriesWritable(join12(path, name));
   };
   makeDirectoriesWritable(root);
@@ -7544,14 +7592,14 @@ function assertInside(root, candidate, label) {
 function resolvedSymlinkTarget(path) {
   const target = readlinkSync3(path);
   let current = isAbsolute4(target) ? parse(target).root : parse(path).root;
-  let pending = (isAbsolute4(target) ? target.split(sep4) : [...relative3(current, dirname7(path)).split(sep4), ...target.split(sep4)]).filter(Boolean);
+  let pending = (isAbsolute4(target) ? target.split(sep4) : [...relative3(current, dirname8(path)).split(sep4), ...target.split(sep4)]).filter(Boolean);
   let links = 0;
   while (pending.length) {
     const part = pending.shift();
     if (part === ".")
       continue;
     if (part === "..") {
-      current = dirname7(current);
+      current = dirname8(current);
       continue;
     }
     const next = join12(current, part);
@@ -7576,7 +7624,7 @@ function resolvedSymlinkTarget(path) {
 }
 function assertNoEscapingSymlinks(root, dir = root) {
   const realRoot = realpathSync9(root);
-  for (const name of readdirSync3(dir)) {
+  for (const name of readdirSync4(dir)) {
     const path = join12(dir, name);
     const stat = lstatSync12(path);
     if (stat.isSymbolicLink()) {
@@ -7619,7 +7667,7 @@ function writeDeliveryTree(sourceRoot, snapshot) {
 function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
     result["."] = `${lstatSync12(root).mode & 4095}:directory`;
-  for (const name of readdirSync3(dir).sort()) {
+  for (const name of readdirSync4(dir).sort()) {
     const path = join12(dir, name), rel = relative3(root, path);
     const stat = lstatSync12(path);
     if (stat.isSymbolicLink())
@@ -7647,7 +7695,7 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     return;
   }
   if (seal === "[]") {
-    for (const name of readdirSync3(root)) {
+    for (const name of readdirSync4(root)) {
       const stat = lstatSync12(join12(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
@@ -8020,7 +8068,7 @@ var init_thresholds = __esm(() => {
 // plugins/immune-brain/runtime/config/project_identity.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { realpathSync as realpathSync10 } from "node:fs";
-import { dirname as dirname8 } from "node:path";
+import { dirname as dirname9 } from "node:path";
 function git4(root, ...args) {
   try {
     return execFileSync5("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -8049,7 +8097,7 @@ function projectIdentity(root) {
     return `${host}/${path.replace(/^\/+|\/+$/g, "").replace(/\.git$/, "")}`;
   }
   const common = git4(root, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  return realpathSync10(common ? dirname8(common) : root);
+  return realpathSync10(common ? dirname9(common) : root);
 }
 var init_project_identity = () => {};
 
@@ -8487,7 +8535,7 @@ function acceptanceRepeatSeries(findings, latestRound) {
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash12, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync7, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync4, realpathSync as realpathSync11, statSync as statSync3 } from "node:fs";
+import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync5, realpathSync as realpathSync11, statSync as statSync3 } from "node:fs";
 import { delimiter as delimiter3, isAbsolute as isAbsolute6, join as join14, relative as relative4, resolve as resolve10, sep as sep5 } from "node:path";
 function insideVerificationRoot(root, candidate) {
   const realRoot = realpathSync11(root);
@@ -8609,7 +8657,7 @@ async function runFixedVerification(root, command, frozen, options) {
         const pids = new Set([child.pid]);
         if (process.platform === "linux") {
           const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
-          for (const entry of readdirSync4(procRoot)) {
+          for (const entry of readdirSync5(procRoot)) {
             if (!/^\d+$/.test(entry))
               continue;
             const session = procSession(entry);
@@ -8875,7 +8923,7 @@ function createInvocationRegistry() {
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash13 } from "node:crypto";
 import { existsSync as existsSync8, readFileSync as readFileSync14 } from "node:fs";
-import { join as join15, dirname as dirname9 } from "node:path";
+import { join as join15, dirname as dirname10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
   const spec = INTERNAL_ROLE_PROMPTS[role];
@@ -8945,7 +8993,7 @@ function buildRoleDelegationPacket(input) {
 }
 var RUNTIME_DIR, INTERNAL_ROLE_PROMPTS, LANE_EXECUTOR_HOSTS, STATIC_REVIEW_RULES;
 var init_role_prompt_bridge = __esm(() => {
-  RUNTIME_DIR = dirname9(fileURLToPath2(import.meta.url));
+  RUNTIME_DIR = dirname10(fileURLToPath2(import.meta.url));
   INTERNAL_ROLE_PROMPTS = {
     qa: { file: "qa.md", authority: "qa", tool_policy: "no tools" },
     "code-review": {
@@ -10828,13 +10876,13 @@ var init_verdict_authority = __esm(() => {
 import { createHash as createHash17 } from "node:crypto";
 import { execFileSync as execFileSync10, spawnSync as spawnSync9 } from "node:child_process";
 import { existsSync as existsSync10, readFileSync as readFileSync17, realpathSync as realpathSync13, statSync as statSync5 } from "node:fs";
-import { dirname as dirname10, join as join18, sep as sep6 } from "node:path";
+import { dirname as dirname11, join as join18, sep as sep6 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
   for (let level = 0;level < MAX_LEVELS; level++) {
     if (existsSync10(join18(current, PLUGIN_MANIFEST)))
       return current;
-    const parent = dirname10(current);
+    const parent = dirname11(current);
     if (parent === current)
       return null;
     current = parent;
@@ -10956,7 +11004,7 @@ var init_host_port = __esm(() => {
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
 import { spawnSync as spawnSync10 } from "node:child_process";
 import { realpathSync as realpathSync14 } from "node:fs";
-import { basename, dirname as dirname11, isAbsolute as isAbsolute8, join as join19, relative as relative5, resolve as resolve12, sep as sep7 } from "node:path";
+import { basename, dirname as dirname12, isAbsolute as isAbsolute8, join as join19, relative as relative5, resolve as resolve12, sep as sep7 } from "node:path";
 function laneTaskOfWorkspace(root) {
   const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
@@ -10976,7 +11024,7 @@ function realpathOfNearest(path) {
     try {
       return join19(realpathSync14(current), ...suffix.reverse());
     } catch {
-      const parent = dirname11(current);
+      const parent = dirname12(current);
       if (parent === current)
         return path;
       suffix.push(basename(current));
@@ -13186,7 +13234,7 @@ var init_qa = __esm(() => {
 
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
 import { execFileSync as execFileSync12, spawnSync as spawnSync11 } from "node:child_process";
-import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync13, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync5, realpathSync as realpathSync15, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
+import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync13, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync6, realpathSync as realpathSync15, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
 import { isAbsolute as isAbsolute9, join as join20, resolve as resolve13 } from "node:path";
 function identityEnv(root) {
@@ -13255,7 +13303,7 @@ function commitWithPathGuard(root, dirty, before, subject) {
     mkdirSync8(hooks);
     let entries = [];
     try {
-      entries = readdirSync5(originalHooks);
+      entries = readdirSync6(originalHooks);
     } catch (error) {
       if (!["ENOENT", "ENOTDIR"].includes(error.code ?? ""))
         throw error;
@@ -13971,7 +14019,7 @@ var init_local_initiative = __esm(() => {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn3, spawnSync as spawnSync14 } from "node:child_process";
-import { existsSync as existsSync11, readFileSync as readFileSync19, readdirSync as readdirSync6 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync19, readdirSync as readdirSync7 } from "node:fs";
 import { basename as basename2, relative as relative6, resolve as resolve15, sep as sep8 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
@@ -15488,12 +15536,12 @@ import {
   mkdirSync as mkdirSync9,
   openSync as openSync6,
   realpathSync as realpathSync16,
-  readdirSync as readdirSync7,
+  readdirSync as readdirSync8,
   renameSync as renameSync4,
   rmSync as rmSync8,
   writeFileSync as writeFileSync9
 } from "node:fs";
-import { dirname as dirname12, join as join21 } from "node:path";
+import { dirname as dirname13, join as join21 } from "node:path";
 function runBatchGitPreflight(input) {
   const { root, base_head: baseHead } = input;
   const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
@@ -15700,11 +15748,11 @@ function ensureSecureDirectory3(root, relativePath) {
 }
 function writeFileAtomically2(root, relativePath, bytes) {
   const target = join21(root, relativePath);
-  const targetDir = dirname12(target);
-  ensureSecureDirectory3(root, dirname12(relativePath));
+  const targetDir = dirname13(target);
+  ensureSecureDirectory3(root, dirname13(relativePath));
   const stats = lstatSync15(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    throw new Error(`${dirname12(relativePath)} is not a real directory`);
+    throw new Error(`${dirname13(relativePath)} is not a real directory`);
   }
   if (existsSync12(target)) {
     const targetStats = lstatSync15(target);
@@ -16193,7 +16241,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   const directory = join21(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync12(directory))
-    for (const file of readdirSync7(directory).sort()) {
+    for (const file of readdirSync8(directory).sort()) {
       if (!file.endsWith(".json"))
         continue;
       const candidate = JSON.parse(readSecureProjectFile(root, `.imm/state/batches/${file}`));
@@ -16487,7 +16535,7 @@ var init_intent_readiness = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
 import { spawnSync as spawnSync16 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname13, join as join22 } from "node:path";
+import { dirname as dirname14, join as join22 } from "node:path";
 function git8(root, args) {
   const result = spawnSync16("git", ["-C", root, ...args], {
     encoding: "utf8",
@@ -16560,7 +16608,7 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
     writeFileSync10(join22(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
-    mkdirSync10(dirname13(join22(backupRoot, "files", path)), { recursive: true });
+    mkdirSync10(dirname14(join22(backupRoot, "files", path)), { recursive: true });
     if (kind === "modified")
       copyFileSync2(join22(root, path), join22(backupRoot, "files", path));
   }
@@ -16586,9 +16634,9 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync14, readdirSync as readdirSync8, readFileSync as readFileSync20 } from "node:fs";
+import { existsSync as existsSync14, readdirSync as readdirSync9, readFileSync as readFileSync20 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
-import { dirname as dirname14, join as join23 } from "node:path";
+import { dirname as dirname15, join as join23 } from "node:path";
 import { spawnSync as spawnSync17 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
@@ -16610,7 +16658,7 @@ function findResumableBatchSlugForTask(root, taskId) {
   const batchesDir = join23(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
-  for (const file of readdirSync8(batchesDir)) {
+  for (const file of readdirSync9(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
@@ -16632,7 +16680,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join23(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
-  for (const file of readdirSync8(batchesDir)) {
+  for (const file of readdirSync9(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -16675,7 +16723,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
   if (!existsSync14(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync8(batchesDir).sort()) {
+  for (const file of readdirSync9(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -17023,7 +17071,7 @@ async function projectPreflight(options, preparing) {
   if (options.plan_source === "single_task") {
     const batchesDir = join23(root, ".imm", "state", "batches");
     if (existsSync14(batchesDir))
-      for (const file of readdirSync8(batchesDir)) {
+      for (const file of readdirSync9(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
@@ -17177,7 +17225,7 @@ async function projectPreflight(options, preparing) {
     return reject("git_status_unreadable");
   }
   if (ignoredAudit.length > 0)
-    return reject("audit_evidence_ignored", [...new Set(ignoredAudit.map((path) => dirname14(dirname14(path))))].join(", "));
+    return reject("audit_evidence_ignored", [...new Set(ignoredAudit.map((path) => dirname15(dirname15(path))))].join(", "));
   if (!isResuming && statusEntries.length > 0) {
     const scopes = unsettledChildScopes(root, planSurface.surface.recovery_children.filter((child) => child.intent_path !== null));
     const blocking = statusEntries.filter(({ path }) => !isWorkflowAuthoringPath(path) && scopes.some((scope) => pathMatchesScope(path, scope)));
@@ -17405,7 +17453,7 @@ init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { existsSync as existsSync20, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
+import { existsSync as existsSync20, readdirSync as readdirSync11, realpathSync as realpathSync21 } from "node:fs";
 import { isAbsolute as isAbsolute12, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { createInterface } from "node:readline";
@@ -17651,8 +17699,8 @@ function enrollmentNonce() {
 // plugins/immune-brain/runtime/claude/review_host.ts
 init_review_packet();
 import { createHash as createHash23 } from "node:crypto";
-import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync9, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
-import { basename as basename3, dirname as dirname15, isAbsolute as isAbsolute10, join as join24 } from "node:path";
+import { constants as constants7, fstatSync as fstatSync4, lstatSync as lstatSync16, mkdirSync as mkdirSync11, openSync as openSync7, readdirSync as readdirSync10, readSync, realpathSync as realpathSync17, rmSync as rmSync9, writeSync, closeSync as closeSync7 } from "node:fs";
+import { basename as basename3, dirname as dirname16, isAbsolute as isAbsolute10, join as join24 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 var AGENT_TOOL = "Agent";
 var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
@@ -17831,7 +17879,7 @@ function readSyncAgentTranscript(post, stop) {
   const session = post.transcriptPath;
   if (!session || !isAbsolute10(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join24(dirname15(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join24(dirname16(session), basename3(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
 }
 function hookEventPath(sessionId, root = tmpdir5()) {
@@ -17845,7 +17893,7 @@ class FileHookEventLog {
   }
   append(event) {
     const path = hookEventPath(event.sessionId, this.root);
-    return appendPrivate(path, dirname15(path), `${JSON.stringify(event)}
+    return appendPrivate(path, dirname16(path), `${JSON.stringify(event)}
 `);
   }
   list(sessionId) {
@@ -17855,7 +17903,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync9(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join24(dir, name)));
+      return readdirSync10(dir).filter((name) => name.endsWith(".jsonl")).flatMap((name) => this.readFile(join24(dir, name)));
     } catch {
       return [];
     }
@@ -19351,7 +19399,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname17, join as join34, resolve as resolve16 } from "node:path";
+import { dirname as dirname18, join as join34, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
@@ -21084,7 +21132,17 @@ async function runLaneBatch(input, persisted) {
         skewAcknowledged = runtime.acknowledged;
       }
       try {
-        offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, expectedBatchHead(record)) });
+        const reserved = record.children.find((c) => c.task_id === taskId)?.lane_reservation;
+        if (reserved)
+          offers.push({ task_id: taskId, path: ensureReservedLaneWorktree(input.root, reserved) });
+        else {
+          const planned = plannedLane(input.root, record.initiative_slug, taskId);
+          assertLaneWorktreeAvailable(input.root, record.initiative_slug, taskId);
+          const reservation = { path: planned.path, branch: planned.branch, base_head: expectedBatchHead(record) };
+          record.children = record.children.map((c) => c.task_id === taskId ? { ...c, lane_reservation: reservation } : c);
+          persist();
+          offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, reservation.base_head) });
+        }
       } catch (error) {
         parkChild(taskId, error instanceof Error ? error.message : String(error));
       }
@@ -21118,12 +21176,12 @@ async function runLaneBatch(input, persisted) {
     if (consumedSlots(record) >= record.budget.max_children)
       break;
     const lane = { path: facts.real_path, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
-    record.children = record.children.map((c) => c.task_id === child.task_id ? {
-      ...c,
-      state: "lane_admitted",
-      lane,
-      ...skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}
-    } : c);
+    record.children = record.children.map((c) => {
+      if (c.task_id !== child.task_id)
+        return c;
+      const { lane_reservation: _reserved, ...rest } = c;
+      return { ...rest, state: "lane_admitted", lane, ...skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {} };
+    });
     persist();
     const failed = await enrollInLane(child.task_id);
     if (failed)
@@ -22081,7 +22139,7 @@ import { execFileSync as execFileSync14 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname16, join as join33 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname17, join as join33 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -22173,12 +22231,12 @@ function reviewSessionRunner(env = process.env) {
   if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
     throw new ReviewPreparationError("review_transport_unavailable", "lanes.review_transport is herdr but this Review is not prepared inside Herdr", "Run the Lane inside Herdr, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
   }
-  let dir = dirname16(fileURLToPath3(import.meta.url));
+  let dir = dirname17(fileURLToPath3(import.meta.url));
   for (let level = 0;level < 5; level++) {
     const candidate = join33(dir, "bin", "imm-session");
     if (existsSync18(candidate))
       return candidate;
-    dir = dirname16(dir);
+    dir = dirname17(dir);
   }
   throw new ReviewPreparationError("review_transport_unavailable", "imm-session is not shipped beside this runtime", "Reinstall the plugin, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
 }
@@ -22691,7 +22749,7 @@ class ClaudeRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: "claude-code",
-        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname18(fileURLToPath4(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal
       });
@@ -23218,7 +23276,7 @@ class ClaudeRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname17(fileURLToPath4(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname18(fileURLToPath4(import.meta.url)), "../.."),
         waitMs: claudeLaneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -24326,7 +24384,7 @@ async function runHook() {
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
     const batchesDir = join35(cwd, ".imm", "state", "batches");
-    const activeBatch = existsSync20(batchesDir) && readdirSync10(batchesDir).some((file) => {
+    const activeBatch = existsSync20(batchesDir) && readdirSync11(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;
       try {
@@ -24354,7 +24412,7 @@ if (entry.endsWith("/claude/mcp_server.ts") || entry.endsWith("/claude/mcp-serve
 // plugins/immune-brain/runtime/antigravity/review_host.ts
 init_review_packet();
 import { createHash as createHash28 } from "node:crypto";
-import { mkdirSync as mkdirSync12, readdirSync as readdirSync11, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
+import { mkdirSync as mkdirSync12, readdirSync as readdirSync12, rmSync as rmSync13, writeFileSync as writeFileSync14, readFileSync as readFileSync25 } from "node:fs";
 import { join as join36 } from "node:path";
 import { tmpdir as tmpdir9 } from "node:os";
 var VERIFIER_AGENT = "immune-brain-review-verifier";
@@ -24439,7 +24497,7 @@ class FileHookEventLog2 {
   }
   sessions() {
     try {
-      const files = readdirSync11(this.dir());
+      const files = readdirSync12(this.dir());
       return files.filter((f) => f.endsWith(".events.jsonl")).map((f) => f.replace(/\.events\.jsonl$/, ""));
     } catch {
       return [];

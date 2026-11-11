@@ -155,6 +155,12 @@ export interface BatchLaneChildRun {
 	/** Commit on the batch branch once this child is integrated. */
 	commit: string | null;
 	lane: BatchLaneBinding | null;
+	/**
+	 * A runtime-created Lane recorded before its worktree and branch are created
+	 * (issue #426 F7), so an interruption before admission resumes it instead of
+	 * leaving an unbound resource. Cleared when the Lane is bound.
+	 */
+	lane_reservation?: { path: string; branch: string; base_head: string };
 	qa_failures: number;
 	/** Kernel settlement time orders the durable merge queue, including across ticks. */
 	settled_at?: string;
@@ -866,6 +872,11 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		if (gate !== undefined && (!isObject(gate) || !isCommit(gate.commit) || !isHash(gate.parent_bundle) ||
 			(gate.state !== "required" && gate.state !== "acknowledged")))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_reload`);
+		const reservation = child.lane_reservation as unknown;
+		if (reservation !== undefined && (!isObject(reservation) || Object.keys(reservation).sort().join() !== "base_head,branch,path" ||
+			typeof reservation.path !== "string" || !reservation.path || typeof reservation.branch !== "string" || !reservation.branch ||
+			!isCommit(reservation.base_head) || !["pending", "needs_human", "skipped_blocked"].includes(child.state as string) || child.lane !== null))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane_reservation`);
 		const lane = child.lane as BatchLaneBinding | null | undefined;
 		if (lane !== null) {
 			if (
