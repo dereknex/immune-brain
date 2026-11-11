@@ -30,7 +30,7 @@ import {
 	generateVerifierDefinition,
 } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
-import { sessionHash } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { sessionHash } from "../plugins/immune-brain/runtime/host-core/private_file";
 
 const ROOT = resolve(import.meta.dir, "..");
 const ARTIFACT = resolve(ROOT, ANTIGRAVITY_ROOT);
