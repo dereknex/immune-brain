@@ -5144,7 +5144,8 @@ function preparePiCanary(root, input) {
     workspace,
     digest: ""
   };
-  preparation.digest = `sha256:${sha256Hex2(stableStringify2(preparation))}`;
+  const { generated_at: _observedAt, ...bound } = preparation;
+  preparation.digest = `sha256:${sha256Hex2(stableStringify2(bound))}`;
   return preparation;
 }
 var SOURCE_PATH, GIT_OBJECT_ID2;
@@ -13634,8 +13635,9 @@ function buildCandidate(input) {
       const changed = gitOut(delivery.root, ["diff", "--name-only", "-z", "HEAD"], "inspect generated delta").split("\x00").filter(Boolean);
       const untracked = gitOut(delivery.root, ["ls-files", "--others", "--exclude-standard", "-z"], "inspect generated files").split("\x00").filter(Boolean);
       const delta = [...changed, ...untracked];
-      if (delta.some((path) => !outputs.has(path)))
-        throw new Error("generate changed an undeclared output");
+      const undeclared = delta.filter((path) => !outputs.has(path));
+      if (undeclared.length)
+        throw new Error(`generate changed an undeclared output: ${undeclared.slice(0, 5).join(", ")}${undeclared.length > 5 ? ` (+${undeclared.length - 5} more)` : ""}`);
       if (delta.length)
         gitOut(delivery.root, ["--literal-pathspecs", "add", "-A", "--", ...delta], "stage regenerated outputs");
       const generatedTree = gitOut(delivery.root, ["write-tree"], "write regenerated tree").trim();
@@ -22579,6 +22581,10 @@ function restoreStagedIntent(root, snapshot) {
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
+  execFileSync13("git", ["update-index", "--refresh", "--", snapshot.path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   const restoredIndex = execFileSync13("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -23158,6 +23164,7 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
+init_batch_git();
 
 // plugins/immune-brain/runtime/assurance/cli_review.ts
 init_layered_config();
@@ -23394,6 +23401,41 @@ function readTaskIntentForRecord(root, taskId) {
   const record = readTaskRecordRaw(root, taskId).record;
   return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
+async function executeOrdinaryKernelOperation(input) {
+  const { root, taskId, app } = input;
+  const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
+  const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
+  const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
+  const sidecar = join36(root, priorIntent.intent_ref.path);
+  const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
+  const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
+  try {
+    if (priorBytes) {
+      writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+`);
+      execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    }
+    const result = await app.execute({
+      root,
+      task_id: taskId,
+      operation,
+      reviewContractHash: currentReviewContractHash(),
+      prior_intent_token: priorIntent.token,
+      diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
+      now: new Date().toISOString()
+    });
+    if (operation.op === "freeze_artifacts" || operation.op === "stop")
+      stagePlanningArtifactTransition(root, result.record);
+    return result;
+  } catch (error) {
+    if (priorStaged) {
+      const current = await readTaskRecordRaw(root, taskId);
+      if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
+        restoreStagedIntent(root, priorStaged);
+    }
+    throw error;
+  }
+}
 async function submitHostReview(host, coordinator, ctx, taskId, verdictInput) {
   return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
@@ -23447,6 +23489,14 @@ async function mintCapability(registry, input) {
 function throwIfCancelled(signal) {
   if (signal?.aborted)
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
+
+class ConfirmationPreviewSignal extends Error {
+  input;
+  constructor(input) {
+    super("native confirmation preview");
+    this.input = input;
+  }
 }
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
@@ -23894,41 +23944,32 @@ class HostRuntime {
   }
   async executeOrdinary(ctx, input) {
     const { app } = await this.authority();
-    const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
-    const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join36(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
-    const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
+    return executeOrdinaryKernelOperation({ root: ctx.cwd, taskId: input.taskId, operation: input.operation, app });
+  }
+  async previewConfirmation(run) {
+    const previous = this.requestConfirmation;
+    this.requestConfirmation = async (input) => {
+      throw new ConfirmationPreviewSignal(input);
+    };
     try {
-      if (priorBytes) {
-        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
-`);
-        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
-          cwd: ctx.cwd,
-          stdio: ["ignore", "pipe", "pipe"]
-        });
-      }
-      const result = await app.execute({
-        root: ctx.cwd,
-        task_id: input.taskId,
-        operation,
-        reviewContractHash: currentReviewContractHash(),
-        prior_intent_token: priorIntent.token,
-        diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
-        now: new Date().toISOString()
-      });
-      if (operation.op === "freeze_artifacts" || operation.op === "stop")
-        stagePlanningArtifactTransition(ctx.cwd, result.record);
-      return result;
+      await run();
+      return null;
     } catch (error) {
-      if (priorStaged) {
-        const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
-        if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
-          restoreStagedIntent(ctx.cwd, priorStaged);
-      }
+      if (error instanceof ConfirmationPreviewSignal)
+        return error.input;
       throw error;
+    } finally {
+      this.requestConfirmation = previous;
     }
+  }
+  async previewAuthorization(taskId, operation, meta, extra = {}) {
+    return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+  }
+  async previewBatchConfirmation(initiativeSlug, meta, options = {}) {
+    return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
+  }
+  async previewBatchRetirement(initiativeSlug, meta) {
+    return this.previewConfirmation(() => this.retireStaleBatch(initiativeSlug, meta));
   }
   async startUnattendedBatch(initiativeSlug, meta, options = {}) {
     if (Object.hasOwn(options, "lane_revision"))
@@ -23938,6 +23979,7 @@ class HostRuntime {
   async startPreparedBatch(initiativeSlug, meta, options) {
     throwIfCancelled(meta.signal);
     const reuseOnly = options.reuseOnly === true;
+    const confirmationPreview = options.confirmationPreview === true;
     const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
     if (options.plan_source === "single_task")
       options = { ...options, max_parallel: 1 };
@@ -23977,33 +24019,60 @@ class HostRuntime {
       if (confirmed) {
         const { observation } = confirmed;
         replayReader = async () => observation;
-        if (["running", "completed"].includes(integrationBatch.batch_state))
+        if (!confirmationPreview && ["running", "completed"].includes(integrationBatch.batch_state))
           await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
       }
     }
-    const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+    if (confirmationPreview && !options.plan_source && replayCompleted && integrationBatch?.batch_state === "completed" && integrationBatch.final_verification_result?.passed === true) {
+      try {
+        const confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+        const proof = await observeParentCompletion(this.cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
+        if (proof.complete)
+          return batchReason("confirmation_no_decision");
+      } catch {}
+    }
+    const completed = !confirmationPreview && !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
     if (completed)
       return { state: "started", batch_id: completed.batch_id, report: completed };
+    const nativeParentInput = (effects) => ({
+      operation: "start_unattended_batch",
+      initiativeSlug,
+      toolCallId: meta.toolCallId,
+      planDigest: effects.plan_digest,
+      batchDetails: {
+        initiative_slug: effects.initiative_slug,
+        batch_branch: "",
+        children: effects.children,
+        excluded: [],
+        final_verification: effects.final_commands,
+        parent_final_verification: {}
+      },
+      signal: meta.signal
+    });
+    if (confirmationPreview && !options.plan_source) {
+      const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
+      if (facts) {
+        const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
+        if (options.final_verification && recordedCommands && JSON.stringify(options.final_verification) !== JSON.stringify(recordedCommands))
+          throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
+        const finalCommands = recordedCommands ?? options.final_verification;
+        if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
+          await this.confirm(nativeParentInput({
+            initiative_slug: initiativeSlug,
+            plan_digest: facts.plan_digest,
+            children: facts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
+            final_commands: finalCommands
+          }), meta);
+        }
+        return batchReason("confirmation_no_decision");
+      }
+    }
     const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug), async (effects) => {
       if (reuseOnly)
         return batchReason("confirmation_port_unavailable");
       try {
         manifestChildren = effects.children;
-        const confirmation = await this.confirm({
-          operation: "start_unattended_batch",
-          initiativeSlug,
-          toolCallId: meta.toolCallId,
-          planDigest: effects.plan_digest,
-          batchDetails: {
-            initiative_slug: effects.initiative_slug,
-            batch_branch: "",
-            children: effects.children,
-            excluded: [],
-            final_verification: effects.final_commands,
-            parent_final_verification: {}
-          },
-          signal: meta.signal
-        }, meta);
+        const confirmation = await this.confirm(nativeParentInput(effects), meta);
         if (meta.signal?.aborted)
           return batchReason("cancelled_before_execution");
         if (confirmation.decision === "accept")
@@ -24014,6 +24083,8 @@ class HostRuntime {
           return batchReason("confirmation_declined");
         return batchReason("confirmation_no_decision");
       } catch (err) {
+        if (err instanceof ConfirmationPreviewSignal)
+          throw err;
         if (meta.signal?.aborted)
           return batchReason("cancelled_before_execution");
         if (err instanceof NativeAuthorityError) {
@@ -24122,6 +24193,8 @@ class HostRuntime {
             signal: meta.signal
           }, meta);
         } catch (err) {
+          if (err instanceof ConfirmationPreviewSignal)
+            throw err;
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
           if (err instanceof NativeAuthorityError) {
@@ -24172,6 +24245,8 @@ class HostRuntime {
       return authorization.value;
     if (authorization.outcome === "rejected")
       return authorization.rejection;
+    if (confirmationPreview)
+      return batchReason("confirmation_no_decision");
     const { binding, batch_id: batchId } = authorization;
     if (meta.signal?.aborted)
       return batchReason("cancelled_before_execution");
@@ -24289,6 +24364,8 @@ class HostRuntime {
             signal: meta.signal
           }, meta);
         } catch (err) {
+          if (err instanceof ConfirmationPreviewSignal)
+            throw err;
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
           if (err instanceof NativeAuthorityError) {

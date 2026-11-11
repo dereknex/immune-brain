@@ -504,6 +504,8 @@ describe("Antigravity distribution, version and generated outputs (AC4)", () => 
 		beforeAll(() => {
 			fixture = scratchDir("fixture");
 			cpSync(resolve(ROOT, "package.json"), join(fixture, "package.json"));
+			mkdirSync(join(fixture, "docs/agents"), { recursive: true });
+			cpSync(resolve(ROOT, "docs/agents/derived-files.json"), join(fixture, "docs/agents/derived-files.json"));
 			cpSync(resolve(ROOT, "plugins/immune-brain"), join(fixture, "plugins/immune-brain"), {
 				recursive: true,
 				filter: (source) => !/plugins\/immune-brain\/(dist\/claude|tests|\.plugin-eval)/.test(source),
@@ -564,6 +566,32 @@ describe("Antigravity distribution, version and generated outputs (AC4)", () => 
 			expect(statSync(wrapper).mode & 0o111).not.toBe(0);
 			checkAntigravityPlugin(fixture);
 		}, 120_000);
+
+		it("fails the check when a new shared bin wrapper is generated but not declared as a derived output", () => {
+			const sharedBin = join(fixture, "plugins/immune-brain/bin/imm-probe");
+			const declaration = join(fixture, "docs/agents/derived-files.json");
+			const original = readFileSync(declaration, "utf8");
+			const output = `${ANTIGRAVITY_ROOT}/bin/imm-probe`;
+			try {
+				writeFileSync(sharedBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+				buildAntigravityPlugin(fixture);
+				expect(() => checkAntigravityPlugin(fixture)).toThrow(`undeclared generated output: ${output}`);
+
+				const value = JSON.parse(original);
+				const entry = value.entries.find((candidate: { id: string }) => candidate.id === "antigravity-plugin-artifact");
+				entry.outputs = [...entry.outputs, output].sort();
+				writeFileSync(declaration, JSON.stringify(value));
+				checkAntigravityPlugin(fixture);
+
+				rmSync(sharedBin);
+				buildAntigravityPlugin(fixture);
+				expect(() => checkAntigravityPlugin(fixture)).toThrow(`declared output not generated: ${output}`);
+			} finally {
+				rmSync(sharedBin, { force: true });
+				writeFileSync(declaration, original);
+				buildAntigravityPlugin(fixture);
+			}
+		}, 180_000);
 
 		it("fails explicitly for a missing manifest, role prompt or referenced contract input", () => {
 			const manifest = join(fixture, ANTIGRAVITY_ROOT, ".antigravity-plugin/plugin.json");

@@ -4,27 +4,13 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { laneWriteRefusal } from "../unattended/lane_workspace";
 import {
-	laneRuntimeContractRefusal,
 	parseLaneInstruction,
 	parseLaneOffers,
 	parseMaxParallel,
 	resolveLaneParallel,
 } from "../unattended/batch_lanes";
 import { parseFinalVerification } from "../unattended/batch_final_verification";
-import {
-	authorizeBatch,
-	findExistingActiveBatch,
-	findSettledBatchRecord,
-	prepareBatchPreflight,
-	readConfirmedBatchTopology,
-	type BatchConfirmationFacts,
-} from "../unattended/batch_preflight";
-import { observeNativeParent, observeParentCompletion } from "../unattended/batch_git";
-import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
-import { isLaneBatchRecord } from "../unattended/batch_state";
-import { readStaleBatchLookup } from "../unattended/batch_disposition";
 import type { InitiativeObservationReader } from "../unattended/types";
-import { resolveConfig } from "../config/layered_config";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
 import { releasesRunBinding } from "../assurance/run_continuation";
 import { localSkillExists, readAliasFile } from "../assurance/alias_file";
@@ -650,21 +636,14 @@ async function prepareBatchConfirmation(
 	const task = typeof opArgs.task_id === "string" ? opArgs.task_id : "";
 	if (opArgs.stop !== undefined && typeof opArgs.stop !== "boolean") return { decision: "allow" };
 	if (opArgs.stop === true) return { decision: "allow" };
-	if (
-		opArgs.executor_host !== undefined &&
-		opArgs.executor_host !== "pi" &&
-		opArgs.executor_host !== "claude-code" &&
-		opArgs.executor_host !== "antigravity"
-	) {
+	if (opArgs.executor_host !== undefined && opArgs.executor_host !== "pi" &&
+		opArgs.executor_host !== "claude-code" && opArgs.executor_host !== "antigravity") {
 		return { decision: "allow" };
 	}
 	for (const key of ["executor_model", "executor_effort"]) {
-		if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key])) {
-			return { decision: "allow" };
-		}
+		if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key])) return { decision: "allow" };
 	}
-	if (!!initiative === !!task) return { decision: "allow" };
-	if ("native_decision" in opArgs || "entry_token" in opArgs) return { decision: "allow" };
+	if (!!initiative === !!task || "native_decision" in opArgs || "entry_token" in opArgs) return { decision: "allow" };
 
 	let workspaceRealpath: string;
 	try {
@@ -672,160 +651,35 @@ async function prepareBatchConfirmation(
 	} catch {
 		return { decision: "allow" };
 	}
-
 	const initiativeSlug = task || initiative;
-	const planSource = task ? ("single_task" as const) : undefined;
-	const readInitiative = planSource === "single_task" ? observeSingleTask : locations.readInitiative ?? observeInitiative;
-
 	let maxParallel: number | undefined;
 	let finalVerification: string[] | undefined;
 	try {
 		const laneOffers = parseLaneOffers(opArgs.lane_offers);
 		const laneInstruction = parseLaneInstruction(opArgs.lane_instruction);
 		maxParallel = task ? 1 : resolveLaneParallel(cwd, initiativeSlug, parseMaxParallel(opArgs.max_parallel), laneOffers, laneInstruction);
-		finalVerification =
-			Array.isArray(opArgs.final_verification) && opArgs.final_verification.length === 0
-				? undefined
-				: parseFinalVerification(opArgs.final_verification);
+		finalVerification = Array.isArray(opArgs.final_verification) && opArgs.final_verification.length === 0
+			? undefined : parseFinalVerification(opArgs.final_verification);
 	} catch {
 		return { decision: "allow" };
 	}
 
-	if (planSource && !resolveConfig(cwd).lanes.valid) return { decision: "allow" };
-
-	const existing = findExistingActiveBatch(cwd, initiativeSlug);
-	if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return { decision: "allow" };
-	const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(cwd, initiativeSlug);
-	if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== planSource) {
-		return { decision: "allow" };
-	}
-
-	if (!planSource && !existing && integrationBatch && isLaneBatchRecord(integrationBatch) && integrationBatch.batch_state === "completed") {
-		try {
-			const confirmed = await readConfirmedBatchTopology(cwd, integrationBatch, locations.readInitiative);
-			if (integrationBatch.final_verification_result?.passed === true) {
-				const proof = await observeParentCompletion(
-					cwd,
-					initiativeSlug,
-					confirmed.observation.tasks.map((child) => child.task_id),
-				);
-				if (proof.complete) return { decision: "allow" };
-			}
-		} catch {
-			// Terminal history does not own a revised plan; continue to preflight.
-		}
-	}
-
-	if (!planSource) {
-		const nativeFacts = await observeNativeParent(cwd, initiativeSlug, locations.readInitiative);
-		if (nativeFacts) {
-			const recordedCommands = nativeFacts.native?.final_verification.results.map((result) => result.command);
-			if (finalVerification && recordedCommands && JSON.stringify(finalVerification) !== JSON.stringify(recordedCommands)) {
-				return { decision: "allow" };
-			}
-			const finalCommands = recordedCommands ?? finalVerification;
-			if (
-				["verify", "repair"].includes(nativeFacts.action) &&
-				nativeFacts.proof.missing_task_ids.length === 0 &&
-				finalCommands?.length &&
-				!recordedCommands
-			) {
-				const confirmInput: NativeConfirmationInput = {
-					operation: "start_unattended_batch",
-					initiativeSlug,
-					toolCallId: admissionId,
-					planDigest: nativeFacts.plan_digest,
-					batchDetails: {
-						initiative_slug: initiativeSlug,
-						batch_branch: "",
-						children: nativeFacts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
-						excluded: [],
-						final_verification: finalCommands,
-						parent_final_verification: {},
-					},
-				};
-				writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-				return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
-			}
-			return { decision: "allow" };
-		}
-	}
-
-	const now = new Date().toISOString();
-	const preflight = await prepareBatchPreflight({
-		root: cwd,
-		initiative_slug: initiativeSlug,
-		plan_source: planSource,
-		now,
-		readInitiative,
-		max_parallel: maxParallel,
+	// The exact production preflight builds the gate. The preview stops at the
+	// native decision, so no BatchAuthorization, final verification, tracker
+	// projection, integration or batch execution can happen in this Hook process.
+	const previewRuntime = new AntigravityRuntime({
+		cwd, env: {}, interactive: true, readInitiative: locations.readInitiative,
+		probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
 	});
-	if (!preflight.ok) return { decision: "allow" };
-	if (!preflight.projection.is_resuming && !planSource && !finalVerification?.length) return { decision: "allow" };
-	if (maxParallel !== undefined && !preflight.projection.is_resuming && laneRuntimeContractRefusal(cwd)) {
-		return { decision: "allow" };
+	let confirmInput: NativeConfirmationInput | null;
+	try {
+		confirmInput = await previewRuntime.previewBatchConfirmation(initiativeSlug,
+			{ sessionId: conversationId, toolCallId: admissionId, taskId: initiativeSlug, initiativeSlug, interactive: true },
+			{ ...(task ? { plan_source: "single_task" as const } : {}), max_parallel: maxParallel, final_verification: finalVerification ?? undefined });
+	} finally {
+		await previewRuntime.shutdown();
 	}
-
-	const authorization = await authorizeBatch<BatchConfirmationFacts>({
-		root: cwd,
-		initiative_slug: initiativeSlug,
-		now,
-		projection: preflight.projection,
-		readInitiative,
-		nonce: "antigravity-pretooluse-probe",
-		gate: async (facts) => ({ kind: "host_rejection", value: facts }),
-		confirmationRef: () => "antigravity-pretooluse-probe",
-	});
-	if (authorization.outcome !== "host_rejection") {
-		return { decision: "allow" };
-	}
-
-	const facts = authorization.value;
-	const confirmInput: NativeConfirmationInput = {
-		operation: "start_unattended_batch",
-		initiativeSlug,
-		toolCallId: admissionId,
-		planDigest: preflight.projection.plan_digest,
-		...(facts.preparation?.intent
-			? {
-					intentRevision: facts.preparation.intent.revision,
-					intentContentHash: facts.preparation.intent.content_hash,
-					bindingDigest: facts.preparation.digest,
-				}
-			: {}),
-		batchDetails: {
-			initiative_slug: facts.initiative_slug,
-			batch_branch: facts.batch_branch,
-			children: facts.children.map((child) => ({
-				task_id: child.task_id,
-				slice_id: child.slice_id,
-				risk: child.risk,
-			})),
-			excluded: facts.excluded.map((child) => ({
-				task_id: child.task_id,
-				slice_id: child.slice_id,
-				reason: child.reason,
-			})),
-			budget: facts.budget,
-			...(finalVerification ? { final_verification: finalVerification } : {}),
-			...(maxParallel !== undefined
-				? {
-						lane_mode: {
-							max_parallel: maxParallel,
-							parallel_groups: facts.parallel_groups,
-							serialized: facts.scope_conflicts,
-							...(finalVerification ? { final_verification: finalVerification } : {}),
-						},
-					}
-				: {}),
-			...(facts.reuse_blockers.length > 0
-				? {
-						re_confirmation_required: facts.reuse_blockers,
-						recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
-					}
-				: {}),
-		},
-	};
+	if (!confirmInput) return { decision: "allow" };
 	writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
 	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
@@ -847,29 +701,18 @@ async function prepareRetireConfirmation(
 	} catch {
 		return { decision: "allow" };
 	}
-	const lookup = readStaleBatchLookup(cwd, initiativeSlug);
-	if (lookup.kind !== "retirable") return { decision: "allow" };
-	const facts = lookup.facts;
-	const confirmInput: NativeConfirmationInput = {
-		operation: "retire_stale_batch",
-		initiativeSlug,
-		toolCallId: admissionId,
-		batchDisposition: {
-			batch_id: facts.batch_id,
-			batch_state: facts.batch_state,
-			batch_branch: facts.branch,
-			plan_digest: facts.plan_digest,
-			recorded_commits: facts.recorded_commits.length,
-			children: facts.children.map((child) => ({
-				task_id: child.task_id,
-				slice_id: child.slice_id,
-				state: child.state,
-				commit: child.commit,
-				lane_branch: child.lane_branch,
-				kernel_lifecycle: child.kernel_lifecycle,
-			})),
-		},
-	};
+	const previewRuntime = new AntigravityRuntime({
+		cwd, env: {}, interactive: true,
+		probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
+	});
+	let confirmInput: NativeConfirmationInput | null;
+	try {
+		confirmInput = await previewRuntime.previewBatchRetirement(initiativeSlug,
+			{ sessionId: conversationId, toolCallId: admissionId, taskId: initiativeSlug, initiativeSlug, interactive: true });
+	} finally {
+		await previewRuntime.shutdown();
+	}
+	if (!confirmInput) return { decision: "allow" };
 	writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
 	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
@@ -888,33 +731,25 @@ async function prepareTaskAuthorityConfirmation(
 		return { decision: "allow" };
 	}
 
-	let captured: NativeConfirmationInput | null = null;
-	const probeRuntime = new AntigravityRuntime({
+	const previewRuntime = new AntigravityRuntime({
 		cwd,
 		env: {},
 		interactive: true,
 		probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
-		requestConfirmation: async (input) => {
-			captured = input;
-			return { decision: "cancel", requestId: "antigravity-pretooluse-probe" };
-		},
 	});
+	let confirmInput: NativeConfirmationInput | null;
 	try {
-		await probeRuntime.authorize(
+		confirmInput = await previewRuntime.previewAuthorization(
 			taskId,
 			call.operation,
 			{ sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true },
 			call.opArgs,
 		);
-	} catch {
-		// Expected: either preconditions refused before the gate (`captured === null`)
-		// or the cancelling probe rolled back any staged sidecar after capturing `input`.
 	} finally {
-		await probeRuntime.shutdown();
+		await previewRuntime.shutdown();
 	}
 
-	if (!captured) return { decision: "allow" };
-	const confirmInput: NativeConfirmationInput = captured;
+	if (!confirmInput) return { decision: "allow" };
 
 	let verifierChoice: "accept_verifier_dispute" | "dismiss_verifier_dispute" | undefined;
 	if (confirmInput.verifierDispute) {

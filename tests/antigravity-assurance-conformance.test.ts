@@ -1357,6 +1357,7 @@ describe("Antigravity Harness Conformance", () => {
 			const batchRecordPath = join(root, ".imm/state/batches", `${started.batch_id}.json`);
 			const persisted = JSON.parse(readFileSync(batchRecordPath, "utf8"));
 			writeFileSync(batchRecordPath, `${JSON.stringify({ ...persisted, batch_state: "running" }, null, 2)}\n`);
+			const beforeResumePreview = readFileSync(batchRecordPath, "utf8");
 			const resumeHook = await antigravityPreToolUseHookAsync({
 				conversationId,
 				stepIdx: 11,
@@ -1367,6 +1368,50 @@ describe("Antigravity Harness Conformance", () => {
 				},
 			}, { root: store, readInitiative });
 			expect(resumeHook).toEqual({ decision: "allow" });
+			expect(readFileSync(batchRecordPath, "utf8")).toBe(beforeResumePreview);
+			server.input.end();
+		}, 60_000);
+
+		// The single-task preparation digest is bound by the PreToolUse hook process
+		// and recomputed later by the MCP call process; the grant must still match.
+		it("start_unattended_batch single-task grant from PreToolUse is consumed by a later MCP call", async () => {
+			const root = temp("single-gate");
+			const store = temp("single-store");
+			const SINGLE = "single-task-gate";
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(root, "base.txt"), "base\n");
+			writeIntent(root, "deliver one task", 1, SINGLE);
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "fixture");
+
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${SINGLE}`, workspacePaths: [root] }, { root: store, home: store });
+			const args = { task_id: SINGLE };
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx: 20,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: args },
+				},
+			}, { root: store });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(hookRes.reason).toContain("Preparation digest: sha256:");
+
+			// The MCP call observes the workspace at a strictly later instant.
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			const server = wire(root, store, {
+				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
+			});
+			await initialize(server);
+			server.send({ jsonrpc: "2.0", id: "single-start-1", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: args, _meta: meta(root, 20) } });
+			const reply = await server.next();
+			expect(reply.error).toBeUndefined();
+			const text = reply.result.content[0].text as string;
+			expect(text).not.toContain("workspace_changed");
+			expect(JSON.parse(text).state).toBe("started");
 			server.input.end();
 		}, 60_000);
 	});

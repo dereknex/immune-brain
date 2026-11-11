@@ -74,6 +74,7 @@ import { resolveUxLanguage, uxText } from "./ux-language";
 /** Host-native UI language; see ux-language.ts. Resolved once per process. */
 const UX_LANG = resolveUxLanguage();
 import { taskDeliveryIdentity } from "../runtime/workspace_scope";
+import { executeOrdinaryKernelOperation } from "../runtime/host-core/runtime";
 import {
 	AssuranceProgression,
 	buildReviewPrompt,
@@ -1680,53 +1681,13 @@ async function executeOrdinaryOperation(
 	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
 ): Promise<unknown> {
 	const { app } = await authorityPair();
-	const operation = input.operation.op === "revise_intent"
-		? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) }
-		: input.operation;
-	const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-	const nextScope = operation.op === "revise_intent"
-		? (operation.next_intent as { scope_hint: string[] }).scope_hint
-		: undefined;
-	const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
-	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
-	// A content-changing revision writes the sidecar before the kernel's drift
-	// check runs; an unstaged write is itself scoped drift and deadlocks the
-	// revision. Mirror the breaking-revision path: stage the written sidecar
-	// (worktree == index) and restore the exact prior state on failure.
-	const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
-	try {
-		if (priorBytes) {
-			writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
-			execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
-				cwd: ctx.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-		}
-		const result = await app.execute({
-			root: ctx.cwd,
-			task_id: input.taskId,
-			operation: operation as never,
-			reviewContractHash: currentReviewContractHash(),
-			prior_intent_token: priorIntent.token,
-			diffProvider: (root: string, record: TaskRecord) =>
-				diffSnapshotOf(root, nextScope ? withNextScope(record, nextScope) : record),
-			now: new Date().toISOString(),
-		});
-		if (operation.op === "freeze_artifacts" || operation.op === "stop")
-			stagePlanningArtifactTransition(
-				ctx.cwd,
-				(result as { record: Parameters<typeof stagePlanningArtifactTransition>[1] }).record,
-			);
-		return result;
-	} catch (error) {
-		if (priorBytes) {
-			const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
-			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision && priorStaged) {
-				restoreStagedIntentShared(ctx.cwd, priorStaged);
-			}
-		}
-		throw error;
-	}
+	return executeOrdinaryKernelOperation({
+		root: ctx.cwd,
+		taskId: input.taskId,
+		operation: input.operation,
+		app,
+		readIntent: readTaskIntentForRecord,
+	});
 }
 
 type AssuranceTaskState = AssuranceProjectionResult["projection"] | { error: string };

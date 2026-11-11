@@ -55,7 +55,7 @@ import {
 	readTaskIntent,
 	withNextScope,
 } from "../kernel/intent";
-import { capabilityActionFor, createCanaryApplication } from "../kernel/canary_application";
+import { capabilityActionFor, createCanaryApplication, type CanaryApplication } from "../kernel/canary_application";
 import {
 	createMutationAuthorityRegistry,
 	digestOfAction,
@@ -107,8 +107,9 @@ import {
 import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
-import { integrateSettledCriticalSlices, advanceNativeParent } from "../unattended/batch_git";
+import { integrateSettledCriticalSlices, advanceNativeParent, observeNativeParent } from "../unattended/batch_git";
 import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
+import { observeParentCompletion } from "../unattended/batch_git";
 import {
 	enrollmentNonce,
 	entryTokenRequestId,
@@ -162,6 +163,51 @@ function readTaskIntentForRecord(root: string, taskId: string) {
 	recoverKernelStoreFollowUps(root, taskId);
 	const record = readTaskRecordRaw(root, taskId).record;
 	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
+}
+
+/** Ordinary Kernel mutation shared by all Hosts; only Intent recovery is injected. */
+export async function executeOrdinaryKernelOperation(input: {
+	root: string;
+	taskId: string;
+	operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string };
+	app: CanaryApplication;
+	readIntent?: (root: string, taskId: string) => ReturnType<typeof readTaskIntent>;
+}) {
+	const { root, taskId, app } = input;
+	const operation = input.operation.op === "revise_intent"
+		? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) }
+		: input.operation;
+	const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
+	const nextScope = operation.op === "revise_intent"
+		? (operation.next_intent as { scope_hint: string[] }).scope_hint
+		: undefined;
+	const sidecar = join(root, priorIntent.intent_ref.path);
+	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+	const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
+	try {
+		if (priorBytes) {
+			writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+			execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+		}
+		const result = await app.execute({
+			root,
+			task_id: taskId,
+			operation: operation as never,
+			reviewContractHash: currentReviewContractHash(),
+			prior_intent_token: priorIntent.token,
+			diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
+			now: new Date().toISOString(),
+		});
+		if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(root, result.record);
+		return result;
+	} catch (error) {
+		if (priorStaged) {
+			const current = await readTaskRecordRaw(root, taskId);
+			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
+				restoreStagedIntentShared(root, priorStaged);
+		}
+		throw error;
+	}
 }
 
 import {
@@ -270,6 +316,13 @@ async function mintCapability(
 
 function throwIfCancelled(signal?: AbortSignal): void {
 	if (signal?.aborted) throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
+
+/** Internal control flow for a read-only native-gate preview, never a user decision. */
+class ConfirmationPreviewSignal extends Error {
+	constructor(readonly input: NativeConfirmationInput) {
+		super("native confirmation preview");
+	}
 }
 
 /** Every Host-specific fact this runtime needs; each adapter's composition root supplies one. */
@@ -889,46 +942,43 @@ export class HostRuntime {
 
 	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
 		const { app } = await this.authority();
-		const operation = input.operation.op === "revise_intent"
-			? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) }
-			: input.operation;
-		const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-		const nextScope = operation.op === "revise_intent"
-			? (operation.next_intent as { scope_hint: string[] }).scope_hint
-			: undefined;
-		const sidecar = join(ctx.cwd, priorIntent.intent_ref.path);
-		const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
-		// A content-changing revision writes the sidecar before the kernel's drift
-		// check runs, so the written sidecar is staged and the exact prior bytes and
-		// index entry are restored, verified, if the revision fails.
-		const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
+		return executeOrdinaryKernelOperation({ root: ctx.cwd, taskId: input.taskId, operation: input.operation, app });
+	}
+
+	/**
+	 * Build the exact native-gate input without accepting, declining or applying
+	 * the operation. Hook-based Hosts use this instead of running a second,
+	 * deliberately-cancelled authorization implementation. Breaking revisions
+	 * still roll their staged sidecar back in the ordinary gate error path.
+	 */
+	private async previewConfirmation(run: () => Promise<unknown>): Promise<NativeConfirmationInput | null> {
+		const previous = this.requestConfirmation;
+		this.requestConfirmation = async (input) => { throw new ConfirmationPreviewSignal(input); };
 		try {
-			if (priorBytes) {
-				writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
-				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
-					cwd: ctx.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-			}
-			const result = await app.execute({
-				root: ctx.cwd,
-				task_id: input.taskId,
-				operation: operation as never,
-				reviewContractHash: currentReviewContractHash(),
-				prior_intent_token: priorIntent.token,
-				diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
-				now: new Date().toISOString(),
-			});
-			if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(ctx.cwd, result.record);
-			return result;
+			await run();
+			return null;
 		} catch (error) {
-			if (priorStaged) {
-				const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
-				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
-					restoreStagedIntentShared(ctx.cwd, priorStaged);
-			}
+			if (error instanceof ConfirmationPreviewSignal) return error.input;
 			throw error;
+		} finally {
+			this.requestConfirmation = previous;
 		}
+	}
+
+	async previewAuthorization(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+	}
+
+	async previewBatchConfirmation(
+		initiativeSlug: string,
+		meta: ToolMeta,
+		options: { plan_source?: "single_task"; max_parallel?: number; final_verification?: string[] } = {},
+	) {
+		return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
+	}
+
+	async previewBatchRetirement(initiativeSlug: string, meta: ToolMeta) {
+		return this.previewConfirmation(() => this.retireStaleBatch(initiativeSlug, meta));
 	}
 
 	async startUnattendedBatch(
@@ -942,10 +992,11 @@ export class HostRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; confirmationPreview?: boolean },
 	): Promise<HostBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
+		const confirmationPreview = options.confirmationPreview === true;
 		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
 		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
 		const probe = this.probeHost();
@@ -984,39 +1035,67 @@ export class HostRuntime {
 			if (confirmed) {
 				const { observation } = confirmed;
 				replayReader = async () => observation;
-				if (["running", "completed"].includes(integrationBatch.batch_state))
+				if (!confirmationPreview && ["running", "completed"].includes(integrationBatch.batch_state))
 					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
 			}
 		}
-		const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+		// A preview must prove completion without the report's tracker and file
+		// writes. An already-complete Parent opens no fresh authorization gate.
+		if (confirmationPreview && !options.plan_source && replayCompleted && integrationBatch?.batch_state === "completed" && integrationBatch.final_verification_result?.passed === true) {
+			try {
+				const confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+				const proof = await observeParentCompletion(this.cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
+				if (proof.complete) return batchReason("confirmation_no_decision");
+			} catch {
+				// The real call owns the terminal-history diagnostic.
+			}
+		}
+		const completed = !confirmationPreview && !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
 		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
+		const nativeParentInput = (effects: { initiative_slug: string; plan_digest: string; children: Array<{ task_id: string; slice_id: string }>; final_commands: string[] }): NativeConfirmationInput => ({
+			operation: "start_unattended_batch",
+			initiativeSlug,
+			toolCallId: meta.toolCallId,
+			planDigest: effects.plan_digest,
+			batchDetails: {
+				initiative_slug: effects.initiative_slug,
+				batch_branch: "",
+				children: effects.children,
+				excluded: [],
+				final_verification: effects.final_commands,
+				parent_final_verification: {},
+			},
+			signal: meta.signal,
+		});
+		if (confirmationPreview && !options.plan_source) {
+			const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
+			if (facts) {
+				const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
+				if (options.final_verification && recordedCommands && JSON.stringify(options.final_verification) !== JSON.stringify(recordedCommands))
+					throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
+				const finalCommands = recordedCommands ?? options.final_verification;
+				if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
+					await this.confirm(nativeParentInput({ initiative_slug: initiativeSlug, plan_digest: facts.plan_digest,
+						children: facts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
+						final_commands: finalCommands }), meta);
+				}
+				return batchReason("confirmation_no_decision");
+			}
+		}
 		const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
 			async (effects) => {
 				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
 				if (reuseOnly) return batchReason("confirmation_port_unavailable");
 				try {
 					manifestChildren = effects.children;
-					const confirmation = await this.confirm({
-						operation: "start_unattended_batch",
-						initiativeSlug,
-						toolCallId: meta.toolCallId,
-						planDigest: effects.plan_digest,
-						batchDetails: {
-							initiative_slug: effects.initiative_slug,
-							batch_branch: "",
-							children: effects.children,
-							excluded: [],
-							final_verification: effects.final_commands,
-							parent_final_verification: {},
-						},
-						signal: meta.signal,
-					}, meta);
+					const confirmation = await this.confirm(nativeParentInput(effects), meta);
 					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 					if (confirmation.decision === "accept") return null;
 					if (confirmation.decision === "cancel") return batchReason("confirmation_cancelled");
 					if (confirmation.decision === "decline") return batchReason("confirmation_declined");
 					return batchReason("confirmation_no_decision");
 				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
 					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
 					if (err instanceof NativeAuthorityError) {
 						if (err.reasonCode === "unsupported_host") throw err;
@@ -1136,6 +1215,7 @@ export class HostRuntime {
 						signal: meta.signal,
 					}, meta);
 				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
 					if (err instanceof NativeAuthorityError) {
@@ -1188,6 +1268,9 @@ export class HostRuntime {
 		});
 		if (authorization.outcome === "host_rejection") return authorization.value;
 		if (authorization.outcome === "rejected") return authorization.rejection;
+		// Reused authorization needs no gate; a preview stops before issuance or
+		// any batch execution just as it does after capturing a fresh gate.
+		if (confirmationPreview) return batchReason("confirmation_no_decision");
 		const { binding, batch_id: batchId } = authorization;
 
 		// review-1: verify cancellation signal right before authority issuance and startBatch
@@ -1309,6 +1392,7 @@ export class HostRuntime {
 						signal: meta.signal,
 					}, meta);
 				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
 					if (meta.signal?.aborted)
 						return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
 					if (err instanceof NativeAuthorityError) {
