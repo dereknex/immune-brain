@@ -152,6 +152,66 @@ describe("herdr-core readiness and Host versions", () => {
 	});
 });
 
+describe("herdr-core viewer tab inside Herdr", () => {
+	type ViewerCall = { cwd: string; label: string; argv: string[]; env?: Record<string, string> };
+	function watched(result: { ok: true } | { ok: false; code: "start_failed"; reason: string } = { ok: true }, extra: Record<string, unknown> = {}, readyTimeoutMs?: number) {
+		const calls: ViewerCall[] = [];
+		const made = subject(extra, { viewer: async (input) => { calls.push(input); return result; }, ...(readyTimeoutMs ? { readyTimeoutMs } : {}) });
+		return { ...made, calls };
+	}
+
+	it("opens one unfocused viewer per new session running hc attach, with the Parent's core selection", async () => {
+		const { port, calls, env } = watched();
+		env.HC_SESSION = "imm-probe";
+		const { port: selected, calls: selectedCalls } = (() => {
+			const seen: ViewerCall[] = [];
+			return { port: createHerdrCoreSessionProvider({ env, pollMs: 10, viewer: async (input) => { seen.push(input); return { ok: true }; } }), calls: seen };
+		})();
+		const created = await port.createSession(INPUT);
+		expect(created).toMatchObject({ ok: true, entry_submitted: true, viewer: { opened: true } });
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toMatchObject({ cwd: "/lanes/slice-a", label: "s1-slice-a (hc t1)", argv: ["hc", "attach", "t1"] });
+		await selected.createSession(INPUT);
+		expect(selectedCalls[0]!.env).toMatchObject({ HC_SESSION: "imm-probe" });
+		if (!created.ok) throw new Error(created.reason);
+		// Resuming does not open a second viewer.
+		await port.createSession({ ...INPUT, resume: created.handle });
+		expect(calls).toHaveLength(1);
+	});
+
+	it("keeps the session when the viewer cannot open, and says why", async () => {
+		const { port } = watched({ ok: false, code: "start_failed", reason: "herdr tab create failed: x" });
+		expect(await port.createSession(INPUT)).toMatchObject({ ok: true, entry_submitted: true, viewer: { opened: false, reason: "herdr tab create failed: x" } });
+	});
+
+	it("points a silent startup at the viewer tab instead of hc attach", async () => {
+		const { port } = watched({ ok: true }, { initial_status: null }, 100);
+		const result = await port.createSession(INPUT);
+		expect(result).toMatchObject({ ok: true, entry_submitted: false, viewer: { opened: true } });
+		if (result.ok) expect(result.attention).toContain("in its viewer tab");
+	});
+
+	it("attaches again only to a session it owns that is still running", async () => {
+		const { port, calls, control } = watched();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		expect(await port.attachSession!(created.handle)).toEqual({ ok: true });
+		expect(calls).toHaveLength(2);
+		expect(await port.attachSession!(control.foreignHandle!())).toMatchObject({ ok: false, code: "not_owned" });
+		control.exit(created.handle);
+		expect(await port.attachSession!(created.handle)).toMatchObject({ ok: false, code: "state_refused" });
+		expect(calls).toHaveLength(2);
+	});
+
+	it("outside Herdr opens nothing and names hc attach", async () => {
+		const { port } = subject({ initial_status: null }, { readyTimeoutMs: 100 });
+		const created = await port.createSession(INPUT);
+		expect(created).not.toHaveProperty("viewer");
+		if (!created.ok) throw new Error(created.reason);
+		expect(await port.attachSession!(created.handle)).toMatchObject({ ok: false, code: "provider_unavailable", reason: expect.stringContaining("hc attach t1") });
+	});
+});
+
 describe("herdr-core admission fails closed", () => {
 	it.each([
 		["an older core", { version: "0.1.18" }, "protocol_mismatch"],

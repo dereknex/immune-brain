@@ -10,7 +10,7 @@ import { join, resolve } from "node:path";
 import { resolveConfig } from "../plugins/immune-brain/runtime/config/layered_config";
 import { EXECUTOR_HOSTS } from "../plugins/immune-brain/runtime/session/supervised_session_port";
 import { runSessionCli } from "../plugins/immune-brain/runtime/session/cli";
-import { createHerdrSessionProvider, herdrAgentName, parseHerdrState } from "../plugins/immune-brain/runtime/session/herdr_provider";
+import { createHerdrSessionProvider, createHerdrViewer, herdrAgentName, parseHerdrState } from "../plugins/immune-brain/runtime/session/herdr_provider";
 import { herdrCalls, herdrSubject } from "./helpers/fake-herdr";
 
 const INPUT = { cwd: "/lanes/slice-a", label: "slice-a", host: "pi" as const, hostArgs: ["--model", "m1"], entry: "/drive slice-a" };
@@ -105,6 +105,27 @@ describe("Herdr adapter command spelling", () => {
 		if (!created.ok) throw new Error(created.reason);
 		control.setState(created.handle, "unknown");
 		expect(await port.awaitTransition(created.handle, { timeoutMs: 2_000 })).toEqual({ ok: true, transition: "changed", state: "unknown", provenance: "none" });
+	});
+});
+
+describe("viewer tab for providers that draw nothing (herdr-core)", () => {
+	it("opens an unfocused tab in the Parent's workspace that runs the command and closes when it ends cleanly", async () => {
+		const { env, stateFile } = subject();
+		expect(createHerdrViewer({ env: { ...env, HERDR_ENV: undefined } })).toBeNull();
+		const viewer = createHerdrViewer({ env })!;
+		expect(await viewer({ cwd: "/lanes/a", label: "a (hc t1)", argv: ["hc", "attach", "t1"], env: { HC_SESSION: "s" } })).toEqual({ ok: true });
+		const calls = herdrCalls(stateFile);
+		expect(calls[0]).toEqual(["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/a", "--label", "a (hc t1)", "--env", "HC_SESSION=s", "--no-focus"]);
+		expect(calls[1]![0]).toBe("pane");
+		expect(calls[1]![1]).toBe("run");
+		expect(calls[1]![3]).toBe("hc attach t1 && exit");
+	});
+
+	it("has no separate viewer for a Herdr session: attach is refused, not faked", async () => {
+		const { port, env } = subject();
+		const created = await port.createSession(INPUT);
+		if (!created.ok) throw new Error(created.reason);
+		expect(JSON.parse((await runSessionCli(["attach", created.handle, "--provider", "herdr"], env)).stdout)).toMatchObject({ ok: false, code: "provider_unavailable" });
 	});
 });
 

@@ -30,7 +30,9 @@ The Executor close rule (#426 S1): the batch runner records the close of an
 integrated child's session in the batch record's `session_closes` at the tick
 that integrates it (`lane_session_close` on `start_unattended_batch` returns
 that record), and `imm-session close --batch` closes only a session that record
-lists. Lanes and branches are not removed. A Lane the runtime creates is
+lists. Lanes and branches are not removed. Inside Herdr, a herdr-core session opens an
+unfocused Herdr tab running `hc attach` so the user can watch it, and
+`imm-session attach` opens another. A Lane the runtime creates is
 reserved in the batch record first, so a tick stopped between creating and
 binding it is resumed rather than parked.
 Two opt-in Lane settings put work in watched Herdr sessions (#426 S4, S2):

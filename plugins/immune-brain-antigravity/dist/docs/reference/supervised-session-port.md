@@ -41,7 +41,7 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `snapshot` | `reconcile`; a mismatch is `unknown` and wakes the user |
 | `manageWorktree` | The Lane's own provisioning (`lane-steward`) |
 | `reportState` | Provider detection only; a provider whose only state source is self-report must declare it in the admission matrix |
-| `attachSession` | No effect on Parent scheduling |
+| `attachSession` | No effect on Parent scheduling; `imm-session attach` refuses with `provider_unavailable` |
 | `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
 `structuredResult` is reserved and unfilled: verdicts return through the file protocol, and a provider that fills it is refused.
@@ -61,6 +61,7 @@ imm-session <verb> --provider herdr|herdr-core [options]
   observe <handle>
   run --cwd <dir> --label <name> [--env KEY=VALUE]... -- <command> [args...]
   read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
+  attach <handle>
   stop <handle>
   close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]
   reconcile <handle>...
@@ -102,7 +103,7 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 
 | Port | `hc` command | Note |
 | --- | --- | --- |
-| `createSession` | `<host> --version`, then `run --bg --json --no-parent --name <name> --cwd <lane> --label imm-session=<token> -- [env K=V...] <host> <args>`, then `get` until the Host's first report, then `send <t> <entry> --if idle` | The Host must be at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, else `provider_unavailable` and nothing starts. A first report of `blocked` returns `entry_submitted: false`; no report within 30 s keeps the terminal and returns `entry_submitted: false`, state `unknown` and an `attention` text naming `hc attach <address>` (Claude Code 2.1.322 shows workspace trust that way); after the user answers, `resume` submits the entry. The name is the label folded to core's `a-z 0-9 - _`. `resume` of a finished terminal is `state_refused`: core cannot restart it in place |
+| `createSession` | `<host> --version`, then `run --bg --json --no-parent --name <name> --cwd <lane> --label imm-session=<token> -- [env K=V...] <host> <args>`, then `get` until the Host's first report, then `send <t> <entry> --if idle` | The Host must be at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, else `provider_unavailable` and nothing starts. A first report of `blocked` returns `entry_submitted: false`; no report within 30 s keeps the terminal and returns `entry_submitted: false`, state `unknown` and an `attention` text pointing at the viewer tab, or naming `hc attach <address>` outside Herdr (Claude Code 2.1.322 shows workspace trust that way); after the user answers, `resume` submits the entry. The name is the label folded to core's `a-z 0-9 - _`. `resume` of a finished terminal is `state_refused`: core cannot restart it in place |
 | `sendInstruction` | `send <t> <text> --if idle` when observed `idle`; plain `send <t> <text>` when observed `done`, because `--if` cannot name `done` | Core itself refuses `blocked` (and, with `--if idle`, any other state) and sends nothing. The `done` case keeps a check-then-act race against a turn starting in between. `--force`, which may answer a dialog, is never sent |
 | `awaitTransition` | `wait <t> [--timeout <seconds>]` | `reason` `exit` is `exited`; `timeout` is `timeout` when the Parent set a bound, otherwise core's own 180-second check-in and the wait continues; a `message` to a waiting Parent also continues |
 | `readOutput` | `read <t> --lines 0` (visible) or `--lines 200` (scrollback) | |
@@ -111,7 +112,8 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 | `closeSession` | `kill <t>` when live, then `rm <t>` | |
 | `reconcile` | `get` per owned handle | |
 | `sendKeys` | `keys <t> <key>` | |
-| `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState`, `attachSession` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
+| `attachSession` | Inside Herdr: `hc attach <t>` in a new unfocused Herdr tab in the Parent's workspace, opened by the Herdr adapter (`herdr tab create ... --no-focus`, `herdr pane run <pane> "hc attach <t> && exit"`) | Core draws nothing, and `hc attach` takes over the terminal that runs it, so it never runs in the Parent's own. A new session gets one viewer before its first status poll, so a startup dialog shows there; the result carries `viewer: { opened }`, and a viewer that fails to open never fails the session. `HC_SESSION` and the `XDG_*` directories are passed to the tab so it reaches the same core. Outside Herdr nothing opens and the refusal names `hc attach <t>` for another terminal; the Herdr provider has no separate viewer, its sessions are already tabs |
+| `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
 | `reportState` | Not applicable | The Host reports OSC 7501 itself |
 
 ## Admission matrix

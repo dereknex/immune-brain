@@ -265,6 +265,10 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
   - “没有活跃 claim”是 Kernel 事实，不是缺 TaskIntent。
   - `herdr` 上的 `attention` 在用户回答后，先问用户 entry 是否已被 Host 接收，再决定是否重发。
 
+### herdr-core 的观看 tab（新增）
+
+core 不画任何界面，而 `hc attach` 会把执行它的终端接到 session 上；若由 `imm-session` 直接执行，被接管的就是 Parent 自己的终端。现在在 Herdr 内创建 core session 时，Herdr adapter 会在 Parent 的 workspace 里开一个不抢焦点的 tab，运行 `hc attach <address> && exit`。这一步在第一次轮询状态之前完成，所以启动对话框会直接显示在这个 tab 里。tab 会带上 `HC_SESSION` 与 `XDG_*`，保证连到同一个 core。结果里带 `viewer: { opened }`；tab 开不出来不影响 session 本身。`imm-session attach <handle> --provider herdr-core` 可以再开一个。在 Herdr 外不开任何 tab，提示改为在另一个终端执行 `hc attach`。测试：`tests/supervised-session-herdr-core.test.ts`“herdr-core viewer tab inside Herdr”，以及 `tests/supervised-session-herdr.test.ts` 的 viewer 拼写。未经实测：`hc attach` 在 Herdr pane 里的显示与退出行为。
+
 ### 仍需实测
 
 R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显式 `-e` 加已安装 package），以及 F1 的 `attention` 在 Herdr 登录框下的真实表现。

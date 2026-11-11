@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import { createHerdrCoreSessionProvider } from "./herdr_core_provider";
 import { extractMarkedResult } from "./marked_result";
-import { createHerdrSessionProvider } from "./herdr_provider";
+import { createHerdrSessionProvider, createHerdrViewer } from "./herdr_provider";
 import {
 	admitSessionProvider,
 	EXECUTOR_HOSTS,
@@ -30,7 +30,7 @@ export interface CliOutcome {
 	returncode: number;
 }
 
-export const SESSION_VERBS = ["probe", "create", "run", "send", "await", "observe", "read", "stop", "close", "reconcile"] as const;
+export const SESSION_VERBS = ["probe", "create", "run", "send", "await", "observe", "read", "attach", "stop", "close", "reconcile"] as const;
 
 const USAGE = [
 	"imm-session <verb> --provider herdr|herdr-core [options]",
@@ -41,6 +41,7 @@ const USAGE = [
 	"  await <handle>... [--timeout-ms <ms>]   (several handles: the first transition, with its handle)",
 	"  observe <handle>",
 	"  read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]",
+	"  attach <handle>   (herdr-core inside Herdr: opens another unfocused tab watching the session)",
 	"  stop <handle>",
 	"  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]",
 	"  reconcile <handle>...",
@@ -48,7 +49,8 @@ const USAGE = [
 
 export function resolveSessionProvider(name: string | undefined, env: Record<string, string | undefined>): SupervisedSessionPort | Refusal {
 	if (name === "herdr") return createHerdrSessionProvider({ env });
-	if (name === "herdr-core") return createHerdrCoreSessionProvider({ env });
+	// Inside Herdr, a core session gets an unfocused viewer tab; `hc attach` would take over the caller's terminal.
+	if (name === "herdr-core") return createHerdrCoreSessionProvider({ env, viewer: createHerdrViewer({ env }) ?? undefined });
 	return refuse("invalid_input", `unknown session provider ${JSON.stringify(name ?? "")}; name one explicitly (herdr, herdr-core); there is no fallback`);
 }
 
@@ -210,6 +212,12 @@ export async function runSessionCli(
 			// `result` is the advisory child's marked result; null means result_untrusted.
 			if (extract && read.ok) return emit({ ...read, result: extractMarkedResult(read.text) });
 			return emit(read);
+		}
+		case "attach": {
+			const bad = needHandle();
+			if (bad) return bad;
+			if (!provider.attachSession) return emit(refuse("provider_unavailable", `${provider.provider} has no separate viewer; its sessions already show in their own tab`, handle));
+			return emit(await provider.attachSession(handle));
 		}
 		case "stop": {
 			const bad = needHandle();

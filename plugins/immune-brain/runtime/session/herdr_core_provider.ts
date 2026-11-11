@@ -30,7 +30,9 @@ import {
 	type Refusal,
 	type SessionHandle,
 	type SessionState,
+	type SessionViewer,
 	type SupervisedSessionPort,
+	type ViewerResult,
 } from "./supervised_session_port";
 
 export const HERDR_CORE_MIN_VERSION: [number, number, number] = [0, 1, 19];
@@ -72,7 +74,12 @@ export interface HerdrCoreProviderOptions {
 	readyTimeoutMs?: number;
 	pollMs?: number;
 	sleep?: (ms: number) => Promise<void>;
+	/** Opens a tab the user can watch a session in; absent outside Herdr. */
+	viewer?: SessionViewer;
 }
+
+/** Variables that choose which core `hc` talks to; a viewer tab needs the Parent's. */
+export const HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"] as const;
 
 interface CoreIds { address: string; token: string }
 
@@ -163,6 +170,14 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 		return coreState(pick(json, ["status"]));
 	};
 
+	const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap(key => (options.env[key] ? [[key, options.env[key]!]] : [])));
+	/** Core draws nothing; `hc attach` would take over the caller's own terminal, so it runs in a new unfocused tab. */
+	const openViewer = async (address: string, name: string, cwd: string): Promise<ViewerResult> => {
+		if (!options.viewer) return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
+		const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
+		return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
+	};
+
 	const hostVersionRefusal = async (host: ExecutorHostKind): Promise<Refusal | null> => {
 		const { binary, version } = HOST_STATUS_MINIMUM[host];
 		const result = await exec(binary, ["--version"]);
@@ -228,6 +243,9 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const address = pick(parseJson(started.stdout), ["address"]);
 			if (typeof address !== "string" || !address) return refuse("start_failed", "hc run returned no address");
 			const handle = encodeHerdrCoreHandle({ address, token });
+			// Open the viewer before anything can need the user: a startup dialog shows there.
+			const viewer = options.viewer ? await openViewer(address, herdrCoreName(input.label), input.cwd) : undefined;
+			const shown = viewer ? { viewer } : {};
 			// Wait for the Host's first status report; before it, core cannot tell idle from a dialog.
 			const deadline = Date.now() + readyTimeoutMs;
 			for (;;) {
@@ -235,11 +253,11 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 				if (isRefusal(found)) return { ...found, handle };
 				if (pick(found.terminal, ["state"]) === "finished") return refuse("start_failed", "the Executor Host exited before it reported a status", handle);
 				const current = observed(found.terminal);
-				if (current.state === "blocked") return { ok: true, handle, entry_submitted: false, ...current };
+				if (current.state === "blocked") return { ok: true, handle, entry_submitted: false, ...current, ...shown };
 				if (current.state === "idle") {
 					const after = await send(handle, address, input.entry, "idle");
 					if (isRefusal(after)) return after;
-					return { ok: true, handle, entry_submitted: true, ...after };
+					return { ok: true, handle, entry_submitted: true, ...after, ...shown };
 				}
 				if (Date.now() >= deadline) {
 					// Silence is observed, not a dialog guessed: Claude Code 2.1.322 shows its
@@ -247,7 +265,8 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 					// the user can look and answer; `--resume` then submits the entry.
 					return {
 						ok: true, handle, entry_submitted: false, state: "unknown", provenance: "none",
-						attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look with \`hc attach ${address}\`, answer it there, then resume this session.`,
+						attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
+						...shown,
 					};
 				}
 				await sleep(pollMs);
@@ -304,6 +323,16 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
 			return { ok: true, ...observed(found.terminal) };
+		},
+		/** Opens another viewer tab, for instance after the user closed the first one. */
+		async attachSession(handle) {
+			const found = await owned(handle);
+			if (isRefusal(found)) return found;
+			if (pick(found.terminal, ["state"]) === "finished") return refuse("state_refused", "the session's terminal finished; there is nothing to watch", handle);
+			const name = String(pick(found.terminal, ["name"]) ?? "lane");
+			const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
+			const viewer = await openViewer(found.ids.address, name, cwd);
+			return viewer.opened ? { ok: true } : refuse("provider_unavailable", viewer.reason, handle);
 		},
 		async stopSession(handle) {
 			const found = await owned(handle);

@@ -40,6 +40,7 @@ import {
 	type SessionState,
 	type SupervisedSessionPort,
 	type CreateSessionResult,
+	type SessionViewer,
 } from "./supervised_session_port";
 
 /** Herdr socket protocol versions this adapter is pinned to (Herdr TUI 0.9.x). */
@@ -97,6 +98,28 @@ export interface HerdrProviderOptions {
 
 export function defaultHerdrExec(env: Record<string, string | undefined>): HerdrExec {
 	return (args, signal) => runCommand(env, "herdr", args, signal);
+}
+
+/**
+ * A viewer for providers that draw nothing themselves (herdr-core): a new tab
+ * in the Parent's workspace, opened without focus, whose shell runs the viewing
+ * command and closes the tab when it ends cleanly. Null outside Herdr.
+ */
+export function createHerdrViewer(options: HerdrProviderOptions): SessionViewer | null {
+	const workspace = options.env.HERDR_WORKSPACE_ID;
+	if (options.env.HERDR_ENV !== "1" || !workspace) return null;
+	const exec = options.exec ?? defaultHerdrExec(options.env);
+	return async ({ cwd, label, argv, env }) => {
+		if (argv.length === 0) return refuse("invalid_input", "argv is empty");
+		const created = await exec(HERDR_CLI.tabCreate(workspace, cwd, label, env));
+		if (created.missing) return refuse("provider_unavailable", "the herdr executable is not on PATH");
+		if (created.code !== 0) return refuse("start_failed", `herdr tab create failed: ${failure(created)}`);
+		const pane = pick(parseJson(created.stdout), ["result", "root_pane", "pane_id"]);
+		if (typeof pane !== "string" || !pane) return refuse("start_failed", "herdr tab create returned no result.root_pane.pane_id");
+		const ran = await exec(HERDR_CLI.paneRun(pane, `${argv.map(shellWord).join(" ")} && exit`));
+		if (ran.code !== 0) return refuse("start_failed", `herdr pane run failed: ${failure(ran)}`);
+		return { ok: true };
+	};
 }
 
 interface HerdrIds { workspace: string; tab: string; pane: string; token: string }

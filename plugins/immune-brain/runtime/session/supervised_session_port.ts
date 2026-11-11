@@ -69,7 +69,18 @@ export interface CreateSessionInput {
  * its entry: a dialog, or a Host that has not reported yet. `attention` says
  * what the provider observed and how the user can look at the session.
  */
-export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean; attention?: string } & Observation) | Refusal;
+export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean; attention?: string; viewer?: ViewerResult } & Observation) | Refusal;
+
+/** Whether a provider without a screen of its own opened a tab the user can watch the session in. */
+export type ViewerResult = { opened: true } | { opened: false; reason: string };
+
+/**
+ * Opens, without taking focus, a tab in the Parent's workspace that runs one
+ * viewing command (such as `hc attach <address>`). Not waited on, not a
+ * session, and never a source of state. Supplied by the Herdr adapter, the
+ * only module that spawns `herdr`.
+ */
+export type SessionViewer = (input: { cwd: string; label: string; argv: string[]; env?: Record<string, string> }) => Promise<StopResult>;
 export type ObserveResult = ({ ok: true } & Observation) | Refusal;
 export type InstructionResult = ({ ok: true } & Observation) | Refusal;
 /**
