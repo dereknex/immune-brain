@@ -51,12 +51,8 @@ export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
-	/**
-	 * The Host session the admission belongs to, when the Host names it outright.
-	 * Claude binds its session through the Hook correlation file instead, so it
-	 * stays absent there; Antigravity names the conversation (D5).
-	 */
-	session_id?: string | null;
+	/** The Hook session the admission was recorded under; it becomes the run's Hook session. */
+	session_id: string;
 }
 
 /** Where the phase entry gate keeps its private files and finds user aliases. */
@@ -264,5 +260,5 @@ export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, r
 	let state: PhaseEntryState | null = null;
 	try { state = readPhaseEntryState(first.session_id, root); } catch { /* an unreadable store refuses */ }
 	if (!state?.run_live || state.token !== first.entry_token) return false;
-	return { entry_token: state.token, workspace: state.workspace };
+	return { entry_token: state.token, workspace: state.workspace, session_id: first.session_id };
 }

@@ -19845,20 +19845,20 @@ function createMcpRuntime(profile, options = {}) {
   const consumeAdmission = options.consumePhaseAdmission ?? ((toolCallId, operation) => profile.consumePhaseAdmission(toolCallId, operation));
   const sessionProbe = options.probeHost ?? profile.probeHost;
   const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
-  const unversionedHostReason = () => {
-    const probe = probeNegotiatedHost(undefined);
-    return probe.ok ? "host version is unavailable" : probe.reason;
+  const requireTrustedHost = (needsInteraction) => {
+    const probe = probeNegotiatedHost();
+    if (!probe.ok)
+      throw new NativeAuthorityError("unsupported_host", probe.reason);
+    if (needsInteraction && !negotiatedInteractive)
+      throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
   };
   let hookSessionId = null;
-  const requireRunEntry = (operation, toolCallId, workspace, admissionId = toolCallId) => {
-    const correlated = profile.readRunToolSession(toolCallId, operation, workspace);
-    if (!options.consumePhaseAdmission && !correlated)
-      throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
+  const requireRunEntry = (operation, workspace, admissionId) => {
     const grant = consumeAdmission(admissionId, operation);
     if (!grant)
       throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-    hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
-    if (grant === true || !grant.entry_token)
+    hookSessionId = grant.session_id;
+    if (!grant.entry_token)
       return;
     let current = null;
     try {
@@ -19867,6 +19867,22 @@ function createMcpRuntime(profile, options = {}) {
     if (!current || grant.workspace !== current)
       throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
     return grant.entry_token;
+  };
+  const gatedToolMeta = (name, initiativeSlug, workspace, meta) => {
+    requireTrustedHost(true);
+    const toolCallId = meta.toolCallId ?? `call-${name}`;
+    const entryToken = requireRunEntry(name, workspace, meta.admissionId ?? toolCallId);
+    return {
+      sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+      toolCallId,
+      ...meta.admissionId ? { admissionId: meta.admissionId } : {},
+      workspace,
+      taskId: initiativeSlug,
+      initiativeSlug,
+      ...entryToken ? { entryToken } : {},
+      interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+      signal: meta.signal
+    };
   };
   const refuseSuppliedAuthority = (args) => {
     if ("native_decision" in args)
@@ -19922,27 +19938,7 @@ function createMcpRuntime(profile, options = {}) {
           return batchReason("batch_entry_ambiguous");
         const initiativeSlug = task || initiative;
         refuseSuppliedAuthority(args);
-        if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-        if (!negotiatedInteractive) {
-          throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-        }
-        const probe = probeNegotiatedHost();
-        if (!probe.ok)
-          throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const toolCallId = meta.toolCallId ?? `call-${name}`;
-        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-        const toolMeta = {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId,
-          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
-          workspace,
-          taskId: initiativeSlug,
-          initiativeSlug,
-          ...entryToken ? { entryToken } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        };
+        const toolMeta = gatedToolMeta(name, initiativeSlug, workspace, meta);
         const laneOffers = parseLaneOffers(args.lane_offers);
         const laneInstruction = parseLaneInstruction(args.lane_instruction);
         const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
@@ -19966,28 +19962,7 @@ function createMcpRuntime(profile, options = {}) {
         if (!initiativeSlug)
           throw new Error("initiative_slug is required");
         refuseSuppliedAuthority(args);
-        if (!negotiatedVersion)
-          throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-        if (!negotiatedInteractive) {
-          throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-        }
-        const probe = probeNegotiatedHost();
-        if (!probe.ok)
-          throw new NativeAuthorityError("unsupported_host", probe.reason);
-        const toolCallId = meta.toolCallId ?? `call-${name}`;
-        const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-        const toolMeta = {
-          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-          toolCallId,
-          ...meta.admissionId ? { admissionId: meta.admissionId } : {},
-          workspace,
-          taskId: initiativeSlug,
-          initiativeSlug,
-          ...entryToken ? { entryToken } : {},
-          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-          signal: meta.signal
-        };
-        return runtime.retireStaleBatch(initiativeSlug, toolMeta);
+        return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -20000,14 +19975,7 @@ function createMcpRuntime(profile, options = {}) {
         const warnings = Array.isArray(result.warnings) ? result.warnings : [];
         return { ...result, warnings: [...warnings, { code: "plugin_bundle_stale", paths: [bundle.path], message: `${staleBundleMessage()}; authority calls refuse until the immune-brain MCP server is reconnected` }] };
       }
-      if (!negotiatedVersion)
-        throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-      if (!negotiatedInteractive && name !== "repair_authority_state") {
-        throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-      }
-      const probe = probeNegotiatedHost();
-      if (!probe.ok)
-        throw new NativeAuthorityError("unsupported_host", probe.reason);
+      requireTrustedHost(name !== "repair_authority_state");
       const toolMeta = {
         sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
         toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -21949,7 +21917,7 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir7()) {
   } catch {}
   if (!state?.run_live || state.token !== first.entry_token)
     return false;
-  return { entry_token: state.token, workspace: state.workspace };
+  return { entry_token: state.token, workspace: state.workspace, session_id: first.session_id };
 }
 
 // plugins/immune-brain/runtime/claude/run_continuation.ts
