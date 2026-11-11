@@ -52,8 +52,8 @@ export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
-	/** The Host conversation the admission belongs to, when the Host names it outright (D5). */
-	session_id?: string | null;
+	/** The Hook session the admission was recorded under; it becomes the run's Hook session (D5). */
+	session_id: string;
 }
 
 /** One `tools/call`'s Host identity: the display/audit call id and the admission key. */
@@ -63,27 +63,61 @@ export interface HostCallIdentity {
 }
 
 /** What only a Host knows about its MCP connection; each adapter's composition root supplies one. */
-export interface McpHostProfile {
+export type McpHostProfile = McpHostProfileBase & McpHostCallIdentity & McpHostConfirmation;
+
+/**
+ * How one `tools/call` names its Host call: either one `_meta` key carries the
+ * call id, which is also the admission key, or the Host's own identity rule
+ * (D4) derives both. A Host supplies exactly one of them.
+ */
+type McpHostCallIdentity =
+	| {
+		/** The `_meta` key carrying this Host's tool-call id. */
+		readonly toolCallIdMetaKey: string;
+		readonly resolveHostCall?: undefined;
+	}
+	| {
+		readonly toolCallIdMetaKey?: undefined;
+		/**
+		 * D4: the Host's identity rule for one `tools/call`, when the call id alone
+		 * is not the admission key. `undefined` means the call names no Host
+		 * session, so a privileged call refuses.
+		 */
+		readonly resolveHostCall: (operation: string, meta: Record<string, unknown> | undefined, messageId: string | number | null) => HostCallIdentity | undefined;
+	};
+
+/**
+ * How a literal-user confirmation opens: a Host-native port (e.g. Antigravity's
+ * `PreToolUse` `force_ask` grant consumer, ADR 0004), or server-initiated MCP
+ * `elicitation/create`, which alone can be rejected by the Host.
+ */
+type McpHostConfirmation =
+	| {
+		/**
+		 * When present, `initialize` treats a trusted versioned client as
+		 * interactive without requiring MCP `capabilities.elicitation`, and
+		 * `serveStdio` preserves this port instead of binding `elicitation/create`.
+		 */
+		readonly requestConfirmation: NativeConfirmationPort;
+		readonly elicitationRejectedRefusal?: undefined;
+	}
+	| {
+		readonly requestConfirmation?: undefined;
+		/** The refusal when the Host rejects `elicitation/create`. */
+		readonly elicitationRejectedRefusal: string;
+	};
+
+interface McpHostProfileBase {
 	/** The `serverInfo` this server answers `initialize` with, and the Host floor it reports. */
 	readonly serverInfo: { name: string; minimumHostVersion: string };
 	/** The Host-adapter contract this server answers `initialize` with. */
 	readonly contract: string;
 	/** Client names whose `initialize` handshake may bind a trusted host version. */
 	readonly trustedClientNames: ReadonlyArray<string>;
-	/** The `_meta` key carrying this Host's tool-call id. */
-	readonly toolCallIdMetaKey: string;
 	/** The refusal when a privileged call carries no tool-call id. */
 	readonly correlationMissingRefusal: string;
-	/**
-	 * D4: the Host's identity rule for one `tools/call`, when the call id alone is
-	 * not the admission key. Absent, `toolCallIdMetaKey` names both. `undefined`
-	 * means the call names no Host session, so a privileged call refuses.
-	 */
-	readonly resolveHostCall?: (operation: string, meta: Record<string, unknown> | undefined, messageId: string | number | null) => HostCallIdentity | undefined;
-	/** The refusal when the connected client offers no interactive elicitation. */
+	/** The refusal when the connected client offers no interactive confirmation. */
 	readonly elicitationUnavailableRefusal: string;
-	/** The refusal when the Host rejects `elicitation/create`. */
-	readonly elicitationRejectedRefusal: string;
 	/** The Host probe; the shared runtime never selects one. */
 	readonly probeHost: HostRuntimeProfile["probeHost"];
 	/** The adapter's AssuranceHostPort, built when the runtime needs its default. */
@@ -91,21 +125,13 @@ export interface McpHostProfile {
 	/** Builds this adapter's runtime; the MCP server never names an adapter class. */
 	readonly createRuntime: (options: HostRuntimeOptions) => HostRuntime;
 	/** Takes the admission the PreToolUse hook wrote for one gated call. */
-	readonly consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant | null;
-	/** The Hook session correlated with one gated call in this workspace. */
+	readonly consumePhaseAdmission: (toolCallId: string, operation: GatedTool) => PhaseAdmissionGrant | false | null;
+	/** The Hook session correlated with one tool call in this workspace, for run continuation. */
 	readonly readRunToolSession: (toolCallId: string, operation: string, workspace: string) => string | null;
 	/** Runs this Host's `--hook` entry. */
 	readonly dispatchHook: () => Promise<void>;
 	/** This adapter module's own bundle, watched for staleness. */
 	readonly bundlePath: string;
-	/**
-	 * Optional Host-native confirmation port (e.g. Antigravity's `PreToolUse`
-	 * `force_ask` grant consumer, ADR 0004). When present, `initialize` treats a
-	 * trusted versioned client as interactive without requiring MCP
-	 * `capabilities.elicitation`, and `serveStdio` preserves this port instead of
-	 * binding server-initiated `elicitation/create`.
-	 */
-	readonly requestConfirmation?: NativeConfirmationPort;
 }
 
 export const TOOLS = [
@@ -220,9 +246,9 @@ export interface McpRuntimeOptions {
 	/**
 	 * Takes the admission the PreToolUse hook wrote for one
 	 * `start_unattended_batch` or `retire_stale_batch` call. Defaults to the
-	 * profile's private file store. `true` is an admission without an entry token.
+	 * profile's private file store.
 	 */
-	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => boolean | PhaseAdmissionGrant | null;
+	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => PhaseAdmissionGrant | false | null;
 	/** The startup identity of this server's own bundle; defaults to the profile's module file. */
 	bundleIdentity?: BundleIdentityWatch;
 	/** Client names whose `initialize` handshake may bind a trusted host version; defaults to the profile's. */
@@ -316,32 +342,49 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 	// the injected probe's own reason.
 	const sessionProbe = options.probeHost ?? profile.probeHost;
 	const probeNegotiatedHost = (version = negotiatedVersion) => sessionProbe({}, process.platform, version);
-	const unversionedHostReason = (): string => {
-		const probe = probeNegotiatedHost(undefined);
-		return probe.ok ? "host version is unavailable" : probe.reason;
+	/** Trusted Host evidence first, then the native interaction capability when the tool needs one. */
+	const requireTrustedHost = (needsInteraction: boolean): void => {
+		const probe = probeNegotiatedHost();
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		if (needsInteraction && !negotiatedInteractive)
+			throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
 	};
 	// The phase entry gate, before any preparation or native dialog. The hook
 	// decided on the session's literal entry; no admission for this exact call
-	// means no hook saw it, which refuses. ADR 0025: the admission carries the
-	// session's entry token, which stands in for the native gate only in the
-	// workspace the token was minted for.
+	// means no hook saw it, which refuses. The admission is single-use and bound
+	// to its call, operation, Hook session and live entry, so it is this call's
+	// session correlation on every Host. ADR 0025: its entry token stands in for
+	// the native gate only in the workspace the token was minted for; a token-less
+	// admission still needs the native gate.
 	let hookSessionId: string | null = null;
-	const requireRunEntry = (operation: GatedTool, toolCallId: string, workspace: string, admissionId = toolCallId): string | undefined => {
-		const correlated = profile.readRunToolSession(toolCallId, operation, workspace);
-		if (!options.consumePhaseAdmission && !correlated)
-			throw new NativeAuthorityError("run_entry_required", "A gated call needs exact Hook session and workspace correlation");
+	const requireRunEntry = (operation: GatedTool, workspace: string, admissionId: string): string | undefined => {
 		const grant = consumeAdmission(admissionId, operation);
 		if (!grant) throw new NativeAuthorityError("run_entry_required", `${operation} needs a literal-user drive entry in this session`);
-		// D5: admission identity and the display/audit call id are separate. An
-		// admission that names its own conversation makes that conversation this
-		// run's Hook session, not the transport connection.
-		hookSessionId = correlated ?? (grant === true ? null : grant.session_id ?? null) ?? hookSessionId;
-		if (grant === true || !grant.entry_token) return undefined;
+		// D5: the admission's own session is this run's Hook session, not the transport connection.
+		hookSessionId = grant.session_id;
+		if (!grant.entry_token) return undefined;
 		let current: string | null = null;
 		try { current = realpathSync(workspace); } catch { /* an unresolvable workspace refuses */ }
 		if (!current || grant.workspace !== current)
 			throw new NativeAuthorityError("run_entry_required", `${operation} runs in a workspace other than the one drive was entered in`);
 		return grant.entry_token;
+	};
+	/** The shared gate of `start_unattended_batch` and `retire_stale_batch`: Host evidence, then the run entry. */
+	const gatedToolMeta = (name: GatedTool, initiativeSlug: string, workspace: string, meta: Partial<ToolMeta>): ToolMeta => {
+		requireTrustedHost(true);
+		const toolCallId = meta.toolCallId ?? `call-${name}`;
+		const entryToken = requireRunEntry(name, workspace, meta.admissionId ?? toolCallId);
+		return {
+			sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+			toolCallId,
+			...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
+			workspace,
+			taskId: initiativeSlug,
+			initiativeSlug,
+			...(entryToken ? { entryToken } : {}),
+			interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+			signal: meta.signal,
+		};
 	};
 	const refuseSuppliedAuthority = (args: Record<string, unknown>) => {
 		if ("native_decision" in args) throw new Error("native_decision cannot be supplied in tool arguments");
@@ -389,25 +432,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				if (!!initiative === !!task) return batchReason("batch_entry_ambiguous");
 				const initiativeSlug = task || initiative;
 				refuseSuppliedAuthority(args);
-				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-				if (!negotiatedInteractive) {
-					throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-				}
-				const probe = probeNegotiatedHost();
-				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const toolCallId = meta.toolCallId ?? `call-${name}`;
-				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-				const toolMeta: ToolMeta = {
-					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId,
-					...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
-					workspace,
-					taskId: initiativeSlug,
-					initiativeSlug,
-					...(entryToken ? { entryToken } : {}),
-					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-					signal: meta.signal,
-				};
+				const toolMeta = gatedToolMeta(name, initiativeSlug, workspace, meta);
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
@@ -431,26 +456,7 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				const initiativeSlug = String(args.initiative_slug ?? "");
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
 				refuseSuppliedAuthority(args);
-				if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-				if (!negotiatedInteractive) {
-					throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-				}
-				const probe = probeNegotiatedHost();
-				if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
-				const toolCallId = meta.toolCallId ?? `call-${name}`;
-				const entryToken = requireRunEntry(name, toolCallId, workspace, meta.admissionId ?? toolCallId);
-				const toolMeta: ToolMeta = {
-					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
-					toolCallId,
-					...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
-					workspace,
-					taskId: initiativeSlug,
-					initiativeSlug,
-					...(entryToken ? { entryToken } : {}),
-					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
-					signal: meta.signal,
-				};
-				return runtime.retireStaleBatch(initiativeSlug, toolMeta);
+				return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
 			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
@@ -465,15 +471,9 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 			}
 			// The environment version fallback is disabled on this connection:
 			// only a version bound from the trusted initialize handshake may
-			// reach authority-mutating tools.
-			if (!negotiatedVersion) throw new NativeAuthorityError("unsupported_host", unversionedHostReason());
-			// Automatic stale-claim repair is deterministic and needs no native
-			// interaction; other mutations retain the Host capability requirement.
-			if (!negotiatedInteractive && name !== "repair_authority_state") {
-				throw new NativeAuthorityError("unsupported_host", profile.elicitationUnavailableRefusal);
-			}
-			const probe = probeNegotiatedHost();
-			if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+			// reach authority-mutating tools. Automatic stale-claim repair is
+			// deterministic and needs no native interaction.
+			requireTrustedHost(name !== "repair_authority_state");
 			const toolMeta: ToolMeta = {
 				sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
 				toolCallId: meta.toolCallId ?? `call-${name}`,
@@ -639,6 +639,8 @@ export async function handleJsonRpc(message: JsonRpc, mcp: McpRuntime): Promise<
 		try {
 			const name = String(params.name ?? "");
 			const interactive = mcp.sessionInteractive();
+			// An untrusted or non-interactive client is refused as such before its
+			// call identity is judged, so the refusal names the actual cause.
 			if (isPrivilegedOperation(name) && !interactive) {
 				throw new NativeAuthorityError("unsupported_host", mcp.profile.elicitationUnavailableRefusal);
 			}

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
@@ -158,7 +158,7 @@ describe("Antigravity Harness Conformance", () => {
 			expect(isPrivilegedOperation("status")).toBe(false);
 		});
 
-		it("intercepts privileged MCP tool calls with force_ask when not admitted", () => {
+		it("denies privileged MCP tool calls outright when not admitted", () => {
 			const result = antigravityPreToolUseHook({
 				conversationId: "conv-gate-1",
 				toolCall: {
@@ -167,7 +167,7 @@ describe("Antigravity Harness Conformance", () => {
 				},
 			});
 
-			expect(result.decision).toBe("force_ask");
+			expect(result.decision).toBe("deny");
 			expect(result.reason).toContain("run_entry_required");
 		});
 
@@ -184,37 +184,43 @@ describe("Antigravity Harness Conformance", () => {
 		});
 
 		it("records /drive in PreInvocation hook and gates admission on stepIdx", () => {
-			const res = antigravityPreInvocationHook({
-				conversationId: "conv-drive-1",
-				lastUserInput: "/drive task-999",
-			});
+			// A private store: the real OS temp directory is the Host's own state.
+			const root = mkdtempSync(join(tmpdir(), "drive-entry-store-"));
+			try {
+				const res = antigravityPreInvocationHook({
+					conversationId: "conv-drive-1",
+					lastUserInput: "/drive task-999",
+				}, { root, home: root });
 
-			expect(res.injectSteps).toBeDefined();
+				expect(res.injectSteps).toBeDefined();
 
-			const state = readPhaseEntryState("conv-drive-1");
-			expect(state?.run_live).toBe(true);
+				const state = readPhaseEntryState("conv-drive-1", root);
+				expect(state?.run_live).toBe(true);
 
-			// PreToolUse with stepIdx succeeds and records admission
-			const admitted = antigravityPreToolUseHook({
-				conversationId: "conv-drive-1",
-				stepIdx: 42,
-				toolCall: {
-					name: "mcp__immune-brain__start_unattended_batch",
-					args: { taskId: "task-999" },
-				},
-			});
-			expect(admitted.decision).toBe("allow");
+				// PreToolUse with stepIdx succeeds and records admission
+				const admitted = antigravityPreToolUseHook({
+					conversationId: "conv-drive-1",
+					stepIdx: 42,
+					toolCall: {
+						name: "mcp__immune-brain__start_unattended_batch",
+						args: { taskId: "task-999" },
+					},
+				}, { root });
+				expect(admitted.decision).toBe("allow");
 
-			// PreToolUse missing stepIdx fails closed
-			const missingStep = antigravityPreToolUseHook({
-				conversationId: "conv-drive-1",
-				toolCall: {
-					name: "mcp__immune-brain__start_unattended_batch",
-					args: { taskId: "task-999" },
-				},
-			});
-			expect(missingStep.decision).toBe("deny");
-			expect(missingStep.reason).toContain("Tool invocation identity (stepIdx) is missing");
+				// PreToolUse missing stepIdx fails closed
+				const missingStep = antigravityPreToolUseHook({
+					conversationId: "conv-drive-1",
+					toolCall: {
+						name: "mcp__immune-brain__start_unattended_batch",
+						args: { taskId: "task-999" },
+					},
+				}, { root });
+				expect(missingStep.decision).toBe("deny");
+				expect(missingStep.reason).toContain("Tool invocation identity (stepIdx) is missing");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+			}
 		});
 
 		it("enforces lane boundary on file edits", () => {
@@ -997,6 +1003,51 @@ describe("Antigravity Harness Conformance", () => {
 			expect(resultOf(await call("rpc-96", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 8))))
 				.toMatchObject({ state: "rejected", reason: "native interaction declined" });
 			expect(reasonCode(await call("rpc-97", "start_unattended_batch", { task_id: TASK }, meta(conversationId, 8)))).toBe("run_entry_required");
+		}, 60_000);
+
+		// The production server injects no admission port: the Hook and the server
+		// meet only in the default private store under the OS temp directory, and
+		// Antigravity records no `.continuation-call` correlation.
+		it("admits a Hook-recorded batch call through the default admission store", async () => {
+			const root = workspace(false);
+			const tmp = temp("tmpdir");
+			const home = temp("home");
+			const conversationId = "conv-default-store";
+			const previous = process.env.TMPDIR;
+			process.env.TMPDIR = tmp;
+			try {
+				const gates: string[] = [];
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: {},
+					interactive: true,
+					requestConfirmation: async (input) => {
+						gates.push(input.operation);
+						return { decision: "decline", requestId: `gate-${gates.length}` };
+					},
+				});
+				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
+				const meta = (step: number) => ({
+					"antigravity.google/conversation_id": conversationId,
+					"antigravity.google/workspace_paths": [root],
+					progressToken: `antigravity-hook:${step}`,
+				});
+				const call = (id: string, step: number) =>
+					handleJsonRpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "start_unattended_batch", arguments: { task_id: TASK }, _meta: meta(step) } }, mcp);
+
+				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { home });
+				expect(antigravityPreToolUseHook({ conversationId, stepIdx: 3, workspacePaths: [root],
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: {} } } }))
+					.toEqual({ decision: "allow" });
+				expect(existsSync(join(tmp, "immune-brain-antigravity"))).toBe(true);
+
+				expect(resultOf(await call("rpc-default-1", 3))).toMatchObject({ state: "rejected", reason: "native interaction declined" });
+				expect(gates).toEqual(["start_unattended_batch"]);
+				expect(reasonCode(await call("rpc-default-2", 3))).toBe("run_entry_required");
+			} finally {
+				if (previous === undefined) delete process.env.TMPDIR;
+				else process.env.TMPDIR = previous;
+			}
 		}, 60_000);
 	});
 

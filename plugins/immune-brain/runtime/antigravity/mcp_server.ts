@@ -50,7 +50,6 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 	// Antigravity reports itself as `antigravity-client` (CLI 1.5.3)
 	// and `antigravity`, with a `v`-prefixed version.
 	trustedClientNames: ["antigravity-client", "antigravity"],
-	toolCallIdMetaKey: "claudecode/toolUseId",
 	correlationMissingRefusal: "antigravity.google/conversation_id metadata is missing",
 	// D4: Antigravity names the conversation, and the step its `progressToken`
 	// ends with keys the admission the Hook wrote for that step.
@@ -61,7 +60,6 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 		return { toolCallId: String(messageId), ...(step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` }) };
 	},
 	elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
-	elicitationRejectedRefusal: "Claude Code rejected MCP elicitation/create",
 	probeHost,
 	createHost: () => new AntigravityReviewHost(antigravityHookEventLog()),
 	createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,

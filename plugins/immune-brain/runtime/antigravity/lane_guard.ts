@@ -91,7 +91,7 @@ export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
 	/** The Host conversation the admission belongs to; it becomes the runtime Hook session. */
-	session_id?: string | null;
+	session_id: string;
 }
 
 export interface NativeConfirmationGrant {
@@ -591,7 +591,9 @@ function evaluatePreToolUseSync(
 		const opName: PhaseOperation = { kind: "tool", name: call.operation };
 		const admission = admitPhaseOperation(opName, state);
 		if (!admission.ok) {
-			return { done: true, result: { decision: "force_ask", reason: phaseRefusalMessage(admission) } };
+			// A call without a live drive entry is refused outright, as on Claude Code:
+			// the server refuses it anyway, so a confirmation here could authorize nothing.
+			return { done: true, result: { decision: "deny", reason: phaseRefusalMessage(admission) } };
 		}
 		if (payload.stepIdx === undefined) {
 			return {
