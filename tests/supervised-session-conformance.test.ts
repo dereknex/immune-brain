@@ -24,7 +24,7 @@ function fakeSubject(): Subject {
 const SUBJECTS: Array<[string, () => Subject]> = [["fake", fakeSubject], ["herdr", () => herdrSubject()], ["herdr-core", () => herdrCoreSubject()]];
 
 const INPUT = { cwd: "/lanes/slice-a", label: "slice-a", host: "claude-code" as const, hostArgs: ["--plugin-dir", "/p"], entry: "/immune-brain:drive slice-a" };
-const PROOF: CloseRecord = { task_id: "slice-a", recorded_at: "2026-11-11T08:00:00.000Z" };
+const PROOF: CloseRecord = { task_id: "slice-a", recorded_at: "2020-01-01T00:00:00.000Z" };
 
 async function created(port: SupervisedSessionPort): Promise<SessionHandle> {
 	const result = await port.createSession(INPUT);

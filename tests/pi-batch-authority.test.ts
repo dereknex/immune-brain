@@ -121,7 +121,7 @@ describe("acc-pi-batch-gate", () => {
 	it("registers the Lane tool and exactly its supported parameters", () => {
 		const tool = register(async () => { throw new Error("schema does not read a plan"); });
 		expect(tool).toBeDefined(); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(Object.keys(tool.parameters.properties)).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
 		expect(tool.parameters.required ?? []).toEqual([]);
 		const schema = tool.parameters.properties.max_parallel;
 		expect(schema.minimum).toBe(1); expect(schema.type === "integer" || schema.multipleOf === 1).toBe(true);

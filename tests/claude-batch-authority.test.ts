@@ -208,7 +208,7 @@ describe("acc-claude-batch-gate", () => {
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
 	});
 	it.each([false, true])("starts a standalone task after one native confirmation (Herdr=%s)", async herdr => {
 		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;

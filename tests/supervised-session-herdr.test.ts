@@ -27,7 +27,7 @@ function subject(extra: Record<string, unknown> = {}) {
 /** Calls that act, without the ownership reads every verb makes first. */
 const acting = (calls: string[][]) => calls.filter(call => !(call[1] === "get" && (call[0] === "pane" || call[0] === "tab")));
 const tokenOf = (handle: string) => decodeURIComponent(handle.split("/")[3]);
-const PROOF = { task_id: "slice-a", recorded_at: "2026-11-11T08:00:00.000Z" };
+const PROOF = { task_id: "slice-a", recorded_at: "2020-01-01T00:00:00.000Z" };
 
 describe("Herdr adapter command spelling", () => {
 	it("creates the tab in the Parent's workspace without focus and marked with the session token, starts the Host by kind and waits until working or blocked", async () => {
@@ -321,7 +321,7 @@ describe("imm-session CLI", () => {
 		expect((await runSessionCli(["close", created.handle, "--provider", "herdr"], env)).returncode).toBe(2);
 		const forged = await runSessionCli(["close", created.handle, "--provider", "herdr", "--task", "slice-a", "--recorded-at", "now"], env);
 		expect(JSON.parse(forged.stdout)).toMatchObject({ ok: false, code: "close_unproven" });
-		const closed = await runSessionCli(["close", created.handle, "--provider", "herdr", "--task", "slice-a", "--recorded-at", "2026-11-11T08:00:00.000Z"], env);
+		const closed = await runSessionCli(["close", created.handle, "--provider", "herdr", "--task", "slice-a", "--recorded-at", "2020-01-01T00:00:00.000Z"], env);
 		expect(JSON.parse(closed.stdout)).toEqual({ ok: true });
 		expect(acting(herdrCalls(stateFile)).at(-1)).toEqual(["tab", "close", "t1"]);
 	});
