@@ -21173,184 +21173,11 @@ import { randomUUID as randomUUID11 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
 import { join as join35 } from "node:path";
 init_batch_final_verification();
-init_batch_preflight();
-init_batch_git();
-init_batch_plan();
-init_batch_state();
-
-// plugins/immune-brain/runtime/unattended/batch_disposition.ts
-init_storage();
-init_storage_paths();
-init_batch_reasons();
-init_batch_preflight();
-init_batch_state();
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join30 } from "node:path";
-var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
-var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
-var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
-var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
-var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
-function kernelLifecycleOf(root, taskId) {
-  try {
-    if (readActiveClaimTaskId(root) === taskId)
-      return null;
-    return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
-  } catch {
-    return null;
-  }
-}
-function laneChildLifecycleOf(root, child) {
-  const lane = child.lane;
-  if (!lane)
-    return kernelLifecycleOf(root, child.task_id);
-  try {
-    if (!existsSync17(join30(lane.path, KERNEL_DB_RELATIVE)))
-      return null;
-    if (readActiveClaimTaskId(lane.path) === child.task_id)
-      return null;
-    const runId = localRunId(lane.path, child.task_id);
-    if (runId === null)
-      return kernelLifecycleOf(root, child.task_id);
-    if (lane.run_id && runId !== lane.run_id)
-      return null;
-    return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
-  } catch {
-    return null;
-  }
-}
-function childEvidenceOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
-    return record.children.map((child) => ({
-      task_id: child.task_id,
-      slice_id: child.slice_id,
-      state: child.state,
-      commit: child.commit,
-      lane_branch: child.lane?.branch ?? null,
-      kernel_lifecycle: laneChildLifecycleOf(root, child)
-    }));
-  return record.children.map((child) => ({
-    task_id: child.task_id,
-    slice_id: child.slice_id,
-    state: child.state,
-    commit: child.commit,
-    lane_branch: null,
-    kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
-  }));
-}
-function inFlightChildOf(root, record) {
-  if (record.contract === "assurance_kernel/batch_run_state/v2")
-    return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
-  return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
-}
-function readStaleBatchLookup(root, initiativeSlug) {
-  const found = findExistingActiveBatch(root, initiativeSlug);
-  if (found === null) {
-    const settled = findSettledBatchRecord(root, initiativeSlug);
-    if (settled)
-      return { kind: "terminal", batch_id: settled.batch_id };
-    return { kind: "none" };
-  }
-  if (found.corrupt)
-    return { kind: "corrupt", path: found.path, ...found.newer_contract ? { newer_contract: found.newer_contract } : {} };
-  const record = found.record;
-  if (isTerminalBatchState(record.batch_state))
-    return { kind: "terminal", batch_id: record.batch_id };
-  const inFlight = inFlightChildOf(root, record);
-  if (inFlight)
-    return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
-  return {
-    kind: "retirable",
-    record,
-    facts: {
-      batch_id: record.batch_id,
-      initiative_slug: record.initiative_slug,
-      batch_state: record.batch_state,
-      plan_digest: record.plan_digest,
-      branch: record.branch ?? `imm/${record.initiative_slug}`,
-      base_head: record.base_head,
-      confirmation_time: record.confirmation_time,
-      recorded_commits: [...record.commits],
-      children: childEvidenceOf(root, record)
-    }
-  };
-}
-async function retireStaleBatch(options) {
-  const { root, initiative_slug: initiativeSlug, now } = options;
-  const lookup = readStaleBatchLookup(root, initiativeSlug);
-  if (lookup.kind === "none")
-    return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
-  if (lookup.kind === "corrupt")
-    return { outcome: "rejected", rejection: lookup.newer_contract ? batchReason("batch_runtime_too_old", new BatchRuntimeTooOldError(lookup.path, lookup.newer_contract).detail) : batchReason("batch_state_unreadable", lookup.path) };
-  if (lookup.kind === "terminal")
-    return {
-      outcome: "rejected",
-      rejection: batchReason("stale_batch_absent", `batch ${lookup.batch_id} already reached a terminal state`)
-    };
-  if (lookup.kind === "in_flight")
-    return {
-      outcome: "rejected",
-      rejection: batchReason("stale_batch_in_flight", `batch ${lookup.batch_id}, child ${lookup.task_id}`)
-    };
-  const { record, facts } = lookup;
-  const expected = readSecureProjectBytes(root, batchStatePath(record.batch_id));
-  const decision = await options.gate(facts);
-  if (decision.kind === "host_rejection")
-    return { outcome: "host_rejection", value: decision.value };
-  if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
-    return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
-  const retired = { ...record, batch_state: "superseded" };
-  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
-  const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
-  const retirement = options.confirmationRef ? {
-    retirement: {
-      confirmation_ref: options.confirmationRef({
-        batch_id: record.batch_id,
-        plan_digest: record.plan_digest,
-        request_id: decision.request_id
-      }),
-      plan_digest: record.plan_digest
-    }
-  } : {};
-  const stored = replaceAnyBatchRunState(root, expected, retired, () => {
-    if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
-      throw new Error("batch state changed before the disposition was applied");
-  });
-  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: stored.batch_id,
-    initiative_slug: stored.initiative_slug,
-    batch_state: stored.batch_state,
-    max_parallel: stored.max_parallel,
-    children: stored.children,
-    commits: stored.commits,
-    reason,
-    handoffs: [],
-    ...retirement,
-    next_action: RETIRE_NEXT_ACTION,
-    created_at: now
-  }) : writeBatchRunReport(root, {
-    contract: "assurance_kernel/batch_run_report/v1",
-    batch_id: stored.batch_id,
-    initiative_slug: stored.initiative_slug,
-    batch_state: stored.batch_state,
-    children: stored.children,
-    commits: stored.commits,
-    reason,
-    ...retirement,
-    next_action: RETIRE_NEXT_ACTION,
-    created_at: now
-  });
-  return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
-}
-
-// plugins/immune-brain/runtime/antigravity/lane_guard.ts
-init_layered_config();
 init_assurance_projection();
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
 import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join30 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
@@ -21378,7 +21205,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join31(dir, name, "SKILL.md"));
+    statSync6(join30(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -21469,11 +21296,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join32 } from "node:path";
+import { join as join31 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync22(join32(root, relativePath)),
+    bytes: readFileSync22(join31(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -21481,7 +21308,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join32(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join31(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -21493,10 +21320,14 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync22(join32(root, snapshot.path));
+  const restoredBytes = readFileSync22(join31(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
+  execFileSync13("git", ["update-index", "--refresh", "--", snapshot.path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
   const restoredIndex = execFileSync13("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -21878,6 +21709,172 @@ function createBatchKernelPort(input) {
   };
 }
 
+// plugins/immune-brain/runtime/unattended/batch_disposition.ts
+init_storage();
+init_storage_paths();
+init_batch_reasons();
+init_batch_preflight();
+init_batch_state();
+import { existsSync as existsSync17 } from "node:fs";
+import { join as join32 } from "node:path";
+var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
+var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
+var RETIRE_REASON_ENDED_OUTSIDE = " A child this record still holds mid-flight had already ended in the Kernel store when the record was retired; its own TaskRecord, not this record, is the evidence of that run.";
+var RETIRE_NEXT_ACTION = "The Initiative has no active batch. Run each remaining child with drive under its own authorization, or start a new batch for this Initiative after checking out its batch branch.";
+function kernelLifecycleOf(root, taskId) {
+  try {
+    if (readActiveClaimTaskId(root) === taskId)
+      return null;
+    return readSettledRunEvidence(root, taskId)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
+function laneChildLifecycleOf(root, child) {
+  const lane = child.lane;
+  if (!lane)
+    return kernelLifecycleOf(root, child.task_id);
+  try {
+    if (!existsSync17(join32(lane.path, KERNEL_DB_RELATIVE)))
+      return null;
+    if (readActiveClaimTaskId(lane.path) === child.task_id)
+      return null;
+    const runId = localRunId(lane.path, child.task_id);
+    if (runId === null)
+      return kernelLifecycleOf(root, child.task_id);
+    if (lane.run_id && runId !== lane.run_id)
+      return null;
+    return readSettledRunEvidence(lane.path, child.task_id)?.lifecycle ?? null;
+  } catch {
+    return null;
+  }
+}
+function childEvidenceOf(root, record) {
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.map((child) => ({
+      task_id: child.task_id,
+      slice_id: child.slice_id,
+      state: child.state,
+      commit: child.commit,
+      lane_branch: child.lane?.branch ?? null,
+      kernel_lifecycle: laneChildLifecycleOf(root, child)
+    }));
+  return record.children.map((child) => ({
+    task_id: child.task_id,
+    slice_id: child.slice_id,
+    state: child.state,
+    commit: child.commit,
+    lane_branch: null,
+    kernel_lifecycle: kernelLifecycleOf(root, child.task_id)
+  }));
+}
+function inFlightChildOf(root, record) {
+  if (record.contract === "assurance_kernel/batch_run_state/v2")
+    return record.children.find((child) => LANE_IN_FLIGHT.has(child.state) && laneChildLifecycleOf(root, child) === null) ?? null;
+  return record.children.find((child) => SERIAL_IN_FLIGHT.has(child.state) && kernelLifecycleOf(root, child.task_id) === null) ?? null;
+}
+function readStaleBatchLookup(root, initiativeSlug) {
+  const found = findExistingActiveBatch(root, initiativeSlug);
+  if (found === null) {
+    const settled = findSettledBatchRecord(root, initiativeSlug);
+    if (settled)
+      return { kind: "terminal", batch_id: settled.batch_id };
+    return { kind: "none" };
+  }
+  if (found.corrupt)
+    return { kind: "corrupt", path: found.path, ...found.newer_contract ? { newer_contract: found.newer_contract } : {} };
+  const record = found.record;
+  if (isTerminalBatchState(record.batch_state))
+    return { kind: "terminal", batch_id: record.batch_id };
+  const inFlight = inFlightChildOf(root, record);
+  if (inFlight)
+    return { kind: "in_flight", batch_id: record.batch_id, task_id: inFlight.task_id };
+  return {
+    kind: "retirable",
+    record,
+    facts: {
+      batch_id: record.batch_id,
+      initiative_slug: record.initiative_slug,
+      batch_state: record.batch_state,
+      plan_digest: record.plan_digest,
+      branch: record.branch ?? `imm/${record.initiative_slug}`,
+      base_head: record.base_head,
+      confirmation_time: record.confirmation_time,
+      recorded_commits: [...record.commits],
+      children: childEvidenceOf(root, record)
+    }
+  };
+}
+async function retireStaleBatch(options) {
+  const { root, initiative_slug: initiativeSlug, now } = options;
+  const lookup = readStaleBatchLookup(root, initiativeSlug);
+  if (lookup.kind === "none")
+    return { outcome: "rejected", rejection: batchReason("stale_batch_absent", `Initiative ${initiativeSlug} has no active batch`) };
+  if (lookup.kind === "corrupt")
+    return { outcome: "rejected", rejection: lookup.newer_contract ? batchReason("batch_runtime_too_old", new BatchRuntimeTooOldError(lookup.path, lookup.newer_contract).detail) : batchReason("batch_state_unreadable", lookup.path) };
+  if (lookup.kind === "terminal")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_absent", `batch ${lookup.batch_id} already reached a terminal state`)
+    };
+  if (lookup.kind === "in_flight")
+    return {
+      outcome: "rejected",
+      rejection: batchReason("stale_batch_in_flight", `batch ${lookup.batch_id}, child ${lookup.task_id}`)
+    };
+  const { record, facts } = lookup;
+  const expected = readSecureProjectBytes(root, batchStatePath(record.batch_id));
+  const decision = await options.gate(facts);
+  if (decision.kind === "host_rejection")
+    return { outcome: "host_rejection", value: decision.value };
+  if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+    return { outcome: "rejected", rejection: batchReason("plan_changed", record.batch_id) };
+  const retired = { ...record, batch_state: "superseded" };
+  const inFlightStates = record.contract === "assurance_kernel/batch_run_state/v2" ? LANE_IN_FLIGHT : SERIAL_IN_FLIGHT;
+  const reason = record.children.some((child) => inFlightStates.has(child.state)) ? RETIRE_REASON + RETIRE_REASON_ENDED_OUTSIDE : RETIRE_REASON;
+  const retirement = options.confirmationRef ? {
+    retirement: {
+      confirmation_ref: options.confirmationRef({
+        batch_id: record.batch_id,
+        plan_digest: record.plan_digest,
+        request_id: decision.request_id
+      }),
+      plan_digest: record.plan_digest
+    }
+  } : {};
+  const stored = replaceAnyBatchRunState(root, expected, retired, () => {
+    if (!readSecureProjectBytes(root, batchStatePath(record.batch_id)).equals(expected))
+      throw new Error("batch state changed before the disposition was applied");
+  });
+  const report = stored.contract === "assurance_kernel/batch_run_state/v2" ? writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    max_parallel: stored.max_parallel,
+    children: stored.children,
+    commits: stored.commits,
+    reason,
+    handoffs: [],
+    ...retirement,
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  }) : writeBatchRunReport(root, {
+    contract: "assurance_kernel/batch_run_report/v1",
+    batch_id: stored.batch_id,
+    initiative_slug: stored.initiative_slug,
+    batch_state: stored.batch_state,
+    children: stored.children,
+    commits: stored.commits,
+    reason,
+    ...retirement,
+    next_action: RETIRE_NEXT_ACTION,
+    created_at: now
+  });
+  return { outcome: "retired", batch_id: stored.batch_id, record: stored, report };
+}
+
 // plugins/immune-brain/runtime/unattended/run_entry_manifest.ts
 function manifestVerification(verification) {
   try {
@@ -21910,6 +21907,7 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
+init_batch_git();
 
 // plugins/immune-brain/runtime/assurance/cli_review.ts
 init_layered_config();
@@ -22146,6 +22144,41 @@ function readTaskIntentForRecord(root, taskId) {
   const record = readTaskRecordRaw(root, taskId).record;
   return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
+async function executeOrdinaryKernelOperation(input) {
+  const { root, taskId, app } = input;
+  const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
+  const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
+  const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
+  const sidecar = join34(root, priorIntent.intent_ref.path);
+  const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
+  const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
+  try {
+    if (priorBytes) {
+      writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+`);
+      execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    }
+    const result = await app.execute({
+      root,
+      task_id: taskId,
+      operation,
+      reviewContractHash: currentReviewContractHash(),
+      prior_intent_token: priorIntent.token,
+      diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
+      now: new Date().toISOString()
+    });
+    if (operation.op === "freeze_artifacts" || operation.op === "stop")
+      stagePlanningArtifactTransition(root, result.record);
+    return result;
+  } catch (error) {
+    if (priorStaged) {
+      const current = await readTaskRecordRaw(root, taskId);
+      if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
+        restoreStagedIntent(root, priorStaged);
+    }
+    throw error;
+  }
+}
 async function submitHostReview(host, coordinator, ctx, taskId, verdictInput) {
   return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
 }
@@ -22199,6 +22232,14 @@ async function mintCapability(registry, input) {
 function throwIfCancelled(signal) {
   if (signal?.aborted)
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
+
+class ConfirmationPreviewSignal extends Error {
+  input;
+  constructor(input) {
+    super("native confirmation preview");
+    this.input = input;
+  }
 }
 var ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
 
@@ -22646,41 +22687,32 @@ class HostRuntime {
   }
   async executeOrdinary(ctx, input) {
     const { app } = await this.authority();
-    const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(ctx.cwd, input.operation.next_intent) } : input.operation;
-    const priorIntent = await readTaskIntentForRecord(ctx.cwd, input.taskId);
-    const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-    const sidecar = join34(ctx.cwd, priorIntent.intent_ref.path);
-    const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
-    const priorStaged = priorBytes !== null ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : null;
+    return executeOrdinaryKernelOperation({ root: ctx.cwd, taskId: input.taskId, operation: input.operation, app });
+  }
+  async previewConfirmation(run) {
+    const previous = this.requestConfirmation;
+    this.requestConfirmation = async (input) => {
+      throw new ConfirmationPreviewSignal(input);
+    };
     try {
-      if (priorBytes) {
-        writeFileSync13(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
-`);
-        execFileSync15("git", ["add", "--", priorIntent.intent_ref.path], {
-          cwd: ctx.cwd,
-          stdio: ["ignore", "pipe", "pipe"]
-        });
-      }
-      const result = await app.execute({
-        root: ctx.cwd,
-        task_id: input.taskId,
-        operation,
-        reviewContractHash: currentReviewContractHash(),
-        prior_intent_token: priorIntent.token,
-        diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
-        now: new Date().toISOString()
-      });
-      if (operation.op === "freeze_artifacts" || operation.op === "stop")
-        stagePlanningArtifactTransition(ctx.cwd, result.record);
-      return result;
+      await run();
+      return null;
     } catch (error) {
-      if (priorStaged) {
-        const current = await readTaskRecordRaw(ctx.cwd, input.taskId);
-        if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
-          restoreStagedIntent(ctx.cwd, priorStaged);
-      }
+      if (error instanceof ConfirmationPreviewSignal)
+        return error.input;
       throw error;
+    } finally {
+      this.requestConfirmation = previous;
     }
+  }
+  async previewAuthorization(taskId, operation, meta, extra = {}) {
+    return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+  }
+  async previewBatchConfirmation(initiativeSlug, meta, options = {}) {
+    return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
+  }
+  async previewBatchRetirement(initiativeSlug, meta) {
+    return this.previewConfirmation(() => this.retireStaleBatch(initiativeSlug, meta));
   }
   async startUnattendedBatch(initiativeSlug, meta, options = {}) {
     if (Object.hasOwn(options, "lane_revision"))
@@ -22690,6 +22722,7 @@ class HostRuntime {
   async startPreparedBatch(initiativeSlug, meta, options) {
     throwIfCancelled(meta.signal);
     const reuseOnly = options.reuseOnly === true;
+    const confirmationPreview = options.confirmationPreview === true;
     const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
     if (options.plan_source === "single_task")
       options = { ...options, max_parallel: 1 };
@@ -22729,33 +22762,60 @@ class HostRuntime {
       if (confirmed) {
         const { observation } = confirmed;
         replayReader = async () => observation;
-        if (["running", "completed"].includes(integrationBatch.batch_state))
+        if (!confirmationPreview && ["running", "completed"].includes(integrationBatch.batch_state))
           await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
       }
     }
-    const completed = !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+    if (confirmationPreview && !options.plan_source && replayCompleted && integrationBatch?.batch_state === "completed" && integrationBatch.final_verification_result?.passed === true) {
+      try {
+        const confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+        const proof = await observeParentCompletion(this.cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
+        if (proof.complete)
+          return batchReason("confirmation_no_decision");
+      } catch {}
+    }
+    const completed = !confirmationPreview && !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
     if (completed)
       return { state: "started", batch_id: completed.batch_id, report: completed };
+    const nativeParentInput = (effects) => ({
+      operation: "start_unattended_batch",
+      initiativeSlug,
+      toolCallId: meta.toolCallId,
+      planDigest: effects.plan_digest,
+      batchDetails: {
+        initiative_slug: effects.initiative_slug,
+        batch_branch: "",
+        children: effects.children,
+        excluded: [],
+        final_verification: effects.final_commands,
+        parent_final_verification: {}
+      },
+      signal: meta.signal
+    });
+    if (confirmationPreview && !options.plan_source) {
+      const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
+      if (facts) {
+        const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
+        if (options.final_verification && recordedCommands && JSON.stringify(options.final_verification) !== JSON.stringify(recordedCommands))
+          throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
+        const finalCommands = recordedCommands ?? options.final_verification;
+        if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
+          await this.confirm(nativeParentInput({
+            initiative_slug: initiativeSlug,
+            plan_digest: facts.plan_digest,
+            children: facts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
+            final_commands: finalCommands
+          }), meta);
+        }
+        return batchReason("confirmation_no_decision");
+      }
+    }
     const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug), async (effects) => {
       if (reuseOnly)
         return batchReason("confirmation_port_unavailable");
       try {
         manifestChildren = effects.children;
-        const confirmation = await this.confirm({
-          operation: "start_unattended_batch",
-          initiativeSlug,
-          toolCallId: meta.toolCallId,
-          planDigest: effects.plan_digest,
-          batchDetails: {
-            initiative_slug: effects.initiative_slug,
-            batch_branch: "",
-            children: effects.children,
-            excluded: [],
-            final_verification: effects.final_commands,
-            parent_final_verification: {}
-          },
-          signal: meta.signal
-        }, meta);
+        const confirmation = await this.confirm(nativeParentInput(effects), meta);
         if (meta.signal?.aborted)
           return batchReason("cancelled_before_execution");
         if (confirmation.decision === "accept")
@@ -22766,6 +22826,8 @@ class HostRuntime {
           return batchReason("confirmation_declined");
         return batchReason("confirmation_no_decision");
       } catch (err) {
+        if (err instanceof ConfirmationPreviewSignal)
+          throw err;
         if (meta.signal?.aborted)
           return batchReason("cancelled_before_execution");
         if (err instanceof NativeAuthorityError) {
@@ -22874,6 +22936,8 @@ class HostRuntime {
             signal: meta.signal
           }, meta);
         } catch (err) {
+          if (err instanceof ConfirmationPreviewSignal)
+            throw err;
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
           if (err instanceof NativeAuthorityError) {
@@ -22924,6 +22988,8 @@ class HostRuntime {
       return authorization.value;
     if (authorization.outcome === "rejected")
       return authorization.rejection;
+    if (confirmationPreview)
+      return batchReason("confirmation_no_decision");
     const { binding, batch_id: batchId } = authorization;
     if (meta.signal?.aborted)
       return batchReason("cancelled_before_execution");
@@ -23041,6 +23107,8 @@ class HostRuntime {
             signal: meta.signal
           }, meta);
         } catch (err) {
+          if (err instanceof ConfirmationPreviewSignal)
+            throw err;
           if (meta.signal?.aborted)
             return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
           if (err instanceof NativeAuthorityError) {
@@ -23190,6 +23258,15 @@ class AntigravityRuntime {
   }
   authorize(...args) {
     return this.runtime.authorize(...args);
+  }
+  previewAuthorization(...args) {
+    return this.runtime.previewAuthorization(...args);
+  }
+  previewBatchConfirmation(...args) {
+    return this.runtime.previewBatchConfirmation(...args);
+  }
+  previewBatchRetirement(...args) {
+    return this.runtime.previewBatchRetirement(...args);
   }
   startUnattendedBatch(...args) {
     return this.runtime.startUnattendedBatch(...args);
@@ -23627,13 +23704,10 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
     return { decision: "allow" };
   }
   for (const key of ["executor_model", "executor_effort"]) {
-    if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key])) {
+    if (opArgs[key] !== undefined && (typeof opArgs[key] !== "string" || !opArgs[key]))
       return { decision: "allow" };
-    }
   }
-  if (!!initiative === !!task)
-    return { decision: "allow" };
-  if ("native_decision" in opArgs || "entry_token" in opArgs)
+  if (!!initiative === !!task || "native_decision" in opArgs || "entry_token" in opArgs)
     return { decision: "allow" };
   let workspaceRealpath;
   try {
@@ -23642,8 +23716,6 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
     return { decision: "allow" };
   }
   const initiativeSlug = task || initiative;
-  const planSource = task ? "single_task" : undefined;
-  const readInitiative = planSource === "single_task" ? observeSingleTask : locations.readInitiative ?? observeInitiative;
   let maxParallel;
   let finalVerification;
   try {
@@ -23654,123 +23726,21 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
   } catch {
     return { decision: "allow" };
   }
-  if (planSource && !resolveConfig(cwd).lanes.valid)
-    return { decision: "allow" };
-  const existing = findExistingActiveBatch(cwd, initiativeSlug);
-  if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record))
-    return { decision: "allow" };
-  const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(cwd, initiativeSlug);
-  if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== planSource) {
-    return { decision: "allow" };
-  }
-  if (!planSource && !existing && integrationBatch && isLaneBatchRecord(integrationBatch) && integrationBatch.batch_state === "completed") {
-    try {
-      const confirmed = await readConfirmedBatchTopology(cwd, integrationBatch, locations.readInitiative);
-      if (integrationBatch.final_verification_result?.passed === true) {
-        const proof = await observeParentCompletion(cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
-        if (proof.complete)
-          return { decision: "allow" };
-      }
-    } catch {}
-  }
-  if (!planSource) {
-    const nativeFacts = await observeNativeParent(cwd, initiativeSlug, locations.readInitiative);
-    if (nativeFacts) {
-      const recordedCommands = nativeFacts.native?.final_verification.results.map((result) => result.command);
-      if (finalVerification && recordedCommands && JSON.stringify(finalVerification) !== JSON.stringify(recordedCommands)) {
-        return { decision: "allow" };
-      }
-      const finalCommands = recordedCommands ?? finalVerification;
-      if (["verify", "repair"].includes(nativeFacts.action) && nativeFacts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
-        const confirmInput = {
-          operation: "start_unattended_batch",
-          initiativeSlug,
-          toolCallId: admissionId,
-          planDigest: nativeFacts.plan_digest,
-          batchDetails: {
-            initiative_slug: initiativeSlug,
-            batch_branch: "",
-            children: nativeFacts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
-            excluded: [],
-            final_verification: finalCommands,
-            parent_final_verification: {}
-          }
-        };
-        writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-        return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
-      }
-      return { decision: "allow" };
-    }
-  }
-  const now = new Date().toISOString();
-  const preflight = await prepareBatchPreflight({
-    root: cwd,
-    initiative_slug: initiativeSlug,
-    plan_source: planSource,
-    now,
-    readInitiative,
-    max_parallel: maxParallel
+  const previewRuntime = new AntigravityRuntime({
+    cwd,
+    env: {},
+    interactive: true,
+    readInitiative: locations.readInitiative,
+    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform })
   });
-  if (!preflight.ok)
-    return { decision: "allow" };
-  if (!preflight.projection.is_resuming && !planSource && !finalVerification?.length)
-    return { decision: "allow" };
-  if (maxParallel !== undefined && !preflight.projection.is_resuming && laneRuntimeContractRefusal(cwd)) {
-    return { decision: "allow" };
+  let confirmInput;
+  try {
+    confirmInput = await previewRuntime.previewBatchConfirmation(initiativeSlug, { sessionId: conversationId, toolCallId: admissionId, taskId: initiativeSlug, initiativeSlug, interactive: true }, { ...task ? { plan_source: "single_task" } : {}, max_parallel: maxParallel, final_verification: finalVerification ?? undefined });
+  } finally {
+    await previewRuntime.shutdown();
   }
-  const authorization = await authorizeBatch({
-    root: cwd,
-    initiative_slug: initiativeSlug,
-    now,
-    projection: preflight.projection,
-    readInitiative,
-    nonce: "antigravity-pretooluse-probe",
-    gate: async (facts) => ({ kind: "host_rejection", value: facts }),
-    confirmationRef: () => "antigravity-pretooluse-probe"
-  });
-  if (authorization.outcome !== "host_rejection") {
+  if (!confirmInput)
     return { decision: "allow" };
-  }
-  const facts = authorization.value;
-  const confirmInput = {
-    operation: "start_unattended_batch",
-    initiativeSlug,
-    toolCallId: admissionId,
-    planDigest: preflight.projection.plan_digest,
-    ...facts.preparation?.intent ? {
-      intentRevision: facts.preparation.intent.revision,
-      intentContentHash: facts.preparation.intent.content_hash,
-      bindingDigest: facts.preparation.digest
-    } : {},
-    batchDetails: {
-      initiative_slug: facts.initiative_slug,
-      batch_branch: facts.batch_branch,
-      children: facts.children.map((child) => ({
-        task_id: child.task_id,
-        slice_id: child.slice_id,
-        risk: child.risk
-      })),
-      excluded: facts.excluded.map((child) => ({
-        task_id: child.task_id,
-        slice_id: child.slice_id,
-        reason: child.reason
-      })),
-      budget: facts.budget,
-      ...finalVerification ? { final_verification: finalVerification } : {},
-      ...maxParallel !== undefined ? {
-        lane_mode: {
-          max_parallel: maxParallel,
-          parallel_groups: facts.parallel_groups,
-          serialized: facts.scope_conflicts,
-          ...finalVerification ? { final_verification: finalVerification } : {}
-        }
-      } : {},
-      ...facts.reuse_blockers.length > 0 ? {
-        re_confirmation_required: facts.reuse_blockers,
-        recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD"
-      } : {}
-    }
-  };
   writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
   return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
@@ -23788,30 +23758,20 @@ async function prepareRetireConfirmation(conversationId, sync) {
   } catch {
     return { decision: "allow" };
   }
-  const lookup = readStaleBatchLookup(cwd, initiativeSlug);
-  if (lookup.kind !== "retirable")
+  const previewRuntime = new AntigravityRuntime({
+    cwd,
+    env: {},
+    interactive: true,
+    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform })
+  });
+  let confirmInput;
+  try {
+    confirmInput = await previewRuntime.previewBatchRetirement(initiativeSlug, { sessionId: conversationId, toolCallId: admissionId, taskId: initiativeSlug, initiativeSlug, interactive: true });
+  } finally {
+    await previewRuntime.shutdown();
+  }
+  if (!confirmInput)
     return { decision: "allow" };
-  const facts = lookup.facts;
-  const confirmInput = {
-    operation: "retire_stale_batch",
-    initiativeSlug,
-    toolCallId: admissionId,
-    batchDisposition: {
-      batch_id: facts.batch_id,
-      batch_state: facts.batch_state,
-      batch_branch: facts.branch,
-      plan_digest: facts.plan_digest,
-      recorded_commits: facts.recorded_commits.length,
-      children: facts.children.map((child) => ({
-        task_id: child.task_id,
-        slice_id: child.slice_id,
-        state: child.state,
-        commit: child.commit,
-        lane_branch: child.lane_branch,
-        kernel_lifecycle: child.kernel_lifecycle
-      }))
-    }
-  };
   writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
   return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
@@ -23826,25 +23786,20 @@ async function prepareTaskAuthorityConfirmation(conversationId, sync) {
   } catch {
     return { decision: "allow" };
   }
-  let captured = null;
-  const probeRuntime = new AntigravityRuntime({
+  const previewRuntime = new AntigravityRuntime({
     cwd,
     env: {},
     interactive: true,
-    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform }),
-    requestConfirmation: async (input) => {
-      captured = input;
-      return { decision: "cancel", requestId: "antigravity-pretooluse-probe" };
-    }
+    probeHost: () => ({ ok: true, version: "1.0.0", platform: process.platform })
   });
+  let confirmInput;
   try {
-    await probeRuntime.authorize(taskId, call.operation, { sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true }, call.opArgs);
-  } catch {} finally {
-    await probeRuntime.shutdown();
+    confirmInput = await previewRuntime.previewAuthorization(taskId, call.operation, { sessionId: conversationId, toolCallId: admissionId, taskId, interactive: true }, call.opArgs);
+  } finally {
+    await previewRuntime.shutdown();
   }
-  if (!captured)
+  if (!confirmInput)
     return { decision: "allow" };
-  const confirmInput = captured;
   let verifierChoice;
   if (confirmInput.verifierDispute) {
     const rawChoice = call.opArgs.choice;

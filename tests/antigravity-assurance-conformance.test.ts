@@ -1357,6 +1357,7 @@ describe("Antigravity Harness Conformance", () => {
 			const batchRecordPath = join(root, ".imm/state/batches", `${started.batch_id}.json`);
 			const persisted = JSON.parse(readFileSync(batchRecordPath, "utf8"));
 			writeFileSync(batchRecordPath, `${JSON.stringify({ ...persisted, batch_state: "running" }, null, 2)}\n`);
+			const beforeResumePreview = readFileSync(batchRecordPath, "utf8");
 			const resumeHook = await antigravityPreToolUseHookAsync({
 				conversationId,
 				stepIdx: 11,
@@ -1367,6 +1368,7 @@ describe("Antigravity Harness Conformance", () => {
 				},
 			}, { root: store, readInitiative });
 			expect(resumeHook).toEqual({ decision: "allow" });
+			expect(readFileSync(batchRecordPath, "utf8")).toBe(beforeResumePreview);
 			server.input.end();
 		}, 60_000);
 

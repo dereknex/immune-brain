@@ -48,6 +48,13 @@ export function restoreStagedIntent(root: string, snapshot: StagedIntentSnapshot
 	if (!restoredBytes.equals(snapshot.bytes)) {
 		throw new Error("failed to restore prior intent bytes");
 	}
+	// `--index-info` restores the object entry but not its worktree stat data.
+	// Refresh it so an immediate `diff.autoRefreshIndex=false` projection does
+	// not mistake the byte-identical restored sidecar for an unstaged change.
+	execFileSync("git", ["update-index", "--refresh", "--", snapshot.path], {
+		cwd: root,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
 	const restoredIndex = execFileSync("git", ["ls-files", "--stage", "-z", "--", snapshot.path], {
 		cwd: root,
 		stdio: ["ignore", "pipe", "pipe"],

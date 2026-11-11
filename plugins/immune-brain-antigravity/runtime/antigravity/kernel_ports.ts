@@ -107,6 +107,18 @@ export class AntigravityRuntime {
 		return this.runtime.authorize(...args);
 	}
 
+	previewAuthorization(...args: Parameters<HostRuntime["previewAuthorization"]>): ReturnType<HostRuntime["previewAuthorization"]> {
+		return this.runtime.previewAuthorization(...args);
+	}
+
+	previewBatchConfirmation(...args: Parameters<HostRuntime["previewBatchConfirmation"]>): ReturnType<HostRuntime["previewBatchConfirmation"]> {
+		return this.runtime.previewBatchConfirmation(...args);
+	}
+
+	previewBatchRetirement(...args: Parameters<HostRuntime["previewBatchRetirement"]>): ReturnType<HostRuntime["previewBatchRetirement"]> {
+		return this.runtime.previewBatchRetirement(...args);
+	}
+
 	startUnattendedBatch(...args: Parameters<HostRuntime["startUnattendedBatch"]>): ReturnType<HostRuntime["startUnattendedBatch"]> {
 		return this.runtime.startUnattendedBatch(...args);
 	}
