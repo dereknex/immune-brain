@@ -8158,7 +8158,7 @@ function resolveConfig(root, options = {}) {
   validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
   validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
   validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-  const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport"];
+  const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport", "review_verifier_model"];
   validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
   validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
   const validateLane = (o, file, path) => {
@@ -12687,7 +12687,8 @@ Counter-path: ${exhaustedDispute.counter_path}`
       operation: "verification",
       operation_id: pending.dispatch.reservation.id,
       snapshot_digest: snapshotDigest(pending.review.snapshot),
-      agent_params: pending.dispatch.reservation.dispatch
+      agent_params: pending.dispatch.reservation.dispatch,
+      ...pending.dispatch.reservation.verification_command ? { verification_command: pending.dispatch.reservation.verification_command } : {}
     };
   }
   releaseVerificationReservation(taskId, pending) {
@@ -22128,6 +22129,35 @@ function reviewArguments(profile, packetPath, turnBudget) {
     `/authority-review ${packetPath}`
   ];
 }
+var HOST_DEFAULT_MODEL = "host-default";
+function verificationArguments(profile, model, packetPath, turnBudget) {
+  const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
+  const instruction = `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
+  if (profile.host === "claude-code") {
+    return [
+      "--print",
+      "--no-session-persistence",
+      "--max-turns",
+      String(turnBudget),
+      "--tools",
+      "Read,Grep,Glob,Bash",
+      "--allowedTools",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git ls-tree:*)",
+      "--permission-mode",
+      "dontAsk",
+      ...modelFlag,
+      instruction
+    ];
+  }
+  if (profile.host === "pi")
+    return ["--print", "--no-session", ...modelFlag, instruction];
+  return ["--print", ...modelFlag, instruction];
+}
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
   return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
@@ -22179,20 +22209,80 @@ function treeChanged(root, recorded) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+var VERIFICATION_TURNS = 16;
+function writeProcessScript(script, root, command, output, exitFile) {
+  writeFileSync12(script, [
+    "#!/bin/sh",
+    `cd ${shellQuote(root)} || exit 1`,
+    `out=${shellQuote(output)}`,
+    `tmp="$out.part"`,
+    `${command.map(shellQuote).join(" ")} >"$tmp" 2>&1`,
+    "status=$?",
+    `mv -f "$tmp" "$out"`,
+    `printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
+    `exit "$status"`,
+    ""
+  ].join(`
+`), { encoding: "utf8", mode: 493 });
+  chmodSync5(script, 493);
+}
 
 class CliReviewHost {
   wrapped;
   host;
-  prepareVerification;
-  inspectVerification;
   reservations = new Map;
+  verifications = new Map;
   constructor(wrapped) {
     this.wrapped = wrapped;
     this.host = wrapped.host;
-    if (wrapped.prepareVerification)
-      this.prepareVerification = (request) => wrapped.prepareVerification(request);
-    if (wrapped.inspectVerification)
-      this.inspectVerification = (reservation) => wrapped.inspectVerification(reservation);
+  }
+  prepareVerification(request) {
+    const review = [...this.reservations.values()].reverse().find((item) => item.taskId === request.taskId);
+    if (!review) {
+      if (!this.wrapped.prepareVerification)
+        throw new Error("host verifier dispatch is unavailable");
+      return this.wrapped.prepareVerification(request);
+    }
+    const executable = reviewBinary(review.profile.host);
+    if (!executable)
+      throw new ReviewPreparationError("review_host_unavailable", `review_host ${review.profile.host} executable ${REVIEW_BINARY[review.profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+    const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
+    const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
+    const directory = mkdtempSync6(join33(tmpdir8(), "imm-cli-verify-"));
+    chmodSync5(directory, 493);
+    const packet = join33(directory, "verify-packet.md");
+    const script = join33(directory, "verify.sh");
+    const output = join33(directory, `verify-output-${request.operationId}.txt`);
+    const exitFile = join33(directory, `verify-exit-${request.operationId}`);
+    writeFileSync12(packet, request.prompt, { encoding: "utf8", mode: 420 });
+    writeProcessScript(script, review.root, [executable, ...verificationArguments(review.profile, request.model, packet, VERIFICATION_TURNS)], output, exitFile);
+    const command = sessionRunner ? [sessionRunner, "run", "--provider", "herdr", "--cwd", review.root, "--label", `verify ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ") : `sh ${script}`;
+    const actorId = `cli-verifier:${review.profile.host}:${request.operationId}`;
+    this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, exitFile });
+    return {
+      id: request.operationId,
+      dispatch: { verification_command: command, verifier_model: request.model },
+      verification_command: command,
+      review_profile: review.profile,
+      review_actor_id: actorId
+    };
+  }
+  inspectVerification(reservation) {
+    const owned = this.verifications.get(reservation.id);
+    if (!owned) {
+      if (!this.wrapped.inspectVerification)
+        return { ok: false, release: true, reason: "no verification reservation" };
+      return this.wrapped.inspectVerification(reservation);
+    }
+    if (!existsSync18(owned.exitFile))
+      return { ok: false, release: false, reason: "verification process still running; wait for it to exit, then call submit_verification again" };
+    const status = Number.parseInt(readFileSync23(owned.exitFile, "utf8").trim(), 10);
+    if (status !== 0)
+      return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
+    const bytes = existsSync18(owned.output) ? readFileSync23(owned.output, "utf8") : "";
+    if (!bytes.trim())
+      return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
+    return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
   }
   prepareReview(request) {
     if (!request.root)
@@ -22218,20 +22308,7 @@ class CliReviewHost {
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const argv = reviewArguments(profile, packet, request.maxTurns);
-    writeFileSync12(script, [
-      "#!/bin/sh",
-      `cd ${shellQuote(root)} || exit 1`,
-      `out=${shellQuote(output)}`,
-      `tmp="$out.part"`,
-      `${[executable, ...argv].map(shellQuote).join(" ")} >"$tmp" 2>&1`,
-      "status=$?",
-      `mv -f "$tmp" "$out"`,
-      `printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
-      `exit "$status"`,
-      ""
-    ].join(`
-`), { encoding: "utf8", mode: 493 });
-    chmodSync5(script, 493);
+    writeProcessScript(script, root, [executable, ...argv], output, exitFile);
     const reviewCommand = sessionRunner ? [sessionRunner, "run", "--provider", "herdr", "--cwd", root, "--label", `review ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ") : `sh ${script}`;
     const actorId = `cli:${profile.host}:${request.operationId}`;
     this.reservations.set(request.operationId, {
@@ -22280,15 +22357,27 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
     if (mismatch)
       return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
+    const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value;
     return {
       ok: true,
-      receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? "host-default" }
+      receipt: {
+        actorId: reservation.actorId,
+        result: bytes,
+        model: reservation.profile.model ?? HOST_DEFAULT_MODEL,
+        ...verifierModel ? { offered_models: [verifierModel] } : {}
+      }
     };
   }
   inspectReviewForTask(taskId) {
     return this.inspectReview(taskId);
   }
   releaseReview(reservation) {
+    const verification = this.verifications.get(reservation.id);
+    if (verification) {
+      this.verifications.delete(reservation.id);
+      rmSync12(verification.directory, { recursive: true, force: true });
+      return;
+    }
     const owned = this.reservations.get(reservation.id);
     if (!owned) {
       this.wrapped.releaseReview(reservation);

@@ -570,6 +570,8 @@ export interface VerificationReadyResult {
 	operation_id: string;
 	snapshot_digest: string;
 	agent_params: unknown;
+	/** Set when verification runs as a CLI process: run it, then call `submit_verification`. */
+	verification_command?: string;
 }
 
 export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
@@ -2115,7 +2117,8 @@ export class AssuranceCoordinator {
 
 	private verificationReadyResult(pending: VerificationReservation): VerificationReadyResult {
 		return { state: "verification_ready", operation: "verification", operation_id: pending.dispatch.reservation.id,
-			snapshot_digest: snapshotDigest(pending.review.snapshot), agent_params: pending.dispatch.reservation.dispatch };
+			snapshot_digest: snapshotDigest(pending.review.snapshot), agent_params: pending.dispatch.reservation.dispatch,
+			...(pending.dispatch.reservation.verification_command ? { verification_command: pending.dispatch.reservation.verification_command } : {}) };
 	}
 
 	private releaseVerificationReservation(taskId: string, pending: VerificationReservation): void {

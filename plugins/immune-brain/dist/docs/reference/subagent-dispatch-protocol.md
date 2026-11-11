@@ -25,10 +25,13 @@ second definition would fork a boundary the Host owns.
 `code-review` is not in this table. The authoritative Review is not an
 in-process agent: the Parent runs the returned `review_command` in its own
 shell, in the task's working directory, and that process loads the packaged
-`authority-review` skill (ADR 0037). Findings verification keeps its Host
-subagent dispatch: `immune-brain:immune-brain-review-verifier` keeps the
-allowlist that adds `Bash` because it must run read-only Git commands against
-the immutable revision.
+`authority-review` skill (ADR 0037). Findings verification after such a Review
+is a CLI process as well (ADR 0039): the Parent runs the returned
+`verification_command` the same way. It keeps the verifier's read-only boundary
+on Claude Code (`Read, Grep, Glob, Bash` with only read-only Git commands
+allowed, as `immune-brain:immune-brain-review-verifier` does) because it must run
+read-only Git commands against the immutable revision. A verification that
+follows no CLI Review keeps that Host subagent dispatch.
 
 On Pi the agent configuration belongs to the Pi user, and the read-only boundary
 remains prompt text plus the `tool_policy` the delegation packet declares; Pi's

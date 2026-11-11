@@ -22,6 +22,8 @@ import {
 	type AssuranceHostPort,
 	type HostReviewReservation,
 	type ReviewRequest,
+	type VerificationReceipt,
+	type VerificationRequest,
 } from "./host_port";
 import type { ReviewObservation } from "./review_mediation";
 
@@ -74,6 +76,30 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 		...(profile.effort ? ["--effort", profile.effort] : []),
 		`/authority-review ${packetPath}`,
 	];
+}
+
+/** The model a Host runs on when the profile names none; never passed as `--model`. */
+const HOST_DEFAULT_MODEL = "host-default";
+
+/**
+ * The verifier argv (verification CLI stage): the same fresh, read-only print
+ * session as the reviewer's, on the selected verifier model, told to read the
+ * verification packet. The packet carries the whole `review-verifier` role
+ * contract, so no packaged skill is needed.
+ */
+export function verificationArguments(profile: ReviewProfile, model: string, packetPath: string, turnBudget: number): string[] {
+	const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
+	const instruction = `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
+	if (profile.host === "claude-code") {
+		return [
+			"--print", "--no-session-persistence", "--max-turns", String(turnBudget),
+			"--tools", "Read,Grep,Glob,Bash",
+			"--allowedTools", "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+			"--permission-mode", "dontAsk", ...modelFlag, instruction,
+		];
+	}
+	if (profile.host === "pi") return ["--print", "--no-session", ...modelFlag, instruction];
+	return ["--print", ...modelFlag, instruction];
 }
 
 /** Resolve the reviewer executable from PATH as the Lane supervisor does; absent means unavailable. */
@@ -143,6 +169,36 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+interface CliVerificationReservation {
+	taskId: string;
+	actorId: string;
+	/** The selected verifier model, exactly as the coordinator asked for it. */
+	model: string;
+	directory: string;
+	output: string;
+	exitFile: string;
+}
+
+/** Turn budget of one verifier process: it reads one packet and the revision, nothing else. */
+const VERIFICATION_TURNS = 16;
+
+/** The script both CLI stages run: output under a temporary name, the exit status last (ADR 0037 D2). */
+function writeProcessScript(script: string, root: string, command: string[], output: string, exitFile: string): void {
+	writeFileSync(script, [
+		"#!/bin/sh",
+		`cd ${shellQuote(root)} || exit 1`,
+		`out=${shellQuote(output)}`,
+		`tmp="$out.part"`,
+		`${command.map(shellQuote).join(" ")} >"$tmp" 2>&1`,
+		"status=$?",
+		`mv -f "$tmp" "$out"`,
+		`printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
+		`exit "$status"`,
+		"",
+	].join("\n"), { encoding: "utf8", mode: 0o755 });
+	chmodSync(script, 0o755);
+}
+
 interface CliReviewReservation {
 	taskId: string;
 	operationId: string;
@@ -161,14 +217,68 @@ interface CliReviewReservation {
  */
 export class CliReviewHost implements AssuranceHostPort {
 	readonly host: AssuranceHostPort["host"];
-	readonly prepareVerification?: AssuranceHostPort["prepareVerification"];
-	readonly inspectVerification?: AssuranceHostPort["inspectVerification"];
 	private readonly reservations = new Map<string, CliReviewReservation>();
+	private readonly verifications = new Map<string, CliVerificationReservation>();
 
 	constructor(private readonly wrapped: AssuranceHostPort) {
 		this.host = wrapped.host;
-		if (wrapped.prepareVerification) this.prepareVerification = (request) => wrapped.prepareVerification!(request);
-		if (wrapped.inspectVerification) this.inspectVerification = (reservation) => wrapped.inspectVerification!(reservation);
+	}
+
+	/**
+	 * Verification CLI stage: a verification that follows a CLI Review runs as one
+	 * more CLI process, in the same working directory and with the same reviewer
+	 * Host, and its output bytes are the receipt (ADR 0017 binds them by reading
+	 * twice). One that follows no CLI Review goes to the wrapped Host as before.
+	 */
+	prepareVerification(request: VerificationRequest): HostReviewReservation {
+		const review = [...this.reservations.values()].reverse().find((item) => item.taskId === request.taskId);
+		if (!review) {
+			if (!this.wrapped.prepareVerification) throw new Error("host verifier dispatch is unavailable");
+			return this.wrapped.prepareVerification(request);
+		}
+		const executable = reviewBinary(review.profile.host);
+		if (!executable) throw new ReviewPreparationError("review_host_unavailable",
+			`review_host ${review.profile.host} executable ${REVIEW_BINARY[review.profile.host]} is not on PATH`,
+			`Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+		const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
+		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
+		const directory = mkdtempSync(join(tmpdir(), "imm-cli-verify-"));
+		chmodSync(directory, 0o755);
+		const packet = join(directory, "verify-packet.md");
+		const script = join(directory, "verify.sh");
+		const output = join(directory, `verify-output-${request.operationId}.txt`);
+		const exitFile = join(directory, `verify-exit-${request.operationId}`);
+		writeFileSync(packet, request.prompt, { encoding: "utf8", mode: 0o644 });
+		writeProcessScript(script, review.root, [executable, ...verificationArguments(review.profile, request.model, packet, VERIFICATION_TURNS)], output, exitFile);
+		// S3 (#426): with a session transport the verifier runs in a watched tab too.
+		const command = sessionRunner
+			? [sessionRunner, "run", "--provider", "herdr", "--cwd", review.root, "--label", `verify ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ")
+			: `sh ${script}`;
+		const actorId = `cli-verifier:${review.profile.host}:${request.operationId}`;
+		this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, exitFile });
+		return {
+			id: request.operationId,
+			dispatch: { verification_command: command, verifier_model: request.model },
+			verification_command: command,
+			review_profile: review.profile,
+			review_actor_id: actorId,
+		};
+	}
+
+	/** No exit file keeps the reservation; a failed or silent process releases it with no receipt. */
+	inspectVerification(reservation: HostReviewReservation): VerificationReceipt {
+		const owned = this.verifications.get(reservation.id);
+		if (!owned) {
+			if (!this.wrapped.inspectVerification) return { ok: false, release: true, reason: "no verification reservation" };
+			return this.wrapped.inspectVerification(reservation);
+		}
+		if (!existsSync(owned.exitFile))
+			return { ok: false, release: false, reason: "verification process still running; wait for it to exit, then call submit_verification again" };
+		const status = Number.parseInt(readFileSync(owned.exitFile, "utf8").trim(), 10);
+		if (status !== 0) return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
+		const bytes = existsSync(owned.output) ? readFileSync(owned.output, "utf8") : "";
+		if (!bytes.trim()) return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
+		return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
 	}
 
 	prepareReview(request: ReviewRequest): HostReviewReservation {
@@ -194,19 +304,7 @@ export class CliReviewHost implements AssuranceHostPort {
 		const contractHash = currentReviewContractHash();
 		writeFileSync(packet, `review_contract_hash: ${contractHash}\n\n${request.snapshotPrompt}`, { encoding: "utf8", mode: 0o644 });
 		const argv = reviewArguments(profile, packet, request.maxTurns);
-		writeFileSync(script, [
-			"#!/bin/sh",
-			`cd ${shellQuote(root)} || exit 1`,
-			`out=${shellQuote(output)}`,
-			`tmp="$out.part"`,
-			`${[executable, ...argv].map(shellQuote).join(" ")} >"$tmp" 2>&1`,
-			"status=$?",
-			`mv -f "$tmp" "$out"`,
-			`printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
-			`exit "$status"`,
-			"",
-		].join("\n"), { encoding: "utf8", mode: 0o755 });
-		chmodSync(script, 0o755);
+		writeProcessScript(script, root, [executable, ...argv], output, exitFile);
 
 		// S4 (#426): the same script, in a Herdr tab the user can watch; the verdict
 		// still comes from the output and exit files, never from the tab.
@@ -252,9 +350,15 @@ export class CliReviewHost implements AssuranceHostPort {
 		const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
 		if (mismatch)
 			return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
+		// A configured verifier model is offered, so the verifier runs on a different
+		// model from the reviewer's whenever one is set (#284 D1).
+		const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value as string | null | undefined;
 		return {
 			ok: true,
-			receipt: { actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? "host-default" },
+			receipt: {
+				actorId: reservation.actorId, result: bytes, model: reservation.profile.model ?? HOST_DEFAULT_MODEL,
+				...(verifierModel ? { offered_models: [verifierModel] } : {}),
+			},
 		};
 	}
 
@@ -264,6 +368,12 @@ export class CliReviewHost implements AssuranceHostPort {
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {
+		const verification = this.verifications.get(reservation.id);
+		if (verification) {
+			this.verifications.delete(reservation.id);
+			rmSync(verification.directory, { recursive: true, force: true });
+			return;
+		}
 		const owned = this.reservations.get(reservation.id);
 		if (!owned) {
 			this.wrapped.releaseReview(reservation);

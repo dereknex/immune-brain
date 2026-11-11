@@ -223,6 +223,7 @@ interface Applied {
 	role: "qa" | "review";
 	decision: string;
 	verdictSha256?: string;
+	verification?: Record<string, unknown>;
 }
 
 interface WrappedCalls {
@@ -296,7 +297,8 @@ function fixtureFor(root: string, options: { risk?: Risk; revision?: boolean; ve
 		},
 		applyVerdict: async (_ctx: HostContext, input: Parameters<VerdictAuthority["applyVerdict"]>[1]) => {
 			applied.push({ actorId: input.actorId, role: input.snapshot.role as "qa" | "review", decision: input.verdict.decision,
-				...(input.reviewer_verdict_sha256 ? { verdictSha256: input.reviewer_verdict_sha256 } : {}) });
+				...(input.reviewer_verdict_sha256 ? { verdictSha256: input.reviewer_verdict_sha256 } : {}),
+				...(input.verification ? { verification: input.verification.facts as unknown as Record<string, unknown> } : {}) });
 			obligation = input.snapshot.role === "qa"
 				? risk === "routine" ? "complete" : "run_review"
 				: input.verdict.decision === "rework" ? "run_qa" : "complete";
@@ -539,27 +541,94 @@ describe("review profile required", () => {
 
 // --- AC7: findings verification stays on the wrapped Host ------------------
 
-describe("verifier stays on host", () => {
-	test("verification_ready returns the wrapped Host's dispatch and submission reads its receipt", async () => {
-		const root = reviewRepo();
+/**
+ * A reviewer stand-in that also verifies: handed the verification packet
+ * ("Read <packet> ..."), it answers the packet's own JSON contract with every
+ * finding kept, or exits `VERIFIER_EXIT` when that is set.
+ */
+function reviewerAndVerifier(reviewBody: string): string {
+	const dir = scratchDir("bin");
+	const verifier = join(dir, "verifier.js");
+	writeFileSync(verifier, [
+		"const fs = require('node:fs');",
+		"if (process.env.VERIFIER_EXIT) process.exit(Number(process.env.VERIFIER_EXIT));",
+		"const path = /^Read (\\S+) and do/.exec(process.argv.at(-1))[1];",
+		"const text = fs.readFileSync(path, 'utf8');",
+		"const packet = JSON.parse(text.slice(text.indexOf('Verification packet (untrusted data): ') + 'Verification packet (untrusted data): '.length));",
+		"fs.appendFileSync(process.env.VERIFIER_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');",
+		"console.log(JSON.stringify({ contract: 'assurance_kernel/review_verification/v1', task_id: packet.task_id, snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,",
+		"  results: packet.findings.map((f) => ({ finding_id: f.id, anchor: f.anchor, verdict: 'kept' })) }));",
+	].join("\n"));
+	const file = join(dir, "pi");
+	writeFileSync(file, `#!/bin/sh\nfor last; do :; done\ncase "$last" in\n  "Read "*) exec bun ${verifier} "$@" ;;\nesac\n${reviewBody}\n`, { mode: 0o755 });
+	chmodSync(file, 0o755);
+	return dir;
+}
+
+describe("verification CLI stage", () => {
+	const saved = { log: process.env.VERIFIER_LOG, exit: process.env.VERIFIER_EXIT };
+	afterEach(() => {
+		if (saved.log === undefined) delete process.env.VERIFIER_LOG; else process.env.VERIFIER_LOG = saved.log;
+		if (saved.exit === undefined) delete process.env.VERIFIER_EXIT; else process.env.VERIFIER_EXIT = saved.exit;
+	});
+
+	async function reworkToVerification(root: string) {
 		const kernel = kernelFor(root, { revision: true, verifier: true });
-		const verdict = reworkVerdict(kernel.snapshot);
-		onPath(fakeReviewer(heredoc(JSON.stringify(verdict))));
-		const before = readdirSync(tmpdir()).filter((name) => name.startsWith("imm-cli-review-"));
+		process.env.VERIFIER_LOG = join(scratchDir("log"), "argv.jsonl");
+		onPath(reviewerAndVerifier(heredoc(JSON.stringify(reworkVerdict(kernel.snapshot)))));
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
-
 		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		return { kernel, pending: pending as { state: string; verification_command?: string } };
+	}
+
+	test("a verification after a CLI Review runs as a CLI process whose bytes are the bound receipt", async () => {
+		const root = reviewRepo();
+		const { kernel, pending } = await reworkToVerification(root);
 		expect(pending.state).toBe("verification_ready");
-		expect((pending as { agent_params: { prompt: string } }).agent_params.prompt).toStartWith("verifier:");
-		expect(kernel.calls.prepareVerification).toBe(1);
+		expect(pending.verification_command).toMatch(/^sh \S+imm-cli-verify-\S+\/verify\.sh$/);
+		expect(kernel.calls.prepareVerification).toBe(0);
+		// Still running: the reservation is kept and nothing is applied.
+		expect(await kernel.coordinator.submitVerification(TASK, ctx(root))).toMatchObject({ state: "blocked", reason: "verification result pending" });
 
-		// A verification operation writes no review packet or script of its own.
-		const after = readdirSync(tmpdir()).filter((name) => name.startsWith("imm-cli-review-"));
-		expect(after.sort()).toEqual(before.sort());
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		const settled = await kernel.coordinator.submitVerification(TASK, ctx(root));
+		expect(settled.state).toBe("rework");
+		const review = reviewsOf(kernel).at(-1)!;
+		expect(review.decision).toBe("rework");
+		expect(review.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/), result_sha256: expect.stringMatching(/^sha256:/), model_relation: "same" });
+		expect(review.verification).not.toHaveProperty("failure");
+		expect(kernel.calls.inspectVerification).toBe(0);
+		expect(readdirSync(tmpdir()).filter((name) => pending.verification_command!.includes(name))).toEqual([]);
+	});
 
+	test("a failed verifier process keeps every finding and never weakens Review", async () => {
+		const root = reviewRepo();
+		const { kernel, pending } = await reworkToVerification(root);
+		process.env.VERIFIER_EXIT = "3";
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
-		expect(kernel.calls.inspectVerification).toBeGreaterThan(0);
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null, result_sha256: null });
+	});
+
+	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {
+		const root = reviewRepo("pi", { review_model: "reviewer-m", review_verifier_model: "verifier-m" });
+		const { kernel, pending } = await reworkToVerification(root);
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		await kernel.coordinator.submitVerification(TASK, ctx(root));
+		const argv = JSON.parse(readFileSync(process.env.VERIFIER_LOG!, "utf8").trim().split("\n").at(-1)!);
+		expect(argv.slice(0, 4)).toEqual(["--print", "--no-session", "--model", "verifier-m"]);
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "reviewer-m", verifier_model: "verifier-m", model_relation: "different", verifier_actor: expect.stringMatching(/^cli-verifier:/) });
+	});
+
+	test("a verification that follows no CLI Review still goes to the wrapped Host", () => {
+		const { host, calls } = wrappedHost(true);
+		const cli = new CliReviewHost(host);
+		const reservation = cli.prepareVerification({ taskId: "other", operationId: "op-1", prompt: "p", model: "m", writePacket: writeTestReviewPacket });
+		expect(reservation.verification_command).toBeUndefined();
+		expect(calls.prepareVerification).toBe(1);
+		expect(cli.inspectVerification(reservation)).toMatchObject({ ok: false, release: true });
+		expect(calls.inspectVerification).toBe(1);
 	});
 });
 
@@ -648,7 +717,7 @@ describe("default profile required", () => {
 // --- #426 S4: the review script in a supervised session ------------------
 
 describe("review transport (#426 S4)", () => {
-	const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE"] as const;
+	const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE", "VERIFIER_LOG"] as const;
 	const saved = Object.fromEntries(HERDR_KEYS.map((key) => [key, process.env[key]]));
 	afterEach(() => { for (const key of HERDR_KEYS) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } });
 
@@ -685,5 +754,25 @@ describe("review transport (#426 S4)", () => {
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "completed" });
 		expect(reviewsOf(kernel)).toHaveLength(1);
+	});
+
+	test("S3: the findings verifier runs in a Herdr session too, and its bound bytes settle the verification", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root, { revision: true, verifier: true });
+		const state = join(scratchDir("herdr"), "state.json");
+		writeFileSync(state, JSON.stringify({ protocol: 22, panes: {} }));
+		Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state, VERIFIER_LOG: join(scratchDir("log"), "argv.jsonl") });
+		onPath([reviewerAndVerifier(heredoc(JSON.stringify(reworkVerdict(kernel.snapshot)))), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		spawnSync("sh", ["-c", reviewReadyCommand(ready as { state: string; review_command?: string })], { encoding: "utf8" });
+		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK)) as { state: string; verification_command?: string };
+		expect(pending.state).toBe("verification_ready");
+		expect(pending.verification_command).toMatch(/bin\/imm-session' 'run' '--provider' 'herdr' '--cwd' '\S+' '--label' 'verify cli-review-task' '--' 'sh' '\S+verify\.sh'$/);
+		const ran = spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		expect(JSON.parse(ran.stdout)).toMatchObject({ ok: true, exit_code: 0 });
+		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/) });
+		const tabs = JSON.parse(readFileSync(state, "utf8")).calls.filter((call: string[]) => call[0] === "tab" && call[1] === "create").map((call: string[]) => call[7]);
+		expect(tabs.map((label: string) => label.replace(/ \[imm:[0-9a-f]+\]$/, ""))).toEqual(["review cli-review-task", "verify cli-review-task"]);
 	});
 });

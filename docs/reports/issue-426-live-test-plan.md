@@ -155,3 +155,14 @@ rec() { local tag=$1; shift; printf '%s %s\n' "$(date +%s.%N)" "$tag" >> ~/imm-p
 | S2-a | 项目配置 `lanes.advisory_transport: herdr`，让 Parent 触发一次 `advisory-reviewer` | Parent 按协议 `imm-session create` → `await` → `read --source scrollback --lines 2000 --extract advisory`，`result` 非空并被当作 advisory 结论使用；之后 `stop` 关闭该会话 |
 | S2-b | 让 advisory 子任务不输出标记块（例如中途打断） | `result: null`，Parent 按 `result_untrusted` 丢弃，不自动重试 |
 | S2-c | 在 Claude Code 的真实 TUI 中，看 `IMM-ADVISORY-BEGIN/END` 行被渲染后的样子 | 抽取仍得到正文；若 TUI 把标记行折行或加前缀导致抽取失败，记录实际形状以修正 `marked_result.ts` |
+
+## 补充用例：S3 verifier 会话（ADR 0039）
+
+前提：临时仓库的 `.imm/config.json` 设 `review_verifier: on`、`lanes.review_transport: herdr`，可选 `lanes.review_verifier_model` 设为与 reviewer 不同的模型。
+
+| 用例 | 步骤 | 期望 |
+| --- | --- | --- |
+| S3-a | 让 Review 给出带 blocking finding 的 rework | `submit_review` 返回 `verification_ready`，带 `verification_command`（`imm-session run ... --label 'verify <task_id>'`）；运行期间 `submit_verification` 得 `verification result pending` |
+| S3-b | 运行 `verification_command`，结束后 `submit_verification` | 出现 `verify <task_id> [imm:<token>]` tab；返回 `rework`（或 refuted 全部时继续）；TaskRecord 的 verification facts 中 `verifier_actor` 为 `cli-verifier:<host>:...`，设置了 verifier 模型时 `model_relation: different` |
+| S3-c | 让 verifier 进程失败（例如临时把 Host 的 API key 置空） | 所有 finding 保留，facts 的 `failure` 为 `dispatch_failed`，Review 不被削弱 |
+| S3-d | 不设 `review_transport`（默认 `process`） | `verification_command` 为 `sh .../verify.sh`，在 Parent 的 shell 里运行，结论相同 |

@@ -81,7 +81,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
 	validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
 	validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport"];
+	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport", "review_verifier_model"];
 	validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
 	validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
 	const validateLane = (o: Obj, file: string, path: string) => {

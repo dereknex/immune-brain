@@ -43,6 +43,8 @@ export interface HostReviewReservation {
 	dispatch: unknown;
 	/** Set by a Host that dispatches Review to a CLI process instead of an in-process agent. */
 	review_command?: string;
+	/** Set by a Host that dispatches findings verification to a CLI process (verification CLI stage). */
+	verification_command?: string;
 	review_profile?: ReviewProfile;
 	/** The actor identity the Kernel records for this reservation's verdict. */
 	review_actor_id?: string;

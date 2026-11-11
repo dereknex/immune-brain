@@ -138,25 +138,15 @@ no complete block is `result_untrusted`. The markers are spelled in parts in the
 dispatch text, so the echoed prompt is never a result. The protocol lives in
 `docs/reference/subagent-dispatch-protocol.md`.
 
-**S3, the #284 verifier in an authority session: deferred, and why #284 does not
-have to finish first.** Three facts, checked against this branch:
-
-1. #426 named #284's two review timestamps as S3's prerequisite. They are
-   delivered: the coordinator records `review_started_at` and
-   `review_submitted_at` per round, and verification records `dispatched_at` and
-   `submitted_at` (`runtime/assurance/coordinator.ts`,
-   `runtime/kernel/validation.ts`).
-2. What #284 still lacks is the labelled baseline that decides whether the
-   verifier is turned on. That decides the verifier's rollout, not its transport;
-   a pilot can run in a throwaway repository with `review_verifier: on`.
-3. The real blocker is the transport itself. Findings verification is still a
-   Host subagent with receipt-bound observation (ADR 0017; ADR 0037 Decision 9
-   kept it so), so there is no process to put in a session. S3 needs a
-   verification CLI stage first, the counterpart of ADR 0037 for
-   `prepareVerification`: a packet, a script, output and exit files. S4's
-   `runCommand` then carries it unchanged.
-
-So S3 is ordered after a verification CLI stage, not after #284's baseline.
-Doing it now would add a session path that runs only when `review_verifier` is
-on, a setting nothing in this repository enables, so it would ship untested end
-to end.
+**S3, the #284 verifier in an authority session: delivered after a verification
+CLI stage.** #284 did not have to finish first: its two review timestamps, which
+#426 named as S3's prerequisite, are delivered (`review_started_at` and
+`review_submitted_at` per round, `dispatched_at` and `submitted_at` for
+verification), and its open labelled baseline decides whether the verifier is
+turned on (`review_verifier`), not where it runs. The real blocker was that
+findings verification was a Host subagent, not a process. [ADR
+0039](0039-verification-cli-stage.md) makes it a CLI process after a CLI Review;
+with `lanes.review_transport: herdr` that process then runs through
+`imm-session run` in a `verify <task_id>` tab, its completion signal being the
+script's exit status. A pilot needs `review_verifier: on` in the repository that
+runs it; nothing in this repository enables it.

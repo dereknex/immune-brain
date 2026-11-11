@@ -34,3 +34,8 @@ Two opt-in Lane settings put work in watched Herdr sessions (#426 S4, S2):
 `lanes.review_transport: herdr` runs the authority Review's script through
 `imm-session run`, and `lanes.advisory_transport: herdr` runs advisory children
 in a session whose marked result `imm-session read --extract advisory` returns.
+Findings verification after a CLI Review is now a CLI process (ADR 0039):
+`verification_ready` carries `verification_command`, its output bytes are the
+bound receipt, `lanes.review_verifier_model` lets the verifier run on a
+different model, and with `lanes.review_transport: herdr` it runs in a Herdr tab
+(#426 S3).
