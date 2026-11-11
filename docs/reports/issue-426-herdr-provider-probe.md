@@ -67,8 +67,8 @@ core 侧：`crates/ghostty-vt/src/tests.rs:155-171` 断言 core 解析 `state=wo
 
 ## 未完成与下一步
 
-1. **Herdr TUI 运行实测**：已执行，见下节；G3 的权限与登录两类对话框仍缺。
-2. **herdr-core 运行实测（D2 的 probe）**：已执行，见下节；结论是“无 Host 准入”，其中 Claude Code 的 workspace trust 一项被推翻。
+1. **Herdr TUI 运行实测**：已执行，见下节；G3 的权限对话框已通过，登录对话框对 Claude Code 失败、对 Pi 不可测。
+2. **herdr-core 运行实测（D2 的 probe）**：已执行，见下节；结论是“无 Host 准入”，其中 Claude Code 的 workspace trust 与登录两项都不上报 `blocked`。
 3. **herdr-core adapter（S0.5 实现）**：已按用户要求在运行实测之前写成，见 `plugins/immune-brain/runtime/session/herdr_core_provider.ts`，映射见 `docs/reference/supervised-session-port.md`。它通过同一套 conformance suite（stand-in `hc` 取自上述 0.1.19 源码与 schema），可用 `--provider herdr-core` 显式选择，但 Loop 契约尚不使用它。与原计划相比有两处具体化：所有权用随机 token 作为终端标签 `imm-session`，每个动词先读终端核对；创建时先轮询 `hc get` 等 Host 的首个状态上报（30 秒上限），再 `send --if idle`。
 4. 1 和 2 通过之前，Loop 契约不启用 herdr-core（D2）；届时再决定由哪项配置显式选择 provider，仍不自动探测。
 
@@ -82,8 +82,9 @@ core 侧：`crates/ghostty-vt/src/tests.rs:155-171` 断言 core 解析 `state=wo
 | --- | --- | --- | --- | --- | --- | --- |
 | G1 `probe` | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 |
 | G2 一轮 `create → observe → await → read → stop` | 通过（先 trust，后 `--resume`） | 通过 | 通过（先 trust，后 `--resume`） | 通过 | 通过 | 通过 |
-| G3 workspace trust | 通过：4.03 s 报 `blocked`，entry 未提交 | 不适用（无此对话框） | 通过：4.03 s 报 `blocked` | **失败**：30 s 内无任何上报，`start_failed` | 不适用 | 未测 |
-| G3 权限 / 登录 | 未测 | 未测 | 未测 | 未测 | 未测 | 未测 |
+| G3 workspace trust | 通过：4.03 s 报 `blocked`，entry 未提交 | 不适用（无此对话框） | 通过：4.03 s 报 `blocked` | **失败**：30 s 内无任何上报，`start_failed`；本轮复测仍不上报，改为保留终端 + `attention`，接受后 `--resume` 0.38 s 提交成功 | 不适用 | 未测 |
+| G3 权限 | 通过：4.3 s 报 `blocked`，`await` 滞后 0.27 s | 未测 | 未测 | **通过**：2.1 s 报 `blocked`，`status.kind = permission` | 未测 | 未测 |
+| G3 登录 | **失败**：登录选择框下报 `idle`，9.4 s 后 `provider_error` / `agent_prompt_stalled`，entry 被误发 | 不可测（`PI_CODING_AGENT_DIR` 只得到空会话） | 未测 | 备选分支：`entry_submitted:false` + `unknown` + `attention`，未报 `blocked` | 未测 | 未测 |
 | G4 负向 | 通过 | 通过 | 通过 | 通过 | 通过 | 通过 |
 
 G2 细节：create 3.7–4.0 s（Herdr，含 agent 就绪）、1.7–3.7 s（core）；一轮 `await` 用 0.05–6.7 s 返回 `changed` 与 `idle` 或 `done`；`read` 均取到 `READY`；`stop` 后 Herdr 关 tab、core 的终端为 `state: "finished"`。
@@ -101,8 +102,8 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 | 旧版本 Host 不上报 | **证实** | `PI_PROGRAM_STATUS=0` 得 `start_failed`，entry 未发送 |
 | “`waiting on you` 覆盖 workspace trust、登录与权限对话框” | **被推翻（workspace trust）** | claude 2.1.322 显示 trust 对话框时，`hc get` 的 `status` 30 s 保持 `null`，create 得 `start_failed` 而非 `blocked` |
 | Pi / Antigravity 的说明未提到 workspace trust | Herdr 上**确有该对话框** | 两者在 Herdr 的 create 都返回 `entry_submitted:false` 与 `blocked`，接受后 `--resume` 成功 |
-| K1：Herdr 所有权只比 workspace | **证实** | 自己 pane 的 handle 可被 `observe` 成功（`unknown` / `none`），未判 `not_owned` |
-| O1：`done` 的指令规则 | **证实，core 上更严重** | 三 Host 一轮后均报 `done`，`send` 一律 `state_refused`；Herdr 聚焦 tab 后变 `idle` 才可发；core 无聚焦概念，`done` 之后再也发不出指令 |
+| K1：Herdr 所有权只比 workspace | **已修复并实测** | 本轮：自身 pane 拼出的 handle、尾部改 `000000000000` 的 handle，`observe` / `stop` 均 `not_owned`；core 上自建终端同样 |
+| O1：`done` 的指令规则 | **已修复并实测** | 本轮：Herdr 与 core 均在 `done` 上直接 `send` 成功并回到 `working`，无需先聚焦 |
 | O2：首报可能是 `done` | **部分推翻** | 三 Host 首报都是 `idle`；真正的风险是“启动对话框 = 完全静默” |
 | O4：时延 | 记录 | create 3.7–4.0 s（Herdr）、1.7–3.7 s（core）；G3 的 5 s 门限在 Herdr 的 trust 场景成立 |
 
@@ -151,7 +152,7 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 - 修复：新增 `plugins/immune-brain/.pi-extension/single-copy.ts`。两个扩展入口先按源目录（realpath 后的插件根）认领自己的 resource loader，以 Pi 让同一 loader 加载的所有扩展共享的 `pi.events` 作标识（0.84.1 `resource-loader.js:158` 的 `this.eventBus`）：第一份的目录拥有该 loader，同一目录重载照常，其他目录的副本什么都不注册，只在 `session_start` 提示一次“已从哪里加载、哪份被忽略”；原拥有目录已不存在（package 被移动或升级）时由新目录接管。因 `-e` 先加载，显式指定的目录生效。`dist/drive-batch.md` 写明该行为。
 - 第一版按“进程”认领，`tests/pi-canary-packed-loader.test.ts` 在同进程其他测试之后从打包副本加载时被误判为重复而失败（单独跑通过），因此改为按 loader 认领；该测试现已通过。
 - 测试：`tests/pi-extension-single-copy.test.ts`（认领规则与接管；两个真实入口在被他人认领时零注册、只提示一次；自己拥有的 loader 与另一个 loader 都照常注册工具）。
-- 待实测：在装有用户级 Immune-Brain Pi package 的机器上，以 `-e <插件目录>` 启动 Pi Executor，确认不再退出、提示出现一次、使用的是 `-e` 那份。
+- 实测未通过（2026-11-11）：在装有用户级 Immune-Brain Pi package 的机器上以 `-e <插件目录>` 启动 Executor，pi 仍报 `Failed to load extension … conflicts with …` 并退出（`start_failed`，两次复现）；加 `-ne -ns` 才成功。按 loader 认领的 `single-copy.ts` 覆盖不到“显式 `-e` + 已安装 package”这一组合，因为两份副本由不同的 resource loader 载入。
 
 ### Claude Code 启动对话框不上报（缓解，未根治）
 
@@ -164,3 +165,71 @@ G4 细节：Herdr 外 `probe` / `create` 得 `provider_unavailable` 且 tab 数�
 > **Program Status Protocol: report `blocked` while the workspace trust dialog is shown**
 >
 > Claude Code 2.1.295 added OSC 7501 support (CHANGELOG: “terminals that implement it can show whether Claude Code is working, waiting on you, or done”). In 2.1.322, starting `claude` in a directory that has not been trusted shows the workspace trust dialog, but no OSC 7501 record is written until it is answered, under a terminal that answers the `OSC 7501;?` probe (herdr-core 0.1.19). A supervisor therefore cannot tell “waiting on the user” from “still starting”. Expected: a `state=blocked:kind=permission` (or `question`) record while the trust dialog is visible, as for other waiting-on-you states.
+
+## 运行实测（2026-11-11，第二轮）
+
+方法：按 `docs/reports/issue-426-local-validation-plan.md` 执行，被测代码 `claude/affectionate-pascal-prxbzx` @ `abb4d73f91`。本机 `herdr` 0.9.5（protocol 22）、`hc` 0.1.20、`claude` 2.1.322、`pi` 1.5.2、`agy` 1.5.5、`bun` 1.4.2。CLI 级用例由 agent 在 `imm-probe` workspace 的 pane 内驱动；需要回答对话框的用例（trust、权限、登录）由用户本人操作。证据：`~/imm-probe/evidence/v2/`（`results-v2.md`、`*.json`、`C1-parent-session.jsonl`）。
+
+### 端口用例
+
+| 用例 | herdr × claude-code | herdr × pi | herdr × antigravity | core × claude-code | core × pi |
+| --- | --- | --- | --- | --- | --- |
+| G1 `probe` | 通过 | 通过 | 通过 | 通过 | 通过 |
+| G2 一轮 | 通过 6.6 s | 通过 8.7 s | 通过 11.2 s | 通过（见 B3） | 通过 3.0 s |
+| G3 workspace trust | 通过：4.09 s 报 `blocked`，接受后 `--resume` 0.53 s 同 tab 提交 | 不适用 | 未测 | 失败：30 s 无上报，`entry_submitted:false` + `unknown` + `attention`；接受后 `--resume` 0.38 s 提交成功 | 不适用 |
+| G3 权限 | 通过：4.3 s 报 `blocked`，`await` 滞后 0.27 s | 未测 | 未测 | 通过：2.1 s 报 `blocked`，`status.kind = permission` | 未测 |
+| G3 登录 | 失败：登录选择框下报 `idle`，9.4 s 后 `provider_error` / `agent_prompt_stalled`，entry 被误发 | 不可测 | 未测 | 备选分支：`entry_submitted:false` + `unknown` + `attention`，未报 `blocked` | 未测 |
+| G4 负向 | 通过 | 通过 | 通过 | 通过 | 通过 |
+
+G2 细节：Herdr tab 名形如 `<label> [imm:<12 位十六进制>]` 且不抢焦点；`await` 返回 `changed` 与 `done`；`read` 均取到 `READY`；`stop` 关 tab，core 终端转 `finished`。
+
+G3 权限细节（A4/B4）：Herdr 走屏幕检测 4.3 s 报 `blocked`；core 走 OSC 7501，2.1 s 报 `blocked` 且 `status.kind` 为 `permission`、`provenance: reported`。Allow 后两者都回到工作态并完成整轮（生成标记文件、回复 DONE）。
+
+G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herdr tab 出现 “Select login method”，core 终端出现首次运行引导），但两类 provider 都没报 `blocked`：Herdr 报 `idle` 并把 entry 打进对话框（`agent_prompt_stalled`），core 保持 `status: null` 返回 `unknown` + `attention`。`--env PI_CODING_AGENT_DIR=<空目录>` 只得到全新空会话，不产生登录框，该分支不可测。
+
+### 上一轮修复项的实测确认
+
+| 修复 | 状态 | 依据 |
+| --- | --- | --- |
+| K1 归属只比 workspace | 证实已修 | 自身 pane 拼出的 handle、尾部改 `000000000000` 的 handle，`observe` / `stop` 均 `not_owned`；core 自建终端同样 |
+| O1 `done` 发不出指令 | 证实已修 | Herdr 与 core 均在 `done` 上直接 `send` 成功并回到 `working`，无需先聚焦 |
+| C-2 死 Host 不能原地重启 | 证实已修 | 退出后 `await` 0.15 s 返回 `exited` / `unknown`；`--resume` 3.71 s 同 tab 重启完成一轮；core 已 `finished` 的终端保持 `state_refused` |
+| `--env` 注入 | 证实可用 | A5/B5/B10 均通过它控制 Host 环境；`PI_PROGRAM_STATUS=0` 时 30.5 s 返回 `entry_submitted:false` + `attention` |
+| C-3 多 handle await | 部分证实 | 无 `--timeout-ms` 的 `await` 持续 208.7 s，跨过 180 s check-in 后返回 `changed` / `done`；真实双 Lane 因 F7 未执行 |
+| C-1 单插件副本 | 未生效 | 见上一节“实测未通过” |
+
+### 新发现
+
+- **F1 登录 / 选择类对话框在两类 provider 上都不是 `blocked`。** Herdr 还把它当“可发送”，把 entry 打进对话框并失败；core 保持沉默并给出 `attention`。这是 G3 登录一格的失败原因。
+- **F2 `close` 的记录只做形式校验。** `closeRecordRefusal`（`runtime/session/supervised_session_port.ts:216-223`）只验 `task_id` 形式与 `recorded_at` 是否为规范 ISO 串，不核对 batch report：`--recorded-at now` 得 `close_unproven`，而 `--recorded-at 2020-01-01T00:00:00.000Z` 直接 `ok:true` 并关掉 tab。
+- **F4（环境）mise 的选择框同样静默。** 隔离 `XDG_STATE_HOME` 后 core 终端里的 `claude` 先弹 mise 的 “Trust them?”，30 s 零上报；加 `--env MISE_TRUSTED_CONFIG_PATHS` 后才是真正的权限框。与 F1 同源。
+- **F6 `lane_session_close` 无法按契约执行。** 契约（`dist/drive-batch.md:502-512`）要求“report 显示 child `integrated` 时再调用 `start_unattended_batch` 带 `lane_session_close`”，但集成已把 `imm/<slug>` 推离 `base_head`，再进入即 `batch_rejected: batch_parent_branch_exists`；补 `initiative_slug` 得 `batch_entry_kind_mismatch`。唯一可行顺序是把关闭放进集成那一次调用，与契约文字相反。结果：Executor tab 无法由 Parent 关闭。
+- **F7 第一个 batch 之后，新 batch 一律起不来。** 后续三次 batch（`par-probe` 并行 ×2、`probe-m1` 单任务 material）都在约 30 s 后把 child 置为 `needs_human`、`lane: null`，原因 `batch_worktree_failed: …/.git/imm/worktrees/<slug>/<task> (refs/heads/imm-lane/<slug>/<task>) has no recorded Lane binding; resource retained`。worktree 与 lane/parent 分支都已创建并指向 base，只是绑定未写进 record；同 slug 不可重试，只能 `git worktree remove --force` + `git branch -D`。代码上 `createLaneWorktree`（`runtime/unattended/batch_lanes.ts:1363-1400`）先建 worktree/branch、后在 admission 之后写绑定，中途失败即留下“有资源无绑定”，下一次 tick 的 `assertLaneWorktreeAvailable`（`runtime/unattended/batch_worktrees.ts:27-37`）只能判死；形态像同一授权周期内并发 tick 的竞态。
+- **Parent 行为缺陷（非 port）**：三次 Parent 会话分别出现 ①把“没有活跃 claim”当成缺 TaskIntent，去 `.imm/` 找文件并索要需求；②拿到 `executor` handoff 后主张在 Parent 会话里自己实现，需纠正才改走 `imm-session`；③`lane_session_close` 被拒后考虑 `git reset` 复位 parent branch（未执行）。
+
+### 阶段 C（Loop 端到端，probe-c1）
+
+原生门打开一次并由用户确认，Parent 经 `imm-session create --provider herdr` 建不抢焦点 tab（4.9 s，`entry_submitted:true`），前台 `await` 49 s 返回 `changed` / `done`；Kernel 结算 batch `completed`、child `integrated`、commit `69f4d40`、`qa_failures: 0`、`task-record.lifecycle: done`；`imm/probe-c1` 与 Lane worktree 保留（`git_integration: manual`）。Parent 会话的 16 条 bash 调用里没有一条执行 `herdr tab`、`herdr agent` 或 `herdr pane`（G5）。S1 见 F6，C-3 见 F7，R4（review / verifier / advisory 走会话）因 F7 未能进入。
+
+### 准入后果（D2 更新）
+
+- **herdr**：G1、G2、G4 通过（三 Host）；G3 的 workspace trust 与权限通过，登录对 Claude Code 失败。Claude Code 在 herdr 上仍差“登录对话框”一格；Pi 与 Antigravity 的权限 / 登录未测。
+- **herdr-core**：Claude Code 因 workspace trust 与登录两类对话框都不报 `blocked` 继续不准入；Pi 与 Antigravity 的权限 / 登录未测。
+- **Loop**：单任务 Lane 在 Herdr 可用，但 Parent 无法按契约关闭 Executor tab（F6）；同仓第二个 batch 无法启动（F7），并行 batch 与 Review 传输都无法实测。
+- D2 仍未满足，Loop 契约继续不启用 herdr-core。
+
+### 未覆盖
+
+- A4/B4 的 Deny 分支，Pi 与 Antigravity 的权限与登录对话框。
+- C-3 的双 tab 并发与多 handle await；R4 的 S2-a/b/c、S3-a-d、S4-a/b。
+- S1-a（未集成时请求关闭）与 S1-c（重复请求 + 伪造 `recorded_at`）的真实 Lane 版本；S1-c 目前只有 CLI 级证据（F2）。
+
+### 待修复清单
+
+| 编号 | 问题 | 证据位置 |
+| --- | --- | --- |
+| F1 | 登录 / 选择类对话框不报 `blocked`，Herdr 还会误发 entry | 上文 G3 登录细节 |
+| F2 | `close` 记录只做形式校验，不核对 batch report | `runtime/session/supervised_session_port.ts:216-223` |
+| F6 | `lane_session_close` 的契约顺序不可执行 | `dist/drive-batch.md:502-512`、`batch_lanes.ts` 的 parent-branch 检查 |
+| F7 | 新 batch 的 Lane 创建自锁，不可自愈 | `batch_lanes.ts:1363-1400`、`batch_worktrees.ts:27-37` |
+| C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | `.pi-extension/single-copy.ts` |
