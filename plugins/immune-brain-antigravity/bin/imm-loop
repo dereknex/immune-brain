@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+PLUGIN_ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
+exec bun "$PLUGIN_ROOT/runtime/loop_daemon/cli.ts" "$@"
