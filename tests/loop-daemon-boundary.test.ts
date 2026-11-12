@@ -384,6 +384,18 @@ describe("dry-run isolation", () => {
 			snapshotOverride: snapshot,
 			gh: gh.transport,
 			classify: recordingClassifier().classify,
+			loopConfig: {
+				mode: "observe",
+				interval_seconds: 60,
+				max_concurrent: 2,
+				max_ready_buffer: 5,
+				max_pr_buffer: 5,
+				auto_enroll_max_risk: "none",
+				allowed_actors: ["owner"],
+				allowed_associations: ["OWNER", "MEMBER", "COLLABORATOR"],
+				budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
+			},
+			guardFacts: { daemon_identity: "daemon-bot" },
 		});
 		expect(result.returncode).toBe(0);
 		expect(gh.calls).toEqual([]);

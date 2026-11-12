@@ -21,10 +21,13 @@
 | `loop-daemon-s5-drive-pr` | `S5`: Enrollment confirmation sources (`tracker_approval`, `policy_auto`), `LaneSupervisor` drive, and `open_pr` | `critical` | `tests/loop-daemon-drive-pr.test.ts` | Kernel Enrollment accepts `tracker_approval` (`record_approval` from verified, unedited, non-daemon owner comment) and `policy_auto` (strictly routine tasks only, capped by `loop.auto_enroll_max_risk: "routine"` and `.imm/risk-floor.json`, never `material` or `critical`); daemon acts as 4th composition root invoking `startBatch` and `LaneSupervisor`, records Executor exit via `exit_recorder.ts`, and opens draft/ready PRs on `imm/<slug>` (`BR-SCN-2`, `BR-SCN-3`). |
 | `loop-daemon-s6-decisions` | `S6`: In-Lane literal-user decision relay over GitHub Issues | `material` | `tests/loop-daemon-decisions.test.ts` | When a supervised Lane pauses on `laneDecisionFacts` requiring a literal-user decision, the daemon parks the slot, posts a structured question bound to `run_id` and `record_revision`, and relays a verified owner reply back via `relayLaneDecision` (`BR-SCN-4`). |
 | `loop-daemon-s7-repair` | `S7`: Headless `fix-pr` repair loop, review comment triage, `mark_ready`, and `close_out` | `material` | `tests/loop-daemon-repair.test.ts` | Daemon dispatches bounded `fix-pr` on `imm/*` and `imm-loop/*` PRs for failing checks (reproduced locally first), base-branch conflicts, and review comments; enforces a 2-attempt cap per `(head_sha, failure_signature)` before `escalate`; handles `mark_ready` and `close_out`. |
+| `loop-daemon-s8-dispatch-core` | `S8`: Tick dispatch core: loop config, guard facts, scheduler, and deterministic handlers | `material` | `tests/loop-daemon-dispatch.test.ts` | `imm-loop tick` and `run` read the `loop` block, refuse a live run under `mode: "off"` or when the daemon identity equals a configured owner, populate `GuardFacts` from configuration, the authenticated GitHub identity, and local state, pass every judged handler through `scheduleLoopWork()` and lease acquisition, execute the deterministic handlers through one GitHub write port gated by `loop.mode`, update the status Issue in place, and append every dispatch outcome to `.imm/state/loop/dispatches.jsonl` (`SCN-5`). |
+| `loop-daemon-s9-agent-handlers` | `S9`: Headless agent session runner and agent-backed handlers | `material` | `tests/loop-daemon-agent-handlers.test.ts` | A headless Host session runner starts bounded analysis, planning, execution, and repair sessions with only the daemon's credentials and reads their completion from files, Git, and the Kernel; the dispatch core executes `analyze_codebase`, `draft_plan`, `publish_plan_for_approval`, `enroll_and_drive` (verified `/approve <digest>` -> `tracker_approval`, or `policy_auto`, then `dispatchLoopDrive()` under the standing `run` process, then `open_pr`), `repair_pr_ci`, `repair_pr_conflict`, and `address_pr_review` (`SCN-6`). |
+| `loop-daemon-s10-decision-model` | `S10`: Decision-model application under ADR 0039 Decisions 5-7 | `material` | `tests/loop-daemon-decision-model.test.ts` | Each daemon point carries a conservative hand-set threshold and acts only on its correctable direction; below-threshold, truncated, disabled, or unavailable answers go to a read-only judging agent that picks one catalogue handler (invalid output -> no side effect); the production classifier is wired with full envelope provenance; a periodic full reconciliation re-checks model-skipped events; every downstream correction lands in `.imm/state/loop/labels.jsonl` in `scripts/decision-eval` corpus form; `a20` candidates, PR review triage, and free-text Lane replies are bound (`SCN-7`). |
 
 ## Sources
 
-- **Parent Issue**: GitHub Issue `#458` (`[Initiative] Loop daemon: unattended planning and advancement of Issues`) and slice Issues `#459` (`S0`) through `#466` (`S7`).
+- **Parent Issue**: GitHub Issue `#458` (`[Initiative] Loop daemon: unattended planning and advancement of Issues`) and slice Issues `#459` (`S0`) through `#466` (`S7`); `S8`-`S10` are added by the post-S7 amendment (see Post-S7 Gap Audit).
 - **Design Branch Artifacts**: `origin/claude/loop-agent-design-0pg9mz` (`docs/adr/0038-loop-daemon.md`, renumbered to `docs/adr/0039-loop-daemon.md` per `BR-DEC-3`, and `docs/proposals/loop-agent.md`).
 - **Upstream ADRs & Specs**:
   - `docs/adr/0005-unattended-initiative-batch-run.md` (Enrollment confirmation sources and risk floor).
@@ -39,6 +42,7 @@
   - `plugins/immune-brain/runtime/decision_model/contract.ts` and `thresholds.ts`
   - `plugins/immune-brain/runtime/layered_config.ts` and `github_issue_tracker.ts`
   - `.imm/risk-floor.json`
+- **Post-S7 Design Source**: `docs/proposals/loop-agent.md` §7.4-§7.6 (decision-model tiering, per-point suitability table, and enablement rules) and ADR 0039 Decisions 5-7, 12-13.
 
 ## Threat model and supported environment
 
@@ -51,7 +55,7 @@
 
 ## User scenarios
 
-### Scenario Matrix (`BR-SCN-1` – `BR-SCN-4`)
+### Scenario Matrix (`BR-SCN-1` – `BR-SCN-4`, `SCN-5` – `SCN-7`)
 
 | Scenario ID | Owning Slice | User / Operator Action | Expected Observable Outcome | Verification Seam |
 | --- | --- | --- | --- | --- |
@@ -59,6 +63,9 @@
 | `BR-SCN-2` | `loop-daemon-s5-drive-pr` (`S5`) | Daemon plans an Issue via headless `draw-up` on `imm-loop/<issue>` and posts the plan summary; an authorized owner replies approving the matching `plan_digest`. | Daemon verifies `comment.user.login` (not daemon identity) + `author_association` + unedited status (`updated_at === created_at`) + `plan_digest`, records `record_approval` (`confirmation_source: "tracker_approval"`), enrolls the TaskIntent, drives the Lane via `LaneSupervisor` to `settled`, records Executor exit, and opens a PR on `imm/<slug>`. | `tests/loop-daemon-drive-pr.test.ts` |
 | `BR-SCN-3` | `loop-daemon-s5-drive-pr` (`S5`) | An Issue with a staged routine TaskIntent is evaluated under `loop.auto_enroll_max_risk: "routine"`; a second TaskIntent touches a path matched by `.imm/risk-floor.json` (elevated to `material` or `critical`), or is declared `material`. | The genuine `routine`-risk TaskIntent auto-enrolls under `confirmation_source: "policy_auto"` (when not in same-UID `degraded` mode and not touching `no-touch.json`), while the `.imm/risk-floor.json`-elevated or declared `material`/`critical` TaskIntent is strictly rejected for `policy_auto` by the Enrollment membrane and requires `tracker_approval` or `user_session`. | `tests/loop-daemon-drive-pr.test.ts` |
 | `BR-SCN-4` | `loop-daemon-s6-decisions` (`S6`) | During unattended Lane execution, `laneDecisionFacts` detects a `user_only` literal-user decision gate (e.g. `widen_scope` or breaking intent revision). | Daemon parks the Lane slot, posts a structured GitHub Issue comment carrying `run_id` and `record_revision`, waits for a verified owner reply referencing that revision, and invokes `relayLaneDecision` to resume the Lane (or parks/escalates on stale revision or non-owner reply). | `tests/loop-daemon-decisions.test.ts` |
+| `SCN-5` | `loop-daemon-s8-dispatch-core` (`S8`) | Operator runs a live `imm-loop tick` under `loop.mode: "assist"` with fixtures carrying an escalation-worthy event, a parked Lane decision, and an existing status Issue; then repeats it under `loop.mode: "observe"`. | Under `assist`, the escalation comment is created once and updated in place for the same key, the Lane decision question is posted with `(run_id, record_revision)`, the status Issue body is edited in place, and each outcome appears in `dispatches.jsonl`; under `observe` the same input records decisions and `skipped_mode` dispatches with zero GitHub writes. | `tests/loop-daemon-dispatch.test.ts` |
+| `SCN-6` | `loop-daemon-s9-agent-handlers` (`S9`) | A new Issue arrives; the daemon plans it; the verified owner replies `/approve <digest>`; `imm-loop run` continues on later ticks. | The analysis and planning sessions produce a validated candidate on `imm-loop/<issue>` and a plan summary comment; the approval is turned into a `tracker_approval_proof`, the task enrolls, `dispatchLoopDrive()` drives the Lane to settlement, the exit is recorded, and a PR opens on `imm/<slug>`, all driven by ticks against a fake session provider and GitHub fixtures. | `tests/loop-daemon-agent-handlers.test.ts` |
+| `SCN-7` | `loop-daemon-s10-decision-model` (`S10`) | An `a18` answer below its threshold arrives; separately, an event `a18` judged `ignore` above threshold is later reconciled. | The low-confidence event is decided by the judging agent rather than escalated; at reconciliation the judging agent overrides the skipped event, its handler is dispatched through the normal guards and scheduler, and one correction label is appended to `labels.jsonl`. | `tests/loop-daemon-decision-model.test.ts` |
 
 ### Scenario Exemptions
 
@@ -67,6 +74,25 @@
 - `loop-daemon-s3-config-comms` (`S3`): Configuration validation, same-UID `degraded` posture, status Issue, and owner command parsing supporting `BR-SCN-2`–`BR-SCN-4`; verified via `tests/loop-daemon-config-comms.test.ts`.
 - `loop-daemon-s4-schedule-plan` (`S4`): Scheduler lease/buffer management, cached codebase analysis, and headless `draw-up` supporting `BR-SCN-2`; verified via `tests/loop-daemon-schedule-plan.test.ts`.
 - `loop-daemon-s7-repair` (`S7`): Post-PR headless `fix-pr` repair loop, conflict rebase, and review triage; verified via `tests/loop-daemon-repair.test.ts`.
+
+## Post-S7 Gap Audit
+
+After `S7` was integrated (`b0dd519cd0`), a review of #458 against this Spec found that every slice met its own Done-Looks-Like while no slice owned connecting the judged handler to its module. Each row below is repository evidence at `b0dd519cd0` and is the sole source of the `S8`-`S10` design decisions that cite it.
+
+| Gap ID | Evidence | Target Slice |
+| --- | --- | --- |
+| `GAP-1` | `runtime/loop_daemon/cli.ts` `tick` ends after `appendLoopDecision`; `scheduleLoopWork`, `analyzeCodebase`, `draftAndPublishPlan`, `dispatchLoopDrive`, `openLoopPullRequest`, `planStatusIssue`, `planEscalation`, and the `repair_agent.ts` entries have no caller outside their own file and tests. | `S8`, `S9` |
+| `GAP-2` | `cli.ts` builds `GuardFacts` with only `paused`, `no_touch_paths`, `active_leases`, and `identity_posture`; `guards.ts` `isVerifiedActor()` treats an absent `allowed_actors` as an empty allowlist, so every live owner comment is refused at `G7`. | `S8` |
+| `GAP-3` | `cli.ts` `run` takes `--interval` (default 60) and never reads `loop.mode` or `loop.interval_seconds`. | `S8` |
+| `GAP-4` | ADR 0039 Decision 13 requires refusing to start when the daemon identity equals a configured owner; `identity.ts` checks only the OS UID. | `S8` |
+| `GAP-5` | `drive_dispatcher.ts` keeps one `LaneSupervisor` per process and documents that a fresh one per tick reports a running generation as unobservable, so a one-shot `tick` cannot own a Lane. | `S9` |
+| `GAP-6` | `analysis_agent.ts` (`CodebaseAnalysisProbe`), `plan_drafter.ts` (`PlanDraftDeps`), and `repair_agent.ts` (`RepairCiDeps`, `RepairConflictDeps`, `AddressReviewDeps`) take their agent work as injected functions with no production implementation. | `S9` |
+| `GAP-7` | `judgement.ts` `MIN_CLASSIFIER_CONFIDENCE = 0.6` applies to every point while `decision_model/thresholds.ts` keeps `threshold_set.values: null` for `a18`-`a20`; ADR 0039 Decision 7 requires a conservative per-point hand-set threshold. | `S10` |
+| `GAP-8` | Below-threshold answers escalate (`judgement.ts` `escalated(...)`); ADR 0039 Decision 6 and proposal §7.6 rule 1 route them, and truncated or unavailable answers, to a judging agent. | `S10` |
+| `GAP-9` | No full reconciliation re-checks model-skipped events and no correction label is recorded (ADR 0039 Decision 7, proposal §7.6 rule 3). | `S10` |
+| `GAP-10` | `createDecisionModelClassifier()` keeps only `choice` and `confidence` from the envelope, and `cli.ts` passes no classifier, so the live daemon never calls the decision model. | `S10` |
+| `GAP-11` | `a19` `approve_plan` maps to `enroll_and_drive` (`judgement.ts` `classifyOwnerComment`); ADR 0039 Decisions 5 and 9 and proposal §7.5 say a model answer never constitutes approval. | `S10` |
+| `GAP-12` | `facts.duplicate_candidate` is never supplied, so `a20_issue_duplicate_pair` is never called; `E10` uses `a14_ambiguous_user_intent` although proposal §7.5 binds PR review triage to `a14_pr_comment_triage`; `AddressReviewDeps.classifyComment` is optional and, when absent, every review comment is applied. | `S9`, `S10` |
 
 ## Brainstorm Trace
 
@@ -77,7 +103,7 @@
 | `BR-REQ-3` | `.imm/config.json` `loop` configuration block, same-UID `degraded` identity check, standing publication grant, single status Issue, marker-keyed escalations, and verified `@imm-loop` owner commands | `S0`, `S3` | Technical Design `D3` |
 | `BR-REQ-4` | Enrollment confirmation sources (`user_session`, `tracker_approval`, `policy_auto`) with `.imm/risk-floor.json` enforcement, 4th composition root (`startBatch` + `LaneSupervisor`), and `exit_recorder.ts` | `S0`, `S5` | Technical Design `D5`, `D6` |
 | `BR-REQ-5` | GitHub-relayed in-Lane literal-user decisions (`laneDecisionFacts` + `relayLaneDecision`) and bounded headless `fix-pr` repair loop (2 attempts per `(head_sha, failure_signature)`) | `S6`, `S7` | Technical Design `D7`, `D8` |
-| `BR-DEC-1` | Preserve 8-slice decomposition (`S0`–`S7`) matching Issues `#459`–`#466` with `S6` and `S7` parallel after `S5` | `S0`–`S7` | Outcome, Technical Design `D9` |
+| `BR-DEC-1` | Preserve 8-slice decomposition (`S0`–`S7`) matching Issues `#459`–`#466` with `S6` and `S7` parallel after `S5`; the post-S7 amendment appends `S8`–`S10` serially without changing `S0`–`S7` | `S0`–`S10` | Outcome, Technical Design `D9` |
 | `BR-DEC-2` | Reuse existing design from `origin/claude/loop-agent-design-0pg9mz` (`docs/proposals/loop-agent.md` and loop daemon ADR) | `S0`–`S7` | Technical Design `D1`–`D8` |
 | `BR-DEC-3` | Renumber loop daemon ADR from `0038` to `docs/adr/0039-loop-daemon.md` because `0038-supervised-session-port.md` already occupies `0038` on `HEAD` | `S0` | Technical Design `D1` |
 | `BR-OUT-1` | External webhook receiver / multi-tenant hosted daemon service is out of scope (polling + local/cron/systemd CLI only) | — | Threat model and supported environment |
@@ -89,6 +115,9 @@
 | `BR-SCN-2` | Headless `draw-up` plan publication, verified `tracker_approval`, and `LaneSupervisor` drive to PR scenario | `S5` | User scenarios (`BR-SCN-2`) |
 | `BR-SCN-3` | `policy_auto` enrollment vs `.imm/risk-floor.json` and `critical` rejection scenario | `S5` | User scenarios (`BR-SCN-3`) |
 | `BR-SCN-4` | In-Lane `user_only` decision parking and verified GitHub reply relay scenario | `S6` | User scenarios (`BR-SCN-4`) |
+| `GAP-1`–`GAP-4` | Tick dispatch core (repository evidence, Post-S7 Gap Audit) | `S8` | Technical Design `D10` |
+| `GAP-1`, `GAP-5`, `GAP-6` | Agent-backed handlers (repository evidence, Post-S7 Gap Audit) | `S9` | Technical Design `D11` |
+| `GAP-7`–`GAP-12` | Decision-model application (repository evidence, Post-S7 Gap Audit) | `S10` | Technical Design `D12` |
 
 ## Technical Design
 
@@ -106,6 +135,9 @@ flowchart TD
     SUP["S5: 4th Composition Root (startBatch + LaneSupervisor + exit_recorder)"]
     DEC["S6: In-Lane Decision Relay (laneDecisionFacts -> GitHub -> relayLaneDecision)"]
     REP["S7: Headless fix-pr Repair Loop (2x head_sha + failure_signature cap)"]
+    DSP["S8: Dispatch Core (mode gate, guard facts, GitHub write port, dispatches.jsonl)"]
+    AGT["S9: Headless Session Runner (analysis / planning / drive / repair)"]
+    DMA["S10: Decision-Model Application (thresholds, judging agent, reconciliation, labels)"]
 
     CLI --> OBS
     GH <--> OBS
@@ -120,6 +152,14 @@ flowchart TD
     DEC <-->|"run_id + record_revision"| GH
     GH --> REP
     SCH --> REP
+    JDG --> DSP
+    DMA --> JDG
+    SCH --> DSP
+    DSP --> AGT
+    DSP -->|"comments / status Issue / PR state"| GH
+    AGT --> SCH
+    AGT --> ENR
+    AGT --> REP
 ```
 
 ### D1: Upstream Contracts and ADR 0039 (`S0` — `loop-daemon-s0-contracts`)
@@ -149,7 +189,7 @@ flowchart TD
         - `a19_owner_comment_intent`: Classifies verified owner free-text comments into `approve_plan`, `request_plan_revision`, `answer_lane_decision`, `command`, or `discussion`.
         - `a20_issue_duplicate_pair`: Evaluates candidate duplicate Issue pairs before planning.
         - Reuses `a14_ambiguous_user_intent` and `a15_task_granularity` for triage (`clear_single_task`, `needs_initiative_decomposition`, `needs_clarification`).
-     4. **Tier 3 — Escalation Fallback**: Any low-confidence or conflicting classification falls back to `escalate` or `noop_record`.
+     4. **Tier 3 — Escalation Fallback**: Any low-confidence or conflicting classification falls back to `escalate` or `noop_record`. *Superseded by `D12` (`S10`): below-threshold, truncated, disabled, or unavailable answers go to the judging agent first, and only an unavailable or invalid judging agent falls back to the point baseline or `escalate`.*
    - **Closed 15-Handler Catalogue**:
      1. `noop_record`
      2. `triage_issue`
@@ -261,6 +301,38 @@ flowchart TD
 - **Rebuildable `.imm/state/loop/` vs database**: Keeping `.imm/state/loop/` as disposable JSON/JSONL backed by GitHub markers and `.imm/runs/*` preserves single-source Kernel authority in `.imm/runs/`.
 - **No false compromise detected**: Security invariants (owner API verification, `.imm/risk-floor.json` enforcement, same-UID `degraded` posture, and 2-attempt repair cap) are enforced deterministically in code guards and the Enrollment membrane rather than delegated to prompt instructions.
 
+### D10: Tick Dispatch Core (`S8` — `loop-daemon-s8-dispatch-core`)
+
+1. **Mode gate (`GAP-3`)**: `tick` and `run` read the validated `loop` block from the layered configuration. `--dry-run` and `status` work under every mode. A live `tick` or `run` under `mode: "off"` exits non-zero with `loop.mode is off`. `observe` judges and records but dispatches nothing (each would-be dispatch is recorded as `skipped_mode`). `assist` and `autonomous` may dispatch; `policy_auto` stays limited to `autonomous` by `D5`. `run` uses `loop.interval_seconds` unless `--interval` overrides it.
+2. **Owner-identity refusal (`GAP-4`)**: Before any live work, the daemon reads its authenticated GitHub login once per process; when that login is in `loop.allowed_actors`, `tick` and `run` exit non-zero (ADR 0039 Decision 13). An unreadable identity also refuses a live run.
+3. **Guard facts (`GAP-2`)**: `GuardFacts` carry `allowed_actors`, `allowed_associations`, `daemon_identity`, `budget_exhausted` (from `loop.budget` against `state.stats`), `retry_counts` (from `repair_agent.ts` retries), `unresolved_blockers` (from the observed native `blocked_by` edges), and `shutdown_requested` (from the signal handler), alongside the existing facts.
+4. **Schedule and lease (`GAP-1`)**: Every decision whose handler is not `noop_record` becomes a `ScheduleCandidate`; only entries `scheduleLoopWork()` admits are dispatched, each under an acquired lease that is released when its handler finishes; held candidates are recorded as `held` with the scheduler's reason.
+5. **Deterministic handlers**: One GitHub write port (built on the observer's `gh` invocation seam, with a fake in tests) backs `escalate` (`planEscalation()` -> create or edit by key), `relay_lane_decision_question` and `apply_lane_decision_reply` (`decision_relay.ts`), `open_pr` (`openLoopPullRequest()`), `mark_pr_ready` and `close_out` (`repair_agent.ts`), owner `pause`/`resume`/`retry`/`ignore` (state mutation), and the per-tick in-place status Issue (`planStatusIssue()`). `noop_record` records only. Agent-backed handlers (`triage_issue`, `analyze_codebase`, `draft_plan`, `publish_plan_for_approval`, `enroll_and_drive`, `repair_pr_ci`, `repair_pr_conflict`, `address_pr_review`) and owner `replan`/`approve` are recorded as `agent_port_unavailable` with no side effect until `S9` binds them.
+6. **Dispatch record**: Each dispatch appends `assurance_kernel/loop_dispatch_record/v1` (`decision_id`, `handler`, `outcome` in `executed | skipped_mode | held | agent_port_unavailable | failed`, `detail`, `recorded_at`) to `.imm/state/loop/dispatches.jsonl` (`0600`). A failed handler is recorded and never retried within the same tick.
+
+### D11: Headless Agent Session Runner and Agent-Backed Handlers (`S9` — `loop-daemon-s9-agent-handlers`)
+
+1. **Session runner (`GAP-6`)**: `agent_runner.ts` starts one bounded headless Host session per agent dispatch from the configured Executor Host profile, reusing the CLI invocation pattern of `runtime/assurance/cli_review.ts`, with a turn budget and timeout, inside a worktree the daemon created, and with an environment that carries only the daemon's GitHub credential (ADR 0039 Decision 13). Completion is read from checkable evidence only: the expected output file and its schema, the Git head of the daemon branch, `imm-kernel intent validate`, or the Kernel projection; session prose is never parsed for an outcome (ADR 0039 Decision 2). Tests use a fake session provider.
+2. **Planning chain**: `analyze_codebase` binds `CodebaseAnalysisProbe` to a read-only session; `draft_plan` binds `PlanDraftDeps` to a planning session that writes candidate TaskIntents through `imm-kernel intent author`; `publish_plan_for_approval` posts the summary through the `S8` write port. `triage_issue` dispatches `analyze_codebase` for an uncached key and `draft_plan` otherwise.
+3. **Enrollment and drive (`GAP-5`)**: `enroll_and_drive` builds a `tracker_approval_proof` only from a REST-read `/approve <digest>` comment (or the `@imm-loop approve <digest>` command) whose digest equals the published plan digest, or selects `policy_auto` when `D5` admits it, then calls `enrollTask` with that source. A rejected proof is recorded and escalated once. Driving runs only inside the standing `imm-loop run` process, which owns `loopDaemonSupervisor`; a one-shot `tick` records `requires_standing_daemon`. After settlement the handler calls `open_pr` (`D10`).
+4. **Repair**: `repair_pr_ci`, `repair_pr_conflict`, and `address_pr_review` bind `RepairCiDeps`, `RepairConflictDeps`, and `AddressReviewDeps` to repair sessions in the PR's worktree, keeping the `S7` attempt cap. Until `S10` binds review triage, `classifyComment` treats a comment as scope-changing (escalate) unless its `path` lies inside the TaskIntent `scope_hint` (`GAP-12`).
+5. **Owner `replan` and `approve`**: `replan` re-dispatches `draft_plan` for the Issue; `approve` enters item 3 with the command's digest.
+
+### D12: Decision-Model Application (`S10` — `loop-daemon-s10-decision-model`)
+
+1. **Per-point threshold and correctable direction (`GAP-7`, `GAP-11`)**: The daemon points get hand-set values in `thresholds.ts` with versions bumped to `/v1`. Only the direction a later step can correct is acted on:
+   | Point | Acted-on answer (threshold) | Handler | Other answers |
+   | --- | --- | --- | --- |
+   | `a18_event_prefilter` | `ignore` (>= 0.90) | `noop_record`, kept for reconciliation | `actionable` always proceeds |
+   | `a15_task_granularity` | any (>= 0.75) | `clear_single_task` -> `triage_issue`; `needs_initiative_decomposition` -> `draft_plan`; `needs_clarification` -> `escalate` | — |
+   | `a20_issue_duplicate_pair` | `duplicate` (>= 0.85) | `escalate` naming both Issues (never closes) | `related`/`unrelated` proceed |
+   | `a19_owner_comment_intent` | any (>= 0.80) | `request_plan_revision` -> `draft_plan`; `answer_lane_decision` -> `apply_lane_decision_reply` (option still resolved by `decision_relay.ts`); `discussion` -> `noop_record`, kept for reconciliation; `approve_plan` and `command` -> one deduplicated format reminder (`escalate` keyed per comment) and never `enroll_and_drive` | — |
+   | `a14_pr_comment_triage` (replaces `a14_ambiguous_user_intent` for `E10`) | any (>= 0.80) | `blocking`/`nit` -> `address_pr_review`; `out_of_scope` -> `escalate`; `duplicate` -> `noop_record`, kept for reconciliation | — |
+2. **Judging agent (`GAP-8`)**: An answer below its threshold, with `truncation` other than `none`, from a point absent in `decision_models.enabled_points`, or `unavailable` goes to a read-only judging agent session (`S9` runner) given the event and recorded state; it returns one handler from the closed catalogue, which code validates. An invalid or unavailable judging agent falls back to the point baseline from proposal §7.5 (`a18` -> proceed as `actionable`; `a20` -> `unrelated`; `a14_pr_comment_triage` -> `address_pr_review`) and otherwise to `escalate`; nothing with a side effect runs on invalid output (ADR 0039 Decision 5). Judging-agent calls count against `loop.budget`.
+3. **Production classifier and provenance (`GAP-10`)**: `cli.ts` passes `createDecisionModelClassifier(root)`; the classifier returns the whole envelope, and `loop_decision_record/v1` stores `probabilities`, `profile`, `model`, `model_version`, `threshold_set_version`, and `truncation` for every Tier-2 answer. Only non-sensitive input categories are sent; CI logs are never sent.
+4. **Reconciliation and labels (`GAP-9`)**: `imm-loop reconcile` re-checks with the judging agent every decision kept for reconciliation since the last pass; `run` performs it at start and every 24 hours. A disagreement dispatches the judging agent's handler through the normal guards and scheduler and appends one row to `.imm/state/loop/labels.jsonl` (`0600`) with `id` (the decision id), `point`, `gold` (the corrected option in that point's option set), `model_choice`, `source`, and `recorded_at`, loadable by `scripts/decision-eval/harness.ts` `loadCorpus()`. A verified owner `retry` or `ignore` that reverses a model-decided event also appends a row with `source: "owner"`.
+5. **Remaining points (`GAP-12`)**: `a20` candidates come from a deterministic lexical-similarity search over open Issues (best candidate above a fixed similarity floor); `AddressReviewDeps.classifyComment` reuses the recorded `a14_pr_comment_triage` answer; a Lane decision reply that `parseDecisionReplyText()` cannot resolve goes through `a19` and then the judging agent, and still binds the chosen option to the parked `(run_id, record_revision)`.
+
 ## Verification and acceptance mapping
 
 | Task ID | Verification Seam Command | Positive Control | Negative Control | Boundary / Fault Control |
@@ -273,6 +345,9 @@ flowchart TD
 | `loop-daemon-s5-drive-pr` | `bun test tests/loop-daemon-drive-pr.test.ts` | Verified owner approval enrolls via `tracker_approval` and routine task enrolls via `policy_auto`; `LaneSupervisor` runs to `settled`, `exit_recorder.ts` writes exit record, and `pr_opener.ts` opens PR on `imm/<slug>` (`BR-SCN-2`, `BR-SCN-3`). | `policy_auto` is rejected when effective risk is `material` or `critical`, or when daemon is `degraded`. For `tracker_approval`, mismatched `plan_digest`, approval timestamp older than plan comment, daemon-authored comment (`actor_login === daemon_identity`), or edited comment (`updated_at !== created_at`) is strictly rejected by `enrollment_authority.ts`. | Negative control verifies non-routine `policy_auto` rejection and edited comment rejection. |
 | `loop-daemon-s6-decisions` | `bun test tests/loop-daemon-decisions.test.ts` | `user_only` `laneDecisionFacts` parks the slot, posts question with `(run_id, record_revision)`, and verified owner reply invokes `relayLaneDecision` to resume (`BR-SCN-4`). | Reply from non-owner or without matching `run_id` is ignored. | Reply referencing a stale `record_revision` is rejected without mutating Lane state and posts a revision-mismatch notice. |
 | `loop-daemon-s7-repair` | `bun test tests/loop-daemon-repair.test.ts` | Failing CI check on `imm/<slug>` is reproduced locally, fixed via headless `fix-pr`, and pushed; clean PR transitions via `mark_pr_ready` and waits for human owner merge; upon owner merge, `close_out` cleans up worktrees and leases. | PR not on `imm/*` or `imm-loop/*` (or lacking `loop-pr` marker) is ignored; auto-merge is prohibited (ADR 0039 Decision 11). | 3rd failure for the same `(head_sha, failure_signature)` stops repair and dispatches `escalate`. |
+| `loop-daemon-s8-dispatch-core` | `bun test tests/loop-daemon-dispatch.test.ts` | Under `assist`, deterministic handlers execute through the write port, escalations and the status Issue update in place, and `dispatches.jsonl` records each outcome (`SCN-5`). | Live `tick` under `mode: "off"` or with the daemon login in `allowed_actors` exits non-zero with zero writes; `observe` performs zero writes. | A candidate overlapping an active lease is recorded `held`; an agent-backed handler is recorded `agent_port_unavailable` with no side effect; a configured allowlisted owner comment passes `G7`. |
+| `loop-daemon-s9-agent-handlers` | `bun test tests/loop-daemon-agent-handlers.test.ts` | Fake-session ticks carry an Issue through analysis, plan publication, verified `/approve <digest>`, `tracker_approval` enrollment, Lane settlement, and `open_pr` (`SCN-6`). | An approval with a stale digest, an edited comment, or a daemon-authored comment does not enroll; a one-shot `tick` records `requires_standing_daemon` instead of driving. | A session that exits without its expected file or Git head is recorded `failed` regardless of its prose; a review comment outside `scope_hint` escalates. |
+| `loop-daemon-s10-decision-model` | `bun test tests/loop-daemon-decision-model.test.ts` | Below-threshold `a18` goes to the judging agent; reconciliation overrides a skipped event, dispatches it, and appends a `labels.jsonl` row loadable by `loadCorpus()` (`SCN-7`). | `a19` `approve_plan` at any confidence never yields `enroll_and_drive`; an invalid judging-agent handler runs nothing. | A disabled point or `truncation` other than `none` routes to the judging agent; decision records carry the full envelope provenance. |
 
 ## Devil's Advocate Audit
 
@@ -282,3 +357,5 @@ flowchart TD
 | Could a `material` or under-classified TaskIntent start without owner approval under `policy_auto`? | Blocked by ADR 0039 Decision 8 and `enrollment_authority.ts`: `policy_auto` is routine-only; any `material` or `critical` task (declared or elevated by `.imm/risk-floor.json`) strictly requires `tracker_approval` from a verified owner. |
 | What happens if `.imm/state/loop/` is wiped while a Lane is mid-run or a PR is open? | `rebuildLoopState()` (`S1`) reconstructs active leases and watermarks from `.imm/runs/*`, open `imm/*` / `imm-loop/*` branches, and GitHub tracker markers before scheduling any work. |
 | Could a flaky or unfixable CI check cause an infinite repair loop burning tokens and actions minutes? | Guard `G5` and `repair_agent.ts` (`S7`) cap repair at 2 attempts per `(head_sha, failure_signature)` and escalate on the 3rd failure. |
+| Could a confident model answer start execution without an owner act? | Blocked by `D12`: `a19` `approve_plan` only yields a format reminder; enrollment needs the code-verified `/approve <digest>` proof of `D11` or `policy_auto` under `D5`. |
+| Could a wrong `ignore` silently drop owner work? | `D12` keeps every model-skipped event for the judging agent at the next reconciliation and records the disagreement as a label. |

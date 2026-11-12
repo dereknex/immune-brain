@@ -56,6 +56,7 @@ import { normalizeEvents } from "../plugins/immune-brain/runtime/loop_daemon/eve
 import { observeGithub, pollPRsFromGithub } from "../plugins/immune-brain/runtime/loop_daemon/observer.ts";
 import { rebuildLoopState } from "../plugins/immune-brain/runtime/loop_daemon/rebuild.ts";
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
+import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
 import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -85,6 +86,15 @@ function createMockGhTransport(responses: {
 					output_exceeded: false,
 				};
 			}
+			if (args[0] === "api" && args[1] === "user") {
+				return {
+					exit_code: 0,
+					stdout: JSON.stringify({ login: "daemon-bot" }),
+					stderr: "",
+					timed_out: false,
+					output_exceeded: false,
+				};
+			}
 			return {
 				exit_code: 0,
 				stdout: "[]",
@@ -103,9 +113,24 @@ describe("loop daemon observe, normalization, and state persistence (S1)", () =>
 	beforeEach(() => {
 		testDir = mkdtempSync(join(tmpdir(), "loop-daemon-test-"));
 		stateDir = join(testDir, ".imm/state/loop");
+		setCachedDaemonGithubLogin("daemon-bot");
+		execFileSync("git", ["init", "-q", testDir]);
+		mkdirSync(join(testDir, ".imm"), { recursive: true });
+		writeFileSync(
+			join(testDir, ".imm/config.json"),
+			JSON.stringify({
+				contract: "immune_brain/project_config/v1",
+				loop: {
+					mode: "observe",
+					allowed_actors: ["owner"],
+				},
+			}),
+		);
+		execFileSync("git", ["add", ".imm/config.json"], { cwd: testDir });
 	});
 
 	afterEach(() => {
+		setCachedDaemonGithubLogin(null);
 		try {
 			rmSync(testDir, { recursive: true, force: true });
 		} catch {}

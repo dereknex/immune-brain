@@ -116,6 +116,30 @@ export function appendLoopDecision(stateDir: string, decision: unknown): void {
 	} catch {}
 }
 
+export function appendLoopDispatch(stateDir: string, dispatch: unknown): void {
+	ensureLoopStateDir(stateDir);
+	const dispatchesPath = join(stateDir, "dispatches.jsonl");
+	const line = `${JSON.stringify(dispatch)}\n`;
+	appendFileSync(dispatchesPath, line, { mode: 0o600 });
+	try {
+		chmodSync(dispatchesPath, 0o600);
+	} catch {}
+}
+
+export function loadLoopDispatches(stateDir: string): any[] {
+	const dispatchesPath = join(stateDir, "dispatches.jsonl");
+	if (!existsSync(dispatchesPath)) return [];
+	try {
+		return readFileSync(dispatchesPath, "utf8")
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line));
+	} catch {
+		return [];
+	}
+}
+
 export function saveLease(stateDir: string, lease: LoopLease): void {
 	const { leasesDir } = ensureLoopStateDir(stateDir);
 	const leasePath = join(leasesDir, `${lease.target_id}.lease.json`);

@@ -42,6 +42,23 @@ const HANDLER_PRIORITY: Partial<Record<LoopHandler, SchedulePriority>> = {
 	triage_issue: "triage",
 };
 
+const ALL_HANDLER_PRIORITY: Partial<Record<LoopHandler, SchedulePriority>> = {
+	apply_lane_decision_reply: "owner_control",
+	repair_pr_ci: "pr_repair",
+	repair_pr_conflict: "pr_repair",
+	address_pr_review: "pr_repair",
+	mark_pr_ready: "pr_repair",
+	close_out: "pr_repair",
+	enroll_and_drive: "ready_task",
+	open_pr: "ready_task",
+	analyze_codebase: "planning",
+	draft_plan: "planning",
+	publish_plan_for_approval: "planning",
+	relay_lane_decision_question: "planning",
+	triage_issue: "triage",
+	escalate: "triage",
+};
+
 export interface ScheduleCandidate {
 	/** Lease target, e.g. `issue-42` or `pr-17`. */
 	target_id: string;
@@ -49,16 +66,21 @@ export interface ScheduleCandidate {
 	/** A verified owner action keeps class 1 whatever handler it selects. */
 	event_kind?: LoopEventKind;
 	scope_hint?: string[];
+	candidate_id?: string;
 }
 
 /**
  * The class of one candidate, or null when this scheduler never dispatches it
- * (`noop_record`, `escalate`, and the PR-lifecycle handlers S5/S7 own).
+ * (`noop_record`, `escalate`, and the PR-lifecycle handlers S5/S7 own unless allHandlers is true).
  */
-export function candidatePriority(candidate: ScheduleCandidate): SchedulePriority | null {
+export function candidatePriority(
+	candidate: ScheduleCandidate,
+	options?: { allHandlers?: boolean },
+): SchedulePriority | null {
 	// The handler filter is the closed gate: an owner event elevates a handler the
 	// daemon may dispatch, but it never makes an undispatched handler schedulable.
-	const base = HANDLER_PRIORITY[candidate.handler];
+	const map = options?.allHandlers ? ALL_HANDLER_PRIORITY : HANDLER_PRIORITY;
+	const base = map[candidate.handler];
 	if (base === undefined) return null;
 	const ownerAddressed = candidate.event_kind === "E3_OWNER_COMMENT" || candidate.event_kind === "E7_LANE_DECISION_REPLIED";
 	return ownerAddressed ? "owner_control" : base;
@@ -101,6 +123,7 @@ export interface ScheduleInput {
 	budget: ScheduleBudget;
 	paused?: boolean;
 	shutdown_requested?: boolean;
+	allHandlers?: boolean;
 }
 
 export interface ScheduleEntry {
@@ -109,6 +132,7 @@ export interface ScheduleEntry {
 	priority: SchedulePriority | null;
 	action: "dispatch" | "hold";
 	reason: string;
+	candidate_id?: string;
 }
 
 export interface ScheduleResult {
@@ -149,7 +173,11 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 			: Math.max(0, input.budget.max_dispatches_per_day - input.budget.dispatches_today);
 
 	const ordered = input.candidates
-		.map((candidate, index) => ({ candidate, index, priority: candidatePriority(candidate) }))
+		.map((candidate, index) => ({
+			candidate,
+			index,
+			priority: candidatePriority(candidate, { allHandlers: input.allHandlers }),
+		}))
 		.sort((left, right) => {
 			const leftRank = left.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[left.priority];
 			const rightRank = right.priority === null ? Number.MAX_SAFE_INTEGER : SCHEDULE_PRIORITY[right.priority];
@@ -162,16 +190,16 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 
 	const entries: ScheduleEntry[] = [];
 	const dispatched: string[] = [];
-	const hold = (entry: { target_id: string; handler: LoopHandler; priority: SchedulePriority | null }, reason: string): void => {
+	const hold = (entry: { target_id: string; handler: LoopHandler; priority: SchedulePriority | null; candidate_id?: string }, reason: string): void => {
 		entries.push({ ...entry, action: "hold", reason });
 	};
-	const start = (entry: { target_id: string; handler: LoopHandler; priority: SchedulePriority }): void => {
+	const start = (entry: { target_id: string; handler: LoopHandler; priority: SchedulePriority; candidate_id?: string }): void => {
 		entries.push({ ...entry, action: "dispatch", reason: `priority ${SCHEDULE_PRIORITY[entry.priority]}` });
 		dispatched.push(entry.target_id);
 	};
 
 	for (const { candidate, priority } of ordered) {
-		const entry = { target_id: candidate.target_id, handler: candidate.handler, priority };
+		const entry = { target_id: candidate.target_id, handler: candidate.handler, priority, candidate_id: candidate.candidate_id };
 		if (guard !== null) {
 			hold(entry, `${guard.id}: ${guard.detail}`);
 			continue;
@@ -188,7 +216,11 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 			continue;
 		}
 		const scope = candidate.scope_hint ?? [];
-		const overlap = inFlight.findIndex((other) => scopesOverlap(other.scope, scope));
+		const overlap = inFlight.findIndex((other) =>
+			candidate.handler === "close_out" && other.target_id === candidate.target_id
+				? false
+				: other.target_id === candidate.target_id || scopesOverlap(other.scope, scope),
+		);
 		if (overlap !== -1) {
 			hold(entry, `scope_overlap: shares a path with the in-flight lease ${inFlight[overlap]!.target_id}`);
 			continue;
@@ -205,7 +237,12 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 			hold(entry, `max_pr_buffer: ${prs}/${input.limits.max_pr_buffer} daemon PRs open`);
 			continue;
 		}
-		start({ target_id: candidate.target_id, handler: candidate.handler, priority });
+		start({
+			target_id: candidate.target_id,
+			handler: candidate.handler,
+			priority,
+			candidate_id: candidate.candidate_id,
+		});
 		slots += 1;
 		inFlight.push({ target_id: candidate.target_id, scope });
 		if (priority === "planning") ready += 1;

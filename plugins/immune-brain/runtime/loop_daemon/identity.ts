@@ -11,6 +11,7 @@
  */
 
 import { statSync } from "node:fs";
+import type { GhTransport } from "../github_issue_tracker.ts";
 
 export type LoopIdentityPosture = "isolated" | "degraded";
 
@@ -91,3 +92,40 @@ export function capabilityRefusal(posture: LoopIdentityPosture, capability: Loop
 	}
 	return null;
 }
+
+let cachedDaemonGithubLogin: string | null = null;
+
+export function setCachedDaemonGithubLogin(login: string | null): void {
+	cachedDaemonGithubLogin = login;
+}
+
+export function getCachedDaemonGithubLogin(): string | null {
+	return cachedDaemonGithubLogin;
+}
+
+/**
+ * Read the authenticated GitHub login once per process via gh api user.
+ * An unreadable or empty identity returns null.
+ */
+export async function readAuthenticatedGithubLogin(
+	gh: GhTransport,
+	cwd: string,
+): Promise<string | null> {
+	if (cachedDaemonGithubLogin !== null) {
+		return cachedDaemonGithubLogin;
+	}
+	try {
+		const res = await gh.run(["api", "user"], { cwd });
+		if (res.exit_code === 0 && res.stdout) {
+			const data = JSON.parse(res.stdout);
+			if (typeof data?.login === "string" && data.login.trim()) {
+				cachedDaemonGithubLogin = data.login.trim();
+				return cachedDaemonGithubLogin;
+			}
+		}
+	} catch {
+		// unreadable
+	}
+	return null;
+}
+

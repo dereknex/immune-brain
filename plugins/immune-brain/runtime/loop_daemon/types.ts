@@ -97,6 +97,7 @@ export interface E6LaneDecisionNeededEvent extends BaseLoopEvent {
 	record_revision: string;
 	question: string;
 	options: Array<{ id: string; label: string }>;
+	issue_number?: number;
 }
 
 export interface E7LaneDecisionRepliedEvent extends BaseLoopEvent {
@@ -109,6 +110,7 @@ export interface E7LaneDecisionRepliedEvent extends BaseLoopEvent {
 	record_revision: string;
 	selected_option: string;
 	reply_body: string;
+	task_id?: string;
 }
 
 export interface E8PRCheckFailedEvent extends BaseLoopEvent {
@@ -194,6 +196,10 @@ export interface LoopDaemonState {
 		ticks_total: number;
 		events_observed_total: number;
 		last_tick_at: string | null;
+		ticks_today?: number;
+		dispatches_today?: number;
+		dispatches_total?: number;
+		today_date?: string;
 	};
 }
 
@@ -260,6 +266,7 @@ export interface RawPRReviewComment {
 export interface RawPR {
 	number: number;
 	title: string;
+	body?: string;
 	head_ref_name: string;
 	head_sha: string;
 	base_ref_name: string;

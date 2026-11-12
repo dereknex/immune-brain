@@ -45,6 +45,7 @@ export interface GuardFacts {
 	daemon_identity?: string | null;
 	expected_plan_digest?: string | null;
 	expected_record_revision?: string | null;
+	expected_record_revisions?: Record<string, string>;
 	worktree_dirty?: boolean;
 	lock_conflict?: boolean;
 	identity_posture?: "degraded" | "isolated";
@@ -209,7 +210,13 @@ export function evaluateGuards(event: NormalizedLoopEvent, facts: GuardFacts = {
 		const stale = expected === null || event.plan_digest !== expected;
 		verdict("G8", stale, expected === null ? "no published plan digest to match" : stale ? `plan digest ${event.plan_digest} is not the published ${expected}` : "plan digest matches the published plan");
 	} else if (event.kind === "E7_LANE_DECISION_REPLIED") {
-		const expected = facts.expected_record_revision ?? null;
+		const expected =
+			(event.run_id ? facts.expected_record_revisions?.[event.run_id] : null)
+			?? (event.task_id ? facts.expected_record_revisions?.[event.task_id] : null)
+			?? facts.expected_record_revisions?.[String(event.issue_number)]
+			?? facts.expected_record_revisions?.[`issue-${event.issue_number}`]
+			?? facts.expected_record_revision
+			?? null;
 		const stale = expected === null || event.record_revision !== expected;
 		verdict("G8", stale, expected === null ? "no current record revision to match" : stale ? `record revision ${event.record_revision} is not the current ${expected}` : "record revision is current");
 	} else {

@@ -16,15 +16,22 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import type { GhTransport } from "../github_issue_tracker.ts";
+import { DEFAULT_LOOP_CONFIG, type LoopConfig, resolveConfig } from "../config/layered_config.ts";
+import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
+import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
+import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
+import { dispatchDecisions, type RelayInputFactory } from "./dispatch.ts";
+import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
-import { detectIdentityPosture, inspectDaemonIdentity } from "./identity.ts";
+import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
 import { type ClassifyFn, createDecisionModelClassifier, judgeEvents } from "./judgement.ts";
 import { acquireDaemonLock, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
+import { loadRepairRetries } from "./repair_agent.ts";
+import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
 	appendLoopDecision,
 	appendLoopEvent,
@@ -51,6 +58,7 @@ export async function runLoopDaemonCli(
 	root: string = process.cwd(),
 	options?: {
 		gh?: GhTransport;
+		gitHubPort?: LoopGitHubPort;
 		stateDir?: string;
 		snapshotOverride?: ObservationInput;
 		lockHeld?: boolean;
@@ -59,6 +67,13 @@ export async function runLoopDaemonCli(
 		classify?: ClassifyFn;
 		/** Facts the caller owns (budget, leases, identity posture, retry cap). */
 		guardFacts?: Partial<GuardFacts>;
+		loopConfig?: LoopConfig;
+		userConfigPath?: string;
+		isShutdownRequested?: () => boolean;
+		shutdownRequested?: boolean;
+		sleep?: (seconds: number) => Promise<void> | void;
+		relayDecision?: typeof relayLaneDecision;
+		relayInputFactory?: RelayInputFactory<unknown>;
 	},
 ): Promise<CliOutput> {
 	const absoluteRoot = resolve(root);
@@ -85,6 +100,12 @@ Options:
 `;
 		return { stdout: usage, stderr: "", returncode: command ? 0 : 2 };
 	}
+
+	const resolved = resolveConfig(absoluteRoot, { userConfigPath: options?.userConfigPath });
+	const loopConfig: LoopConfig =
+		options?.loopConfig ??
+		(resolved.loop?.valid ? (resolved.loop.value as LoopConfig) : null) ??
+		DEFAULT_LOOP_CONFIG;
 
 	if (command === "status") {
 		const isJson = args.includes("--json");
@@ -223,12 +244,53 @@ Options:
 		};
 	}
 
+	if (command === "tick" || command === "run") {
+		const isDryRun = args.includes("--dry-run");
+
+		if (!options?.loopConfig && resolved.loop.valid === false) {
+			return {
+				stdout: "",
+				stderr: "Error: invalid loop configuration\n",
+				returncode: 1,
+			};
+		}
+
+		if (!isDryRun) {
+			if (loopConfig.mode === "off") {
+				return {
+					stdout: "",
+					stderr: "Error: loop.mode is off\n",
+					returncode: 1,
+				};
+			}
+
+			const gh = options?.gh ?? createGhTransport();
+			const daemonLogin = options?.guardFacts?.daemon_identity ?? (await readAuthenticatedGithubLogin(gh, absoluteRoot));
+			if (!daemonLogin) {
+				return {
+					stdout: "",
+					stderr: "Error: unreadable daemon GitHub identity\n",
+					returncode: 1,
+				};
+			}
+
+			if (loopConfig.allowed_actors && loopConfig.allowed_actors.includes(daemonLogin)) {
+				return {
+					stdout: "",
+					stderr: `Error: daemon GitHub identity '${daemonLogin}' is in loop.allowed_actors\n`,
+					returncode: 1,
+				};
+			}
+		}
+	}
+
 	if (command === "tick") {
 		const isDryRun = args.includes("--dry-run");
 		const isJson = args.includes("--json");
 		const lockHeld = Boolean(options?.lockHeld);
 
 		let releaseLock: (() => void) | null = null;
+		let onSig: () => void = () => {};
 		if (!isDryRun && !lockHeld) {
 			const lockResult = acquireDaemonLock(stateDir);
 			if (!lockResult.acquired) {
@@ -278,9 +340,17 @@ Options:
 			}
 
 			if (!isDryRun) {
+				const today = new Date().toISOString().slice(0, 10);
+				if (state.stats.today_date !== today) {
+					state.stats.today_date = today;
+					state.stats.ticks_today = 0;
+					state.stats.dispatches_today = 0;
+				}
+
 				state.watermarks = obs.watermarks;
 				state.updated_at = new Date().toISOString();
 				state.stats.ticks_total += 1;
+				state.stats.ticks_today = (state.stats.ticks_today ?? 0) + 1;
 				state.stats.events_observed_total += obs.events.length;
 				state.stats.last_tick_at = new Date().toISOString();
 
@@ -303,13 +373,120 @@ Options:
 				};
 			}
 
+			const gh = options?.gh ?? createGhTransport();
+			let daemonLogin: string | null = options?.guardFacts?.daemon_identity ?? null;
+			if (!isDryRun && !daemonLogin) {
+				daemonLogin = await readAuthenticatedGithubLogin(gh, absoluteRoot);
+			}
+
+			const currentBudget: ScheduleBudget = {
+				ticks_today: state.stats.ticks_today ?? 0,
+				dispatches_today: state.stats.dispatches_today ?? 0,
+				max_ticks_per_day: loopConfig.budget.max_ticks_per_day,
+				max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+			};
+
+			const closedIssues = new Set(
+				obs.snapshot.issues.filter((i) => i.state === "closed").map((i) => i.number),
+			);
+			const unresolved_blockers: Record<number, number[]> = {};
+			for (const issue of obs.snapshot.issues) {
+				const blockers = (issue.blocked_by ?? []).filter((b) => !closedIssues.has(b));
+				if (blockers.length > 0) {
+					unresolved_blockers[issue.number] = blockers;
+				}
+			}
+
+			const expected_record_revisions: Record<string, string> = {};
+			for (const dec of obs.snapshot.lane_decisions ?? []) {
+				if (dec.record_revision) {
+					if (dec.run_id) expected_record_revisions[dec.run_id] = dec.record_revision;
+					if (dec.task_id) expected_record_revisions[dec.task_id] = dec.record_revision;
+					const m = dec.task_id?.match(/(?:issue|task)-(\d+)/);
+					if (m) {
+						expected_record_revisions[m[1]] = dec.record_revision;
+						expected_record_revisions[`issue-${m[1]}`] = dec.record_revision;
+					}
+				}
+			}
+
+			for (const event of obs.events) {
+				if (event.kind === "E7_LANE_DECISION_REPLIED" || event.kind === "E6_LANE_DECISION_NEEDED") {
+					const issueNum = "issue_number" in event ? event.issue_number : undefined;
+					const taskId =
+						("task_id" in event && event.task_id)
+							? event.task_id
+							: ("run_id" in event && event.run_id)
+								? event.run_id
+								: (issueNum ? `issue-${issueNum}` : "");
+					if (taskId && !expected_record_revisions[taskId]) {
+						const target = findLaneRelayTarget(absoluteRoot, taskId);
+						if (target) {
+							try {
+								const raw = readTaskRecordRaw(target.lane_path, taskId);
+								if (raw.record && raw.revision) {
+									expected_record_revisions[taskId] = raw.revision;
+									if ("run_id" in event && event.run_id) expected_record_revisions[event.run_id] = raw.revision;
+									if (issueNum) {
+										expected_record_revisions[String(issueNum)] = raw.revision;
+										expected_record_revisions[`issue-${issueNum}`] = raw.revision;
+									}
+								}
+							} catch {}
+						}
+						try {
+							const rootRaw = readTaskRecordRaw(absoluteRoot, taskId);
+							if (rootRaw.record && rootRaw.revision) {
+								expected_record_revisions[taskId] = rootRaw.revision;
+								if ("run_id" in event && event.run_id) expected_record_revisions[event.run_id] = rootRaw.revision;
+								if (issueNum) {
+									expected_record_revisions[String(issueNum)] = rootRaw.revision;
+									expected_record_revisions[`issue-${issueNum}`] = rootRaw.revision;
+								}
+							}
+						} catch {}
+					}
+				}
+			}
+
+			let tickShutdown =
+				options?.shutdownRequested ??
+				options?.guardFacts?.shutdown_requested ??
+				Boolean(options?.isShutdownRequested?.());
+			onSig = () => {
+				tickShutdown = true;
+			};
+			process.on("SIGINT", onSig);
+			process.on("SIGTERM", onSig);
+
+			const isShutdown = () =>
+				tickShutdown ||
+				Boolean(options?.isShutdownRequested?.()) ||
+				Boolean(options?.guardFacts?.shutdown_requested);
+
 			const facts: GuardFacts = {
 				paused: state.paused,
 				no_touch_paths: declaredNoTouch,
 				active_leases: state.active_leases,
-				// Same-UID execution degrades to observe/triage/publish; G10 then refuses policy_auto.
 				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
+				allowed_actors: loopConfig.allowed_actors,
+				allowed_associations: loopConfig.allowed_associations,
+				daemon_identity: daemonLogin,
+				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
+				retry_counts: loadRepairRetries(stateDir),
+				unresolved_blockers,
+				expected_record_revisions: {
+					...expected_record_revisions,
+					...(options?.guardFacts?.expected_record_revisions ?? {}),
+				},
+				expected_record_revision: options?.guardFacts?.expected_record_revision ?? null,
 				...options?.guardFacts,
+				get shutdown_requested() {
+					return isShutdown();
+				},
+				set shutdown_requested(val: boolean | undefined) {
+					tickShutdown = Boolean(val);
+				},
 			};
 
 			const judgements = await judgeEvents(obs.events, { facts, classify: options?.classify });
@@ -323,6 +500,23 @@ Options:
 				}
 			}
 
+			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
+			const dispatchRes = await dispatchDecisions({
+				root: absoluteRoot,
+				stateDir,
+				loopConfig,
+				events: obs.events,
+				decisions,
+				snapshot: obs.snapshot,
+				state,
+				gitHubPort,
+				guardFacts: facts,
+				dryRun: isDryRun,
+				now: recordedAt,
+				relayDecision: options?.relayDecision,
+				relayInputFactory: options?.relayInputFactory,
+			});
+
 			const outputPayload = {
 				contract: "assurance_kernel/loop_tick_result/v1",
 				dry_run: isDryRun,
@@ -330,6 +524,8 @@ Options:
 				events_count: obs.events.length,
 				decisions,
 				decisions_count: decisions.length,
+				dispatches: dispatchRes.dispatches,
+				dispatches_count: dispatchRes.dispatches.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -338,14 +534,19 @@ Options:
 				return { stdout: jsonOutput(outputPayload), stderr: "", returncode: 0 };
 			}
 
-			const summary = `Tick completed (${isDryRun ? "DRY-RUN" : "LIVE"}): observed ${obs.events.length} events, recorded ${decisions.length} decisions\n` +
+			const summary =
+				`Tick completed (${isDryRun ? "DRY-RUN" : "LIVE"}): observed ${obs.events.length} events, recorded ${decisions.length} decisions, dispatched ${dispatchRes.dispatches.length}\n` +
 				obs.events.map((e) => `  [${e.kind}] ${e.event_id}`).join("\n") +
 				(obs.events.length > 0 ? "\n" : "") +
 				decisions.map((d) => `  -> ${d.handler} (tier ${d.tier}) ${d.event_id}: ${d.reason}`).join("\n") +
-				(decisions.length > 0 ? "\n" : "");
+				(decisions.length > 0 ? "\n" : "") +
+				dispatchRes.dispatches.map((d) => `  => dispatch: ${d.handler} [${d.outcome}] ${d.detail}`).join("\n") +
+				(dispatchRes.dispatches.length > 0 ? "\n" : "");
 
 			return { stdout: summary, stderr: "", returncode: 0 };
 		} finally {
+			process.off("SIGINT", onSig);
+			process.off("SIGTERM", onSig);
 			if (releaseLock) {
 				releaseLock();
 			}
@@ -358,7 +559,7 @@ Options:
 		const intervalSec =
 			intervalIdx >= 0 && args[intervalIdx + 1]
 				? Math.max(1, parseInt(args[intervalIdx + 1], 10))
-				: 60;
+				: (loopConfig.interval_seconds ?? 60);
 
 		const lockResult = acquireDaemonLock(stateDir);
 		if (!lockResult.acquired) {
@@ -370,30 +571,52 @@ Options:
 		}
 
 		let running = true;
+		let shutdownRequested = Boolean(options?.shutdownRequested || options?.isShutdownRequested?.());
 		const stop = (): void => {
 			running = false;
+			shutdownRequested = true;
 			lockResult.release();
 		};
 
 		process.on("SIGINT", stop);
 		process.on("SIGTERM", stop);
 
+		const checkShutdown = (): boolean =>
+			shutdownRequested ||
+			!running ||
+			Boolean(options?.shutdownRequested) ||
+			Boolean(options?.isShutdownRequested?.());
+
 		try {
 			while (running) {
+				const isShut = checkShutdown();
 				const tickRes = await runLoopDaemonCli(
 					["tick", ...(isDryRun ? ["--dry-run"] : [])],
 					absoluteRoot,
-					{ ...options, lockHeld: true },
+					{
+						...options,
+						lockHeld: true,
+						shutdownRequested: isShut,
+						isShutdownRequested: checkShutdown,
+					},
 				);
 				if (tickRes.stdout) process.stdout.write(tickRes.stdout);
 				if (tickRes.stderr) process.stderr.write(tickRes.stderr);
 
-				if (options?.singleIteration) {
+				if (options?.sleep) {
+					await options.sleep(intervalSec);
+				}
+
+				if (options?.singleIteration || !running || isShut || checkShutdown()) {
 					break;
 				}
-				await new Promise((res) => setTimeout(res, intervalSec * 1000));
+				if (!options?.sleep) {
+					await new Promise((res) => setTimeout(res, intervalSec * 1000));
+				}
 			}
 		} finally {
+			process.off("SIGINT", stop);
+			process.off("SIGTERM", stop);
 			lockResult.release();
 		}
 
