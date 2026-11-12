@@ -117,7 +117,9 @@ export function verificationArguments(profile: ReviewProfile, model: string, pac
 	const instruction = `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
 	if (profile.host === "claude-code") {
 		return [
-			"--print", "--no-session-persistence", "--max-turns", String(turnBudget),
+			// The packet lives outside the reviewed tree; `dontAsk` denies a Read outside it (#426 F12).
+			// Variadic: a flag follows it so the instruction is never taken as a directory.
+			"--print", "--no-session-persistence", "--add-dir", dirname(packetPath), "--max-turns", String(turnBudget),
 			"--tools", "Read,Grep,Glob,Bash",
 			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS,
 			"--permission-mode", "dontAsk", "--settings", CLAUDE_REVIEW_SETTINGS, ...modelFlag, instruction,
@@ -267,7 +269,7 @@ export class CliReviewHost implements AssuranceHostPort {
 			`Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
 		const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
 		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
-		const directory = mkdtempSync(join(tmpdir(), "imm-cli-verify-"));
+		const directory = realpathSync(mkdtempSync(join(tmpdir(), "imm-cli-verify-")));
 		chmodSync(directory, 0o755);
 		const packet = join(directory, "verify-packet.md");
 		const script = join(directory, "verify.sh");

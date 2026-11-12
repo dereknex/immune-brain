@@ -334,6 +334,7 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 | F9 | Herdr 外由 runtime 起 `pi --print` 跑 Executor，永远等不到 Kernel 写入（`code=tui_required`） | 缺陷（已修复） | 成因：`lane_supervisor.ts` 的 `executorArguments` 对每个 Host 都拼非交互入口，而 Pi 只在 TUI 里写 Kernel（ADR 0027）。修复：`superviseLane` 在为新 generation 起进程前拒绝 `pi`，返回 `state: unavailable`、`reason: lane_executor_requires_tui`；batch 报告把子任务留在 `enrolled`、保留带 Lane 路径与 `task_id` 的 `executor` handoff，`next_action` 让用户在 Lane 里跑交互式 pi 的 `/skill:drive <task_id>` 后再调一次 `start_unattended_batch`。不回退到别的 Executor Host。 |
 | F10 | claude-code reviewer/verifier 在 `dontAsk` 下拿不到 git，Review 以 `inspected_paths: []` 结束 | 缺陷（已修复） | 成因：`--allowedTools` 只放行六条 `Bash(git <sub>:*)`，模型常发的 `git --no-pager …`（以及 `git -C …`、管道、重定向）被拒。修复：reviewer 与 verifier 共用一份十二条 allow-list——六条原样加六条 `--no-pager` 形式；`authority-review` 与两个 role prompt 要求一次一条 git 命令、在当前目录、不用 `-C`、管道和重定向，`--no-pager` 只放在第一个参数。`git -C` 与 `--no-pager` 之外的新形式仍不准入。 |
 | F11 | 修了 F10 之后，在装有用户级 PreToolUse hook 的机器上，claude-code reviewer/verifier 仍然所有 git 都被拒 | 缺陷（已修复） | 2026-11-12 用 `2118d025be` 的 reviewer 参数直接跑 `claude --print --permission-mode dontAsk`：默认用户设置下 `git --no-pager show`、`git diff` 全部被拒，`permission_denials` 里的命令带 `rtk` 前缀——用户的 `rtk hook claude` 把 `git …` 改写成 `rtk git …`，十二条 `Bash(git …:*)` 都匹配不上；加 `--setting-sources project,local` 或 `--settings '{"disableAllHooks":true}'` 后同样的命令通过，`git -C` 仍被拒。修复：reviewer 与 verifier 的 claude-code argv 都带 `--settings '{"disableAllHooks":true}'`（`REVIEW_HOST_SETTINGS`，`runtime/assurance/cli_review.ts`）。receipt 来自 output 文件而非 hook，关 hook 不丢任何证据；同条件下 `immune-brain:authority-review` 仍出现在 init 的 slash_commands 里。Pi 与 antigravity 的 argv 不变。 |
+| F12 | claude-code verifier 读不到自己的 verification packet | 缺陷（已修复） | 2026-11-12 v4 在 `~/imm-probe/L4` 用 PR 头 `ac6be56af5` 的 `verificationArguments` 跑真实 `claude`，packet 按生产写到 `tmpdir()/imm-cli-verify-*`：`permission_denials` 为 `Read …/verify-packet.md`，verifier 以散文作答，没有 JSON；同一运行加 `--add-dir <packet 目录>` 后 `git --no-pager show`、`git diff` 通过、`git -C` 被拒，返回预期 JSON（证据 `~/imm-probe/evidence/v4/smoke-args/`）。reviewer 早已带 `--add-dir`，verifier 漏了。修复：claude-code verifier argv 带 `--add-dir dirname(packet)`，verify 目录与 review 目录一样取 `realpath`（`runtime/assurance/cli_review.ts`）。Pi 与 antigravity 的 argv 不变。 |
 
 F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督行为本轮未复测（BR-DEFER-2）。F10 的十二条 allow-list 与 F11 的关 hook 参数由自动化测试覆盖，并用真实 `claude` 做过一次 argv 级冒烟（上表 F11）；完整的 Review 复跑仍然延后（BR-SCN-1）。
 
@@ -382,6 +383,7 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | **F9** | Herdr 外非交互 Executor 与 `tui_required` 矛盾，批永不结算 | 已修：返回 `lane_executor_requires_tui`，子任务留在 `enrolled`；未实测 |
 | **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | 已修：根因是 `dontAsk` 拒绝 `git --no-pager`；真实模型复跑未做（BR-SCN-1） |
 | **F11** | 用户级 PreToolUse hook 改写 git 命令，reviewer 的 git allow-list 全部失配 | 已修：claude-code reviewer/verifier 带 `--settings '{"disableAllHooks":true}'`；argv 级冒烟通过，完整 Review 复跑未做（BR-SCN-1） |
+| **F12** | claude-code verifier 的 packet 在仓库外，`dontAsk` 拒绝 Read | 已修：verifier argv 带 `--add-dir <packet 目录>`；argv 级冒烟通过（v4 `smoke-args`），完整 Review 复跑未做（BR-SCN-1） |
 
 ### 4. 准入决定
 

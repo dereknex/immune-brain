@@ -23392,6 +23392,8 @@ function verificationArguments(profile, model, packetPath, turnBudget) {
     return [
       "--print",
       "--no-session-persistence",
+      "--add-dir",
+      dirname18(packetPath),
       "--max-turns",
       String(turnBudget),
       "--tools",
@@ -23500,7 +23502,7 @@ class CliReviewHost {
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${review.profile.host} executable ${REVIEW_BINARY[review.profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
     const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
-    const directory = mkdtempSync6(join35(tmpdir9(), "imm-cli-verify-"));
+    const directory = realpathSync23(mkdtempSync6(join35(tmpdir9(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
     const packet = join35(directory, "verify-packet.md");
     const script = join35(directory, "verify.sh");

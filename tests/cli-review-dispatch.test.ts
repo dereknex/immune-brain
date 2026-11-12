@@ -433,6 +433,13 @@ describe("#426 reviewer and verifier git allow-list", () => {
 		}
 	});
 
+	test("#426 F12: the claude-code verifier may read its out-of-tree packet directory", () => {
+		const argv = verificationArguments({ host: "claude-code" }, "model", packet, 12);
+		expect(argv[argv.indexOf("--add-dir") + 1]).toBe("/tmp/imm-cli-review");
+		expect(argv[argv.indexOf("--add-dir") + 2]).toBe("--max-turns");
+		expect(argv.at(-1)).toContain(packet);
+	});
+
 	test("no rule admits -C, a non-git command or a bare Bash", () => {
 		for (const rule of rulesOf(claudeArgv()[0]!)) {
 			expect(rule).toMatch(/^Bash\(git (--no-pager )?(show|diff|log|cat-file|rev-parse|ls-tree):\*\)$/);
