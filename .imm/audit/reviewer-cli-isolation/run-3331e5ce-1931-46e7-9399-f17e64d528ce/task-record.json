@@ -1,0 +1,173 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "reviewer-cli-isolation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "reviewer-cli-isolation",
+    "goal": "Implement Slice S7 of docs/specs/tri-host-capability-alignment.spec.md: disable ambient Pi Reviewer extensions, discovered skills and MCP, explicitly load only authority-review, narrow Pi tools, and record the remaining Bash and Antigravity guard-only risks without claiming preventive read-only isolation.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D8 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-4): Pi reviewArguments includes --no-extensions --no-skills --no-mcp, an explicit existing absolute authority-review SKILL.md path and --tools read,grep,find,ls,bash while preserving --print --no-session, model, effort and packet. Positive: BR-SCN-3 exposes that exact argv and the explicit skill remains loadable with discovery disabled. Negative: ambient configuration or an implicit skill lookup is absent. Bound: Claude and Antigravity argv are unchanged and Bash is not described as argument-restricted. Agreed seam: tests/cli-review-dispatch.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D9 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-5): Pi and Antigravity P5 remain guard-only, and ADR 0037, the capability table and Antigravity README disclose Pi Bash arguments, AG absence of restriction flags, shell-less native-role immutable-Git limits and untracked-file tree-guard coverage. Positive: a maintainer can read the residual risk. Negative: no text declares either CLI preventively read-only or certifies native AG Review. Bound: review_host: antigravity remains supported. Agreed seams: tests/host-capability-contract.test.ts, tests/antigravity-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-capability-contract.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D8 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-4): this Spec supersedes review-cli-stage D9 by reference and the amended ADR 0037 decision 4 matches the implemented argv, source and bundled explicit-skill path resolution typechecks, and both packages regenerate. Positive: package checks and typecheck pass. Negative: stale generated cli_review code fails. Bound: no new dependency or lockfile change. Agreed seam: package generation plus TypeScript.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/reviewer-cli-isolation.md",
+      "docs/adr/0037-authority-review-cli-stage.md",
+      "docs/plans/reviewer-cli-isolation.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain-antigravity/README.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/.pi-extension/pi-capability.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/capability.ts",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "tests/antigravity-host-package.test.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/host-capability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/reviewer-cli-isolation.intent.json",
+    "content_hash": "sha256:ea9ebce30161fc498340c78e0e1b19dbadf29fa683b80b8f983a9b54715d383c"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ea9ebce30161fc498340c78e0e1b19dbadf29fa683b80b8f983a9b54715d383c",
+  "git_base_head": "21e312a4c4ca5b4fb2e4849579f6333d3f730118",
+  "attestations": [
+    {
+      "id": "approval-qa-a52acb68",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ea9ebce30161fc498340c78e0e1b19dbadf29fa683b80b8f983a9b54715d383c",
+      "diff_hash": "sha256:a6e898e205f7a4e01be326bbeebf959a67f5899d67ce35c3e81d6f886eaeb2f0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:8a4b3a21531b539561f261aa2ee33a38aef9cefdbf4014dea5ec3217c7b02d6e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8a4b3a21531b539561f261aa2ee33a38aef9cefdbf4014dea5ec3217c7b02d6e"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8a4b3a21531b539561f261aa2ee33a38aef9cefdbf4014dea5ec3217c7b02d6e"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:8a4b3a21531b539561f261aa2ee33a38aef9cefdbf4014dea5ec3217c7b02d6e"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5887f907",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ea9ebce30161fc498340c78e0e1b19dbadf29fa683b80b8f983a9b54715d383c",
+      "diff_hash": "sha256:a6e898e205f7a4e01be326bbeebf959a67f5899d67ce35c3e81d6f886eaeb2f0",
+      "actor_id": "cli:claude-code:1775cb6c-5313-4d10-839f-d2a0fbddfb97",
+      "summary": "Pi reviewer argv now carries --no-extensions --no-skills --no-mcp, an explicit absolute authority-review SKILL.md resolved in both the source and bundled layouts, and --tools read,grep,find,ls,bash, while keeping print/session/model/effort/packet; Claude and AG argv are unchanged; ADR 0037, the P5 table, the Pi declaration and the AG README disclose guard-only residual risk without claiming read-only or certification; both bundles are regenerated, and the two cli_review.ts copies have the same blob; blast radius medium: the cli_review.ts reviewer argv and both generated mcp-server bundles.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21e312a4c4ca5b4fb2e4849579f6333d3f730118",
+        "review_commit": "3a45d28a4db03e5e8aeac931d2f817eb2fe0b39c",
+        "review_tree": "2dcf4a4552a3dc935aa38b9cceeba8a5895d6d62",
+        "manifest_digest": "sha256:50c86b3a262c63e27ea7fbd8827a4c29574cc2f7ffdca7f29406018ede8e20a4"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-941dd68aa807-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "If the explicit skill path cannot be resolved, a generic Error is thrown after the review temp directory is created, so the failure is not a ReviewPreparationError and the temp directory is left behind.",
+          "anchor": "sha256:cdc07c5619836f17956c8bd3ce359a3da234a0ca05cc5feea58636de8ef56629",
+          "evidence": {
+            "trigger": "A Pi review profile and a package layout with no skills/authority-review/SKILL.md under any candidate path → reviewArguments throws a plain Error after mkdtempSync; reservation fails with no review_host_unavailable-style code and the imm-cli-review-* directory is left orphaned.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.prepareReview",
+              "plugins/immune-brain/runtime/assurance/cli_review.ts:reviewArguments",
+              "plugins/immune-brain/runtime/assurance/cli_review.ts:resolveAuthorityReviewSkillPath"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:4598731a3530ca51af3b9f7f4833324f7a57a7bdbdf7c500b874eb81a9dfaa11"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:reviewer-cli-isolation:2026-11-12T08:04:34.499Z",
+      "at": "2026-11-12T08:04:34.499Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/reviewer-cli-isolation.intent.json"
+    },
+    {
+      "id": "record_approval:reviewer-cli-isolation:2026-11-12T08:05:06.179Z",
+      "at": "2026-11-12T08:05:06.179Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a52acb68\naction_v2_sha256:ee5a4fd78735f84d84b04faaafaafde3b4820c2ecae6e4a9e0429e8afb6105ed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T08:05:06.179Z"
+      }
+    },
+    {
+      "id": "record_approval:reviewer-cli-isolation:2026-11-12T08:06:41.583Z",
+      "at": "2026-11-12T08:06:41.583Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5887f907\naction_v2_sha256:9ecb4da969a0389d440b88575a37149c1b626316f3fefff540991d4828f327f1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:1775cb6c-5313-4d10-839f-d2a0fbddfb97",
+        "confirmation_ref": "antigravity:cli:claude-code:1775cb6c-5313-4d10-839f-d2a0fbddfb97",
+        "issued_at": "2026-11-12T08:06:41.583Z"
+      },
+      "review_started_at": "2026-11-12T08:05:09.731Z",
+      "review_submitted_at": "2026-11-12T08:06:40.329Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:reviewer-cli-isolation:2026-11-12T08:06:43.726Z",
+      "at": "2026-11-12T08:06:43.726Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6e717b9d7a81fc4731c096c728676d9575a34223dd56660e35a862fa559e21d9"
+    }
+  ]
+}

@@ -17495,7 +17495,7 @@ import { existsSync as existsSync20, readdirSync as readdirSync10 } from "node:f
 import { createInterface } from "node:readline";
 import { join as join37 } from "node:path";
 import { stdin as stdin2 } from "node:process";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
 import { randomUUID as randomUUID10 } from "node:crypto";
@@ -22603,8 +22603,8 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname18, join as join36, resolve as resolve16 } from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import { dirname as dirname18, join as join36, resolve as resolve17 } from "node:path";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
 init_review_evidence();
@@ -23299,7 +23299,8 @@ import { execFileSync as execFileSync14 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync23, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir9 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname17, join as join35 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname17, join as join35, resolve as resolve16 } from "node:path";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
@@ -23310,7 +23311,19 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
   disableAllHooks: true,
   env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
 });
-function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
+function resolveAuthorityReviewSkillPath(moduleDir = dirname17(fileURLToPath4(import.meta.url))) {
+  const candidates = [
+    resolve16(moduleDir, "../../skills/authority-review/SKILL.md"),
+    resolve16(moduleDir, "../skills/authority-review/SKILL.md"),
+    resolve16(moduleDir, "skills/authority-review/SKILL.md")
+  ];
+  for (const candidate of candidates) {
+    if (existsSync18(candidate))
+      return candidate;
+  }
+  throw new Error(`authority-review skill not found from ${moduleDir}`);
+}
+function reviewArguments(profile, packetPath, turnBudget, readDirs = [], skillPath) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
     return [
@@ -23338,9 +23351,17 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
     ];
   }
   if (profile.host === "pi") {
+    const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
     return [
       "--print",
       "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-mcp",
+      "--skill",
+      explicitSkill,
+      "--tools",
+      "read,grep,find,ls,bash",
       ...model,
       ...profile.effort ? ["--thinking", profile.effort] : [],
       `/skill:authority-review ${packetPath}`
@@ -23862,7 +23883,7 @@ class HostRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname18(fileURLToPath4(import.meta.url)), "../.."),
+        pluginDir: resolve17(dirname18(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
@@ -24414,7 +24435,7 @@ class HostRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname18(fileURLToPath4(import.meta.url)), "../.."),
+        pluginDir: resolve17(dirname18(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -24634,7 +24655,7 @@ var CLAUDE_MCP_PROFILE = {
   consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
   readRunToolSession: (toolCallId, operation, workspace) => readRunToolSession(toolCallId, operation, workspace),
   dispatchHook: runHook,
-  bundlePath: fileURLToPath5(import.meta.url)
+  bundlePath: fileURLToPath6(import.meta.url)
 };
 var createMcpRuntime2 = (options = {}) => createMcpRuntime(CLAUDE_MCP_PROFILE, options);
 var handleJsonRpc2 = (message, mcp = createMcpRuntime2()) => handleJsonRpc(message, mcp);

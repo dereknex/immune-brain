@@ -32,7 +32,7 @@ export const PI_CAPABILITY: HostCapabilityDeclaration = validateHostCapabilityDe
 		P5: {
 			port: "P5",
 			level: "guard-only",
-			evidence: "Tree guard only; Pi reviewer argv currently lacks ambient restriction flags, and Bash arguments cannot be restricted to Git (ADR 0037, D8)",
+			evidence: "Tree guard only; Pi reviewer disables ambient extensions/skills/mcp with narrowed tools (read,grep,find,ls,bash), but Bash arguments cannot be restricted to Git and untracked files are uncovered (ADR 0037, D8)",
 		},
 		P6: {
 			port: "P6",

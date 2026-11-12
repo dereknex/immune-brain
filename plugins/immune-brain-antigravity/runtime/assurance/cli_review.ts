@@ -13,7 +13,8 @@ import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import {
@@ -44,10 +45,32 @@ export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 
 /**
+ * Resolves the explicit absolute path to authority-review SKILL.md.
+ * Resolves from the package root in both source and bundled layouts (Spec S7 D8).
+ */
+export function resolveAuthorityReviewSkillPath(moduleDir: string = dirname(fileURLToPath(import.meta.url))): string {
+	const candidates = [
+		resolve(moduleDir, "../../skills/authority-review/SKILL.md"),
+		resolve(moduleDir, "../skills/authority-review/SKILL.md"),
+		resolve(moduleDir, "skills/authority-review/SKILL.md"),
+	];
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return candidate;
+	}
+	throw new Error(`authority-review skill not found from ${moduleDir}`);
+}
+
+/**
  * The reviewer argv for one Host, model and effort applied only when the profile sets them (D5).
  * `readDirs` are the out-of-tree directories the reviewer must read (packet, evidence).
  */
-export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number, readDirs: string[] = []): string[] {
+export function reviewArguments(
+	profile: ReviewProfile,
+	packetPath: string,
+	turnBudget: number,
+	readDirs: string[] = [],
+	skillPath?: string,
+): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
 	if (profile.host === "claude-code") {
 		return [
@@ -76,9 +99,17 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 		];
 	}
 	if (profile.host === "pi") {
+		const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
 		return [
 			"--print",
 			"--no-session",
+			"--no-extensions",
+			"--no-skills",
+			"--no-mcp",
+			"--skill",
+			explicitSkill,
+			"--tools",
+			"read,grep,find,ls,bash",
 			...model,
 			...(profile.effort ? ["--thinking", profile.effort] : []),
 			`/skill:authority-review ${packetPath}`,

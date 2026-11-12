@@ -68,7 +68,7 @@ _Isolated CLI execution for authority review and verifier processes_
 
 - **Claude Code** (`certified`): Fresh claude --print process with --dangerously-skip-permissions, tool allowlist, no session persistence, and immutable tree guard
 - **Antigravity** (`guard-only`): Tree guard only; agy --print lacks CLI restriction flags, shell-less native roles cannot perform git checks, and untracked files are uncovered (ADR 0037, D9)
-- **Pi** (`guard-only`): Tree guard only; Pi reviewer argv currently lacks ambient restriction flags, and Bash arguments cannot be restricted to Git (ADR 0037, D8)
+- **Pi** (`guard-only`): Tree guard only; Pi reviewer disables ambient extensions/skills/mcp with narrowed tools (read,grep,find,ls,bash), but Bash arguments cannot be restricted to Git and untracked files are uncovered (ADR 0037, D8)
 
 ### P6 — Lane Executor spawn
 

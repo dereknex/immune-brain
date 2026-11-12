@@ -38,6 +38,15 @@ copy source into the review packet, or change shared Review authority, and it do
 certify the complete Managed lifecycle (Enrollment, QA, Review, completion) on Antigravity.
 Package checks verify the read-only restrictions and this disclosure, not real model behavior.
 
+### Review CLI residual risk (`review_host: antigravity`)
+
+`review_host: antigravity` remains supported as `guard-only` (port P5). Unlike Claude Code,
+`agy --print` has no CLI restriction flags to restrict tools or enforce read-only execution.
+The runtime relies on the post-review tree guard comparing HEAD, the index, and tracked
+worktree content; untracked files are uncovered by the tree guard. Neither CLI invocation
+nor native roles provide preventive read-only isolation, and native Antigravity Review is
+not certified.
+
 ## Hooks and MCP
 
 Hook commands run from the plugin directory (`node "./dist/antigravity/mcp-server.mjs" --hook`)

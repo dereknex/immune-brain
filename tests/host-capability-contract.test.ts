@@ -198,6 +198,41 @@ describe("host capability contract", () => {
 			expect(exportedKeys).not.toContain("resolveHost");
 		});
 	});
+
+	describe("S7 AC2: Review CLI residual risk and guard-only declarations (D8, D9)", () => {
+		it("Pi and Antigravity P5 remain guard-only with residual risks disclosed", () => {
+			expect(PI_CAPABILITY.ports.P5.level).toBe("guard-only");
+			expect(ANTIGRAVITY_CAPABILITY.ports.P5.level).toBe("guard-only");
+
+			// Pi P5 evidence discloses Bash arguments and untracked files
+			expect(PI_CAPABILITY.ports.P5.evidence).toContain("Bash arguments cannot be restricted to Git");
+			expect(PI_CAPABILITY.ports.P5.evidence).toContain("untracked files are uncovered");
+			expect(PI_CAPABILITY.ports.P5.evidence).toContain("read,grep,find,ls,bash");
+
+			// Antigravity P5 evidence discloses absence of restriction flags, shell-less limits, and untracked files
+			expect(ANTIGRAVITY_CAPABILITY.ports.P5.evidence).toContain("agy --print lacks CLI restriction flags");
+			expect(ANTIGRAVITY_CAPABILITY.ports.P5.evidence).toContain("shell-less native roles cannot perform git checks");
+			expect(ANTIGRAVITY_CAPABILITY.ports.P5.evidence).toContain("untracked files are uncovered");
+		});
+
+		it("negative: no declaration text claims either CLI is preventively read-only or certifies native AG review", () => {
+			for (const decl of [PI_CAPABILITY, ANTIGRAVITY_CAPABILITY]) {
+				const p5 = decl.ports.P5;
+				expect(p5.evidence).not.toMatch(/preventive(?:ly)?\s+read-only/i);
+				expect(p5.evidence).not.toContain("certified");
+			}
+			expect(ANTIGRAVITY_CAPABILITY.ports.P5.level).not.toBe("certified");
+		});
+
+		it("positive: maintainer reading rendered table sees the residual risks for both hosts", () => {
+			const rendered = renderHostCapabilityMatrix(declarations);
+			expect(rendered).toContain("| P5 | Review/Verify CLI isolation | `certified` | `guard-only` | `guard-only` |");
+			expect(rendered).toContain("Bash arguments cannot be restricted to Git");
+			expect(rendered).toContain("agy --print lacks CLI restriction flags");
+			expect(rendered).toContain("shell-less native roles cannot perform git checks");
+			expect(rendered).toContain("untracked files are uncovered");
+		});
+	});
 });
 
 function cloneDeclaration(decl: HostCapabilityDeclaration): HostCapabilityDeclaration {

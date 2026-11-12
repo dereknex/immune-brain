@@ -139,6 +139,17 @@ describe("Antigravity artifact boundary (AC1)", () => {
 		expect(readme).toContain("not real model behavior");
 	});
 
+	it("discloses Review CLI residual risk, absence of restriction flags, and untracked-file limits (S7 AC2, D9)", () => {
+		const readme = readFileSync(join(ARTIFACT, "README.md"), "utf8").replace(/\s+/g, " ");
+		expect(readme).toContain("Review CLI residual risk");
+		expect(readme).toContain("`review_host: antigravity`");
+		expect(readme).toContain("`guard-only`");
+		expect(readme).toContain("`agy --print` has no CLI restriction flags");
+		expect(readme).toContain("untracked files are uncovered by the tree guard");
+		expect(readme).toContain("Neither CLI invocation nor native roles provide preventive read-only isolation");
+		expect(readme).toContain("native Antigravity Review is not certified");
+	});
+
 	it("carries no other host's loader components, while runtime/claude implementation stays", () => {
 		expect(artifactBoundaryErrors(ARTIFACT)).toEqual([]);
 		for (const absent of [".claude-plugin", ".mcp.json", "hooks", ".pi-extension", "dist/claude"]) {

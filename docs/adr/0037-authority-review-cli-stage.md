@@ -14,6 +14,20 @@ keeps it) and [ADR 0030](0030-marker-keyed-review-dispatch.md) (its
 marker-keyed Agent-dispatch binding applies to findings verification only).
 Those ADRs gain a status note pointing here.
 
+**Amendment (tri-host capability alignment S7):** Decision 4 is amended by
+[ADR 0039](0039-host-capability-profiles.md) and Spec
+`docs/specs/tri-host-capability-alignment.spec.md` D8/D9 (which supersedes
+`review-cli-stage` D9 by explicit reference). Pi reviewer argv adds
+`--no-extensions --no-skills --no-mcp`, an explicit existing absolute
+`authority-review/SKILL.md` path, and narrowed tools
+`--tools read,grep,find,ls,bash`. Residual risks are explicitly disclosed: Pi
+Bash arguments cannot be restricted to Git; Antigravity `agy --print` lacks CLI
+restriction flags and shell-less native roles cannot perform immutable-Git
+checks; tree guard covers tracked files but untracked files are uncovered.
+Neither CLI is preventively read-only, native Antigravity Review is not
+certified, and both remain `guard-only` on port P5 while `review_host: antigravity`
+remains supported.
+
 Accepted by the repository owner for Issue #386 through the decisions recorded
 in `docs/specs/review-cli-stage.spec.md` (BR-REQ-1..7, BR-DEC-1..6, BR-SCN-1/2).
 It records Slices S1-S3 of that Spec; Slice S4 retires what is left of the
@@ -52,12 +66,21 @@ process can be selected by the project and observed by its own output bytes.
    contract-mismatch line or a changed reviewed tree releases it without a
    Review round. A valid verdict keeps the existing REVISE/PASS,
    `review_incomplete` and round-budget mechanics.
-4. **Reviewer invocation.** Each Host gets one argv: `claude --print` with a
-   read-only tool allowlist and no session persistence, `pi --print
-   --no-session` with the user's own Pi configuration (no tool restriction
-   flag), or `agy --print`. Each ends with the skill invocation on the packet.
-   The executable is resolved from `PATH`; an absent binary fails reservation
-   with `review_host_unavailable`.
+4. **Reviewer invocation (amended by ADR 0039 and Spec tri-host-capability-alignment D8/D9, superseding review-cli-stage D9).**
+   Each Host gets one argv:
+   - `claude --print` with a read-only tool allowlist (`Read,Grep,Glob,Bash`),
+     `--allowedTools` restricted to immutable git commands (`git show:*`,
+     `git diff:*`, `git log:*`, `git cat-file:*`, `git rev-parse:*`,
+     `git ls-tree:*`), `--permission-mode dontAsk`, and no session persistence.
+   - `pi --print --no-session` with `--no-extensions --no-skills --no-mcp`, an
+     explicit existing absolute `authority-review/SKILL.md` path (`--skill <path>`),
+     and narrowed tools `--tools read,grep,find,ls,bash`. Pi Bash arguments
+     cannot be restricted to Git.
+   - `agy --print` with no CLI restriction flags (Antigravity provides no CLI
+     flags to restrict tools or permissions).
+   Each ends with the skill invocation on the packet. The executable is
+   resolved from `PATH`; an absent binary fails reservation with
+   `review_host_unavailable`.
 5. **Tree guard.** Reservation records `git rev-parse HEAD`, the sha256 of
    `git ls-files -s` and the sha256 of `git diff --binary HEAD`.
    `inspectReview` recomputes them before reading the output and releases with
@@ -105,6 +128,16 @@ Review parts of `docs/reference/subagent-dispatch-protocol.md`.
 - Review authority no longer depends on a Host's Agent-observation hook for the
   primary Review; it depends on the output bytes and the tree guard. A reviewer
   that writes tracked content is detected after the fact, not prevented.
+- Residual risks (amended by tri-host capability alignment D8/D9):
+  - Pi Bash arguments cannot be restricted to Git; `--tools read,grep,find,ls,bash`
+    narrows privilege but does not prevent arbitrary shell commands.
+  - Antigravity `agy --print` has no CLI restriction flags, and shell-less
+    native roles cannot perform immutable-Git checks.
+  - The tree guard compares HEAD, the index, and tracked worktree content;
+    untracked files are uncovered.
+  - Neither CLI is preventively read-only, and native Antigravity Review is not
+    certified. Both Pi and Antigravity remain `guard-only` on port P5, while
+    `review_host: antigravity` remains supported.
 - Until S4 lands, two dispatch paths exist behind one internal switch, and the
   in-process path's tests select `subagent` explicitly.
 - The rollback is flipping the default back to `subagent`; S4 is the
