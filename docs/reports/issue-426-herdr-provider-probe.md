@@ -196,7 +196,7 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
 | C-2 死 Host 不能原地重启 | 证实已修 | 退出后 `await` 0.15 s 返回 `exited` / `unknown`；`--resume` 3.71 s 同 tab 重启完成一轮；core 已 `finished` 的终端保持 `state_refused` |
 | `--env` 注入 | 证实可用 | A5/B5/B10 均通过它控制 Host 环境；`PI_PROGRAM_STATUS=0` 时 30.5 s 返回 `entry_submitted:false` + `attention` |
 | C-3 多 handle await | 部分证实 | 无 `--timeout-ms` 的 `await` 持续 208.7 s，跨过 180 s check-in 后返回 `changed` / `done`；真实双 Lane 因 F7 未执行 |
-| C-1 单插件副本 | 未生效 | 见上一节“实测未通过” |
+| C-1 单插件副本 | 第三轮实测通过 | 两份都带 `single-copy.ts` 时 `exit=0`；只有旧 checkout 时仍冲突（旧副本无认领代码） |
 
 ### 新发现
 
@@ -226,13 +226,16 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
 
 ### 待修复清单
 
-| 编号 | 问题 | 证据位置 |
-| --- | --- | --- |
-| F1 | 登录 / 选择类对话框不报 `blocked`，Herdr 还会误发 entry | 上文 G3 登录细节 |
-| F2 | `close` 记录只做形式校验，不核对 batch report | `runtime/session/supervised_session_port.ts:216-223` |
-| F6 | `lane_session_close` 的契约顺序不可执行 | `dist/drive-batch.md:502-512`、`batch_lanes.ts` 的 parent-branch 检查 |
-| F7 | 新 batch 的 Lane 创建自锁，不可自愈 | `batch_lanes.ts:1363-1400`、`batch_worktrees.ts:27-37` |
-| C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | `.pi-extension/single-copy.ts` |
+| 编号 | 问题 | 状态（第三轮实测后） | 证据位置 |
+| --- | --- | --- | --- |
+| F1 | 登录 / 选择类对话框不报 `blocked`，Herdr 还会误发 entry | 已修（见“修复（第二轮实测之后）”）；第三轮 A5 通过：`unknown` + `attention`、entry 未发出 | 上文 G3 登录细节 |
+| F2 | `close` 记录只做形式校验，不核对 batch report | 已修：`close` 必须带 `--batch`，由 `closeRecordUnproven` 核对记录；第三轮 S1-c 三次伪造均被拒 | `runtime/session/cli.ts:106-120` |
+| F6 | `lane_session_close` 的契约顺序不可执行 | 已修（改为集成 tick 记录 `session_closes`）；第三轮 S1 按新契约关闭成功 | `batch_lanes.ts:248-261` |
+| F7 | 新 batch 的 Lane 创建自锁，不可自愈 | 已修；第三轮同仓第 2、3 个 batch 均正常创建 | `batch_lanes.ts:1363-1400` |
+| C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | 已修（按进程认领）；第三轮两份修复版副本共存 `exit=0`，旧副本仍冲突 | `.pi-extension/single-copy.ts` |
+| F8 | 配置解析顺序：active 用户 profile 覆盖项目 `lanes.*`（预期 project 优先），且 profile 设 `review_host` 时项目的 `review_verifier_model` 被丢弃 | **未修** | `runtime/config/layered_config.ts:178-182` |
+| F9 | Herdr 外的非交互 Executor 完成后被判 `lane_executor_no_progress`，Lane 无 `task-record.json` | **未修** | 上文 S4-b 行与 F9 条目 |
+| F10 | claude-code reviewer 的评审结论被判 coverage 不足（两轮后 park），无 findings/verify | **未修** | `runtime/assurance/coordinator.ts:1551,1741`；上文 S3 行与 F10 条目 |
 
 ## 修复（第二轮实测之后，2026-11-11）
 
@@ -272,3 +275,115 @@ core 不画任何界面，而 `hc attach` 会把执行它的终端接到 session
 ### 仍需实测
 
 R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显式 `-e` 加已安装 package），以及 F1 的 `attention` 在 Herdr 登录框下的真实表现。
+
+## 运行实测（2026-11-11，第三轮）
+
+被测代码 `97152e2291`（含 `51c9e77d63` F7、`51afbb0a4d` F6/F2、`3537ed12c1` F2 契约、`9c03705f4c` C-1 等修复）。运行时 herdr 0.9.5、claude 2.1.322、pi 1.5.2；Parent 用 Pi（`grok/grok-4.7@500k`，antigravity 模型当日配额耗尽）。按 `docs/reports/issue-426-local-validation-plan.md` §0.1 的八步执行，每个场景用全新仓库（`~/imm-probe/L3/single`、`L3/par`、`L3/rev`）以隔离 F7。证据：`~/imm-probe/evidence/v3/`。
+
+| 步骤 | 用例 | 结果 | 关键数据 |
+| --- | --- | --- | --- |
+| 2 | A5 登录框（F1） | **通过** | `ok:true`、`entry_submitted:false`、`state:"unknown"`、`provenance:"none"`，`attention` 含 “do not send the entry again”；登录框仍在、**entry 未被发送**、tab 保留 |
+| 3 | 单任务 Lane（probe-r3） | 通过 | Executor tab 不抢焦点；`await` → `done`；integrated `08f5c5a`；report 自带 `session_closes: [{probe-r3, at: 13:32:39.161Z}]` |
+| 3 | S1-a（未集成时请求关闭） | 通过 | `accepted:false`，`batch_lane_session_close_refused: … is enrolled, not integrated; its session stays for the user` |
+| 3 | S1（按新契约） | 通过 | `close <handle> --batch <batch_id> --task … --recorded-at <session_closes[].at> --root …` → `{"ok":true}`，tab 关闭 |
+| 3 | S1-c（三次伪造） | 通过 | 缺 `--batch` → 用法错误；`--recorded-at 2020-01-01T00:00:00.000Z` 与错 `--task` → 均 `close_unproven`，tab 未关 |
+| 4 | F7 连续新 batch | **通过（修复生效）** | 同仓第 2、3 个 batch 均 `enrolled` 且 `lane` 绑定成功，无 `batch_worktree_failed`；`probe-f7a` 结算 `completed`/`28e6744`/`session_closes`/tab 关闭；`probe-f7b` integrated `40b407b` 后停在 `needs_human`，原因是 **`checkout_delivery_overlap: README.md`**（前两批投递到 checkout 的改动未提交，第三次投递同文件重叠） |
+| 5 | C-3 并行 batch | **通过** | 两个 Executor tab 同时出现（`slice-a`、`slice-b`）且都不抢焦点；Parent 一次 `await` 带两个 handle；两者 integrated（`a6f0f77`、`835ceb6`）；`session_closes` 两项；两个 tab 均关闭 |
+| 6 | C-1 | **通过（两份都为修复版）** | 本分支副本装到用户级后，`pi -e <插件根> -p` `exit=0`，无工具冲突；用户级是旧 checkout（无 `single-copy.ts`）时仍 `Failed to load extension … conflicts with …`（`exit=1`）——旧副本缺认领代码，属升级问题。测试后已恢复用户级安装 |
+| 7 | S4-a review 走会话 | **部分通过** | 出现 tab `review probe-m1 [imm:f435aaca1723]`，内部执行 `imm-cli-review-…/review.sh` 并以 `IMM_f435aaca1723_DONE_0` 退出；批次 `completed`、integrated `0729940`、`lifecycle: done`、`findings: 0`、attestation 为 `cli:pi:…` |
+| 7 | S2-a advisory 走会话 | 通过 | `create` → `await` → `read --source scrollback --lines 2000 --extract advisory`：`result` 非 null（1183 字符），Parent 采用后 `stop` |
+| 7 | S2-b 打断 | 通过 | 在 child 生成过程中按 `Ctrl+C`：`read --extract advisory` 返回 `result: null`，Parent 按 `result_untrusted` 丢弃且不重试 |
+| 7 | S2-c 原始输出 | 记录 | `S2c-raw.json` 保存了 `--source scrollback --lines 2000` 的原文；未打断的那次原文含完整 `IMM-ADVISORY-BEGIN/END` 块 |
+| 7 | S3-a–d | **未触发（第三次尝试暴露 F10）** | 前两次 reviewer 为 pi、均 0 finding；第三次按计划换成 claude-code/opus（临时用户 profile），两轮 review 都以 `IMM_…_DONE_0` 退出却被判 `Review coverage remained incomplete after two rounds`，batch 停在 `needs_human`，未产生 findings / verification_ready / verify tab |
+| 7 | S4-b（Herdr 外） | **未验证（新现象 F9）** | 用 `env -u HERDR_ENV …` 起 Pi Parent（已核对进程 env 无 `HERDR_ENV`），门通过后 child `enrolled`，随后停在 `needs_human` / `lane_executor_no_progress`；Lane 里 `src/parse.js`、`tests/parse.test.js` 已暂存（Executor 实际完成实现），Lane 无 `task-record.json`。未走到 review 准备，`review_transport_unavailable` 未实测；复现得到 `code=tui_required`（见 F9） |
+| 8 | B2 | 通过 | create 2.08 s → `entry_submitted:true`、`reported`、`viewer:{opened:true}`；不抢焦点的 `probe-r5 (hc t1f)`；`await` → `done`；read 含 READY |
+| 8 | B3（claude trust） | 通过（G3 仍记失败） | `entry_submitted:false`、`unknown`、`none`、`viewer:{opened:true}`，`attention` 含 “look in its viewer tab, answer it there, then resume”；在观看 tab 接受 trust 后 `observe` → `idle`，`--resume` 0.33 s → `done`；`stop` 后观看 tab 消失、终端 `finished` |
+| 8 | B13 观看 tab 去留 | 通过（只记现象） | 关掉观看 tab 后 `attach` → `{"ok":true}` 并新建不抢焦点 tab；在观看 tab 按 `ctrl+\` 分离后 tab **自动关闭**；再 attach、`stop` 后观看 tab 结束 |
+| 8 | B14 归属与跨 provider | 通过 | `herdr-core:<addr>/guessed` → `not_owned`，不开 tab；Herdr handle 用 core provider `attach` → `provider_unavailable`（“herdr has no separate viewer”） |
+| 8 | S1-d | 通过 | 无 record 时 `close_unproven`、终端仍 `live`；写入手写 record 后同一命令 `{"ok":true}`，终端 kill+rm、观看 tab 消失 |
+
+| A4 Deny | 通过 | `--permission-mode manual` → `blocked`；点 No 后回到 `idle`，`touch` 未执行 |
+
+| 8 | B5（新代码复测） | 通过（备选分支） | 30.2 s → `entry_submitted:false`、`unknown`、`viewer:{opened:true}`、`attention`；屏幕为 Claude 首次运行引导 |
+| 8 | B3（Pi 分支） | 不适用 | pi 在 core 的未信任目录里无 trust 框，直接 `entry_submitted:true` → `done` |
+| 8 | B8（新代码复测） | 通过 | 假 `claude 2.1.100` → `provider_unavailable`，无新终端 |
+| 3 | S1-e | 通过 | 并行 batch 中一条已集成、另一条仍在跑时请求 `lane_session_close`：`accepted:true`，`recorded_at` 与已记录的 `session_closes[0].at` 完全一致，不新增记录 |
+| 3 | antigravity Executor | 通过 | 显式 `executor_host="antigravity"`：先出 agy trust 框，接受后 `--resume` 提交 `/drive probe-ag`，结算 `completed`/`a8b0b02`，tab 由 Parent 关闭 |
+| 3 | Claude Code 作 Parent | 通过 | `claude --plugin-dir` 跑 `/immune-brain:drive probe-cc`：await 以后台命令挂起，返回后重入并关闭 tab；`completed`/`ea2574f`/`session_closes` 齐备。备注：`auto mode` 下原生门被自动通过，非人工确认 |
+
+### 第三轮发现
+
+- **F8 配置解析顺序错位（新）**：`layered_config.ts:178-182` 让 active 用户 profile 覆盖项目 `.imm/config.json` 的 `lanes.*`；当 profile 设了 `review_host` 时，项目的 `review_verifier_model` 等依赖键会以 `not_applied` 警告被丢弃。预期应为 **project 优先**。后果：计划 §7 的 `review_host: claude-code` / `review_model: opus` / `review_verifier_model: sonnet` 在本机不生效，review 实际由 `cli:pi:…`（`group/kimi-k3.1`）执行，S3 的 `verifier_model` 与 `model_relation: "different"` 无法验证。
+- **投递约束（非缺陷）**：`git_integration: manual` 下连续 batch 投递同一路径到未提交的 coordinator checkout 会 `checkout_delivery_overlap` 停在 `needs_human`；需在每个 batch 后提交投递改动，或让不同 batch 使用不同路径。
+- **F10（新）claude-code reviewer 的结论不被 coverage 判定接受**：reviewer 为 pi 时同一强度任务 `findings: 0` 并正常集成（probe-m1、probe-m3）；换成 claude-code/opus 后两次 review 虽 exit 0（各约 11 s），却被 `review_incomplete`（`coordinator.ts:1551/1741`，`incomplete.count >= round_limit`）判为覆盖不足并 park。reviewer 启动参数自检正常（`--tools Read,Grep,Glob,Bash --permission-mode dontAsk --model opus` 可直接返回），需复现并检查 `imm-cli-review-*/review-output-*.txt`。
+- **F9（新）Herdr 外的非交互 Executor 永远结算不了**：`executorArguments`（`runtime/unattended/lane_supervisor.ts:22-36`）在无 Herdr 时用 `pi --print "/skill:drive <task>"` 启动 Executor，而 Kernel 写入只允许 TUI 会话——在 Lane 里手动重放同一命令，`imm_kernel_canary advance_assurance` 返回 `state=blocked`、`code=tui_required`、"Kernel mutation is TUI-only"，且未产生任何副作用。于是 Executor 实现了代码（`src/parse.js`、`tests/parse.test.js` 已暂存）却无法 settle，批记录停在 `needs_human` / `lane_executor_no_progress`，Lane 侧没有 `task-record.json`。影响：任何 Herdr 外的 Lane 批都走不完 assurance/review，S4-b 的 `review_transport_unavailable` 因此未实测。
+- **Parent 侧仍需人工纠偏**：本轮 Parent 出现过“把无活跃 claim 当成缺 TaskIntent”“拿到 handoff 后主张自己实现”，与第二轮的 Parent 行为问题同类，未计入产品缺陷。
+
+### 第三轮后的结论
+
+- 第二轮提出的 F1、F2、F6、F7 与 C-1 **均已被实现修复并实测通过**；F6 实际是设计已改为“集成 tick 记录 `session_closes`，Parent 读取后关闭”，第二轮把它当成缺陷是误判，因为当时走的是已被删除的请求入口。
+- 仍未解决：F8（配置优先级）、F9（Herdr 外非交互 Executor 与 `tui_required` 的矛盾）、S3 的真实 rework 路径、S4-a 的 Parent 侧 `review_ready`、C-3 的 Claude Code 并行变体。
+
+## 整体验证报告（#426 收尾）
+
+综合三轮实跑（2026-11-10 首轮、2026-11-11 第二/三轮）。被测代码从 `0fe3f41a` → `abb4d73f91` → `97152e2291` 演进；有效结论以 `97152e2291` 为准。运行时 herdr 0.9.5（protocol 22）、hc 0.1.20、claude 2.1.322、pi 1.5.2、agy 1.5.5。证据在 `~/imm-probe/evidence/{v2,v3}/`。
+
+### 1. 覆盖矩阵
+
+| 组 | 用例 | 状态 |
+| --- | --- | --- |
+| 端口 · Herdr | A1、A2（×3 Host）、A6、A7、A8、A9、A10、S4-c | 通过 |
+| 端口 · Herdr · 对话框 | A3（claude/agy trust）、A4（claude 权限，Allow 与 Deny 两分支） | 通过 |
+| 端口 · Herdr · 登录 | A5 | claude 走 F1 修复后的 `unknown` + `attention` 通过；pi 分支不可测 |
+| 端口 · herdr-core | B1、B2、B4、B6–B14、S1-d | 通过 |
+| 端口 · herdr-core · 对话框 | B3（claude trust + 观看 tab 里回答）、B5（登录，备选分支） | 通过（G3 仍对 claude 记失败）；B3 的 pi 分支不适用 |
+| Loop | C（单任务 Lane）、S1、S1-a、S1-b、S1-c、S1-e | 通过 |
+| Loop · 并行 | C-3（Pi Parent） | 通过；Claude Code 并行组合未跑 |
+| Loop · 插件副本 | C-1 | 通过（两份修复版共存）；旧安装副本仍冲突 |
+| Loop · 连续 batch | F7 回归（同仓第 2、3 个 batch） | 通过 |
+| Loop · Host 变体 | antigravity Executor、Claude Code Parent（后台 await） | 各通过一次 |
+| Review / advisory | S2-a、S2-b、S2-c、S4-a | S2 全部通过；S4-a 的会话传输成立（reviewer 为 pi 时结算成功，claude 路径撞 F10） |
+| Review / verifier | S3-a、S3-b、S3-c、S3-d | **未验证**（三次 material 尝试未产生 rework；第三次撞 F10） |
+| Herdr 外 | S4-b | **未验证**（F9） |
+
+### 2. 五个门的结论
+
+| 门 | 结论 |
+| --- | --- |
+| G1 `probe` | 通过（两类 provider 均 `ok:true`，protocol 22） |
+| G2 五步一轮 ≤60 s | 通过：Herdr 三 Host 6.6–11.2 s；herdr-core 2.1–3.0 s |
+| G3 对话框 5 s 内 `blocked` | **部分**：权限（Herdr 4.3 s / core 2.1 s `status.kind=permission`）与 workspace trust（Herdr claude/agy）通过；登录对话框在两类 provider 上都不报 `blocked`，core 的 claude trust 也不报（改为 `attention` 保留终端） |
+| G4 归属与不可用 | 通过：`not_owned`、Herdr 外 `provider_unavailable`、不新建 tab 或终端 |
+| G5 Parent 不直调 `herdr` | 通过：Parent 会话 16 条 bash 调用无一条执行 `herdr tab/agent/pane` |
+
+### 3. 缺陷清单与状态
+
+| 编号 | 问题 | 状态 |
+| --- | --- | --- |
+| F1 | 登录 / 选择类对话框不报 `blocked`，Herdr 还会把 entry 打进对话框 | 已修（`attention` + 保留终端）；**登录框仍不报 `blocked`**，属上游/待根治 |
+| F2 | `close` 只校验形式，不核对 batch record | 已修：必须带 `--batch`，按 `session_closes` 核对 |
+| F6 | “集成后再请求关闭”不可执行 | 已改为“集成 tick 记录 `session_closes`”；第二轮曾误判为缺陷 |
+| F7 | 首个 batch 之后新 batch 自锁 | 已修（创建前先写 `lane_reservation`），第三轮同仓连续 batch 验证通过 |
+| C-1 | 显式 `-e` + 已安装 package 冲突退出 | 已修（按进程认领）；旧副本缺认领代码时仍会冲突 |
+| **F8** | active 用户 profile 覆盖项目 `lanes.*`，预期 project 优先 | **未修**（`layered_config.ts:178-182`） |
+| **F9** | Herdr 外非交互 Executor 与 `tui_required` 矛盾，批永不结算 | **未修**（`lane_supervisor.ts:22-36`） |
+| **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | **未修**（`coordinator.ts:1551,1741`） |
+
+### 4. 准入决定
+
+- **herdr**：三 Host 的 G1、G2、G4 通过；G3 的权限与 trust 通过，登录一格对 Claude 仍不通过。Claude Code 在 herdr 上差“登录对话框”一项；Pi 与 Antigravity 的权限 / 登录未测。
+- **herdr-core**：**无 Host 准入**。Claude Code 的 trust 与登录都不报 `blocked`；Pi 与 Antigravity 的权限 / 登录未测。
+- **Loop**：单任务、并行、连续 batch 与 S1 关闭流程在 herdr 上可用；herdr-core 未接入 Loop（D2 不满足）。
+
+### 5. 方法与限制
+
+- Parent 以 Pi（`grok/grok-4.7@500k`）为主，Claude Code Parent 只跑了一次单任务变体（`auto mode` 下原生门被自动通过，非人工确认）；antigravity 模型在测试当日配额耗尽。
+- “Herdr 外”用剥离 `HERDR_ENV` 的进程等价构造，非真正独立终端。
+- 每次回收到的对话框（trust、权限、登录）都由用户本人回答；C-1 测试期间临时把本分支副本装到用户级，测试后已恢复原安装。
+- 为跑 S3 临时加了用户级 profile `r4probe` 并切 active，结束后已还原为 `deepseek`。
+
+### 6. 剩余工作
+
+1. 修 F8、F9、F10。
+2. 重跑 S3-a/b（含 `verifier_actor` / `verifier_model` / `model_relation`）、S3-c（verify tab 里 Ctrl+C）、S3-d（`review_transport: process`）、S4-b（`review_transport_unavailable`）。
+3. 补测 Pi / Antigravity 的权限与登录对话框（需要各自 host 的隔离配置），以及 C-3 的 Claude Code 并行组合。
