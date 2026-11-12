@@ -1,6 +1,8 @@
 // A Lane's index must carry stat data after its delivery is indexed: task
 // snapshots diff with `diff.autoRefreshIndex=false`, and a zero-stat index
-// (what `read-tree` writes) makes every tracked file look unstaged.
+// makes every tracked file look unstaged. git 2.43 (Ubuntu 24.04) `read-tree`
+// writes such an index; git 2.56 (CI) no longer does, so these assertions are
+// about the state after the helper and hold on both.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -42,10 +44,12 @@ afterEach(() => {
 });
 
 describe("readLaneDeliveryIntoIndex", () => {
-	test("plain read-tree leaves a zero-stat index that a no-refresh snapshot reads as drift", () => {
+	test("every index entry carries stat data afterwards", () => {
 		const { root, commit } = lane();
-		git(root, "read-tree", commit);
-		expect(unstaged(root).split("\n").sort()).toEqual(["out.ts", "src/impl.ts"]);
+		readLaneDeliveryIntoIndex(root, commit);
+		const entries = git(root, "ls-files", "--debug").split("\n").filter((line) => line.trim().startsWith("mtime:"));
+		expect(entries.length).toBe(2);
+		for (const line of entries) expect(line.trim()).not.toBe("mtime: 0:0");
 	});
 
 	test("leaves no tracked file unstaged for a no-refresh snapshot", () => {

@@ -6,4 +6,4 @@
 
 The Preparation digest no longer includes `generated_at` (8.1.3), so a digest issued by 8.1.2 no longer matches: an enrollment or batch confirmation that was open across the upgrade reports `enrollment preparation digest mismatch` and must be confirmed again.
 
-Batch Lane delivery indexing (`read-tree` after a Lane commit) now refreshes the index stat data. `read-tree` writes entries with none, and the task snapshots diff with `diff.autoRefreshIndex=false`, so every tracked file of the Lane read as unstaged and the Parent branch integration parked the child as `batch_integration_conflict: task scope contains unstaged or untracked changes`.
+Batch Lane delivery indexing (`read-tree` after a Lane commit) now refreshes the index stat data. git before about 2.5x (2.43 on Ubuntu 24.04) `read-tree` writes entries with none, and the task snapshots diff with `diff.autoRefreshIndex=false`, so every tracked file of the Lane read as unstaged and the Parent branch integration parked the child as `batch_integration_conflict: task scope contains unstaged or untracked changes`.
