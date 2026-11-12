@@ -61,3 +61,19 @@ one adapter from the other.
   only in-flight verifier events that could never settle a receipt.
 - Reverting a Slice restores its predecessor's file set, because later Slices
   depend on earlier ones only through modules they added.
+
+## Amendment: Tri-host capability alignment
+
+Accepted in [ADR 0039](0039-host-capability-profiles.md) and
+`docs/specs/tri-host-capability-alignment.spec.md` D12.
+
+The restriction "Pi stays outside this layer" is removed. Claude Code,
+Antigravity, and Pi are sibling adapters over `host-core`. The adapter
+dependency direction is:
+
+    kernel ← assurance ← host-core ← adapters (claude, antigravity, pi)
+
+The Pi adapter (`.pi-extension`) may import `host-core` modules (such as
+`runtime/host-core/capability.ts`). The inner-layer rule forbidding `kernel/` and
+`assurance/` from importing `host-core` remains unchanged, and adapters still
+neither import nor extend each other.

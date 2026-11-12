@@ -4,6 +4,10 @@ export const CORE_CONTRACT = "assurance_kernel/host_adapter/claude-code/v1";
 export const SUPPORTED_PLATFORMS = ["darwin", "linux"] as const;
 
 import type { PermissionMode } from "../host-core/runtime";
+import {
+	type HostCapabilityDeclaration,
+	validateHostCapabilityDeclaration,
+} from "../host-core/capability";
 
 export type { PermissionMode };
 
@@ -61,3 +65,57 @@ export function probeHost(
 	}
 	return { ok: true, version, platform };
 }
+
+export const CLAUDE_CAPABILITY: HostCapabilityDeclaration = validateHostCapabilityDeclaration({
+	hostId: "claude-code",
+	hostName: "Claude Code",
+	ports: {
+		P1: {
+			port: "P1",
+			level: "certified",
+			evidence: "Live Hook correlation (PreToolUse/PostToolUse) with session:stepIdx and phase admission",
+		},
+		P2: {
+			port: "P2",
+			level: "certified",
+			evidence: "Native interactive confirmation dialog via confirm_dialog and HostConfirmationRef",
+		},
+		P3: {
+			port: "P3",
+			level: "certified",
+			evidence: "Verifier observation state machine through hook event log",
+		},
+		P4: {
+			port: "P4",
+			level: "certified",
+			evidence: "Run continuation state machine through hook event log and automated stop",
+		},
+		P5: {
+			port: "P5",
+			level: "certified",
+			evidence: "Fresh claude --print process with --dangerously-skip-permissions, tool allowlist, no session persistence, and immutable tree guard",
+		},
+		P6: {
+			port: "P6",
+			level: "certified",
+			evidence: "Lane Executor process spawn in isolated worktree",
+		},
+		P7: {
+			port: "P7",
+			level: "certified",
+			evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks",
+		},
+		P8: {
+			port: "P8",
+			level: "certified",
+			evidence: "PreInvocation active-task notice and prompt injection",
+		},
+		P9: {
+			port: "P9",
+			level: "unsupported",
+			evidence: "Claude Code provides no background wake or external turn wakeup mechanism",
+		},
+	},
+});
+
+export const CAPABILITY_DECLARATION = CLAUDE_CAPABILITY;

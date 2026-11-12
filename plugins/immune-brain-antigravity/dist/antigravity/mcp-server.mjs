@@ -23159,6 +23159,80 @@ class HostRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/host-core/capability.ts
+var CAPABILITY_PORT_IDS = [
+  "P1",
+  "P2",
+  "P3",
+  "P4",
+  "P5",
+  "P6",
+  "P7",
+  "P8",
+  "P9"
+];
+var CAPABILITY_LEVELS = [
+  "certified",
+  "conformance-only",
+  "guard-only",
+  "unsupported"
+];
+function validateHostCapabilityDeclaration(declaration) {
+  if (!declaration || typeof declaration !== "object") {
+    throw new Error("Capability declaration must be a non-null object");
+  }
+  const candidate = declaration;
+  if (typeof candidate.hostId !== "string" || !candidate.hostId.trim()) {
+    throw new Error("Capability declaration missing valid hostId");
+  }
+  if (typeof candidate.hostName !== "string" || !candidate.hostName.trim()) {
+    throw new Error("Capability declaration missing valid hostName");
+  }
+  if (!candidate.ports || typeof candidate.ports !== "object") {
+    throw new Error("Capability declaration missing ports object");
+  }
+  const seenPorts = new Set;
+  const portsRecord = candidate.ports;
+  for (const key of Object.keys(portsRecord)) {
+    if (!CAPABILITY_PORT_IDS.includes(key)) {
+      throw new Error(`Unknown capability port ID: ${key}`);
+    }
+  }
+  const validatedPorts = {};
+  for (const portId of CAPABILITY_PORT_IDS) {
+    if (!(portId in portsRecord)) {
+      throw new Error(`Missing capability port: ${portId} in declaration for ${candidate.hostId}`);
+    }
+    seenPorts.add(portId);
+    const cell = portsRecord[portId];
+    if (!cell || typeof cell !== "object") {
+      throw new Error(`Invalid cell for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (cell.port !== portId) {
+      throw new Error(`Mismatched port ID in cell: expected ${portId}, got ${cell.port}`);
+    }
+    if (!CAPABILITY_LEVELS.includes(cell.level)) {
+      throw new Error(`Invalid capability level "${cell.level}" for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (typeof cell.evidence !== "string" || !cell.evidence.trim()) {
+      throw new Error(`Missing evidence/limitation text for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    validatedPorts[portId] = {
+      port: portId,
+      level: cell.level,
+      evidence: cell.evidence.trim()
+    };
+  }
+  if (seenPorts.size !== CAPABILITY_PORT_IDS.length) {
+    throw new Error(`Declaration for ${candidate.hostId} covers ${seenPorts.size} ports, expected ${CAPABILITY_PORT_IDS.length}`);
+  }
+  return {
+    hostId: candidate.hostId,
+    hostName: candidate.hostName,
+    ports: validatedPorts
+  };
+}
+
 // plugins/immune-brain/runtime/antigravity/capability.ts
 var MIN_ANTIGRAVITY_VERSION = "0.1.0";
 var HOST_ID = "antigravity";
@@ -23191,6 +23265,57 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   }
   return { ok: true, host: HOST_ID, version, platform };
 }
+var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
+  hostId: "antigravity",
+  hostName: "Antigravity",
+  ports: {
+    P1: {
+      port: "P1",
+      level: "conformance-only",
+      evidence: "Conformance-tested MCP tools and Hook handlers; live certification pending S8 (#469)"
+    },
+    P2: {
+      port: "P2",
+      level: "conformance-only",
+      evidence: "Conformance-tested native confirmation grant files and MCP elicitation; live certification pending S8 (#469)"
+    },
+    P3: {
+      port: "P3",
+      level: "conformance-only",
+      evidence: "Conformance-tested verifier observation via hook event log; live observation pending S8 (#451)"
+    },
+    P4: {
+      port: "P4",
+      level: "conformance-only",
+      evidence: "Conformance-tested simplified continuation; shared continuation pending S6 and live certification pending S8"
+    },
+    P5: {
+      port: "P5",
+      level: "guard-only",
+      evidence: "Tree guard only; agy --print lacks CLI restriction flags, shell-less native roles cannot perform git checks, and untracked files are uncovered (ADR 0037, D9)"
+    },
+    P6: {
+      port: "P6",
+      level: "conformance-only",
+      evidence: "Conformance-tested Lane Executor spawn via configured executor host"
+    },
+    P7: {
+      port: "P7",
+      level: "conformance-only",
+      evidence: "Conformance-tested private directory storage; mode, ownership and O_NOFOLLOW security protections pending S2 (D3)"
+    },
+    P8: {
+      port: "P8",
+      level: "unsupported",
+      evidence: "PreInvocation returns empty steps; active-task notice and model-callable Skill entry pending S8 probe (D10)"
+    },
+    P9: {
+      port: "P9",
+      level: "unsupported",
+      evidence: "Antigravity provides no background wake mechanism"
+    }
+  }
+});
 
 // plugins/immune-brain/runtime/antigravity/kernel_ports.ts
 var ANTIGRAVITY_PROFILE = {

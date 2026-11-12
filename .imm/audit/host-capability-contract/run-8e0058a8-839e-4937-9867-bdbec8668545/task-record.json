@@ -1,0 +1,277 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-capability-contract",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-capability-contract",
+    "goal": "Implement Slice S1 of docs/specs/tri-host-capability-alignment.spec.md: define the P1-P9 capability declaration and four evidence levels for Pi, Claude Code and Antigravity, render one maintainer table, and record ADR 0039 plus the ADR 0038 tri-host amendment. Declarations are documentation/conformance inputs only, never runtime dispatch; Pi background wake remains unsupported and no MCP transport is added.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D1 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-1): every adapter declaration covers P1-P9 exactly once using only certified, conformance-only, guard-only or unsupported with evidence/limitation text, and the generated table renders every Host and port exactly once. Positive: the complete current declarations render BR-SCN-1. Negative: an unknown port, duplicate/missing cell or unsupported level is rejected. Bound: no fifth level or runtime-selected host is accepted. Done looks like: a maintainer opens docs/reference/host-capability.md and sees the complete matrix. Agreed seam: tests/host-capability-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-capability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D2 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-4): the renderer and tests explicitly import the three composition-root declarations while production runtime performs no capability-based registry lookup or dispatch. Positive: existing HostRuntime/McpHostProfile selection remains. Negative: cross-adapter imports or a production host registry/dispatcher fail the boundary. Bound: the existing empty host-to-host baseline stays empty. Agreed seams: tests/runtime-layering-boundary.test.ts, tests/host-capability-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/host-capability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D13 of docs/specs/tri-host-capability-alignment.spec.md (source: repository evidence docs/agents/derived-files.json): regenerate every owned Antigravity output containing the new declarations, never hand-edit it, and typecheck the source and renderer. Positive: generation checks are clean. Negative: a stale copied declaration or generated bundle fails. Bound: no unrelated full-suite or release command is required. Agreed seam: package generation plus TypeScript.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-capability-contract.md",
+      "docs/adr/0038-host-neutral-adapter-core.md",
+      "docs/adr/0039-host-capability-profiles.md",
+      "docs/plans/host-capability-contract.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/capability.ts",
+      "plugins/immune-brain/.pi-extension/pi-capability.ts",
+      "plugins/immune-brain/runtime/antigravity/capability.ts",
+      "plugins/immune-brain/runtime/claude/capability.ts",
+      "plugins/immune-brain/runtime/host-core/capability.ts",
+      "scripts/render-host-capability.ts",
+      "tests/host-capability-contract.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-capability-contract.intent.json",
+    "content_hash": "sha256:8b21fab5413dfa9b8b11d70d26232b824b0e7fcfcd49ca73582f479f09770cd6"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8b21fab5413dfa9b8b11d70d26232b824b0e7fcfcd49ca73582f479f09770cd6",
+  "git_base_head": "560ea1afe3944fc447bdfdcf6eba70db19ee204a",
+  "attestations": [
+    {
+      "id": "approval-qa-4f0cd68d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8b21fab5413dfa9b8b11d70d26232b824b0e7fcfcd49ca73582f479f09770cd6",
+      "diff_hash": "sha256:f8451ff0a12bab1207cf92bbba5adb5e1755f32484d13b5abc8400dd1acde2f1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:ce2e9ff1c8fca2bfcfdd0d7faff0f63e34c74859b3839b97e80edc578efb2024",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ce2e9ff1c8fca2bfcfdd0d7faff0f63e34c74859b3839b97e80edc578efb2024"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ce2e9ff1c8fca2bfcfdd0d7faff0f63e34c74859b3839b97e80edc578efb2024"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ce2e9ff1c8fca2bfcfdd0d7faff0f63e34c74859b3839b97e80edc578efb2024"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-89982b45",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8b21fab5413dfa9b8b11d70d26232b824b0e7fcfcd49ca73582f479f09770cd6",
+      "diff_hash": "sha256:2d3d1eef5db3f3a1c0c4f101fb49e3967a3662de369243faf4a5e8f35de526bf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:22c09a797e51956266fe6c144c604f9388cc759cef47f14adc9c648cfc8ae39b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22c09a797e51956266fe6c144c604f9388cc759cef47f14adc9c648cfc8ae39b"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22c09a797e51956266fe6c144c604f9388cc759cef47f14adc9c648cfc8ae39b"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:22c09a797e51956266fe6c144c604f9388cc759cef47f14adc9c648cfc8ae39b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c2eeaa66",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8b21fab5413dfa9b8b11d70d26232b824b0e7fcfcd49ca73582f479f09770cd6",
+      "diff_hash": "sha256:2d3d1eef5db3f3a1c0c4f101fb49e3967a3662de369243faf4a5e8f35de526bf",
+      "actor_id": "cli:claude-code:12dde718-1977-4980-a6a5-49c84ed6ae60",
+      "summary": "Provenance checked: review commit 44af835e has the single parent 560ea1af and tree 22f27f3a. AC1: the host-core validator rejects unknown ports, missing ports, mismatched cells, levels outside the four allowed ones and blank evidence. The three declarations cover P1-P9, and the tests compare the rendered matrix byte-for-byte with docs/reference/host-capability.md. AC2: the renderer and tests import the three declarations explicitly, and a new boundary test stops non-adapter runtime code from importing them, so production has no registry or dispatch. AC3: the Antigravity mirror copies have the same blob OIDs as the main copies, host-core/capability.ts was added to derived-files.json, and the regenerated mcp-server.mjs includes the validator and the Antigravity declaration. Blast radius: tier low. The change is additive declarations and docs; the load-bearing paths are runtime/host-core/capability.ts, its derived Antigravity copy and the dist mcp-server.mjs bundle, with no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "560ea1afe3944fc447bdfdcf6eba70db19ee204a",
+        "review_commit": "44af835ecd677fc5f99af0a018673656850fe7b2",
+        "review_tree": "22f27f3a09e20a8b80f51adaa950ae001b6d8a63",
+        "manifest_digest": "sha256:25f186e5c62e8903421c43a02299c0e0c157fcd2aef78432539ec3dc875a1af1"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-03d01075f70c-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "The host-core 'no registry or dispatcher' test only checks for four hard-coded export names, so any dispatcher with a different name would pass. The import-graph boundary test in runtime-layering-boundary.test.ts is the real guard.",
+          "anchor": "sha256:b6bda04b2e14d8bc280bd36fd05ec8983b12a1ebab418a6cbb4ddbc65f9808c0",
+          "evidence": {
+            "trigger": "Add a host-core export such as selectHostFor(capability) → the export-name test in host-capability-contract.test.ts still passes, because it only checks registerHost, getHostByCapability, dispatchCapability and resolveHost.",
+            "caller_chain": [
+              "tests/host-capability-contract.test.ts",
+              "plugins/immune-brain/runtime/host-core/capability.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:3b69bb6b8994f9fca266ae43eb7e7881105f8ecbf30b3c8e403dc2878de5c987"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-4a1bbf9979a8-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "AC1 names a duplicate-cell negative, but tests/host-capability-contract.test.ts never checks it. The 'every Host and port exactly once' test only checks that each item is present and never counts them. The validator's duplicate-cell guard (cell.port !== portId) and the renderer's handling of a repeated Host are both left without a test. Add negative tests for a duplicate cell (for example P2 carrying port P1) and a duplicated Host declaration, and count occurrences rather than only checking presence.",
+      "anchor": "sha256:ba9f2c1bc369ced92bb21b1298b3107648cf6384ad967227b26a495884b46e59",
+      "evidence": {
+        "trigger": "Declaration with ports.P2 = {port:'P1', level:'certified', evidence:'x'} (P1 cell duplicated under P2), or renderHostCapabilityMatrix([CLAUDE_CAPABILITY, CLAUDE_CAPABILITY, ANTIGRAVITY_CAPABILITY]) → if the cell.port mismatch check in validateHostCapabilityDeclaration is removed, the duplicate P1 cell is accepted and rendered as P2 with the AC1 suite still green. The renderer already emits a table with Claude Code twice and Pi missing, without rejecting it. The positive test uses toContain/toMatch, so it cannot detect a port row or Host column that appears more than once. Neither path is covered by the agreed seam, even though AC1 and spec S1 AC1 (line 134) list duplicate cells as a required negative.",
+        "caller_chain": [
+          "tests/host-capability-contract.test.ts",
+          "scripts/render-host-capability.ts:renderHostCapabilityMatrix",
+          "plugins/immune-brain/runtime/host-core/capability.ts:validateHostCapabilityDeclaration"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-capability-contract:2026-11-12T07:29:53.412Z",
+      "at": "2026-11-12T07:29:53.412Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-capability-contract.intent.json"
+    },
+    {
+      "id": "record_approval:host-capability-contract:2026-11-12T07:30:08.422Z",
+      "at": "2026-11-12T07:30:08.422Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4f0cd68d\naction_v2_sha256:afa18e1469b265860b2f70536f7af0c0bd206f065cfd6937de665aae488516cb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T07:30:08.422Z"
+      }
+    },
+    {
+      "id": "request_rework:host-capability-contract:2026-11-12T07:32:02.103Z",
+      "at": "2026-11-12T07:32:02.103Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:9873898eb840297c314b23c708342bd0aa339ed2bd3d13058c799b8b84df3945",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:13334d91-6f4e-4ab5-b882-a17d143d7efa",
+        "confirmation_ref": "antigravity:cli:claude-code:13334d91-6f4e-4ab5-b882-a17d143d7efa",
+        "issued_at": "2026-11-12T07:32:02.103Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "560ea1afe3944fc447bdfdcf6eba70db19ee204a",
+        "review_commit": "152a1bb5d73ac2cbfacea7c1b8009005b00c2a57",
+        "review_tree": "250940e3f02503d76da58c4d9c92df27ad828882",
+        "manifest_digest": "sha256:6563e393f8a8e3a722714f127d383954fd8629d307c70c819f0203837896eb8b"
+      },
+      "review_started_at": "2026-11-12T07:30:12.165Z",
+      "review_submitted_at": "2026-11-12T07:32:01.070Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:host-capability-contract:2026-11-12T07:33:02.902Z",
+      "at": "2026-11-12T07:33:02.902Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4a1bbf9979a8-1-review-1\naction_v2_sha256:ec1d7f4ff706ab593d0209b3bb78fe5b9229d14efd5307ff0ba06d74c1927420"
+    },
+    {
+      "id": "freeze_artifacts:host-capability-contract:2026-11-12T07:33:17.714Z",
+      "at": "2026-11-12T07:33:17.714Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-capability-contract.intent.json"
+    },
+    {
+      "id": "record_approval:host-capability-contract:2026-11-12T07:33:33.728Z",
+      "at": "2026-11-12T07:33:33.728Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-89982b45\naction_v2_sha256:f9813603fb02f04dde14223967f7fffc4de6273db825383b3de19226023e3b9a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T07:33:33.728Z"
+      }
+    },
+    {
+      "id": "record_approval:host-capability-contract:2026-11-12T07:34:41.014Z",
+      "at": "2026-11-12T07:34:41.014Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c2eeaa66\naction_v2_sha256:39a38ba2165c71fe45e87453a5514dd38c1d2bf24f62fa1d45b53e6a1b0d0db5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:12dde718-1977-4980-a6a5-49c84ed6ae60",
+        "confirmation_ref": "antigravity:cli:claude-code:12dde718-1977-4980-a6a5-49c84ed6ae60",
+        "issued_at": "2026-11-12T07:34:41.014Z"
+      },
+      "review_started_at": "2026-11-12T07:33:38.490Z",
+      "review_submitted_at": "2026-11-12T07:34:39.839Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:host-capability-contract:2026-11-12T07:34:43.592Z",
+      "at": "2026-11-12T07:34:43.592Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9c09dbef3ab29e01886ab69d729c84a48d9a46f7327d02f238ab410c45bc539c"
+    }
+  ]
+}

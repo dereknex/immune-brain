@@ -20628,6 +20628,80 @@ function runMcpEntry(profile, entrySuffixes) {
     serveStdio(profile);
 }
 
+// plugins/immune-brain/runtime/host-core/capability.ts
+var CAPABILITY_PORT_IDS = [
+  "P1",
+  "P2",
+  "P3",
+  "P4",
+  "P5",
+  "P6",
+  "P7",
+  "P8",
+  "P9"
+];
+var CAPABILITY_LEVELS = [
+  "certified",
+  "conformance-only",
+  "guard-only",
+  "unsupported"
+];
+function validateHostCapabilityDeclaration(declaration) {
+  if (!declaration || typeof declaration !== "object") {
+    throw new Error("Capability declaration must be a non-null object");
+  }
+  const candidate = declaration;
+  if (typeof candidate.hostId !== "string" || !candidate.hostId.trim()) {
+    throw new Error("Capability declaration missing valid hostId");
+  }
+  if (typeof candidate.hostName !== "string" || !candidate.hostName.trim()) {
+    throw new Error("Capability declaration missing valid hostName");
+  }
+  if (!candidate.ports || typeof candidate.ports !== "object") {
+    throw new Error("Capability declaration missing ports object");
+  }
+  const seenPorts = new Set;
+  const portsRecord = candidate.ports;
+  for (const key of Object.keys(portsRecord)) {
+    if (!CAPABILITY_PORT_IDS.includes(key)) {
+      throw new Error(`Unknown capability port ID: ${key}`);
+    }
+  }
+  const validatedPorts = {};
+  for (const portId of CAPABILITY_PORT_IDS) {
+    if (!(portId in portsRecord)) {
+      throw new Error(`Missing capability port: ${portId} in declaration for ${candidate.hostId}`);
+    }
+    seenPorts.add(portId);
+    const cell = portsRecord[portId];
+    if (!cell || typeof cell !== "object") {
+      throw new Error(`Invalid cell for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (cell.port !== portId) {
+      throw new Error(`Mismatched port ID in cell: expected ${portId}, got ${cell.port}`);
+    }
+    if (!CAPABILITY_LEVELS.includes(cell.level)) {
+      throw new Error(`Invalid capability level "${cell.level}" for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (typeof cell.evidence !== "string" || !cell.evidence.trim()) {
+      throw new Error(`Missing evidence/limitation text for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    validatedPorts[portId] = {
+      port: portId,
+      level: cell.level,
+      evidence: cell.evidence.trim()
+    };
+  }
+  if (seenPorts.size !== CAPABILITY_PORT_IDS.length) {
+    throw new Error(`Declaration for ${candidate.hostId} covers ${seenPorts.size} ports, expected ${CAPABILITY_PORT_IDS.length}`);
+  }
+  return {
+    hostId: candidate.hostId,
+    hostName: candidate.hostName,
+    ports: validatedPorts
+  };
+}
+
 // plugins/immune-brain/runtime/claude/capability.ts
 var MIN_CLAUDE_CODE_VERSION = "2.1.236";
 var HOST_ID = "claude-code";
@@ -20662,6 +20736,57 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   }
   return { ok: true, version, platform };
 }
+var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
+  hostId: "claude-code",
+  hostName: "Claude Code",
+  ports: {
+    P1: {
+      port: "P1",
+      level: "certified",
+      evidence: "Live Hook correlation (PreToolUse/PostToolUse) with session:stepIdx and phase admission"
+    },
+    P2: {
+      port: "P2",
+      level: "certified",
+      evidence: "Native interactive confirmation dialog via confirm_dialog and HostConfirmationRef"
+    },
+    P3: {
+      port: "P3",
+      level: "certified",
+      evidence: "Verifier observation state machine through hook event log"
+    },
+    P4: {
+      port: "P4",
+      level: "certified",
+      evidence: "Run continuation state machine through hook event log and automated stop"
+    },
+    P5: {
+      port: "P5",
+      level: "certified",
+      evidence: "Fresh claude --print process with --dangerously-skip-permissions, tool allowlist, no session persistence, and immutable tree guard"
+    },
+    P6: {
+      port: "P6",
+      level: "certified",
+      evidence: "Lane Executor process spawn in isolated worktree"
+    },
+    P7: {
+      port: "P7",
+      level: "certified",
+      evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks"
+    },
+    P8: {
+      port: "P8",
+      level: "certified",
+      evidence: "PreInvocation active-task notice and prompt injection"
+    },
+    P9: {
+      port: "P9",
+      level: "unsupported",
+      evidence: "Claude Code provides no background wake or external turn wakeup mechanism"
+    }
+  }
+});
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync18, readdirSync as readdirSync9, rmSync as rmSync9 } from "node:fs";

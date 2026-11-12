@@ -139,6 +139,7 @@
         "plugins/immune-brain-antigravity/runtime/derived_files.ts",
         "plugins/immune-brain-antigravity/runtime/git_integration_preference.ts",
         "plugins/immune-brain-antigravity/runtime/github_issue_tracker.ts",
+        "plugins/immune-brain-antigravity/runtime/host-core/capability.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/hook_event_log.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/mcp_runtime.ts",

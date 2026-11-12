@@ -243,6 +243,7 @@ describe("runtime layering boundary", () => {
 				.map((file) => file.path);
 			expect(importers.some((path) => path.startsWith(`${HOSTS.claude}/`))).toBe(true);
 			expect(importers.some((path) => path.startsWith(`${HOSTS.antigravity}/`))).toBe(true);
+			expect(importers.some((path) => path.startsWith(`${HOSTS.pi}/`))).toBe(true);
 		});
 
 		test("AC2: a Kernel or assurance import of host-core is reported, and host-core may not import an adapter", () => {
@@ -277,6 +278,26 @@ describe("runtime layering boundary", () => {
 			.filter((file) => file.path.startsWith(`${RUNTIME_DIR}/`) && file.source.includes("extends ClaudeRuntime"))
 			.map((file) => file.path);
 		expect(inheriting).toEqual([]);
+	});
+
+	test("AC2: production runtime performs no capability-based registry lookup or dynamic dispatch", () => {
+		// Capability declarations are documentation and conformance inputs only (D1, D2).
+		// Non-adapter production runtime modules never import adapter composition roots or their capability declarations.
+		const capabilityModules = [
+			"plugins/immune-brain/runtime/claude/capability",
+			"plugins/immune-brain/runtime/antigravity/capability",
+			"plugins/immune-brain/.pi-extension/pi-capability",
+		];
+		const nonAdapterReal = real.filter((file) => hostOf(file.path, HOSTS) === null);
+		const offenders: string[] = [];
+		for (const file of nonAdapterReal) {
+			for (const target of importedTargets(file)) {
+				if (capabilityModules.includes(target)) {
+					offenders.push(`${file.path} -> ${target}`);
+				}
+			}
+		}
+		expect(offenders).toEqual([]);
 	});
 
 	test("the path resolver covers upward relative forms and leaves bare specifiers alone", () => {
