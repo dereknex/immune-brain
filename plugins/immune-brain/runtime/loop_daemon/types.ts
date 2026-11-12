@@ -10,6 +10,7 @@ export const LOOP_DAEMON_LOCK_CONTRACT = "assurance_kernel/loop_daemon_lock/v1" 
 export const LOOP_DAEMON_LEASE_CONTRACT = "assurance_kernel/loop_daemon_lease/v1" as const;
 export const LOOP_DAEMON_EVENT_CONTRACT = "assurance_kernel/loop_daemon_event/v1" as const;
 export const LOOP_DECISION_RECORD_CONTRACT = "assurance_kernel/loop_decision_record/v1" as const;
+export const LOOP_ANALYSIS_CONTRACT = "assurance_kernel/loop_analysis/v1" as const;
 
 export type LoopEventKind =
 	| "E1_NEW_ISSUE"
