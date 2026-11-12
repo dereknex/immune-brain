@@ -11004,6 +11004,10 @@ function pluginRootAbove(dir) {
   }
   return null;
 }
+function runtimeClaudePluginDir(start = runningRuntimeSource()) {
+  const root = pluginRootAbove(start);
+  return root ? realpathSync13(root) : null;
+}
 function sameBuild(a, b) {
   const left = join18(a, BUILD_PROXY), right = join18(b, BUILD_PROXY);
   if (!existsSync10(left) || !existsSync10(right))
@@ -23314,6 +23318,7 @@ init_batch_plan();
 
 // plugins/immune-brain/runtime/assurance/cli_review.ts
 init_layered_config();
+init_plugin_source_skew();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
@@ -23346,7 +23351,7 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
   disableAllHooks: true,
   env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
 });
-function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
+function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
     return [
@@ -23354,6 +23359,7 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = []) {
       "--no-session-persistence",
       "--settings",
       CLAUDE_REVIEW_SETTINGS,
+      ...pluginDir ? ["--plugin-dir", pluginDir] : [],
       ...readDirs.length ? ["--add-dir", ...readDirs] : [],
       "--max-turns",
       String(turnBudget),
@@ -23562,7 +23568,7 @@ class CliReviewHost {
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const readDirs = [...new Set([directory, dirname18(request.evidencePath)])];
-    const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
+    const argv = reviewArguments(profile, packet, request.maxTurns, readDirs, runtimeClaudePluginDir());
     writeProcessScript(script, root, [executable, ...argv], output, exitFile);
     const reviewCommand = sessionRunner ? [sessionRunner, "run", "--provider", "herdr", "--cwd", root, "--label", `review ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ") : `sh ${script}`;
     const actorId = `cli:${profile.host}:${request.operationId}`;

@@ -32,6 +32,16 @@ function pluginRootAbove(dir: string): string | null {
 	return null;
 }
 
+/**
+ * The Claude plugin root this runtime was loaded from, so a claude-code reviewer
+ * loads the same `authority-review` skill as the Kernel's review contract (#426 F13).
+ * Null when no Claude plugin manifest sits above the runtime (the Antigravity copy).
+ */
+export function runtimeClaudePluginDir(start: string = runningRuntimeSource()): string | null {
+	const root = pluginRootAbove(start);
+	return root ? realpathSync(root) : null;
+}
+
 function sameBuild(a: string, b: string): boolean {
 	const left = join(a, BUILD_PROXY), right = join(b, BUILD_PROXY);
 	if (!existsSync(left) || !existsSync(right)) return false;

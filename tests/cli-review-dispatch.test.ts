@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
@@ -14,6 +14,7 @@ import {
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
 import { CliReviewHost, reviewArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -377,14 +378,23 @@ describe("review arguments", () => {
 		expect(argv.at(-1)).toBe(`/authority-review ${packet}`);
 	});
 
-	test("no Host carries a drive entry or a plugin dir", () => {
+	test("no Host carries a drive entry, and only claude-code takes the runtime's plugin dir", () => {
 		for (const host of ["claude-code", "pi", "antigravity"] as const) {
-			const argv = reviewArguments({ host, model: "m", effort: "high" }, packet, 12);
-			for (const arg of argv) {
-				expect(arg).not.toContain("drive");
-				expect(arg).not.toContain("--plugin-dir");
-			}
+			const argv = reviewArguments({ host, model: "m", effort: "high" }, packet, 12, [], "/plugins/immune-brain");
+			for (const arg of argv) expect(arg).not.toContain("drive");
+			if (host === "claude-code") {
+				expect(argv[argv.indexOf("--plugin-dir") + 1]).toBe("/plugins/immune-brain");
+				expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
+			} else expect(argv).not.toContain("--plugin-dir");
+			expect(reviewArguments({ host }, packet, 12)).not.toContain("--plugin-dir");
 		}
+	});
+
+	test("#426 F13: the runtime resolves the Claude plugin it was loaded from", () => {
+		const root = join(import.meta.dir, "..", "plugins", "immune-brain");
+		expect(runtimeClaudePluginDir(join(root, "runtime", "assurance"))).toBe(realpathSync(root));
+		expect(runtimeClaudePluginDir(join(root, "dist", "claude"))).toBe(realpathSync(root));
+		expect(runtimeClaudePluginDir(join(import.meta.dir, "..", "plugins", "immune-brain-antigravity", "runtime", "assurance"))).toBeNull();
 	});
 
 	test("a profile without model or effort omits those flags", () => {

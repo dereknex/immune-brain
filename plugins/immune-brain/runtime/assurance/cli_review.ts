@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
+import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import {
 	ReviewPreparationError,
@@ -63,7 +64,9 @@ export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
  * The reviewer argv for one Host, model and effort applied only when the profile sets them (D5).
  * `readDirs` are the out-of-tree directories the reviewer must read (packet, evidence).
  */
-export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number, readDirs: string[] = []): string[] {
+export function reviewArguments(
+	profile: ReviewProfile, packetPath: string, turnBudget: number, readDirs: string[] = [], pluginDir: string | null = null,
+): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
 	if (profile.host === "claude-code") {
 		return [
@@ -71,6 +74,8 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 			"--no-session-persistence",
 			"--settings",
 			CLAUDE_REVIEW_SETTINGS,
+			// The skill must come from the plugin the Kernel runs, not an older user install (#426 F13).
+			...(pluginDir ? ["--plugin-dir", pluginDir] : []),
 			// Variadic: keep a flag after it so the prompt is never taken as a directory.
 			...(readDirs.length ? ["--add-dir", ...readDirs] : []),
 			"--max-turns",
@@ -331,7 +336,7 @@ export class CliReviewHost implements AssuranceHostPort {
 		const contractHash = currentReviewContractHash();
 		writeFileSync(packet, `review_contract_hash: ${contractHash}\n\n${request.snapshotPrompt}`, { encoding: "utf8", mode: 0o644 });
 		const readDirs = [...new Set([directory, dirname(request.evidencePath)])];
-		const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
+		const argv = reviewArguments(profile, packet, request.maxTurns, readDirs, runtimeClaudePluginDir());
 		writeProcessScript(script, root, [executable, ...argv], output, exitFile);
 
 		// S4 (#426): the same script, in a Herdr tab the user can watch; the verdict
