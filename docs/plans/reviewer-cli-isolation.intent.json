@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "reviewer-cli-isolation",
+  "owner": "user",
+  "goal": "Implement Slice S7 of docs/specs/tri-host-capability-alignment.spec.md: disable ambient Pi Reviewer extensions, discovered skills and MCP, explicitly load only authority-review, narrow Pi tools, and record the remaining Bash and Antigravity guard-only risks without claiming preventive read-only isolation.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D8 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-4): Pi reviewArguments includes --no-extensions --no-skills --no-mcp, an explicit existing absolute authority-review SKILL.md path and --tools read,grep,find,ls,bash while preserving --print --no-session, model, effort and packet. Positive: BR-SCN-3 exposes that exact argv and the explicit skill remains loadable with discovery disabled. Negative: ambient configuration or an implicit skill lookup is absent. Bound: Claude and Antigravity argv are unchanged and Bash is not described as argument-restricted. Agreed seam: tests/cli-review-dispatch.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D9 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-5): Pi and Antigravity P5 remain guard-only, and ADR 0037, the capability table and Antigravity README disclose Pi Bash arguments, AG absence of restriction flags, shell-less native-role immutable-Git limits and untracked-file tree-guard coverage. Positive: a maintainer can read the residual risk. Negative: no text declares either CLI preventively read-only or certifies native AG Review. Bound: review_host: antigravity remains supported. Agreed seams: tests/host-capability-contract.test.ts, tests/antigravity-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-capability-contract.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D8 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-4): this Spec supersedes review-cli-stage D9 by reference and the amended ADR 0037 decision 4 matches the implemented argv, source and bundled explicit-skill path resolution typechecks, and both packages regenerate. Positive: package checks and typecheck pass. Negative: stale generated cli_review code fails. Bound: no new dependency or lockfile change. Agreed seam: package generation plus TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/reviewer-cli-isolation.md",
+    "docs/adr/0037-authority-review-cli-stage.md",
+    "docs/plans/reviewer-cli-isolation.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/README.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/.pi-extension/pi-capability.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "tests/antigravity-host-package.test.ts",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/host-capability-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

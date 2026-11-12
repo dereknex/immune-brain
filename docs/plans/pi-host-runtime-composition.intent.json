@@ -1,0 +1,51 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-host-runtime-composition",
+  "owner": "user",
+  "goal": "Implement Slice S4 of docs/specs/tri-host-capability-alignment.spec.md: compose Pi task and Batch operations on HostRuntime, retire the duplicate AssuranceProgression and standalone Pi Batch flow, and preserve in-process tool schemas, native dialogs, Task Rail and foreground Agent behavior.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D5 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): Pi public tools translate Extension API contexts to ToolMeta and call one production HostRuntime composition root. Positive: status, advance, review, verification and authorization preserve their results, settle commits and native dialogs. Negative: declined/cancelled gates and stale authority retain their refusals. Bound: no direct Kernel-store writes or second coordinator authority path. Agreed seams: tests/pi-canary-assurance-progression.test.ts, tests/pi-canary-work-extension.test.ts, tests/pi-canary-assurance-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/pi-canary-work-extension.test.ts\",\n      \"tests/pi-canary-assurance-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D5 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): single-task, Parent, resume, Lane stop and stale retirement use HostRuntime Batch methods and preserve receipt identity and terminal tracker behavior. Positive: confirmed starts and resumes match prior observable results. Negative: failed/cancelled gates and missing persisted batch identity manufacture no run. Bound: the old executePiUnattendedBatch implementation is deleted rather than retained as a fallback. Agreed seams: tests/pi-batch-authority.test.ts, tests/pi-batch-acceptance-integration.test.ts, tests/claude-batch-authority.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-batch-authority.test.ts\",\n      \"tests/pi-batch-acceptance-integration.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D12 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-1): duplicate Pi coordinator/Batch source and its old contract text are deleted, adapters remain siblings under kernel ← assurance ← host-core ← adapters, and current architecture docs name all three adapters. Positive: composition imports pass. Negative: host-to-host or inner-layer violations fail. Bound: Pi native UI remains in .pi-extension and no MCP stdio transport appears. Agreed seams: tests/runtime-layering-boundary.test.ts, tests/pi-canary-package-boundary.test.ts, tests/layering-rules-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/pi-canary-package-boundary.test.ts\",\n      \"tests/layering-rules-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Per D5 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): Pi entrypoints, the composition root and affected test harnesses typecheck after retirement. Positive: typecheck passes. Negative: references to deleted AssuranceProgression/Batch implementations fail. Bound: public extension entries stay imm-canary-work.ts and imm-unattended-batch.ts. Agreed seam: TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/pi-host-runtime-composition.md",
+    "CONTEXT.md",
+    "docs/plans/pi-host-runtime-composition.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/reference/layering-rules.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-capability.ts",
+    "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+    "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/layering-rules-contract.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-canary-work-extension.test.ts",
+    "tests/runtime-layering-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

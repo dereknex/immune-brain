@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-shared-continuation",
+  "owner": "user",
+  "goal": "Implement Slice S5 of docs/specs/tri-host-capability-alignment.spec.md: map Pi input, tool, reviewer and settle events onto the shared run-continuation session, with common failure/stall/boundary limits, selected-parent correlation and private continuation metadata while keeping Pi entry tokens in process memory.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): real Pi input/tool/settle seams bind active tasks and persisted Parent receipts, continue automated obligations, yield for user waits and unchanged progress, and revoke on settlement. Positive: task and Parent continuations reach their existing next actions. Negative: a user decision, terminal projection or absent live entry stops without manufacturing authority. Bound: session loss leaves no live token and unusable metadata is dropped. Agreed seams: tests/pi-run-continuation.test.ts, tests/pi-canary-assurance-continuation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/pi-canary-assurance-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): the third native-operation failure and seventh active settle boundary pause with Pi-named recovery, and a paused native gate denies until literal same-Host drive. Positive: first two failures and progress-reset boundaries retain the run. Negative: paused gates deny and malformed/foreign metadata fails closed. Bound: three failures, one unchanged observation and seven boundaries; Claude behavior stays unchanged. Agreed seams: tests/pi-run-continuation.test.ts, tests/claude-run-continuation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): selectedParent uses exact shared tool/session/workspace/slug correlation, the Pi HostRuntime profile wires that port, and the dependency direction remains host-core ← adapter. Positive: the owning Parent session is selected. Negative: wrong workspace, slug, session or stale call correlation returns false. Bound: no host-to-host import. Agreed seams: tests/pi-batch-authority.test.ts, tests/runtime-layering-boundary.test.ts plus TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-batch-authority.test.ts tests/runtime-layering-boundary.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/pi-shared-continuation.md",
+    "docs/plans/pi-shared-continuation.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-capability.ts",
+    "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+    "plugins/immune-brain/runtime/host-core/private_file.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/pi-batch-authority.test.ts",
+    "tests/pi-canary-assurance-continuation.test.ts",
+    "tests/pi-run-continuation.test.ts",
+    "tests/runtime-layering-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

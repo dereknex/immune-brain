@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-shared-continuation",
+  "owner": "user",
+  "goal": "Implement Slice S6 of docs/specs/tri-host-capability-alignment.spec.md: replace Antigravity simplified Stop continuation with the shared typed-event state machine for tasks and Batch Parents, including three-failure pause, no-progress yield and the seven-Stop same-Host recovery boundary.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D7 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-3): real Antigravity PreToolUse/PostToolUse/Stop payload mapping binds active tasks and persisted Parent receipts and renders shared continue/pause outcomes. Positive: BR-SCN-2 pauses on the seventh consecutive Stop and tells the user to resume explicitly in the same Host. Negative: user waits, terminal state and missing usable boundary identity do not auto-continue. Bound: the old decideAutomatedStop behavior and D11 exemption are retired. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D7 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-3): Antigravity shares native-failure, review, stall and stop-block semantics with Claude while keeping conversationId and conversationId:stepIdx correlation. Positive: batch binding and automated continuation match the shared machine. Negative: replayed/foreign correlation and paused native gates refuse. Bound: three native failures, one unchanged observation and seven Stops; no simplified fallback remains and pause text is Host-neutral. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/claude-run-continuation.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D13 of docs/specs/tri-host-capability-alignment.spec.md (source: repository evidence docs/agents/derived-files.json): regenerate both MCP Host packages and the Antigravity runtime inventory after deleting the old decision, and typecheck all adapter mappings. Positive: generation checks pass. Negative: stale copied continuation code fails. Bound: no hand-edited generated output. Agreed seam: package generation plus TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-shared-continuation.md",
+    "docs/plans/antigravity-shared-continuation.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-run-continuation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
