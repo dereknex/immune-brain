@@ -7,11 +7,12 @@ import {
 	enrollmentScopeDisclosure,
 	enrollTask,
 } from "../../plugins/immune-brain/runtime/kernel/enrollment";
+import { readTaskIntent } from "../../plugins/immune-brain/runtime/kernel/intent";
 import {
 	createEnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
+	type EnrollmentConfirmationInput,
 } from "../../plugins/immune-brain/runtime/kernel/enrollment_authority";
-import { readTaskIntent } from "../../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { inspectSpecBinding } from "../../plugins/immune-brain/runtime/kernel/spec_binding";
 
@@ -23,7 +24,11 @@ import { inspectSpecBinding } from "../../plugins/immune-brain/runtime/kernel/sp
  * active TaskRecord can reach one without a Host adapter. Nothing is committed:
  * Enrollment records the user's HEAD as the task's Git base (ADR 0036).
  */
-export async function enrollTaskForTest(cwd: string, taskId: string) {
+export async function enrollTaskForTest(
+	cwd: string,
+	taskId: string,
+	options: { confirmation?: EnrollmentConfirmationInput } = {},
+) {
 	const now = new Date().toISOString();
 	const read = readTaskIntent(cwd, taskId);
 	const spec = inspectSpecBinding(read.intent);
@@ -48,5 +53,6 @@ export async function enrollTaskForTest(cwd: string, taskId: string) {
 		binding,
 		now,
 		disclosed_scope_paths: disclosure.paths,
+		...(options.confirmation ? { confirmation: options.confirmation } : {}),
 	});
 }

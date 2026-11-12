@@ -9,6 +9,15 @@ export type TaskArtifactState = (typeof TASK_ARTIFACT_STATES)[number];
 export const TASK_RISKS = ["routine", "material", "critical"] as const;
 export type TaskRisk = (typeof TASK_RISKS)[number];
 
+/**
+ * How an Enrollment was confirmed (ADR 0005, ADR 0019, ADR 0039 Decision 8).
+ * `user_session` is the interactive literal-user gate and stays the default;
+ * `tracker_approval` and `policy_auto` are the unattended sources the Loop
+ * daemon uses.
+ */
+export const ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"] as const;
+export type EnrollmentConfirmationSource = (typeof ENROLLMENT_CONFIRMATION_SOURCES)[number];
+
 export type EvidenceStatus = "passed" | "failed" | "blocked";
 
 export type FindingKind =
@@ -312,6 +321,12 @@ export interface TaskRecordV4 extends Omit<TaskRecordV3, "contract"> {
 	review_round_budget_extension?: number;
 	/** The literal user's acceptance of the open blocking Review findings for one exact revision. */
 	residual_risk_acceptance?: ResidualRiskAcceptanceV1;
+	/**
+	 * How this Enrollment was confirmed. Optional and additive: absent means the
+	 * interactive `user_session` default, so every record written before the
+	 * unattended sources existed stays byte-identical.
+	 */
+	confirmation_source?: EnrollmentConfirmationSource;
 }
 
 /**

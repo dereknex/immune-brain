@@ -31,7 +31,13 @@ function isLiteralUserActor(actorId) {
 function canonicalActorId(actorId) {
   return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
 }
-var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS;
+function isUnattendedCompositionRoot(actorId) {
+  return actorId === LOOP_DAEMON_ACTOR_ID;
+}
+function isCompositionRootActor(actorId) {
+  return isLiteralUserActor(actorId) || isUnattendedCompositionRoot(actorId);
+}
+var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS, LOOP_DAEMON_ACTOR_ID = "loop-daemon";
 var init_actor_identity = __esm(() => {
   LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
 });
@@ -869,12 +875,13 @@ function stableStringify(value) {
 }
 
 // plugins/immune-brain/runtime/kernel/types.ts
-var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
+var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, ENROLLMENT_CONFIRMATION_SOURCES, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
 var init_types = __esm(() => {
   TASK_PHASES = ["working", "review", "done", "stopped"];
   TASK_LIFECYCLES = ["active", "done", "stopped"];
   TASK_ARTIFACT_STATES = ["active", "frozen"];
   TASK_RISKS = ["routine", "material", "critical"];
+  ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"];
   REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
   MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 });
@@ -2252,7 +2259,7 @@ function parseTaskRecordAtVersion(raw, version) {
     "attestations",
     "findings",
     "history",
-    ...version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : []
+    ...version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance", "confirmation_source"] : []
   ], "record", violations);
   const expectedContract = version === 4 ? TASK_RECORD_CONTRACT_V4 : TASK_RECORD_CONTRACT_V3;
   if (value.contract !== expectedContract)
@@ -2324,6 +2331,15 @@ function parseTaskRecordAtVersion(raw, version) {
     budgetExtension = positiveInteger2(value.review_round_budget_extension, "record.review_round_budget_extension", violations);
   }
   const residualRiskAcceptance = value.residual_risk_acceptance === undefined ? undefined : parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+  let confirmationSource;
+  if (value.confirmation_source !== undefined) {
+    if (version !== 4)
+      violations.push("record.confirmation_source is only valid on a v4 record");
+    else if (!ENROLLMENT_CONFIRMATION_SOURCES.includes(value.confirmation_source))
+      violations.push(`record.confirmation_source must be one of ${ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
+    else
+      confirmationSource = value.confirmation_source;
+  }
   if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
     violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
   if (residualRiskAcceptance) {
@@ -2373,6 +2389,7 @@ function parseTaskRecordAtVersion(raw, version) {
     ...version === 4 ? { git_base_head: gitBaseHead } : {},
     ...version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {},
     ...version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {},
+    ...version === 4 && confirmationSource !== undefined ? { confirmation_source: confirmationSource } : {},
     attestations,
     findings,
     history
@@ -5268,8 +5285,8 @@ function createBatchAuthorityRegistry() {
   const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
     validateBinding(binding) {
       requireNonEmpty(binding);
-      if (!isLiteralUserActor(binding.actor_id))
-        throw new Error("batch authorization requires a literal-user actor_id");
+      if (!isCompositionRootActor(binding.actor_id))
+        throw new Error("batch authorization requires a literal-user actor_id or the loop-daemon composition root");
       if (!GIT_COMMIT_ID.test(binding.base_head))
         throw new Error("batch authorization base_head must be a committed 40-hex commit id");
       validateBudget(binding.budget);
@@ -22597,6 +22614,94 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
+// plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
+init_no_touch();
+init_risk_floor();
+var ok = { ok: true };
+var refuse3 = (reason) => ({ ok: false, reason });
+function timestamp2(value) {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+function isPositiveInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+function verifyTrackerApproval(proof, policy) {
+  if (!isPositiveInteger(proof.issue_number) || !isPositiveInteger(proof.comment_id))
+    return refuse3(`tracker_approval_proof_shape: issue_number and comment_id must be positive integers`);
+  if (policy.daemon_identity === "")
+    return refuse3("tracker_approval_policy_shape: daemon identity is empty");
+  if (proof.actor_login === policy.daemon_identity)
+    return refuse3(`tracker_approval_daemon_authored: ${proof.actor_login}`);
+  if (!policy.allowed_actors.includes(proof.actor_login))
+    return refuse3(`tracker_approval_actor_not_allowed: ${proof.actor_login}`);
+  if (!policy.allowed_associations.includes(proof.author_association))
+    return refuse3(`tracker_approval_association_not_allowed: ${proof.author_association}`);
+  const created = timestamp2(proof.created_at);
+  const published = timestamp2(policy.plan_published_at);
+  if (created === null || published === null)
+    return refuse3("tracker_approval_timestamp_invalid: created_at and plan_published_at must be timestamps");
+  if (created <= published)
+    return refuse3(`tracker_approval_predates_plan: ${proof.created_at} is not after ${policy.plan_published_at}`);
+  if (proof.updated_at !== proof.created_at)
+    return refuse3(`tracker_approval_comment_edited: updated_at ${proof.updated_at} differs from created_at`);
+  if (proof.plan_digest !== policy.plan_digest)
+    return refuse3(`tracker_approval_digest_mismatch: ${proof.plan_digest} is not the published ${policy.plan_digest}`);
+  return ok;
+}
+var POLICY_AUTO_MAX_RISK = "routine";
+function verifyPolicyAuto(policy, risk) {
+  if (policy.mode !== "autonomous")
+    return refuse3(`policy_auto_mode_not_autonomous: loop.mode is ${policy.mode}`);
+  if (policy.identity_posture !== "isolated")
+    return refuse3(`policy_auto_requires_isolated_identity: ${policy.identity_posture}`);
+  if (policy.auto_enroll_max_risk !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_disabled: loop.auto_enroll_max_risk is ${policy.auto_enroll_max_risk}`);
+  if (risk.declared !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_requires_routine_risk: declared ${risk.declared}`);
+  if (risk.elevated !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_requires_routine_risk: elevated ${risk.elevated}`);
+  return ok;
+}
+function noTouchScopeMatches(scopeHint, declared) {
+  const forbidden = [NO_TOUCH_PATH, ...declared];
+  const literal = (entry) => entry.replace(/\/\*\*$/, "").replace(/\/\*$/, "").replace(/\/$/, "");
+  return scopeHint.filter((entry) => {
+    const path = literal(entry);
+    if (path === "" || !entry)
+      return false;
+    if (noTouchPaths([path], forbidden).length > 0)
+      return true;
+    return forbidden.some((declaration) => declaration.startsWith(`${path}/`));
+  });
+}
+function verifyEnrollmentConfirmation(root, input, intent) {
+  if (input.source === "user_session")
+    return ok;
+  if (input.source === "tracker_approval") {
+    if (!input.tracker_approval)
+      return refuse3("tracker_approval_missing_proof: a tracker approval needs a comment proof and its policy");
+    return verifyTrackerApproval(input.tracker_approval.proof, input.tracker_approval.policy);
+  }
+  if (input.source !== "policy_auto")
+    return refuse3(`unknown_confirmation_source: ${String(input.source)}`);
+  if (!input.policy_auto)
+    return refuse3("policy_auto_missing_policy: policy_auto needs loop.mode, the risk cap and the identity posture");
+  let declaredNoTouch;
+  try {
+    declaredNoTouch = readNoTouch(root);
+  } catch (error) {
+    return refuse3(`policy_auto_no_touch_unreadable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const elevated = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, readRiskFloor(root)));
+  const verdict = verifyPolicyAuto(input.policy_auto, { declared: intent.risk, elevated });
+  if (!verdict.ok)
+    return verdict;
+  const touched = noTouchScopeMatches(intent.scope_hint, declaredNoTouch);
+  if (touched.length > 0)
+    return refuse3(`policy_auto_touches_no_touch: ${touched.join(", ")}`);
+  return ok;
+}
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -22776,6 +22881,16 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
       const binding = inspectSpecBinding(intent.intent);
       if (!binding.ok)
         fail(binding.message, new Error(binding.message));
+      if (input.confirmation) {
+        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
+          risk: intent.intent.risk,
+          scope_hint: intent.intent.scope_hint
+        });
+        if (!verdict.ok) {
+          const message = `confirmation: ${verdict.reason}`;
+          fail(message, new Error(message));
+        }
+      }
     }
     try {
       gitBaseHead = readGitHead(root);
@@ -22832,7 +22947,8 @@ function buildTaskRecordV4(input, intent, gitBaseHead) {
     git_base_head: gitBaseHead,
     attestations: [],
     findings: [],
-    history: []
+    history: [],
+    ...input.confirmation && input.confirmation.source !== "user_session" ? { confirmation_source: input.confirmation.source } : {}
   };
 }
 function runEnrollmentRehearsal(root, input, capability, registry) {
@@ -22857,7 +22973,7 @@ function enrollmentEventId(taskId, now) {
 }
 var CANCELLATION_BOUNDARY = Promise.resolve();
 async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
+  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
   const capability = registry.issue(binding);
   const input = {
     task_id: binding.task_id,
@@ -22868,6 +22984,7 @@ async function enrollTask(root, registry, request) {
     capability_binding: binding,
     ...batch ? { batch } : {},
     ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
+    ...confirmation ? { confirmation } : {},
     now
   };
   const { eventId, digest } = digestForEnrollment(input);

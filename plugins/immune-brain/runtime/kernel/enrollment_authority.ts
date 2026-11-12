@@ -4,6 +4,11 @@
 
 import { createCapabilityRegistry } from "./capability_registry";
 
+// The confirmation membrane lives beside this file so the capability-registry
+// adapter stays as thin as its line budget guards, and is surfaced here because
+// this is the module enrollment code and tests read the contract from.
+export * from "./enrollment_confirmation";
+
 export const ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
 
 /**

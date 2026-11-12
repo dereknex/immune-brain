@@ -1,0 +1,165 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s5-drive-pr",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s5-drive-pr",
+    "goal": "Deliver Kernel Enrollment confirmation sources (tracker_approval and policy_auto with .imm/risk-floor.json enforcement), register loop_daemon as the 4th composition root driving startBatch and LaneSupervisor, record Executor exits via exit_recorder.ts, and open PRs on imm/<slug> under S5 (D5, D6, BR-SCN-2, BR-SCN-3) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S5-AC1",
+        "assertion": "Source BR-REQ-4, BR-OUT-3, BR-SCN-2, BR-SCN-3; meet S5, D5, and D6 in docs/specs/loop-daemon.spec.md: enrollment.ts and enrollment_authority.ts support confirmation_source values user_session, tracker_approval (verifying owner login, association, timestamp, and matching plan_digest), and policy_auto (enforcing loop.auto_enroll_max_risk, .imm/risk-floor.json path elevation, no-touch exclusion, non-degraded posture, and rejecting critical tasks); loop_daemon is registered as the 4th composition root invoking startBatch and LaneSupervisor; exit_recorder.ts writes executor_exit_record/v1; and pr_opener.ts opens PRs on imm/<slug>.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s5-drive-pr.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/kernel/actor_identity.ts",
+      "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment.ts",
+      "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+      "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+      "plugins/immune-brain/runtime/loop_daemon/pr_opener.ts",
+      "tests/loop-daemon-drive-pr.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s5-drive-pr.intent.json",
+    "content_hash": "sha256:686b80934d351646c680288bb5d3505758a308b94a3f21d06732406b6703fcc7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:686b80934d351646c680288bb5d3505758a308b94a3f21d06732406b6703fcc7",
+  "git_base_head": "866fdd37f97a5099a7a4d22230c4c38b16596aaa",
+  "attestations": [
+    {
+      "id": "approval-qa-8b210a72",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:686b80934d351646c680288bb5d3505758a308b94a3f21d06732406b6703fcc7",
+      "diff_hash": "sha256:272422c98286f2c849bc444d5c23f39b9fbd4228f8d31bfb65aadc375b728a6e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:3345321ca0e7973cd82f2b031549b5f7a31e94423ae1581a00500357f3f81bf1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:3345321ca0e7973cd82f2b031549b5f7a31e94423ae1581a00500357f3f81bf1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2eb38cf9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:686b80934d351646c680288bb5d3505758a308b94a3f21d06732406b6703fcc7",
+      "diff_hash": "sha256:272422c98286f2c849bc444d5c23f39b9fbd4228f8d31bfb65aadc375b728a6e",
+      "actor_id": "cli:claude-code:93efa092-bf00-4f23-b0c0-877dc4ddd4cb",
+      "summary": "S5-AC1 is met. tracker_approval checks the actor, association, timestamps, edit status and plan_digest. policy_auto accepts routine work only and checks mode, cap, isolated identity, risk-floor elevation and no-touch scope, and refuses on its own when the policy fails. loop_daemon composes startBatch with LaneSupervisor, the exit recorder writes executor_exit_record/v1, and PRs open on imm/<slug>. The kernel mirror trees and both bundle diffs match. Blast radius: high (kernel enrollment.ts, batch_authority actor gate, persisted TaskRecord v4 confirmation_source field).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "866fdd37f97a5099a7a4d22230c4c38b16596aaa",
+        "review_commit": "de0a5d5c8f9e8d23a38dc8ae5cc72d3f674435a5",
+        "review_tree": "70df7fba309d91f0ef2e082f0dc862cd2db4dcd0",
+        "manifest_digest": "sha256:e4f82ea640cce076aadb1b6f7396a0e86743268cce56a74d9fa7c651a514aada"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-5ee904f77aa2-1-review-1",
+          "acceptance_id": "S5-AC1",
+          "summary": "The membrane trusts loop policy values the caller supplies (allowed_actors, allowed_associations, mode, auto_enroll_max_risk, identity_posture) instead of reading them from .imm/config.json and the identity probe. The guarantee therefore depends on the in-process daemon passing honest values.",
+          "anchor": "sha256:af79008d6f12ee29ed134f9b7f5cab5836b2689c460111cbf4f4c424612edeb3",
+          "evidence": {
+            "trigger": "An in-process caller passes policy_auto {mode:'autonomous', auto_enroll_max_risk:'routine', identity_posture:'isolated'} while .imm/config.json declares loop.auto_enroll_max_risk 'none' → the Enrollment is accepted with confirmation_source policy_auto",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/enrollment.ts:runEnrollmentPreconditionChecks",
+              "plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts:verifyEnrollmentConfirmation",
+              "plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts:verifyPolicyAuto"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-5ee904f77aa2-2-review-2",
+          "acceptance_id": "S5-AC1",
+          "summary": "isCompositionRootActor now accepts the loop-daemon actor for batch authorization without tying the batch to a verified tracker_approval or policy_auto confirmation. confirmation_ref stays free text.",
+          "anchor": "sha256:8d063668cb2c6effead3b040083e7672ad96ad6e350cba175b6820dbc8c3c9fa",
+          "evidence": {
+            "trigger": "registry.issue({actor_id:'loop-daemon', confirmation_ref:'anything', ...}) → a batch capability is issued with no proof of an unattended confirmation",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/kernel/batch_authority.ts:createBatchAuthorityRegistry.validateBinding",
+              "plugins/immune-brain/runtime/kernel/actor_identity.ts:isCompositionRootActor"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:872f00aa1c615766f16a3adf61faeeced020ab930bb4045eb9bc04f9b7cdafcb"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s5-drive-pr:2026-11-12T07:27:19.188Z",
+      "at": "2026-11-12T07:27:19.188Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s5-drive-pr.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s5-drive-pr:2026-11-12T07:27:34.807Z",
+      "at": "2026-11-12T07:27:34.807Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8b210a72\naction_v2_sha256:ce376c9d5395b916eaa125c2d9c6ead6445204fb5919ec8736af95df216078e5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-295c9e7cc87c5778",
+        "issued_at": "2026-11-12T07:27:34.807Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s5-drive-pr:2026-11-12T07:29:25.695Z",
+      "at": "2026-11-12T07:29:25.695Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2eb38cf9\naction_v2_sha256:c692834293ad72fd06fd3eb9eda616d13f728371bba8149ac0574ded85e6e5ba",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:93efa092-bf00-4f23-b0c0-877dc4ddd4cb",
+        "confirmation_ref": "pi-confirm-e4532f15706c42d3",
+        "issued_at": "2026-11-12T07:29:25.695Z"
+      },
+      "review_started_at": "2026-11-12T07:27:42.431Z",
+      "review_submitted_at": "2026-11-12T07:29:24.176Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-daemon-s5-drive-pr:2026-11-12T07:29:29.043Z",
+      "at": "2026-11-12T07:29:29.043Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:57d8e578f9a577d187002ed2617a597ee46f4beaf059bbf7458a6e29a8568d28"
+    }
+  ]
+}

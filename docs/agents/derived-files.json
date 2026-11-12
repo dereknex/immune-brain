@@ -160,6 +160,7 @@
         "plugins/immune-brain-antigravity/runtime/kernel/completion.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/enrollment.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/enrollment_authority.ts",
+        "plugins/immune-brain-antigravity/runtime/kernel/enrollment_confirmation.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/index.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/intent.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/intent_readiness.ts",
