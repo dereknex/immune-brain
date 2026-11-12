@@ -17,6 +17,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
+import { laneBatchReviewProfile } from "../unattended/batch_state";
 import { currentReviewContractHash } from "../role_prompt_bridge";
 import {
 	ReviewPreparationError,
@@ -316,7 +317,9 @@ export class CliReviewHost implements AssuranceHostPort {
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		if (!request.root) throw new Error("CLI Review requires the task's working directory");
 		const root: string = request.root;
-		const profile = chooseReviewer(resolveConfig(root).lanes as Parameters<typeof chooseReviewer>[0]);
+		// A Lane Review runs on the profile its batch fixed at confirmation, so a
+		// request-selected Lane profile reaches Review (#426 F14).
+		const profile = laneBatchReviewProfile(root) ?? chooseReviewer(resolveConfig(root).lanes as Parameters<typeof chooseReviewer>[0]);
 		if (!profile) throw new ReviewPreparationError("review_profile_required",
 			"Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
 		const executable = reviewBinary(profile.host);

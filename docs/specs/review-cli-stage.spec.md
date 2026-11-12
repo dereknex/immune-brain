@@ -44,6 +44,8 @@ The reviewer process is a model the user configured; it is trusted to return a v
 
 `lanes` gains `review_host` (`pi` | `claude-code` | `antigravity`), `review_model` and `review_effort` (non-empty strings), accepted in user `lanes.profiles.<name>` and in project `.imm/config.json` `lanes`, resolved with the existing active-profile → project precedence. `review_model` and `review_effort` apply only in the layer that sets `review_host`, with the same `not_applied` diagnostics as the executor keys. `imm-kernel config --json` reports each key with its source. A resolver `chooseReviewer(resolvedLanes)` exported from `runtime/config/layered_config.ts` returns `{ host, model?, effort? }` or `null` when no `review_host` resolves.
 
+Amended by #426 F14: a Lane Review does not resolve `lanes.active` when it is prepared. The Parent resolves the Review keys from the request-selected Lane profile, as it does the executor keys, and passes them to `start_unattended_batch` as `review_host`, `review_model` and `review_effort`. A new lane batch records them as `review_profile`, and `prepareReview` in a runtime-owned Lane uses the profile of the in-flight batch that binds that Lane. Only when that batch recorded none does it fall back to `chooseReviewer` over the layered config. Live evidence: probe-m3 on 2026-11-12 selected `review-probe` (sonnet Review), but Review ran on `claude-opus-5-5` from the active profile.
+
 ### D2 — No model-distinctness rule (source: BR-DEC-2)
 
 The resolver never compares the review model with the executor model; a profile may set the same model for both. Issue #386 acceptance "different from the implement profile's model" is superseded.

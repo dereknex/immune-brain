@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, te
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -23,6 +23,8 @@ import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/rev
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { laneBatchReviewProfile, prepareBatchLaneRunState, reviewProfileFromArgs, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 setDefaultTimeout(120_000);
 
@@ -884,5 +886,61 @@ describe("review transport (#426 S4)", () => {
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/) });
 		const tabs = JSON.parse(readFileSync(state, "utf8")).calls.filter((call: string[]) => call[0] === "tab" && call[1] === "create").map((call: string[]) => call[7]);
 		expect(tabs.map((label: string) => label.replace(/ \[imm:[0-9a-f]+\]$/, ""))).toEqual(["review cli-review-task", "verify cli-review-task"]);
+	});
+});
+
+// --- #426 F14: a Lane Review runs on its batch's recorded profile ----------
+
+const F14_TIME = "2026-11-12T00:00:00.000Z";
+
+/** A coordinator repo whose config names antigravity, one Lane, and a lane batch bound to it. */
+function laneBatch(options: { state?: string; review_profile?: { host: "pi" | "claude-code" | "antigravity"; model?: string }; batchId?: string; lane?: string } = {}) {
+	const root = options.lane ? dirname(dirname(dirname(dirname(dirname(options.lane))))) : realpathSync(reviewRepo("antigravity", { review_model: "config-model" }));
+	const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+	const lane = options.lane ?? createLaneWorktree(root, "f14", TASK, head);
+	const child = { task_id: TASK, slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
+		intent_path: `docs/plans/${TASK}.intent.json`, intent_revision: 1, intent_content_hash: `sha256:${"0".repeat(64)}` };
+	const record = prepareBatchLaneRunState({ batch_id: options.batchId ?? "f14-batch", initiative_slug: "f14", children: [child],
+		plan_digest: `sha256:${"1".repeat(64)}`, base_head: head, confirmation_time: F14_TIME, now: F14_TIME,
+		budget: { max_children: 1, qa_failure_limit: 2 }, max_parallel: 1,
+		...(options.review_profile ? { review_profile: options.review_profile } : {}) });
+	record.batch_state = "running" as never;
+	record.children = [{ ...record.children[0]!, state: (options.state ?? "enrolled") as never,
+		reason: options.state === "needs_human" ? "parked" : null,
+		lane: { path: lane, branch: `imm-lane/f14/${TASK}`, base_head: head, lane_commit: null } }];
+	writeBatchLaneRunState(root, record);
+	return { root, lane };
+}
+
+describe("#426 F14 batch review profile", () => {
+	test("a Lane Review runs on the profile its batch recorded, not the layered config", async () => {
+		const { lane } = laneBatch({ review_profile: { host: "pi", model: "model-x" } });
+		onPath(fakeReviewer("exit 0"));
+		const ready = await claudeAdvance(lane, ROOT_ENV);
+		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
+	});
+
+	test("without a recorded profile, or once the child left the Lane, the layered config applies", () => {
+		expect(laneBatchReviewProfile(laneBatch().lane)).toBeUndefined();
+		expect(laneBatchReviewProfile(laneBatch({ state: "needs_human", review_profile: { host: "pi" } }).lane)).toBeUndefined();
+	});
+
+	test("a checkout that is not a runtime-owned Lane reads no batch profile", () => {
+		const { root } = laneBatch({ review_profile: { host: "pi" } });
+		expect(laneBatchReviewProfile(root)).toBeUndefined();
+	});
+
+	test("two in-flight batches with different profiles on one Lane fail closed", () => {
+		const { lane } = laneBatch({ review_profile: { host: "pi" } });
+		laneBatch({ lane, batchId: "f14-other", review_profile: { host: "claude-code", model: "m" } });
+		expect(() => laneBatchReviewProfile(lane)).toThrow("review_profile_ambiguous");
+	});
+
+	test("start arguments map to one profile and refuse a model without a host", () => {
+		expect(reviewProfileFromArgs({})).toBeUndefined();
+		expect(reviewProfileFromArgs({ review_host: "claude-code", review_model: "sonnet", review_effort: "low" }))
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
+		expect(() => reviewProfileFromArgs({ review_model: "sonnet" })).toThrow("require review_host");
+		expect(() => reviewProfileFromArgs({ review_host: "codex" })).toThrow("invalid review_profile");
 	});
 });

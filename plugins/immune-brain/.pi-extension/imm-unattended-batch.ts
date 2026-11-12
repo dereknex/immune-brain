@@ -37,6 +37,8 @@ import { advancePiTask, piEntryToken, piRunEntryRefusal, readTaskIntentForRecord
 import { runEntryManifest, type RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
+import { reviewProfileFromArgs } from "../runtime/unattended/batch_state";
+import type { ReviewProfile } from "../runtime/config/layered_config";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, parseLaneSessionClose, type LaneInstructionRequest, type LaneSessionCloseRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
 	authorizeBatch,
@@ -132,6 +134,8 @@ export interface PiBatchExecutionOptions {
 	lane_offers?: LaneOffer[];
 	/** Lane mode: the project's full verification commands, run once every child is integrated. */
 	final_verification?: string[];
+	/** Lane mode: the Review profile fixed when a new batch starts (#426 F14). */
+	review_profile?: ReviewProfile;
 	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
 	lane_instruction?: LaneInstructionRequest;
 	/** Lane mode: the Executor close rule for an integrated child's session, recorded before the close. */
@@ -318,7 +322,7 @@ async function executePreparedPiBatch(
 			}
 			const confirmDetails = {
 				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}${facts.preparation?.intent ? `\nTaskIntent revision: ${facts.preparation.intent.revision}\nTaskIntent content hash: ${facts.preparation.intent.content_hash}\nPreparation digest: ${facts.preparation.digest}` : ""}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}`,
+				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}${facts.preparation?.intent ? `\nTaskIntent revision: ${facts.preparation.intent.revision}\nTaskIntent content hash: ${facts.preparation.intent.content_hash}\nPreparation digest: ${facts.preparation.digest}` : ""}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}${options.review_profile ? `\nReview: ${[options.review_profile.host, options.review_profile.model, options.review_profile.effort].filter(Boolean).join(" / ")}` : ""}`,
 				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
 				planDigest: facts.plan_digest,
 				signal,
@@ -426,6 +430,7 @@ async function executePreparedPiBatch(
 		kernel: kernelPort,
 		git: options.batchGit,
 		...(options.final_verification ? { final_verification: options.final_verification } : {}),
+		...(options.review_profile ? { review_profile: options.review_profile } : {}),
 		...(options.max_parallel !== undefined
 			? {
 					max_parallel: options.max_parallel,
@@ -559,6 +564,9 @@ export default function (
 			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
 			executor_model: Type.Optional(Type.String({ minLength: 1 })),
 			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
+			review_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
+			review_model: Type.Optional(Type.String({ minLength: 1 })),
+			review_effort: Type.Optional(Type.String({ minLength: 1 })),
 			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
 			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
@@ -575,7 +583,7 @@ export default function (
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; review_host?: "pi" | "claude-code" | "antigravity"; review_model?: string; review_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -611,6 +619,7 @@ export default function (
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = params.final_verification?.length === 0 ? undefined : parseFinalVerification(params.final_verification);
+			const reviewProfile = reviewProfileFromArgs(params);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
 			const laneSessionClose = parseLaneSessionClose(params.lane_session_close);
 
@@ -624,6 +633,7 @@ export default function (
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+				...(reviewProfile !== undefined ? { review_profile: reviewProfile } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
 				...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				interactive: ctx.mode === "tui",

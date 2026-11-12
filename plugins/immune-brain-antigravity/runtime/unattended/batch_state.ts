@@ -1,9 +1,10 @@
 // Batch run state persistence for unattended Initiative batch runs.
 // State lives at .imm/state/batches/<batch_id>.json, written only under the
 // kernel store lock, and is Git-ignored with the rest of .imm/state/.
-import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync, readdirSync, realpathSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import { bindsAuthoritySubject } from "../kernel/batch_authority";
@@ -13,6 +14,42 @@ import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
 import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ReviewProfile } from "../config/layered_config";
+
+const REVIEW_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
+
+/**
+ * The Review profile a lane batch fixes at confirmation (#426 F14): the Parent
+ * resolves it from the request-selected Lane profile, so Review runs on it
+ * instead of whatever `lanes.active` names when Review is prepared. Throws on
+ * a malformed value; returns undefined when none is given.
+ */
+export function parseBatchReviewProfile(value: unknown): ReviewProfile | undefined {
+	if (value === undefined) return undefined;
+	const profile = value as Record<string, unknown>;
+	if (typeof value !== "object" || value === null || Array.isArray(value) || !REVIEW_HOSTS.has(String(profile.host))
+		|| Object.keys(profile).some(key => key !== "host" && key !== "model" && key !== "effort")
+		|| (profile.model !== undefined && (typeof profile.model !== "string" || !profile.model.trim()))
+		|| (profile.effort !== undefined && (typeof profile.effort !== "string" || !profile.effort.trim())))
+		throw new Error("invalid review_profile: expected { host: pi | claude-code | antigravity, model?, effort? }");
+	return { host: profile.host as ReviewProfile["host"], ...(profile.model ? { model: profile.model as string } : {}), ...(profile.effort ? { effort: profile.effort as string } : {}) };
+}
+
+/**
+ * The Review profile carried by `start_unattended_batch`'s flat
+ * `review_host` / `review_model` / `review_effort` arguments; undefined when
+ * none is given. A model or effort without a host is refused (#426 F14).
+ */
+export function reviewProfileFromArgs(args: Record<string, unknown>): ReviewProfile | undefined {
+	if (args.review_host === undefined) {
+		if (args.review_model !== undefined || args.review_effort !== undefined)
+			throw new Error("invalid review_profile: review_model and review_effort require review_host");
+		return undefined;
+	}
+	return parseBatchReviewProfile({ host: args.review_host,
+		...(args.review_model !== undefined ? { model: args.review_model } : {}),
+		...(args.review_effort !== undefined ? { effort: args.review_effort } : {}) });
+}
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
 	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
@@ -273,6 +310,8 @@ export interface BatchLaneRunStateRecord {
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	/** Review profile resolved from the request-selected Lane profile; fixed when the batch starts (#426 F14). */
+	review_profile?: ReviewProfile;
 	repair_tasks?: Array<{ task_id: string; run_id: string }>;
 	/** Legacy v2 fields, preserved for reading and retirement only (D20). */
 	revision_delegation?: { confirmation_time: string };
@@ -700,6 +739,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
 	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
 		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
+	try { parseBatchReviewProfile(record.review_profile); } catch { throw new Error(`batch run state ${batchId} has an invalid review_profile`); }
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
 		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
 	if (record.batch_id !== batchId)
@@ -959,6 +999,7 @@ export function prepareBatchLaneRunState(input: {
 	progress_mode?: "parent_branch";
 	now: string;
 	final_verification?: string[];
+	review_profile?: ReviewProfile;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -988,6 +1029,7 @@ export function prepareBatchLaneRunState(input: {
 		})),
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
+		...(input.review_profile ? { review_profile: { ...input.review_profile } } : {}),
 		intent_identities: batchIntentIdentities(input.children),
 		created_at: input.now,
 		updated_at: input.now,
@@ -1018,6 +1060,50 @@ export function readAnyBatchRunState(root: string, batchId: string): AnyBatchRun
 	const path = statePath(batchId);
 	if (!existsSync(join(root, path))) return null;
 	return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join(root, path));
+}
+
+/** Child states in which a Lane can still reach Review. */
+const REVIEWABLE_CHILD_STATES: ReadonlySet<string> = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+
+function realOrNull(path: string): string | null {
+	try { return realpathSync(path); } catch { return null; }
+}
+
+/**
+ * The `review_profile` recorded by the batch whose in-flight child runs in the
+ * Lane at `root` (#426 F14). Undefined when `root` is not a runtime-owned Lane
+ * or that batch recorded no profile, so the caller falls back to the layered
+ * config. The coordinator checkout owns the Git common directory and keeps
+ * every Lane batch's state.
+ */
+export function laneBatchReviewProfile(root: string): ReviewProfile | undefined {
+	const lane = realOrNull(root);
+	if (!lane) return undefined;
+	let common: string | null;
+	try {
+		common = realOrNull(execFileSync("git", ["-C", lane, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+	} catch {
+		return undefined;
+	}
+	if (!common || basename(common) !== ".git") return undefined;
+	const below = relative(join(common, "imm", "worktrees"), lane);
+	if (!below || below.startsWith("..") || isAbsolute(below) || below.split(sep).length !== 2) return undefined;
+	const coordinator = dirname(common);
+	const directory = join(coordinator, ".imm", "state", "batches");
+	if (!existsSync(directory)) return undefined;
+	const found = new Map<string, ReviewProfile>();
+	for (const file of readdirSync(directory).sort()) {
+		if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
+		const batchId = file.slice(0, -".json".length);
+		if (!BATCH_ID_PATTERN.test(batchId)) continue;
+		const record = readAnyBatchRunState(coordinator, batchId);
+		if (!record || !isLaneBatchRecord(record) || !record.review_profile) continue;
+		if (record.children.some(child => child.lane !== null && REVIEWABLE_CHILD_STATES.has(child.state) && realOrNull(child.lane.path) === lane))
+			found.set(JSON.stringify(record.review_profile), record.review_profile);
+	}
+	if (found.size > 1) throw new Error(`review_profile_ambiguous: more than one in-flight batch binds the Lane ${lane}`);
+	return found.values().next().value;
 }
 
 export function readBatchLaneRunState(root: string, batchId: string): BatchLaneRunStateRecord | null {

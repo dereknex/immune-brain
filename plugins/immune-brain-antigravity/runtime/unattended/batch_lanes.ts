@@ -1000,6 +1000,7 @@ export async function runLaneBatch(
 			max_parallel: limit,
 			now: input.now,
 			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
+			...(input.review_profile ? { review_profile: input.review_profile } : {}),
 		});
 	}
 

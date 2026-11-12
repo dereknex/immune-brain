@@ -280,6 +280,7 @@ Instruction-file lane directives are not read.
 | `executor_host` | `claude-code`, `pi` or `antigravity` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type, else another allowlisted Host the `lane-steward` reported available |
 | `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi` | The Executor Host's own default |
+| `review_host`, `review_model`, `review_effort` | the selected profile's Review fields | The Parent passes them as `review_host`, `review_model` and `review_effort` when it starts a batch. The batch records them as `review_profile`, the native confirmation shows them, and every CLI Review of the batch's Lanes runs on them; a resume keeps the recorded profile. A model or effort without `review_host` is refused. | Review resolves `lanes.active` when it is prepared |
 
 Each field resolves on its own, in order: literal request, selected user Lane
 profile, project `lanes` defaults, then the default above. Select the profile

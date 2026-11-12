@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConfig } from "../config/layered_config";
+import { resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
 import type { AssuranceHostPort } from "../assurance/host_port";
 
@@ -1002,7 +1002,7 @@ export class HostRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
 	): Promise<HostBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -1010,7 +1010,7 @@ export class HostRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest; confirmationPreview?: boolean },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest; confirmationPreview?: boolean },
 	): Promise<HostBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -1214,6 +1214,7 @@ export class HostRuntime {
 											parallel_groups: facts.parallel_groups,
 											serialized: facts.scope_conflicts,
 											...(options.final_verification ? { final_verification: options.final_verification } : {}),
+											...(options.review_profile ? { review_profile: options.review_profile } : {}),
 										},
 									}
 								: {}),
@@ -1339,6 +1340,7 @@ export class HostRuntime {
 			kernel: kernelPort,
 			git: this.batchGit,
 			...(options.final_verification ? { final_verification: options.final_verification } : {}),
+			...(options.review_profile ? { review_profile: options.review_profile } : {}),
 			...(options.max_parallel !== undefined
 				? {
 						max_parallel: options.max_parallel,

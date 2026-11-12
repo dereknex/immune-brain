@@ -150,6 +150,12 @@ export interface StartBatchInput {
 	 * the recorded list in either execution mode.
 	 */
 	final_verification?: string[];
+	/**
+	 * Lane mode: the Review profile resolved from the request-selected Lane
+	 * profile, recorded when a new batch starts; a resume keeps the recorded one
+	 * (#426 F14).
+	 */
+	review_profile?: import("../config/layered_config").ReviewProfile;
 	/** Bounds each final command; absent, the verifier's own default applies. Not a Host tool parameter. */
 	final_verification_timeout_ms?: number;
 	/**
