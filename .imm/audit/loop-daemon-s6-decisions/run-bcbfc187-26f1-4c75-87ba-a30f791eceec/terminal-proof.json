@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-daemon-s6-decisions",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-daemon-s6-decisions:2026-11-12T08:42:02.817Z",
+  "final_record_hash": "sha256:2f42da3e54cfc27beb66c76be88d01d1057b352a1d6f0b7500cad2f8a8d3a280",
+  "terminalized_at": "2026-11-12T08:42:02.817Z"
+}

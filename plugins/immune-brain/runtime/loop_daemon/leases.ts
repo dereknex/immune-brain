@@ -303,6 +303,57 @@ export function releaseLoopLease(stateDir: string, targetId: string, options: { 
 	}
 }
 
+/**
+ * Transition one owned lease to "parked_for_decision" (D7), releasing its concurrency slot
+ * while preserving target_id, worktree_path, and scope_hint reservations.
+ */
+export function parkLoopLeaseForDecision(
+	stateDir: string,
+	targetId: string,
+	options: { host_token: string; now?: string },
+): LoopLease | null {
+	const gate = acquireGate(stateDir, targetId);
+	if (gate === null) return null;
+	try {
+		const lease = loadLease(stateDir, targetId);
+		if (lease === null || lease.host_token !== options.host_token) return null;
+		const next: LoopLease = {
+			...lease,
+			status: "parked_for_decision",
+			heartbeat_at: options.now ?? new Date().toISOString(),
+		};
+		saveLease(stateDir, next);
+		return next;
+	} finally {
+		releaseGate(gate.path, targetId, gate.gen);
+	}
+}
+
+/**
+ * Resume one owned lease from "parked_for_decision" back to "active".
+ */
+export function resumeLoopLeaseFromDecision(
+	stateDir: string,
+	targetId: string,
+	options: { host_token: string; now?: string },
+): LoopLease | null {
+	const gate = acquireGate(stateDir, targetId);
+	if (gate === null) return null;
+	try {
+		const lease = loadLease(stateDir, targetId);
+		if (lease === null || lease.host_token !== options.host_token) return null;
+		const next: LoopLease = {
+			...lease,
+			status: "active",
+			heartbeat_at: options.now ?? new Date().toISOString(),
+		};
+		saveLease(stateDir, next);
+		return next;
+	} finally {
+		releaseGate(gate.path, targetId, gate.gen);
+	}
+}
+
 /** Reclaim every expired lease in one pass and report what was taken back. */
 export function reclaimExpiredLeases(stateDir: string, expiry: LeaseExpiryFacts = {}): LoopLease[] {
 	const reclaimed: LoopLease[] = [];

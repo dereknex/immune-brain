@@ -184,16 +184,27 @@ describe("S4 continuous scheduler", () => {
 		expect(planningUnderLimit.dispatched).toEqual(["issue-6"]);
 	});
 
-	it("counts a parked lane's lease against max_concurrent", () => {
-		const result = scheduleLoopWork(
+	it("releases concurrency slot for a parked lane while preserving scope reservation (D7)", () => {
+		// Non-overlapping candidate can dispatch because parked lease released its concurrency slot
+		const nonOverlapping = scheduleLoopWork(
 			scheduleInput({
 				candidates: [{ target_id: "issue-7", handler: "enroll_and_drive", scope_hint: ["src/a/"] }],
 				active_leases: [lease("issue-6", { status: "parked_for_decision", scope_hint: ["docs/b/"] })],
 				limits: { max_concurrent: 1, max_ready_buffer: 5, max_pr_buffer: 5 },
 			}),
 		);
-		expect(result.dispatched).toEqual([]);
-		expect(result.entries[0]!.reason).toStartWith("max_concurrent:");
+		expect(nonOverlapping.dispatched).toEqual(["issue-7"]);
+
+		// Overlapping candidate is held because scope reservation is preserved
+		const overlapping = scheduleLoopWork(
+			scheduleInput({
+				candidates: [{ target_id: "issue-8", handler: "enroll_and_drive", scope_hint: ["docs/b/"] }],
+				active_leases: [lease("issue-6", { status: "parked_for_decision", scope_hint: ["docs/b/"] })],
+				limits: { max_concurrent: 1, max_ready_buffer: 5, max_pr_buffer: 5 },
+			}),
+		);
+		expect(overlapping.dispatched).toEqual([]);
+		expect(overlapping.entries[0]!.reason).toStartWith("scope_overlap:");
 	});
 
 	it("holds a candidate whose scope overlaps an active lease or an earlier dispatch", () => {

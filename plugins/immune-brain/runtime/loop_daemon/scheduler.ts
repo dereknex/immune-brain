@@ -137,7 +137,8 @@ export function scheduleLoopWork(input: ScheduleInput): ScheduleResult {
 		target_id: lease.target_id,
 		scope: lease.scope_hint ?? [],
 	}));
-	let slots = busy.length;
+	// Spec D7: parking a Lane releases its active concurrency slot while preserving scope reservation
+	let slots = input.active_leases.filter((lease) => lease.status === "active").length;
 	let ready = input.ready_buffer;
 	let prs = input.open_daemon_prs;
 	// The guard only halts a tick that starts with a spent budget; a tick may still
