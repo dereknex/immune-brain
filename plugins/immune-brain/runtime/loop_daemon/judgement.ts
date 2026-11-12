@@ -26,6 +26,7 @@ import {
 	firstBlock,
 } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
+import { resolveOwnerCommand } from "./owner_commands.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
 
 /** Below this confidence a Tier-2 classification escalates rather than acts. */
@@ -88,26 +89,8 @@ async function classifyPoint(
 	return { kind: "decided", choice: result.choice, confidence: result.confidence };
 }
 
-const OWNER_COMMAND = /@imm-loop\s+([a-z-]+)/i;
-
-function ownerCommandHandler(command: string): { handler: LoopHandler; reason: string } {
-	switch (command.toLowerCase()) {
-		case "replan":
-			return { handler: "draft_plan", reason: "verified owner @imm-loop replan" };
-		case "retry":
-			return { handler: "repair_pr_ci", reason: "verified owner @imm-loop retry" };
-		case "ignore":
-			return { handler: "noop_record", reason: "verified owner @imm-loop ignore" };
-		default:
-			return {
-				handler: "noop_record",
-				reason: `verified owner @imm-loop ${command} is daemon control, applied before judging (S3)`,
-			};
-	}
-}
-
 /** Tier 1: exact label, marker and command transitions. `null` means Tier 2 must decide. */
-function matchTier1(event: NormalizedLoopEvent): Judgement | null {
+function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | null {
 	const decided = (handler: LoopHandler, reason: string): Judgement => ({
 		tier: 1,
 		handler,
@@ -123,10 +106,13 @@ function matchTier1(event: NormalizedLoopEvent): Judgement | null {
 			if (event.labels.includes("ready-for-agent")) return decided("enroll_and_drive", "label transitioned to ready-for-agent");
 			return null;
 		case "E3_OWNER_COMMENT": {
-			const command = event.body.match(OWNER_COMMAND);
-			if (command === null) return null;
-			const resolved = ownerCommandHandler(command[1]);
-			return decided(resolved.handler, resolved.reason);
+			// A comment only reaches this tier after G7 verified its REST actor. A parsed
+			// command that still fails verification settles here as a quiet noop: handing
+			// it to Tier 2 would let a classifier turn rejected evidence into authority.
+			const resolved = resolveOwnerCommand(event, facts);
+			if (resolved.command === null) return null;
+			if (resolved.handler !== null) return decided(resolved.handler, resolved.reason);
+			return decided("noop_record", `rejected @imm-loop ${resolved.command}: ${resolved.reason}`);
 		}
 		case "E4_PLAN_APPROVED":
 			return decided("enroll_and_drive", "verified plan approval marker");
@@ -320,7 +306,7 @@ export async function judgeEvent(event: NormalizedLoopEvent, deps: JudgeDeps = {
 			classification: null,
 		};
 	}
-	const tier1 = matchTier1(event);
+	const tier1 = matchTier1(event, facts);
 	if (tier1 !== null) return tier1;
 	return judgeTier2(event, facts, deps);
 }

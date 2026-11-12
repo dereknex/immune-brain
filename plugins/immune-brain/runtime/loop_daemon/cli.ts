@@ -20,6 +20,7 @@ import type { GhTransport } from "../github_issue_tracker.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
+import { detectIdentityPosture, inspectDaemonIdentity } from "./identity.ts";
 import { type ClassifyFn, createDecisionModelClassifier, judgeEvents } from "./judgement.ts";
 import { acquireDaemonLock, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
@@ -306,8 +307,8 @@ Options:
 				paused: state.paused,
 				no_touch_paths: declaredNoTouch,
 				active_leases: state.active_leases,
-				// S3 replaces this with the same-UID inspection; degraded fails policy_auto closed.
-				identity_posture: "degraded",
+				// Same-UID execution degrades to observe/triage/publish; G10 then refuses policy_auto.
+				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
 				...options?.guardFacts,
 			};
 
