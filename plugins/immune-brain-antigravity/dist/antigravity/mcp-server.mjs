@@ -22183,6 +22183,7 @@ var REVIEW_GIT_ALLOWED_TOOLS = Object.freeze([
   "Bash(git --no-pager rev-parse:*)",
   "Bash(git --no-pager ls-tree:*)"
 ]);
+var REVIEW_HOST_SETTINGS = JSON.stringify({ disableAllHooks: true });
 function reviewArguments(profile, packetPath, turnBudget) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
@@ -22197,6 +22198,8 @@ function reviewArguments(profile, packetPath, turnBudget) {
       ...REVIEW_GIT_ALLOWED_TOOLS,
       "--permission-mode",
       "dontAsk",
+      "--settings",
+      REVIEW_HOST_SETTINGS,
       ...model,
       ...profile.effort ? ["--effort", profile.effort] : [],
       `/immune-brain:authority-review ${packetPath}`
@@ -22234,6 +22237,8 @@ function verificationArguments(profile, model, packetPath, turnBudget) {
       ...REVIEW_GIT_ALLOWED_TOOLS,
       "--permission-mode",
       "dontAsk",
+      "--settings",
+      REVIEW_HOST_SETTINGS,
       ...modelFlag,
       instruction
     ];

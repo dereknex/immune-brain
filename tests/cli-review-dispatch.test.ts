@@ -397,6 +397,18 @@ describe("#426 reviewer and verifier git allow-list", () => {
 		}
 	});
 
+	test("#426 F11: both claude-code argv turn every hook off so no rewrite hides git from the rules", () => {
+		for (const argv of claudeArgv()) {
+			const settings = argv[argv.indexOf("--settings") + 1]!;
+			expect(JSON.parse(settings)).toEqual({ disableAllHooks: true });
+			expect(argv).not.toContain("--setting-sources");
+		}
+		for (const host of ["pi", "antigravity"] as const) {
+			expect(reviewArguments({ host }, packet, 12)).not.toContain("--settings");
+			expect(verificationArguments({ host }, "model", packet, 12)).not.toContain("--settings");
+		}
+	});
+
 	test("no rule admits -C, a non-git command or a bare Bash", () => {
 		for (const rule of rulesOf(claudeArgv()[0]!)) {
 			expect(rule).toMatch(/^Bash\(git (--no-pager )?(show|diff|log|cat-file|rev-parse|ls-tree):\*\)$/);

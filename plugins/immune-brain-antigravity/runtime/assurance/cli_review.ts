@@ -47,6 +47,14 @@ export const REVIEW_GIT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
 	"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
 ]);
 
+/**
+ * The claude-code reviewer and verifier run with every hook off (#426 F11). A user PreToolUse hook
+ * may rewrite `git show` into another command (e.g. `rtk git show`), so no `Bash(git …)` rule matches
+ * and `dontAsk` denies every git read. The receipt is the output file, never a hook observation, so
+ * the read-only session loses nothing; user settings, plugins and skills still load.
+ */
+export const REVIEW_HOST_SETTINGS = JSON.stringify({ disableAllHooks: true });
+
 /** The reviewer argv for one Host, model and effort applied only when the profile sets them (D5). */
 export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
@@ -62,6 +70,8 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 			...REVIEW_GIT_ALLOWED_TOOLS,
 			"--permission-mode",
 			"dontAsk",
+			"--settings",
+			REVIEW_HOST_SETTINGS,
 			...model,
 			...(profile.effort ? ["--effort", profile.effort] : []),
 			`/immune-brain:authority-review ${packetPath}`,
@@ -101,7 +111,7 @@ export function verificationArguments(profile: ReviewProfile, model: string, pac
 			"--print", "--no-session-persistence", "--max-turns", String(turnBudget),
 			"--tools", "Read,Grep,Glob,Bash",
 			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS,
-			"--permission-mode", "dontAsk", ...modelFlag, instruction,
+			"--permission-mode", "dontAsk", "--settings", REVIEW_HOST_SETTINGS, ...modelFlag, instruction,
 		];
 	}
 	if (profile.host === "pi") return ["--print", "--no-session", ...modelFlag, instruction];
