@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "antigravity-private-state",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:antigravity-private-state:2026-11-12T08:18:32.780Z",
+  "final_record_hash": "sha256:59d0cb7e0a79e1d76219dfd4af88f263c8e3ec4fb799fee06df7ab81401403c1",
+  "terminalized_at": "2026-11-12T08:18:32.780Z"
+}

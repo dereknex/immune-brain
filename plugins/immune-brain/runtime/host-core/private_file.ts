@@ -2,15 +2,15 @@
 // (Spec docs/specs/host-neutral-adapter-core.spec.md D3).
 //
 // Interface: `sessionHash`, `cacheDir(root, cacheName)`, `ownedByUs`,
-// `ensurePrivateDir`, `appendPrivate`, `readPrivate`.
+// `ensurePrivateDir`, `appendPrivate`, `writePrivate`, `readPrivate`, `dropPrivate`.
 // Invariants: a directory is used only when it is owned by this user with mode
 // 0700; a file only when it is owned, a regular file, mode 0600 and opened
 // O_NOFOLLOW. A symlink planted where the cache belongs is never followed.
-// Side Effects: creates the cache directory, appends or reads one file in it.
+// Side Effects: creates the cache directory, appends, writes, reads or drops one file in it.
 // Verification: `bun test tests/dual-host-assurance-conformance.test.ts -t 'shared hook event log'`.
 
 import { createHash } from "node:crypto";
-import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, writeSync } from "node:fs";
+import { constants, closeSync, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
 export function sessionHash(sessionId: string): string {
@@ -56,6 +56,32 @@ export function appendPrivate(path: string, dir: string, line: string): boolean 
 		return false;
 	} finally {
 		closeSync(fd);
+	}
+}
+
+export function writePrivate(path: string, dir: string, content: string): boolean {
+	if (!ensurePrivateDir(dir)) return false;
+	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK;
+	let fd: number;
+	try { fd = openSync(path, flags, 0o600); } catch { return false; }
+	try {
+		const stat = fstatSync(fd);
+		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return false;
+		ftruncateSync(fd, 0);
+		return writeSync(fd, content, 0, "utf8") === Buffer.byteLength(content);
+	} catch {
+		return false;
+	} finally {
+		closeSync(fd);
+	}
+}
+
+export function dropPrivate(path: string): void {
+	try {
+		const stat = lstatSync(path);
+		if (ownedByUs(stat) && stat.isFile()) rmSync(path, { force: true });
+	} catch {
+		// already gone, or not ours to remove
 	}
 }
 

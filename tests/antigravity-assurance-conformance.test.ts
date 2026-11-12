@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
@@ -16,10 +16,12 @@ import {
 	antigravityPreInvocationHook,
 	antigravityPreToolUseHook,
 	antigravityPreToolUseHookAsync,
+	consumeNativeConfirmation,
 	consumePhaseAdmission,
 	readPhaseEntryState,
 	type GatedTool,
 } from "../plugins/immune-brain/runtime/antigravity/lane_guard";
+import { sessionHash } from "../plugins/immune-brain/runtime/host-core/private_file";
 import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { antigravityRunContinuationHook } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
@@ -1412,6 +1414,223 @@ describe("Antigravity Harness Conformance", () => {
 			const text = reply.result.content[0].text as string;
 			expect(text).not.toContain("workspace_changed");
 			expect(JSON.parse(text).state).toBe("started");
+			server.input.end();
+		}, 60_000);
+
+		it("AC2 (D3; BR-REQ-2): real seams preserve live drive entry, one admitted call and one consumed native grant; replay, truncated grant and tampered files refuse", async () => {
+			const root = temp("ac2-gate");
+			const store = temp("store-ac2");
+			const TASK_AC2 = "ac2-single-task";
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(root, "base.txt"), "base\n");
+			writeIntent(root, "deliver one task", 1, TASK_AC2);
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "fixture");
+
+			const conversationId = "conv-ac2-1";
+			const stepIdx = 50;
+			const admissionId = `${conversationId}:${stepIdx}:start_unattended_batch`;
+			const cache = join(store, "immune-brain-antigravity");
+			const entryFile = join(cache, `${sessionHash(conversationId)}.entry`);
+			const admitFile = join(cache, `${sessionHash(admissionId)}.admit`);
+			const confirmFile = join(cache, `${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`);
+
+			// 1. Bound: missing step identity denies PreToolUse
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK_AC2}`, workspacePaths: [root] }, { root: store, home: store });
+			const missingStep = antigravityPreToolUseHook({
+				conversationId,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(missingStep.decision).toBe("deny");
+			expect(missingStep.reason).toContain("stepIdx");
+
+			// 2. Tampered entry log (wrong mode) refuses PreToolUse
+			expect(existsSync(entryFile)).toBe(true);
+			chmodSync(entryFile, 0o644);
+			const deniedWrongModeEntry = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(deniedWrongModeEntry.decision).toBe("deny");
+			expect(deniedWrongModeEntry.reason).toContain("run_entry_required");
+
+			// 3. Planted symlink entry log refuses PreToolUse
+			const outsideEntry = join(store, "outside-entry.txt");
+			writeFileSync(outsideEntry, readFileSync(entryFile, "utf8"), { mode: 0o600 });
+			rmSync(entryFile, { force: true });
+			symlinkSync(outsideEntry, entryFile);
+			const deniedSymlinkEntry = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(deniedSymlinkEntry.decision).toBe("deny");
+			expect(deniedSymlinkEntry.reason).toContain("run_entry_required");
+
+			// 4. Restore valid drive entry; PreToolUse Hook records admission with 0600 mode
+			rmSync(entryFile, { force: true });
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK_AC2}`, workspacePaths: [root] }, { root: store, home: store });
+			expect(readPhaseEntryState(conversationId, store)?.run_live).toBe(true);
+
+			const admitted = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(admitted.decision).toBe("allow");
+			expect(existsSync(admitFile)).toBe(true);
+			expect((lstatSync(admitFile).mode & 0o777)).toBe(0o600);
+
+			// 5. Tampered admission file (wrong mode 0644) refuses MCP consumption
+			chmodSync(admitFile, 0o644);
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+
+			// 6. Truncated admission file refuses MCP consumption
+			chmodSync(admitFile, 0o600);
+			writeFileSync(admitFile, "{ \"broken_json\": ", { mode: 0o600 });
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+
+			// 7. Planted symlink admission file refuses MCP consumption
+			rmSync(admitFile, { force: true });
+			const outsideAdmit = join(store, "outside-admit.txt");
+			writeFileSync(outsideAdmit, JSON.stringify({ operation: "start_unattended_batch", conversation: conversationId }), { mode: 0o600 });
+			symlinkSync(outsideAdmit, admitFile);
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+			rmSync(admitFile, { force: true });
+
+			// 8. Re-record admission and prepare native confirmation grant via PreToolUseHookAsync
+			antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(existsSync(confirmFile)).toBe(true);
+			expect((lstatSync(confirmFile).mode & 0o777)).toBe(0o600);
+
+			// 9. Tampered confirmation grant (wrong mode 0644) refuses
+			const validConfirmBytes = readFileSync(confirmFile, "utf8");
+			chmodSync(confirmFile, 0o644);
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+
+			// 10. Truncated confirmation grant refuses
+			writeFileSync(confirmFile, "{\"incomplete\":", { mode: 0o600 });
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+
+			// 11. Planted symlink confirmation grant refuses
+			rmSync(confirmFile, { force: true });
+			const outsideConfirm = join(store, "outside-confirm.txt");
+			writeFileSync(outsideConfirm, validConfirmBytes, { mode: 0o600 });
+			symlinkSync(outsideConfirm, confirmFile);
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+			rmSync(confirmFile, { force: true });
+
+			// 12. Foreign-owned confirmation grant refuses
+			writeFileSync(confirmFile, validConfirmBytes, { mode: 0o600 });
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				await expect(consumeNativeConfirmation({
+					operation: "start_unattended_batch",
+					admissionId,
+					workspace: root,
+					taskId: TASK_AC2,
+				}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+			} finally {
+				spy.mockRestore();
+			}
+
+			// 13. Positive: valid confirmation resolves once through the real MCP server
+			antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+
+			const server = wire(root, store, {
+				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
+			});
+			await initialize(server);
+			server.send({ jsonrpc: "2.0", id: "ac2-positive-1", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+					"antigravity.google/conversation_id": conversationId,
+					"antigravity.google/workspace_paths": [root],
+					progressToken: `antigravity-hook:${stepIdx}`,
+				} } });
+			const reply = await server.next();
+			expect(reply.error).toBeUndefined();
+			const text = reply.result.content[0].text as string;
+			expect(JSON.parse(text).state).toBe("started");
+
+			// 14. Negative: replay of the same step refuses because grants are single-use
+			server.send({ jsonrpc: "2.0", id: "ac2-replay-2", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+					"antigravity.google/conversation_id": conversationId,
+					"antigravity.google/workspace_paths": [root],
+					progressToken: `antigravity-hook:${stepIdx}`,
+				} } });
+			const replayReply = await server.next();
+			expect(replayReply.error).toBeDefined();
+			expect(replayReply.error.data?.reason_code).toBe("run_entry_required");
 			server.input.end();
 		}, 60_000);
 	});

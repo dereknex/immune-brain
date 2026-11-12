@@ -2,11 +2,21 @@ import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
-import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+	appendPrivate,
+	cacheDir,
+	dropPrivate,
+	ensurePrivateDir,
+	ownedByUs,
+	readPrivate,
+	sessionHash,
+	writePrivate,
+} from "../plugins/immune-brain/runtime/host-core/private_file";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -2598,6 +2608,323 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 	} as unknown as AssuranceCoordinatorPorts;
 	return { ports, applied };
 }
+
+// Spec docs/specs/tri-host-capability-alignment.spec.md S2 AC1 (D3; BR-REQ-2):
+// shared private helpers accept an owned 0700 directory and regular owned 0600
+// files and reject planted symlinks, foreign-owned files, non-regular files and
+// wrong-mode files without ordinary-read fallback.
+describe("shared private file helpers (D3; S2 AC1)", () => {
+	function scratchRoot(): string {
+		return mkdtempSync(join(tmpdir(), "shared-private-file-"));
+	}
+
+	test("ensurePrivateDir: creates owned 0700 directory and accepts existing", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "sub-dir");
+			expect(ensurePrivateDir(target)).toBe(true);
+			const stat = lstatSync(target);
+			expect(stat.isDirectory()).toBe(true);
+			expect((stat.mode & 0o777)).toBe(0o700);
+			expect(ownedByUs(stat)).toBe(true);
+			// Idempotent: accepts existing
+			expect(ensurePrivateDir(target)).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects directory with wrong mode (0755, 0777)", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "mode-dir");
+			mkdirSync(target, 0o755);
+			chmodSync(target, 0o755);
+			expect(ensurePrivateDir(target)).toBe(false);
+			chmodSync(target, 0o777);
+			expect(ensurePrivateDir(target)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects planted symlink directory", () => {
+		const root = scratchRoot();
+		const outside = scratchRoot();
+		try {
+			chmodSync(outside, 0o700);
+			const link = join(root, "sym-dir");
+			symlinkSync(outside, link);
+			expect(ensurePrivateDir(link)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects foreign-owned directory", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "foreign-dir");
+			mkdirSync(target, 0o700);
+			chmodSync(target, 0o700);
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(ensurePrivateDir(target)).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects a regular file at the directory path", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "file-not-dir");
+			writeFileSync(target, "not a dir", { mode: 0o700 });
+			chmodSync(target, 0o700);
+			expect(ensurePrivateDir(target)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: positive round-trip and overwrite with readPrivate", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			const file = join(dir, "grant.json");
+			expect(writePrivate(file, dir, JSON.stringify({ grant: "first", n: 1 }))).toBe(true);
+			const stat = lstatSync(file);
+			expect(stat.isFile()).toBe(true);
+			expect((stat.mode & 0o777)).toBe(0o600);
+			expect(readPrivate(file)).toBe(JSON.stringify({ grant: "first", n: 1 }));
+
+			// Overwriting existing owned 0600 file succeeds
+			expect(writePrivate(file, dir, JSON.stringify({ grant: "second" }))).toBe(true);
+			expect(readPrivate(file)).toBe(JSON.stringify({ grant: "second" }));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects writing when directory fails ensurePrivateDir", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "bad-dir");
+			mkdirSync(dir, 0o755);
+			chmodSync(dir, 0o755);
+			const file = join(dir, "grant.json");
+			expect(writePrivate(file, dir, "content")).toBe(false);
+			expect(existsSync(file)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects planted symlink file and preserves target", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const outsideTarget = join(root, "innocent.txt");
+			writeFileSync(outsideTarget, "original-content", { mode: 0o600 });
+			const link = join(dir, "sym-grant.json");
+			symlinkSync(outsideTarget, link);
+
+			expect(writePrivate(link, dir, "malicious-write")).toBe(false);
+			// Target must be completely untouched
+			expect(readFileSync(outsideTarget, "utf8")).toBe("original-content");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects file with wrong mode (0644, 0666, 0700) and preserves content", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			for (const mode of [0o644, 0o666, 0o700]) {
+				const file = join(dir, `mode-${mode.toString(8)}.json`);
+				writeFileSync(file, "initial-bytes");
+				chmodSync(file, mode);
+				expect(writePrivate(file, dir, "overwritten")).toBe(false);
+				expect(readFileSync(file, "utf8")).toBe("initial-bytes");
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects foreign-owned file", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const file = join(dir, "foreign.json");
+			expect(writePrivate(file, dir, "first")).toBe(true);
+
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(writePrivate(file, dir, "foreign-update")).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects non-regular file (directory and FIFO)", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			// Subdirectory at the file path
+			const subDir = join(dir, "file-is-dir");
+			mkdirSync(subDir, 0o700);
+			chmodSync(subDir, 0o700);
+			expect(writePrivate(subDir, dir, "data")).toBe(false);
+
+			// FIFO
+			const fifo = join(dir, "file.fifo");
+			try {
+				execFileSync("mkfifo", [fifo]);
+				chmodSync(fifo, 0o600);
+				expect(writePrivate(fifo, dir, "data")).toBe(false);
+			} catch {}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("appendPrivate: positive round-trip and negative attacks", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			const file = join(dir, "log.jsonl");
+			expect(appendPrivate(file, dir, "line1\n")).toBe(true);
+			expect(appendPrivate(file, dir, "line2\n")).toBe(true);
+			expect(readPrivate(file)).toBe("line1\nline2\n");
+
+			// Rejects planted symlink
+			const target = join(root, "target.txt");
+			writeFileSync(target, "safe", { mode: 0o600 });
+			const link = join(dir, "sym-log.jsonl");
+			symlinkSync(target, link);
+			expect(appendPrivate(link, dir, "attack\n")).toBe(false);
+			expect(readFileSync(target, "utf8")).toBe("safe");
+
+			// Rejects wrong mode
+			const wrongMode = join(dir, "wrong-mode.jsonl");
+			writeFileSync(wrongMode, "existing\n");
+			chmodSync(wrongMode, 0o644);
+			expect(appendPrivate(wrongMode, dir, "extra\n")).toBe(false);
+			expect(readFileSync(wrongMode, "utf8")).toBe("existing\n");
+
+			// Rejects foreign-owned
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(appendPrivate(file, dir, "foreign\n")).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("readPrivate: positive and rejects attacks without fallback ordinary read", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const file = join(dir, "good.txt");
+			writeFileSync(file, "hello-world", { mode: 0o600 });
+			chmodSync(file, 0o600);
+			expect(readPrivate(file)).toBe("hello-world");
+
+			// Returns undefined on nonexistent file
+			expect(readPrivate(join(dir, "absent.txt"))).toBeUndefined();
+
+			// Rejects planted symlink (never falls back to ordinary readFileSync)
+			const outside = join(root, "outside.txt");
+			writeFileSync(outside, "secret-data");
+			const link = join(dir, "planted-link.txt");
+			symlinkSync(outside, link);
+			expect(readPrivate(link)).toBeUndefined();
+
+			// Rejects wrong mode files
+			for (const mode of [0o644, 0o666, 0o700, 0o777]) {
+				const wrongFile = join(dir, `mode-${mode.toString(8)}.txt`);
+				writeFileSync(wrongFile, "secret", { mode });
+				chmodSync(wrongFile, mode);
+				expect(readPrivate(wrongFile)).toBeUndefined();
+			}
+
+			// Rejects foreign-owned file
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(readPrivate(file)).toBeUndefined();
+			} finally {
+				spy.mockRestore();
+			}
+
+			// Rejects maxBytes overflow
+			expect(readPrivate(file, 5)).toBeUndefined();
+
+			// Rejects non-regular file (directory)
+			const subDir = join(dir, "subdir");
+			mkdirSync(subDir, 0o700);
+			expect(readPrivate(subDir)).toBeUndefined();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("dropPrivate: removes owned regular file but preserves symlinks and directories", () => {
+		const root = scratchRoot();
+		try {
+			const file = join(root, "remove-me.txt");
+			writeFileSync(file, "temp", { mode: 0o600 });
+			chmodSync(file, 0o600);
+			dropPrivate(file);
+			expect(existsSync(file)).toBe(false);
+
+			// Planted symlink is preserved, target is preserved
+			const target = join(root, "target-keep.txt");
+			writeFileSync(target, "keep");
+			const link = join(root, "sym-link.txt");
+			symlinkSync(target, link);
+			dropPrivate(link);
+			expect(existsSync(link)).toBe(true);
+			expect(existsSync(target)).toBe(true);
+
+			// Directory is preserved
+			const subDir = join(root, "keep-dir");
+			mkdirSync(subDir, 0o700);
+			dropPrivate(subDir);
+			expect(existsSync(subDir)).toBe(true);
+
+			// Foreign-owned file is preserved
+			const foreignFile = join(root, "foreign-keep.txt");
+			writeFileSync(foreignFile, "foreign", { mode: 0o600 });
+			chmodSync(foreignFile, 0o600);
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				dropPrivate(foreignFile);
+			} finally {
+				spy.mockRestore();
+			}
+			expect(existsSync(foreignFile)).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 
 // Spec docs/specs/host-neutral-adapter-core.spec.md S1 AC3 (D3): one event log
 // implementation, constructed by each adapter over its own cache directory.

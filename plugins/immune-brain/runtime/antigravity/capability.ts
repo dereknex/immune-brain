@@ -80,7 +80,7 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 		P7: {
 			port: "P7",
 			level: "conformance-only",
-			evidence: "Conformance-tested private directory storage; mode, ownership and O_NOFOLLOW security protections pending S2 (D3)",
+			evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8",
 		},
 		P8: {
 			port: "P8",

@@ -11,7 +11,7 @@
 // otherwise leaves an admission carrying that token, which the tool handler
 // consumes by tool-use id. A model Skill call for
 // `draw-up` or `clarify` is never denied and changes no entry state.
-import { lstatSync, realpathSync, rmSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ import {
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
-import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "../host-core/private_file";
+import { appendPrivate, cacheDir, dropPrivate, ensurePrivateDir, readPrivate, sessionHash } from "../host-core/private_file";
 import { CLAUDE_CACHE_DIR } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -138,14 +138,6 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir(), read: ty
 	let text: string | undefined;
 	try { text = read(path); } catch { return null; }
 	return text === undefined ? null : reducePhaseEntryLog(text);
-}
-
-/** Removes one of our private files. Never follows a link or touches another owner's file. */
-function dropPrivate(path: string): void {
-	try {
-		const stat = lstatSync(path);
-		if (ownedByUs(stat) && stat.isFile()) rmSync(path, { force: true });
-	} catch { /* already gone, or not ours to remove */ }
 }
 
 /**

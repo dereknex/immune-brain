@@ -20615,7 +20615,7 @@ function runMcpEntry(profile, entrySuffixes) {
 }
 
 // plugins/immune-brain/runtime/host-core/run_continuation_session.ts
-import { existsSync as existsSync16, lstatSync as lstatSync18, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync9 } from "node:fs";
+import { existsSync as existsSync16, lstatSync as lstatSync18, realpathSync as realpathSync19, renameSync as renameSync6, rmSync as rmSync10 } from "node:fs";
 init_coordinator();
 init_storage();
 init_batch_state();
@@ -20726,7 +20726,7 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
 import { createHash as createHash25 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync17, mkdirSync as mkdirSync11, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync11, openSync as openSync7, readSync, rmSync as rmSync9, writeSync } from "node:fs";
 import { join as join27 } from "node:path";
 function sessionHash(sessionId) {
   return createHash25("sha256").update(sessionId).digest("hex");
@@ -20780,6 +20780,35 @@ function appendPrivate(path, dir, line) {
   } finally {
     closeSync7(fd);
   }
+}
+function writePrivate(path, dir, content) {
+  if (!ensurePrivateDir(dir))
+    return false;
+  const flags = constants8.O_WRONLY | constants8.O_CREAT | constants8.O_NOFOLLOW | constants8.O_NONBLOCK;
+  let fd;
+  try {
+    fd = openSync7(path, flags, 384);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return false;
+    ftruncateSync(fd, 0);
+    return writeSync(fd, content, 0, "utf8") === Buffer.byteLength(content);
+  } catch {
+    return false;
+  } finally {
+    closeSync7(fd);
+  }
+}
+function dropPrivate(path) {
+  try {
+    const stat = lstatSync17(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync9(path, { force: true });
+  } catch {}
 }
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
@@ -20844,7 +20873,7 @@ function decideAutomatedStop(taskId, projection) {
 }
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync19, readdirSync as readdirSync9, rmSync as rmSync10 } from "node:fs";
+import { lstatSync as lstatSync19, readdirSync as readdirSync9, rmSync as rmSync11 } from "node:fs";
 import { dirname as dirname15, join as join29 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 class MemoryHookEventLog {
@@ -20929,7 +20958,7 @@ class FileHookEventLog {
       const stat = lstatSync19(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
-      rmSync10(path, { force: true });
+      rmSync11(path, { force: true });
     } catch {}
   }
 }
@@ -21178,7 +21207,7 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync20, lstatSync as lstatSync20, readdirSync as readdirSync10, readFileSync as readFileSync25, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync20, lstatSync as lstatSync20, readdirSync as readdirSync10, realpathSync as realpathSync21 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
 import { join as join35 } from "node:path";
@@ -21924,7 +21953,7 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync20, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync20, rmSync as rmSync12, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir7 } from "node:os";
 import { delimiter as delimiter5, dirname as dirname16, join as join33, resolve as resolve16 } from "node:path";
@@ -22154,7 +22183,7 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
       return;
     }
     this.reservations.delete(reservation.id);
-    rmSync11(owned.directory, { recursive: true, force: true });
+    rmSync12(owned.directory, { recursive: true, force: true });
   }
 }
 
@@ -23333,7 +23362,7 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
     P7: {
       port: "P7",
       level: "conformance-only",
-      evidence: "Conformance-tested private directory storage; mode, ownership and O_NOFOLLOW security protections pending S2 (D3)"
+      evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8"
     },
     P8: {
       port: "P8",
@@ -23601,11 +23630,6 @@ function parseAdmissionId(admissionId) {
 function confirmationPath(conversation, admissionId, root) {
   return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
-function dropPrivate(path) {
-  try {
-    rmSync12(path, { force: true });
-  } catch {}
-}
 function dropConversationConfirmations(conversationId, root) {
   if (!conversationId)
     return;
@@ -23646,24 +23670,23 @@ function readPhaseEntryState(sessionId, root = tmpdir8()) {
   }
   if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
     return null;
+  let text;
   try {
-    const text = readFileSync25(path, "utf8");
-    return reducePhaseEntryLog(text);
+    text = readPrivate(path);
   } catch {
     return null;
   }
+  return text === undefined ? null : reducePhaseEntryLog(text);
 }
 function appendPhaseEntry(sessionId, line, root) {
   const path = entryLogPath(sessionId, root);
-  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+  let recorded = false;
   try {
-    writeFileSync14(path, line + `
-`, { flag: "a", mode: 384 });
-    return true;
-  } catch {
+    recorded = appendPrivate(path, cacheDir(root, ANTIGRAVITY_CACHE_DIR), line);
+  } catch {}
+  if (!recorded)
     dropPrivate(path);
-    return false;
-  }
+  return recorded;
 }
 function dropPhaseEntryLog(sessionId, root = tmpdir8()) {
   if (sessionId)
@@ -23690,10 +23713,19 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   return appendPhaseEntry(conversationId, line, storeRoot);
 }
 function consumePhaseAdmission(toolCallId, operation, root = tmpdir8()) {
+  if (!toolCallId || !ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
+    return null;
   const path = admissionPath(toolCallId, root);
+  let text;
   try {
-    const text = readFileSync25(path, "utf8");
-    dropPrivate(path);
+    text = readPrivate(path);
+  } catch {
+    return null;
+  }
+  if (text === undefined)
+    return null;
+  dropPrivate(path);
+  try {
     const parsed = JSON.parse(text);
     if (parsed.operation !== operation)
       return null;
@@ -23725,8 +23757,13 @@ function writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, i
     ...choices.reworkChoice ? { rework_choice: choices.reworkChoice } : {},
     ...choices.verifierChoice ? { verifier_choice: choices.verifierChoice } : {}
   };
-  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-  writeFileSync14(confirmationPath(conversation, admissionId, root), JSON.stringify(grant), { mode: 384 });
+  const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+  const path = confirmationPath(conversation, admissionId, root);
+  const written = writePrivate(path, dir, JSON.stringify(grant));
+  if (!written) {
+    dropPrivate(path);
+    return null;
+  }
   return requestId;
 }
 async function consumeNativeConfirmation(input, root = tmpdir8()) {
@@ -23737,14 +23774,23 @@ async function consumeNativeConfirmation(input, root = tmpdir8()) {
   if (!parsedId || !input.admissionId) {
     throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing (step correlation unavailable)");
   }
+  if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) {
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
+  }
   const path = confirmationPath(parsedId.conversation, input.admissionId, root);
+  let raw;
+  try {
+    raw = readPrivate(path);
+  } catch {}
+  if (raw === undefined) {
+    dropPrivate(path);
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
+  }
+  dropPrivate(path);
   let grant;
   try {
-    const raw = readFileSync25(path, "utf8");
-    dropPrivate(path);
     grant = JSON.parse(raw);
   } catch {
-    dropPrivate(path);
     throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
   }
   if (grant.conversation !== parsedId.conversation || grant.step_idx !== parsedId.stepIdx || grant.operation !== input.operation || typeof grant.request_id !== "string" || !grant.request_id) {
@@ -23825,8 +23871,16 @@ function evaluatePreToolUseSync(payload, locations = {}) {
       workspace: state?.workspace,
       conversation: payload.conversationId
     });
-    ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-    writeFileSync14(admissionPath(admissionId, root), admitLine, { mode: 384 });
+    const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+    const path = admissionPath(admissionId, root);
+    const written = writePrivate(path, dir, admitLine);
+    if (!written) {
+      dropPrivate(path);
+      return {
+        done: true,
+        result: { decision: "deny", reason: `run_entry_required: the admission for this ${call.operation} call could not be recorded securely` }
+      };
+    }
     return { done: false, call, state, root, cwd, stepIdx: payload.stepIdx, admissionId };
   }
   const taskId = typeof call.opArgs.task_id === "string" ? call.opArgs.task_id : "";
@@ -23897,7 +23951,9 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
+  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
+    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+  }
   return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
 async function prepareRetireConfirmation(conversationId, sync) {
@@ -23928,7 +23984,9 @@ async function prepareRetireConfirmation(conversationId, sync) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
+  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
+    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+  }
   return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
 }
 async function prepareTaskAuthorityConfirmation(conversationId, sync) {
@@ -23989,10 +24047,12 @@ ${reworkExitLines(confirmInput.reworkExits).join(`
     }
     reworkChoice = parsed;
   }
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
+  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
     verifierChoice,
     reworkChoice
-  });
+  })) {
+    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+  }
   return {
     decision: "force_ask",
     reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice })

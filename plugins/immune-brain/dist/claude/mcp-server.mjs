@@ -20789,13 +20789,13 @@ var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
 });
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync9, rmSync as rmSync9 } from "node:fs";
+import { lstatSync as lstatSync18, readdirSync as readdirSync9, rmSync as rmSync10 } from "node:fs";
 import { dirname as dirname15, join as join28 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
 import { createHash as createHash24 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync17, mkdirSync as mkdirSync11, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync11, openSync as openSync7, readSync, rmSync as rmSync9, writeSync } from "node:fs";
 import { join as join27 } from "node:path";
 function sessionHash(sessionId) {
   return createHash24("sha256").update(sessionId).digest("hex");
@@ -20849,6 +20849,13 @@ function appendPrivate(path, dir, line) {
   } finally {
     closeSync7(fd);
   }
+}
+function dropPrivate(path) {
+  try {
+    const stat = lstatSync17(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync9(path, { force: true });
+  } catch {}
 }
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
@@ -20954,7 +20961,7 @@ class FileHookEventLog {
       const stat = lstatSync18(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
-      rmSync9(path, { force: true });
+      rmSync10(path, { force: true });
     } catch {}
   }
 }
@@ -21468,7 +21475,7 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync19, realpathSync as realpathSync20, rmSync as rmSync10 } from "node:fs";
+import { lstatSync as lstatSync19, realpathSync as realpathSync20 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
 import { join as join31 } from "node:path";
@@ -21933,13 +21940,6 @@ function readPhaseEntryState(sessionId, root = tmpdir7(), read = readPrivate) {
     return null;
   }
   return text === undefined ? null : reducePhaseEntryLog(text);
-}
-function dropPrivate(path) {
-  try {
-    const stat = lstatSync19(path);
-    if (ownedByUs(stat) && stat.isFile())
-      rmSync10(path, { force: true });
-  } catch {}
 }
 function appendPhaseEntry(sessionId, line, root, locations) {
   const path = entryLogPath(sessionId, root);

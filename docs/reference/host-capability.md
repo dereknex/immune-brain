@@ -83,7 +83,7 @@ _Spawning isolated Lane Executor processes in child worktrees_
 _Tamper-resistant storage for authority correlation and grant state_
 
 - **Claude Code** (`certified`): Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks
-- **Antigravity** (`conformance-only`): Conformance-tested private directory storage; mode, ownership and O_NOFOLLOW security protections pending S2 (D3)
+- **Antigravity** (`conformance-only`): Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8
 - **Pi** (`certified`): Native in-process Extension API state with no filesystem trust boundary (D1)
 
 ### P8 — active-task/model-entry Host integration
