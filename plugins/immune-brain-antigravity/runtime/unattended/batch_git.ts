@@ -1071,19 +1071,36 @@ export type NativeParentRefusal = { state: "rejected" | "cancelled" | "blocked";
 /** Resolves null once the literal user accepted exactly these effects, otherwise the Host's refusal envelope. */
 export type NativeParentGate = (effects: NativeParentEffects) => Promise<NativeParentRefusal | null>;
 
-export async function advanceNativeParent(root: string, initiativeSlug: string, commands?: string[], readInitiative?: InitiativeObservationReader,
-	tracker?: import("./batch_runner").BatchTrackerPort, gate?: NativeParentGate) {
-	let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
-	if (!facts) return null;
+type NativeParentFacts = NonNullable<Awaited<ReturnType<typeof observeNativeParent>>>;
+
+/**
+ * The one decision both the real Parent entry and a Hook-side confirmation
+ * preview share: the commands the Parent would run, and whether they need a
+ * fresh native gate (`gate` is null when recorded commands already authorize
+ * their replay). `run` is false when nothing would execute.
+ */
+export function nativeParentFinalDecision(facts: NativeParentFacts, commands?: string[]):
+	{ run: false } | { run: true; commands: string[]; recorded: boolean; gate: NativeParentEffects | null } {
 	const recordedCommands = facts.native?.final_verification.results.map(result => result.command);
 	if (commands && recordedCommands && JSON.stringify(commands) !== JSON.stringify(recordedCommands))
 		throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
 	const finalCommands = recordedCommands ?? commands;
-	if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length) {
+	if (!(["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length)) return { run: false };
+	return { run: true, commands: finalCommands, recorded: Boolean(recordedCommands), gate: recordedCommands ? null : {
+		initiative_slug: facts.initiative_slug, plan_digest: facts.plan_digest,
+		children: facts.parent.tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id })), final_commands: finalCommands } };
+}
+
+export async function advanceNativeParent(root: string, initiativeSlug: string, commands?: string[], readInitiative?: InitiativeObservationReader,
+	tracker?: import("./batch_runner").BatchTrackerPort, gate?: NativeParentGate) {
+	let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
+	if (!facts) return null;
+	const decision = nativeParentFinalDecision(facts, commands);
+	if (decision.run) {
+		const finalCommands = decision.commands;
 		// New commands need confirmation; recorded commands authorize their replay.
-		if (!recordedCommands) {
-			const refused: NativeParentRefusal | null = gate ? await gate({ initiative_slug: initiativeSlug, plan_digest: facts.plan_digest,
-				children: facts.parent.tasks.map(task => ({ task_id: task.task_id, slice_id: task.slice_id })), final_commands: finalCommands }) :
+		if (decision.gate) {
+			const refused: NativeParentRefusal | null = gate ? await gate(decision.gate) :
 				{ state: "rejected", reason: "Parent final verification requires native confirmation before execution",
 					recovery_action: "retry through a fresh native gate in the current Host" };
 			if (refused) return refused;
