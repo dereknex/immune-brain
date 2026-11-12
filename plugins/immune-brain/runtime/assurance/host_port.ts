@@ -20,16 +20,9 @@ export interface ReviewRequest {
 	/** The task's working directory; set by the coordinator for a Host that writes reviewer files. */
 	root?: string;
 	/**
-	 * The complete Review prompt: internal role contract, static review rules and
-	 * the per-dispatch facts. Written into the packet by a Host whose reviewer
-	 * agent carries no instructions of its own.
-	 */
-	prompt: string;
-	/**
-	 * The per-dispatch facts alone, a strict suffix of `prompt`. A Host whose
-	 * reviewer definition already carries the role contract and the static rules
-	 * writes only this into the packet, so static instructions stay generated from one
-	 * source instead of being sent twice.
+	 * The per-dispatch facts alone: internal role contract references, the snapshot,
+	 * the evidence file and the turn budget. Static instructions stay generated from
+	 * one source in the role definition instead of being sent a second time.
 	 */
 	snapshotPrompt: string;
 	evidencePath: string;

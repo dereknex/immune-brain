@@ -588,8 +588,8 @@ describe("post-settlement tracker projection", () => {
 		const f = fixture("tracker-throw"), taskId = `${f.slug}-c1`;
 		const runtime = new ClaudeRuntime({ cwd: f.root, env: ENV, interactive: true, permissionMode: "manual", requestConfirmation: async ({ operation }) => ({ decision: "accept", requestId: `nested-${operation}` }) });
 		const meta = (toolCallId: string): ToolMeta => ({ taskId, sessionId: "s", toolCallId, requiresUserInteraction: true, interactive: true, permissionMode: "manual" });
-		await enrollTaskForTest(f.root, taskId); const realStatus = runtime.status.bind(runtime); let forced = 0;
-		runtime.status = (async id => { if (readTaskTombstone(f.root, id)) { forced++; throw new Error("terminal-tracker projection failed"); } return realStatus(id); }) as ClaudeRuntime["status"];
+		await enrollTaskForTest(f.root, taskId); const realStatus = runtime.runtime.status.bind(runtime.runtime); let forced = 0;
+		runtime.runtime.status = (async id => { if (readTaskTombstone(f.root, id)) { forced++; throw new Error("terminal-tracker projection failed"); } return realStatus(id); }) as ClaudeRuntime["status"];
 		const result = await runtime.authorize(taskId, "stop", meta("stop")); expect(forced).toBe(1); expect(result.record.lifecycle).toBe("stopped");
 		expect((result as { tracker?: unknown }).tracker).toMatchObject({ operation: "mark-terminal", status: "retryable_failure" }); expect(readTaskTombstone(f.root, taskId)?.terminal_lifecycle).toBe("stopped"); expect(readTaskRecordRaw(f.root, taskId).record).toBeNull();
 	});

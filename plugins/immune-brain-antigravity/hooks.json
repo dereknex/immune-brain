@@ -8,18 +8,19 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "edit_file|write_file|invoke_subagent|Subagent|mcp__.*immune-brain.*__.*",
+        "matcher": "edit_file|write_file|invoke_subagent|Subagent|call_mcp_tool|mcp__.*immune-brain.*__.*",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"./dist/antigravity/mcp-server.mjs\" --hook"
+            "command": "node \"./dist/antigravity/mcp-server.mjs\" --hook",
+            "timeout": 120
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "invoke_subagent|Subagent",
+        "matcher": "invoke_subagent|Subagent|call_mcp_tool|mcp__.*immune-brain.*__.*",
         "hooks": [
           {
             "type": "command",

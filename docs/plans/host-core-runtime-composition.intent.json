@@ -1,0 +1,53 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-core-runtime-composition",
+  "owner": "user",
+  "goal": "Issue #414 slice S3 (Spec docs/specs/host-neutral-adapter-core.spec.md, D2, D7). The host-neutral body of ClaudeRuntime moves to plugins/immune-brain/runtime/host-core/runtime.ts as HostRuntime configured by a HostRuntimeProfile (host id, native confirmation reference, AssuranceHostPort and its observe, probe, lane relay factory); ClaudeRuntime and AntigravityRuntime each compose it and neither extends the other. NativeAuthorityError is defined once in host-core/interaction.ts. The host-to-host baseline drops the kernel_ports and interaction edges, leaving only antigravity/mcp_server -> claude/mcp_server. Behavior preserved; no user-visible change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S3 AC1 (BR-REQ-5; D2, D7). Done looks like: no adapter runtime extends another and the boundary baseline loses two edges. Seam: tests/runtime-layering-boundary.test.ts over the real sources. Positive: BASELINE has exactly one entry, 'plugins/immune-brain/runtime/antigravity/mcp_server.ts -> plugins/immune-brain/runtime/claude/mcp_server', and the observed edges equal it. Negative: a fixture edge outside the baseline is reported unexpected, and no file under plugins/immune-brain/runtime contains 'extends ClaudeRuntime'. Bound: a baseline entry with no observed import is reported stale.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -rn 'extends ClaudeRuntime' plugins/immune-brain/runtime && bun test tests/runtime-layering-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S3 AC2 (BR-REQ-5; D7). Done looks like: both runtimes are the same HostRuntime with different profiles. Seam: tests/dual-host-assurance-conformance.test.ts describe 'runtime composition', constructing ClaudeRuntime and AntigravityRuntime over isolated repositories with the same scripted task. Positive: driving each through enrollment, QA and review_ready yields equal Kernel projections apart from the Host identity, which is 'claude-code' and 'antigravity' respectively, each with its own native confirmation reference; an Antigravity verifier event passed to observeAntigravity reaches that runtime's ReviewHost. Negative: a native refusal raised by either runtime is an instance of the NativeAuthorityError exported by runtime/host-core/interaction.ts and keeps its error code. Bound: exactly one file under plugins/immune-brain/runtime declares class NativeAuthorityError, and it is runtime/host-core/interaction.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test \\\"$(grep -rl 'class NativeAuthorityError' plugins/immune-brain/runtime)\\\" = plugins/immune-brain/runtime/host-core/interaction.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'runtime composition'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec S3 AC3 (BR-REQ-5; D7). Done looks like: existing callers of ClaudeRuntime and AntigravityRuntime keep working with at most import changes. Seam: the existing runtime suites tests/claude-host-authority.test.ts, tests/antigravity-assurance-conformance.test.ts and tests/claude-batch-authority.test.ts. Positive: their enrollment, QA, Review and batch tests pass. Negative: their existing refusal tests (for example run_entry_required and probe refusals) still refuse with the same codes. Bound: the AntigravityRuntime host probe tests still observe the Antigravity probe, not the Claude one.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-host-authority.test.ts\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/claude-batch-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-core-runtime-composition.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/host-core-runtime-composition.intent.json",
+    "docs/specs/host-neutral-adapter-core.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/interaction.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/interaction.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/interaction.ts",
+    "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/interaction.ts",
+    "plugins/immune-brain/runtime/claude/kernel_ports.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/host-core/interaction.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-host-authority.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/runtime-layering-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

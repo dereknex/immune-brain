@@ -1,0 +1,47 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-tool-hook-and-mcp-correlation",
+  "owner": "user",
+  "goal": "Issue #469 (Spec docs/specs/antigravity-tool-hook-and-mcp-correlation.spec.md). Repair the complete Antigravity native tool chain: dispatch mixed tool/lastUserInput payloads to PreToolUse or PostToolUse before PreInvocation, observe invoke_subagent results, admit Immune-Brain lazy call_mcp_tool operations, replace Claude-only tool metadata with Antigravity conversation-scoped correlation, and preserve literal-user entry, workspace, native confirmation, single-use admission, and Claude compatibility. Keep Herdr process supervision unchanged.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (BR-REQ-1; D1). Done looks like: Antigravity native tools execute without a PreInvocation-shaped protojson response and subagent completion is observable. Seam: tests/antigravity-host-package.test.ts describe \"Antigravity hook dispatch and observation\", exercising the packaged bundle. Positive: PreToolUse with lastUserInput and write_file or call_mcp_tool returns {decision:\"allow\"}; PostToolUse with invoke_subagent, result, stepIdx, and lastUserInput returns {} and appends the existing event; Stop still wins over PreInvocation. Negative: a pure PreInvocation payload retains injectSteps output and an unrelated lazy ServerName receives ordinary allow without admission. Bound: the canonical matcher includes call_mcp_tool and no tool payload returns injectSteps.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-host-package.test.ts\",\n      \"-t\",\n      \"Antigravity hook dispatch and observation\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (BR-DEC-1; D3, D5). Done looks like: one admitted Antigravity batch operation reaches its authorized confirmation path with no Claude metadata and cannot be replayed or consumed by another conversation. Seam: tests/antigravity-assurance-conformance.test.ts describe \"Antigravity privileged MCP correlation\". Positive: after a literal-user drive and matching lazy PreToolUse, start_unattended_batch and retire_stale_batch with antigravity.google/conversation_id, workspace_paths, and progressToken whose numeric suffix equals hook stepIdx succeed once through their existing authority path even though stepIdx differs from JSON-RPC message.id; two sequential calls receive distinct step admissions. Negative: missing/empty or different conversation, missing/malformed or wrong-step progressToken, replay, and workspace mismatch refuse. Bound: an unrelated lazy call creates no admission, and the admitted conversation becomes the runtime Hook session rather than the transport connection ID.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"Antigravity privileged MCP correlation\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (BR-REQ-3; D6). Done looks like: every privileged Antigravity tool reaches its existing native-authority path using Host conversation metadata, not claudecode/toolUseId. Seam: tests/antigravity-assurance-conformance.test.ts describe \"Antigravity privileged native gates\". Positive: request_authorization, approve_breaking_intent_revision, and stop with valid interactive Antigravity conversation metadata reach elicitation without Claude metadata. Negative: missing conversation identity refuses before elicitation, and decline/cancel performs no protected mutation. Bound: these three operations neither create nor consume start/retire batch admission, and an actual batch start still requires AC2 admission.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"Antigravity privileged native gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (BR-OUT-1; D4, D7). Done looks like: generated packages are current and Claude/Pi behavior and Herdr supervision remain unchanged. Seam: focused tests in tests/claude-host-authority.test.ts, tests/antigravity-host-package.test.ts, and tests/runtime-layering-boundary.test.ts plus both existing build --check commands. Positive: Claude accepts its established exact claudecode/toolUseId correlation and both generated bundles match fresh builds. Negative: Claude still rejects a privileged call without claudecode/toolUseId. Bound: no new cross-adapter import appears, the existing cross-adapter baseline passes, and no Herdr or supervised-session file changes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/claude-host-authority.test.ts tests/antigravity-host-package.test.ts tests/runtime-layering-boundary.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-tool-hook-and-mcp-correlation.md",
+    "docs/plans/antigravity-tool-hook-and-mcp-correlation.intent.json",
+    "docs/specs/antigravity-tool-hook-and-mcp-correlation.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/hooks.json",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/antigravity-host-package.test.ts",
+    "tests/claude-host-authority.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

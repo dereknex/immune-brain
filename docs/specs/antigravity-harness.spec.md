@@ -14,7 +14,7 @@ The solution provides:
 1. A unified host identity (`"antigravity"`) across the Assurance Host Port, configuration resolvers, and unattended lane supervisors.
 2. An integrated native Antigravity plugin packaged within the existing repository structure, governed by root manifest versioning.
 3. Dual execution surface support:
-   - **Interactive Frontend (CLI & Desktop App)**: Native enrollment gate enforcement using `PreInvocation` and `PreToolUse` hooks (`force_ask`), read-only reviewer subagent dispatch using `define_subagent` (`EnableWriteTools: false`) and `invoke_subagent`, and session-bound run continuation driven by the `Stop` hook.
+   - **Interactive Frontend (CLI & Desktop App)**: Native enrollment gate enforcement using `PreInvocation` and `PreToolUse` hooks (`deny` for a gated call without a live drive entry, `force_ask` for the native confirmation of an admitted one), read-only reviewer subagent dispatch using `define_subagent` (`EnableWriteTools: false`) and `invoke_subagent`, and session-bound run continuation driven by the `Stop` hook.
    - **Headless Unattended Execution (`LaneSupervisor`)**: Background worker execution automatically routed to `agy --print --dangerously-skip-permissions` with explicit model and effort flags for isolated Git worktree lane children.
 4. Dual-mode status visualization: Terminal-friendly Markdown tables for MCP tool responses, coupled with native Markdown Artifacts written to the session artifact directory to illuminate the Antigravity 2.0 Auxiliary Pane.
 
@@ -56,14 +56,15 @@ The solution provides:
 
 ### 3. Native Enrollment Gate (ADR 0019 / ADR 0025)
 - **Token Capture**: `PreInvocation` monitors `lastUserInput`. When explicit `/drive` or `/immune-brain:drive` commands are observed, a session-bound and workspace-bound run entry token is recorded.
-- **Tool Interception**: `PreToolUse` intercepts calls to `enroll` and `start_unattended_batch`. If an unadmitted call is detected, the hook returns:
+- **Tool Interception**: `PreToolUse` intercepts calls to `start_unattended_batch` and `retire_stale_batch`. A call whose conversation holds no live run entry is refused outright, as on Claude Code, because the MCP server refuses it anyway and a confirmation could authorize nothing:
   ```json
   {
-    "decision": "force_ask",
-    "reason": "Enrollment requires literal user authorization: <task_id> (<summary>)"
+    "decision": "deny",
+    "reason": "run_entry_required: <operation> needs a literal-user drive entry in this session; recovery: ask the user to enter /drive ..."
   }
   ```
-- In interactive environments (App and CLI TUI), this forces the host to present its native permission gate. In headless print mode, unapproved calls fail closed.
+  An admitted call records a single-use admission under its conversation, step and operation, and the hook then returns `force_ask` with the prepared operation details (ADR 0004) so the host presents its native permission gate.
+- In interactive environments (App and CLI TUI), `force_ask` presents that gate. In headless print mode, unapproved calls fail closed.
 
 ### 4. Read-Only Reviewer Subagent Dispatch (ADR 0003 / 0004 / 0030)
 - On first review dispatch or session initialization, the adapter registers the reviewer role using the host's `define_subagent` facility:
@@ -107,7 +108,7 @@ The solution provides:
 
 ### Modules Tested
 - **Host Port Conformance**: Testing `AntigravityHostAdapter` across the complete task lifecycle (Enrollment -> QA -> Review -> Settlement).
-- **Gate Enforcement**: Proving that unadmitted `enroll` calls trigger `force_ask` and that pre-invocation tokens admit authorized calls.
+- **Gate Enforcement**: Proving that unadmitted `start_unattended_batch` calls are denied, and that pre-invocation tokens admit authorized calls, which then open `force_ask`.
 - **Reviewer Dispatch**: Verifying that `define_subagent` configures write-tool restrictions and that receipts match snapshot digests.
 - **Stop Hook Continuation**: Asserting that active tasks trigger loop continuation and settled tasks exit cleanly.
 - **Lane Supervisor**: Testing that `agy` process arguments and generation states conform to supervisor invariants.

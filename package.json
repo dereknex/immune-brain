@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "8.0.0",
+  "version": "8.1.3",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
@@ -94,6 +94,7 @@
     "plugins/immune-brain/runtime/session",
     "plugins/immune-brain/runtime/claude",
     "plugins/immune-brain/runtime/antigravity",
+    "plugins/immune-brain/runtime/host-core",
     "plugins/immune-brain/runtime/prompts",
     ".claude-plugin",
     "plugins/immune-brain/.claude-plugin",

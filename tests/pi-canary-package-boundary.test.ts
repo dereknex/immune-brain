@@ -149,7 +149,7 @@ describe("pi canary package boundary", () => {
 		expect([...entryCalls].sort()).toEqual(["runtime/unattended/batch_kernel_port.ts"]);
 		// Both Hosts' batch children reach the entry only through that port.
 		const sources = new Map(productionSources());
-		for (const host of ["imm-unattended-batch.ts", "runtime/claude/kernel_ports.ts"])
+		for (const host of ["imm-unattended-batch.ts", "runtime/host-core/runtime.ts"])
 			expect(sources.get(host)).toMatch(/\bcreateBatchKernelPort\s*\(/);
 		expect(importsEntry(sources.get("imm-unattended-batch.ts") ?? "")).toBe(false);
 		expect(sequencers).toEqual([]);

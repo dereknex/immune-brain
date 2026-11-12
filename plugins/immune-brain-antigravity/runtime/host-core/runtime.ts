@@ -1,0 +1,1472 @@
+// Host-neutral adapter runtime (Issue #414 slice S3, Spec
+// docs/specs/host-neutral-adapter-core.spec.md D7). One `HostRuntime` holds the
+// body the two Hosts used to share by inheritance; each adapter supplies a
+// `HostRuntimeProfile` and owns the instance.
+//
+// Interface: `HostRuntime`, `HostRuntimeOptions`, `HostRuntimeProfile`,
+// `ToolMeta`, `diffSnapshotOf`, `diffHashOf`, `settledKernelResult`,
+// `LANE_WAIT_MS`.
+// Invariants: every Host-specific fact arrives through the profile; this module
+// imports no adapter, and no adapter extends another.
+// Side Effects: through the coordinator, the Kernel store and the Lane supervisor.
+// Verification: `bun test tests/dual-host-assurance-conformance.test.ts -t 'runtime composition'`.
+
+import { stagePlanningArtifactTransition, type VerdictAuthority } from "../assurance/verdict_authority";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveConfig } from "../config/layered_config";
+import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
+import type { AssuranceHostPort } from "../assurance/host_port";
+
+/** The Lane supervisor's poll interval; shorter when the Host's tool timeout is. */
+export const LANE_WAIT_MS = 500;
+
+function laneWaitMs(env: NodeJS.ProcessEnv): number {
+	const limit = Number(env.MCP_TOOL_TIMEOUT);
+	return Number.isFinite(limit) && limit > 0 ? Math.min(LANE_WAIT_MS, Math.floor(limit / 2)) : LANE_WAIT_MS;
+}
+import {
+	AssuranceCoordinator,
+	type AssuranceCoordinatorPorts,
+	type AssuranceSubmitReviewResult,
+	type HostContext,
+} from "../assurance/coordinator";
+import {
+} from "../assurance/verification";
+import {
+	writeNativeReviewEvidence,
+} from "../assurance/review_evidence";
+import {
+	projectAssurance,
+	type AssuranceProjection,
+	type AssuranceProjectionResult,
+	type ReworkChoice,
+	type ReworkExitsReadiness,
+} from "../kernel/assurance_projection";
+import { type TaskFinding, type TaskRecord } from "../kernel/types";
+import { findingsDigestV2 } from "../kernel/reducer";
+import { readTaskRecordRaw, recoverKernelStoreFollowUps } from "../kernel/storage";
+import {
+	canonicalIntentHash,
+	classifyIntentRevision,
+	parseProjectTaskIntent,
+	readTaskIntent,
+	withNextScope,
+} from "../kernel/intent";
+import { capabilityActionFor, createCanaryApplication, type CanaryApplication } from "../kernel/canary_application";
+import {
+	createMutationAuthorityRegistry,
+	digestOfAction,
+	type CapabilityBindingV2,
+	type MutationAuthorityRegistry,
+} from "../kernel/authority_port";
+import { createEnrollmentAuthorityRegistry } from "../kernel/enrollment_authority";
+import { reconcileKernelAuthority, repairKernelAuthority } from "../kernel/storage";
+import { withSettleCommit } from "../assurance/workflow_autocommit";
+import { runDeterministicQa } from "../assurance/qa";
+import { taskDeliveryIdentity } from "../workspace_scope";
+import { batchReason } from "../unattended/batch_reasons";
+import { deriveAuthorizationOperation, reviewRetryNotice } from "../authorization_operation";
+import { currentReviewContractHash } from "../role_prompt_bridge";
+import { LITERAL_USER_ACTOR_ID, canonicalActorId } from "../kernel/actor_identity";
+import {
+	captureStagedIntent,
+	restoreStagedIntent as restoreStagedIntentShared,
+} from "../staged_intent";
+import { projectTaskStatus, projectTerminalTrackerState, TRACKER_PROJECTION_FAILURE } from "../assurance/coordinator";
+import { runGithubTrackerOperation } from "../github_issue_tracker";
+import { readTaskTombstone } from "../kernel/backend_claim";
+import {
+	authorizeBatch,
+	prepareBatchPreflight,
+	readConfirmedBatchTopology,
+	findResumableBatchSlugForTask,
+	findExistingActiveBatch,
+	findSettledBatchRecord,
+} from "../unattended/batch_preflight";
+import {
+	startBatch, completedParentReport, stopSingleTaskSupervisor,
+	type BatchRunnerKernelPort,
+	type BatchRunReport,
+	type BatchTrackerPort,
+} from "../unattended/batch_runner";
+import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
+import { createBatchKernelPort } from "../unattended/batch_kernel_port";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
+import { retireStaleBatch } from "../unattended/batch_disposition";
+import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
+import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../unattended/batch_state";
+import {
+	createBatchAuthorityRegistry,
+} from "../kernel/batch_authority";
+import {
+	type BatchRunnerGitPort,
+	advanceNativeParent,
+	integrateSettledCriticalSlices,
+	nativeParentFinalDecision,
+	observeNativeParent,
+	observeParentCompletion,
+} from "../unattended/batch_git";
+import type {
+	InitiativeObservationReader,
+} from "../unattended/types";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
+import {
+	enrollmentNonce,
+	entryTokenRequestId,
+	evaluateNativeGate,
+	isPrivilegedOperation,
+	NativeAuthorityError,
+	type ConfirmationRefInput,
+	type NativeConfirmationInput,
+	type NativeConfirmationPort,
+	type NativeConfirmationResult,
+	type NativeDecision,
+	type PrivilegedOperation,
+} from "./interaction";
+import { CliReviewHost } from "../assurance/cli_review";
+
+/** The Host's native permission mode; each adapter's capability module validates its own accepted set. */
+export type PermissionMode = "manual" | "acceptEdits" | "auto" | "bypassPermissions" | "dontAsk";
+
+/** What a Host probe reports; the shared runtime reads only the refusal reason. */
+export type HostProbe = { ok: true } | { ok: false; reason: string };
+
+export function diffSnapshotOf(root: string, record: TaskRecord): {
+	diff_hash: string;
+	changed_paths: readonly string[];
+} {
+	return taskDeliveryIdentity(root, record);
+}
+
+export function diffHashOf(root: string, record: TaskRecord): string {
+	return diffSnapshotOf(root, record).diff_hash;
+}
+
+/**
+ * A revision is prepared, checked and bound against the scope it asks for, so
+ * the delivery identity of that operation reads the next scope (ADR 0021, D6).
+ */
+function nextScopeDiffProvider(nextScope: readonly string[]): typeof diffSnapshotOf {
+	return (root, record) => diffSnapshotOf(root, withNextScope(record, nextScope));
+}
+
+/**
+ * Read the TaskIntent through the TaskRecord's `intent_ref.path`.
+ *
+ * `freeze_artifacts` binds the sidecar in place. Every post-freeze read — QA
+ * settlement included — must follow the record instead of guessing a default
+ * path. Historical archived sidecars remain readable. The Pi adapter resolves
+ * the same way in its own runtime stub; both Hosts must stay in step.
+ */
+function readTaskIntentForRecord(root: string, taskId: string) {
+	// Converge committed follow-ups first, then follow the record.
+	recoverKernelStoreFollowUps(root, taskId);
+	const record = readTaskRecordRaw(root, taskId).record;
+	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
+}
+
+/**
+ * Ordinary Kernel mutation shared by all Hosts; only Intent recovery is injected.
+ * A content-changing revision writes the sidecar before the Kernel's drift check
+ * runs, and an unstaged write is itself scoped drift that deadlocks the
+ * revision. So the written sidecar is staged (worktree == index) and, if the
+ * revision fails, the exact prior bytes and index entry are restored, verified.
+ */
+export async function executeOrdinaryKernelOperation(input: {
+	root: string;
+	taskId: string;
+	operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string };
+	app: CanaryApplication;
+	readIntent?: (root: string, taskId: string) => ReturnType<typeof readTaskIntent>;
+}) {
+	const { root, taskId, app } = input;
+	const operation = input.operation.op === "revise_intent"
+		? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) }
+		: input.operation;
+	const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
+	const nextScope = operation.op === "revise_intent"
+		? (operation.next_intent as { scope_hint: string[] }).scope_hint
+		: undefined;
+	const sidecar = join(root, priorIntent.intent_ref.path);
+	const priorBytes = operation.op === "revise_intent" ? readFileSync(sidecar) : null;
+	const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
+	try {
+		if (priorBytes) {
+			writeFileSync(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}\n`);
+			execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+		}
+		const result = await app.execute({
+			root,
+			task_id: taskId,
+			operation: operation as never,
+			reviewContractHash: currentReviewContractHash(),
+			prior_intent_token: priorIntent.token,
+			diffProvider: nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf,
+			now: new Date().toISOString(),
+		});
+		if (operation.op === "freeze_artifacts" || operation.op === "stop") stagePlanningArtifactTransition(root, result.record);
+		return result;
+	} catch (error) {
+		if (priorStaged) {
+			const current = await readTaskRecordRaw(root, taskId);
+			if (current.record?.intent_snapshot.revision === priorIntent.intent.revision)
+				restoreStagedIntentShared(root, priorStaged);
+		}
+		throw error;
+	}
+}
+
+import {
+	extractVerdictJson,
+	submitMediatedReview,
+} from "../assurance/review_mediation";
+export { extractVerdictJson };
+
+export async function submitHostReview(
+	host: { inspectReviewForTask(taskId: string): any },
+	coordinator: AssuranceCoordinator,
+	ctx: HostContext,
+	taskId: string,
+	verdictInput: unknown,
+): Promise<AssuranceSubmitReviewResult> {
+	// ADR 0017: an omitted verdict applies the hook-observed reviewer receipt.
+	return submitMediatedReview(coordinator, ctx, taskId, verdictInput, () => host.inspectReviewForTask(taskId));
+}
+
+/**
+ * Whether a Kernel result settled its task: the coordinator's own terminal
+ * outcomes, or the lifecycle a privileged mutation committed. Only such a result
+ * can have produced the claimless terminal projection the GitHub tracker step
+ * needs, and it is exported so the gate's terminal shapes are asserted directly
+ * instead of by settling a task against a live tracker.
+ */
+export function settledKernelResult(result: object): boolean {
+	const state = (result as { state?: unknown }).state;
+	if (state === "completed" || state === "stopped") return true;
+	const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
+	return lifecycle === "done" || lifecycle === "stopped";
+}
+
+/** `extra` arrives as `Record<string, unknown>`; only a real string is a reason. */
+function stopReason(value: unknown): string {
+	return typeof value === "string" && value.length > 0 ? value : "user stop";
+}
+
+function assertProjectionBinding(before: AssuranceProjectionResult, after: AssuranceProjectionResult, allowDiffChange = false): void {
+	const fields: ReadonlyArray<keyof AssuranceProjection> = allowDiffChange
+		? ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash"]
+		: ["record_revision", "workspace_revision", "intent_revision", "intent_content_hash", "diff_hash"];
+	if (before.error || !before.claim || after.error || !after.claim || before.claim.task_id !== after.claim.task_id
+		|| fields.some((field) => before.projection[field] !== after.projection[field])) {
+		throw new Error("Task changed after native confirmation; authority aborted before capability issuance");
+	}
+}
+
+async function mintCapability(
+	registry: MutationAuthorityRegistry,
+	input: {
+		authority_kind: "review" | "qa" | "user";
+		task_id: string;
+		run_id?: string | null;
+		action_kind: string;
+		expected_record_hash: string;
+		intent_revision: number;
+		intent_content_hash: string;
+		diff_hash: string;
+		actor_id: string;
+		findings?: unknown[];
+		approval?: unknown;
+		next_intent?: unknown;
+		next_intent_ref?: unknown;
+		reason?: string;
+		rounds?: number;
+		review_contract_hash?: string;
+		finding_id?: string;
+		resolution?: string;
+		now: string;
+		confirmation_ref: string;
+	},
+) {
+	const action = capabilityActionFor({
+		op: input.action_kind,
+		task_id: input.task_id,
+		at: input.now,
+		actor_id: input.actor_id,
+		...(input.reason !== undefined ? { reason: input.reason } : {}),
+		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
+		...(input.review_contract_hash ? { review_contract_hash: input.review_contract_hash, intent_content_hash: input.intent_content_hash } : {}),
+		...(input.findings !== undefined ? { findings: input.findings } : {}),
+		...(input.approval !== undefined ? { approval: input.approval } : {}),
+		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
+		...(input.next_intent_ref !== undefined ? { next_intent_ref: input.next_intent_ref } : {}),
+		...(input.finding_id !== undefined ? { finding_id: input.finding_id } : {}),
+		...(input.resolution !== undefined ? { resolution: input.resolution } : {}),
+	});
+	const binding: CapabilityBindingV2 = {
+		authority_kind: input.authority_kind,
+		task_id: input.task_id,
+		...(input.run_id ? { run_id: input.run_id } : {}),
+		action_digest: digestOfAction(action),
+		expected_record_hash: input.expected_record_hash,
+		intent_revision: input.intent_revision,
+		intent_content_hash: input.intent_content_hash,
+		diff_hash: input.diff_hash,
+		actor_id: input.actor_id,
+		confirmation_ref: input.confirmation_ref,
+		findings_digest: input.action_kind === "request_rework"
+			? findingsDigestV2(input.findings as TaskFinding[])
+			: null,
+	};
+	return registry.issue(binding);
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+	if (signal?.aborted) throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+}
+
+/** Internal control flow for a read-only native-gate preview, never a user decision. */
+class ConfirmationPreviewSignal extends Error {
+	constructor(readonly input: NativeConfirmationInput) {
+		super("native confirmation preview");
+	}
+}
+
+/** Every Host-specific fact this runtime needs; each adapter's composition root supplies one. */
+export interface HostRuntimeProfile {
+	/** The Kernel host id of this adapter, and its default parent host. */
+	readonly hostId: ExecutorHost;
+	/** The adapter's AssuranceHostPort, built when the runtime needs its default. */
+	createHost(): AssuranceHostPort & { observe(event: any): void };
+	/** Records one raw Host event on that port. */
+	observe(host: AssuranceHostPort & { observe(event: any): void }, event: unknown): void;
+	/** The Host probe this composition root chose; the shared runtime never selects one. */
+	probeHost: (env: Record<string, string | undefined>, platform: NodeJS.Platform, hostVersion?: string) => HostProbe;
+	/** The Kernel-bound reference this Host records for one native confirmation. */
+	confirmationRef(input: ConfirmationRefInput): string;
+	/** Builds the runtime that answers a Lane decision at the Lane root. */
+	laneRuntime(options: HostRuntimeOptions): HostRuntime;
+	/** Whether this Host's foreground parent session owns the batch (Herdr lane tabs). */
+	selectedParent(toolCallId: string, root: string, slug: string): boolean;
+}
+
+export interface HostRuntimeOptions {
+	cwd: string;
+	env?: Record<string, string | undefined>;
+	parentHost?: ExecutorHost;
+	probeHost?: HostRuntimeProfile["probeHost"];
+	host?: AssuranceHostPort & {
+		observe(event: any): void;
+	};
+	/**
+	 * Overrides layered on top of the real production ports, never a
+	 * replacement for them. A whole synthetic ports object could previously be
+	 * substituted here, so a suite could pass while the object production
+	 * actually wires was never constructed once.
+	 */
+	ports?: Partial<AssuranceCoordinatorPorts>;
+	/** Optional authority test seam, separate from host ports. */
+	authorityOverrides?: Partial<VerdictAuthority>;
+	interactive?: boolean;
+	permissionMode?: PermissionMode;
+	requestConfirmation?: NativeConfirmationPort;
+	batchKernel?: Partial<BatchRunnerKernelPort>;
+	batchGit?: BatchRunnerGitPort;
+	batchTracker?: BatchTrackerPort;
+	readInitiative?: InitiativeObservationReader;
+	/** Set only on the runtime a decision relay builds at a Lane root; it never relays again. */
+	laneRoot?: boolean;
+}
+
+/** ADR 0025: the run-internal authority operations a live entry token authorizes. */
+// ADR 0025: Enrollment and batch start keep their native gate; a token only spares the run-internal steps.
+const ENTRY_TOKEN_OPERATIONS = new Set(["retire_stale_batch"]);
+
+/**
+ * The Host failure envelopes for a batch start; the shared authorization flow
+ * passes them through untouched.
+ */
+type HostBatchStartResult =
+	| NonNullable<Awaited<ReturnType<typeof advanceNativeParent>>>
+	| { state: "started"; batch_id: string; report: BatchRunReport; manifest?: RunEntryManifest }
+	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
+	| { state: "rejected"; reason: string; recovery_action: string }
+	| { state: "cancelled"; reason: string; recovery_action: string }
+	| { state: "blocked"; reason: string; recovery_action: string };
+
+/**
+ * One Host's adapter runtime. Every host-neutral step — Kernel operations, batch
+ * flow, Lane relay, native gate plumbing — lives here; the adapter supplies a
+ * `HostRuntimeProfile` and composes an instance.
+ */
+export class HostRuntime {
+	private readonly laneSupervisor = new LaneSupervisor();
+	private readonly parentHost: ExecutorHost;
+	readonly host: AssuranceHostPort & {
+		observe(event: any): void;
+	};
+	/** The Review port the coordinator and `submit_review` use: the CLI dispatcher (D11). */
+	private readonly reviewHost: CliReviewHost;
+	readonly coordinator: AssuranceCoordinator;
+	private cwd: string;
+	private readonly options: HostRuntimeOptions;
+	private readonly env: Record<string, string | undefined>;
+	private readonly interactive: boolean;
+	private requestConfirmation?: NativeConfirmationPort;
+	private hostVersion: string | undefined;
+	private mutationRegistry: MutationAuthorityRegistry | null = null;
+	private enrollmentRegistry = createEnrollmentAuthorityRegistry();
+	private batchRegistry = createBatchAuthorityRegistry();
+	private app: ReturnType<typeof createCanaryApplication> | null = null;
+	private readonly batchKernel?: Partial<BatchRunnerKernelPort>;
+	private readonly batchGit?: BatchRunnerGitPort;
+	private readonly batchTracker?: BatchTrackerPort;
+	private readonly readInitiative?: InitiativeObservationReader;
+
+	constructor(readonly profile: HostRuntimeProfile, options: HostRuntimeOptions) {
+		this.cwd = options.cwd;
+		this.options = options;
+		this.env = options.env ?? process.env;
+		this.interactive = options.interactive ?? true;
+		this.parentHost = options.parentHost ?? profile.hostId;
+		this.requestConfirmation = options.requestConfirmation;
+		this.batchKernel = options.batchKernel;
+		this.batchGit = options.batchGit;
+		this.batchTracker = options.batchTracker;
+		this.readInitiative = options.readInitiative;
+		this.host = options.host ?? profile.createHost();
+		this.reviewHost = new CliReviewHost(this.host);
+		this.coordinator = new AssuranceCoordinator({
+			...this.createKernelPorts(),
+			...options.ports,
+			host: this.reviewHost,
+			confirmationReference: this.actorConfirmationRef,
+		}, options.authorityOverrides);
+	}
+
+	/** The coordinator-facing confirmation reference: this Host's name over the exact actor. */
+	private actorConfirmationRef = ({ actorId }: { actorId: string }): string =>
+		`${this.parentHost === "claude-code" ? "claude" : this.parentHost}:${actorId}`;
+
+	observe(event: unknown): void {
+		this.profile.observe(this.host, event);
+	}
+
+	/** Bind the version announced by the connected Host during the MCP handshake. */
+	/**
+	 * Bind the workspace this connection's next call runs in. The MCP server
+	 * resolves it per tool call, so a long-lived server started from the plugin
+	 * root follows the session workspace instead of its own `cwd`.
+	 */
+	bindWorkspace(cwd: string): void {
+		this.cwd = cwd;
+	}
+
+	bindHostVersion(version: string | undefined): void {
+		this.hostVersion = version || undefined;
+	}
+
+	private probeHost(): HostProbe {
+		return (this.options.probeHost ?? this.profile.probeHost)(this.env, process.platform, this.hostVersion);
+	}
+
+	bindNativeConfirmation(port: NativeConfirmationPort): void {
+		this.requestConfirmation = port;
+	}
+
+	async shutdown(): Promise<void> {
+		await this.coordinator.onSessionShutdown();
+	}
+
+	/**
+	 * The exact ports object the coordinator runs on. Public so a conformance
+	 * suite can drive what production wires instead of a hand-built double: the
+	 * host adapter defects that reached published plugins all lived in this
+	 * object and none of them were reachable from a test while it was private.
+	 */
+	kernelPorts(): AssuranceCoordinatorPorts {
+		return this.createKernelPorts();
+	}
+
+	private createKernelPorts(): AssuranceCoordinatorPorts {
+		return {
+			host: this.reviewHost,
+			confirmationReference: this.actorConfirmationRef,
+			projectTask: (root, taskId) => projectAssurance(root, taskId, diffSnapshotOf),
+			readTaskRecord: async (root, taskId) => readTaskRecordRaw(root, taskId),
+			readTaskIntent: async (root, taskId) => readTaskIntentForRecord(root, taskId),
+			runQa: (snapshot, descriptors, options) => runDeterministicQa(snapshot, descriptors, options),
+			writeReviewEvidence: (input) => writeNativeReviewEvidence(input.evidence),
+			applyOrdinaryOperation: (ctx, input) => this.executeOrdinary(ctx, input),
+		};
+	}
+
+	private authority() {
+		this.mutationRegistry ??= createMutationAuthorityRegistry();
+		this.app ??= createCanaryApplication(this.mutationRegistry);
+		return { registry: this.mutationRegistry, app: this.app };
+	}
+
+	/**
+	 * ADR 0025: a live entry token is the literal-user act for the run-internal
+	 * authority operations, so they open no dialog. A request that collects a
+	 * user choice (rework exits) still goes to the native gate.
+	 */
+	private async confirm(input: NativeConfirmationInput, meta: ToolMeta): Promise<NativeConfirmationResult> {
+		if (meta.entryToken && ENTRY_TOKEN_OPERATIONS.has(input.operation) && !input.reworkExits)
+			return { decision: "accept", requestId: entryTokenRequestId(meta.entryToken) };
+		if (!this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		return this.requestConfirmation({
+			...input,
+			...(meta.admissionId ? { admissionId: meta.admissionId } : {}),
+			...(meta.workspace ? { workspace: meta.workspace } : {}),
+		});
+	}
+
+	private async gate(operation: string, meta: ToolMeta, binding: {
+		risk?: string;
+		intentRevision?: number;
+		intentContentHash?: string;
+		bindingDigest?: string;
+		gitBaseNotice?: string;
+		reworkExits?: ReworkExitsReadiness;
+		verifierDispute?: NativeConfirmationInput["verifierDispute"];
+		reviewRetryNotice?: string;
+	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
+		throwIfCancelled(meta.signal);
+		const probe = this.probeHost();
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		const interactive = meta.interactive ?? this.interactive;
+		if (!interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		if (!isPrivilegedOperation(operation)) throw new Error(`unsupported native operation ${operation}`);
+		// The text is table-owned; only the form (a thrown native error rather than
+		// a returned envelope) is this Host's.
+		const result = await this.confirm({ operation, taskId: meta.taskId, toolCallId: meta.toolCallId, signal: meta.signal, ...binding }, meta);
+		throwIfCancelled(meta.signal);
+		const gate = evaluateNativeGate({ operation, interactive, decision: result.decision });
+		if (!gate.ok) throw gate.error;
+		const { reworkExits: _exits, verifierDispute: _dispute, ...refBinding } = binding;
+		return {
+			confirmation_ref: this.profile.confirmationRef({
+				connectionId: meta.sessionId,
+				toolCallId: meta.toolCallId,
+				requestId: result.requestId,
+				operation,
+				taskId: meta.taskId,
+				...refBinding,
+			}),
+			...(result.reworkChoice ? { reworkChoice: result.reworkChoice } : {}),
+			...(result.verifierChoice ? { verifierChoice: result.verifierChoice } : {}),
+		};
+	}
+
+	/** The status Tool: readable with unstaged in-scope paths, which come back as a warning. */
+	async status(taskId: string, nextScope?: readonly string[]) {
+		return nextScope ? this.project(taskId, nextScope) : projectTaskStatus(this.cwd, taskId);
+	}
+
+	/** The refusing projection every mutation and authorization is bound to. */
+	private async project(taskId: string, nextScope?: readonly string[]) {
+		return projectAssurance(this.cwd, taskId, nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf);
+	}
+
+	async advance(taskId: string, signal?: AbortSignal, meta?: ToolMeta) {
+		return this.closeOutBatchChild(
+			taskId,
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId, await this.coordinator.advance(taskId, { cwd: this.cwd }, signal)), signal),
+			meta,
+		);
+	}
+
+	async submitReview(taskId: string, verdictInput: unknown, meta?: ToolMeta) {
+		return this.closeOutBatchChild(
+			taskId,
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(
+				taskId,
+				await submitHostReview(this.reviewHost, this.coordinator, { cwd: this.cwd }, taskId, verdictInput),
+			), meta?.signal),
+			meta,
+		);
+	}
+
+	async submitVerification(taskId: string, result: string | undefined, meta?: ToolMeta) {
+		return this.closeOutBatchChild(taskId,
+			withSettleCommit(this.cwd, taskId, await this.withTerminalTracker(taskId,
+				await this.coordinator.submitVerification(taskId, { cwd: this.cwd }, result)), meta?.signal), meta);
+	}
+
+	/**
+	 * Gate-free closeout: a batch child that reached Kernel `done` in the
+	 * foreground re-enters the batch in the same call, reusing its authorization.
+	 * Only `done` continues; a stopped child, a parked child and a live Review
+	 * obligation end where they do today. The continuation is transport: the
+	 * Kernel result is returned unchanged, and any failure is reported beside it
+	 * with one retry action, never thrown into a path that could read as "the
+	 * mutation did not happen".
+	 */
+	private async closeOutBatchChild<T>(taskId: string, result: T, meta?: ToolMeta): Promise<T> {
+		if (!meta || result === null || typeof result !== "object") return result;
+		const lifecycle = (result as { record?: { lifecycle?: unknown } }).record?.lifecycle;
+		if ((result as { state?: unknown }).state !== "completed" && lifecycle !== "done") return result;
+		let slug: string | null;
+		try {
+			slug = findResumableBatchSlugForTask(this.cwd, taskId);
+		} catch {
+			return result;
+		}
+		if (!slug) return result;
+		try {
+			if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug)) return result;
+			// The batch commit takes exactly the scope envelope plus this task's own
+			// audit evidence, and its preflight refuses unstaged changes: stage only
+			// that evidence, the step an Executor otherwise does by hand.
+			if (existsSync(join(this.cwd, ".imm", "audit", taskId)))
+				execFileSync("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
+			const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
+			return { ...(result as object), batch, ...(batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {}) } as T;
+		} catch (error) {
+			return {
+				...(result as object),
+				batch: {
+					state: "rejected",
+					reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+					recovery_action: "call start_unattended_batch with the same Initiative to continue the batch",
+				},
+			} as T;
+		}
+	}
+
+	/**
+	 * Post-settlement GitHub tracker projection: the same shared step the Pi Host
+	 * runs, so an opted-in terminal projection no longer depends on which Host
+	 * settled the task. Only a call that settled its task pays for it: the step
+	 * cannot project anything from a result that reports a live obligation, so
+	 * every other invocation returns untouched without reading the Kernel.
+	 *
+	 * Transport, never authority: the shared projection derives nothing unless the
+	 * Kernel already shows a fresh claimless done/stopped task with its exact
+	 * terminal tombstone, a tracker failure is reported as `tracker` alongside the
+	 * authoritative result rather than as evidence or a blocker, and it never
+	 * repeats the settling mutation.
+	 */
+	private async withTerminalTracker<T>(taskId: string, result: T): Promise<T> {
+		if (result === null || typeof result !== "object") return result;
+		if (!settledKernelResult(result)) return result;
+		try {
+			// An observation after the commit, not an authority binding: it reads
+			// through the same status the Tool returns.
+			const projection = await this.status(taskId);
+			const tracker = await projectTerminalTrackerState({
+				root: this.cwd,
+				task_id: taskId,
+				projection,
+				tombstone: readTaskTombstone(this.cwd, taskId),
+				markTerminal: (root, input) => runGithubTrackerOperation(root, { op: "mark-terminal", ...input }),
+			});
+			return tracker ? ({ ...(result as object), tracker } as T) : result;
+		} catch {
+			// The underlying Kernel mutation already committed, so a failed observation
+			// is reported beside the authoritative result instead of rethrown into a
+			// path a caller could read as "the mutation did not happen" and retry.
+			return { ...(result as object), tracker: TRACKER_PROJECTION_FAILURE } as T;
+		}
+	}
+
+	async reviseIntent(taskId: string, nextIntent: unknown) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: { op: "revise_intent", next_intent: nextIntent, actor_id: "executor" },
+		});
+	}
+
+	/**
+	 * Ordinary Kernel operation, not a privileged one: canary_application builds
+	 * the action without a capability and the Pi Host lists resolve_finding in
+	 * its ordinary KERNEL_OPERATIONS. The reducer owns every precondition, so
+	 * this port reads no findings and tests no kind.
+	 */
+	async resolveFinding(taskId: string, findingId: string) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: { op: "resolve_finding", finding_id: findingId, actor_id: "executor" },
+		});
+	}
+
+	/**
+	 * Ordinary Kernel operation, not a privileged one: the actor cannot assert a
+	 * refutation, it can only bind a fresh passing QA attestation the Kernel
+	 * already validated. The reducer owns every precondition.
+	 */
+	async refuteFinding(taskId: string, findingId: string, attestationId: string) {
+		return this.executeOrdinary({ cwd: this.cwd }, {
+			taskId,
+			operation: {
+				op: "refute_finding",
+				finding_id: findingId,
+				attestation_id: attestationId,
+				actor_id: "executor",
+			},
+		});
+	}
+
+	/**
+	 * Spec drive-always-lanes D11: a decision for a single-task Lane is answered at
+	 * the Parent's native gate and applied to the Lane store, then the next
+	 * Executor generation starts. Any other task keeps the in-place path.
+	 */
+	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
+			? findLaneRelayTarget(this.cwd, taskId) : null;
+		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
+		const laneRuntime = this.profile.laneRuntime({ ...this.options, cwd: relayed.lane_path, laneRoot: true,
+			requestConfirmation: this.requestConfirmation, batchKernel: undefined, batchGit: undefined, batchTracker: undefined, readInitiative: undefined });
+		if (this.hostVersion) laneRuntime.bindHostVersion(this.hostVersion);
+		try {
+			const outcome = await relayLaneDecision({
+				root: this.cwd, taskId, operation: operation as LaneDecisionOperation,
+				expectedRecordRevision: typeof extra.record_revision === "string" ? extra.record_revision : undefined,
+				project: (lanePath, id) => projectAssurance(lanePath, id, diffSnapshotOf),
+				apply: async () => laneRuntime.authorizeInRoot(taskId, operation, meta, extra),
+				applied: result => !(result && typeof result === "object" && "state" in result && result.state === "replan_selected"),
+				supervisor: this.laneSupervisor, parentHost: this.parentHost,
+				pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."), waitMs: laneWaitMs(this.env), signal: meta.signal,
+			});
+			return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : this.authorizeInRoot(taskId, operation, meta, extra);
+		} finally {
+			await laneRuntime.shutdown();
+		}
+	}
+
+	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		if (operation === "repair_authority_state") {
+			const authority = reconcileKernelAuthority(this.cwd, taskId);
+			// The workspace owner is derived from the single active run, so a claim
+			// that contradicts the run index cannot exist: a settled or unowned
+			// authority has nothing to repair, and any leftover retired claim file
+			// is inert. A live owner is a conflict the caller must resolve.
+			if (authority.state === "terminal_owner" || authority.state === "unowned")
+				return repairKernelAuthority(this.cwd, taskId, authority.revision);
+			if (authority.state !== "repairable_stale_claim" || authority.owner_task_id !== taskId) {
+				throw new Error(authority.diagnostic ?? "authority repair requires a repairable stale claim");
+			}
+			return repairKernelAuthority(this.cwd, taskId, authority.revision);
+		}
+		if (!isPrivilegedOperation(operation) && operation !== "request_authorization") throw new Error(`unsupported privileged operation ${operation}`);
+		let op: PrivilegedOperation | "request_authorization" | "resolve_user_decision" | "authorize_rework" | "authorize_review_retry" | "accept_residual_risk" = operation;
+		let decisionOp: { finding_id: string; resolution: string } | undefined;
+		let verifierDispute: NativeConfirmationInput["verifierDispute"];
+		// Set only at a replan boundary: the exits the literal user chooses between.
+		let reworkExits: ReworkExitsReadiness | undefined;
+		let reworkChoice: ReworkChoice | undefined;
+		let reviewRetry: { review_contract_hash: string; previous_contract_hash: string | null } | undefined;
+		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
+		// The whole operation is judged against the scope it asks for (D6).
+		const nextScope = nextIntent?.scope_hint;
+		const diffProvider = nextScope ? nextScopeDiffProvider(nextScope) : diffSnapshotOf;
+		const projection = await this.project(taskId, nextScope);
+		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
+		// Kernel projection is the sole source of authorization readiness, and the
+		// derivation is the shared export both Hosts use, so it cannot drift:
+		// request_authorization submits the exact operation the projection derives,
+		// including the single bound user-decision resolution.
+		if (operation === "request_authorization") {
+			const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
+			if ("blocked" in derived) throw new Error(derived.blocked);
+			if (derived.operation === "resolve-user-decision") {
+				const record = await readTaskRecordRaw(this.cwd, taskId);
+				const open = (record.record?.findings ?? []).filter(
+					(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
+				);
+				if (open.length !== 1) throw new Error(`resolve-user-decision requires exactly one open user decision; found ${open.length}`);
+				op = "resolve_user_decision";
+				decisionOp = { finding_id: open[0].id, resolution: `resume after literal-user decision: ${open[0].summary}` };
+				const dispute = record.record?.history.find(entry => entry.review_verifier_dispute?.decision_id === open[0].id)?.review_verifier_dispute;
+				if (dispute) verifierDispute = { claim: dispute.finding.summary, trigger: dispute.finding.evidence.trigger,
+					caller_chain: dispute.finding.evidence.caller_chain, counter_path: dispute.counter_path };
+			} else if (derived.operation === "authorize-review-retry") {
+				op = "authorize_review_retry";
+				reviewRetry = projection.projection.authorization.review_retry;
+				if (!reviewRetry || reviewRetry.review_contract_hash !== currentReviewContractHash()) throw new Error("Review retry contract changed");
+			} else {
+				op = "authorize_rework";
+				reworkExits = projection.projection.authorization.exits;
+			}
+		}
+		const priorIntent = await readTaskIntentForRecord(this.cwd, taskId);
+		const now = new Date().toISOString();
+		const actorId = LITERAL_USER_ACTOR_ID;
+		if (op === "approve_breaking_intent_revision" && !nextIntent) throw new Error("approve_breaking_intent_revision requires next_intent");
+		const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
+		const nextIntentRef = nextIntent
+			? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash! }
+			: undefined;
+		const sidecar = nextIntent ? join(this.cwd, priorIntent.intent_ref.path) : undefined;
+		// The snapshot carries the prior bytes; a second read would only be a
+		// second source for the same fact.
+		const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
+		const restoreStagedIntent = (): void => {
+			if (!stagedSnapshot) return;
+			restoreStagedIntentShared(this.cwd, stagedSnapshot);
+		};
+		let preparedDiffHash = projection.projection.diff_hash;
+		let gate: { confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] };
+		try {
+			if (sidecar && nextIntent) {
+				// A gate the Kernel would refuse afterwards is never opened.
+				if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
+					throw new Error("approve_breaking_intent_revision requires a breaking revision");
+				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
+				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
+				const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
+				if (!preparedRecord.record) {
+					throw new NativeAuthorityError("workspace_changed", "TaskRecord changed before the breaking revision digest");
+				}
+				preparedDiffHash = diffProvider(this.cwd, preparedRecord.record).diff_hash;
+			}
+			const preparedProjection = await this.project(taskId, nextScope);
+			try {
+				assertProjectionBinding(projection, preparedProjection, Boolean(nextIntent));
+				if (preparedProjection.projection.diff_hash !== preparedDiffHash) {
+					throw new Error("workspace changed while preparing the authority digest");
+				}
+			} catch (error) {
+				throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
+			}
+			gate = await this.gate(operation, { ...meta, taskId }, {
+				risk: projection.projection.risk,
+				intentRevision: nextIntent?.revision ?? projection.projection.intent_revision,
+				intentContentHash: nextIntentHash ?? projection.projection.intent_content_hash,
+				bindingDigest: `${preparedDiffHash}:${nextIntentHash ?? ""}`,
+				...(reworkExits ? { reworkExits } : {}),
+				...(verifierDispute ? { verifierDispute } : {}),
+				...(reviewRetry ? { reviewRetryNotice: reviewRetryNotice(reviewRetry) } : {}),
+			});
+			reworkChoice = gate.reworkChoice;
+		} catch (error) {
+			if (stagedSnapshot) {
+				const current = await readTaskRecordRaw(this.cwd, taskId);
+				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
+					restoreStagedIntent();
+				}
+			}
+			throw error;
+		}
+		if (verifierDispute) {
+			if (!decisionOp || (gate.verifierChoice !== "accept_verifier_dispute" && gate.verifierChoice !== "dismiss_verifier_dispute"))
+				throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no verifier dispute choice");
+			decisionOp.resolution = gate.verifierChoice;
+		}
+		if (reworkExits) {
+			if (!reworkChoice) throw new NativeAuthorityError("interaction_not_opened", "native interaction returned no exit");
+			// A replan is not a mutation of this operation: the user chose to revise
+			// the Intent, which has its own gate. Nothing is written.
+			if (reworkChoice.exit === "replan") {
+				return {
+					state: "replan_selected",
+					task_id: taskId,
+					next: "revise the Intent, then call approve_breaking_intent_revision",
+				};
+			}
+			if (reworkChoice.exit === "accept_residual_risk") op = "accept_residual_risk";
+		}
+		const { registry, app } = this.authority();
+		const confirmation = gate.confirmation_ref;
+		let committed: ReturnType<typeof app.execute>;
+		try {
+			const capabilityProjection = await this.project(taskId, nextScope);
+			try {
+				assertProjectionBinding(projection, capabilityProjection, Boolean(nextIntent));
+			} catch (error) {
+				throw new NativeAuthorityError("workspace_changed", error instanceof Error ? error.message : String(error));
+			}
+			const operationDiffHash = capabilityProjection.projection.diff_hash;
+			if (nextIntent && operationDiffHash !== preparedDiffHash) {
+				throw new NativeAuthorityError("workspace_changed", "workspace changed after native confirmation");
+			}
+			throwIfCancelled(meta.signal);
+			const capability = await mintCapability(registry, {
+				authority_kind: "user",
+				task_id: taskId,
+				run_id: capabilityProjection.projection.run_id,
+				action_kind: op,
+				expected_record_hash: capabilityProjection.projection.record_revision,
+				intent_revision: nextIntent?.revision ?? capabilityProjection.projection.intent_revision,
+				intent_content_hash: nextIntentHash ?? capabilityProjection.projection.intent_content_hash,
+				diff_hash: operationDiffHash,
+				actor_id: canonicalActorId(actorId),
+				now,
+				confirmation_ref: confirmation,
+				...(op === "authorize_review_retry" && reviewRetry ? { review_contract_hash: reviewRetry.review_contract_hash } : {}),				...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
+				...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
+				...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
+				...(op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
+				...(op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}),
+			});
+			throwIfCancelled(meta.signal);
+			const result = app.execute({
+				root: this.cwd,
+				task_id: taskId,
+				operation: {
+					op,
+					capability,
+					...(op === "authorize_review_retry" && reviewRetry ? { review_contract_hash: reviewRetry.review_contract_hash, intent_content_hash: projection.projection.intent_content_hash } : {}),
+					actor_id: canonicalActorId(actorId),
+					...(op === "approve_breaking_intent_revision" ? { next_intent: nextIntent, next_intent_ref: nextIntentRef } : {}),
+					...(op === "resolve_user_decision" && decisionOp ? decisionOp : {}),
+					...(op === "stop" ? { reason: stopReason(extra.reason) } : {}),
+					...(op === "authorize_rework" && reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
+					...(op === "accept_residual_risk" && reworkChoice?.exit === "accept_residual_risk" ? { reason: reworkChoice.reason } : {}),
+				} as never,
+				prior_intent_token: priorIntent.token,
+				reviewContractHash: currentReviewContractHash(),
+				diffProvider,
+				now,
+			});
+			committed = result;
+			if (
+				op === "stop" ||
+				op === "authorize_rework" ||
+				op === "accept_residual_risk" ||
+				(op === "resolve_user_decision" && decisionOp?.resolution === "accept_verifier_dispute") ||
+				op === "approve_breaking_intent_revision"
+			) stagePlanningArtifactTransition(this.cwd, result.record);
+		} catch (error) {
+			if (stagedSnapshot) {
+				const current = await readTaskRecordRaw(this.cwd, taskId);
+				if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) {
+					restoreStagedIntent();
+				}
+			}
+			throw error;
+		}
+		// A stop settles the task: project the terminal tracker state exactly as the
+		// Pi Host does after its own settlement. It runs once the mutation's own
+		// try/catch has closed, so observation can never roll the staged intent back
+		// or turn a committed mutation into an exception.
+		return this.withTerminalTracker(taskId, committed);
+	}
+
+	private async executeOrdinary(ctx: HostContext, input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown; finding_id?: string; attestation_id?: string } }) {
+		const { app } = await this.authority();
+		return executeOrdinaryKernelOperation({ root: ctx.cwd, taskId: input.taskId, operation: input.operation, app });
+	}
+
+	/**
+	 * Build the exact native-gate input without accepting, declining or applying
+	 * the operation. Hook-based Hosts use this instead of running a second,
+	 * deliberately-cancelled authorization implementation. Breaking revisions
+	 * still roll their staged sidecar back in the ordinary gate error path.
+	 *
+	 * It swaps the instance's confirmation port for the duration of `run`, so it
+	 * is only safe on a runtime that serves one call at a time (the Hook builds a
+	 * fresh one per preview); concurrent calls on a shared instance are refused.
+	 */
+	private previewing = false;
+
+	private async previewConfirmation(run: () => Promise<unknown>): Promise<NativeConfirmationInput | null> {
+		if (this.previewing) throw new Error("a confirmation preview is already running on this runtime");
+		this.previewing = true;
+		const previous = this.requestConfirmation;
+		this.requestConfirmation = async (input) => { throw new ConfirmationPreviewSignal(input); };
+		try {
+			await run();
+			return null;
+		} catch (error) {
+			if (error instanceof ConfirmationPreviewSignal) return error.input;
+			throw error;
+		} finally {
+			this.requestConfirmation = previous;
+			this.previewing = false;
+		}
+	}
+
+	async previewAuthorization(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		return this.previewConfirmation(() => this.authorize(taskId, operation, meta, extra));
+	}
+
+	async previewBatchConfirmation(
+		initiativeSlug: string,
+		meta: ToolMeta,
+		options: { plan_source?: "single_task"; max_parallel?: number; final_verification?: string[] } = {},
+	) {
+		return this.previewConfirmation(() => this.startPreparedBatch(initiativeSlug, meta, { ...options, confirmationPreview: true }));
+	}
+
+	async previewBatchRetirement(initiativeSlug: string, meta: ToolMeta) {
+		return this.previewConfirmation(() => this.retireStaleBatch(initiativeSlug, meta));
+	}
+
+	async startUnattendedBatch(
+		initiativeSlug: string,
+		meta: ToolMeta,
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
+	): Promise<HostBatchStartResult> {
+		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
+		return this.startPreparedBatch(initiativeSlug, meta, options);
+	}
+
+	private async startPreparedBatch(
+		initiativeSlug: string, meta: ToolMeta,
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest; confirmationPreview?: boolean },
+	): Promise<HostBatchStartResult> {
+		throwIfCancelled(meta.signal);
+		const reuseOnly = options.reuseOnly === true;
+		const confirmationPreview = options.confirmationPreview === true;
+		const readInitiative = options.plan_source === "single_task" ? observeSingleTask : this.readInitiative ?? observeInitiative;
+		if (options.plan_source === "single_task") options = { ...options, max_parallel: 1 };
+		const probe = this.probeHost();
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		if (options.stop) {
+			if (options.plan_source !== "single_task") return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
+			return stopSingleTaskSupervisor(this.laneSupervisor, this.cwd, initiativeSlug, meta.signal);
+		}
+		if (options.plan_source && !resolveConfig(this.cwd).lanes.valid)
+			return batchReason("lane_config_invalid");
+		// A reuse-only continuation never opens a gate, so it needs no confirmation port.
+		const interactive = meta.interactive ?? this.interactive;
+		if (!reuseOnly && !interactive) throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		// The text is table-owned; only the form (a thrown native error rather than
+		// a returned envelope) is this Host's.
+		if (!reuseOnly && !this.requestConfirmation)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
+
+		const existing = findExistingActiveBatch(this.cwd, initiativeSlug);
+		if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
+		const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(this.cwd, initiativeSlug);
+		if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
+			return batchReason("batch_entry_kind_mismatch");
+		let replayCompleted = true;
+		let replayReader = this.readInitiative;
+		if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
+			let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
+			try {
+				confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+			} catch (error) {
+				if (existing) return batchReason("plan_changed", error instanceof Error ? error.message : String(error));
+				// Terminal history owns no new plan; do not replay its writes or completion.
+				replayCompleted = false;
+			}
+			if (confirmed) {
+				const { observation } = confirmed;
+				replayReader = async () => observation;
+				if (!confirmationPreview && ["running", "completed"].includes(integrationBatch.batch_state))
+					await integrateSettledCriticalSlices(this.cwd, initiativeSlug, replayReader);
+			}
+		}
+		// A preview must prove completion without the report's tracker and file
+		// writes. An already-complete Parent opens no fresh authorization gate.
+		if (confirmationPreview && !options.plan_source && replayCompleted && integrationBatch?.batch_state === "completed" && integrationBatch.final_verification_result?.passed === true) {
+			try {
+				const confirmed = await readConfirmedBatchTopology(this.cwd, integrationBatch, this.readInitiative);
+				const proof = await observeParentCompletion(this.cwd, initiativeSlug, confirmed.observation.tasks.map((child) => child.task_id));
+				if (proof.complete) return batchReason("confirmation_no_decision");
+			} catch {
+				// The real call owns the terminal-history diagnostic.
+			}
+		}
+		const completed = !confirmationPreview && !options.plan_source && replayCompleted ? await completedParentReport(this.cwd, initiativeSlug, replayReader, this.batchTracker) : null;
+		if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
+		const nativeParentInput = (effects: { initiative_slug: string; plan_digest: string; children: Array<{ task_id: string; slice_id: string }>; final_commands: string[] }): NativeConfirmationInput => ({
+			operation: "start_unattended_batch",
+			initiativeSlug,
+			toolCallId: meta.toolCallId,
+			planDigest: effects.plan_digest,
+			batchDetails: {
+				initiative_slug: effects.initiative_slug,
+				batch_branch: "",
+				children: effects.children,
+				excluded: [],
+				final_verification: effects.final_commands,
+				parent_final_verification: {},
+			},
+			signal: meta.signal,
+		});
+		if (confirmationPreview && !options.plan_source) {
+			const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
+			if (facts) {
+				// Same decision advanceNativeParent makes; only the gate is captured, never run.
+				const decision = nativeParentFinalDecision(facts, options.final_verification);
+				if (decision.run && decision.gate) await this.confirm(nativeParentInput(decision.gate), meta);
+				return batchReason("confirmation_no_decision");
+			}
+		}
+		const native = options.plan_source ? null : await advanceNativeParent(this.cwd, initiativeSlug, options.final_verification, this.readInitiative, this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug),
+			async (effects) => {
+				// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
+				if (reuseOnly) return batchReason("confirmation_port_unavailable");
+				try {
+					manifestChildren = effects.children;
+					const confirmation = await this.confirm(nativeParentInput(effects), meta);
+					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
+					if (confirmation.decision === "accept") return null;
+					if (confirmation.decision === "cancel") return batchReason("confirmation_cancelled");
+					if (confirmation.decision === "decline") return batchReason("confirmation_declined");
+					return batchReason("confirmation_no_decision");
+				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
+					if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						return { state: err.reasonCode === "user_cancelled" ? "cancelled" : "rejected", reason: err.message, recovery_action: err.recoveryAction };
+					}
+					return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
+				}
+			});
+		if (native) return native;
+		// 1. Host-independent batch preflight: claim ownership, branch
+		// availability, working-tree cleanliness against the authorized scope,
+		// recovery children, plan digest, and base HEAD are one shared projection,
+		// so neither Host re-implements a batch decision.
+		let now = new Date().toISOString();
+		const preflight = await prepareBatchPreflight({
+			root: this.cwd,
+			initiative_slug: initiativeSlug,
+			plan_source: options.plan_source,
+			now,
+			readInitiative,
+			max_parallel: options.max_parallel,
+			signal: meta.signal, reuseOnly,
+		});
+		if (!preflight.ok) {
+			return {
+				state: preflight.state,
+				reason: preflight.reason,
+				recovery_action: preflight.recovery_action,
+			};
+		}
+		const isResuming = preflight.projection.is_resuming;
+		if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
+			state: "rejected",
+			reason: "final_verification_required",
+			recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
+		};
+		const batchBranch = preflight.projection.batch_branch;
+		const existingBatch = preflight.projection.existing_batch;
+		const budget = preflight.projection.budget;
+		const planDigest = preflight.projection.plan_digest;
+		const recoveryChildren = preflight.projection.recovery_children;
+		// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
+		// contracts is refused before the gate opens; a match adds nothing.
+		if (options.max_parallel !== undefined && !isResuming) {
+			const contractRefusal = laneRuntimeContractRefusal(this.cwd);
+			if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
+		}
+		// 5. Literal-user gate plus the shared reuse decision, the post-gate
+		// claim/drift cascade, and the Batch Authorization binding. The Host supplies
+		// only its gate, its confirmation reference, and its binding nonce.
+		const authorization = await authorizeBatch<HostBatchStartResult>({
+			root: this.cwd,
+			initiative_slug: initiativeSlug,
+			now,
+			projection: preflight.projection,
+			readInitiative,
+			nonce: enrollmentNonce(),
+			gate: async (facts) => {
+				// A continuation after a foreground child never opens a gate: when the
+				// authorization cannot be reused, the user re-enters the batch tool.
+				if (reuseOnly)
+					return {
+						kind: "host_rejection",
+						value: {
+							state: "blocked",
+							reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
+							recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization",
+						},
+					};
+				// The gate settles only on the literal user's answer or the caller's
+				// cancellation signal.
+				let confirmationResult: { decision: NativeDecision; requestId: string };
+				manifestChildren = facts.children;
+				try {
+					confirmationResult = await this.confirm({
+						operation: "start_unattended_batch",
+						initiativeSlug,
+						toolCallId: meta.toolCallId,
+						planDigest,
+						...(facts.preparation?.intent ? {
+							intentRevision: facts.preparation.intent.revision,
+							intentContentHash: facts.preparation.intent.content_hash,
+							bindingDigest: facts.preparation.digest,
+						} : {}),
+						batchDetails: {
+							initiative_slug: facts.initiative_slug,
+							batch_branch: facts.batch_branch,
+							children: facts.children.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								risk: child.risk,
+							})),
+							excluded: facts.excluded.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								reason: child.reason,
+							})),
+							budget: facts.budget,
+							...(options.final_verification ? { final_verification: options.final_verification } : {}),
+							...(options.max_parallel !== undefined
+								? {
+										lane_mode: {
+											max_parallel: options.max_parallel,
+											parallel_groups: facts.parallel_groups,
+											serialized: facts.scope_conflicts,
+											...(options.final_verification ? { final_verification: options.final_verification } : {}),
+										},
+									}
+								: {}),
+							...(facts.reuse_blockers.length > 0
+								? {
+										re_confirmation_required: facts.reuse_blockers,
+										recovery: "confirm to issue a fresh authorization bound to the current plan and HEAD",
+									}
+								: {}),
+						},
+						signal: meta.signal,
+					}, meta);
+				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
+					if (meta.signal?.aborted)
+						return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						if (err.reasonCode === "user_cancelled") {
+							return {
+								kind: "host_rejection",
+								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
+							};
+						}
+						return {
+							kind: "host_rejection",
+							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
+						};
+					}
+					return {
+						kind: "host_rejection",
+						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+					};
+				}
+
+				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+				if (confirmationResult.decision === "decline")
+					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+				if (confirmationResult.decision === "cancel")
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (confirmationResult.decision !== "accept")
+					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+				return {
+					kind: "confirmed",
+					request_id: confirmationResult.requestId,
+				};
+			},
+			// A reused authorization keeps this invocation's Kernel binding without a new
+			// literal-user act, so its confirmation reference names the resumed batch
+			// rather than a requestId no elicitation produced.
+			confirmationRef: ({ batch_id, request_id }) =>
+				this.profile.confirmationRef({
+					connectionId: meta.sessionId,
+					toolCallId: meta.toolCallId,
+					requestId: request_id ?? `resumed-${batch_id}`,
+					operation: "start_unattended_batch",
+					initiativeSlug,
+					planDigest,
+					bindingDigest: preflight.projection.preparation?.digest,
+				}),
+		});
+		if (authorization.outcome === "host_rejection") return authorization.value;
+		if (authorization.outcome === "rejected") return authorization.rejection;
+		// Reused authorization needs no gate; a preview stops before issuance or
+		// any batch execution just as it does after capturing a fresh gate.
+		if (confirmationPreview) return batchReason("confirmation_no_decision");
+		const { binding, batch_id: batchId } = authorization;
+
+		// review-1: verify cancellation signal right before authority issuance and startBatch
+		if (meta.signal?.aborted) return batchReason("cancelled_before_execution");
+
+		now = new Date().toISOString();
+		const capability = this.batchRegistry.issue(binding, recoveryChildren as any, now);
+
+		// review-batch-partial-port-fabricates-enrollment: the production child
+		// Kernel port is the shared runtime/unattended one; this Host supplies
+		// only its own advanceTask progression seam (D5).
+		const advanceTask: BatchRunnerKernelPort["advanceTask"] = async (root, taskId) => {
+			const result = await this.coordinator.advance(taskId, { cwd: root });
+			const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+			if (result.state === "completed") return { state: "completed", ...facts };
+			if (result.state === "stopped") return { state: "stopped", ...facts };
+			if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
+			if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, ...facts };
+			if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, ...facts };
+			if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+			return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
+		};
+		const parent = await readInitiative(this.cwd, initiativeSlug);
+		if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
+			return batchReason("plan_changed");
+		const kernelPort = createBatchKernelPort({
+			root: this.cwd,
+			parent,
+			enrollmentRegistry: this.enrollmentRegistry,
+			registry: this.batchRegistry,
+			capability,
+			binding,
+			advanceTask,
+			resume: { isResuming, existingBatch, batchBranch },
+			overrides: this.batchKernel,
+		});
+		let report = await startBatch({
+			plan_source: options.plan_source,
+			...(options.plan_source && this.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
+			...(options.plan_source ? { supervision: { supervisor: this.laneSupervisor, parentHost: this.parentHost, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+				waitMs: laneWaitMs(this.env), signal: meta.signal, stop: options.stop, request: options.executor } } : {}),
+			topology_digest: preflight.projection.topology_digest,
+			root: this.cwd,
+			batch_id: batchId,
+			initiative_slug: initiativeSlug,
+			registry: this.batchRegistry,
+			capability,
+			children: recoveryChildren,
+			plan_digest: planDigest,
+			base_head: binding.base_head,
+			confirmation_time: now,
+			budget,
+			now,
+			kernel: kernelPort,
+			git: this.batchGit,
+			...(options.final_verification ? { final_verification: options.final_verification } : {}),
+			...(options.max_parallel !== undefined
+				? {
+						max_parallel: options.max_parallel,
+						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
+						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+						...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
+					}
+				: {}),
+			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
+		});
+
+		// review-3 & review-batch-preflight-recovery-is-diagnostic: map rejected batch state to rejected result with same-Host recovery action
+		if (report.batch_state === "rejected") return batchReason("batch_run_rejected", report.reason ?? "");
+
+		if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
+			report = await completedParentReport(this.cwd, initiativeSlug, this.readInitiative, this.batchTracker) ?? report;
+		return {
+			state: "started",
+			batch_id: batchId,
+			report,
+			...(manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(this.cwd, taskId).intent) } : {}),
+		};
+	}
+
+	/**
+	 * The batch disposition. One explicit literal-user decision retires a record
+	 * the plan moved past: the terminal superseded state and its report preserve
+	 * every child state, recorded commit and the batch branch, and no child is
+	 * re-enrolled, handed off, or credited with delivery it never had.
+	 */
+	async retireStaleBatch(initiativeSlug: string, meta: ToolMeta): Promise<HostBatchStartResult> {
+		throwIfCancelled(meta.signal);
+		const probe = this.probeHost();
+		if (!probe.ok) throw new NativeAuthorityError("unsupported_host", probe.reason);
+		// Without an entry token the disposition opens a gate, so it needs a confirmation port.
+		if (!this.requestConfirmation && !meta.entryToken)
+			throw new NativeAuthorityError("interaction_not_opened", batchReason("confirmation_port_unavailable").reason);
+		const outcome = await retireStaleBatch<HostBatchStartResult>({
+			root: this.cwd,
+			initiative_slug: initiativeSlug,
+			now: new Date().toISOString(),
+			gate: async (facts) => {
+				let confirmationResult: { decision: NativeDecision; requestId: string };
+				try {
+					confirmationResult = await this.confirm({
+						operation: "retire_stale_batch",
+						initiativeSlug,
+						toolCallId: meta.toolCallId,
+						batchDisposition: {
+							batch_id: facts.batch_id,
+							batch_state: facts.batch_state,
+							batch_branch: facts.branch,
+							plan_digest: facts.plan_digest,
+							recorded_commits: facts.recorded_commits.length,
+							children: facts.children.map((child) => ({
+								task_id: child.task_id,
+								slice_id: child.slice_id,
+								state: child.state,
+								commit: child.commit,
+								lane_branch: child.lane_branch,
+								kernel_lifecycle: child.kernel_lifecycle,
+							})),
+						},
+						signal: meta.signal,
+					}, meta);
+				} catch (err) {
+					if (err instanceof ConfirmationPreviewSignal) throw err;
+					if (meta.signal?.aborted)
+						return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+					if (err instanceof NativeAuthorityError) {
+						if (err.reasonCode === "unsupported_host") throw err;
+						if (err.reasonCode === "user_cancelled") {
+							return {
+								kind: "host_rejection",
+								value: { state: "cancelled", reason: err.message, recovery_action: err.recoveryAction },
+							};
+						}
+						return {
+							kind: "host_rejection",
+							value: { state: "rejected", reason: err.message, recovery_action: err.recoveryAction },
+						};
+					}
+					return {
+						kind: "host_rejection",
+						value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
+						};
+				}
+				if (confirmationResult.decision === "cancel" && meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (meta.signal?.aborted)
+					return { kind: "host_rejection", value: batchReason("cancelled_before_execution") };
+				if (confirmationResult.decision === "decline")
+					return { kind: "host_rejection", value: batchReason("confirmation_declined") };
+				if (confirmationResult.decision === "cancel")
+					return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
+				if (confirmationResult.decision !== "accept")
+					return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
+				return { kind: "confirmed", request_id: confirmationResult.requestId };
+			},
+			confirmationRef: ({ request_id, plan_digest }) =>
+				this.profile.confirmationRef({
+					connectionId: meta.sessionId,
+					toolCallId: meta.toolCallId,
+					requestId: request_id,
+					operation: "retire_stale_batch",
+					initiativeSlug,
+					planDigest: plan_digest,
+				}),
+		});
+		if (outcome.outcome === "host_rejection") return outcome.value;
+		if (outcome.outcome === "rejected") return outcome.rejection;
+		return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
+	}
+}
+
+export interface ToolMeta {
+	sessionId: string;
+	toolCallId: string;
+	taskId: string;
+	initiativeSlug?: string;
+	/** ADR 0025: the live entry token the phase entry hook admitted for this call. */
+	entryToken?: string;
+	requiresUserInteraction?: boolean;
+	permissionMode?: PermissionMode;
+	interactive?: boolean;
+	signal?: AbortSignal;
+	/** Absolute workspace resolved for this call from Host metadata or MCP roots. */
+	workspace?: string;
+	/** The admission the Host correlated with this exact call, when it is not the display call id. */
+	admissionId?: string;
+}

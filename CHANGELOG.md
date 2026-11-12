@@ -1,5 +1,76 @@
 # Changelog
 
+## 8.1.3
+
+### Patch Changes
+
+- [#478](https://github.com/dereknex/immune-brain/pull/478) [`ab0ee72`](https://github.com/dereknex/immune-brain/commit/ab0ee72616f8562b70d7b0c3d898449f617f9cb8) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity `PreToolUse` now builds each `force_ask` confirmation from the same `HostRuntime` path the later MCP call executes, instead of a second batch and task preflight. The preview stops before issuing Batch Authorization or starting a run, and it performs no final verification, tracker write, or critical integration. Single-use grants, digest binding, and refusal after the confirmed workspace changes remain in place.
+
+  `preparePiCanary` no longer includes `generated_at` in the owner digest, so a grant written by the Hook process still matches when the MCP server consumes it. Restoring a staged TaskIntent refreshes its Git index stat, so a later projection does not treat the restored sidecar as unstaged. The Antigravity plugin check now rejects generated files that are missing from the derived-files declaration.
+
+## 8.1.2
+
+### Patch Changes
+
+- [#476](https://github.com/dereknex/immune-brain/pull/476) [`536573b`](https://github.com/dereknex/immune-brain/commit/536573bb1a6a080cabd5dfba19553b650b6212a4) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity `start_unattended_batch` and `retire_stale_batch` no longer refuse every call with `run_entry_required: A gated call needs exact Hook session and workspace correlation`. The shared MCP runtime required a Claude-only `.continuation-call` correlation before reading the `PreToolUse` admission, and only skipped that requirement when a test injected an admission port, so the production Antigravity server never reached its admission. The single-use admission, already bound to its call, operation, Hook session, live drive entry and workspace, is now the gated call's correlation on every Host, and the Claude admission names its Hook session. The redundant unversioned-Host check, the unused `true` admission, the duplicated `start_unattended_batch`/`retire_stale_batch` gate and the two Claude-only fields Antigravity's profile carried are removed. A trusted client with an unsupported Host version is now refused for its version before its interaction capability.
+
+  Antigravity's `PreToolUse` now denies a gated call that has no live drive entry, as Claude Code's hook does, instead of opening a `force_ask` confirmation that the server would refuse anyway. `force_ask` remains the native confirmation for an admitted call (ADR 0004, `antigravity-harness` spec §3).
+
+## 8.1.1
+
+### Patch Changes
+
+- [#475](https://github.com/dereknex/immune-brain/pull/475) [`7d760c3`](https://github.com/dereknex/immune-brain/commit/7d760c34ef5a1f42f19fbcbd772fe65ef71331a3) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity privileged operations now confirm through Antigravity's native `PreToolUse` `force_ask` channel instead of server-initiated MCP `elicitation/create`, which Antigravity CLI cancels after ~30 seconds without opening a native prompt (ADR 0004). `antigravityPreToolUseHookAsync` prepares the operation's `NativeConfirmationInput` (batch preflight/retire or task-level `request_authorization`, `approve_breaking_intent_revision` with temporary sidecar staging restored before returning, `stop`, and `repair_authority_state`), persists a step-correlated single-use `.confirm` grant in the private Antigravity cache, and returns `{"decision":"force_ask","reason":"..."}`; `PostToolUse` clears unused grants when the user rejects or cancels, and `ANTIGRAVITY_MCP_PROFILE.requestConfirmation` consumes the matching grant once during `tools/call` while failing closed (`interaction_not_opened` or `workspace_changed`) on unconfirmed calls, replays, or post-confirmation binding drift. Claude Code's MCP `elicitation/create` confirmation channel is unchanged.
+
+- [#472](https://github.com/dereknex/immune-brain/pull/472) [`a6aa54a`](https://github.com/dereknex/immune-brain/commit/a6aa54a8609ce8709489c71b2e15d26506baec98) Thanks [@dereknex](https://github.com/dereknex)! - The claude-code CLI reviewer now reads its own Review packet and evidence directories and runs its allowlisted git commands. `reviewArguments` passes `--add-dir` for the packet directory and the evidence directory, placed before `--max-turns` so the variadic flag never swallows the prompt, and `--settings` with `disableAllHooks: true`, so a user PreToolUse hook that rewrites `git diff` no longer falls outside `--allowedTools` under `dontAsk`, and `BASH_MAX_OUTPUT_LENGTH` of 150000, so a whole reviewed file fits. The packet directory is resolved to its real path. Pi and Antigravity reviewer arguments are unchanged (#447).
+
+- [#473](https://github.com/dereknex/immune-brain/pull/473) [`cac0861`](https://github.com/dereknex/immune-brain/commit/cac086160f5906b76ef41bad67b9eaf539f49d13) Thanks [@dereknex](https://github.com/dereknex)! - Adapter machinery both Hosts share now lives once in the new host-neutral layer `plugins/immune-brain/runtime/host-core/`, which ADR 0038 and the layering reference record under `kernel ← assurance ← host-core ← adapter`. Slice S1 moves the hook event log and its private-file helpers there: the Claude Code and Antigravity adapters keep no copy, so the Antigravity log gains the ownership check, the `0700`/`0600` modes and the `O_NOFOLLOW` open it lacked, and its `sessions()` returns session ids instead of file-name hashes. Antigravity's `--hook` also appends the start event of an allowed `invoke_subagent` / `Subagent` dispatch, which the matching `PostToolUse` already terminated. `tests/runtime-layering-boundary.test.ts` gains a rule refusing a `kernel/` or `assurance/` import of `host-core`. Verifier state machines, runtimes, the MCP runtime and run continuation are unchanged; no user-visible behavior changes (#414).
+
+- [#473](https://github.com/dereknex/immune-brain/pull/473) [`18d5d68`](https://github.com/dereknex/immune-brain/commit/18d5d68ed83b36a42891738b9d70d0b47051bc0f) Thanks [@dereknex](https://github.com/dereknex)! - One host-neutral MCP stdio runtime now serves both Hosts: `plugins/immune-brain/runtime/host-core/mcp_runtime.ts` holds `createMcpRuntime`, `handleJsonRpc` and `serveStdio`, configured by an `McpHostProfile` (serverInfo and contract, trusted client names, the tool-call correlation meta key and its refusal, the elicitation refusals, the probe, the runtime factory, the phase admission, the run-session correlation reader, the hook dispatcher and the bundle path). `claude/mcp_server.ts` and `antigravity/mcp_server.ts` keep only their profile, `--hook` dispatch and entrypoint guard, so the Antigravity adapter no longer imports the Claude one and the host-to-host baseline in `tests/runtime-layering-boundary.test.ts` is empty; the layering reference states that zero baseline. The Antigravity MCP server now composes `AntigravityRuntime` through its profile instead of the Claude runtime wrapper. #429 per-call workspace resolution (`_meta` workspace, then the first `file://` root, then the server's own workspace) is preserved, as are the tool surface, the correlation refusals and every Kernel outcome. No user-visible change (#414 S4).
+
+- [#473](https://github.com/dereknex/immune-brain/pull/473) [`1b022f6`](https://github.com/dereknex/immune-brain/commit/1b022f647c7a0f46ba0d49acbbc48e23756c64be) Thanks [@dereknex](https://github.com/dereknex)! - Run continuation session state moves into the host-neutral `host-core` layer: `plugins/immune-brain/runtime/host-core/run_continuation_session.ts` now owns the Claude Code session metadata files, the one-use tool-call correlation, pause, the native-failure counter and binding migration, driven by typed Host events, and the Antigravity Stop rule is a pure function there over the task projection. `claude/run_continuation.ts` keeps only payload parsing, transcript boundary and output rendering, and `antigravity/run_continuation.ts` keeps payload parsing and rendering, so neither adapter keeps a second copy of the automated obligations. Session metadata past the 256 KiB bound now reads as a blank session instead of a verification fault. Behavior is otherwise unchanged; no user-visible change (#414).
+
+- [#473](https://github.com/dereknex/immune-brain/pull/473) [`748c0a1`](https://github.com/dereknex/immune-brain/commit/748c0a15579bc9de1453e1385bf47110da7020cb) Thanks [@dereknex](https://github.com/dereknex)! - One host-neutral runtime now serves both Hosts: `plugins/immune-brain/runtime/host-core/runtime.ts` holds `HostRuntime`, the body the Claude Code and Antigravity runtimes previously shared by inheritance, and each adapter composes an instance with its own `HostRuntimeProfile` (host id, native confirmation reference, `AssuranceHostPort` and its `observe`, probe, Lane relay factory, Lane parent check). `AntigravityRuntime extends ClaudeRuntime` is gone, so `plugins/immune-brain/runtime/antigravity/kernel_ports.ts` no longer imports the Claude runtime and the host-to-host baseline in `tests/runtime-layering-boundary.test.ts` shrinks to its last edge (`antigravity/mcp_server -> claude/mcp_server`, retired by S4). `NativeAuthorityError` is declared once in `runtime/host-core/interaction.ts`; both adapters re-export or import it, and each runtime composition names its own confirmation reference (`claude-*` for the Claude profile, `antigravity-*` for the Antigravity profile; the Antigravity MCP entrypoint still composes the Claude profile until S4 moves it onto the shared MCP runtime). Public adapter method names, tool behavior and Kernel outcomes are unchanged. Known follow-up outside this Slice's scope: `.imm/risk-floor.json` still floors `runtime/claude/kernel_ports.ts` (now the adapter facade) rather than `runtime/host-core/runtime.ts`. No user-visible change (#414).
+
+- [#473](https://github.com/dereknex/immune-brain/pull/473) [`d920473`](https://github.com/dereknex/immune-brain/commit/d9204739d5ed2a65855cd9bad61806df0da7f09b) Thanks [@dereknex](https://github.com/dereknex)! - Verifier observation now has one state machine in the host-neutral layer: `plugins/immune-brain/runtime/host-core/verifier_observation.ts` binds the `VerificationRequest` directly and both Hosts map their own hook events into its `start` / `result` / `stop` / `session_end` vocabulary. Each adapter keeps only that mapping and its result resolution, so the Claude Code and Antigravity receipts now settle through the same outcomes: a start without its terminal keeps the reservation, a foreign agent, a model that differs from the reservation, a duplicate result and a finished session all refuse it. Antigravity's `PostToolUse` is terminal for its verifier dispatch (BR-SCN-1), so a receipt written by its own `--hook` entry no longer waits for a `SubagentStop` that Host never sends; the Antigravity hook log stores the shared vocabulary directly. `ReviewRequest.prompt` is removed: a Host receives the per-dispatch facts only, and the role contract and static review rules stay generated from the reviewer definition. No user-visible change on the Claude Code Host (#414).
+
+## 8.1.0
+
+### Minor Changes
+
+- [#457](https://github.com/dereknex/immune-brain/pull/457) [`cc567b1`](https://github.com/dereknex/immune-brain/commit/cc567b1c9100630aa4b7d9268f00726e0f4d14df) Thanks [@dereknex](https://github.com/dereknex)! - A project can list where a `routine` risk declaration may stand in `.imm/routine-classes.json`. When a `routine` task's actual diff leaves every listed class, the Kernel raises it to `material`, so it needs Review; nothing is refused and no gate opens. An untrusted list makes every task `critical`, and the file itself is always `critical`. `imm-kernel inspect --json` reports `risk.routine_classes` and `risk.outside_routine_allowlist`, and the Review manifest lists the escaping paths. Without the file nothing changes. ADR 0038 records the decision; this repository pilots a `docs-only` class.
+
+- [#470](https://github.com/dereknex/immune-brain/pull/470) [`22420e6`](https://github.com/dereknex/immune-brain/commit/22420e69287ad767311c88c10893ed42e32d5be8) Thanks [@dereknex](https://github.com/dereknex)! - Inside Herdr the Parent now drives each Lane Executor session through the new
+  `imm-session` command and the Supervised Session Port (ADR 0038) instead of
+  spelling `herdr` commands itself. The Herdr adapter keeps the same tabs, focus
+  rule, dialog handling and event-driven wait, pins Herdr protocol 22, and fails
+  closed when Herdr is unavailable. Kernel and batch behavior are unchanged.
+  Antigravity is now a Herdr Executor Host (kind `agy`) alongside Claude Code and
+  Pi, matching the hosts the Lane configuration already accepts.
+  `imm-session --provider herdr-core` adds a herdr-core adapter on the `hc` CLI;
+  the Loop contract does not use it yet.
+
+### Patch Changes
+
+- [#470](https://github.com/dereknex/immune-brain/pull/470) [`15445df`](https://github.com/dereknex/immune-brain/commit/15445df942cdceb669d20df61dea2af2bfe361fe) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity native tools work again on v8.0.0. A hook payload that carries
+  `lastUserInput` alongside `toolCall` is dispatched as a tool instead of a
+  `PreInvocation`, so `PreToolUse`/`PostToolUse` answer correctly and
+  `invoke_subagent` completion is observed again.
+
+  The lazy `call_mcp_tool` form is now matched by the canonical `PreToolUse`
+  matcher and admitted only when it targets Immune-Brain; other lazy servers stay
+  an ordinary allow. A privileged Antigravity batch call no longer needs Claude
+  metadata: it is correlated by `antigravity.google/conversation_id` plus the
+  `progressToken` step suffix that matches the Hook's `stepIdx`, and consuming
+  that admission revalidates the conversation's live entry token and workspace.
+  The admitted conversation becomes the runtime Hook session instead of the
+  transport connection id. Claude Code keeps its exact
+  `claudecode/toolUseId` correlation, and Herdr process supervision is unchanged.
+
+- [#471](https://github.com/dereknex/immune-brain/pull/471) [`b078ade`](https://github.com/dereknex/immune-brain/commit/b078ade02c0716069473ef01609ceba49fab2e57) Thanks [@dereknex](https://github.com/dereknex)! - The packaged `docs/reference/supervised-session-port.md` now matches its source,
+  so the installed Claude and Antigravity artifacts carry the measured
+  `herdr-core` admission status instead of the pre-measurement text.
+
 ## 8.0.0
 
 ### Major Changes

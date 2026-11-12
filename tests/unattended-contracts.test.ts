@@ -345,9 +345,9 @@ describe("unattended batch contract text", () => {
 		expect(LOOP_LOADER).toContain("dist/drive-batch.md#unattended-batch-opt-in");
 
 		// The opt-in tool and its single parameter are shipped facts, not prose.
-		const claudeServer = read("plugins/immune-brain/runtime/claude/mcp_server.ts");
-		expect(claudeServer).toContain(`name: "${BATCH_TOOL}"`);
-		expect(claudeServer).toContain("initiative_slug");
+		const mcpRuntime = read("plugins/immune-brain/runtime/host-core/mcp_runtime.ts");
+		expect(mcpRuntime).toContain(`name: "${BATCH_TOOL}"`);
+		expect(mcpRuntime).toContain("initiative_slug");
 
 		const piExtension = read("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts");
 		expect(piExtension).toContain(`name: "${BATCH_TOOL}"`);

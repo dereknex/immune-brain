@@ -16,7 +16,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 function git(root: string, ...args: string[]) {
 	return execFileSync("git", ["-C", root, "-c", "user.name=Test", "-c", "user.email=test@local", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
-function fixture(mode = "manual") {
+function fixture(mode = "manual", routineClasses?: Array<{ id: string; paths: string[] }>) {
 	const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-final-report-")));
 	roots.push(root);
 	git(root, "init", "-q", "-b", "main");
@@ -24,11 +24,12 @@ function fixture(mode = "manual") {
 	writeFileSync(join(root, "value.txt"), "base\n");
 	mkdirSync(join(root, ".imm"));
 	writeFileSync(join(root, ".imm/risk-floor.json"), JSON.stringify({ contract: "assurance_kernel/risk_floor/v1", critical: { changed_only: ["extra.txt"] } }));
+	if (routineClasses) writeFileSync(join(root, ".imm/routine-classes.json"), JSON.stringify({ contract: "assurance_kernel/routine_classes/v1", classes: routineClasses }));
 	git(root, "add", ".");
 	git(root, "commit", "-qm", "base");
 	const base = git(root, "rev-parse", "HEAD");
 	const intent = parseTaskIntentV1({ contract: "assurance_kernel/task_intent/v1", task_id: "child", owner: "user", goal: "Deliver child",
-		scope_hint: ["value.txt"], risk: "material", revision: 1,
+		scope_hint: ["value.txt"], risk: routineClasses ? "routine" : "material", revision: 1,
 		acceptance: [{ id: "AC1", assertion: "value delivered", verification: "bun --version" }, { id: "AC2", assertion: "extra delivered", verification: "bun --version" }] });
 	git(root, "checkout", "-qb", "imm/example");
 	writeFileSync(join(root, "value.txt"), "delivered\n");
@@ -58,12 +59,19 @@ function fixture(mode = "manual") {
 }
 
 describe("D24 final report and coordinator return", () => {
+	test("names the delivered paths that kept a routine declaration from standing (ADR 0038)", async () => {
+		const fx = fixture("manual", [{ id: "value-only", paths: ["value.txt"] }]);
+		const report = await buildBatchFinalReport(fx.root, fx.batch);
+		expect(report.children[0]).toMatchObject({ declared_risk: "routine", projected_risk: "critical", outside_routine_allowlist: ["extra.txt"] });
+	});
+
 	test("reports approved acceptance vs QA, whole child diff, projected risk and redo count after Lane removal", async () => {
 		const fx = fixture();
 		await fx.verify();
 		const before = fx.snapshot();
 		const report = await buildBatchFinalReport(fx.root, fx.batch);
 		expect(report).toMatchObject({ head: fx.head, children: [{ task_id: "child", acceptance: [{ id: "AC1", qa: "passed" }, { id: "AC2", qa: "passed" }], beyond_estimate: ["extra.txt"], declared_risk: "material", projected_risk: "critical", redo_count: 2, parked_reason: null }], final_verification: { passed: true, head: fx.head } });
+		expect("outside_routine_allowlist" in report.children[0]).toBe(false);
 		expect(fx.snapshot()).toEqual(before);
 		fx.batch.final_report = report;
 		fx.batch.batch_state = "completed";

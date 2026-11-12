@@ -5,7 +5,7 @@ import { MIN_CLAUDE_CODE_VERSION } from "../plugins/immune-brain/runtime/claude/
 
 const ROOT = join(import.meta.dir, "..");
 const REPORT = join(ROOT, "docs/verification/claude-native-elicitation-authority-conformance.md");
-const SERVER = join(ROOT, "plugins/immune-brain/runtime/claude/mcp_server.ts");
+const SERVER = join(ROOT, "plugins/immune-brain/runtime/host-core/mcp_runtime.ts");
 const OBSERVED_PLUGIN_VERSION = "3.4.0";
 
 describe("Claude native elicitation promotion evidence", () => {

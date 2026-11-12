@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "host-core-runtime-composition",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:host-core-runtime-composition:2026-11-10T16:14:18.914Z",
+  "final_record_hash": "sha256:c4a54feb6ce1efd86ad65f670c05ff399001a15f90720d593488f5b65ffb9ad7",
+  "terminalized_at": "2026-11-10T16:14:18.914Z"
+}

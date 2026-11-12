@@ -1,0 +1,157 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-core-mcp-runtime",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-core-mcp-runtime",
+    "goal": "Issue #414 slice S4 (Spec docs/specs/host-neutral-adapter-core.spec.md, D2, D8). createMcpRuntime, handleJsonRpc and serveStdio move to plugins/immune-brain/runtime/host-core/mcp_runtime.ts, configured by an McpHostProfile (serverInfo, trusted client names, tool-call correlation key, elicitation refusal text, probe, runtime factory, phase admission, run-session correlation, hook dispatch). claude/mcp_server.ts and antigravity/mcp_server.ts become profile, entrypoint and hook dispatch. #429 per-call workspace resolution is preserved. The host-to-host baseline is empty and the boundary test keeps it at zero; the layering reference states the zero baseline. Behavior preserved; no user-visible change.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec S4 AC1 (BR-REQ-5; D2). Done looks like: no adapter imports another adapter, and adding such an import fails CI. Seam: tests/runtime-layering-boundary.test.ts and tests/layering-rules-contract.test.ts over the real files. Positive: BASELINE is empty and the observed host-to-host edges are []. Negative: a fixture import from runtime/antigravity/ into runtime/claude/, and one from .pi-extension/ into runtime/antigravity/, are each reported unexpected. Bound: the layering reference's Enforcement section states that the baseline is empty and every host-to-host import fails, and no longer names a remaining #414 edge.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/layering-rules-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec S4 AC2 (BR-REQ-4; D8). Done looks like: each Host's MCP server is the shared runtime with its own profile. Seam: tests/dual-host-assurance-conformance.test.ts describe 'MCP host profile', driving each adapter's MCP runtime through JSON-RPC. Positive: initialize from client 'claude-code' returns serverInfo name 'claude-code'; initialize from 'antigravity-client' or 'antigravity' returns serverInfo name 'antigravity'; each binds the negotiated version for its probe. Negative: initialize from an untrusted client name binds no version, so a gated call is refused with that Host probe's reason; a Claude gated call without claudecode/toolUseId metadata is refused with NativeAuthorityError 'correlation_missing'. Bound: exactly one file under plugins/immune-brain/runtime defines createMcpRuntime, and it is runtime/host-core/mcp_runtime.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"test \\\"$(grep -rlE 'function (createMcpRuntime|handleJsonRpc)\\\\b' plugins/immune-brain/runtime | sort -u)\\\" = plugins/immune-brain/runtime/host-core/mcp_runtime.ts && bun test tests/dual-host-assurance-conformance.test.ts -t 'MCP host profile'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec S4 AC3 (BR-REQ-4; D8). Done looks like: the #429 workspace resolution and the MCP probe gates behave as before. Seam: tests/antigravity-assurance-conformance.test.ts describes 'MCP workspace resolution' and 'MCP host probe gates'. Positive: a tool call carrying _meta['antigravity.google/workspace_paths'][0] resolves that workspace; without it, the first file:// root from roots/list is used. Negative: a non-file root is skipped. Bound: with neither, options.cwd (or process.cwd()) is used, resolved per call rather than once per session.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-assurance-conformance.test.ts -t 'MCP workspace resolution' && bun test tests/antigravity-assurance-conformance.test.ts -t 'MCP host probe gates'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/host-core-mcp-runtime.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/host-core-mcp-runtime.intent.json",
+      "docs/reference/layering-rules.md",
+      "docs/specs/host-neutral-adapter-core.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/layering-rules.md",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/claude/mcp_server.ts",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/claude-host-authority.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/layering-rules-contract.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-core-mcp-runtime.intent.json",
+    "content_hash": "sha256:f7829ce8e6c78c2ee606dc086a85c488e4824229b16eb2613a1b054f0e0b3c24"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f7829ce8e6c78c2ee606dc086a85c488e4824229b16eb2613a1b054f0e0b3c24",
+  "git_base_head": "748c0a15579bc9de1453e1385bf47110da7020cb",
+  "attestations": [
+    {
+      "id": "approval-qa-e4064a0c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7829ce8e6c78c2ee606dc086a85c488e4824229b16eb2613a1b054f0e0b3c24",
+      "diff_hash": "sha256:ccbc161d34428506635f21f78409fededf8bc31d072daea72f6c43bb477cc426",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:9fbdcafbf197fb9bc9033db89e00f605887ac24c3f4f36137a08c4c37467301f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:9fbdcafbf197fb9bc9033db89e00f605887ac24c3f4f36137a08c4c37467301f"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:9fbdcafbf197fb9bc9033db89e00f605887ac24c3f4f36137a08c4c37467301f"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:9fbdcafbf197fb9bc9033db89e00f605887ac24c3f4f36137a08c4c37467301f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-62308b07",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f7829ce8e6c78c2ee606dc086a85c488e4824229b16eb2613a1b054f0e0b3c24",
+      "diff_hash": "sha256:ccbc161d34428506635f21f78409fededf8bc31d072daea72f6c43bb477cc426",
+      "actor_id": "cli:pi:dec08569-46f0-4912-bb14-8b710bbbd6ea",
+      "summary": "The shared profile-driven MCP runtime preserves the Claude behavior, probe gates, correlation refusals and per-call workspace fallback, with an empty host-to-host baseline and matching regenerated bundles; blast radius medium across both Host entrypoints and their persisted admission/session correlation paths.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "748c0a15579bc9de1453e1385bf47110da7020cb",
+        "review_commit": "78112896b60fcd12f941b046fe2d64275279ac10",
+        "review_tree": "cb37dcbe042a3360e5df90948dc396e9b0afe60e",
+        "manifest_digest": "sha256:1e57866f961544a74ed5b6519ad1cc0712a405f2c77b7e0d9eb3bba6902ad9aa"
+      },
+      "reviewer_verdict_sha256": "sha256:1f363db6208a425f80ebfcc8e1847e4b2dffa30d2a4c1036ebd739dc2f516b1d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-core-mcp-runtime:2026-11-11T01:56:31.652Z",
+      "at": "2026-11-11T01:56:31.652Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-core-mcp-runtime.intent.json"
+    },
+    {
+      "id": "record_approval:host-core-mcp-runtime:2026-11-11T01:56:50.368Z",
+      "at": "2026-11-11T01:56:50.368Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e4064a0c\naction_v2_sha256:e75f08a9a2d39f4752b2f0f9b4361b4ab6b6553249034bc3812f97a5b44bc4e1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3e5df083c311f107",
+        "issued_at": "2026-11-11T01:56:50.369Z"
+      }
+    },
+    {
+      "id": "record_approval:host-core-mcp-runtime:2026-11-11T02:08:00.063Z",
+      "at": "2026-11-11T02:08:00.063Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-62308b07\naction_v2_sha256:fb8cdba0f86109cb16d5b8005a152c759bbb88181643f4851ad8589dffdd5fb5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:dec08569-46f0-4912-bb14-8b710bbbd6ea",
+        "confirmation_ref": "pi-confirm-cc318e67687d776e",
+        "issued_at": "2026-11-11T02:08:00.063Z"
+      },
+      "review_started_at": "2026-11-11T01:56:54.375Z",
+      "review_submitted_at": "2026-11-11T02:07:59.071Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:host-core-mcp-runtime:2026-11-11T02:08:03.091Z",
+      "at": "2026-11-11T02:08:03.091Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:760a2c7b40d28db1efa4e814969da428e1ac464f755a75d92a07295f38d48f62"
+    }
+  ]
+}

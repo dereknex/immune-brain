@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { readGitIntegrationPreference, type GitIntegrationMode } from "../git_integration_preference";
 import { readAuditTaskPair } from "../kernel/storage";
 import { intentAuthorityHash, observeEnrollmentTaskIntent, readTaskIntent } from "../kernel/intent";
-import { resolveProjectedRisk } from "../kernel/completion";
+import { resolveProjectedRisk, routineAllowlistEscapes } from "../kernel/completion";
 import { readRiskFloor } from "../kernel/risk_floor";
 import type { EvidenceStatus, TaskIntentV1 } from "../kernel/types";
 import { pathMatchesScope, taskCommitRevisionIdentity } from "../workspace_scope";
@@ -23,6 +23,8 @@ export interface BatchFinalReport {
 		beyond_estimate: string[] | null;
 		declared_risk: TaskIntentV1["risk"];
 		projected_risk: TaskIntentV1["risk"] | null;
+		/** Present only when non-empty: delivered paths that kept a `routine` declaration from standing (ADR 0038). */
+		outside_routine_allowlist?: string[];
 		redo_count: number;
 		parked_reason: string | null;
 		/** Admitted on a fresh resume while the Parent tip's plugin build still differed from the loaded build. */
@@ -84,12 +86,14 @@ export async function buildBatchFinalReport(root: string, record: BatchLaneRunSt
 			const parent = child.commit ? git(path, "rev-parse", `${child.commit}^`) : null;
 			if (parent && parent.status !== 0) throw new Error(`final report unreadable integration: ${child.task_id}`);
 			const paths = child.commit ? taskCommitRevisionIdentity(path, ["**"], parent!.stdout.trim(), child.commit).changed_paths : null;
+			const outsideRoutine = paths ? routineAllowlistEscapes(intent, paths, floor) : [];
 			return {
 				task_id: child.task_id,
 				acceptance: intent.acceptance.map(item => ({ id: item.id, qa: qa?.acceptance_results.find(result => result.acceptance_id === item.id)?.status ?? null })),
 				beyond_estimate: paths?.filter(file => !intent.scope_hint.some(scope => pathMatchesScope(file, scope))) ?? null,
 				declared_risk: intent.risk,
 				projected_risk: paths ? resolveProjectedRisk(intent, paths, floor) : null,
+				...(outsideRoutine.length > 0 ? { outside_routine_allowlist: outsideRoutine } : {}),
 				redo_count: child.redo_grants ?? 0,
 				parked_reason: integrated ? null : child.reason,
 				...(child.runtime_skew_acknowledged ? { runtime_skew_acknowledged: child.runtime_skew_acknowledged } : {}),

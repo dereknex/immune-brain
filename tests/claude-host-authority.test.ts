@@ -1,6 +1,7 @@
 import { reviewIncompleteFixture, exhaustReviewForRetry } from "./fixtures/review-incomplete-fixture";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { execFileSync, spawnSync } from "node:child_process";
 import { prepareBatchRunState, prepareBatchLaneRunState, writeBatchRunReport, type BatchRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -17,7 +18,9 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/review_evidence";
 import { tmpdir } from "node:os";
-import { ClaudeReviewHost, FileHookEventLog, hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { ClaudeReviewHost, hookEventPath } from "../plugins/immune-brain/runtime/claude/review_host";
+import { FileHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
+import type { ClaudeHookEvent } from "../plugins/immune-brain/runtime/claude/review_host";
 import { createMcpRuntime as createMcpRuntimeUngated, elicitationParams, handleJsonRpc, listMcpTools, serveStdio } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { ClaudeRuntime, diffHashOf, diffSnapshotOf, type ToolMeta } from "../plugins/immune-brain/runtime/claude/kernel_ports";
@@ -338,7 +341,7 @@ describe("claude host authority", () => {
 
 	test("production runtime exposes no direct-decision authority seam", () => {
 		const source = [
-			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/kernel_ports.ts"), "utf8"),
+			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8"),
 			readFileSync(join(process.cwd(), "plugins/immune-brain/runtime/claude/mcp_server.ts"), "utf8"),
 		].join("\n");
 		expect(source).not.toContain("configured-test-decision");
@@ -425,6 +428,43 @@ describe("claude host authority", () => {
 		const cancelled = await runWireGate({}, { cancelOuter: true });
 		expect(JSON.stringify(cancelled.result)).toContain("user_cancelled");
 		expect(readTaskRecordRaw(cancelled.root, cancelled.taskId).record?.lifecycle).toBe("active");
+	});
+
+	// Spec antigravity-tool-hook-and-mcp-correlation AC4: Claude keeps its exact
+	// tool-use correlation, and Antigravity's conversation metadata is not a
+	// substitute for it.
+	test("Claude refuses a privileged call without its exact tool-use correlation", async () => {
+		const taskId = "wire-correlation-required";
+		const fixture = authorityFixtureRoot(taskId);
+		await enrollTaskForTest(fixture.root, taskId);
+		const input = new PassThrough();
+		const output = new PassThrough();
+		const next = jsonLineReader(output);
+		void serveStdio({
+			input,
+			output,
+			runtime: createMcpRuntimeUngated({ cwd: fixture.root, env: ENV }),
+			exit: () => undefined,
+		});
+		const send = (message: unknown) => input.write(`${JSON.stringify(message)}\n`);
+		send({
+			jsonrpc: "2.0",
+			id: "init",
+			method: "initialize",
+			params: { protocolVersion: "2025-06-18", clientInfo: { name: "claude-code", version: "2.1.236" }, capabilities: { elicitation: {} } },
+		});
+		await next();
+		for (const meta of [undefined, {}, { "antigravity.google/conversation_id": "conv-claude-impostor" }]) {
+			send({
+				jsonrpc: "2.0",
+				id: `outer-${Math.random().toString(16).slice(2)}`,
+				method: "tools/call",
+				params: { name: "stop", arguments: { task_id: taskId }, ...(meta ? { _meta: meta } : {}) },
+			});
+			expect(await next()).toMatchObject({ error: { data: { reason_code: "correlation_missing" } } });
+		}
+		input.end();
+		expect(readTaskRecordRaw(fixture.root, taskId).record?.lifecycle).toBe("active");
 	});
 
 	test("stdio output stream error terminates serveStdio and rejects pending elicitation", async () => {
@@ -884,14 +924,14 @@ describe("claude host authority", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-symlink-"));
 		const outside = mkdtempSync(join(tmpdir(), "claude-session-outside-"));
 		symlinkSync(outside, join(dir, "immune-brain-claude"));
-		new ClaudeReviewHost(new FileHookEventLog(dir)).observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
+		new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir)).observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		expect(readdirSync(outside)).toEqual([]);
 		expect(statSync(outside).mode & 0o777).toBe(0o700);
 	});
 
 	test("Hook cache rejects an owned evidence file with a non-private mode", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-file-mode-"));
-		const log = new FileHookEventLog(dir);
+		const log = new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir);
 		log.append({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		const file = join(dir, "immune-brain-claude", readdirSync(join(dir, "immune-brain-claude"))[0]);
 		chmodSync(file, 0o644);
@@ -900,7 +940,7 @@ describe("claude host authority", () => {
 
 	test("Hook cache directory and files are owner-only", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-mode-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
+		const host = new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir));
 		host.observe({ type: "SubagentStart", sessionId: "s", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		const cache = join(dir, "immune-brain-claude");
 		expect(statSync(cache).mode & 0o777).toBe(0o700);
@@ -910,7 +950,7 @@ describe("claude host authority", () => {
 
 	test("crafted session IDs cannot write Hook evidence outside the cache directory", () => {
 		const dir = mkdtempSync(join(tmpdir(), "claude-session-escape-"));
-		const host = new ClaudeReviewHost(new FileHookEventLog(dir));
+		const host = new ClaudeReviewHost(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", dir));
 		host.observe({ type: "SubagentStart", sessionId: "../evil", agent: "immune-brain-review-verifier", agentId: "cache-test" });
 		expect(existsSync(join(dir, "evil.jsonl"))).toBe(false);
 		expect(readdirSync(dir)).toEqual(["immune-brain-claude"]);
@@ -1078,7 +1118,7 @@ describe("hook entry writes only for active work", () => {
 		}
 		const path = hookEventPath("hook-work-session", store);
 		if (active) {
-			expect(new FileHookEventLog(store).list("hook-work-session").map((event) => event.type)).toEqual(events);
+			expect(new FileHookEventLog<ClaudeHookEvent>("immune-brain-claude", store).list("hook-work-session").map((event) => event.type)).toEqual(events);
 		} else {
 			expect(existsSync(path)).toBe(false);
 			expect(readdirSync(store)).toEqual([]);
@@ -1469,5 +1509,83 @@ describe("claude host resolve_finding", () => {
 		await expect(mcp.callTool("refute_finding", { task_id: RESOLVE_TASK, finding_id: "f-blocking", attestation_id: "qa-live" }))
 			.rejects.toThrow(/fresh passing QA attestation/);
 		expect(recordBytes(root)).toBe(original.run.split("/").slice(3).join("/"));
+	});
+});
+
+// Spec docs/specs/host-neutral-adapter-core.spec.md S2 AC4 (BR-REQ-2; D5):
+// moving verifier observation into the host-neutral core leaves Claude Code
+// settlement as it was, transcript locators included.
+describe("claude verifier settlement", () => {
+	const TRANSCRIPTS = reviewerTranscripts();
+	const ROOTS: string[] = [];
+	afterAll(() => {
+		TRANSCRIPTS.cleanup();
+		for (const root of ROOTS) rmSync(root, { recursive: true, force: true });
+	});
+
+	const TASK = "verifier-task";
+	const MODEL = "verifier-model";
+	const REPORT = "reviewer report";
+	const VERIFIER = "immune-brain-review-verifier";
+
+	function verifierDispatch(label: string) {
+		const root = mkdtempSync(join(tmpdir(), `claude-verifier-${label}-`));
+		ROOTS.push(root);
+		const instance = new ClaudeRuntime({ cwd: root, env: ENV, interactive: true });
+		const operationId = `verifier-${label}`;
+		const reservation = instance.host.prepareVerification!({
+			taskId: TASK, operationId, prompt: "verifier prompt", model: MODEL, writePacket: writeTestReviewPacket,
+		});
+		const prompt = (reservation.dispatch as { prompt: string }).prompt;
+		const start = (sessionId: string, agentId: string) =>
+			instance.observe({ type: "SubagentStart", sessionId, agent: VERIFIER, agentId, prompt, operationId });
+		const result = (sessionId: string, agentId: string, text: string, transcriptPath?: string) =>
+			instance.observe({ type: "PostToolUse", sessionId, agentId, toolName: "Agent", result: text, model: MODEL, prompt, operationId,
+				...(transcriptPath ? { transcriptPath } : {}) });
+		const stop = (sessionId: string, agentId: string) =>
+			instance.observe({ type: "SubagentStop", sessionId, agent: VERIFIER, agentId, operationId });
+		return { start, result, stop, inspect: () => instance.host.inspectVerification!(reservation) };
+	}
+
+	test("a sync Agent verifier is accepted from its own transcript", () => {
+		const dispatch = verifierDispatch("sync");
+		dispatch.start("session", "agent-sync");
+		dispatch.result("session", "agent-sync", "Agent finished successfully", TRANSCRIPTS.sessionTranscriptPath("agent-sync", REPORT));
+		dispatch.stop("session", "agent-sync");
+		expect(dispatch.inspect()).toEqual({ ok: true, receipt: { actorId: "claude:agent-sync", result: REPORT, model: MODEL } });
+	});
+
+	test("an async Agent launch is accepted from the transcript its envelope names", () => {
+		const dispatch = verifierDispatch("async");
+		const outputFile = TRANSCRIPTS.agentTranscriptPath("agent-async", REPORT);
+		dispatch.start("session", "agent-async");
+		dispatch.result("session", "agent-async", JSON.stringify({ isAsync: true, status: "async_launched", agentId: "agent-async", outputFile }));
+		dispatch.stop("session", "agent-async");
+		expect(dispatch.inspect()).toEqual({ ok: true, receipt: { actorId: "claude:agent-async", result: REPORT, model: MODEL } });
+	});
+
+	test("an async launch envelope naming another agent is refused", () => {
+		const dispatch = verifierDispatch("async-foreign");
+		const outputFile = TRANSCRIPTS.agentTranscriptPath("agent-other", REPORT);
+		dispatch.start("session", "agent-async");
+		dispatch.result("session", "agent-async", JSON.stringify({ isAsync: true, status: "async_launched", agentId: "agent-other", outputFile }));
+		dispatch.stop("session", "agent-async");
+		expect(dispatch.inspect()).toEqual({ ok: false, reason: "async Agent launch envelope names a different agent", release: true });
+	});
+
+	test("a terminal event for another agent is a correlation mismatch", () => {
+		const dispatch = verifierDispatch("mismatch");
+		dispatch.start("session", "agent-sync");
+		dispatch.result("session", "agent-sync", "Agent finished successfully", TRANSCRIPTS.sessionTranscriptPath("agent-sync", REPORT));
+		dispatch.stop("session", "agent-other");
+		expect(dispatch.inspect()).toEqual({ ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true });
+	});
+
+	test("an unreadable sync transcript keeps the reservation", () => {
+		const dispatch = verifierDispatch("unreadable");
+		dispatch.start("session", "agent-sync");
+		dispatch.result("session", "agent-sync", "Agent finished successfully");
+		dispatch.stop("session", "agent-sync");
+		expect(dispatch.inspect()).toEqual({ ok: false, reason: "sync Agent transcript is not readable", release: false });
 	});
 });

@@ -30,6 +30,7 @@ import {
 	generateVerifierDefinition,
 } from "../scripts/build-claude-plugin";
 import { stampPluginManifest, validateManifests } from "../scripts/plugin_versioning";
+import { hookEventPath } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 
 const ROOT = resolve(import.meta.dir, "..");
 const ARTIFACT = resolve(ROOT, ANTIGRAVITY_ROOT);
@@ -223,6 +224,122 @@ describe("Antigravity configured executable paths (AC2)", () => {
 	});
 });
 
+// Spec antigravity-tool-hook-and-mcp-correlation AC1 (D1, D2): a native tool
+// payload that also carries `lastUserInput` is a tool call, not PreInvocation,
+// so the packaged hook answers it and observes subagent completion.
+describe("Antigravity hook dispatch and observation", () => {
+	/** One hook invocation of the packaged bundle in a workspace of the test's own. */
+	function hookRunner(artifact: string, env: Record<string, string>) {
+		const command = hookCommands(artifact).find((entry) => entry.event === "PreToolUse")?.command;
+		if (!command) throw new Error("the packaged artifact configures no PreToolUse hook");
+		return (payload: unknown): Record<string, unknown> => {
+			const run = spawnSync("sh", ["-c", command], { cwd: artifact, env, input: JSON.stringify(payload), encoding: "utf8" });
+			expect(run.status).toBe(0);
+			return JSON.parse(run.stdout);
+		};
+	}
+
+	it("answers mixed tool payloads as tools and still observes the subagent result", () => {
+		const copy = relocate();
+		const workspace = scratchDir("workspace");
+		const env = isolatedEnv();
+		const hook = hookRunner(copy, env);
+		const conversationId = "conv-hook-dispatch";
+
+		// A pure PreInvocation payload keeps its injection response.
+		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive task", workspacePaths: [workspace] }))
+			.toEqual({ injectSteps: [], terminationBehavior: "" });
+
+		// The same marker on a tool payload is a tool call: a file edit is allowed.
+		expect(hook({ conversationId, stepIdx: 1, lastUserInput: "edit the file", workspacePaths: [workspace],
+			toolCall: { name: "write_file", args: { Path: join(workspace, "a.ts") } } })).toEqual({ decision: "allow" });
+
+		// The canonical matcher routes the lazy Immune-Brain form, which admits one gated operation.
+		const matcher = (JSON.parse(readFileSync(join(copy, "hooks.json"), "utf8"))["immune-brain"].PreToolUse as Array<{ matcher?: string }>)[0]?.matcher ?? "";
+		expect(matcher).toContain("call_mcp_tool");
+		expect(hook({ conversationId, stepIdx: 2, lastUserInput: "start the batch", workspacePaths: [workspace],
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "task" } } } }))
+			.toEqual({ decision: "allow" });
+
+		// An unrelated lazy server receives the ordinary allow and admits nothing.
+		expect(hook({ conversationId, stepIdx: 3, lastUserInput: "other server", workspacePaths: [workspace],
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "someone-else", ToolName: "start_unattended_batch", Arguments: {} } } }))
+			.toEqual({ decision: "allow" });
+
+		// PostToolUse keeps its empty response and appends the observed subagent
+		// result as this Host's terminal event in the shared host-core log.
+		expect(hook({ conversationId, stepIdx: 4, lastUserInput: "review it", workspacePaths: [workspace], result: "subagent says yes",
+			toolCall: { name: "invoke_subagent", args: { Model: "model-x", Prompt: "review the change" } } })).toEqual({});
+		const events = hookEventPath("immune-brain-antigravity", conversationId, env.TMPDIR);
+		expect(JSON.parse(readFileSync(events, "utf8").trim())).toMatchObject({
+			type: "result",
+			sessionId: conversationId,
+			agentId: "4",
+			result: "subagent says yes",
+			model: "model-x",
+			prompt: "review the change",
+		});
+
+		// Stop markers win over the PreInvocation marker in the same payload.
+		expect(hook({ conversationId, executionNum: 1, terminationReason: "done", lastUserInput: "stop now", workspacePaths: [scratchDir("idle")] })).toEqual({});
+	});
+
+	it("returns native force_ask confirmation from packaged PreToolUse on a real TaskIntent workspace", () => {
+		const copy = relocate();
+		const preHooks = JSON.parse(readFileSync(join(copy, "hooks.json"), "utf8"))["immune-brain"].PreToolUse as Array<{
+			hooks?: Array<{ timeout?: number }>;
+		}>;
+		expect(preHooks[0]?.hooks?.[0]?.timeout).toBe(120);
+
+		const repo = scratchDir("confirm-repo");
+		mkdirSync(join(repo, "docs/plans"), { recursive: true });
+		writeFileSync(join(repo, ".gitignore"), ".imm/state/\n");
+		writeFileSync(
+			join(repo, "docs/plans/pkg-task.intent.json"),
+			`${JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "pkg-task",
+				owner: "user",
+				goal: "confirm via packaged hook",
+				acceptance: [{
+					id: "AC1",
+					assertion: "packaged hook prepares confirmation",
+					verification: JSON.stringify({
+						contract: "assurance_kernel/verification_descriptor/v2",
+						command: { executable: "sh", argv: ["-c", "exit 0"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 4_096 },
+						environment: { prepare: null, writable_paths: [] },
+					}),
+				}],
+				scope_hint: ["docs/plans"],
+				risk: "routine",
+				revision: 1,
+			})}\n`,
+		);
+		spawnSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "add", "-A"], { cwd: repo });
+		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "fixture"], { cwd: repo });
+
+		const env = isolatedEnv();
+		const hook = hookRunner(copy, env);
+		const conversationId = "conv-pkg-confirm";
+		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive pkg-task", workspacePaths: [repo] }))
+			.toEqual({ injectSteps: [], terminationBehavior: "" });
+		const confirm = hook({
+			conversationId,
+			stepIdx: 2,
+			lastUserInput: "start lane",
+			workspacePaths: [repo],
+			toolCall: {
+				name: "call_mcp_tool",
+				args: { ServerName: "immune-brain_immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "pkg-task" } },
+			},
+		});
+		expect(confirm.decision).toBe("force_ask");
+		expect(String(confirm.reason)).toContain("Authorize this unattended batch run for pkg-task?");
+		expect(String(confirm.reason)).toContain("Preparation digest:");
+	});
+});
+
 describe("Antigravity relocatable closure (AC3)", () => {
 	it("a sibling-free copy has no unresolved link, role prompt, runtime import or symlink", () => {
 		expect(artifactClosureErrors(relocate())).toEqual([]);
@@ -387,6 +504,8 @@ describe("Antigravity distribution, version and generated outputs (AC4)", () => 
 		beforeAll(() => {
 			fixture = scratchDir("fixture");
 			cpSync(resolve(ROOT, "package.json"), join(fixture, "package.json"));
+			mkdirSync(join(fixture, "docs/agents"), { recursive: true });
+			cpSync(resolve(ROOT, "docs/agents/derived-files.json"), join(fixture, "docs/agents/derived-files.json"));
 			cpSync(resolve(ROOT, "plugins/immune-brain"), join(fixture, "plugins/immune-brain"), {
 				recursive: true,
 				filter: (source) => !/plugins\/immune-brain\/(dist\/claude|tests|\.plugin-eval)/.test(source),
@@ -447,6 +566,32 @@ describe("Antigravity distribution, version and generated outputs (AC4)", () => 
 			expect(statSync(wrapper).mode & 0o111).not.toBe(0);
 			checkAntigravityPlugin(fixture);
 		}, 120_000);
+
+		it("fails the check when a new shared bin wrapper is generated but not declared as a derived output", () => {
+			const sharedBin = join(fixture, "plugins/immune-brain/bin/imm-probe");
+			const declaration = join(fixture, "docs/agents/derived-files.json");
+			const original = readFileSync(declaration, "utf8");
+			const output = `${ANTIGRAVITY_ROOT}/bin/imm-probe`;
+			try {
+				writeFileSync(sharedBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+				buildAntigravityPlugin(fixture);
+				expect(() => checkAntigravityPlugin(fixture)).toThrow(`undeclared generated output: ${output}`);
+
+				const value = JSON.parse(original);
+				const entry = value.entries.find((candidate: { id: string }) => candidate.id === "antigravity-plugin-artifact");
+				entry.outputs = [...entry.outputs, output].sort();
+				writeFileSync(declaration, JSON.stringify(value));
+				checkAntigravityPlugin(fixture);
+
+				rmSync(sharedBin);
+				buildAntigravityPlugin(fixture);
+				expect(() => checkAntigravityPlugin(fixture)).toThrow(`declared output not generated: ${output}`);
+			} finally {
+				rmSync(sharedBin, { force: true });
+				writeFileSync(declaration, original);
+				buildAntigravityPlugin(fixture);
+			}
+		}, 180_000);
 
 		it("fails explicitly for a missing manifest, role prompt or referenced contract input", () => {
 			const manifest = join(fixture, ANTIGRAVITY_ROOT, ".antigravity-plugin/plugin.json");

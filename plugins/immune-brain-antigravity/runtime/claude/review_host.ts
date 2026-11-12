@@ -1,19 +1,14 @@
-import { createHash } from "node:crypto";
-import { verificationPacketHandle, verificationPacketError } from "../assurance/review_packet";
-import { constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeSync, closeSync } from "node:fs";
+import { FileHookEventLog, MemoryHookEventLog, hookEventPath as sharedHookEventPath, type HookEventLog } from "../host-core/hook_event_log";
+import { readPrivate } from "../host-core/private_file";
+import { VerifierObservation, type VerifierObservationProfile } from "../host-core/verifier_observation";
+import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
 	AssuranceHostPort,
 	HostReviewReservation,
-	ReviewRequest,
 	VerificationRequest,
 } from "../assurance/host_port";
-
-export type ObservedReviewReceipt = { actorId: string; result: string; model?: string };
-export type ConsumeReviewResult =
-	| { ok: true; receipt: ObservedReviewReceipt }
-	| { ok: false; reason: string; release: boolean };
 
 export const AGENT_TOOL = "Agent";
 /** The verifier agent types a Claude Host reports for its own dispatch. */
@@ -54,94 +49,17 @@ export type ClaudeHookEvent =
 	}
 	| { type: "SessionEnd"; sessionId: string };
 
-export interface HookEventLog {
-	append(event: ClaudeHookEvent): boolean;
-	list(sessionId?: string): ClaudeHookEvent[];
-	sessions(): string[];
-	clear(sessionId?: string): void;
+/** The Claude Host keeps its own cache directory name; storage is shared (D3). */
+export const CLAUDE_CACHE_DIR = "immune-brain-claude";
+
+/** Claude session files stay `<hash>.jsonl` under the Claude cache directory. */
+export function hookEventPath(sessionId: string, root = tmpdir()): string {
+	return sharedHookEventPath(CLAUDE_CACHE_DIR, sessionId, root);
 }
 
-export class MemoryHookEventLog implements HookEventLog {
-	private readonly events: ClaudeHookEvent[] = [];
-	append(event: ClaudeHookEvent): boolean { this.events.push(event); return true; }
-	list(sessionId?: string): ClaudeHookEvent[] {
-		return sessionId ? this.events.filter((event) => event.sessionId === sessionId) : [...this.events];
-	}
-	sessions(): string[] {
-		return [...new Set(this.events.map((event) => event.sessionId))];
-	}
-	clear(sessionId?: string): void {
-		if (!sessionId) {
-			this.events.length = 0;
-			return;
-		}
-		for (let i = this.events.length - 1; i >= 0; i--) {
-			if (this.events[i].sessionId === sessionId) this.events.splice(i, 1);
-		}
-	}
-}
-
-const CACHE_DIR = "immune-brain-claude";
-
-export function sessionHash(sessionId: string): string {
-	return createHash("sha256").update(sessionId).digest("hex");
-}
-
-export function cacheDir(root: string): string {
-	return join(root, CACHE_DIR);
-}
-
-export function ownedByUs(stat: { uid: number; isSymbolicLink(): boolean }): boolean {
-	if (stat.isSymbolicLink()) return false;
-	const uid = process.getuid?.();
-	return uid === undefined || stat.uid === uid;
-}
-
-export function ensurePrivateDir(dir: string): boolean {
-	try {
-		const existing = lstatSync(dir);
-		return existing.isDirectory() && ownedByUs(existing) && (existing.mode & 0o777) === 0o700;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-	}
-	try { mkdirSync(dir, { mode: 0o700 }); } catch { return false; }
-	try {
-		const created = lstatSync(dir);
-		return created.isDirectory() && ownedByUs(created) && (created.mode & 0o777) === 0o700;
-	} catch {
-		return false;
-	}
-}
-
-export function appendPrivate(path: string, dir: string, line: string): boolean {
-	if (!ensurePrivateDir(dir)) return false;
-	const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK;
-	let fd: number;
-	try { fd = openSync(path, flags, 0o600); } catch { return false; }
-	try {
-		const stat = fstatSync(fd);
-		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return false;
-		return writeSync(fd, line) === Buffer.byteLength(line);
-	} catch {
-		return false;
-	} finally {
-		closeSync(fd);
-	}
-}
-
-export function readPrivate(path: string, maxBytes = Number.POSITIVE_INFINITY): string | undefined {
-	let fd: number;
-	try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); } catch { return; }
-	try {
-		const stat = fstatSync(fd);
-		if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 0o777) !== 0o600) return;
-		if (stat.size > maxBytes) return;
-		const buf = Buffer.alloc(stat.size);
-		readSync(fd, buf, 0, stat.size, 0);
-		return buf.toString("utf8");
-	} finally {
-		closeSync(fd);
-	}
+/** The event log this adapter constructs: the shared file log over the Claude cache. */
+export function claudeHookEventLog(root = tmpdir()): FileHookEventLog<ClaudeHookEvent> {
+	return new FileHookEventLog<ClaudeHookEvent>(CLAUDE_CACHE_DIR, root);
 }
 
 /**
@@ -254,75 +172,6 @@ function readSyncAgentTranscript(
 	return readAgentTranscript(derived);
 }
 
-export function hookEventPath(sessionId: string, root = tmpdir()): string {
-	return join(cacheDir(root), `${sessionHash(sessionId)}.jsonl`);
-}
-
-export class FileHookEventLog implements HookEventLog {
-	constructor(private readonly root = tmpdir()) {}
-	append(event: ClaudeHookEvent): boolean {
-		const path = hookEventPath(event.sessionId, this.root);
-		return appendPrivate(path, dirname(path), `${JSON.stringify(event)}\n`);
-	}
-	list(sessionId?: string): ClaudeHookEvent[] {
-		if (sessionId) return this.readSession(sessionId);
-		const dir = cacheDir(this.root);
-		if (!ensurePrivateDir(dir)) return [];
-		try {
-			return readdirSync(dir)
-				.filter((name) => name.endsWith(".jsonl"))
-				.flatMap((name) => this.readFile(join(dir, name)));
-		} catch {
-			return [];
-		}
-	}
-	sessions(): string[] {
-		const ids = new Set<string>();
-		for (const event of this.list()) if (event.sessionId) ids.add(event.sessionId);
-		return [...ids];
-	}
-	private readFile(path: string): ClaudeHookEvent[] {
-		const text = readPrivate(path);
-		if (!text) return [];
-		try {
-			return text.split("\n").filter(Boolean).map((line) => JSON.parse(line) as ClaudeHookEvent);
-		} catch {
-			return [];
-		}
-	}
-	private readSession(sessionId: string): ClaudeHookEvent[] {
-		if (!ensurePrivateDir(cacheDir(this.root))) return [];
-		return this.readFile(hookEventPath(sessionId, this.root));
-	}
-	clear(sessionId?: string): void {
-		if (!sessionId || !ensurePrivateDir(cacheDir(this.root))) return;
-		const path = hookEventPath(sessionId, this.root);
-		try {
-			const stat = lstatSync(path);
-			if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 0o777) !== 0o600) return;
-			rmSync(path, { force: true });
-		} catch { /* cleanup cannot create authority */ }
-	}
-}
-
-interface PendingReview {
-	request: ReviewRequest;
-	verifierModel?: string;
-	/**
-	 * The prompt the Host asked the Parent to dispatch, marker line included.
-	 * Hook evidence carries Parent-authored text, so this is the only string a
-	 * dispatched prompt is ever compared against.
-	 */
-	dispatchPrompt: string;
-	initialCursors: Map<string, number>;
-	sessionCursors: Map<string, number>;
-	startEvent?: Extract<ClaudeHookEvent, { type: "SubagentStart" }>;
-	postEvent?: Extract<ClaudeHookEvent, { type: "PostToolUse" }>;
-	stopEvent?: Extract<ClaudeHookEvent, { type: "SubagentStop" }>;
-	consumed: boolean;
-	error?: string;
-}
-
 export function parseReviewMarker(prompt: unknown): { operationId: string; taskId: string } | undefined {
 	if (typeof prompt !== "string") return;
 	const match = /<!-- immune-brain:operation_id=([^\s]+)\s+task_id=([^\s]+)\s+-->/.exec(prompt);
@@ -330,245 +179,107 @@ export function parseReviewMarker(prompt: unknown): { operationId: string; taskI
 }
 
 /**
- * Whether hook evidence carrying a prompt belongs to this reservation.
- *
- * The prompt is Parent-authored text, so the marker is not an acceptance path:
- * a dispatch that keeps the matching `operation_id` and `task_id` marker but
- * appends, truncates or rewrites the body does not bind and cannot settle. Only
- * the exact reserved dispatch prompt does. Evidence with no prompt at all is
- * judged by the identifiers the hook itself supplies.
+ * The Claude Host's own mapping into the shared state machine (D5): its hook
+ * vocabulary, its dispatch envelope, and its transcript-based result
+ * resolution. Everything the reservation does lives in `VerifierObservation`.
  */
-function bindsPrompt(prompt: string | undefined, pending: PendingReview): boolean {
-	return prompt === undefined || prompt === pending.dispatchPrompt;
-}
-
-function bindsStart(event: Extract<ClaudeHookEvent, { type: "SubagentStart" }>, pending: PendingReview): boolean {
-	if (event.taskId && event.taskId !== pending.request.taskId) return false;
-	if (!bindsPrompt(event.prompt, pending)) return false;
-	if (event.operationId) return event.operationId === pending.request.operationId;
-	return event.prompt !== undefined;
-}
-
-export class ClaudeReviewHost implements AssuranceHostPort {
-	readonly host = "claude-code" as const;
-	private readonly pending = new Map<string, PendingReview>();
-	private readonly appliedBySession = new Map<string, number>();
-	constructor(private readonly log: HookEventLog = new MemoryHookEventLog()) {}
-
-	prepareVerification(request: VerificationRequest): HostReviewReservation {
-		const reviewRequest: ReviewRequest = { taskId: request.taskId, operationId: request.operationId,
-			prompt: request.prompt, snapshotPrompt: request.prompt, evidencePath: "", writePacket: request.writePacket, maxTurns: 16 };
-		this.drain();
-		const cursors = new Map(this.log.sessions().map(sessionId => [sessionId, this.log.list(sessionId).length]));
-		const dispatchPrompt = verificationPacketHandle({ taskId: request.taskId, operationId: request.operationId,
-			packet: request.writePacket(request.operationId, request.prompt) });
-		this.pending.set(request.operationId, { request: reviewRequest, verifierModel: request.model, dispatchPrompt,
-			initialCursors: new Map(cursors), sessionCursors: new Map(cursors), consumed: false });
-		return { id: request.operationId, dispatch: { subagent_type: "immune-brain:immune-brain-review-verifier", model: request.model, prompt: dispatchPrompt } };
-	}
-
-	inspectVerification(reservation: HostReviewReservation) {
-		const state = this.pending.get(reservation.id);
-		if (!state?.verifierModel) return { ok: false as const, reason: "verifier reservation not found", release: true };
-		const result = this.inspectVerifier(reservation);
-		return result.ok ? { ok: true as const, receipt: { ...result.receipt, model: state.verifierModel } } : result;
-	}
-
-	observe(event: ClaudeHookEvent): void {
-		this.log.append(event);
-	}
-
-	private drain(): void {
-		for (const sessionId of this.log.sessions()) {
-			const events = this.log.list(sessionId);
-			let start = this.appliedBySession.get(sessionId) ?? 0;
-			if (start > events.length) start = 0;
-			let ended = false;
-			for (let i = start; i < events.length; i++) {
-				const event = events[i];
-				if (event.type === "SessionEnd") {
-					// Any reservation that already bound evidence from the finished
-					// session loses it outright; that evidence can never be revived.
-					for (const [id, state] of this.pending) {
-						if (state.startEvent?.sessionId === event.sessionId || state.postEvent?.sessionId === event.sessionId || state.stopEvent?.sessionId === event.sessionId) {
-							this.pending.delete(id);
-						}
-					}
-					// A resumed session reuses its id, so the same log can hold events
-					// appended after an earlier end. Advancing every surviving cursor
-					// past this point keeps the pre-end events unusable — the property
-					// the old whole-log clear was protecting — while still letting the
-					// events that follow reach their reservation. Clearing and stopping
-					// here instead silently discarded a live Review receipt.
-					for (const state of this.pending.values()) {
-						const current = state.initialCursors.get(sessionId) ?? 0;
-						if (i + 1 > current) state.initialCursors.set(sessionId, i + 1);
-					}
-					if (i === events.length - 1) {
-						// Nothing followed the end, so the log is safe to reclaim.
-						this.log.clear(event.sessionId);
-						ended = true;
-						this.appliedBySession.delete(event.sessionId);
-						break;
-					}
-					continue;
-				}
-				for (const state of this.pending.values()) {
-					if (state.consumed || state.error || i < (state.initialCursors.get(sessionId) ?? 0)) continue;
-					this.applyReviewEvent(event, state);
-				}
-			}
-			if (ended) {
-				this.appliedBySession.delete(sessionId);
-				for (const state of this.pending.values()) state.sessionCursors.delete(sessionId);
-			} else {
-				this.appliedBySession.set(sessionId, events.length);
-				for (const state of this.pending.values()) state.sessionCursors.set(sessionId, events.length);
-				// Second pass for out-of-order correlation: if postEvent arrived during this batch,
-				// run earlier events >= initialCursor so startEvent/stopEvent are correlated.
-				for (const state of this.pending.values()) {
-					if (state.consumed || state.error || !state.postEvent || state.postEvent.sessionId !== sessionId) continue;
-					if (!state.startEvent || !state.stopEvent) {
-						const from = state.initialCursors.get(sessionId) ?? 0;
-						for (let j = from; j < events.length; j++) {
-							this.applyReviewEvent(events[j], state);
-							if (state.error) break;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	private applyReviewEvent(event: ClaudeHookEvent, state: PendingReview): void {
-		if (state.error) return;
-		if (event.type === "SubagentStart") {
-			if (!VERIFIER_AGENTS.includes(event.agent)) return;
-			// If operationId or prompt is explicit on Start, it must bind to this reservation
-			if (event.operationId || event.prompt !== undefined) {
-				if (!bindsStart(event, state)) return;
-			}
-			// If PostToolUse already bound to this reservation, match its agentId and session
-			if (state.postEvent) {
-				if (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId) return;
-			}
-			if (state.stopEvent) {
-				if (event.sessionId !== state.stopEvent.sessionId || event.agentId !== state.stopEvent.agentId) return;
-			}
-			// If neither postEvent nor stopEvent is present yet and this Start lacks operationId/prompt,
-			// it cannot be bound proactively to a reservation without evidence; skip until correlated.
-			if (!event.operationId && event.prompt === undefined && !state.postEvent && !state.stopEvent) {
-				return;
-			}
-			if (state.startEvent) {
-				if (state.startEvent === event) return;
-				state.error = "reserved Review already has a native tool call";
-				return;
-			}
-			state.startEvent = event;
-			return;
-		}
+const CLAUDE_VERIFIER_PROFILE: VerifierObservationProfile<ClaudeHookEvent> = {
+	verifierAgents: VERIFIER_AGENTS,
+	terminal: "result+stop",
+	actorPrefix: "claude",
+	dispatch: ({ dispatchPrompt, model }) => ({
+		subagent_type: "immune-brain:immune-brain-review-verifier",
+		model,
+		prompt: dispatchPrompt,
+	}),
+	decode(event) {
+		if (event.type === "SessionEnd") return { type: "session_end", sessionId: event.sessionId };
+		if (event.type === "SubagentStart") return {
+			type: "start",
+			sessionId: event.sessionId,
+			agentId: event.agentId,
+			...(event.agent ? { agent: event.agent } : {}),
+			...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+			...(event.taskId ? { taskId: event.taskId } : {}),
+			...(event.operationId ? { operationId: event.operationId } : {}),
+		};
 		if (event.type === "PostToolUse") {
-			if (event.toolName !== AGENT_TOOL) return;
-			if (!event.agentId || !event.operationId || event.operationId !== state.request.operationId) return;
-			if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId) return;
-			// The `Agent` tool input is where this Host actually reports the
-			// dispatched prompt, so it is bound by the same exactness rule.
-			if (!bindsPrompt(event.prompt, state)) return;
-			if (state.verifierModel && event.model !== state.verifierModel) { state.error = "verifier model differs from reservation"; return; }
-			if (state.startEvent && event.sessionId !== state.startEvent.sessionId) return;
-			if (state.startEvent && event.agentId !== state.startEvent.agentId) return;
-			if (state.stopEvent && event.sessionId !== state.stopEvent.sessionId) return;
-			if (state.stopEvent && event.agentId !== state.stopEvent.agentId) return;
-			if (state.postEvent !== undefined) {
-				if (state.postEvent === event) return;
-				state.error = "duplicate PostToolUse result observed for review reservation";
-				return;
-			}
-			state.postEvent = event;
-			return;
+			// An `Agent` result names its reservation through the operation id, so a
+			// result without one is not evidence for any reservation.
+			if (event.toolName !== AGENT_TOOL || !event.agentId || !event.operationId) return null;
+			return {
+				type: "result",
+				sessionId: event.sessionId,
+				agentId: event.agentId,
+				result: event.result,
+				...(event.model !== undefined ? { model: event.model } : {}),
+				...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+				...(event.taskId ? { taskId: event.taskId } : {}),
+				operationId: event.operationId,
+			};
 		}
-		if (event.type === "SubagentStop") {
-			if (!VERIFIER_AGENTS.includes(event.agent)) return;
-			if (!event.agentId) return;
-			if ("operationId" in event && event.operationId && event.operationId !== state.request.operationId) return;
-			if ("taskId" in event && event.taskId && event.taskId !== state.request.taskId) return;
-			if (state.startEvent && (event.sessionId !== state.startEvent.sessionId || event.agentId !== state.startEvent.agentId)) return;
-			if (state.postEvent && (event.sessionId !== state.postEvent.sessionId || event.agentId !== state.postEvent.agentId)) return;
-			if (!event.operationId && !state.startEvent && !state.postEvent) {
-				return;
-			}
-			if (state.stopEvent) {
-				if (state.stopEvent === event) return;
-				state.error = "duplicate SubagentStop observed for review reservation: a reviewer was continued after it finished; a reviewer cannot be continued and a fresh reviewer must be dispatched";
-				return;
-			}
-			state.stopEvent = event;
-		}
-	}
-
-	private inspectVerifier(reservation: HostReviewReservation): ConsumeReviewResult {
-		this.drain();
-		const state = this.pending.get(reservation.id);
-		if (!state) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		const packetError = verificationPacketError(state.dispatchPrompt);
-		if (packetError) return { ok: false, reason: packetError, release: true };
-		if (state.consumed) return { ok: false, reason: "review receipt already consumed", release: true };
-		if (state.error) return { ok: false, reason: state.error, release: true };
-		if (!state.startEvent) return { ok: false, reason: "reserved foreground Agent was not observed", release: true };
-		if (!state.stopEvent || !state.postEvent?.result?.trim()) {
-			return { ok: false, reason: "foreground Agent terminal event order is incomplete", release: false };
-		}
-		// Reconcile: all 3 events must belong to the exact same session and agentId
-		if (
-			state.startEvent.sessionId !== state.postEvent.sessionId ||
-			state.startEvent.sessionId !== state.stopEvent.sessionId ||
-			state.startEvent.agentId !== state.postEvent.agentId ||
-			state.startEvent.agentId !== state.stopEvent.agentId
-		) {
-			return { ok: false, reason: "foreground Agent terminal event correlation mismatch", release: true };
-		}
-		const actorId = `claude:${state.startEvent.agentId ?? reservation.id}`;
-		const launch = parseAsyncAgentLaunch(state.postEvent.result);
+		if (!event.agentId) return null;
+		return {
+			type: "stop",
+			sessionId: event.sessionId,
+			agentId: event.agentId,
+			...(event.agent ? { agent: event.agent } : {}),
+			...(event.taskId ? { taskId: event.taskId } : {}),
+			...(event.operationId ? { operationId: event.operationId } : {}),
+		};
+	},
+	resolveResult(observed) {
+		const post = observed.host.result as Extract<ClaudeHookEvent, { type: "PostToolUse" }>;
+		const stop = observed.host.stop as Extract<ClaudeHookEvent, { type: "SubagentStop" }>;
+		const launch = parseAsyncAgentLaunch(observed.result.result);
 		if (!launch) {
 			// A synchronous result is a pointer notice, not the report, so the
 			// receipt still comes from the reviewer's own transcript. The tool
 			// result text and any `handbackReport` field are bytes the Parent can
 			// see or forge, and are never a receipt.
-			const transcript = readSyncAgentTranscript(state.postEvent, state.stopEvent);
-			if (transcript === undefined) {
-				return { ok: false, reason: "sync Agent transcript is not readable", release: false };
-			}
-			const report = readAgentTranscriptResult(transcript, state.postEvent.agentId);
-			if (!report?.trim()) {
-				return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
-			}
-			const syncModel = state.postEvent.model;
-			return { ok: true, receipt: { actorId, result: report, ...(syncModel ? { model: syncModel } : {}) } };
+			const transcript = readSyncAgentTranscript(post, stop);
+			if (transcript === undefined) return { ok: false, reason: "sync Agent transcript is not readable", release: false };
+			const report = readAgentTranscriptResult(transcript, post.agentId);
+			if (!report?.trim()) return { ok: false, reason: "sync Agent transcript carries no reviewer result", release: false };
+			return { ok: true, result: report };
 		}
 		// Invariant guard. Correlation already binds the PostToolUse through the
 		// same `agentId` this envelope carries, so a foreign id normally never
 		// reaches here; assert it anyway rather than read a transcript the three
 		// observed events did not agree on.
-		if (launch.agentId !== state.postEvent.agentId) {
-			return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
-		}
+		if (launch.agentId !== post.agentId) return { ok: false, reason: "async Agent launch envelope names a different agent", release: true };
 		const transcript = readAgentTranscript(launch.outputFile);
-		if (transcript === undefined) {
-			// Fail closed rather than falling back to bytes the Parent supplied:
-			// an optional weaker path is a path the Parent can choose to force.
-			return { ok: false, reason: "async Agent transcript is not readable", release: false };
-		}
+		// Fail closed rather than falling back to bytes the Parent supplied: an
+		// optional weaker path is a path the Parent can choose to force.
+		if (transcript === undefined) return { ok: false, reason: "async Agent transcript is not readable", release: false };
 		const verdict = readAgentTranscriptResult(transcript, launch.agentId);
-		if (!verdict?.trim()) {
-			return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
-		}
-		const model = launch.resolvedModel ?? state.postEvent.model;
-		return { ok: true, receipt: { actorId, result: verdict, ...(model ? { model } : {}) } };
+		if (!verdict?.trim()) return { ok: false, reason: "async Agent transcript carries no reviewer result", release: false };
+		return { ok: true, result: verdict };
+	},
+};
+
+export class ClaudeReviewHost implements AssuranceHostPort {
+	readonly host = "claude-code" as const;
+	private readonly observation: VerifierObservation<ClaudeHookEvent>;
+
+	constructor(log: HookEventLog<ClaudeHookEvent> = new MemoryHookEventLog<ClaudeHookEvent>()) {
+		this.observation = new VerifierObservation(CLAUDE_VERIFIER_PROFILE, log);
+	}
+
+	prepareVerification(request: VerificationRequest): HostReviewReservation {
+		return this.observation.prepare(request);
+	}
+
+	inspectVerification(reservation: HostReviewReservation) {
+		return this.observation.inspect(reservation);
+	}
+
+	observe(event: ClaudeHookEvent): void {
+		this.observation.observe(event);
 	}
 
 	releaseReview(reservation: HostReviewReservation): void {
-		this.pending.delete(reservation.id);
+		this.observation.release(reservation);
 	}
 }
 

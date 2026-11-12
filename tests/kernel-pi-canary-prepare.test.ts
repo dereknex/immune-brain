@@ -140,6 +140,10 @@ describe("pi canary prepare read-only identity", () => {
 		expect(first.backend_claim.present).toBe(false);
 		expect(first.task_record_v3?.present).toBe(false);
 		expect(first.workspace.current_working).toBeNull();
+		// A recompute at another instant (another process) binds the same owners.
+		const later = preparePiCanary(root, { task_id: TASK, now: "2026-08-12T00:05:00.000Z" });
+		expect(later.generated_at).not.toBe(first.generated_at);
+		expect(later.digest).toBe(first.digest);
 	});
 
 	test("revalidation detects owner drift", () => {

@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-core-run-continuation",
+  "owner": "user",
+  "goal": "Issue #414 slice S5 (Spec docs/specs/host-neutral-adapter-core.spec.md, D9, D11). Run continuation session state (metadata persistence, tool-call correlation, pause, native failure counter, binding migration) moves to plugins/immune-brain/runtime/host-core/run_continuation_session.ts driven by typed events, and the Antigravity Stop decision moves to host-core as a pure function over the task projection with unchanged semantics. claude/run_continuation.ts and antigravity/run_continuation.ts keep only payload parsing and output rendering. Behavior preserved; no user-visible change.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec S5 AC1 (BR-REQ-3; D9). Done looks like: Claude Code Stop continuation behaves as before while its state machine lives in host-core. Seam: tests/claude-run-continuation.test.ts. Positive: a bound run with an automated next step continues at Stop. Negative: after three native failures (NATIVE_FAILURE_LIMIT) the run pauses with the 'Immune-Brain run paused' system message; a tool-call correlation recorded in one workspace is not returned by readRunToolSession for another workspace. Bound: a session metadata file larger than 256 KiB is treated as blank. Structural: runtime/claude/run_continuation.ts defines none of readMetadata, save, pauseRun or observeNativeFailure.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -nE 'function (readMetadata|save|pauseRun|observeNativeFailure)\\\\b' plugins/immune-brain/runtime/claude/run_continuation.ts && bun test tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec S5 AC2 (BR-REQ-3; D9, D11). Done looks like: the Antigravity Stop hook decides exactly as before from a host-core function. Seam: tests/antigravity-assurance-conformance.test.ts describe 'Run Continuation Hook'. Positive: an active claim whose projection is active with next_obligation 'run_qa' returns decision 'continue' with a reason naming the task id and 'run_qa'. Negative: next_obligation 'resolve_user_decision', an open user decision count of 1, a lifecycle other than 'active', and a workspace with no active claim each return {}. Bound: a next_obligation outside run_qa, run_review, submit_assurance and resolve_findings returns {}. Structural: runtime/antigravity/run_continuation.ts no longer lists the automated obligations.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"! grep -n 'run_review' plugins/immune-brain/runtime/antigravity/run_continuation.ts && bun test tests/antigravity-assurance-conformance.test.ts -t 'Run Continuation Hook'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-core-run-continuation.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/host-core-run-continuation.intent.json",
+    "docs/specs/host-neutral-adapter-core.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/claude/mcp_server.ts",
+    "plugins/immune-brain/runtime/claude/run_continuation.ts",
+    "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/claude-run-continuation.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

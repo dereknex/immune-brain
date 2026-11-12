@@ -64,3 +64,7 @@ Issue #397 introduces Google Antigravity (CLI `agy` and Antigravity 2.0 Desktop/
 ## Amendment: Layering doctrine (2026-11-08)
 
 The Dependency Rule, Port slicing, mapping convergence and module-documentation norms that keep the adapter boundary of this ADR are recorded in [ADR 0035](0035-layering-doctrine.md). The decisions above are unchanged.
+
+## Amendment: Antigravity gate decisions (2026-11-11)
+
+On Antigravity, `PreToolUse` returns `deny` for a gated call (`start_unattended_batch`, `retire_stale_batch`) whose conversation holds no live drive entry, exactly as Claude Code's hook does, and returns `force_ask` only for a call it admitted. The server consumes the single-use admission and refuses a call without one, so a `force_ask` on an unadmitted call opened a confirmation that could authorize nothing. That single-use admission, bound to its call, operation, Hook session, live entry and workspace, is the gated call's correlation on every Host; the shared MCP runtime no longer also requires Claude's `.continuation-call` record. The decisions above are otherwise unchanged.

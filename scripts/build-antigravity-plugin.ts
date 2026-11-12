@@ -20,6 +20,7 @@ import {
 	generateVerifierDefinition,
 } from "./build-claude-plugin";
 import { INTERNAL_ROLE_PROMPTS } from "../plugins/immune-brain/runtime/role_prompt_bridge";
+import { DERIVED_FILES_PATH, parseDerivedFiles } from "../plugins/immune-brain/runtime/derived_files";
 
 /** The shared source root: Pi/Claude install root and canonical delivery inputs. */
 export const SHARED_ROOT = "plugins/immune-brain";
@@ -232,8 +233,7 @@ export function buildAntigravityPlugin(root = resolve(import.meta.dir, "..")): {
  * Differences between the committed owned inventory and a fresh generate.
  * Read-only: nothing is stamped, repaired or left in the worktree.
  */
-export function antigravityArtifactDrift(root: string): string[] {
-	const expected = expectedArtifact(root);
+export function antigravityArtifactDrift(root: string, expected: OwnedFiles = expectedArtifact(root)): string[] {
 	const actual = ownedFiles(root);
 	const drift: string[] = [];
 	for (const [path, file] of expected) {
@@ -246,11 +246,38 @@ export function antigravityArtifactDrift(root: string): string[] {
 	return drift;
 }
 
+/** The derived-files entry whose static `outputs` must cover every owned file. */
+export const DERIVED_ENTRY_ID = "antigravity-plugin-artifact";
+
+/**
+ * Differences between the owned inventory a fresh generate produces and the
+ * static `outputs` declared for this builder. The builder enumerates shared
+ * directories (`bin/`, `skills/`, `dist/`), so a new shared file widens the
+ * inventory; batch integration rejects any generated path outside `outputs`.
+ */
+export function antigravityDeclarationDrift(root: string, expected: ReadonlySet<string> = new Set(expectedArtifact(root).keys())): string[] {
+	const path = resolve(root, DERIVED_FILES_PATH);
+	if (!existsSync(path)) return [`missing derived-files declaration: ${DERIVED_FILES_PATH}`];
+	const entry = parseDerivedFiles(JSON.parse(readFileSync(path, "utf8"))).find((candidate) => candidate.id === DERIVED_ENTRY_ID);
+	if (!entry) return [`${DERIVED_FILES_PATH} has no ${DERIVED_ENTRY_ID} entry`];
+	const generated = new Set([...expected].map((file) => `${ANTIGRAVITY_ROOT}/${file}`));
+	const declared = new Set(entry.outputs);
+	const drift: string[] = [];
+	for (const file of generated) if (!declared.has(file)) drift.push(`undeclared generated output: ${file}`);
+	for (const file of declared) if (!generated.has(file)) drift.push(`declared output not generated: ${file}`);
+	return drift.sort();
+}
+
 export function checkAntigravityPlugin(root = resolve(import.meta.dir, "..")): void {
 	validateManifests(root);
-	const drift = antigravityArtifactDrift(root);
+	const expected = expectedArtifact(root);
+	const drift = antigravityArtifactDrift(root, expected);
 	if (drift.length > 0) {
 		throw new Error(`${ANTIGRAVITY_ROOT} drifted from a fresh generate of its sources:\n${drift.join("\n")}`);
+	}
+	const undeclared = antigravityDeclarationDrift(root, new Set(expected.keys()));
+	if (undeclared.length > 0) {
+		throw new Error(`${DERIVED_FILES_PATH} ${DERIVED_ENTRY_ID} outputs differ from the generated inventory:\n${undeclared.join("\n")}`);
 	}
 	const base = resolve(root, ANTIGRAVITY_ROOT);
 	const problems = [...artifactBoundaryErrors(base), ...artifactClosureErrors(base)];

@@ -10,7 +10,7 @@
 // delegate to the wrapped Host (BR-DEC-4).
 
 import { execFileSync } from "node:child_process";
-import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -37,6 +37,7 @@ const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 };
 
 /**
+/**
  * The read-only git rules a claude-code reviewer and verifier may run (#426 D1). One list, so the
  * reviewer and verifier argv cannot drift. `-C`, pipes and redirection stay out: a prefix rule cannot
  * bind the subcommand after `-C`, and allowing a formatter admits non-git commands.
@@ -48,20 +49,30 @@ export const REVIEW_GIT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * The claude-code reviewer and verifier run with every hook off (#426 F11). A user PreToolUse hook
- * may rewrite `git show` into another command (e.g. `rtk git show`), so no `Bash(git …)` rule matches
- * and `dontAsk` denies every git read. The receipt is the output file, never a hook observation, so
- * the read-only session loses nothing; user settings, plugins and skills still load.
+ * Claude Code reviewer and verifier settings: user hooks must not rewrite the allowlisted
+ * git commands (a PreToolUse rewrite such as `rtk git show` no longer matches `--allowedTools`
+ * and `dontAsk` denies it; #426 F11), and Bash output must hold a whole reviewed file. The
+ * receipt is the output file, never a hook observation; user settings, plugins and skills still load.
  */
-export const REVIEW_HOST_SETTINGS = JSON.stringify({ disableAllHooks: true });
+export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
+	disableAllHooks: true,
+	env: { BASH_MAX_OUTPUT_LENGTH: "150000" },
+});
 
-/** The reviewer argv for one Host, model and effort applied only when the profile sets them (D5). */
-export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number): string[] {
+/**
+ * The reviewer argv for one Host, model and effort applied only when the profile sets them (D5).
+ * `readDirs` are the out-of-tree directories the reviewer must read (packet, evidence).
+ */
+export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number, readDirs: string[] = []): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
 	if (profile.host === "claude-code") {
 		return [
 			"--print",
 			"--no-session-persistence",
+			"--settings",
+			CLAUDE_REVIEW_SETTINGS,
+			// Variadic: keep a flag after it so the prompt is never taken as a directory.
+			...(readDirs.length ? ["--add-dir", ...readDirs] : []),
 			"--max-turns",
 			String(turnBudget),
 			"--tools",
@@ -70,8 +81,6 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 			...REVIEW_GIT_ALLOWED_TOOLS,
 			"--permission-mode",
 			"dontAsk",
-			"--settings",
-			REVIEW_HOST_SETTINGS,
 			...model,
 			...(profile.effort ? ["--effort", profile.effort] : []),
 			`/immune-brain:authority-review ${packetPath}`,
@@ -111,7 +120,7 @@ export function verificationArguments(profile: ReviewProfile, model: string, pac
 			"--print", "--no-session-persistence", "--max-turns", String(turnBudget),
 			"--tools", "Read,Grep,Glob,Bash",
 			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS,
-			"--permission-mode", "dontAsk", "--settings", REVIEW_HOST_SETTINGS, ...modelFlag, instruction,
+			"--permission-mode", "dontAsk", "--settings", CLAUDE_REVIEW_SETTINGS, ...modelFlag, instruction,
 		];
 	}
 	if (profile.host === "pi") return ["--print", "--no-session", ...modelFlag, instruction];
@@ -311,7 +320,7 @@ export class CliReviewHost implements AssuranceHostPort {
 		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
 		const tree = reviewTreeState(root);
 
-		const directory = mkdtempSync(join(tmpdir(), "imm-cli-review-"));
+		const directory = realpathSync(mkdtempSync(join(tmpdir(), "imm-cli-review-")));
 		chmodSync(directory, 0o755);
 		const packet = join(directory, "packet.md");
 		const script = join(directory, "review.sh");
@@ -319,7 +328,8 @@ export class CliReviewHost implements AssuranceHostPort {
 		const exitFile = join(directory, `review-exit-${request.operationId}`);
 		const contractHash = currentReviewContractHash();
 		writeFileSync(packet, `review_contract_hash: ${contractHash}\n\n${request.snapshotPrompt}`, { encoding: "utf8", mode: 0o644 });
-		const argv = reviewArguments(profile, packet, request.maxTurns);
+		const readDirs = [...new Set([directory, dirname(request.evidencePath)])];
+		const argv = reviewArguments(profile, packet, request.maxTurns, readDirs);
 		writeProcessScript(script, root, [executable, ...argv], output, exitFile);
 
 		// S4 (#426): the same script, in a Herdr tab the user can watch; the verdict

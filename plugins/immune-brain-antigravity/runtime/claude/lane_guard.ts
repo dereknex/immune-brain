@@ -35,7 +35,8 @@ import {
 	type PhaseEntryState,
 	type PhaseOperation,
 } from "../assurance/phase_entry";
-import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./review_host";
+import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "../host-core/private_file";
+import { CLAUDE_CACHE_DIR } from "./review_host";
 
 const FILE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const GATED_MCP_TOOL = /^mcp__.*immune-brain.*__(start_unattended_batch|retire_stale_batch)$/;
@@ -50,6 +51,8 @@ export type GatedTool = "start_unattended_batch" | "retire_stale_batch";
 export interface PhaseAdmissionGrant {
 	entry_token: string | null;
 	workspace: string | null;
+	/** The Hook session the admission was recorded under; it becomes the run's Hook session. */
+	session_id: string;
 }
 
 /** Where the phase entry gate keeps its private files and finds user aliases. */
@@ -92,11 +95,11 @@ export async function activeTaskHookOutput(payload: Record<string, unknown>): Pr
 }
 
 function entryLogPath(sessionId: string, root: string): string {
-	return join(cacheDir(root), `${sessionHash(sessionId)}.entry`);
+	return join(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 
 function admissionPath(toolUseId: string, root: string): string {
-	return join(cacheDir(root), `${sessionHash(toolUseId)}.admit`);
+	return join(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 
 function sessionIdOf(payload: Record<string, unknown>): string {
@@ -131,7 +134,7 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir(), read: ty
 	} catch (error) {
 		return (error as NodeJS.ErrnoException).code === "ENOENT" ? NO_PHASE_ENTRY : null;
 	}
-	if (!ensurePrivateDir(cacheDir(root))) return null;
+	if (!ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR))) return null;
 	let text: string | undefined;
 	try { text = read(path); } catch { return null; }
 	return text === undefined ? null : reducePhaseEntryLog(text);
@@ -153,7 +156,7 @@ function dropPrivate(path: string): void {
 function appendPhaseEntry(sessionId: string, line: string, root: string, locations: PhaseEntryLocations): boolean {
 	const path = entryLogPath(sessionId, root);
 	let recorded = false;
-	try { recorded = (locations.append ?? appendPrivate)(path, cacheDir(root), line); } catch { /* an unwritten line drops the log */ }
+	try { recorded = (locations.append ?? appendPrivate)(path, cacheDir(root, CLAUDE_CACHE_DIR), line); } catch { /* an unwritten line drops the log */ }
 	if (!recorded) dropPrivate(path);
 	return recorded;
 }
@@ -218,7 +221,7 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	let recorded = false;
 	try {
 		recorded = toolUseId !== ""
-			&& (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root),
+			&& (locations.append ?? appendPrivate)(admissionPath(toolUseId, root), cacheDir(root, CLAUDE_CACHE_DIR),
 				`${JSON.stringify({ v: 2, operation: operation.name, session_id: sessionId, entry_token: state?.token ?? null })}\n`);
 	} catch { /* an admission that could not be written refuses */ }
 	if (recorded) return null;
@@ -236,7 +239,7 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
  * between the hook and the call no longer admits.
  */
 export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, root = tmpdir()): PhaseAdmissionGrant | false {
-	if (!toolUseId || !ensurePrivateDir(cacheDir(root))) return false;
+	if (!toolUseId || !ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR))) return false;
 	const path = admissionPath(toolUseId, root);
 	let text: string | undefined;
 	try { text = readPrivate(path); } catch { return false; }
@@ -257,5 +260,5 @@ export function consumePhaseAdmission(toolUseId: string, operation: GatedTool, r
 	let state: PhaseEntryState | null = null;
 	try { state = readPhaseEntryState(first.session_id, root); } catch { /* an unreadable store refuses */ }
 	if (!state?.run_live || state.token !== first.entry_token) return false;
-	return { entry_token: state.token, workspace: state.workspace };
+	return { entry_token: state.token, workspace: state.workspace, session_id: first.session_id };
 }
