@@ -15859,6 +15859,14 @@ function readBatchCommitEvidence(root, batchId, taskId) {
 function proofEquals(a, b) {
   return serializeTaskTombstone(a) === serializeTaskTombstone(b);
 }
+function readLaneDeliveryIntoIndex(root, commit) {
+  const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+  if (indexed.status !== 0)
+    throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+  const refreshed = spawnSync15("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
+  if (refreshed.status !== 0)
+    throw new Error(`failed to refresh Lane index: ${refreshed.stderr.trim()}`);
+}
 function requireMatchingSettledAudit(auditPair, settled) {
   if (settled.runId === null)
     return;
@@ -15933,9 +15941,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     const moved = spawnSync15("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
     if (moved.status !== 0)
       throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
-    const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-    if (indexed.status !== 0)
-      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+    readLaneDeliveryIntoIndex(root, commit);
     return { commit };
   }
   if (isProgressRef(expectedBranch)) {
@@ -16212,9 +16218,7 @@ async function lookupBatchCommit(input) {
       if (moved.status !== 0)
         throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     }
-    const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-    if (indexed.status !== 0)
-      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+    readLaneDeliveryIntoIndex(root, commit);
   }
   return { commit };
 }
@@ -16377,22 +16381,29 @@ async function observeNativeParent(root, initiativeSlug, readInitiative, blocked
     next_action: action === "drive" ? `Drive active task ${taskId} from Kernel status` : ready ? `Invoke native single-task Enrollment for ${ready.task_id}; no ordinary BatchAuthorization is needed` : originalDelivered ? "Run recorded Parent final verification; diagnose failure and prepare a stable original-goal repair candidate before its fresh native Enrollment" : blockedNativeTasks.length ? `Native gates parked for ${blockedNativeTasks.join(", ")}; resolve their same-Host recovery and enter drive explicitly` : "No dependency-ready required task remains; report concrete blocked predecessors"
   };
 }
-async function advanceNativeParent(root, initiativeSlug, commands, readInitiative, tracker, gate) {
-  let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
-  if (!facts)
-    return null;
+function nativeParentFinalDecision(facts, commands) {
   const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
   if (commands && recordedCommands && JSON.stringify(commands) !== JSON.stringify(recordedCommands))
     throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
   const finalCommands = recordedCommands ?? commands;
-  if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length) {
-    if (!recordedCommands) {
-      const refused = gate ? await gate({
-        initiative_slug: initiativeSlug,
-        plan_digest: facts.plan_digest,
-        children: facts.parent.tasks.map((task) => ({ task_id: task.task_id, slice_id: task.slice_id })),
-        final_commands: finalCommands
-      }) : {
+  if (!(["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length))
+    return { run: false };
+  return { run: true, commands: finalCommands, recorded: Boolean(recordedCommands), gate: recordedCommands ? null : {
+    initiative_slug: facts.initiative_slug,
+    plan_digest: facts.plan_digest,
+    children: facts.parent.tasks.map((task) => ({ task_id: task.task_id, slice_id: task.slice_id })),
+    final_commands: finalCommands
+  } };
+}
+async function advanceNativeParent(root, initiativeSlug, commands, readInitiative, tracker, gate) {
+  let facts = await observeNativeParent(root, initiativeSlug, readInitiative);
+  if (!facts)
+    return null;
+  const decision = nativeParentFinalDecision(facts, commands);
+  if (decision.run) {
+    const finalCommands = decision.commands;
+    if (decision.gate) {
+      const refused = gate ? await gate(decision.gate) : {
         state: "rejected",
         reason: "Parent final verification requires native confirmation before execution",
         recovery_action: "retry through a fresh native gate in the current Host"
@@ -22581,7 +22592,7 @@ function restoreStagedIntent(root, snapshot) {
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
-  execFileSync13("git", ["update-index", "--refresh", "--", snapshot.path], {
+  execFileSync13("git", ["update-index", "-q", "--refresh"], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -23164,7 +23175,6 @@ init_batch_state();
 init_batch_authority();
 init_batch_git();
 init_batch_plan();
-init_batch_git();
 
 // plugins/immune-brain/runtime/assurance/cli_review.ts
 init_layered_config();
@@ -23946,7 +23956,11 @@ class HostRuntime {
     const { app } = await this.authority();
     return executeOrdinaryKernelOperation({ root: ctx.cwd, taskId: input.taskId, operation: input.operation, app });
   }
+  previewing = false;
   async previewConfirmation(run) {
+    if (this.previewing)
+      throw new Error("a confirmation preview is already running on this runtime");
+    this.previewing = true;
     const previous = this.requestConfirmation;
     this.requestConfirmation = async (input) => {
       throw new ConfirmationPreviewSignal(input);
@@ -23960,6 +23974,7 @@ class HostRuntime {
       throw error;
     } finally {
       this.requestConfirmation = previous;
+      this.previewing = false;
     }
   }
   async previewAuthorization(taskId, operation, meta, extra = {}) {
@@ -24052,18 +24067,9 @@ class HostRuntime {
     if (confirmationPreview && !options.plan_source) {
       const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
       if (facts) {
-        const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
-        if (options.final_verification && recordedCommands && JSON.stringify(options.final_verification) !== JSON.stringify(recordedCommands))
-          throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
-        const finalCommands = recordedCommands ?? options.final_verification;
-        if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
-          await this.confirm(nativeParentInput({
-            initiative_slug: initiativeSlug,
-            plan_digest: facts.plan_digest,
-            children: facts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
-            final_commands: finalCommands
-          }), meta);
-        }
+        const decision = nativeParentFinalDecision(facts, options.final_verification);
+        if (decision.run && decision.gate)
+          await this.confirm(nativeParentInput(decision.gate), meta);
         return batchReason("confirmation_no_decision");
       }
     }

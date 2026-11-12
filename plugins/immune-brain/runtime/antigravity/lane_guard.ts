@@ -790,6 +790,12 @@ async function prepareTaskAuthorityConfirmation(
 	};
 }
 
+/** Diagnostics for a confirmation preview that threw; stderr is not part of the Hook's JSON reply. */
+function reportPreviewFailure(operation: string, error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	process.stderr.write(`immune-brain: PreToolUse preview for ${operation} failed: ${message.split("\n")[0]}\n`);
+}
+
 export async function antigravityPreToolUseHookAsync(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
@@ -804,7 +810,10 @@ export async function antigravityPreToolUseHookAsync(
 			return await prepareRetireConfirmation(payload.conversationId, sync);
 		}
 		return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
-	} catch {
+	} catch (error) {
+		// Fail closed: no grant was written, so the MCP call refuses with
+		// `interaction_not_opened`. Name the real cause so that refusal is diagnosable.
+		reportPreviewFailure(sync.call.operation, error);
 		return { decision: "allow" };
 	}
 }

@@ -51,7 +51,9 @@ export function restoreStagedIntent(root: string, snapshot: StagedIntentSnapshot
 	// `--index-info` restores the object entry but not its worktree stat data.
 	// Refresh it so an immediate `diff.autoRefreshIndex=false` projection does
 	// not mistake the byte-identical restored sidecar for an unstaged change.
-	execFileSync("git", ["update-index", "--refresh", "--", snapshot.path], {
+	// `-q --refresh` takes no path: a trailing path would be staged from the
+	// worktree, and without `-q` any other dirty tracked file makes it exit 1.
+	execFileSync("git", ["update-index", "-q", "--refresh"], {
 		cwd: root,
 		stdio: ["ignore", "pipe", "pipe"],
 	});

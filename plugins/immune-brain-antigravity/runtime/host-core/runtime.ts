@@ -103,13 +103,16 @@ import {
 } from "../kernel/batch_authority";
 import {
 	type BatchRunnerGitPort,
+	advanceNativeParent,
+	integrateSettledCriticalSlices,
+	nativeParentFinalDecision,
+	observeNativeParent,
+	observeParentCompletion,
 } from "../unattended/batch_git";
 import type {
 	InitiativeObservationReader,
 } from "../unattended/types";
-import { integrateSettledCriticalSlices, advanceNativeParent, observeNativeParent } from "../unattended/batch_git";
 import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
-import { observeParentCompletion } from "../unattended/batch_git";
 import {
 	enrollmentNonce,
 	entryTokenRequestId,
@@ -165,7 +168,13 @@ function readTaskIntentForRecord(root: string, taskId: string) {
 	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
 }
 
-/** Ordinary Kernel mutation shared by all Hosts; only Intent recovery is injected. */
+/**
+ * Ordinary Kernel mutation shared by all Hosts; only Intent recovery is injected.
+ * A content-changing revision writes the sidecar before the Kernel's drift check
+ * runs, and an unstaged write is itself scoped drift that deadlocks the
+ * revision. So the written sidecar is staged (worktree == index) and, if the
+ * revision fails, the exact prior bytes and index entry are restored, verified.
+ */
 export async function executeOrdinaryKernelOperation(input: {
 	root: string;
 	taskId: string;
@@ -950,8 +959,16 @@ export class HostRuntime {
 	 * the operation. Hook-based Hosts use this instead of running a second,
 	 * deliberately-cancelled authorization implementation. Breaking revisions
 	 * still roll their staged sidecar back in the ordinary gate error path.
+	 *
+	 * It swaps the instance's confirmation port for the duration of `run`, so it
+	 * is only safe on a runtime that serves one call at a time (the Hook builds a
+	 * fresh one per preview); concurrent calls on a shared instance are refused.
 	 */
+	private previewing = false;
+
 	private async previewConfirmation(run: () => Promise<unknown>): Promise<NativeConfirmationInput | null> {
+		if (this.previewing) throw new Error("a confirmation preview is already running on this runtime");
+		this.previewing = true;
 		const previous = this.requestConfirmation;
 		this.requestConfirmation = async (input) => { throw new ConfirmationPreviewSignal(input); };
 		try {
@@ -962,6 +979,7 @@ export class HostRuntime {
 			throw error;
 		} finally {
 			this.requestConfirmation = previous;
+			this.previewing = false;
 		}
 	}
 
@@ -1070,15 +1088,9 @@ export class HostRuntime {
 		if (confirmationPreview && !options.plan_source) {
 			const facts = await observeNativeParent(this.cwd, initiativeSlug, this.readInitiative);
 			if (facts) {
-				const recordedCommands = facts.native?.final_verification.results.map((result) => result.command);
-				if (options.final_verification && recordedCommands && JSON.stringify(options.final_verification) !== JSON.stringify(recordedCommands))
-					throw new Error("Parent final commands changed; start a fresh explicit Parent entry");
-				const finalCommands = recordedCommands ?? options.final_verification;
-				if (["verify", "repair"].includes(facts.action) && facts.proof.missing_task_ids.length === 0 && finalCommands?.length && !recordedCommands) {
-					await this.confirm(nativeParentInput({ initiative_slug: initiativeSlug, plan_digest: facts.plan_digest,
-						children: facts.parent.tasks.map((child) => ({ task_id: child.task_id, slice_id: child.slice_id })),
-						final_commands: finalCommands }), meta);
-				}
+				// Same decision advanceNativeParent makes; only the gate is captured, never run.
+				const decision = nativeParentFinalDecision(facts, options.final_verification);
+				if (decision.run && decision.gate) await this.confirm(nativeParentInput(decision.gate), meta);
 				return batchReason("confirmation_no_decision");
 			}
 		}
