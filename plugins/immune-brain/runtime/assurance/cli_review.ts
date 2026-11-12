@@ -36,6 +36,17 @@ const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 	antigravity: "agy",
 };
 
+/**
+ * The read-only git rules a claude-code reviewer and verifier may run (#426 D1). One list, so the
+ * reviewer and verifier argv cannot drift. `-C`, pipes and redirection stay out: a prefix rule cannot
+ * bind the subcommand after `-C`, and allowing a formatter admits non-git commands.
+ */
+export const REVIEW_GIT_ALLOWED_TOOLS: readonly string[] = Object.freeze([
+	"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+	"Bash(git --no-pager show:*)", "Bash(git --no-pager diff:*)", "Bash(git --no-pager log:*)",
+	"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
+]);
+
 /** The reviewer argv for one Host, model and effort applied only when the profile sets them (D5). */
 export function reviewArguments(profile: ReviewProfile, packetPath: string, turnBudget: number): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
@@ -48,12 +59,7 @@ export function reviewArguments(profile: ReviewProfile, packetPath: string, turn
 			"--tools",
 			"Read,Grep,Glob,Bash",
 			"--allowedTools",
-			"Bash(git show:*)",
-			"Bash(git diff:*)",
-			"Bash(git log:*)",
-			"Bash(git cat-file:*)",
-			"Bash(git rev-parse:*)",
-			"Bash(git ls-tree:*)",
+			...REVIEW_GIT_ALLOWED_TOOLS,
 			"--permission-mode",
 			"dontAsk",
 			...model,
@@ -94,7 +100,7 @@ export function verificationArguments(profile: ReviewProfile, model: string, pac
 		return [
 			"--print", "--no-session-persistence", "--max-turns", String(turnBudget),
 			"--tools", "Read,Grep,Glob,Bash",
-			"--allowedTools", "Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS,
 			"--permission-mode", "dontAsk", ...modelFlag, instruction,
 		];
 	}

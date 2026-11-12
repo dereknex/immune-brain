@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,19 +42,19 @@ describe("Lane Executor supervision", () => {
 	});
 	it("parks after two real exits without Kernel progress", async () => {
 		const { dir, store } = fixture();
-		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 0\n");
+		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 0\n");
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
+			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
 			project: async () => ({ record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }) });
 		expect(result).toMatchObject({ state: "exited", generation: 2, reason: "lane_executor_no_progress" });
 		expect(store.read()).toMatchObject({ no_progress: 2, handled_generation: 2 });
 	});
 	it("takes settlement from Kernel even when the Executor exits nonzero", async () => {
 		const { dir, store } = fixture();
-		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 7\n");
+		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 7\n");
 		let reads = 0;
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
+			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
 			project: async () => (++reads === 1
 				? { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }
 				: { record_revision: "r2", lifecycle: "done", next_obligation: "none", open_user_decision_count: 0 }) });
@@ -139,4 +139,44 @@ describe("Lane Executor supervision", () => {
 			}
 		});
 	}
+});
+
+describe("Pi Executor outside Herdr (#426 D4)", () => {
+	/** An active Lane with no open user decision: the point where a new generation would start. */
+	const active = { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 };
+	const input = (dir: string, store: LaneGenerationStore, project: () => Promise<typeof active>, host: "pi" | "claude-code") => ({
+		key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+		pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100, project });
+
+	it("refuses a Pi choice without reserving a generation or calling run", async () => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const run = spyOn(supervisor, "run");
+		const result = await superviseLane(supervisor, input(dir, store, async () => active, "pi"));
+		expect(result).toEqual({ state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" });
+		expect(run).not.toHaveBeenCalled();
+		expect(store.read()).toBeNull();
+	});
+
+	it("starts a claude-code generation for the same active Lane", async () => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const args = input(dir, store, async () => active, "claude-code");
+		try {
+			expect(await superviseLane(supervisor, args)).toMatchObject({ state: "running", generation: 1 });
+		} finally { await supervisor.run({ ...args, stop: true }); }
+	});
+
+	it.each([
+		["is no longer active", { ...active, lifecycle: "done", next_obligation: "none" }],
+		["awaits the user", { ...active, next_obligation: "awaiting_user" }],
+		["has an open user decision", { ...active, open_user_decision_count: 1 }],
+	])("observes a Pi Lane that %s instead of refusing", async (_label, projection) => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const run = spyOn(supervisor, "run");
+		const result = await superviseLane(supervisor, input(dir, store, async () => projection, "pi"));
+		expect(result).toEqual({ state: "exited", generation: null, exit: null });
+		expect(run).not.toHaveBeenCalled();
+	});
 });

@@ -14,7 +14,7 @@ import {
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
-import { CliReviewHost, reviewArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { CliReviewHost, reviewArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -371,6 +371,63 @@ describe("review arguments", () => {
 			expect(argv).not.toContain("--effort");
 			expect(argv).not.toContain("--thinking");
 		}
+	});
+});
+
+// --- #426 A1: the claude-code git allow-list -------------------------------
+
+describe("#426 reviewer and verifier git allow-list", () => {
+	const packet = "/tmp/imm-cli-review/packet.md";
+	const expected = [
+		"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+		"Bash(git --no-pager show:*)", "Bash(git --no-pager diff:*)", "Bash(git --no-pager log:*)",
+		"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
+	];
+	const rulesOf = (argv: string[]) => argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
+	const claudeArgv = () => [
+		reviewArguments({ host: "claude-code" }, packet, 12),
+		verificationArguments({ host: "claude-code" }, "model", packet, 12),
+	];
+
+	test("both claude-code argv carry the same twelve git rules", () => {
+		for (const argv of claudeArgv()) {
+			expect(rulesOf(argv)).toEqual(expected);
+			expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash");
+			expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+		}
+	});
+
+	test("no rule admits -C, a non-git command or a bare Bash", () => {
+		for (const rule of rulesOf(claudeArgv()[0]!)) {
+			expect(rule).toMatch(/^Bash\(git (--no-pager )?(show|diff|log|cat-file|rev-parse|ls-tree):\*\)$/);
+		}
+	});
+
+	test("pi and antigravity reviewer and verifier argv are unchanged", () => {
+		const instruction = `Read ${packet} and do exactly what it says. Reply with only the JSON it asks for.`;
+		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
+			"--print", "--no-session", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
+		]);
+		expect(verificationArguments({ host: "pi" }, "m", packet, 12)).toEqual(["--print", "--no-session", "--model", "m", instruction]);
+		expect(reviewArguments({ host: "antigravity" }, packet, 12)).toEqual(["--print", `/authority-review ${packet}`]);
+		expect(verificationArguments({ host: "antigravity" }, "m", packet, 12)).toEqual(["--print", "--model", "m", instruction]);
+	});
+});
+
+// --- #426 A2: the plain-cwd git instruction --------------------------------
+
+describe("#426 plain-cwd git instruction", () => {
+	const instruction = "Run one Git command at a time from the current working directory, with no `-C`, no pipes and no redirection, and `--no-pager` only as the first argument.";
+	const read = (rel: string) => readFileSync(join(import.meta.dir, "..", rel), "utf8").replace(/\s+/g, " ");
+
+	test.each([
+		"plugins/immune-brain/skills/authority-review/SKILL.md",
+		"plugins/immune-brain/runtime/prompts/code-review.md",
+		"plugins/immune-brain/runtime/prompts/review-verifier.md",
+		"plugins/immune-brain/dist/role-prompts/code-review.md",
+		"plugins/immune-brain/dist/role-prompts/review-verifier.md",
+	])("%s tells the role how to run git", (rel) => {
+		expect(read(rel)).toContain(instruction);
 	});
 });
 

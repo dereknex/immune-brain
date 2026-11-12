@@ -140,7 +140,7 @@ describe("acc-pi-batch-gate", () => {
 		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
 		try {
 		const gates: any[] = [];
-		const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
+		const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async details => { gates.push(details); return "accept"; } });
 		expect(gates).toHaveLength(1);
 		expect(gates[0].summary).toContain("Preparation digest: sha256:");
 		expect(result.state).toBe("started");
@@ -164,14 +164,14 @@ describe("acc-pi-batch-gate", () => {
 		const lane = (record.children[0] as any).lane;
 		for (let attempt = 0; attempt < 300 && !existsSync(join(bins, "args")); attempt++) await new Promise(resolve => setTimeout(resolve, 10));
 		const argv = readFileSync(join(bins, "args"), "utf8").trim().split("\n");
-		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path)); expect(argv.at(-1)).toBe(`/skill:drive ${taskId}`);
+		expect(realpathSync(argv[0]!)).toBe(realpathSync(lane.path)); expect(argv.at(-1)).toBe(`/immune-brain:drive ${taskId}`);
 		expect((result.report as any).handoffs.filter((h: { role: string }) => h.role === "executor")).toEqual([]);
-		const lost = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" },
+		const lost = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" },
 			supervisor: new LaneSupervisor(), confirmBatch: async () => "accept" });
 		expect((lost as any).report.lane_supervision).toMatchObject({ state: "unobservable", generation: 1, exit: null });
 		const stopped = await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
 		expect((stopped as any).report.lane_supervision).toMatchObject({ state: "stopped", generation: 1 });
-		const resumed = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+		const resumed = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "claude-code" }, confirmBatch: async () => "accept" });
 		expect((resumed as any).report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
 		expect(lane.branch).toBe(`imm-lane/${taskId}/${taskId}`);
 		const tools: any[] = [];
@@ -180,6 +180,39 @@ describe("acc-pi-batch-gate", () => {
 		const status = textOf(await work.execute("status", { task_id: taskId, action: { op: "status" } }, undefined, undefined, context(f.root, "cancel")));
 		expect(status.batch.record).toMatchObject({ plan_source: "single_task", batch_state: "running", children: [{ task_id: taskId, state: "enrolled", lane: { path: lane.path } }] });
 		expect(readFileSync(join(lane.path, `docs/plans/${taskId}.intent.json`), "utf8")).toBe(JSON.stringify(intent));
+		} finally {
+			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
+			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;
+			if (oldHerdr === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = oldHerdr;
+			rmSync(bins, { recursive: true, force: true });
+		}
+	}, 30000);
+	// Issue #426 F9: `pi --print` can never write the Kernel, so the Parent hands the Lane to the user.
+	it("hands a Pi Executor outside Herdr to the user instead of spawning it", async () => {
+		const f = fixture("single-pi"), taskId = `${f.slug}-c1`;
+		const path = join(f.root, `docs/plans/${taskId}.intent.json`);
+		const intent = JSON.parse(readFileSync(path, "utf8"));
+		intent.scope_hint = ["delivery.txt"];
+		intent.acceptance[0].verification = JSON.stringify({ contract: "assurance_kernel/verification_descriptor/v2", command: { executable: "bun", argv: ["-e", ""], cwd: ".", timeout_ms: 60000, max_output_bytes: 4096 }, environment: { prepare: null, writable_paths: [] } });
+		writeFileSync(path, JSON.stringify(intent)); git(f.root, "add", `docs/plans/${taskId}.intent.json`);
+		const bins = mkdtempSync(join(tmpdir(), "lane-fake-executor-"));
+		for (const name of ["claude", "pi"]) { writeFileSync(join(bins, name), "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$LANE_TEST_OUTPUT\"\nexec /bin/sleep 30\n"); chmodSync(join(bins, name), 0o755); }
+		const oldPath = process.env.PATH, oldOutput = process.env.LANE_TEST_OUTPUT, oldHerdr = process.env.HERDR_ENV;
+		delete process.env.HERDR_ENV;
+		process.env.PATH = `${bins}:${oldPath}`; process.env.LANE_TEST_OUTPUT = join(bins, "args");
+		try {
+			const result = await executePiUnattendedBatch({ root: f.root, taskId, executor: { executor_host: "pi" }, confirmBatch: async () => "accept" });
+			expect(result.state).toBe("started");
+			if (result.state !== "started") throw new Error(result.reason);
+			const report = result.report as any;
+			expect(report.reason).toBe("lane_executor_requires_tui");
+			expect(report.lane_supervision).toMatchObject({ state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
+			expect(report.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: taskId, lane_path: expect.any(String) }));
+			expect(report.lane_refusals).toBeUndefined();
+			expect(report.next_action).toContain(`/skill:drive ${taskId}`);
+			const { readAnyBatchRunState } = await import("../plugins/immune-brain/runtime/unattended/batch_state");
+			expect(readAnyBatchRunState(f.root, result.batch_id)).toMatchObject({ batch_state: "running", children: [{ task_id: taskId, state: "enrolled" }] });
+			expect(existsSync(join(bins, "args"))).toBe(false);
 		} finally {
 			await executePiUnattendedBatch({ root: f.root, taskId, stop: true });
 			process.env.PATH = oldPath; if (oldOutput === undefined) delete process.env.LANE_TEST_OUTPUT; else process.env.LANE_TEST_OUTPUT = oldOutput;

@@ -233,9 +233,9 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
 | F6 | `lane_session_close` 的契约顺序不可执行 | 已修（改为集成 tick 记录 `session_closes`）；第三轮 S1 按新契约关闭成功 | `batch_lanes.ts:248-261` |
 | F7 | 新 batch 的 Lane 创建自锁，不可自愈 | 已修；第三轮同仓第 2、3 个 batch 均正常创建 | `batch_lanes.ts:1363-1400` |
 | C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | 已修（按进程认领）；第三轮两份修复版副本共存 `exit=0`，旧副本仍冲突 | `.pi-extension/single-copy.ts` |
-| F8 | 配置解析顺序：active 用户 profile 覆盖项目 `lanes.*`（预期 project 优先），且 profile 设 `review_host` 时项目的 `review_verifier_model` 被丢弃 | **未修** | `runtime/config/layered_config.ts:178-182` |
-| F9 | Herdr 外的非交互 Executor 完成后被判 `lane_executor_no_progress`，Lane 无 `task-record.json` | **未修** | 上文 S4-b 行与 F9 条目 |
-| F10 | claude-code reviewer 的评审结论被判 coverage 不足（两轮后 park），无 findings/verify | **未修** | `runtime/assurance/coordinator.ts:1551,1741`；上文 S3 行与 F10 条目 |
+| F8 | 配置解析顺序：active 用户 profile 覆盖项目 `lanes.*`（预期 project 优先），且 profile 设 `review_host` 时项目的 `review_verifier_model` 被丢弃 | 非缺陷：键写错了层（ADR 0037），见“修复（第三轮实测之后）” | `runtime/config/layered_config.ts:178-182` |
+| F9 | Herdr 外的非交互 Executor 完成后被判 `lane_executor_no_progress`，Lane 无 `task-record.json` | 已修：起进程前拒绝 `pi`，返回 `lane_executor_requires_tui`；未实测 | 上文 S4-b 行与 F9 条目 |
+| F10 | claude-code reviewer 的评审结论被判 coverage 不足（两轮后 park），无 findings/verify | 已修：git allow-list 加 `--no-pager` 形式；真实模型复跑未做（BR-SCN-1） | `runtime/assurance/coordinator.ts:1551,1741`；上文 S3 行与 F10 条目 |
 
 ## 修复（第二轮实测之后，2026-11-11）
 
@@ -322,7 +322,19 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 ### 第三轮后的结论
 
 - 第二轮提出的 F1、F2、F6、F7 与 C-1 **均已被实现修复并实测通过**；F6 实际是设计已改为“集成 tick 记录 `session_closes`，Parent 读取后关闭”，第二轮把它当成缺陷是误判，因为当时走的是已被删除的请求入口。
-- 仍未解决：F8（配置优先级）、F9（Herdr 外非交互 Executor 与 `tui_required` 的矛盾）、S3 的真实 rework 路径、S4-a 的 Parent 侧 `review_ready`、C-3 的 Claude Code 并行变体。
+- 第三轮之后：F8 判为非缺陷，F9、F10 已修（见“修复（第三轮实测之后）”）。仍未解决：S3 的真实 rework 路径、S4-a 的 Parent 侧 `review_ready`、C-3 的 Claude Code 并行变体。
+
+## 修复（第三轮实测之后，2026-11-12）
+
+针对第三轮的三项新发现（见上文“第三轮发现”）。F8 不是缺陷，F9、F10 已在本分支修复（TaskIntent `issue-426-review-git-and-pi-tui`，Lane 提交 `548d5ac2af`）。
+
+| 编号 | 现象 | 判定 | 证据与修复 |
+| --- | --- | --- | --- |
+| F8 | 把 review 键写进 `.imm/config.json`，生效的 Host 仍是 user lane profile 里那个 | 非缺陷：测试配置错误 | review 键按现有 active-profile → project 优先级解析（ADR 0037 “Review profile”；`runtime/config/layered_config.ts:178-182`），活跃 user lane profile 设了 `review_host` 时项目值不生效。第三轮把键写错了层。解析器不改；验证时改走 user lane profile（validation plan §7）。 |
+| F9 | Herdr 外由 runtime 起 `pi --print` 跑 Executor，永远等不到 Kernel 写入（`code=tui_required`） | 缺陷（已修复） | 成因：`lane_supervisor.ts` 的 `executorArguments` 对每个 Host 都拼非交互入口，而 Pi 只在 TUI 里写 Kernel（ADR 0027）。修复：`superviseLane` 在为新 generation 起进程前拒绝 `pi`，返回 `state: unavailable`、`reason: lane_executor_requires_tui`；batch 报告把子任务留在 `enrolled`、保留带 Lane 路径与 `task_id` 的 `executor` handoff，`next_action` 让用户在 Lane 里跑交互式 pi 的 `/skill:drive <task_id>` 后再调一次 `start_unattended_batch`。不回退到别的 Executor Host。 |
+| F10 | claude-code reviewer/verifier 在 `dontAsk` 下拿不到 git，Review 以 `inspected_paths: []` 结束 | 缺陷（已修复） | 成因：`--allowedTools` 只放行六条 `Bash(git <sub>:*)`，模型常发的 `git --no-pager …`（以及 `git -C …`、管道、重定向）被拒。修复：reviewer 与 verifier 共用一份十二条 allow-list——六条原样加六条 `--no-pager` 形式；`authority-review` 与两个 role prompt 要求一次一条 git 命令、在当前目录、不用 `-C`、管道和重定向，`--no-pager` 只放在第一个参数。`git -C` 与 `--no-pager` 之外的新形式仍不准入。 |
+
+F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督行为本轮未复测（BR-DEFER-2）。F10 的十二条 allow-list 由自动化测试覆盖，真实模型下的 Review 复跑仍然延后（BR-SCN-1）。
 
 ## 整体验证报告（#426 收尾）
 
@@ -365,9 +377,9 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 | F6 | “集成后再请求关闭”不可执行 | 已改为“集成 tick 记录 `session_closes`”；第二轮曾误判为缺陷 |
 | F7 | 首个 batch 之后新 batch 自锁 | 已修（创建前先写 `lane_reservation`），第三轮同仓连续 batch 验证通过 |
 | C-1 | 显式 `-e` + 已安装 package 冲突退出 | 已修（按进程认领）；旧副本缺认领代码时仍会冲突 |
-| **F8** | active 用户 profile 覆盖项目 `lanes.*`，预期 project 优先 | **未修**（`layered_config.ts:178-182`） |
-| **F9** | Herdr 外非交互 Executor 与 `tui_required` 矛盾，批永不结算 | **未修**（`lane_supervisor.ts:22-36`） |
-| **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | **未修**（`coordinator.ts:1551,1741`） |
+| **F8** | active 用户 profile 覆盖项目 `lanes.*`，预期 project 优先 | 非缺陷：优先级符合 ADR 0037，测试把键写错了层（`layered_config.ts:178-182`） |
+| **F9** | Herdr 外非交互 Executor 与 `tui_required` 矛盾，批永不结算 | 已修：返回 `lane_executor_requires_tui`，子任务留在 `enrolled`；未实测 |
+| **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | 已修：根因是 `dontAsk` 拒绝 `git --no-pager`；真实模型复跑未做（BR-SCN-1） |
 
 ### 4. 准入决定
 
@@ -384,6 +396,6 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 
 ### 6. 剩余工作
 
-1. 修 F8、F9、F10。
+1. 用真实 claude-code reviewer 复跑 F10（BR-SCN-1）；在 Herdr 外实测 F9 的 `lane_executor_requires_tui`，并补测 `claude --print` 与 antigravity（BR-DEFER-2）。
 2. 重跑 S3-a/b（含 `verifier_actor` / `verifier_model` / `model_relation`）、S3-c（verify tab 里 Ctrl+C）、S3-d（`review_transport: process`）、S4-b（`review_transport_unavailable`）。
 3. 补测 Pi / Antigravity 的权限与登录对话框（需要各自 host 的隔离配置），以及 C-3 的 Claude Code 并行组合。

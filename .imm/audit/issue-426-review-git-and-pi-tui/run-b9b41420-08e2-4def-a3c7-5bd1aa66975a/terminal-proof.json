@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "issue-426-review-git-and-pi-tui",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:issue-426-review-git-and-pi-tui:2026-11-12T07:11:46.685Z",
+  "final_record_hash": "sha256:ca9639870732cc8ef93d53d5009c7b15951bf15c87ecf8fb3cd676098bb5463b",
+  "terminalized_at": "2026-11-12T07:11:46.685Z"
+}

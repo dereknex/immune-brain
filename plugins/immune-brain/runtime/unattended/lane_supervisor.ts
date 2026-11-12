@@ -215,6 +215,10 @@ export async function superviseLane(
 			if (before?.state === "exited") markHandled(before, projection.record_revision !== before.baseline);
 			return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
 		}
+		// #426 D4: Pi writes to the Kernel only in its TUI, so `pi --print` outside Herdr can never settle.
+		// Refuse before a generation is reserved; a generation already live was observed above.
+		if (!mayBeLive && input.choice.host === "pi")
+			return { state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" };
 		const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
 		const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
 		if (observation.state !== "exited" || observation.generation === null) return observation;

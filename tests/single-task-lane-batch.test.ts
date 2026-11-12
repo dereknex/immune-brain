@@ -11,6 +11,7 @@ import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runti
 import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { createDefaultLaneGitPort } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { startBatch, stopSingleTaskSupervisor } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { parseBatchLaneRunState, prepareBatchLaneRunState, readAnyBatchRunState, writeBatchLaneRunState, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
@@ -339,6 +340,35 @@ describe("single-task Lane delivery", () => {
 		expect(git(f.repo, "show", ":delivery.txt")).toBe("delivered");
 		expect(git(f.repo, "worktree", "list", "--porcelain")).toContain(lane);
 		expect(done.children[0]!.lane_retained).toBeDefined();
+		expect(spawn).not.toHaveBeenCalled();
+	});
+
+	// Issue #426 F9: `pi --print` can never write the Kernel, so the Lane is handed to the user instead of spawned.
+	it("hands a Pi Executor outside Herdr to the user instead of spawning a process", async () => {
+		const f = owned();
+		const supervisor = new LaneSupervisor();
+		const spawn = spyOn(supervisor, "run").mockImplementation(async () => { throw new Error("must not spawn a Pi Executor"); });
+		const args = f.args({ supervision: { supervisor, parentHost: "pi" as const, pluginDir: "/plugin", waitMs: 1 } });
+		const first = laneReport(await startBatch(args));
+		const lane = first.children[0]!.lane!.path;
+		expect(first.reason).toBe(batchReason("lane_executor_requires_tui").reason);
+		expect(first.children[0]!.state).toBe("enrolled");
+		expect(first.lane_supervision).toMatchObject({ state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
+		expect(first.lane_refusals).toBeUndefined();
+		expect(first.handoffs).toContainEqual(expect.objectContaining({ role: "executor", task_id: TASK, lane_path: lane }));
+		expect(first.next_action).toContain(`/skill:drive ${TASK}`);
+		expect(first.next_action).toContain("start_unattended_batch");
+		expect(readAnyBatchRunState(f.repo, BATCH_ID)).toMatchObject({ batch_state: "running", children: [{ state: "enrolled" }] });
+		expect(spawn).not.toHaveBeenCalled();
+		// Re-entry after the Lane's own run ended advances the batch without starting a process.
+		writeFileSync(join(lane, "delivery.txt"), "delivered\n");
+		settleLane(lane);
+		f.kernel.settled.add(TASK);
+		auditPair(lane, TASK);
+		git(lane, "add", "--", "delivery.txt");
+		const done = laneReport(await startBatch(args));
+		expect(done.batch_state).toBe("completed");
+		expect(done.final_report?.return_to_coordinator.status).toBe("staged");
 		expect(spawn).not.toHaveBeenCalled();
 	});
 

@@ -16,6 +16,7 @@ export type BatchReasonKey =
 	| "lane_executor_unavailable"
 	| "lane_executor_unobservable"
 	| "lane_executor_no_progress"
+	| "lane_executor_requires_tui"
 	| "lane_decision_stale"
 	| "lane_decision_rebind_failed"
 	| "invalid_slug"
@@ -64,6 +65,7 @@ export const BATCH_REASONS: Readonly<Record<BatchReasonKey, BatchReasonSpec>> = 
 	lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
 	lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
 	lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
+	lane_executor_requires_tui: { state: "blocked", reason: "lane_executor_requires_tui", recovery_action: "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host." },
 	lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
 	lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
 	batch_entry_ambiguous: {

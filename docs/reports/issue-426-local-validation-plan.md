@@ -241,17 +241,17 @@ S1 补充：
 
 ## 7. R4：Review、verifier、advisory 走会话（仓库 L）
 
-把 `.imm/config.json` 改为下面的内容并提交（`<模型A>`、`<模型B>` 为两个不同的、Claude Code 可用的模型 id）：
+Review 走**活跃的 user lane profile**：在 `~/.config/immune-brain/config.json` 里让 `lanes.active` 指向一个 profile，把 review 键放进该 profile 的 `lanes.profiles.<name>`（`<模型A>`、`<模型B>` 为两个不同的、Claude Code 可用的模型 id）。也可以在请求里点名 profile 或直接给字段——两者都比项目层优先。不要写进 `.imm/config.json`：活跃 user profile 设了 `review_host` 时项目层的同名字段不生效（F8，见 ADR 0037 与 `runtime/config/layered_config.ts:178-182`）。其余非 lane 键仍留在项目配置里不变。改完先看 `imm-kernel config --json`：`lanes.review_host` 应是新值，来源为 `user`。
 
 ```json
-{ "contract": "immune_brain/project_config/v1",
-  "git_integration": "manual",
-  "initiative_carrier": "local",
-  "review_verifier": "on",
-  "lanes": { "review_host": "claude-code", "review_model": "<模型A>",
-             "review_verifier_model": "<模型B>", "review_transport": "herdr",
-             "advisory_transport": "herdr" } }
+{ "contract": "immune_brain/user_config/v1",
+  "lanes": { "active": "review-probe",
+             "profiles": { "review-probe": { "review_host": "claude-code", "review_model": "<模型A>",
+                                            "review_verifier_model": "<模型B>", "review_transport": "herdr",
+                                            "advisory_transport": "herdr" } } } }
 ```
+
+`.imm/config.json` 保留 `git_integration`、`initiative_carrier` 与 `review_verifier: "on"`，不要在那里写 `lanes.review_*`。
 
 | 用例 | 步骤 | 期望 |
 | --- | --- | --- |

@@ -1,0 +1,274 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "issue-426-review-git-and-pi-tui",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "issue-426-review-git-and-pi-tui",
+    "goal": "Implement docs/specs/issue-426-review-git-and-pi-tui.spec.md: claude-code reviewers and verifiers can run the read-only git forms models emit (#426 F10); a Pi Executor outside Herdr is handed to the user with lane_executor_requires_tui instead of a print-mode run that cannot settle (#426 F9); the #426 report and validation plan record F8 as a test configuration error.",
+    "acceptance": [
+      {
+        "id": "RGT-A1",
+        "assertion": "Per D1 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: for the claude-code profile, reviewArguments and verificationArguments each pass exactly twelve --allowedTools rules, the six Bash(git <sub>:*) rules for show, diff, log, cat-file, rev-parse and ls-tree plus the same six as Bash(git --no-pager <sub>:*), and both lists are equal. Negative cases pinned in tests: no rule starts with Bash(git -C, no rule names a non-git command, no rule is a bare Bash, --tools stays Read,Grep,Glob,Bash and --permission-mode stays dontAsk. The pi and antigravity reviewer and verifier argv are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RGT-A2",
+        "assertion": "Per D2 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: the authority-review skill, the code-review role prompt and the review-verifier role prompt each instruct the role to run one git command at a time from the current working directory, without -C, pipes or redirection, with --no-pager only as the first argument; a test fails when any of the three loses that instruction. The dist/role-prompts mirrors match their runtime/prompts sources, and any test that pins the review contract hash is updated to the new value.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/cli-review-dispatch.test.ts tests/role-prompt-bridge.test.ts && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RGT-A3",
+        "assertion": "Per D4 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: superviseLane with an Executor choice of host pi on an active Lane that has no open user decision returns state unavailable, generation null, exit null and reason lane_executor_requires_tui, without calling LaneSupervisor.run, starting a process or writing the generation store (the test's supervisor double fails if run is called). Controls: the same call with host claude-code still starts a generation; with host pi on a Lane whose lifecycle is not active, or that awaits the user, it returns the existing exited observation with no reason.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RGT-A4",
+        "assertion": "Per D5 of docs/specs/issue-426-review-git-and-pi-tui.spec.md (BR-SCN-2): a single-task start_unattended_batch under runtime supervision (not interactive) whose resolved executor host is pi returns reason lane_executor_requires_tui, keeps the child enrolled rather than parked to needs_human, keeps the executor handoff with the Lane path and task_id, adds no lane_refusals entry, and its next_action tells the user to run /skill:drive <task_id> in interactive pi in that Lane and call start_unattended_batch again. Re-entry after the Lane's run is no longer active advances the batch without starting a process. The decision relay returns the same reason in lane_relay.lane_supervision. BATCH_REASONS includes lane_executor_requires_tui as blocked with that recovery action.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RGT-A5",
+        "assertion": "Per D3 and D6 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: dist/drive-batch.md no longer says the runtime spawns pi --print outside Herdr and states that a Pi Executor outside Herdr is reported with lane_executor_requires_tui and handed to the user under the no-supervised-session rule, pinned by a contract test; the generated Claude bundle and the antigravity artifact match their sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RGT-A6",
+        "assertion": "Per D7 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: docs/reports/issue-426-herdr-provider-probe.md marks F8 as a non-defect (test configuration error) citing ADR 0037 and layered_config.ts, and records F9 and F10 with their root cause and fix (lane_executor_requires_tui, the --no-pager allow-list), keeping the existing uncommitted edits; section 7 of docs/reports/issue-426-local-validation-plan.md selects the reviewer through an active user lane profile (lanes.profiles and lanes.active) or the request instead of telling the tester to put the review keys into .imm/config.json.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"r=docs/reports/issue-426-herdr-provider-probe.md; p=docs/reports/issue-426-local-validation-plan.md; s=$(sed -n '/^## 7\\\\./,/^## 8\\\\./p' \\\"$p\\\"); grep -q lane_executor_requires_tui \\\"$r\\\" && grep -q -- '--no-pager' \\\"$r\\\" && grep -q 'ADR 0037' \\\"$r\\\" && printf '%s' \\\"$s\\\" | grep -q 'lanes.profiles' && ! printf '%s' \\\"$s\\\" | grep -q '改为下面的内容并提交'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/issue-426-review-git-and-pi-tui.md",
+      "docs/plans/issue-426-review-git-and-pi-tui.intent.json",
+      "docs/reports/issue-426-herdr-provider-probe.md",
+      "docs/reports/issue-426-local-validation-plan.md",
+      "docs/specs/issue-426-review-git-and-pi-tui.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/dist/role-prompts/review-verifier.md",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/review-verifier.md",
+      "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/lane-supervisor.test.ts",
+      "tests/single-task-lane-batch.test.ts",
+      "tests/single-task-lane-decision.test.ts",
+      "tests/unattended-batch-run.test.ts",
+      "tests/unattended-contracts.test.ts"
+    ],
+    "scope_size_reason": "Two small fixes that close the #426 third-round defects together: they share the report rows, the release changeset and one live re-run, and only the reviewer allow-list changes a trust boundary. The count is high because each side carries its prompt mirrors, reason table and three focused test files.",
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/issue-426-review-git-and-pi-tui.intent.json",
+    "content_hash": "sha256:5e77df95d85f679f86773b3413f2f03d49301ed8a1af32848d89b453e004a23b"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5e77df95d85f679f86773b3413f2f03d49301ed8a1af32848d89b453e004a23b",
+  "git_base_head": "97152e2291874d8991098519f6183552da32e775",
+  "attestations": [
+    {
+      "id": "approval-qa-7842cebf",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5e77df95d85f679f86773b3413f2f03d49301ed8a1af32848d89b453e004a23b",
+      "diff_hash": "sha256:a493b9f362165625fd3a4c7831f75575f0b30d5369e90b2882a732a10e9a309d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RGT-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        },
+        {
+          "acceptance_id": "RGT-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        },
+        {
+          "acceptance_id": "RGT-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        },
+        {
+          "acceptance_id": "RGT-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        },
+        {
+          "acceptance_id": "RGT-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        },
+        {
+          "acceptance_id": "RGT-A6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:059a4719d1d7a058b6fff61dab138efaecddc9d0f8f9ef9f94bf0319f3117464"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-22e63841",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5e77df95d85f679f86773b3413f2f03d49301ed8a1af32848d89b453e004a23b",
+      "diff_hash": "sha256:a493b9f362165625fd3a4c7831f75575f0b30d5369e90b2882a732a10e9a309d",
+      "actor_id": "cli:claude-code:2572889d-6cbb-4e60-b6e5-7b0ee775132b",
+      "summary": "Provenance verified (single parent 97152e22, tree bbabc896). RGT-A1 to A6 are met. The 12-rule shared REVIEW_GIT_ALLOWED_TOOLS list adds only --no-pager forms, with no -C, non-git or bare Bash rule, and is pinned by tests. The plain-cwd git instruction is in the skill, both prompts and their mirrors. The Pi refusal in superviseLane comes after the not-active, awaiting-user and open-decision early return and before run or any store write. superviseSingle keeps the child enrolled with its executor handoff, adds no lane_refusals entry and fills task_id into next_action. The new reason is in BATCH_REASONS, and the contract text, reports, bundles and antigravity mirrors match their sources. Blast radius: medium; the load-bearing paths are cli_review.ts (the reviewer trust boundary), lane_supervisor.ts and batch_runner.ts (Lane supervision state machine), and the generated mcp-server.mjs bundles; no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "97152e2291874d8991098519f6183552da32e775",
+        "review_commit": "85a989285f86444f23fb9c1e827144f5ca1daf48",
+        "review_tree": "bbabc8960461637679d68a0d656acb48799395aa",
+        "manifest_digest": "sha256:19fbeef05df5322b70175c6297f0f3aba24fc395a30dafde0b7742dd6a4676e3"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-962ed5ee3def-1-review-1",
+          "acceptance_id": "RGT-A4",
+          "summary": "For a Pi Executor outside Herdr, a replan-only Lane decision is not one of the superviseLane early returns. The report therefore carries lane_executor_requires_tui instead of lane_decision_required, so the decision is only seen once the user opens interactive pi. The behaviour matches D4's placement and the test pins it, but the operator is not told a decision is pending.",
+          "anchor": "sha256:8a3648829f6f8a0c4ee69d5d4f542703a060976a7fa9544aae710673c8cefa57",
+          "evidence": {
+            "trigger": "host pi, Lane active with only a replan_required decision (open_user_decision_count 0, next_obligation not awaiting_user) → superviseLane returns requires_tui before superviseSingle reads laneDecisionFacts → report omits lane_decision_required",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:superviseSingle",
+              "plugins/immune-brain/runtime/unattended/lane_supervisor.ts:superviseLane",
+              "tests/single-task-lane-decision.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RGT-A4"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:92caa64149329877668e3ac919e3f39bdacdaaf9733f7bd30f00c9d33016881c"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-RGT-A3-ce509f70-f34702",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RGT-A3",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=2835B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "qa-RGT-A6-ce509f70-2f70ce",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RGT-A6",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=0B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:issue-426-review-git-and-pi-tui:2026-11-12T06:27:38.071Z",
+      "at": "2026-11-12T06:27:38.071Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/issue-426-review-git-and-pi-tui.intent.json"
+    },
+    {
+      "id": "request_rework:issue-426-review-git-and-pi-tui:2026-11-12T06:31:21.371Z",
+      "at": "2026-11-12T06:31:21.371Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:80f91d28252283046ec50fa6ff271e81472bd3099aa142640d835dca02b8c909",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-a597e1727cecb427",
+        "issued_at": "2026-11-12T06:31:21.371Z"
+      }
+    },
+    {
+      "id": "resolve_finding:issue-426-review-git-and-pi-tui:2026-11-12T07:06:24.951Z",
+      "at": "2026-11-12T07:06:24.951Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RGT-A3-ce509f70-f34702\naction_v2_sha256:24d6d21fc03ad9dbaf7335e6960c95fbc44eebcd0710154fa5af1b5204d8dc9b"
+    },
+    {
+      "id": "resolve_finding:issue-426-review-git-and-pi-tui:2026-11-12T07:06:28.152Z",
+      "at": "2026-11-12T07:06:28.152Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RGT-A6-ce509f70-2f70ce\naction_v2_sha256:b20b53d828b8f407f448e2e749e2f90271a56fbcd00d7bc9c521df5367289773"
+    },
+    {
+      "id": "freeze_artifacts:issue-426-review-git-and-pi-tui:2026-11-12T07:06:42.654Z",
+      "at": "2026-11-12T07:06:42.654Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/issue-426-review-git-and-pi-tui.intent.json"
+    },
+    {
+      "id": "record_approval:issue-426-review-git-and-pi-tui:2026-11-12T07:09:05.529Z",
+      "at": "2026-11-12T07:09:05.529Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7842cebf\naction_v2_sha256:f09a45562bd34bc1ea774d9c301b20fd8f035e23f3d848546cae00667851fff7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-1282c94fda8ade4a",
+        "issued_at": "2026-11-12T07:09:05.529Z"
+      }
+    },
+    {
+      "id": "record_approval:issue-426-review-git-and-pi-tui:2026-11-12T07:11:41.688Z",
+      "at": "2026-11-12T07:11:41.688Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-22e63841\naction_v2_sha256:8cede18f48bf620b36497227bf2ad0ae118aa46572606ac9a85de3dd8df80bf8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:2572889d-6cbb-4e60-b6e5-7b0ee775132b",
+        "confirmation_ref": "pi-confirm-206a4a37e7076d48",
+        "issued_at": "2026-11-12T07:11:41.689Z"
+      },
+      "review_started_at": "2026-11-12T07:09:12.328Z",
+      "review_submitted_at": "2026-11-12T07:11:39.691Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:issue-426-review-git-and-pi-tui:2026-11-12T07:11:46.685Z",
+      "at": "2026-11-12T07:11:46.685Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8197c20f183fe94763711eea06101117ce173799c3538446c150702d691910a6"
+    }
+  ]
+}

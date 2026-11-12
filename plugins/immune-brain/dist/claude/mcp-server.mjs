@@ -6471,6 +6471,7 @@ var init_batch_reasons = __esm(() => {
     lane_executor_unavailable: { state: "blocked", reason: "lane_executor_unavailable", recovery_action: "Install the selected Executor on PATH and retry in the current Host." },
     lane_executor_unobservable: { state: "blocked", reason: "lane_executor_unobservable", recovery_action: "Inspect the retained Lane and Executor process in the current Host." },
     lane_executor_no_progress: { state: "blocked", reason: "lane_executor_no_progress", recovery_action: "Inspect the Lane and resume with a fresh drive entry." },
+    lane_executor_requires_tui: { state: "blocked", reason: "lane_executor_requires_tui", recovery_action: "Open interactive pi in the Lane and run `/skill:drive <task_id>` there; when it finishes, call `start_unattended_batch` again with that task_id in the current Host." },
     lane_decision_stale: { state: "rejected", reason: "lane_decision_stale", recovery_action: "Read the Lane decision facts again with status and relay the decision for the current record revision." },
     lane_decision_rebind_failed: { state: "blocked", reason: "lane_decision_rebind_failed", recovery_action: "The decision was applied in the Lane; inspect the batch record with status before any further entry." },
     batch_entry_ambiguous: {
@@ -19621,6 +19622,8 @@ async function superviseLane(supervisor, input) {
         markHandled(before, projection.record_revision !== before.baseline);
       return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
     }
+    if (!mayBeLive && input.choice.host === "pi")
+      return { state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" };
     const restart = !!before && ["exited", "stopped_by_parent", "interrupted"].includes(before.state) && before.handled_generation === before.generation;
     const observation = await supervisor.run({ ...input, baseline: projection.record_revision, restart, waitMs: Math.max(0, deadline - Date.now()) });
     if (observation.state !== "exited" || observation.generation === null)
@@ -21472,6 +21475,15 @@ async function superviseSingle(input, report) {
   } else if (observation.state === "unavailable" || observation.state === "unobservable") {
     report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
   }
+  if (observation.reason === "lane_executor_requires_tui") {
+    const tui = batchReason("lane_executor_requires_tui");
+    return {
+      ...report,
+      reason: tui.reason,
+      next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
+      lane_supervision: { ...observation, not_applied: choice.not_applied }
+    };
+  }
   let decision = null;
   if (observation.state === "exited" && !observation.reason) {
     const read = await input.kernel.projectTask(child.lane.path, child.task_id);
@@ -22153,6 +22165,20 @@ var REVIEW_BINARY = {
   pi: "pi",
   antigravity: "agy"
 };
+var REVIEW_GIT_ALLOWED_TOOLS = Object.freeze([
+  "Bash(git show:*)",
+  "Bash(git diff:*)",
+  "Bash(git log:*)",
+  "Bash(git cat-file:*)",
+  "Bash(git rev-parse:*)",
+  "Bash(git ls-tree:*)",
+  "Bash(git --no-pager show:*)",
+  "Bash(git --no-pager diff:*)",
+  "Bash(git --no-pager log:*)",
+  "Bash(git --no-pager cat-file:*)",
+  "Bash(git --no-pager rev-parse:*)",
+  "Bash(git --no-pager ls-tree:*)"
+]);
 function reviewArguments(profile, packetPath, turnBudget) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
@@ -22164,12 +22190,7 @@ function reviewArguments(profile, packetPath, turnBudget) {
       "--tools",
       "Read,Grep,Glob,Bash",
       "--allowedTools",
-      "Bash(git show:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git cat-file:*)",
-      "Bash(git rev-parse:*)",
-      "Bash(git ls-tree:*)",
+      ...REVIEW_GIT_ALLOWED_TOOLS,
       "--permission-mode",
       "dontAsk",
       ...model,
@@ -22206,12 +22227,7 @@ function verificationArguments(profile, model, packetPath, turnBudget) {
       "--tools",
       "Read,Grep,Glob,Bash",
       "--allowedTools",
-      "Bash(git show:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git cat-file:*)",
-      "Bash(git rev-parse:*)",
-      "Bash(git ls-tree:*)",
+      ...REVIEW_GIT_ALLOWED_TOOLS,
       "--permission-mode",
       "dontAsk",
       ...modelFlag,

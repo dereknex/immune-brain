@@ -342,7 +342,10 @@ function hostFixture(kind: "unresolved_user_decision" | "replan_required" = "unr
 	].join("\n");
 	for (const name of ["claude", "pi"]) { const path = join(bin, name); writeFileSync(path, script); chmodSync(path, 0o755); }
 	process.env.PATH = `${bin}:${oldPath}`;
-	return { root, spawns: () => existsSync(spawnsFile) ? readFileSync(spawnsFile, "utf8").split("\n").filter(Boolean) : [] };
+	return { root, spawns: () => existsSync(spawnsFile) ? readFileSync(spawnsFile, "utf8").split("\n").filter(Boolean) : [],
+		/** What one interactive TUI run leaves in the Lane; a Pi Executor outside Herdr never runs (D4). */
+		seed: (kind: "unresolved_user_decision" | "replan_required", lane: string) =>
+			execFileSync(process.execPath, [join(bin, "seed.ts"), lane, TASK, kind], { stdio: "ignore" }) };
 }
 
 function claudeHarness(root: string): HostHarness {
@@ -413,12 +416,20 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 	let herdrEnv: string | undefined;
 	beforeEach(() => { herdrEnv = process.env.HERDR_ENV; delete process.env.HERDR_ENV; });
 	afterEach(() => { if (herdrEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = herdrEnv; });
+	/** A claude-code Executor is supervised; a Pi Executor outside Herdr is refused (#426 D4). */
+	const supervised = host === "claude";
 
 	async function waitingHostLane(kind: "unresolved_user_decision" | "replan_required" = "unresolved_user_decision") {
 		const f = hostFixture(kind);
 		const h = host === "claude" ? claudeHarness(f.root) : piHarness(f.root);
 		let started = await h.start();
 		if (started.state !== "started") throw new Error(`start refused: ${JSON.stringify(started)}`);
+		if (!supervised) {
+			// The first Pi generation was refused, so seed the decision the interactive TUI run leaves behind.
+			f.seed(kind, findLaneRelayTarget(f.root, TASK)!.lane_path);
+			started = await h.start();
+			if (started.state !== "started") throw new Error(`Pi re-entry refused: ${JSON.stringify(started)}`);
+		}
 		const startGates = h.gates.length;
 		// A wait window can end while the first generation still runs; the documented next step is to call start again.
 		for (let attempt = 0; attempt < 30 && !started.report.lane_decision_required && started.report.lane_supervision?.state === "running"; attempt++) {
@@ -429,7 +440,7 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 		return { f, h, started, target: findLaneRelayTarget(f.root, TASK)! };
 	}
 
-	it("reports the waiting Lane, then one native gate applies the decision in the Lane and starts generation 2", async () => {
+	it("reports the waiting Lane, then one native gate applies the decision in the Lane", async () => {
 		const { f, h, started, target } = await waitingHostLane();
 		try {
 			const required = started.report.lane_decision_required;
@@ -440,18 +451,22 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(typeof revision).toBe("string");
 			expect(required.open_user_decision_count).toBe(1);
 			expect(started.report.next_action).toContain(revision);
-			expect(f.spawns()).toHaveLength(1);
+			expect(f.spawns()).toHaveLength(supervised ? 1 : 0);
 			expect(decisionStatus(target.lane_path)).toBe("open");
 			const opened = h.gates.length;
 			const relayed = await h.relay("request_authorization", { record_revision: revision });
 			expect(relayed.error).toBeUndefined();
 			expect(h.gates.length - opened).toBe(1);
 			expect(h.gates.at(-1)!.text).toContain(TASK);
-			expect(relayed.lane_relay).toMatchObject({ operation: "request_authorization", applied: true, rebound: false, lane_supervision: { state: "running", generation: 2 } });
-			expect(f.spawns()).toHaveLength(2);
-			expect(realpathSync(f.spawns()[1]!)).toBe(realpathSync(target.lane_path));
+			expect(relayed.lane_relay).toMatchObject(supervised
+				? { operation: "request_authorization", applied: true, rebound: false, lane_supervision: { state: "running", generation: 2 } }
+				: { operation: "request_authorization", applied: true, rebound: false, lane_supervision: { state: "unavailable", generation: null, reason: "lane_executor_requires_tui" } });
+			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
+			if (supervised) {
+				expect(realpathSync(f.spawns()[1]!)).toBe(realpathSync(target.lane_path));
+				expect(readTaskRecordRaw(f.root, TASK).record).toBeFalsy();
+			}
 			expect(decisionStatus(target.lane_path)).toBe("resolved");
-			expect(readTaskRecordRaw(f.root, TASK).record).toBeFalsy();
 		} finally { await h.stopBatch(); }
 	}, 40000);
 
@@ -467,13 +482,20 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(h.gates.length - opened).toBe(1);
 			expect(cancelled.lane_relay?.applied ?? false).toBe(false);
 			expect(decisionStatus(target.lane_path)).toBe("open");
-			expect(f.spawns()).toHaveLength(1);
+			expect(f.spawns()).toHaveLength(supervised ? 1 : 0);
 		} finally { await h.stopBatch(); }
 	}, 40000);
 
-	it("relays a breaking revision through one gate, rebinds the batch identity and does not refuse plan_changed afterwards", async () => {
+	it(`${supervised ? "relays a breaking revision through one gate, rebinds the batch identity and does not refuse plan_changed afterwards" : "refuses a replan-only Lane before its decision facts are read"}`, async () => {
 		const { f, h, started, target } = await waitingHostLane("replan_required");
 		try {
+			if (!supervised) {
+				// A replan-only Lane is not one of the early returns, so the Pi refusal is what the report carries.
+				expect(started.report.reason).toBe(batchReason("lane_executor_requires_tui").reason);
+				expect(started.report.lane_decision_required).toBeUndefined();
+				expect(f.spawns()).toHaveLength(0);
+				return;
+			}
 			const required = started.report.lane_decision_required;
 			expect(required.replan_required_ids).toEqual([DECISION_ID]);
 			const revision: string = required.record_revision;
@@ -483,8 +505,10 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			const relayed = await h.relay("approve_breaking_intent_revision", { record_revision: revision, next_intent: revised });
 			expect(relayed.error).toBeUndefined();
 			expect(h.gates.length - opened).toBe(1);
-			expect(relayed.lane_relay).toMatchObject({ operation: "approve_breaking_intent_revision", applied: true, rebound: true, lane_supervision: { state: "running", generation: 2 } });
-			expect(f.spawns()).toHaveLength(2);
+			expect(relayed.lane_relay).toMatchObject(supervised
+				? { operation: "approve_breaking_intent_revision", applied: true, rebound: true, lane_supervision: { state: "running", generation: 2 } }
+				: { operation: "approve_breaking_intent_revision", applied: true, rebound: true, lane_supervision: { state: "unavailable", generation: null, reason: "lane_executor_requires_tui" } });
+			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
 			const lane = readTaskRecordRaw(target.lane_path, TASK).record!;
 			expect(lane.intent_snapshot.revision).toBe(2);
 			const after = readAnyBatchRunState(f.root, target.batch_id) as BatchLaneRunStateRecord;
@@ -495,8 +519,9 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(next.report.reason).not.toBe(batchReason("plan_changed").reason);
 			expect(JSON.stringify(next)).not.toContain("plan_changed");
 			expect(next.report.batch_state).toBe("running");
-			expect(next.report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
-			expect(f.spawns()).toHaveLength(2);
+			expect(next.report.lane_supervision).toMatchObject(supervised
+				? { state: "running", generation: 2 } : { state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
+			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
 		} finally { await h.stopBatch(); }
 	}, 40000);
 
@@ -504,7 +529,7 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 		const { f, h, target } = await waitingHostLane();
 		try {
 			expect((await h.relay("request_authorization")).error).toBeUndefined();
-			expect(f.spawns()).toHaveLength(2);
+			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
 			h.answer.approve = false;
 			const opened = h.gates.length;
 			const cancelled = await h.relay("stop");
@@ -513,13 +538,14 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(readTaskRecordRaw(target.lane_path, TASK).record?.lifecycle).toBe("active");
 			h.answer.approve = true;
 			const attached = await h.start();
-			expect(attached.report.lane_supervision).toMatchObject({ state: "running", generation: 2 });
-			expect(f.spawns()).toHaveLength(2);
+			expect(attached.report.lane_supervision).toMatchObject(supervised
+				? { state: "running", generation: 2 } : { state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
+			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
 			const beforeStop = h.gates.length;
 			const stopped = await h.relay("stop");
 			expect(stopped.error).toBeUndefined();
 			expect(h.gates.length - beforeStop).toBe(1);
-			expect(stopped.lane_relay).toMatchObject({ operation: "stop", applied: true, lane_supervision: { state: "stopped", generation: 2 } });
+			expect(stopped.lane_relay).toMatchObject({ operation: "stop", applied: true, lane_supervision: { state: "stopped", generation: supervised ? 2 : null } });
 			expect(readTaskTombstone(target.lane_path, TASK)).toMatchObject({ terminal_lifecycle: "stopped" });
 			expect(existsSync(target.lane_path)).toBe(true);
 		} finally { await h.stopBatch(); }

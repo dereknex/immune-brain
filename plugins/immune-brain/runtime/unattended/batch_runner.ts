@@ -240,6 +240,13 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	} else if (observation.state === "unavailable" || observation.state === "unobservable") {
 		report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
 	}
+	// #426 D5: a Pi Executor outside Herdr is handed to the user. The child stays enrolled, the executor
+	// handoff (Lane path and task_id) stays in the report, and no lane_refusals entry is added.
+	if (observation.reason === "lane_executor_requires_tui") {
+		const tui = batchReason("lane_executor_requires_tui");
+		return { ...report, reason: tui.reason, next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
+			lane_supervision: { ...observation, not_applied: choice.not_applied } } as unknown as BatchLaneRunReport;
+	}
 	// Spec drive-always-lanes D11: an Executor that stopped on a literal-user decision is answered at this Host's native gate.
 	let decision: LaneDecisionFacts | null = null;
 	if (observation.state === "exited" && !observation.reason) {

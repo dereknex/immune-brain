@@ -587,9 +587,16 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   no process exit. The Lane and branches remain retained after delivery because
   Herdr session state is never exit proof.
 - **Synchronous runtime supervision outside Herdr.** The
-  runtime spawns one non-interactive Executor (`claude --print` or `pi --print`)
-  with the Lane as working directory and `drive <task_id>` as its only prompt,
-  and waits for it inside the Host tool call. Arguments come only from the
+  runtime spawns one non-interactive Executor (`claude --print` or the
+  antigravity print entry) with the Lane as working directory and
+  `drive <task_id>` as its only prompt, and waits for it inside the Host tool
+  call. A Pi Executor outside Herdr is never spawned: Pi writes to the Kernel
+  only in its TUI, so the runtime reports reason `lane_executor_requires_tui`
+  and hands the Lane to the user under the no-supervised-session rule above.
+  The child stays enrolled, nothing is parked, and the report keeps its
+  `executor` handoff with the Lane path and `task_id`; the user runs
+  `/skill:drive <task_id>` in interactive pi in that Lane and calls
+  `start_unattended_batch` again when it finishes. Arguments come only from the
   loaded plugin location and [Lane Preferences](#lane-preferences), which the
   runtime resolves itself; the Parent passes none. Existing runtime-owned tasks
   keep this supervision even when resumed inside Herdr. The report carries `lane_supervision` with `generation`, `state`
