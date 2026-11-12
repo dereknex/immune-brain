@@ -65,7 +65,7 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 		P4: {
 			port: "P4",
 			level: "conformance-only",
-			evidence: "Conformance-tested simplified continuation; shared continuation pending S6 and live certification pending S8",
+			evidence: "Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8",
 		},
 		P5: {
 			port: "P5",

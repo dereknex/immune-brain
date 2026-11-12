@@ -45,6 +45,12 @@ import {
 } from "../host-core/private_file";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
+import {
+	antigravityRunContinuationPostToolUse,
+	antigravityRunContinuationPreToolUse,
+	isSessionPaused,
+	recordPreToolUseCorrelationSync,
+} from "./run_continuation";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 const PRIVILEGED_MCP_TOOL =
@@ -381,6 +387,10 @@ export function recordPhaseEntryPrompt(
 	dropConversationConfirmations(conversationId, storeRoot);
 	const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir()), "antigravity");
 	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+	if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
+		const contPath = join(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+		dropPrivate(contPath);
+	}
 	let workspace: string | null = null;
 	if (entry === "run") {
 		try {
@@ -551,18 +561,24 @@ export function antigravityPreInvocationHook(
 	return { injectSteps: [], terminationBehavior: "" };
 }
 
-export function antigravityPostToolUseHook(
+export async function antigravityPostToolUseHook(
 	payload: AntigravityPostToolUsePayload,
 	locations: PhaseEntryLocations = {},
-): void {
+): Promise<void> {
 	if (payload.stepIdx === undefined || !payload.conversationId) return;
-	const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
-	if (!call) return;
 	const root = locations.root ?? tmpdir();
-	const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
-	dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
-	if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
-		dropPrivate(admissionPath(admissionId, root));
+	const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
+	if (call) {
+		const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+		dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
+		if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
+			dropPrivate(admissionPath(admissionId, root));
+		}
+	}
+	try {
+		await antigravityRunContinuationPostToolUse(payload, root);
+	} catch {
+		// PostToolUse observation failures fail closed without crashing
 	}
 }
 
@@ -600,6 +616,18 @@ function evaluatePreToolUseSync(
 	}
 
 	const root = locations.root ?? tmpdir();
+	const paused = isSessionPaused(payload.conversationId, root);
+	if (paused) {
+		return {
+			done: true,
+			result: {
+				decision: "deny",
+				reason: paused.startsWith("continuation facts could not be verified")
+					? paused
+					: `Run paused: ${paused}; enter drive explicitly before another native gate`,
+			},
+		};
+	}
 	if (isGatedTool(call.operation)) {
 		const state = readPhaseEntryState(payload.conversationId, root);
 		const opName: PhaseOperation = { kind: "tool", name: call.operation };
@@ -656,8 +684,16 @@ export function antigravityPreToolUseHook(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
 ): PreToolUseHookDecision {
+	const root = locations.root ?? tmpdir();
 	const sync = evaluatePreToolUseSync(payload, locations);
-	return sync.done ? sync.result : { decision: "allow" };
+	if (sync.done) {
+		if (sync.result.decision !== "deny") {
+			recordPreToolUseCorrelationSync(payload, root);
+		}
+		return sync.result;
+	}
+	recordPreToolUseCorrelationSync(payload, root);
+	return { decision: "allow" };
 }
 
 async function prepareBatchConfirmation(
@@ -836,7 +872,11 @@ export async function antigravityPreToolUseHookAsync(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
 ): Promise<PreToolUseHookDecision> {
+	const root = locations.root ?? tmpdir();
 	const sync = evaluatePreToolUseSync(payload, locations);
+	if (sync.done && sync.result.decision === "deny") return sync.result;
+	const contDecision = await antigravityRunContinuationPreToolUse(payload, root);
+	if (contDecision && contDecision.decision === "deny") return contDecision;
 	if (sync.done) return sync.result;
 	try {
 		if (sync.call.operation === "start_unattended_batch") {

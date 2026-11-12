@@ -19921,7 +19921,8 @@ function createMcpRuntime(profile, options = {}) {
       const workspace = await resolveWorkspace(meta, meta.signal);
       if (name !== "status" && bundle.stale())
         throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-      const observedSession = profile.readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
+      const readToolSession = options.readRunToolSession ?? profile.readRunToolSession;
+      const observedSession = readToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
       if (observedSession)
         hookSessionId = observedSession;
       if (name === "start_unattended_batch") {
@@ -22185,7 +22186,9 @@ function drop(host, path, root) {
       rmSync11(path);
   } catch {}
 }
-function readLast(path) {
+function readLast(path, dir) {
+  if (dir && existsSync16(dir) && !ensurePrivateDir(dir))
+    throw new Error("continuation directory could not be verified");
   let stat;
   try {
     stat = lstatSync20(path);
@@ -22206,7 +22209,7 @@ function readLast(path) {
   return JSON.parse(lines.at(-1) ?? "null");
 }
 function readMetadata(host, sessionId, root) {
-  const value = readLast(statePath2(host, sessionId, root));
+  const value = readLast(statePath2(host, sessionId, root), cacheDir(root, host.cache_name));
   if (!value)
     return blank();
   value.native_failures ??= 0;
@@ -22246,13 +22249,13 @@ async function observeNativeFailure(host, metadata, correlation, root, reason) {
   pauseRun(host, metadata, correlation.session_id, root, reason);
 }
 function readSessionToolCall(host, root, toolId, operation, workspace) {
-  const record = readLast(callPath(host, toolId, root));
+  const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
   if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync21(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
     return null;
   return record.session_id;
 }
 function selectedParentSession(host, root, toolId, workspace, slug) {
-  const call = readLast(callPath(host, toolId, root));
+  const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
   if (!call || call.workspace !== realpathSync21(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
     return false;
   const state = readMetadata(host, call.session_id, root).state;
@@ -22271,10 +22274,12 @@ async function applyRunContinuationEvent(host, root, session, event) {
       drop(host, statePath2(host, sessionId, root), root);
     return { kind: "none" };
   }
-  if (event.kind === "tool_call" && host.entry_state(sessionId)?.run_live) {
+  if (event.kind === "tool_call") {
     const metadata = readMetadata(host, sessionId, root);
     if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
       return { kind: "deny", reason: metadata.paused };
+    if (!host.entry_state(sessionId)?.run_live)
+      return { kind: "none" };
     const correlation = {
       session_id: sessionId,
       workspace,
@@ -22291,7 +22296,7 @@ async function applyRunContinuationEvent(host, root, session, event) {
   if (metadata.paused)
     return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
   if (event.kind === "tool_result") {
-    const correlated = readLast(callPath(host, event.tool_id, root));
+    const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name));
     if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
       return { kind: "none" };
     drop(host, callPath(host, event.tool_id, root), root);
@@ -22450,14 +22455,16 @@ async function applyRunContinuationEvent(host, root, session, event) {
     save(host, sessionId, root, metadata);
     return { kind: "none" };
   }
-  if (decision.state.progress_digest !== metadata.state.progress_digest || !event.stop_hook_active)
+  if (!event.stop_hook_active)
     metadata.stop_blocks = 0;
   metadata.state = decision.state;
+  metadata.stop_blocks++;
   if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-    pauseRun(host, metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
+    const hostName = host.host_name ?? "Claude";
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
+    pauseRun(host, metadata, sessionId, root, reason);
     return { kind: "paused", reason: metadata.paused };
   }
-  metadata.stop_blocks++;
   save(host, sessionId, root, metadata);
   return { kind: "continue", label: taskId, next_action: decision.next_action };
 }

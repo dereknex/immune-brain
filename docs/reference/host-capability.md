@@ -59,7 +59,7 @@ _Observation of subagent dispatch and verification receipt settlement_
 _State-machine driven continuation across tool turns and stop boundaries_
 
 - **Claude Code** (`certified`): Run continuation state machine through hook event log and automated stop
-- **Antigravity** (`conformance-only`): Conformance-tested simplified continuation; shared continuation pending S6 and live certification pending S8
+- **Antigravity** (`conformance-only`): Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8
 - **Pi** (`conformance-only`): Conformance-tested dedicated Pi run continuation; shared continuation alignment pending S5 (D6)
 
 ### P5 — Review/Verify CLI isolation

@@ -14,6 +14,7 @@ import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile } from ".
 import { hostConfirmationRef } from "../host-core/interaction";
 import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "./review_host";
 import { probeHost } from "./capability";
+import { selectedAntigravityParent } from "./run_continuation";
 
 export type { ToolMeta } from "../host-core/runtime";
 export type AntigravityRuntimeOptions = HostRuntimeOptions;
@@ -26,17 +27,21 @@ const ANTIGRAVITY_PROFILE: HostRuntimeProfile = {
 	probeHost,
 	confirmationRef: (input) => hostConfirmationRef("antigravity", input),
 	laneRuntime: (options) => new HostRuntime(ANTIGRAVITY_PROFILE, options),
-	// This Host records no foreground parent session metadata, so no Lane tab is
-	// owned by a parent session here (the Claude runtime's continuation log is
-	// another Host's store and is never read).
-	selectedParent: () => false,
+	selectedParent: selectedAntigravityParent,
 };
 
 export class AntigravityRuntime {
 	readonly runtime: HostRuntime;
 
-	constructor(options: AntigravityRuntimeOptions) {
-		this.runtime = new HostRuntime(ANTIGRAVITY_PROFILE, options);
+	constructor(options: AntigravityRuntimeOptions & { confirmationStoreRoot?: string }) {
+		const profile: HostRuntimeProfile = options.confirmationStoreRoot
+			? {
+					...ANTIGRAVITY_PROFILE,
+					selectedParent: (toolId, workspace, slug) =>
+						selectedAntigravityParent(toolId, workspace, slug, options.confirmationStoreRoot),
+				}
+			: ANTIGRAVITY_PROFILE;
+		this.runtime = new HostRuntime(profile, options);
 	}
 
 	get host(): HostRuntime["host"] {
