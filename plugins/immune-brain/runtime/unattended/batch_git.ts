@@ -430,6 +430,19 @@ function proofEquals(a: TaskTombstone, b: TaskTombstone): boolean {
 	return serializeTaskTombstone(a) === serializeTaskTombstone(b);
 }
 
+/**
+ * Point a Lane's index at its delivery commit. `read-tree` writes entries with
+ * no stat data, and the task snapshots read the index with
+ * `diff.autoRefreshIndex=false`, which reports every such entry as unstaged.
+ * Refreshing the stat data keeps a later snapshot from seeing the whole Lane as drift.
+ */
+export function readLaneDeliveryIntoIndex(root: string, commit: string): void {
+	const indexed = spawnSync("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+	if (indexed.status !== 0) throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+	const refreshed = spawnSync("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
+	if (refreshed.status !== 0) throw new Error(`failed to refresh Lane index: ${refreshed.stderr.trim()}`);
+}
+
 function requireMatchingSettledAudit(
 	auditPair: NonNullable<ReturnType<typeof readAuditTaskPair>>,
 	settled: NonNullable<ReturnType<typeof readSettledTaskEvidence>>,
@@ -533,8 +546,7 @@ export async function commitBatchChild(input: {
 		writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
 		const moved = spawnSync("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
 		if (moved.status !== 0) throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
-		const indexed = spawnSync("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-		if (indexed.status !== 0) throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+		readLaneDeliveryIntoIndex(root, commit);
 		return { commit };
 	}
 
@@ -898,8 +910,7 @@ export async function lookupBatchCommit(input: {
 			const moved = spawnSync("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
 			if (moved.status !== 0) throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
 		}
-		const indexed = spawnSync("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-		if (indexed.status !== 0) throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+		readLaneDeliveryIntoIndex(root, commit);
 	}
 
 	return { commit };

@@ -15769,6 +15769,14 @@ function readBatchCommitEvidence(root, batchId, taskId) {
 function proofEquals(a, b) {
   return serializeTaskTombstone(a) === serializeTaskTombstone(b);
 }
+function readLaneDeliveryIntoIndex(root, commit) {
+  const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+  if (indexed.status !== 0)
+    throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+  const refreshed = spawnSync14("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
+  if (refreshed.status !== 0)
+    throw new Error(`failed to refresh Lane index: ${refreshed.stderr.trim()}`);
+}
 function requireMatchingSettledAudit(auditPair, settled) {
   if (settled.runId === null)
     return;
@@ -15843,9 +15851,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
     if (moved.status !== 0)
       throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
-    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-    if (indexed.status !== 0)
-      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+    readLaneDeliveryIntoIndex(root, commit);
     return { commit };
   }
   if (isProgressRef(expectedBranch)) {
@@ -16122,9 +16128,7 @@ async function lookupBatchCommit(input) {
       if (moved.status !== 0)
         throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     }
-    const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
-    if (indexed.status !== 0)
-      throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
+    readLaneDeliveryIntoIndex(root, commit);
   }
   return { commit };
 }
