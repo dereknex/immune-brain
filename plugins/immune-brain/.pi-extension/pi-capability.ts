@@ -4,6 +4,22 @@ import {
 } from "../runtime/host-core/capability";
 
 export const HOST_ID = "pi" as const;
+export const SUPPORTED_PLATFORMS = ["darwin", "linux"] as const;
+
+export type HostProbe =
+	| { ok: true; host: typeof HOST_ID; platform: string; version?: string }
+	| { ok: false; reason: string };
+
+export function probeHost(
+	_env: Record<string, string | undefined> = process.env,
+	platform: NodeJS.Platform = process.platform,
+	hostVersion?: string,
+): HostProbe {
+	if (!SUPPORTED_PLATFORMS.includes(platform as (typeof SUPPORTED_PLATFORMS)[number])) {
+		return { ok: false, reason: `platform ${platform} is unsupported` };
+	}
+	return { ok: true, host: HOST_ID, platform, ...(hostVersion ? { version: hostVersion } : {}) };
+}
 
 export const PI_CAPABILITY: HostCapabilityDeclaration = validateHostCapabilityDeclaration({
 	hostId: "pi",

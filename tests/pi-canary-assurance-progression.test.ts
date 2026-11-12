@@ -460,6 +460,7 @@ test("host hooks never project active state and publish terminal projection only
 	const root = resolve(import.meta.dir, "..");
 	const work = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
 	const batch = readFileSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts"), "utf8");
+	const runtime = readFileSync(resolve(root, "plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8");
 	// Durable absence guards: the retired mark-active projection is fully deleted
 	// from every Pi adapter source that owns tracker or batch glue.
 	expect(existsSync(resolve(root, "plugins/immune-brain/.pi-extension/imm-canary-enroll.ts"))).toBe(false);
@@ -468,19 +469,11 @@ test("host hooks never project active state and publish terminal projection only
 	expect(batch).not.toContain("markGithubTaskActive");
 	expect(batch).not.toContain("mark-active");
 	// Terminal projection stays gated behind fresh Assurance plus exact tombstone
-	// reads. The projection step itself is shared with the Claude Host, so the
-	// gate is: fresh projection, then the exact tombstone, then that shared step,
-	// which is the only thing that reaches the tracker.
-	const enrichment = work.indexOf("async function enrichAssuranceResult");
-	const freshProjection = work.indexOf("await projectAssuranceForTask", enrichment);
-	const sharedProjection = work.indexOf("projectTerminalTrackerState({", freshProjection);
-	const tombstoneRead = work.indexOf("await readTaskTombstone", sharedProjection);
-	const trackerCall = work.indexOf("markGithubTaskTerminal", tombstoneRead);
-	expect(enrichment).toBeGreaterThan(-1);
-	expect(freshProjection).toBeGreaterThan(enrichment);
-	expect(sharedProjection).toBeGreaterThan(freshProjection);
-	// The exact tombstone is read inside the shared step, and the tracker is only
-	// reachable through the step that forwards to it.
+	// reads. The projection step itself is shared across all Hosts in HostRuntime.
+	const sharedProjection = runtime.indexOf("projectTerminalTrackerState({");
+	const tombstoneRead = runtime.indexOf("readTaskTombstone", sharedProjection);
+	const trackerCall = runtime.indexOf("runGithubTrackerOperation", tombstoneRead);
+	expect(sharedProjection).toBeGreaterThan(-1);
 	expect(tombstoneRead).toBeGreaterThan(sharedProjection);
 	expect(trackerCall).toBeGreaterThan(tombstoneRead);
 });

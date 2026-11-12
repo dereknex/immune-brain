@@ -49,12 +49,9 @@ export type {
 	ReviewTimingProfile,
 } from "../runtime/assurance/coordinator";
 
-import { AssuranceCoordinator, type AssuranceAdvanceResult, type AssuranceCoordinatorPorts, type ForegroundToolUpdate, type HostContext, type AssuranceSubmitReviewResult, type ReviewSubmissionOptions } from "../runtime/assurance/coordinator";
-import { withSettleCommit } from "../runtime/assurance/workflow_autocommit";
+import type { AssuranceCoordinatorPorts } from "../runtime/assurance/coordinator";
 import type { AssuranceHostPort, HostReviewReservation, VerificationReceipt, VerificationRequest } from "../runtime/assurance/host_port";
 import { verificationPacketError } from "../runtime/assurance/review_packet";
-import { submitMediatedReview } from "../runtime/assurance/review_mediation";
-import { CliReviewHost } from "../runtime/assurance/cli_review";
 import {
 	VerifierObservation,
 	type VerifierEvent,
@@ -188,39 +185,5 @@ export class PiReviewHost implements AssuranceHostPort {
 			taskId: pending.request.taskId,
 			operationId,
 		});
-	}
-}
-
-export class AssuranceProgression extends AssuranceCoordinator {
-	readonly piReviewHost: PiReviewHost;
-	/** The Review port this composition root reserves: the CLI dispatcher (D11). */
-	private readonly reviewHost: CliReviewHost;
-
-	constructor(ports: AssuranceProgressionPorts) {
-		const host = new PiReviewHost();
-		const reviewHost = new CliReviewHost(host);
-		(ports as AssuranceCoordinatorPorts).host = reviewHost;
-		super(ports as AssuranceCoordinatorPorts, ports.authorityOverrides);
-		this.piReviewHost = host;
-		this.reviewHost = reviewHost;
-	}
-
-	/** Under `Git integration: auto` a settlement reached here also carries its settle commit (ADR 0024). */
-	override async advance(taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void): Promise<AssuranceAdvanceResult> {
-		return withSettleCommit(ctx.cwd, taskId, await super.advance(taskId, ctx, signal, onUpdate), signal);
-	}
-
-	override async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
-		return withSettleCommit(ctx.cwd, taskId, await super.submitReview(taskId, ctx, verdictInput, options));
-	}
-
-	/** ADR 0017: verdict-source resolution happens here, before the shared submit path. */
-	submitMediated(taskId: string, ctx: HostContext, verdictInput: unknown): Promise<AssuranceSubmitReviewResult> {
-		return submitMediatedReview(this, ctx, taskId, verdictInput, () => this.reviewHost.inspectReview(taskId));
-	}
-
-	override async onSessionShutdown(): Promise<void> {
-		this.piReviewHost.onSessionShutdown();
-		await super.onSessionShutdown();
 	}
 }
