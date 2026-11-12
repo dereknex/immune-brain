@@ -22,7 +22,7 @@ export const PI_CAPABILITY: HostCapabilityDeclaration = validateHostCapabilityDe
 		P3: {
 			port: "P3",
 			level: "conformance-only",
-			evidence: "Conformance-tested dedicated Pi verifier observation; shared VerifierObservation alignment pending S3 (D4)",
+			evidence: "Conformance-tested Pi verifier observation via in-memory typed event log and shared VerifierObservation (D4)",
 		},
 		P4: {
 			port: "P4",

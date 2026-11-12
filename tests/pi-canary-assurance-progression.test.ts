@@ -6,8 +6,10 @@ import {
 	buildReviewPrompt,
 	deriveGithubTerminalProjectionInput,
 	parseAssuranceVerdict,
+	PiReviewHost,
 	type AssuranceProgressionPorts,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { writeTestReviewPacket } from "./helpers/review-packet-fixture.ts";
 import {
 	TASK,
 	ctx,
@@ -493,4 +495,126 @@ test("parseAssuranceVerdict rejects unknown approval fields", () => {
 	const pass = JSON.parse(resultText(s)) as { approval: Record<string, unknown> };
 	pass.approval.extra = "nope";
 	expect(() => parseAssuranceVerdict(JSON.stringify(pass), s)).toThrow(/unknown field/i);
+});
+
+describe("Pi verifier observation (D4, S3)", () => {
+	test("a real Pi Agent dispatch accepted by the reservation guard maps to start and its observed bytes to result, yielding one receipt through inspectVerification", () => {
+		const host = new PiReviewHost();
+		const reservation = host.prepareVerification({
+			taskId: TASK,
+			operationId: "op-real-dispatch",
+			prompt: "verify findings",
+			model: "pi-model",
+			writePacket: writeTestReviewPacket,
+		});
+		const params = reservation.dispatch as Record<string, unknown>;
+		expect(host.observeVerifierDispatch(params, "call-1")).toBeUndefined();
+		expect(host.inspectVerification(reservation)).toMatchObject({ ok: false, release: false });
+
+		const verifiedOutput = JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK, valid: true });
+		host.observeVerifierResult("call-1", verifiedOutput);
+
+		expect(host.inspectVerification(reservation)).toEqual({
+			ok: true,
+			receipt: {
+				actorId: "pi:call-1",
+				result: verifiedOutput,
+				model: "pi-model",
+			},
+		});
+	});
+
+	test("unknown reservation refuses with block: true", () => {
+		const host = new PiReviewHost();
+		const result = host.observeVerifierDispatch({
+			prompt: `<!-- immune-brain-verifier:operation_id=unknown task_id=${TASK} -->`,
+		}, "call-1");
+		expect(result).toEqual({ block: true, reason: "unknown verifier reservation" });
+	});
+
+	test("altered prompt or parameter refuses with block: true", () => {
+		const host = new PiReviewHost();
+		const reservation = host.prepareVerification({
+			taskId: TASK,
+			operationId: "op-altered",
+			prompt: "verify findings",
+			model: "pi-model",
+			writePacket: writeTestReviewPacket,
+		});
+		const params = reservation.dispatch as Record<string, unknown>;
+		expect(host.observeVerifierDispatch({ ...params, model: "other-model" }, "call-1")).toEqual({
+			block: true,
+			reason: "verifier dispatch differs from reservation",
+		});
+		expect(host.observeVerifierDispatch({ ...params, prompt: `${params.prompt}\nmodified` }, "call-1")).toEqual({
+			block: true,
+			reason: "verifier dispatch differs from reservation",
+		});
+	});
+
+	test("duplicate dispatch or missing call id refuses with block: true", () => {
+		const host = new PiReviewHost();
+		const reservation = host.prepareVerification({
+			taskId: TASK,
+			operationId: "op-dup",
+			prompt: "verify findings",
+			model: "pi-model",
+			writePacket: writeTestReviewPacket,
+		});
+		const params = reservation.dispatch as Record<string, unknown>;
+		expect(host.observeVerifierDispatch(params, undefined)).toEqual({
+			block: true,
+			reason: "verifier dispatch already observed or missing call id",
+		});
+		expect(host.observeVerifierDispatch(params, "call-first")).toBeUndefined();
+		expect(host.observeVerifierDispatch(params, "call-dup")).toEqual({
+			block: true,
+			reason: "verifier dispatch already observed or missing call id",
+		});
+	});
+
+	test("conflicting result bytes refuses or remains pending without settling", () => {
+		const host = new PiReviewHost();
+		const reservation = host.prepareVerification({
+			taskId: TASK,
+			operationId: "op-conflict",
+			prompt: "verify findings",
+			model: "pi-model",
+			writePacket: writeTestReviewPacket,
+		});
+		const params = reservation.dispatch as Record<string, unknown>;
+		expect(host.observeVerifierDispatch(params, "call-c")).toBeUndefined();
+		host.observeVerifierResult("call-c", "result-first");
+		host.observeVerifierResult("call-c", "result-conflicting");
+
+		const inspected = host.inspectVerification(reservation);
+		expect(inspected.ok).toBe(false);
+		expect(inspected.release).toBe(true);
+	});
+
+	test("only submit_verification consumes the ok inspection; observation alone settles nothing", () => {
+		const h = makeHarness();
+		const host = h.progression.piReviewHost;
+		const reservation = host.prepareVerification({
+			taskId: TASK,
+			operationId: "op-settle-bound",
+			prompt: "verify findings",
+			model: "pi-model",
+			writePacket: writeTestReviewPacket,
+		});
+		const params = reservation.dispatch as Record<string, unknown>;
+		host.observeVerifierDispatch(params, "call-s");
+		host.observeVerifierResult("call-s", JSON.stringify({ contract: "assurance_kernel/review_verification/v1", ok: true }));
+
+		// Observation alone produces NO authority writes
+		expect(h.counts().applyCount).toBe(0);
+
+		// Inspection is idempotent before consumption
+		expect(host.inspectVerification(reservation)).toMatchObject({ ok: true });
+		expect(host.inspectVerification(reservation)).toMatchObject({ ok: true });
+
+		// Release consumes the reservation
+		host.releaseReview(reservation);
+		expect(host.inspectVerification(reservation)).toMatchObject({ ok: false, release: true });
+	});
 });

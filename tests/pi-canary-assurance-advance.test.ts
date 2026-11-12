@@ -46,3 +46,11 @@ test("assurance source contains no detached UI or result-polling path", () => {
 	expect(source).toContain("await progression.advance");
 	expect(source).toContain("await progression.submitMediated");
 });
+
+test("Pi review host contains no duplicate pending-verifier state machine", () => {
+	const progressionSource = require("node:fs").readFileSync("plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts", "utf8") as string;
+	expect(progressionSource).not.toContain("this.verifiers = new Map");
+	expect(progressionSource).not.toContain("RecordedVerificationReceipt");
+	expect(progressionSource).toContain("VerifierObservation");
+	expect(progressionSource).toContain("PI_VERIFIER_PROFILE");
+});

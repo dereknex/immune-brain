@@ -1,0 +1,187 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "pi-verifier-observation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "pi-verifier-observation",
+    "goal": "Implement Slice S3 of docs/specs/tri-host-capability-alignment.spec.md: bind Pi verification to the shared VerifierObservation state machine over in-memory typed Agent events while preserving the exact Pi dispatch envelope, packet marker and pre-dispatch parameter guard.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D4 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): a real Pi Agent dispatch accepted by the reservation guard maps to start and its observed bytes to result, yielding one receipt through inspectVerification. Positive: exact reserved dispatch and result succeed. Negative: unknown reservation, altered prompt/parameter, duplicate dispatch or conflicting result bytes refuses or remains pending without settling. Bound: only submit_verification consumes the ok inspection. Agreed seams: tests/pi-canary-assurance-progression.test.ts, tests/pi-subagent-dispatch-observability-contract.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D4 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): Pi supplies terminal=result, actorPrefix=pi and the existing Agent envelope to the same machine used by the other adapters. Positive: cross-Host profiles preserve their receipt behavior. Negative: bad packet handles, missing terminal evidence and consumed receipts keep their refusals. Bound: no second Pi pending-verifier state machine remains. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/pi-canary-assurance-advance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-canary-assurance-advance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D5 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): the Pi adapter and its observation tests typecheck after composition, with no change to Pi public tool names or native UI. Positive: typecheck passes. Negative: stale references to the retired map-based machine fail. Bound: no MCP transport is introduced. Agreed seam: TypeScript.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/pi-verifier-observation.md",
+      "docs/plans/pi-verifier-observation.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+      "plugins/immune-brain/.pi-extension/pi-capability.ts",
+      "plugins/immune-brain/runtime/host-core/hook_event_log.ts",
+      "plugins/immune-brain/runtime/host-core/verifier_observation.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts",
+      "tests/pi-canary-assurance-advance.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts",
+      "tests/pi-subagent-dispatch-observability-contract.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/pi-verifier-observation.intent.json",
+    "content_hash": "sha256:bb658cbbb26fadbe4e10520597160f2bd8c9984aecae03fd84e9f3260f4519c2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:bb658cbbb26fadbe4e10520597160f2bd8c9984aecae03fd84e9f3260f4519c2",
+  "git_base_head": "21e312a4c4ca5b4fb2e4849579f6333d3f730118",
+  "attestations": [
+    {
+      "id": "approval-qa-9ee929a9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bb658cbbb26fadbe4e10520597160f2bd8c9984aecae03fd84e9f3260f4519c2",
+      "diff_hash": "sha256:77b7bd3872f4eae611bff6f840385131ab954a0e7da121363534c653a54b5a16",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:183c3b946a66b4ead1bd6e0768f68647e8ef87dbcc2b808ffe21be91968ca709",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:183c3b946a66b4ead1bd6e0768f68647e8ef87dbcc2b808ffe21be91968ca709"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:183c3b946a66b4ead1bd6e0768f68647e8ef87dbcc2b808ffe21be91968ca709"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:183c3b946a66b4ead1bd6e0768f68647e8ef87dbcc2b808ffe21be91968ca709"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c2214731",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:bb658cbbb26fadbe4e10520597160f2bd8c9984aecae03fd84e9f3260f4519c2",
+      "diff_hash": "sha256:77b7bd3872f4eae611bff6f840385131ab954a0e7da121363534c653a54b5a16",
+      "actor_id": "cli:claude-code:b473b66a-bd36-4082-bbaa-408f178091dd",
+      "summary": "PiReviewHost now uses the shared VerifierObservation over a MemoryHookEventLog. PI_VERIFIER_PROFILE sets terminal=result and actorPrefix=pi and keeps the exact Agent envelope. The dispatch guard turns an accepted dispatch into a start event and the observed bytes into a result event. Unknown reservations, altered parameters, duplicate dispatches and conflicting bytes are still refused. Inspection does not settle on its own. Cross-host conformance now includes a pi profile. The bundles match the shared source. Blast radius: medium; the load-bearing paths are runtime/host-core/verifier_observation.ts (shared by all three hosts, which only gain two read accessors and a more detailed conflict message) and .pi-extension/pi-canary-assurance-progression.ts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "21e312a4c4ca5b4fb2e4849579f6333d3f730118",
+        "review_commit": "77af52356ee3e1565664f6aacfdf8a81654e1af2",
+        "review_tree": "f261061dbff519f695a6677f8ff64037e8b026fb",
+        "manifest_digest": "sha256:53132a2251354e99f4b82ac7374cba517ffd826d12bcc82a82e911a21b4fc6fe"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-eb7d13dfd621-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "The retired Pi map threw 'duplicate verifier reservation' when prepareVerification got a repeated operationId. The shared VerifierObservation.prepare now silently overwrites the pending entry, and no test pins either behavior.",
+          "anchor": "sha256:831330f4b2efd36e4bc0eb39c753420526952b627f225f0c6300a75980d7cbef",
+          "evidence": {
+            "trigger": "PiReviewHost.prepareVerification called twice with the same operationId → the second call replaces the first pending reservation instead of being refused",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.prepareVerification",
+              "plugins/immune-brain/runtime/host-core/verifier_observation.ts:VerifierObservation.prepare"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-eb7d13dfd621-2-review-2",
+          "acceptance_id": "AC2",
+          "summary": "onSessionShutdown appends session_end for the constant 'pi-session' id. If the same PiReviewHost is reused after that, the shared endSession can move an unbound reservation's cursor past the cleared log, so a later dispatch is ignored. The reservation then reports 'not observed' and is released rather than wrongly settled.",
+          "anchor": "sha256:06cb508874ed74fd550f3a8277b5cb2249c694b42d7273873e8d6fb06bdf8f9a",
+          "evidence": {
+            "trigger": "a reservation is prepared but not yet dispatched, onSessionShutdown runs, the same host instance is reused and the dispatch arrives → the start event lands at an index below the moved cursor and inspect refuses with release:true",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:AssuranceProgression.onSessionShutdown",
+              "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts:PiReviewHost.onSessionShutdown",
+              "plugins/immune-brain/runtime/host-core/verifier_observation.ts:VerifierObservation.endSession"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:499e1ffac3ebdf58575965a9da8268338ea5c0e6c0cf712dfdc34fd29949a33e"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:pi-verifier-observation:2026-11-12T08:10:54.687Z",
+      "at": "2026-11-12T08:10:54.687Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-verifier-observation.intent.json"
+    },
+    {
+      "id": "record_approval:pi-verifier-observation:2026-11-12T08:13:36.976Z",
+      "at": "2026-11-12T08:13:36.976Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9ee929a9\naction_v2_sha256:0758a07140e79a437e1974fa60f535bb531fd73d1f02169a3945e9a4ae99c7e7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T08:13:36.977Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-verifier-observation:2026-11-12T08:15:15.645Z",
+      "at": "2026-11-12T08:15:15.645Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c2214731\naction_v2_sha256:fbc01504fcbd576162abc5162164be13b020eb6fce1f4ec5dfc5d90568d2281a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:b473b66a-bd36-4082-bbaa-408f178091dd",
+        "confirmation_ref": "antigravity:cli:claude-code:b473b66a-bd36-4082-bbaa-408f178091dd",
+        "issued_at": "2026-11-12T08:15:15.645Z"
+      },
+      "review_started_at": "2026-11-12T08:13:40.812Z",
+      "review_submitted_at": "2026-11-12T08:15:14.638Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:pi-verifier-observation:2026-11-12T08:15:18.364Z",
+      "at": "2026-11-12T08:15:18.364Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:da110bb76fe96633acee7a4c9540bd3aeee2c810404b451b375ae058689c4430"
+    }
+  ]
+}

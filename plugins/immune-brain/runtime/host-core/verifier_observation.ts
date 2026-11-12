@@ -103,9 +103,20 @@ export class VerifierObservation<E extends SessionEvent> {
 	private readonly pending = new Map<string, Pending<E>>();
 
 	constructor(
-		private readonly profile: VerifierObservationProfile<E>,
+		readonly profile: VerifierObservationProfile<E>,
 		private readonly log: HookEventLog<E>,
 	) {}
+
+	pendingReservation(operationId: string): { request: VerificationRequest; dispatchPrompt: string } | undefined {
+		const state = this.pending.get(operationId);
+		return state ? { request: state.request, dispatchPrompt: state.dispatchPrompt } : undefined;
+	}
+
+	expectedDispatch(operationId: string): unknown | undefined {
+		const state = this.pending.get(operationId);
+		if (!state) return undefined;
+		return this.profile.dispatch({ dispatchPrompt: state.dispatchPrompt, model: state.request.model });
+	}
 
 	prepare(request: VerificationRequest): HostReviewReservation {
 		this.drain();
@@ -231,7 +242,9 @@ export class VerifierObservation<E extends SessionEvent> {
 				return;
 			}
 			if (state.result) {
-				state.error = "duplicate PostToolUse result observed for review reservation";
+				state.error = state.result.event.result !== event.result
+					? "conflicting verifier result bytes: duplicate PostToolUse result observed for review reservation"
+					: "duplicate PostToolUse result observed for review reservation";
 				return;
 			}
 			state.result = { sessionId, index, event, host };

@@ -18,6 +18,7 @@ import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-b
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
 import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { PiReviewHost, PI_VERIFIER_AGENT } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { HostRuntime } from "../plugins/immune-brain/runtime/host-core/runtime";
 import { NativeAuthorityError } from "../plugins/immune-brain/runtime/host-core/interaction";
@@ -2763,6 +2764,18 @@ describe("verifier observation", () => {
 		};
 	}
 
+	function piHost(): Driver {
+		const host = new PiReviewHost();
+		const verifier = PI_VERIFIER_AGENT;
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "start", sessionId, agentId, agent, prompt }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({ type: "result", sessionId, agentId, result: text, model, prompt }),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "stop", sessionId, agentId, agent }),
+			end: (sessionId) => host.observe({ type: "session_end", sessionId }),
+		};
+	}
+
 	const HOST_SPECS: HostSpec[] = [
 		{
 			label: "claude-code", prefix: "claude", verifier: "immune-brain-review-verifier", make: claudeHost,
@@ -2777,6 +2790,12 @@ describe("verifier observation", () => {
 			label: "antigravity", prefix: "antigravity", verifier: "immune-brain-review-verifier", make: antigravityHost,
 			dispatchPrompt: (reservation) => (reservation.dispatch as { Prompt: string }).Prompt,
 			// BR-SCN-1: PostToolUse is terminal here, so no stop event follows.
+			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
+		},
+		{
+			label: "pi", prefix: "pi", verifier: PI_VERIFIER_AGENT, make: piHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { prompt: string }).prompt,
+			// BR-REQ-6 / D4: terminal is "result", so no stop event follows.
 			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
 		},
 	];
@@ -2881,6 +2900,40 @@ describe("verifier observation", () => {
 
 			spec.terminate(driver, "session-1", "agent-1", prompt);
 			expect(inspect(driver, reservation)).toMatchObject({ ok: true, receipt: { actorId: `${spec.prefix}:agent-1` } });
+		});
+
+		test(`${spec.label}: a corrupted packet handle refuses and releases the reservation`, () => {
+			const driver = spec.make();
+			let packetPath = "";
+			const reservation = driver.host.prepareVerification!({
+				taskId: TASK, operationId: OPERATION, prompt: "verifier prompt", model: MODEL,
+				writePacket: (op, prompt) => {
+					const pkt = writeTestReviewPacket(op, prompt);
+					packetPath = pkt.path;
+					return pkt;
+				},
+			});
+			writeFileSync(packetPath, "corrupted content");
+			const prompt = spec.dispatchPrompt(reservation);
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			const inspected = inspect(driver, reservation);
+			expect(inspected.ok).toBe(false);
+			expect(inspected.release).toBe(true);
+		});
+
+		test(`${spec.label}: releasing the reservation removes it and refuses subsequent inspection`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toMatchObject({ ok: true });
+
+			driver.host.releaseReview!(reservation);
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
 		});
 	}
 });

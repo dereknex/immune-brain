@@ -52,7 +52,7 @@ _Observation of subagent dispatch and verification receipt settlement_
 
 - **Claude Code** (`certified`): Verifier observation state machine through hook event log
 - **Antigravity** (`conformance-only`): Conformance-tested verifier observation via hook event log; live observation pending S8 (#451)
-- **Pi** (`conformance-only`): Conformance-tested dedicated Pi verifier observation; shared VerifierObservation alignment pending S3 (D4)
+- **Pi** (`conformance-only`): Conformance-tested Pi verifier observation via in-memory typed event log and shared VerifierObservation (D4)
 
 ### P4 — run continuation
 
