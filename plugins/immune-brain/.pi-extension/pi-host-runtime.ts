@@ -90,7 +90,7 @@ export class PiRuntime {
 	}
 
 	async shutdown(): Promise<void> {
-		const host = this.options.host ?? (this.runtime as any).reviewHost;
+		const host = this.options.host ?? this.runtime.host;
 		if (host && typeof (host as any).onSessionShutdown === "function") {
 			(host as any).onSessionShutdown();
 		}

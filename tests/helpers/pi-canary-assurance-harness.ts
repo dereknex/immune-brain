@@ -16,14 +16,11 @@ import {
 } from "../../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { PiRuntime } from "../../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import {
-	AssuranceCoordinator,
 	type ForegroundToolUpdate,
 	type HostContext,
 	type ReviewSubmissionOptions,
 } from "../../plugins/immune-brain/runtime/assurance/coordinator";
-import { CliReviewHost } from "../../plugins/immune-brain/runtime/assurance/cli_review";
 import { withSettleCommit } from "../../plugins/immune-brain/runtime/assurance/workflow_autocommit";
-import { submitMediatedReview } from "../../plugins/immune-brain/runtime/assurance/review_mediation";
 import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
@@ -147,6 +144,51 @@ export function passVerdict(s: SnapshotDescriptor): AssuranceVerdict & { approva
 	};
 }
 
+/**
+ * Build a Pi assurance driver backed by the real `PiRuntime`/`HostRuntime`
+ * composition root for conformance and progression tests.
+ */
+export function createPiRuntimeDriver(
+	ports: AssuranceProgressionPorts,
+	cwd: string = process.cwd(),
+) {
+	const host = new PiReviewHost();
+	const piRuntime = new PiRuntime({
+		cwd,
+		ports: ports as any,
+		authorityOverrides: ports.authorityOverrides,
+		host,
+	});
+	const coordinator = piRuntime.coordinator;
+	return {
+		piReviewHost: host,
+		authority: (coordinator as any).authority,
+		coordinator,
+		piRuntime,
+		advance: async (taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.advance(taskId, signal, undefined, onUpdate);
+		},
+		submitReview: async (taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return withSettleCommit(ctx.cwd, taskId, await coordinator.submitReview(taskId, ctx, verdictInput, options));
+		},
+		submitMediated: (taskId: string, ctx: HostContext, verdictInput: unknown) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.submitReview(taskId, verdictInput);
+		},
+		releaseStoppedReview: (taskId: string) => coordinator.releaseStoppedReview(taskId),
+		submitVerification: async (taskId: string, ctx: HostContext, result?: string) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.submitVerification(taskId, result);
+		},
+		active: (taskId: string) => coordinator.active(taskId),
+		onSessionShutdown: async () => {
+			await piRuntime.shutdown();
+		},
+	};
+}
+
 export function makeAssuranceHarness(overrides: Partial<{
 	phase: string;
 	risk: "routine" | "material" | "critical";
@@ -223,44 +265,9 @@ export function makeAssuranceHarness(overrides: Partial<{
 		qaBeforeAuthorityCommit: () => ports.qaBeforeAuthorityCommit?.(),
 		qaOnAuthorityCommit: () => ports.qaOnAuthorityCommit?.(),
 		qaAfterAuthorityCommit: () => ports.qaAfterAuthorityCommit?.(),
-	};
-	const host = new PiReviewHost();
-	const reviewHost = new CliReviewHost(host);
-	(delegatingPorts as any).host = reviewHost;
-	const piRuntime = new PiRuntime({
-		cwd: process.cwd(),
-		ports: delegatingPorts as any,
 		authorityOverrides: ports.authorityOverrides,
-		host: reviewHost,
-	});
-	const coordinator = piRuntime.coordinator;
-	const progression = {
-		piReviewHost: host,
-		authority: (coordinator as any).authority,
-		coordinator,
-		piRuntime,
-		advance: async (taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void) => {
-			piRuntime.bindWorkspace(ctx.cwd);
-			return piRuntime.advance(taskId, signal, undefined, onUpdate);
-		},
-		submitReview: async (taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions) => {
-			piRuntime.bindWorkspace(ctx.cwd);
-			return withSettleCommit(ctx.cwd, taskId, await coordinator.submitReview(taskId, ctx, verdictInput, options));
-		},
-		submitMediated: (taskId: string, ctx: HostContext, verdictInput: unknown) => {
-			piRuntime.bindWorkspace(ctx.cwd);
-			return piRuntime.submitReview(taskId, verdictInput);
-		},
-		releaseStoppedReview: (taskId: string) => coordinator.releaseStoppedReview(taskId),
-		submitVerification: async (taskId: string, ctx: HostContext, result?: string) => {
-			piRuntime.bindWorkspace(ctx.cwd);
-			return piRuntime.submitVerification(taskId, result);
-		},
-		active: (taskId: string) => coordinator.active(taskId),
-		onSessionShutdown: async () => {
-			await piRuntime.shutdown();
-		},
 	};
+	const progression = createPiRuntimeDriver(delegatingPorts);
 	return { progression, authority: progression.authority, ports, counts: () => ({ applyCount, removeCount, evidenceCount }) };
 }
 

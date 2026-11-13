@@ -1,0 +1,122 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "pi-dual-host-conformance-runtime",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "pi-dual-host-conformance-runtime",
+    "goal": "Make tests/dual-host-assurance-conformance.test.ts pass again after S4 (5a3d466) retired AssuranceProgression: the file imports it at :135 and builds Pi drivers at :659, :732 and :752, so 18 of 92 tests fail on ea6e2f6 while all 92 pass on 566abec. Move the Pi side of each cross-host scenario to the PiRuntime/HostRuntime composition root (plugins/immune-brain/.pi-extension/pi-host-runtime.ts) through the shared harness tests/helpers/pi-canary-assurance-harness.ts, keeping every scenario and assertion. A scenario that still fails once it reaches PiRuntime is a behavior regression and is fixed in the Pi adapter, not in the test. Context: batch #481 (tri-host-capability-alignment) integrated S4 (5a3d466) and S5 (8116d1c) without running final verification; full bun test on ea6e2f6 fails 48 tests in 9 files that all pass on 566abec (pre-S4). Spec docs/specs/tri-host-capability-alignment.spec.md D5 keeps Pi public tool results, native confirmation dialogs and Task Rail unchanged while Pi composes HostRuntime. No existing assertion may be deleted, skipped or weakened to pass; a test that only reached a retired symbol is moved to the post-S4 surface (PiRuntime over HostRuntime in plugins/immune-brain/.pi-extension/pi-host-runtime.ts) and keeps its assertions. Depends on pi-authority-fail-closed-repair being integrated first. no user-visible change: test repair plus any D5-preserved Pi behavior it uncovers.",
+    "acceptance": [
+      {
+        "id": "PDHC-A1",
+        "assertion": "tests/dual-host-assurance-conformance.test.ts no longer imports AssuranceProgression or pi-canary-assurance-progression's retired class, builds its Pi drivers through PiRuntime, and runs at least the 92 tests it ran on 566abec with 0 failures and none skipped; each cross-host resume, cancellation, reconciliation, literal-user identity, tracker-failure and project-owned-verification scenario keeps its pre-S4 assertions. Then bun run typecheck exits 0. Done looks like: the dual-host conformance file reports 92 or more pass, 0 fail, and typecheck is clean.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/dual-host-assurance-conformance.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/pi-dual-host-conformance-runtime.intent.json",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/pi-canary-assurance-harness.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/pi-dual-host-conformance-runtime.intent.json",
+    "content_hash": "sha256:f0f97ce01277ff3cca3c781c2f1190f29b74e0424e8173ce59de27ca4d677cce"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:f0f97ce01277ff3cca3c781c2f1190f29b74e0424e8173ce59de27ca4d677cce",
+  "git_base_head": "350bfee8e7fa23578873ec7eb5192ba5ea13b965",
+  "attestations": [
+    {
+      "id": "approval-qa-e4671f39",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0f97ce01277ff3cca3c781c2f1190f29b74e0424e8173ce59de27ca4d677cce",
+      "diff_hash": "sha256:b6ddfe6a59d0ada08fd572f974c58d434589595208486245975722f53c1d989a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:25e00d71f1f860968c6984dd20045a230e52b441b04d4b0be7ec64fd408bb0f3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "PDHC-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:25e00d71f1f860968c6984dd20045a230e52b441b04d4b0be7ec64fd408bb0f3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-bbf31acc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:f0f97ce01277ff3cca3c781c2f1190f29b74e0424e8173ce59de27ca4d677cce",
+      "diff_hash": "sha256:b6ddfe6a59d0ada08fd572f974c58d434589595208486245975722f53c1d989a",
+      "actor_id": "cli:claude-code:aca82f9d-6022-4fb6-afd2-3a0bb5154cba",
+      "summary": "Provenance verified (single parent 350bfee8, tree 6cfb7fdf). The conformance file no longer imports AssuranceProgression and now builds its Pi drivers through PiRuntime using the shared createPiRuntimeDriver. The harness now passes the raw PiReviewHost because HostRuntime already wraps it in CliReviewHost at runtime.ts:430-431, so the old double wrap is gone. PiRuntime.shutdown now reaches PiReviewHost.onSessionShutdown, which restores the pre-S4 session_end behaviour of AssuranceProgression.onSessionShutdown. The source-text guards were retargeted to the HostRuntime delegation points, and the behavioural assertions are unchanged. Blast radius: medium, because the only production line changed is the PiRuntime.shutdown host selection in pi-host-runtime.ts.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "350bfee8e7fa23578873ec7eb5192ba5ea13b965",
+        "review_commit": "03f5e8eb0a9f28af6f0ecdd72ef23dea79bfd7e0",
+        "review_tree": "6cfb7fdf2a9da5203566771455a7e66310e7ddb4",
+        "manifest_digest": "sha256:b6c2dad31fc99d8a1c6ad7e1742dba2b9a54e884fb244e7888f786a5a84dc257"
+      },
+      "reviewer_verdict_sha256": "sha256:ad271e812b3366e98121ee1b5f9e6124fb0183acf673cc3a646c065bfe1ddd84"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:pi-dual-host-conformance-runtime:2026-11-13T07:12:19.417Z",
+      "at": "2026-11-13T07:12:19.417Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-dual-host-conformance-runtime.intent.json"
+    },
+    {
+      "id": "record_approval:pi-dual-host-conformance-runtime:2026-11-13T07:14:45.702Z",
+      "at": "2026-11-13T07:14:45.702Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e4671f39\naction_v2_sha256:21ec08d87704a116a78661f20b2053fb7cfdac9773f07217b87edfd47f3fa056",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-13T07:14:45.702Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-dual-host-conformance-runtime:2026-11-13T07:15:48.113Z",
+      "at": "2026-11-13T07:15:48.113Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-bbf31acc\naction_v2_sha256:c3b3f79b4ee3a150246ddae5f870ecdb3fc6ac93713343418d3639883dbd1aae",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:aca82f9d-6022-4fb6-afd2-3a0bb5154cba",
+        "confirmation_ref": "antigravity:cli:claude-code:aca82f9d-6022-4fb6-afd2-3a0bb5154cba",
+        "issued_at": "2026-11-13T07:15:48.113Z"
+      },
+      "review_started_at": "2026-11-13T07:14:48.757Z",
+      "review_submitted_at": "2026-11-13T07:15:47.609Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:pi-dual-host-conformance-runtime:2026-11-13T07:15:49.734Z",
+      "at": "2026-11-13T07:15:49.734Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b23eeb91dfffde7e9fe4bf9cca9b3a25fda9c02c93fdee32fc8ce7ae1626a4b7"
+    }
+  ]
+}

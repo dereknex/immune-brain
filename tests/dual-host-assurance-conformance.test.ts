@@ -132,7 +132,8 @@ if (!(await hostPackagesAvailable())) {
 	}));
 }
 
-const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
+const { PiRuntime } = await import("../plugins/immune-brain/.pi-extension/pi-host-runtime");
+const { createPiRuntimeDriver } = await import("./helpers/pi-canary-assurance-harness");
 const { default: registerPiBatch, executePiUnattendedBatch: executePiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const executePiUnattendedBatch = (options: Parameters<typeof executePiBatch>[0]) => executePiBatch({ final_verification: ["bun --version"], ...options });
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
@@ -656,7 +657,7 @@ function sharedKernel(
 		},
 		pi() {
 			const { host: _ignored, ...rest } = portsFor(new ClaudeReviewHost());
-			return new AssuranceProgression({ ...rest, authorityOverrides: rest });
+			return createPiRuntimeDriver({ ...rest, authorityOverrides: rest }, ROOT);
 		},
 		stale() { recordRevision = "stale"; },
 		future() { contract = "assurance_kernel/task_record/v99"; },
@@ -728,11 +729,14 @@ esac
 }
 
 function projectVerificationCoordinator(root: string, host: "pi" | "claude") {
-	const ports = host === "pi"
-		? createPiAssuranceProgressionPorts()
-		: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
+	if (host === "pi") {
+		const ports = createPiAssuranceProgressionPorts();
+		const driver = createPiRuntimeDriver(ports, root);
+		return { coordinator: driver.coordinator, ports };
+	}
+	const ports = new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
 	return {
-		coordinator: host === "pi" ? new AssuranceProgression({ ...ports, authorityOverrides: ports }) : new AssuranceCoordinator(ports, ports),
+		coordinator: new AssuranceCoordinator(ports, ports),
 		ports,
 	};
 }
@@ -745,7 +749,7 @@ describe("project-owned-verification", () => {
 		const root = projectVerificationFixture(taskId, "pass", { risk: "routine", gitIntegration });
 		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 		const driver = host === "pi"
-			? new AssuranceProgression(createPiAssuranceProgressionPorts())
+			? createPiRuntimeDriver(createPiAssuranceProgressionPorts(), root).piRuntime
 			: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true });
 		try {
 			const baseHead = git("rev-parse", "HEAD");
@@ -760,9 +764,7 @@ describe("project-owned-verification", () => {
 			writeEnrollmentBaseline(root, ["tools/future-pm"]);
 			const outsideIndex = git("diff", "--cached", "--", "AGENTS.md");
 			const outsideWorktree = git("diff", "--", "AGENTS.md");
-			const result = driver instanceof ClaudeRuntime
-				? await driver.advance(taskId)
-				: await driver.advance(taskId, { cwd: root } as never);
+			const result = await driver.advance(taskId);
 			expect(result).toMatchObject({ state: "completed" });
 			expect(readSettledTaskEvidence(root, taskId)).toMatchObject({
 				record: { lifecycle: "done" }, proof: { terminal_lifecycle: "done" },
@@ -786,8 +788,7 @@ describe("project-owned-verification", () => {
 			expect(readFileSync(join(root, "unrelated.txt"), "utf8")).toBe("untracked user content\n");
 			expect(git("ls-files", "--others", "--exclude-standard", "--", "unrelated.txt")).toBe("unrelated.txt");
 		} finally {
-			if (driver instanceof ClaudeRuntime) await driver.shutdown();
-			else await driver.onSessionShutdown();
+			await driver.shutdown();
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
@@ -1681,12 +1682,10 @@ describe("dual-host assurance conformance", () => {
 			mkdirSync(join(pLane, "docs/specs"), { recursive: true });
 			writeFileSync(join(pLane, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
 			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pLane });
-			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pLane }, {
-				taskId: `${sharedReplaySlug}-p-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
-			});
-			const { AssuranceCoordinator: PiCoordinator } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
-			const piProgression = new PiCoordinator(createPiAssuranceProgressionPorts() as never);
-			expect((await piProgression.advance(`${sharedReplaySlug}-p-c1`, { cwd: pLane })).state).toBe("completed");
+			const piLaneRuntime = createPiRuntimeDriver(createPiAssuranceProgressionPorts(), pLane).piRuntime;
+			await piLaneRuntime.freeze(`${sharedReplaySlug}-p-c1`, { cwd: pLane });
+			expect((await piLaneRuntime.advance(`${sharedReplaySlug}-p-c1`)).state).toBe("completed");
+			await piLaneRuntime.shutdown();
 			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pLane });
 			pRes1 = await executePiUnattendedBatch(replayOptions);
 
@@ -2360,18 +2359,25 @@ describe("dual-host assurance conformance", () => {
 		}
 		// Both adapters mint the canonical spelling rather than a second one: after the
 		// shared authorization flow, the batch binding mints it once in the shared
-		// owner both adapters call, and neither adapter spells it itself.
+		// owner both adapters call through HostRuntime, and neither adapter spells it itself.
 		const sharedOwner = readFileSync(
 			resolve("plugins/immune-brain/runtime/unattended/batch_preflight.ts"),
 			"utf8",
 		);
 		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
-		for (const path of [
-			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
-			"plugins/immune-brain/runtime/host-core/runtime.ts",
-		]) {
+		const sharedRuntime = readFileSync(
+			resolve("plugins/immune-brain/runtime/host-core/runtime.ts"),
+			"utf8",
+		);
+		expect(sharedRuntime.includes("authorizeBatch")).toBe(true);
+		for (const [path, sharedCall] of [
+			["plugins/immune-brain/.pi-extension/imm-unattended-batch.ts", "startUnattendedBatch"],
+			["plugins/immune-brain/.pi-extension/pi-host-runtime.ts", "this.runtime.startUnattendedBatch"],
+			["plugins/immune-brain/runtime/claude/kernel_ports.ts", "this.runtime.startUnattendedBatch"],
+			["plugins/immune-brain/runtime/host-core/runtime.ts", "authorizeBatch"],
+		] as const) {
 			const source = readFileSync(resolve(path), "utf8");
-			expect({ path, shared: source.includes("authorizeBatch") }).toEqual({ path, shared: true });
+			expect({ path, shared: source.includes(sharedCall) }).toEqual({ path, shared: true });
 			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
 		}
 	});
@@ -2478,14 +2484,22 @@ describe("dual-host assurance conformance", () => {
 			expect(absent).toBeUndefined();
 			expect(calls).toBe(0);
 
-			// Both Hosts settle through the one shared step.
+			// Both Hosts settle through the one shared step in HostRuntime.
+			expect({
+				path: "plugins/immune-brain/runtime/host-core/runtime.ts",
+				shared: readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8").includes("projectTerminalTrackerState"),
+			}).toEqual({
+				path: "plugins/immune-brain/runtime/host-core/runtime.ts",
+				shared: true,
+			});
 			for (const path of [
-				"plugins/immune-brain/runtime/host-core/runtime.ts",
-				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+				"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+				"plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
 			]) {
-				expect({ path, shared: readFileSync(resolve(path), "utf8").includes("projectTerminalTrackerState") }).toEqual({
+				const source = readFileSync(resolve(path), "utf8");
+				expect({ path, delegates: source.includes("this.runtime.advance") && source.includes("this.runtime.submitReview") }).toEqual({
 					path,
-					shared: true,
+					delegates: true,
 				});
 			}
 		} finally {
@@ -2557,7 +2571,7 @@ describe("status stays readable with unstaged scope paths on both Hosts", () => 
 
 /**
  * S2 AC2: the CLI switch is read at each composition root. The Host wiring is
- * real — Pi's `AssuranceProgression`, `ClaudeRuntime` and `AntigravityRuntime` —
+ * real — Pi's `PiRuntime`, `ClaudeRuntime` and `AntigravityRuntime` —
  * and only the Kernel ports are the same synthetic fixtures the conformance
  * drives above, because the reservation shape is what the switch changes.
  */
