@@ -76,6 +76,7 @@ import {
 	PiReviewHost,
 } from "./pi-canary-assurance-progression";
 import { PiRuntime, bindPiSelectedParent, type ToolMeta } from "./pi-host-runtime";
+import type { InvocationToken } from "./pi-canary-invocations";
 import {
 	NativeAuthorityError,
 	type NativeConfirmationPort,
@@ -374,18 +375,57 @@ export function piEntryToken(ctx: PhaseEntryContext): string | null {
 	return state?.run_live && state.token && state.workspace === piWorkspace(ctx?.cwd) ? state.token : null;
 }
 
+export interface ActiveAuthorizeCall {
+	ctx: ExtensionContext;
+	invocation?: InvocationToken;
+	startGen?: number;
+	derivedOperation?: AuthorizeOperation;
+}
+
+export interface PiConfirmationHooks {
+	resolveCall?: (toolCallId?: string) => ActiveAuthorizeCall | undefined;
+	isSessionValid?: (startGen?: number, invocation?: InvocationToken) => boolean;
+	onAfterSidecarStage?: () => Promise<void>;
+}
+
 export function createPiNativeConfirmation(
 	pi: ExtensionAPI,
 	getCtx: () => ExtensionContext | undefined,
+	hooks: PiConfirmationHooks = {},
 ): NativeConfirmationPort {
 	return async (input: NativeConfirmationInput): Promise<NativeConfirmationResult> => {
-		const ctx = getCtx();
+		const activeCall = hooks.resolveCall?.(input.toolCallId);
+		const ctx = activeCall?.ctx ?? getCtx();
 		if (!ctx || ctx.mode !== "tui") {
 			throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
 		}
-		if (input.signal?.aborted) {
+		if (input.signal?.aborted || ctx.signal?.aborted) {
 			throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
 		}
+		const signal = input.signal && ctx.signal
+			? AbortSignal.any([input.signal, ctx.signal])
+			: input.signal ?? ctx.signal;
+		const runDialog = async <T>(fn: () => Promise<T>): Promise<T> => {
+			try {
+				return await fn();
+			} catch (error) {
+				const aborted = Boolean(
+					input.signal?.aborted ||
+					ctx.signal?.aborted ||
+					(error instanceof Error && error.name === "AbortError"),
+				);
+				if (input.operation === "stop" && !aborted) throw error;
+				throw new NativeAuthorityError("user_cancelled", "confirmation aborted");
+			}
+		};
+		const assertConfirmStillValid = (): void => {
+			if (input.signal?.aborted || ctx.signal?.aborted) {
+				throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+			}
+			if (hooks.isSessionValid && !hooks.isSessionValid(activeCall?.startGen, activeCall?.invocation)) {
+				throw new NativeAuthorityError("interaction_not_opened", "session changed; confirmation discarded");
+			}
+		};
 		const requestId = randomUUID();
 		const taskId = input.taskId ?? input.initiativeSlug ?? "";
 
@@ -421,31 +461,35 @@ export function createPiNativeConfirmation(
 				{ value: "replan", label: uxText(UX_LANG, "Replan", "重新规划"), description: uxText(UX_LANG, "Revise the Intent instead", "改为修订 Intent") },
 				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 			];
-			const selected = await requestAuthorityDialog(pi, ctx, attention, {
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
 				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
 				summary: dialogSummary,
 				details: dialogDetails,
-				signal: ctx.signal,
+				signal,
 				actions,
-			});
+			}));
 			if (selected === "grant_rounds" || selected === "accept_residual_risk" || selected === "replan") {
 				const raw: Record<string, unknown> = { exit: selected };
 				if (selected === "grant_rounds") {
-					const text = await ctx.ui.input(
+					const text = await runDialog(() => ctx.ui.input(
 						uxText(UX_LANG, `Further Review rounds (${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`, `追加 Review 轮次(${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`),
 						String(reworkExits.grant_rounds.min),
-						{ signal: ctx.signal },
-					);
+						{ signal },
+					));
 					if (text !== undefined && text.trim()) raw.rounds = Number(text.trim());
 					if (text === undefined) raw.exit = "cancelled";
 				} else if (selected === "accept_residual_risk") {
-					const text = await ctx.ui.input(uxText(UX_LANG, "Reason for accepting residual risk", "接受残余风险的理由"), "", { signal: ctx.signal });
+					const text = await runDialog(() => ctx.ui.input(uxText(UX_LANG, "Reason for accepting residual risk", "接受残余风险的理由"), "", { signal }));
 					if (text === undefined) raw.exit = "cancelled";
 					else raw.reason = text;
 				}
 				const reworkChoice = raw.exit === "cancelled" ? undefined : (parseReworkChoice(reworkExits, raw) ?? undefined);
 				if (reworkChoice) {
+					assertConfirmStillValid();
 					return { decision: "accept", requestId, reworkChoice };
+				}
+				if (raw.exit !== "cancelled") {
+					notifyOnce(ctx, `authorization-exit:${taskId}`, `authorize ${opName}: the chosen exit was not valid; nothing applied`, "warning");
 				}
 			}
 			return { decision: "cancel", requestId };
@@ -483,14 +527,15 @@ export function createPiNativeConfirmation(
 				{ value: "dismiss_verifier_dispute", label: uxText(UX_LANG, "Dismiss and review again", "驳回并重新审查"), description: uxText(UX_LANG, "Request a fresh Review", "请求新的 Review") },
 				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 			];
-			const selected = await requestAuthorityDialog(pi, ctx, attention, {
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
 				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
 				summary: dialogSummary,
 				details: dialogDetails,
-				signal: ctx.signal,
+				signal,
 				actions,
-			});
+			}));
 			if (selected === "accept_verifier_dispute" || selected === "dismiss_verifier_dispute") {
+				assertConfirmStillValid();
 				return { decision: "accept", requestId, verifierChoice: selected };
 			}
 			return { decision: "cancel", requestId };
@@ -606,7 +651,10 @@ export function createPiNativeConfirmation(
 
 		if (input.operation === "approve_breaking_intent_revision") {
 			const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
-			const priorIntent = await readTaskIntentForRecord(targetRoot, taskId);
+			const priorRecord = await readTaskRecordRaw(targetRoot, taskId);
+			const priorIntent = priorRecord.record
+				? { intent: priorRecord.record.intent_snapshot, intent_ref: priorRecord.record.intent_ref }
+				: await readTaskIntentForRecord(targetRoot, taskId);
 			let nextIntent: TaskIntentV1 | undefined;
 			try {
 				const sidecar = join(targetRoot, priorIntent.intent_ref.path);
@@ -623,7 +671,8 @@ export function createPiNativeConfirmation(
 						`Acceptance changed: ${nextIntent.acceptance.filter((item: { id: string; assertion: string; verification: string }) => { const prior = priorIntent.intent.acceptance.find((candidate: { id: string }) => candidate.id === item.id); return prior && (prior.assertion !== item.assertion || prior.verification !== item.verification); }).map((item: { id: string }) => item.id).join(", ") || "none"}`,
 					]
 				: [];
-			const stagedDiff = input.bindingDigest?.split(":")[0];
+			const digestMatch = input.bindingDigest?.match(/^(sha256:[a-f0-9]{64})/i);
+			const stagedDiff = digestMatch?.[1] ?? input.bindingDigest?.split(":")[0];
 			const nextIntentHash = input.intentContentHash;
 			const opName = "approve-breaking-intent-revision";
 			const dialogSummary = [
@@ -656,18 +705,34 @@ export function createPiNativeConfirmation(
 				{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${opName} after re-checking state`, `重新校验状态后应用 ${opName}`) },
 				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 			];
-			const selected = await requestAuthorityDialog(pi, ctx, attention, {
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
 				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
 				summary: dialogSummary,
 				details: dialogDetails,
-				signal: ctx.signal,
+				signal,
 				actions,
-			});
-			return { decision: selected === "authorize" || selected === "confirm" ? "accept" : "cancel", requestId };
+			}));
+			if (selected === "authorize" || selected === "confirm") {
+				assertConfirmStillValid();
+				await hooks.onAfterSidecarStage?.();
+				return { decision: "accept", requestId };
+			}
+			return { decision: "cancel", requestId };
 		}
 
 		// Standard operations: request_authorization, stop
-		const opName = input.operation === "stop" ? "stop" : input.operation;
+		const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+		let openDecision: { id: string; summary: string } | undefined;
+		if (input.operation === "request_authorization" && !input.reviewRetryNotice) {
+			const { record } = await readTaskRecordRaw(targetRoot, taskId);
+			const open = (record?.findings ?? []).filter(
+				(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
+			);
+			if (open.length === 1) openDecision = { id: open[0].id, summary: open[0].summary };
+		}
+		const opName = input.operation === "stop"
+			? "stop"
+			: activeCall?.derivedOperation ?? (input.reviewRetryNotice ? "authorize-review-retry" : openDecision ? "resolve-user-decision" : input.operation);
 		presentTaskRail(ctx, {
 			task_id: taskId,
 			state: "Approval required",
@@ -688,6 +753,10 @@ export function createPiNativeConfirmation(
 		const dialogDetails = [
 			...(input.reviewRetryNotice ? [input.reviewRetryNotice] : []),
 			`Operation: ${opName}`,
+			...(openDecision ? [
+				`Finding: ${openDecision.id}`,
+				`Resolution: resume after literal-user decision: ${openDecision.summary}`,
+			] : []),
 			...(input.intentRevision ? [`Intent revision: ${input.intentRevision} (${input.intentContentHash ?? ""})`] : []),
 			...(input.bindingDigest ? [`Binding digest: ${input.bindingDigest}`] : []),
 			...(input.gitBaseNotice ? [input.gitBaseNotice] : []),
@@ -696,14 +765,18 @@ export function createPiNativeConfirmation(
 			{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${opName} after re-checking state`, `重新校验状态后应用 ${opName}`) },
 			{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
 		];
-		const selected = await requestAuthorityDialog(pi, ctx, attention, {
+		const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
 			title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
 			summary: dialogSummary,
 			details: dialogDetails,
-			signal: ctx.signal,
+			signal,
 			actions,
-		});
-		return { decision: selected === "authorize" || selected === "confirm" ? "accept" : "cancel", requestId };
+		}));
+		if (selected === "authorize" || selected === "confirm") {
+			assertConfirmStillValid();
+			return { decision: "accept", requestId };
+		}
+		return { decision: "cancel", requestId };
 	};
 }
 
@@ -721,7 +794,17 @@ export default function (
 		...(ports.authorityOverrides ? { authorityOverrides: ports.authorityOverrides } : {}),
 	});
 	(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = runtime;
-	runtime.bindNativeConfirmation(createPiNativeConfirmation(pi, () => railContext));
+	const activeAuthorizeCalls = new Map<string, ActiveAuthorizeCall>();
+	runtime.bindNativeConfirmation(createPiNativeConfirmation(pi, () => railContext, {
+		resolveCall: (toolCallId) => (toolCallId ? activeAuthorizeCalls.get(toolCallId) : undefined),
+		isSessionValid: (startGen, invocation) =>
+			runtime.coordinator.sessionActiveValue()
+			&& (startGen === undefined || runtime.coordinator.sessionGenerationValue() === startGen)
+			&& (!invocation || runtime.coordinator.invocationState(invocation) === "open"),
+		onAfterSidecarStage: async () => {
+			await dependencies.authorizationAfterSidecarStage?.();
+		},
+	}));
 
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
@@ -974,20 +1057,79 @@ export default function (
 				}
 			}
 			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "submit_verification" || action.op === "approve_breaking_intent_revision") {
-				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
+				const isAuthorizeOp = action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision";
+				if (isAuthorizeOp && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
+				if (isAuthorizeOp && runtime.coordinator.active(taskId)?.state === "running") {
+					return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "assurance operation is already running", "wait for the active assurance operation to finish");
+				}
+				let derivedOperation: AuthorizeOperation | undefined;
+				if (action.op === "request_authorization") {
+					if (runtime.coordinator.isInvocationOpen(taskId)) {
+						return failCanaryTool(
+							taskId,
+							action.op,
+							"blocked",
+							"authority_failed",
+							`task ${taskId} already has an open invocation; concurrent assure/authorize is rejected`,
+							"inspect authority state",
+						);
+					}
+					const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+					if (projection.error || !projection.claim) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", projection.error ?? "no active backend claim", "inspect authority state");
+					}
+					await dependencies.authorizationBeforeRecordRead?.();
+					const read = await readTaskRecordRaw(ctx.cwd, taskId);
+					if (!read.record) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", `task ${taskId} has no TaskRecord v3`, "inspect authority state");
+					}
+					if (read.revision !== projection.projection.record_revision) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "TaskRecord changed while deriving authorization operation", "inspect authority state");
+					}
+					const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
+					if ("blocked" in derived) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", derived.blocked, "inspect authority state");
+					}
+					derivedOperation = derived.operation;
+				}
+				const effectiveSignal = signal && ctx.signal
+					? AbortSignal.any([signal, ctx.signal])
+					: signal ?? ctx.signal;
 				const meta: ToolMeta = {
 					sessionId: piSessionId(ctx),
 					toolCallId,
 					workspace: ctx.cwd,
 					taskId,
 					interactive: ctx.mode === "tui",
-					signal,
+					signal: effectiveSignal,
 				};
+				let preStopLifecycle: string | undefined;
+				if (action.op === "request_stop") {
+					try {
+						preStopLifecycle = readTaskRecordRaw(ctx.cwd, taskId).record?.lifecycle;
+					} catch {}
+				}
+				const startGen = runtime.coordinator.sessionGenerationValue();
+				let invocation: InvocationToken | undefined;
+				if (isAuthorizeOp) {
+					try {
+						invocation = runtime.coordinator.openInvocation(taskId);
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error);
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", message, "inspect authority state");
+					}
+					activeAuthorizeCalls.set(toolCallId, { ctx, invocation, startGen, derivedOperation });
+				}
+				const reportedOperation = action.op === "request_stop"
+					? "stop"
+					: action.op === "approve_breaking_intent_revision"
+						? "approve-breaking-intent-revision"
+						: derivedOperation ?? action.op;
 				let result: unknown;
 				try {
 					if (action.op === "advance_assurance") {
-						result = await runtime.advance(taskId, signal, meta, (update: any) => {
+						result = await runtime.advance(taskId, effectiveSignal, meta, (update: any) => {
 							onUpdate?.(update);
 							presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
 						});
@@ -1014,10 +1156,17 @@ export default function (
 					if (error instanceof NativeAuthorityError && error.reasonCode === "user_cancelled") {
 						result = {
 							state: "cancelled",
-							operation: action.op === "request_stop" ? "stop" : action.op === "approve_breaking_intent_revision" ? "approve-breaking-intent-revision" : action.op,
+							operation: reportedOperation,
 							reason: error.message,
 						};
-					} else if (action.op === "request_stop") {
+					} else if (
+						action.op === "approve_breaking_intent_revision" &&
+						error instanceof NativeAuthorityError &&
+						error.reasonCode === "workspace_changed" &&
+						error.message.includes("workspace changed after native confirmation")
+					) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "staged next-state diff changed after native confirmation", "inspect authority state");
+					} else if (action.op === "request_stop" && preStopLifecycle && preStopLifecycle !== "stopped") {
 						const terminal = await projectAssuranceForTask(ctx.cwd, taskId).catch(() => null);
 						if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
 							runtime.coordinator.releaseStoppedReview(taskId);
@@ -1035,14 +1184,22 @@ export default function (
 						const message = error instanceof Error ? error.message : String(error);
 						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", message, "inspect authority state");
 					}
+				} finally {
+					activeAuthorizeCalls.delete(toolCallId);
+					if (invocation) runtime.coordinator.closeInvocation(invocation);
 				}
 				if (result && typeof result === "object" && "record" in result) {
 					const resObj = result as Record<string, unknown>;
 					result = {
 						...resObj,
 						state: "applied",
-						operation: action.op === "request_stop" ? "stop" : action.op === "approve_breaking_intent_revision" ? "approve-breaking-intent-revision" : action.op,
+						operation: reportedOperation,
 						lifecycle: (resObj.record as any)?.lifecycle,
+					};
+				} else if (result && typeof result === "object" && (result as Record<string, unknown>).state === "replan_selected") {
+					result = {
+						...(result as Record<string, unknown>),
+						operation: reportedOperation,
 					};
 				}
 				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);

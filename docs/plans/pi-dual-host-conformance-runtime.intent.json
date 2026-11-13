@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-dual-host-conformance-runtime",
+  "owner": "user",
+  "goal": "Make tests/dual-host-assurance-conformance.test.ts pass again after S4 (5a3d466) retired AssuranceProgression: the file imports it at :135 and builds Pi drivers at :659, :732 and :752, so 18 of 92 tests fail on ea6e2f6 while all 92 pass on 566abec. Move the Pi side of each cross-host scenario to the PiRuntime/HostRuntime composition root (plugins/immune-brain/.pi-extension/pi-host-runtime.ts) through the shared harness tests/helpers/pi-canary-assurance-harness.ts, keeping every scenario and assertion. A scenario that still fails once it reaches PiRuntime is a behavior regression and is fixed in the Pi adapter, not in the test. Context: batch #481 (tri-host-capability-alignment) integrated S4 (5a3d466) and S5 (8116d1c) without running final verification; full bun test on ea6e2f6 fails 48 tests in 9 files that all pass on 566abec (pre-S4). Spec docs/specs/tri-host-capability-alignment.spec.md D5 keeps Pi public tool results, native confirmation dialogs and Task Rail unchanged while Pi composes HostRuntime. No existing assertion may be deleted, skipped or weakened to pass; a test that only reached a retired symbol is moved to the post-S4 surface (PiRuntime over HostRuntime in plugins/immune-brain/.pi-extension/pi-host-runtime.ts) and keeps its assertions. Depends on pi-authority-fail-closed-repair being integrated first. no user-visible change: test repair plus any D5-preserved Pi behavior it uncovers.",
+  "acceptance": [
+    {
+      "id": "PDHC-A1",
+      "assertion": "tests/dual-host-assurance-conformance.test.ts no longer imports AssuranceProgression or pi-canary-assurance-progression's retired class, builds its Pi drivers through PiRuntime, and runs at least the 92 tests it ran on 566abec with 0 failures and none skipped; each cross-host resume, cancellation, reconciliation, literal-user identity, tracker-failure and project-owned-verification scenario keeps its pre-S4 assertions. Then bun run typecheck exits 0. Done looks like: the dual-host conformance file reports 92 or more pass, 0 fail, and typecheck is clean.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/dual-host-assurance-conformance.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/pi-dual-host-conformance-runtime.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

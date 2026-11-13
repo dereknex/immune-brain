@@ -122,9 +122,18 @@ export function registerPiRunContinuation(
 	const pausedNotified = new Set<string>();
 	const userTurns = new Set<string>();
 
+	const readSessionId = (ctx?: ExtensionContext | null): string => {
+		try {
+			const id = ctx?.sessionManager?.getSessionId?.();
+			return typeof id === "string" && id.trim().length > 0 ? id : "";
+		} catch {
+			return "";
+		}
+	};
+
 	pi.on("session_start", async (_event, ctx) => {
 		activeContext = ctx;
-		const sessionId = ctx?.sessionManager?.getSessionId?.() ?? "";
+		const sessionId = readSessionId(ctx);
 		if (sessionId) {
 			pausedNotified.delete(sessionId);
 			host.revoke_entry(sessionId);
@@ -134,8 +143,9 @@ export function registerPiRunContinuation(
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		activeContext = ctx;
-		const sessionId = ctx?.sessionManager?.getSessionId?.() ?? activeContext?.sessionManager?.getSessionId?.() ?? "";
+		const prevContext = activeContext;
+		activeContext = ctx ?? activeContext;
+		const sessionId = readSessionId(ctx) || readSessionId(prevContext);
 		if (sessionId) {
 			pausedNotified.delete(sessionId);
 			host.revoke_entry(sessionId);
@@ -147,7 +157,8 @@ export function registerPiRunContinuation(
 	pi.on("input", async (event, ctx) => {
 		if (event.source === "extension") return;
 		activeContext = ctx;
-		const sessionId = ctx.sessionManager?.getSessionId?.() ?? "";
+		const sessionId = readSessionId(ctx);
+		if (!sessionId) return;
 		userTurns.add(sessionId);
 		pausedNotified.delete(sessionId);
 		const entry = ports.entry(event.text, ctx.cwd);
@@ -173,7 +184,8 @@ export function registerPiRunContinuation(
 
 	pi.on("tool_call", async (event, ctx) => {
 		activeContext = ctx ?? activeContext;
-		const sessionId = activeContext?.sessionManager?.getSessionId?.() ?? "";
+		const sessionId = readSessionId(activeContext);
+		if (!sessionId) return;
 		const workspace = activeContext?.cwd ? realpathSync(activeContext.cwd) : process.cwd();
 		const session = { session_id: sessionId, workspace };
 
@@ -245,7 +257,8 @@ export function registerPiRunContinuation(
 
 	pi.on("tool_result", async (event, ctx) => {
 		activeContext = ctx ?? activeContext;
-		const sessionId = activeContext?.sessionManager?.getSessionId?.() ?? "";
+		const sessionId = readSessionId(activeContext);
+		if (!sessionId) return;
 		const workspace = activeContext?.cwd ? realpathSync(activeContext.cwd) : process.cwd();
 		const session = { session_id: sessionId, workspace };
 
@@ -287,8 +300,10 @@ export function registerPiRunContinuation(
 	};
 
 	boundaryApi.on("agent_before_settle", async (event, ctx) => {
+		const prevContext = activeContext;
 		activeContext = ctx ?? activeContext;
-		const sessionId = ctx.sessionManager?.getSessionId?.() ?? activeContext?.sessionManager?.getSessionId?.() ?? "";
+		const sessionId = readSessionId(ctx) || readSessionId(prevContext);
+		if (!sessionId) return;
 		const workspace = realpathSync(ctx.cwd);
 		const session = { session_id: sessionId, workspace };
 
