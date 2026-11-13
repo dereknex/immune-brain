@@ -87,7 +87,7 @@ import {
 	type DaemonPrInput,
 	type RepairResult,
 } from "./repair_agent.ts";
-import { ensureLoopStateDir } from "./state.ts";
+import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -943,6 +943,24 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
 		const scopeHint = intent?.scope_hint ?? [];
 
+		const recordedChoice = (() => {
+			if (context.decision.corrected_option) {
+				return context.decision.corrected_option;
+			}
+			if (context.decision.classification?.point === "a14_pr_comment_triage") {
+				return context.decision.classification.choice;
+			}
+			const prior = loadLoopDecisions(context.stateDir)
+				.filter(
+					(row) =>
+						row &&
+						row.event_id === event.event_id &&
+						row.classification?.point === "a14_pr_comment_triage",
+				)
+				.pop();
+			return prior?.corrected_option ?? prior?.classification?.choice ?? null;
+		})();
+
 		const result = await addressPrReview({
 			pr: daemonPrInput(pr),
 			comment: {
@@ -960,14 +978,25 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				state_dir: context.stateDir,
 			},
 			deps: {
-				// Until S10 binds `a14_pr_comment_triage`, a comment is scope-changing
-				// unless the path it names already lies inside the TaskIntent scope.
-				classifyComment: async ({ comment }) => ({
-					is_scope_changing: comment.path === undefined || !pathInScope(comment.path, scopeHint),
-					...(comment.path === undefined
-						? { reason: "review comment names no path, so its effect is unknown" }
-						: {}),
-				}),
+				// Reuse the recorded `a14_pr_comment_triage` answer (`blocking`/`nit` -> in scope,
+				// `out_of_scope` -> escalate); only fall back to path heuristics when unavailable.
+				classifyComment: async ({ comment }) => {
+					if (recordedChoice === "blocking" || recordedChoice === "nit") {
+						return { is_scope_changing: false };
+					}
+					if (recordedChoice === "out_of_scope") {
+						return {
+							is_scope_changing: true,
+							reason: "a14_pr_comment_triage classified review comment as out_of_scope",
+						};
+					}
+					return {
+						is_scope_changing: comment.path === undefined || !pathInScope(comment.path, scopeHint),
+						...(comment.path === undefined
+							? { reason: "review comment names no path, so its effect is unknown" }
+							: {}),
+					};
+				},
 				applyReviewFix: async (input) => {
 					const session = await runSession(context, {
 						kind: "repair",

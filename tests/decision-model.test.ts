@@ -459,7 +459,7 @@ describe("envelope and isolation (AC4)", () => {
 			confidence: 0.7,
 			provider_kind: "fake",
 			model: "fake",
-			threshold_set_version: "a14/v0",
+			threshold_set_version: "a14/v1",
 			truncation: "unknown",
 		});
 	});

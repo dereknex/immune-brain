@@ -53,7 +53,17 @@ export interface GuardFacts {
 	identity_posture?: "degraded" | "isolated";
 	confirmation_source?: ConfirmationSource | null;
 	/** Best duplicate candidate for the event's issue, supplied by the caller. */
-	duplicate_candidate?: { number: number; title: string; body: string };
+	duplicate_candidate?: { number: number; title: string; body: string; score?: number };
+	/** Per-issue best duplicate candidates computed by deterministic lexical similarity. */
+	duplicate_candidates_by_issue?: Record<number, { number: number; title: string; body: string; score?: number }>;
+	/** Active parked Lane decision facts for binding unparsed owner replies. */
+	lane_decision_facts?: {
+		task_id: string;
+		run_id: string;
+		record_revision: string;
+		options?: Array<{ id: string; label: string; description?: string }>;
+		issue_number?: number;
+	};
 }
 
 export const DEFAULT_ALLOWED_ASSOCIATIONS: readonly string[] = ["OWNER", "MEMBER", "COLLABORATOR"];

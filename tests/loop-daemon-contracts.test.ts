@@ -135,6 +135,21 @@ describe("loop daemon upstream contracts (loop-daemon-s0-contracts)", () => {
 		expect(POINT_REGISTRY.a19_owner_comment_intent).toBe(A19_OWNER_COMMENT_INTENT);
 		expect(POINT_REGISTRY.a20_issue_duplicate_pair).toBe(A20_ISSUE_DUPLICATE_PAIR);
 
+		const expectedThresholds: Record<string, { version: string; values: Record<string, number> }> = {
+			a18_event_prefilter: { version: "a18/v1", values: { ignore: 0.9 } },
+			a19_owner_comment_intent: {
+				version: "a19/v1",
+				values: {
+					approve_plan: 0.8,
+					request_plan_revision: 0.8,
+					answer_lane_decision: 0.8,
+					command: 0.8,
+					discussion: 0.8,
+				},
+			},
+			a20_issue_duplicate_pair: { version: "a20/v1", values: { duplicate: 0.85 } },
+		};
+
 		for (const pointId of ["a18_event_prefilter", "a19_owner_comment_intent", "a20_issue_duplicate_pair"]) {
 			const point = POINT_REGISTRY[pointId];
 			expect(point).toBeDefined();
@@ -143,8 +158,8 @@ describe("loop daemon upstream contracts (loop-daemon-s0-contracts)", () => {
 			expect(point.options.length).toBeGreaterThan(0);
 			expect(Object.keys(point.criteria).sort()).toEqual([...point.options].sort());
 			expect(point.instructions.trim().length).toBeGreaterThan(0);
-			expect(point.threshold_set.version.trim().length).toBeGreaterThan(0);
-			expect(point.threshold_set.values).toBeNull();
+			expect(point.threshold_set.version).toBe(expectedThresholds[pointId]!.version);
+			expect(point.threshold_set.values).toEqual(expectedThresholds[pointId]!.values);
 		}
 	});
 

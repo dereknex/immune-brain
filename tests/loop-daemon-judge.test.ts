@@ -428,21 +428,22 @@ describe("Tier 1: deterministic rule matchers", () => {
 });
 
 describe("Tier 2: decision-model points", () => {
-	it("a19 classifies a verified owner comment as a plan approval", async () => {
+	it("a19 yields a format reminder (never enroll_and_drive) when an owner comment looks like approve_plan", async () => {
 		const classifier = fakeClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.9 },
 			a19_owner_comment_intent: { choice: "approve_plan", confidence: 0.88 },
 		});
 		const judgement = await judgeEvent(commentEvent(), { facts: OWNER_FACTS, classify: classifier.classify });
 		expect(judgement.tier).toBe(2);
-		expect(judgement.handler).toBe("enroll_and_drive");
+		expect(judgement.handler).toBe("escalate");
+		expect(judgement.escalation_key).toBe("a19_format_reminder:issue:10:comment:900");
 		expect(judgement.classification).toEqual({ point: "a19_owner_comment_intent", choice: "approve_plan", confidence: 0.88 });
 		expect(classifier.calls).toEqual(["a18_event_prefilter", "a19_owner_comment_intent"]);
 	});
 
 	it("a19 maps every intent option onto one catalogue handler", async () => {
 		const expectations: Array<[string, string]> = [
-			["approve_plan", "enroll_and_drive"],
+			["approve_plan", "escalate"],
 			["request_plan_revision", "draft_plan"],
 			["answer_lane_decision", "apply_lane_decision_reply"],
 			["command", "escalate"],
@@ -466,17 +467,18 @@ describe("Tier 2: decision-model points", () => {
 		expect(classifier.calls).toEqual(["a18_event_prefilter"]);
 	});
 
-	it("a14_ambiguous_user_intent maps every intent option onto one catalogue handler", async () => {
+	it("a14_pr_comment_triage maps every option onto one catalogue handler", async () => {
 		const expectations: Array<[string, string]> = [
-			["clear_single_task", "address_pr_review"],
-			["needs_initiative_decomposition", "draft_plan"],
-			["needs_clarification", "escalate"],
+			["blocking", "address_pr_review"],
+			["nit", "address_pr_review"],
+			["out_of_scope", "escalate"],
+			["duplicate", "noop_record"],
 		];
 		for (const [choice, handler] of expectations) {
-			const classifier = fakeClassifier({ a14_ambiguous_user_intent: { choice, confidence: 0.9 } });
+			const classifier = fakeClassifier({ a14_pr_comment_triage: { choice, confidence: 0.9 } });
 			const judgement = await judgeEvent(reviewCommentEvent(), { facts: REVIEWER_FACTS, classify: classifier.classify });
 			expect(judgement.handler).toBe(handler as never);
-			expect(judgement.classification).toEqual({ point: "a14_ambiguous_user_intent", choice, confidence: 0.9 });
+			expect(judgement.classification).toEqual({ point: "a14_pr_comment_triage", choice, confidence: 0.9 });
 		}
 	});
 
@@ -529,31 +531,33 @@ describe("Tier 2: decision-model points", () => {
 });
 
 describe("Tier 3: escalation fallback and baseline behaviour", () => {
-	it("escalates a classification below the confidence floor", async () => {
+	it("escalates a classification below the point threshold when no judging agent is present", async () => {
 		const classifier = fakeClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.9 },
-			a19_owner_comment_intent: { choice: "approve_plan", confidence: MIN_CLASSIFIER_CONFIDENCE - 0.05 },
+			a19_owner_comment_intent: { choice: "request_plan_revision", confidence: 0.55 },
 		});
 		const judgement = await judgeEvent(commentEvent(), { facts: OWNER_FACTS, classify: classifier.classify });
 		expect(judgement.tier).toBe(3);
 		expect(judgement.handler).toBe("escalate");
 	});
 
-	it("keeps the baseline behaviour when the decision model is unavailable", async () => {
+	it("keeps the D12 baseline behaviour when the decision model and judging agent are unavailable", async () => {
 		const unavailable = fakeClassifier({});
 		const reviewComment = await judgeEvent(reviewCommentEvent(), { facts: REVIEWER_FACTS, classify: unavailable.classify });
 		expect(reviewComment.tier).toBe(3);
 		expect(reviewComment.handler).toBe("address_pr_review");
 
 		const triage = await judgeEvent(issueEvent(), { classify: unavailable.classify });
-		expect(triage.handler).toBe("triage_issue");
+		expect(triage.tier).toBe(3);
+		expect(triage.handler).toBe("escalate");
 
 		const comment = await judgeEvent(commentEvent(), { facts: OWNER_FACTS, classify: unavailable.classify });
-		expect(comment.handler).toBe("noop_record");
+		expect(comment.tier).toBe(3);
+		expect(comment.handler).toBe("escalate");
 	});
 
 	it("treats a throwing classifier as unavailable rather than crashing the tick", async () => {
-		const classifier = fakeClassifier({ a14_ambiguous_user_intent: "throw" });
+		const classifier = fakeClassifier({ a14_pr_comment_triage: "throw" });
 		const judgement = await judgeEvent(reviewCommentEvent(), { facts: REVIEWER_FACTS, classify: classifier.classify });
 		expect(judgement.handler).toBe("address_pr_review");
 		expect(judgement.tier).toBe(3);
@@ -587,7 +591,7 @@ describe("loop_decision_record/v1 emission", () => {
 		const record = buildDecisionRecord(event, judgement, eventTarget(event), { recorded_at: TS, dry_run: true });
 
 		expect(record.contract).toBe(LOOP_DECISION_RECORD_CONTRACT);
-		expect(record.handler).toBe("triage_issue");
+		expect(record.handler).toBe("escalate");
 		expect(record.mutations).toEqual([]);
 		expect(record.dry_run).toBe(true);
 		expect(record.decision_id).toBe(decisionId(event.event_id, judgement.handler, judgement.tier));
@@ -615,7 +619,7 @@ describe("loop_decision_record/v1 emission", () => {
 		};
 		const classifier = fakeClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.9 },
-			a15_issue_triage: { choice: "ready_for_agent", confidence: 0.9 },
+			a15_task_granularity: { choice: "clear_single_task", confidence: 0.9 },
 		});
 
 		const result = await runLoopDaemonCli(["tick", "--dry-run", "--json"], root, {

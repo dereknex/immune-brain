@@ -22,7 +22,7 @@ import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
-export type AgentSessionKind = "analysis" | "planning" | "repair";
+export type AgentSessionKind = "analysis" | "planning" | "repair" | "judging";
 
 export interface AgentSessionRequest {
 	kind: AgentSessionKind;

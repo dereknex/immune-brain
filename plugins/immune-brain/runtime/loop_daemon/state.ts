@@ -106,6 +106,20 @@ export function appendLoopEvent(stateDir: string, event: NormalizedLoopEvent): v
 	} catch {}
 }
 
+export function loadLoopEvents(stateDir: string): NormalizedLoopEvent[] {
+	const eventsPath = join(stateDir, "events.jsonl");
+	if (!existsSync(eventsPath)) return [];
+	try {
+		return readFileSync(eventsPath, "utf8")
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as NormalizedLoopEvent);
+	} catch {
+		return [];
+	}
+}
+
 export function appendLoopDecision(stateDir: string, decision: unknown): void {
 	ensureLoopStateDir(stateDir);
 	const decisionsPath = join(stateDir, "decisions.jsonl");
@@ -114,6 +128,20 @@ export function appendLoopDecision(stateDir: string, decision: unknown): void {
 	try {
 		chmodSync(decisionsPath, 0o600);
 	} catch {}
+}
+
+export function loadLoopDecisions<T = any>(stateDir: string): T[] {
+	const decisionsPath = join(stateDir, "decisions.jsonl");
+	if (!existsSync(decisionsPath)) return [];
+	try {
+		return readFileSync(decisionsPath, "utf8")
+			.trim()
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as T);
+	} catch {
+		return [];
+	}
 }
 
 export function appendLoopDispatch(stateDir: string, dispatch: unknown): void {

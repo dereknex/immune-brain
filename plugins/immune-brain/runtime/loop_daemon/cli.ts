@@ -21,7 +21,11 @@ import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts"
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
+import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
+import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
+import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
+import { createCliAgentSessionProvider } from "./agent_runner.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
@@ -32,10 +36,17 @@ import { dispatchDecisions, type RelayInputFactory } from "./dispatch.ts";
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
-import { type ClassifyFn, createDecisionModelClassifier, judgeEvents } from "./judgement.ts";
+import {
+	type ClassifyFn,
+	createDecisionModelClassifier,
+	judgeEvents,
+	type JudgingBudgetTracker,
+} from "./judgement.ts";
+import { createSessionJudgingAgent, type JudgingAgentFn } from "./judging_agent.ts";
 import { acquireDaemonLock, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
+import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
@@ -71,6 +82,10 @@ export async function runLoopDaemonCli(
 		singleIteration?: boolean;
 		/** Decision-model seam; production runs resolve the user's point bindings. */
 		classify?: ClassifyFn;
+		/** Configured enabled points override; defaults to `decision_models.enabled_points`. */
+		enabledPoints?: readonly string[];
+		/** Read-only judging agent seam; production executable binds the S9 session runner. */
+		judgingAgent?: JudgingAgentFn;
 		/** Facts the caller owns (budget, leases, identity posture, retry cap). */
 		guardFacts?: Partial<GuardFacts>;
 		loopConfig?: LoopConfig;
@@ -84,6 +99,8 @@ export async function runLoopDaemonCli(
 		agentPort?: AgentHandlerPort;
 		/** True only inside the standing `imm-loop run` process. */
 		standingDaemon?: boolean;
+		/** Deterministic clock seam for reconciliation schedule tests. */
+		now?: () => string;
 	},
 ): Promise<CliOutput> {
 	const absoluteRoot = resolve(root);
@@ -102,6 +119,7 @@ Commands:
   resume                          Resume scheduling for the daemon
   retire-lease <target-id>        Manually retire/remove an active lease
   rebuild [--json]                Reconstruct state and leases from GitHub and repository evidence
+  reconcile [--dry-run] [--json]  Re-check model-skipped decisions with the judging agent
   run [--interval <sec>]          Run standing loop daemon process
 
 Options:
@@ -474,6 +492,22 @@ Options:
 				Boolean(options?.isShutdownRequested?.()) ||
 				Boolean(options?.guardFacts?.shutdown_requested);
 
+			const duplicate_candidates_by_issue: Record<
+				number,
+				{ number: number; title: string; body: string; score?: number }
+			> = {};
+			for (const event of obs.events) {
+				if (event.kind === "E1_NEW_ISSUE" || event.kind === "E2_ISSUE_EDITED") {
+					const best = selectBestDuplicateCandidate(
+						{ number: event.issue_number, title: event.title, body: event.body },
+						obs.snapshot.issues,
+					);
+					if (best) {
+						duplicate_candidates_by_issue[event.issue_number] = best;
+					}
+				}
+			}
+
 			const facts: GuardFacts = {
 				paused: state.paused,
 				no_touch_paths: declaredNoTouch,
@@ -485,6 +519,7 @@ Options:
 				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
 				retry_counts: loadRepairRetries(stateDir),
 				unresolved_blockers,
+				duplicate_candidates_by_issue,
 				expected_plan_digests: {
 					...loadPublishedPlanDigests(stateDir),
 					...(options?.guardFacts?.expected_plan_digests ?? {}),
@@ -503,7 +538,55 @@ Options:
 				},
 			};
 
-			const judgements = await judgeEvents(obs.events, { facts, classify: options?.classify });
+			const classify =
+				options?.classify ??
+				createDecisionModelClassifier(absoluteRoot, {
+					userConfigPath: options?.userConfigPath,
+				});
+			const enabledPoints =
+				options?.enabledPoints ??
+				(Array.isArray(resolved.decision_models?.enabled_points?.value)
+					? (resolved.decision_models.enabled_points.value as string[])
+					: undefined);
+			const budgetTracker: JudgingBudgetTracker = {
+				canInvoke: () => {
+					const max = loopConfig.budget.max_dispatches_per_day;
+					return max === null || (state.stats.dispatches_today ?? 0) < max;
+				},
+				recordInvocation: () => {
+					if (!isDryRun) {
+						const today = recordedAt.slice(0, 10);
+						if (state.stats.today_date !== today) {
+							state.stats.today_date = today;
+							state.stats.ticks_today = 0;
+							state.stats.dispatches_today = 0;
+						}
+						state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
+						state.stats.dispatches_total = (state.stats.dispatches_total ?? 0) + 1;
+						state.updated_at = recordedAt;
+						saveLoopState(stateDir, state);
+					} else {
+						state.stats.dispatches_today = (state.stats.dispatches_today ?? 0) + 1;
+					}
+				},
+			};
+
+			const judgements = await judgeEvents(obs.events, {
+				facts,
+				classify,
+				enabledPoints,
+				judgingAgent: options?.judgingAgent,
+				budgetTracker,
+				offeredOptionsForEvent: (evt) => {
+					if (evt.kind !== "E3_OWNER_COMMENT") return undefined;
+					if (facts.lane_decision_facts?.options) {
+						return facts.lane_decision_facts.options;
+					}
+					const issueComments =
+						obs.snapshot.issues.find((i) => i.number === evt.issue_number)?.comments ?? [];
+					return findLatestLaneDecisionQuestion(issueComments)?.options;
+				},
+			});
 			const decisions = obs.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
 			);
@@ -529,6 +612,7 @@ Options:
 				now: recordedAt,
 				agentPort: options?.agentPort,
 				standingDaemon: options?.standingDaemon === true,
+				judgingAgent: options?.judgingAgent,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
 			});
@@ -569,6 +653,112 @@ Options:
 		}
 	}
 
+	if (command === "reconcile") {
+		const isDryRun = args.includes("--dry-run");
+		const isJson = args.includes("--json");
+
+		let releaseLock: (() => void) | null = null;
+		if (!isDryRun && !options?.lockHeld) {
+			const lockResult = acquireDaemonLock(stateDir);
+			if (!lockResult.acquired) {
+				return {
+					stdout: "",
+					stderr: `Error: ${lockResult.reason}\n`,
+					returncode: 1,
+				};
+			}
+			releaseLock = lockResult.release;
+		}
+
+		try {
+			const state = loadLoopState(stateDir) ?? initLoopState();
+			const now = options?.now?.() ?? new Date().toISOString();
+			const gh = options?.gh ?? createGhTransport();
+			let snapshot: ObservationInput = options?.snapshotOverride ?? {
+				issues: [],
+				pull_requests: [],
+				observed_at: now,
+			};
+			if (!options?.snapshotOverride && options?.gh) {
+				try {
+					const obs = await observeGithub(absoluteRoot, {
+						gh: options.gh,
+						previousState: state,
+					});
+					snapshot = obs.snapshot;
+				} catch {}
+			}
+
+			let declaredNoTouch: string[] = [];
+			try {
+				declaredNoTouch = readNoTouch(absoluteRoot);
+			} catch (error: any) {
+				return {
+					stdout: "",
+					stderr: `Error: unreadable no-touch declaration: ${error?.message || String(error)}\n`,
+					returncode: 1,
+				};
+			}
+
+			let daemonLogin: string | null = options?.guardFacts?.daemon_identity ?? null;
+			if (!isDryRun && !daemonLogin && options?.gh) {
+				daemonLogin = await readAuthenticatedGithubLogin(gh, absoluteRoot);
+			}
+
+			const currentBudget: ScheduleBudget = {
+				ticks_today: state.stats.ticks_today ?? 0,
+				dispatches_today: state.stats.dispatches_today ?? 0,
+				max_ticks_per_day: loopConfig.budget.max_ticks_per_day,
+				max_dispatches_per_day: loopConfig.budget.max_dispatches_per_day,
+			};
+
+			const facts: GuardFacts = {
+				paused: state.paused,
+				no_touch_paths: declaredNoTouch,
+				active_leases: state.active_leases,
+				identity_posture: detectIdentityPosture(inspectDaemonIdentity(absoluteRoot)),
+				allowed_actors: loopConfig.allowed_actors,
+				allowed_associations: loopConfig.allowed_associations,
+				daemon_identity: daemonLogin,
+				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
+				retry_counts: loadRepairRetries(stateDir),
+				expected_plan_digests: loadPublishedPlanDigests(stateDir),
+				...options?.guardFacts,
+			};
+
+			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
+			const result = await reconcileSkippedDecisions({
+				root: absoluteRoot,
+				stateDir,
+				loopConfig,
+				snapshot,
+				gitHubPort,
+				guardFacts: facts,
+				dryRun: isDryRun,
+				now,
+				judgingAgent: options?.judgingAgent,
+				agentPort: options?.agentPort,
+				standingDaemon: options?.standingDaemon === true,
+				relayDecision: options?.relayDecision,
+				relayInputFactory: options?.relayInputFactory,
+				state,
+			});
+
+			const payload = {
+				contract: "assurance_kernel/loop_reconcile_result/v1",
+				dry_run: isDryRun,
+				...result,
+			};
+			if (isJson) {
+				return { stdout: jsonOutput(payload), stderr: "", returncode: 0 };
+			}
+			const summary = `Reconcile completed (${isDryRun ? "DRY-RUN" : "LIVE"}): checked ${result.checked}, overrides ${result.overrides}, labels appended ${result.labels_appended}, dispatched ${result.dispatches.length}\n`;
+			return { stdout: summary, stderr: "", returncode: 0 };
+		} finally {
+			if (releaseLock) releaseLock();
+		}
+	}
+
 	if (command === "run") {
 		const isDryRun = args.includes("--dry-run");
 		const intervalIdx = args.indexOf("--interval");
@@ -603,9 +793,27 @@ Options:
 			Boolean(options?.shutdownRequested) ||
 			Boolean(options?.isShutdownRequested?.());
 
+		let reconciledOnStart = false;
+
 		try {
 			while (running) {
 				const isShut = checkShutdown();
+				const nowIso = options?.now?.() ?? new Date().toISOString();
+				if (!isShut && (!reconciledOnStart || shouldRunScheduledReconcile(stateDir, nowIso))) {
+					reconciledOnStart = true;
+					const recRes = await runLoopDaemonCli(
+						["reconcile", ...(isDryRun ? ["--dry-run"] : [])],
+						absoluteRoot,
+						{
+							...options,
+							lockHeld: true,
+							standingDaemon: true,
+						},
+					);
+					if (recRes.stdout) process.stdout.write(recRes.stdout);
+					if (recRes.stderr) process.stderr.write(recRes.stderr);
+				}
+
 				const tickRes = await runLoopDaemonCli(
 					["tick", ...(isDryRun ? ["--dry-run"] : [])],
 					absoluteRoot,
@@ -652,16 +860,32 @@ Options:
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
 	const root = process.cwd();
 	const command = process.argv[2];
-	// The agent port belongs to the live daemon: a `tick` or `run` from this
-	// executable dispatches agent-backed handlers through real sessions, and
-	// `enroll_and_drive` still refuses to drive outside `run`.
-	const agentPort =
-		command === "tick" || command === "run"
-			? createAgentHandlerPort(createDefaultAgentHandlerDeps(root))
-			: undefined;
+	// The agent port belongs to the live daemon: a `tick`, `run`, or `reconcile`
+	// from this executable dispatches agent-backed handlers through real sessions.
+	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
+	const agentPort = needsAgent
+		? createAgentHandlerPort(createDefaultAgentHandlerDeps(root))
+		: undefined;
+	let judgingAgent: JudgingAgentFn | undefined;
+	if (needsAgent) {
+		const cfg = resolveConfig(root);
+		const host = (cfg.lanes?.executor_host?.value as ExecutorHost | null) ?? null;
+		if (host === "claude-code" || host === "pi" || host === "antigravity") {
+			const model = (cfg.lanes?.executor_model?.value as string | null) ?? null;
+			const effort = (cfg.lanes?.executor_effort?.value as string | null) ?? null;
+			judgingAgent = createSessionJudgingAgent({
+				root,
+				provider: createCliAgentSessionProvider({
+					profile: { host, model, effort },
+					log_dir: join(root, ".imm/state/loop/session-logs"),
+				}),
+			});
+		}
+	}
 	const result = await runLoopDaemonCli(process.argv.slice(2), root, {
 		classify: createDecisionModelClassifier(root),
 		...(agentPort ? { agentPort } : {}),
+		...(judgingAgent ? { judgingAgent } : {}),
 	});
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);

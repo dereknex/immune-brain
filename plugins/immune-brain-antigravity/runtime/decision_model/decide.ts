@@ -43,12 +43,15 @@ export interface ResolvedProfile {
 }
 
 /** Steps 1-2 of the decide path: binding, then the named local profile. */
-export function resolveProfile(pointId: string, deps: Pick<DecideDeps, "root" | "registry">): { ok: true; value: ResolvedProfile } | { ok: false; error: Unavailable } {
+export function resolveProfile(
+	pointId: string,
+	deps: Pick<DecideDeps, "root" | "registry" | "userConfigPath">,
+): { ok: true; value: ResolvedProfile } | { ok: false; error: Unavailable } {
 	const registry: PointRegistry = deps.registry ?? POINT_REGISTRY;
 	const point = Object.hasOwn(registry, pointId) ? registry[pointId] : undefined;
 	if (point === undefined) return { ok: false, error: unavailable("config_invalid", `unknown application point "${pointId}"`) };
 
-	const config = resolveConfig(deps.root, { registry });
+	const config = resolveConfig(deps.root, { registry, userConfigPath: deps.userConfigPath });
 	const models = config.decision_models;
 	const errors = config.diagnostics.filter((d) => d.severity === "error");
 	const bound = Object.hasOwn(models.bindings, pointId) ? models.bindings[pointId].value : models.default_profile.value;

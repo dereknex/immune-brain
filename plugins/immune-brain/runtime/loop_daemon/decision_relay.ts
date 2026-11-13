@@ -166,19 +166,47 @@ export function renderRevisionMismatchNotice(input: {
 }
 
 /**
- * Parse markers from a lane-decision question comment body.
+ * Parse markers and offered options from a lane-decision question comment body.
  */
-export function parseLaneDecisionQuestion(body: string): { run_id: string; record_revision: string; task_id?: string } | null {
+export function parseLaneDecisionQuestion(body: string): {
+	run_id: string;
+	record_revision: string;
+	task_id?: string;
+	options?: DecisionOption[];
+} | null {
 	if (!body.includes(LANE_DECISION_MARKER)) return null;
 	const runMatch = body.match(RUN_ID_PATTERN);
 	const revMatch = body.match(RECORD_REVISION_PATTERN);
 	if (!runMatch || !revMatch) return null;
 	const taskMatch = body.match(TASK_ID_PATTERN);
+	const options: DecisionOption[] = [];
+	for (const line of body.split("\n")) {
+		const m = line.match(/^\s*\d+\.\s+\*\*([^*]+)\*\*\s+\(`([^`]+)`\)(?::\s*(.+))?$/);
+		if (m) {
+			options.push({
+				id: m[2]!,
+				label: m[1]!,
+				...(m[3] ? { description: m[3].trim() } : {}),
+			});
+		}
+	}
 	return {
 		run_id: runMatch[1],
 		record_revision: revMatch[1],
 		task_id: taskMatch ? taskMatch[1] : undefined,
+		...(options.length > 0 ? { options } : {}),
 	};
+}
+
+export function findLatestLaneDecisionQuestion(
+	comments: readonly RawComment[] | undefined,
+): { run_id: string; record_revision: string; task_id?: string; options?: DecisionOption[] } | null {
+	if (!comments || comments.length === 0) return null;
+	for (let i = comments.length - 1; i >= 0; i--) {
+		const parsed = parseLaneDecisionQuestion(comments[i]!.body);
+		if (parsed) return parsed;
+	}
+	return null;
 }
 
 /**

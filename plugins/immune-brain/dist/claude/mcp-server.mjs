@@ -7867,7 +7867,10 @@ var init_thresholds = __esm(() => {
       duplicate: "Restates an earlier comment in the same PR"
     },
     instructions: "Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
-    threshold_set: { version: "a14/v0", values: null }
+    threshold_set: {
+      version: "a14/v1",
+      values: { blocking: 0.8, nit: 0.8, out_of_scope: 0.8, duplicate: 0.8 }
+    }
   };
   A15_ISSUE_TRIAGE = {
     id: "a15_issue_triage",
@@ -7906,7 +7909,14 @@ var init_thresholds = __esm(() => {
       needs_clarification: "The issue is too under-specified to plan"
     },
     instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
-    threshold_set: { version: "a15-granularity/v0", values: null }
+    threshold_set: {
+      version: "a15-granularity/v1",
+      values: {
+        clear_single_task: 0.75,
+        needs_initiative_decomposition: 0.75,
+        needs_clarification: 0.75
+      }
+    }
   };
   A16_REVISIT_CHAIN_CLASS = {
     id: "a16_revisit_chain_class",
@@ -7954,7 +7964,7 @@ var init_thresholds = __esm(() => {
       ignore: "The event is noisy, informational, or requires no action"
     },
     instructions: "Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
-    threshold_set: { version: "a18/v0", values: null }
+    threshold_set: { version: "a18/v1", values: { ignore: 0.9 } }
   };
   A19_OWNER_COMMENT_INTENT = {
     id: "a19_owner_comment_intent",
@@ -7969,7 +7979,16 @@ var init_thresholds = __esm(() => {
       discussion: "General discussion not requiring execution"
     },
     instructions: "Given a comment from a verified repository owner, which option best describes the author's intent?",
-    threshold_set: { version: "a19/v0", values: null }
+    threshold_set: {
+      version: "a19/v1",
+      values: {
+        approve_plan: 0.8,
+        request_plan_revision: 0.8,
+        answer_lane_decision: 0.8,
+        command: 0.8,
+        discussion: 0.8
+      }
+    }
   };
   A20_ISSUE_DUPLICATE_PAIR = {
     id: "a20_issue_duplicate_pair",
@@ -7982,7 +8001,7 @@ var init_thresholds = __esm(() => {
       unrelated: "The candidate issue is unrelated to the existing issue"
     },
     instructions: "Given two GitHub issues, which option best describes their relationship?",
-    threshold_set: { version: "a20/v0", values: null }
+    threshold_set: { version: "a20/v1", values: { duplicate: 0.85 } }
   };
   POINT_REGISTRY = {
     [A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,

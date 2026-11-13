@@ -179,6 +179,8 @@ export interface DecideDeps extends AdapterDeps {
 	/** Repository root for project and legacy configuration. */
 	root: string;
 	now?: () => Date;
+	/** Test seam: overrides the layered user configuration file path. */
+	userConfigPath?: string;
 	/** Test seam: replaces the code-owned registry (and the point ids the bindings parser accepts). */
 	registry?: PointRegistry;
 	/** Test seam: replaces adapters by kind. */

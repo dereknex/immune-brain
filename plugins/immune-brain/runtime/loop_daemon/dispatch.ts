@@ -30,8 +30,12 @@ import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor
 import { type LoopDecisionRecord } from "./decision_record.ts";
 import type { AgentHandlerPort } from "./agent_handlers.ts";
 import {
+	findLatestLaneDecisionQuestion,
 	handleLaneDecisionReply,
+	matchOfferedOption,
+	parseDecisionReplyText,
 	publishLaneDecisionQuestion,
+	type DecisionOption,
 	type DecisionQuestionInput,
 	type RelayInputFactory,
 } from "./decision_relay.ts";
@@ -43,6 +47,8 @@ import {
 import { readExecutorExit } from "./exit_recorder.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
+import type { JudgingAgentFn } from "./judging_agent.ts";
+import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
 import {
@@ -65,6 +71,7 @@ import {
 	appendLoopDispatch,
 	listLeases,
 	loadLease,
+	loadLoopDecisions,
 	saveLoopState,
 } from "./state.ts";
 import {
@@ -218,8 +225,82 @@ export interface DispatchDecisionsOptions {
 	agentPort?: AgentHandlerPort;
 	/** True only inside the standing `imm-loop run` process, which owns the Lane supervisor. */
 	standingDaemon?: boolean;
+	judgingAgent?: JudgingAgentFn;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
+}
+
+function recordOwnerReversalLabel(
+	stateDir: string,
+	ownerDecision: LoopDecisionRecord,
+	command: "retry" | "ignore",
+	allDecisions: readonly LoopDecisionRecord[],
+	now: string,
+): void {
+	const labelId = `owner:${ownerDecision.decision_id}`;
+	if (loadLoopLabels(stateDir).some((row) => row.id === labelId)) {
+		return;
+	}
+
+	const prior = [...allDecisions]
+		.reverse()
+		.find(
+			(d) =>
+				d.decision_id !== ownerDecision.decision_id &&
+				d.target.kind === ownerDecision.target.kind &&
+				d.target.id === ownerDecision.target.id &&
+				d.classification !== null,
+		);
+	if (!prior?.classification) return;
+
+	const { point, choice } = prior.classification;
+	let mapping: { point: string; gold: string; model_choice: string } | null = null;
+
+	if (command === "ignore") {
+		if (point === "a18_event_prefilter" && choice === "actionable") {
+			mapping = { point: "a18_event_prefilter", gold: "ignore", model_choice: "actionable" };
+		} else if (point === "a15_task_granularity" && choice !== "needs_clarification") {
+			mapping = { point: "a18_event_prefilter", gold: "ignore", model_choice: "actionable" };
+		} else if (point === "a19_owner_comment_intent" && choice !== "discussion") {
+			mapping = { point: "a19_owner_comment_intent", gold: "discussion", model_choice: choice };
+		} else if (point === "a14_pr_comment_triage" && (choice === "blocking" || choice === "nit")) {
+			mapping = { point: "a14_pr_comment_triage", gold: "duplicate", model_choice: choice };
+		}
+	} else if (command === "retry") {
+		if (point === "a18_event_prefilter" && choice === "ignore") {
+			mapping = { point: "a18_event_prefilter", gold: "actionable", model_choice: "ignore" };
+		} else if (point === "a19_owner_comment_intent" && choice === "discussion") {
+			mapping = {
+				point: "a19_owner_comment_intent",
+				gold: "request_plan_revision",
+				model_choice: "discussion",
+			};
+		} else if (point === "a14_pr_comment_triage" && (choice === "duplicate" || choice === "out_of_scope")) {
+			mapping = { point: "a14_pr_comment_triage", gold: "blocking", model_choice: choice };
+		} else if (point === "a20_issue_duplicate_pair" && choice === "duplicate") {
+			mapping = { point: "a20_issue_duplicate_pair", gold: "unrelated", model_choice: "duplicate" };
+		} else if (point === "a15_task_granularity" && choice === "needs_clarification") {
+			mapping = {
+				point: "a15_task_granularity",
+				gold: "clear_single_task",
+				model_choice: "needs_clarification",
+			};
+		}
+	}
+
+	if (!mapping) return;
+	appendLoopLabel(stateDir, {
+		id: labelId,
+		point: mapping.point,
+		gold: mapping.gold,
+		model_choice: mapping.model_choice,
+		source: "owner",
+		recorded_at: now,
+		decision_id: prior.decision_id,
+		event_id: ownerDecision.event_id,
+		target_id: `${ownerDecision.target.kind}-${ownerDecision.target.id}`,
+		reason: `verified owner @imm-loop ${command} reversed ${mapping.point} choice ${mapping.model_choice}`,
+	});
 }
 
 export interface DispatchDecisionsResult {
@@ -341,8 +422,26 @@ export async function dispatchDecisions(
 		{ decision: LoopDecisionRecord; event?: NormalizedLoopEvent; candidate: ScheduleCandidate }
 	>();
 
+	const allStoredDecisions = loadLoopDecisions(stateDir);
+	const knownDecisions = [...allStoredDecisions, ...decisions];
+
 	for (const decision of decisions) {
 		const evt = eventById.get(decision.event_id);
+		if (evt && evt.kind === "E3_OWNER_COMMENT") {
+			const resolved = resolveOwnerCommand(
+				{
+					body: evt.body,
+					author: evt.author,
+					author_association: evt.author_association,
+					created_at: evt.created_at,
+					updated_at: evt.updated_at,
+				},
+				guardFacts,
+			);
+			if (resolved.accepted && (resolved.command === "retry" || resolved.command === "ignore")) {
+				recordOwnerReversalLabel(stateDir, decision, resolved.command, knownDecisions, now);
+			}
+		}
 		if (decision.handler === "noop_record") {
 			// Check if this noop_record was a verified owner command that needs state mutation
 			if (evt && evt.kind === "E3_OWNER_COMMENT") {
@@ -492,11 +591,13 @@ export async function dispatchDecisions(
 			if (decision.handler === "escalate") {
 				const target = event ? eventTarget(event) : { kind: "issue" as const, id: "0" };
 				const targetNumber = parseInt(target.id, 10);
-				const key = escalationKey({
-					kind: "escalate",
-					target: `${target.kind}-${target.id}`,
-					detail: decision.reason,
-				});
+				const key =
+					decision.escalation_key ??
+					escalationKey({
+						kind: "escalate",
+						target: `${target.kind}-${target.id}`,
+						detail: decision.reason,
+					});
 
 				const existingComments = (
 					target.kind === "pr"
@@ -566,31 +667,155 @@ export async function dispatchDecisions(
 					`published lane decision question for ${event.task_id} (posted: ${result.posted})`,
 				);
 			} else if (decision.handler === "apply_lane_decision_reply") {
-				if (!event || event.kind !== "E7_LANE_DECISION_REPLIED") {
-					emitDispatch(decision.decision_id, decision.handler, "failed", "event is not E7_LANE_DECISION_REPLIED");
+				if (
+					!event ||
+					(event.kind !== "E7_LANE_DECISION_REPLIED" && event.kind !== "E3_OWNER_COMMENT")
+				) {
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"failed",
+						"event is not E7_LANE_DECISION_REPLIED or E3_OWNER_COMMENT",
+					);
 					continue;
 				}
 
-				const taskId = event.task_id ?? `issue-${event.issue_number}`;
+				const issueComments =
+					snapshot.issues.find((i) => i.number === event.issue_number)?.comments ?? [];
+
+				if (event.kind === "E7_LANE_DECISION_REPLIED") {
+					const taskId = event.task_id ?? `issue-${event.issue_number}`;
+					const outcome = await handleLaneDecisionReply(
+						{
+							issue_number: event.issue_number,
+							comment_id: event.comment_id,
+							author: event.author,
+							author_association: event.author_association,
+							run_id: event.run_id,
+							record_revision: event.record_revision,
+							selected_option: event.selected_option,
+							reply_body: event.reply_body,
+						},
+						{
+							task_id: taskId,
+							run_id: event.run_id,
+							record_revision: event.record_revision,
+						},
+						{
+							postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
+							existingComments: issueComments,
+							stateDir,
+							hostToken: lease?.host_token ?? randomUUID(),
+							guardFacts,
+							relayDecision: options.relayDecision ?? relayLaneDecision,
+						},
+						options.relayInputFactory ??
+							createDefaultRelayInputFactory(options.root, taskId, {
+								commentId: event.comment_id,
+							}),
+					);
+
+					if (outcome.action === "relayed" && outcome.relay_outcome?.relayed !== false) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"executed",
+							`applied lane decision reply (${outcome.action})`,
+						);
+					} else {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`relay reply failed (${outcome.action}${outcome.reason ? `: ${outcome.reason}` : ""})`,
+						);
+					}
+					continue;
+				}
+
+				// Unparsed Lane decision reply arriving via E3_OWNER_COMMENT (S10-AC2 item 5).
+				const factsLane = guardFacts.lane_decision_facts;
+				const parkedQuestion = findLatestLaneDecisionQuestion(issueComments);
+				const expectedRunId = factsLane?.run_id ?? parkedQuestion?.run_id;
+				const expectedRevision =
+					factsLane?.record_revision ??
+					parkedQuestion?.record_revision ??
+					guardFacts.expected_record_revision ??
+					undefined;
+				const taskId = factsLane?.task_id ?? parkedQuestion?.task_id ?? `issue-${event.issue_number}`;
+				const offeredOptions: DecisionOption[] =
+					factsLane?.options ?? parkedQuestion?.options ?? [];
+
+				if (!expectedRunId || !expectedRevision) {
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"failed",
+						"no parked lane decision (run_id, record_revision) found for owner reply",
+					);
+					continue;
+				}
+
+				const parsedBody = parseDecisionReplyText(event.body);
+				const replyRunId = parsedBody.run_id ?? expectedRunId;
+				const replyRevision = parsedBody.record_revision ?? expectedRevision;
+
+				let resolvedOption: string | undefined = decision.lane_option;
+				if (!resolvedOption && parsedBody.selected_option) {
+					if (offeredOptions.length > 0) {
+						const matched = matchOfferedOption(parsedBody.selected_option, offeredOptions);
+						if (matched) resolvedOption = matched.id;
+					} else {
+						resolvedOption = parsedBody.selected_option;
+					}
+				}
+				if (!resolvedOption && options.judgingAgent) {
+					try {
+						const judged = await options.judgingAgent({
+							point: "a19_owner_comment_intent",
+							escalation_reason: "unparsed lane decision reply requires option resolution",
+							event,
+							...(decision.classification?.choice
+								? { model_choice: decision.classification.choice }
+								: {}),
+							...(decision.classification?.confidence !== undefined
+								? { model_confidence: decision.classification.confidence }
+								: {}),
+							offered_options: offeredOptions,
+						});
+						const candidateOption = judged?.lane_option ?? judged?.corrected_option;
+						if (candidateOption) {
+							const matched =
+								offeredOptions.length > 0
+									? matchOfferedOption(candidateOption, offeredOptions)
+									: null;
+							resolvedOption = matched ? matched.id : candidateOption;
+						}
+					} catch {}
+				}
+
 				const outcome = await handleLaneDecisionReply(
 					{
 						issue_number: event.issue_number,
 						comment_id: event.comment_id,
 						author: event.author,
 						author_association: event.author_association,
-						run_id: event.run_id,
-						record_revision: event.record_revision,
-						selected_option: event.selected_option,
-						reply_body: event.reply_body,
+						run_id: replyRunId,
+						record_revision: replyRevision,
+						selected_option: resolvedOption,
+						reply_body: event.body,
+						created_at: event.created_at,
+						updated_at: event.updated_at,
 					},
 					{
 						task_id: taskId,
-						run_id: event.run_id,
-						record_revision: event.record_revision,
+						run_id: expectedRunId,
+						record_revision: expectedRevision,
+						...(offeredOptions.length > 0 ? { options: offeredOptions } : {}),
 					},
 					{
 						postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
-						existingComments: snapshot.issues.find((i) => i.number === event.issue_number)?.comments ?? [],
+						existingComments: issueComments,
 						stateDir,
 						hostToken: lease?.host_token ?? randomUUID(),
 						guardFacts,
@@ -607,7 +832,7 @@ export async function dispatchDecisions(
 						decision.decision_id,
 						decision.handler,
 						"executed",
-						`applied lane decision reply (${outcome.action})`,
+						`applied unparsed lane decision reply (${outcome.choice?.option_id ?? resolvedOption ?? "unknown"})`,
 					);
 				} else {
 					emitDispatch(

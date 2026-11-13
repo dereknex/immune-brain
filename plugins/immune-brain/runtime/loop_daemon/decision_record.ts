@@ -22,6 +22,12 @@ export interface JudgementClassification {
 	point: string;
 	choice: string;
 	confidence: number;
+	probabilities?: Record<string, number>;
+	profile?: string;
+	model?: string;
+	model_version?: string | null;
+	threshold_set_version?: string;
+	truncation?: "possible" | "none" | "unknown";
 }
 
 export interface LoopDecisionRecord {
@@ -36,6 +42,11 @@ export interface LoopDecisionRecord {
 	reason: string;
 	guard: { id: GuardId; detail: string } | null;
 	classification: JudgementClassification | null;
+	kept_for_reconciliation?: boolean;
+	judging_agent_used?: boolean;
+	escalation_key?: string;
+	corrected_option?: string;
+	lane_option?: string;
 	dry_run: boolean;
 	mutations: string[];
 }
@@ -47,6 +58,11 @@ export interface Judgement {
 	reason: string;
 	guard: { id: GuardId; detail: string } | null;
 	classification: JudgementClassification | null;
+	kept_for_reconciliation?: boolean;
+	judging_agent_used?: boolean;
+	escalation_key?: string;
+	corrected_option?: string;
+	lane_option?: string;
 }
 
 /** Deterministic, so re-judging the same event with the same handler stays idempotent. */
@@ -74,6 +90,11 @@ export function buildDecisionRecord(
 		reason: judgement.reason,
 		guard: judgement.guard,
 		classification: judgement.classification,
+		...(judgement.kept_for_reconciliation ? { kept_for_reconciliation: true } : {}),
+		...(judgement.judging_agent_used ? { judging_agent_used: true } : {}),
+		...(judgement.escalation_key ? { escalation_key: judgement.escalation_key } : {}),
+		...(judgement.corrected_option ? { corrected_option: judgement.corrected_option } : {}),
+		...(judgement.lane_option ? { lane_option: judgement.lane_option } : {}),
 		dry_run: options.dry_run,
 		mutations: [],
 	};

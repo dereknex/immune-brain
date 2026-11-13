@@ -31,7 +31,10 @@ export const A14_PR_COMMENT_TRIAGE: ApplicationPoint = {
 	},
 	instructions:
 		"Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
-	threshold_set: { version: "a14/v0", values: null },
+	threshold_set: {
+		version: "a14/v1",
+		values: { blocking: 0.8, nit: 0.8, out_of_scope: 0.8, duplicate: 0.8 },
+	},
 };
 
 export const A15_ISSUE_TRIAGE: ApplicationPoint = {
@@ -85,7 +88,14 @@ export const A15_TASK_GRANULARITY: ApplicationPoint = {
 		needs_clarification: "The issue is too under-specified to plan",
 	},
 	instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
-	threshold_set: { version: "a15-granularity/v0", values: null },
+	threshold_set: {
+		version: "a15-granularity/v1",
+		values: {
+			clear_single_task: 0.75,
+			needs_initiative_decomposition: 0.75,
+			needs_clarification: 0.75,
+		},
+	},
 };
 
 export const A16_REVISIT_CHAIN_CLASS: ApplicationPoint = {
@@ -140,7 +150,7 @@ export const A18_EVENT_PREFILTER: ApplicationPoint = {
 	},
 	instructions:
 		"Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
-	threshold_set: { version: "a18/v0", values: null },
+	threshold_set: { version: "a18/v1", values: { ignore: 0.9 } },
 };
 
 export const A19_OWNER_COMMENT_INTENT: ApplicationPoint = {
@@ -157,7 +167,16 @@ export const A19_OWNER_COMMENT_INTENT: ApplicationPoint = {
 	},
 	instructions:
 		"Given a comment from a verified repository owner, which option best describes the author's intent?",
-	threshold_set: { version: "a19/v0", values: null },
+	threshold_set: {
+		version: "a19/v1",
+		values: {
+			approve_plan: 0.8,
+			request_plan_revision: 0.8,
+			answer_lane_decision: 0.8,
+			command: 0.8,
+			discussion: 0.8,
+		},
+	},
 };
 
 export const A20_ISSUE_DUPLICATE_PAIR: ApplicationPoint = {
@@ -172,7 +191,7 @@ export const A20_ISSUE_DUPLICATE_PAIR: ApplicationPoint = {
 	},
 	instructions:
 		"Given two GitHub issues, which option best describes their relationship?",
-	threshold_set: { version: "a20/v0", values: null },
+	threshold_set: { version: "a20/v1", values: { duplicate: 0.85 } },
 };
 
 export const POINT_REGISTRY: PointRegistry = {

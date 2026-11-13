@@ -200,6 +200,7 @@ export interface LoopDaemonState {
 		dispatches_today?: number;
 		dispatches_total?: number;
 		today_date?: string;
+		last_reconcile_at?: string | null;
 	};
 }
 

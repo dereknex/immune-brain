@@ -458,6 +458,12 @@ function jsonPayload(stdout: string): any {
 	return JSON.parse(stdout);
 }
 
+const s9IssueClassifier = async (point: string) => {
+	if (point === "a18_event_prefilter") return { status: "decided" as const, choice: "actionable", confidence: 0.95 };
+	if (point === "a15_task_granularity") return { status: "decided" as const, choice: "clear_single_task", confidence: 0.9 };
+	return { status: "unavailable" as const, reason: "no_binding" as const, detail: "unused in S9 fixture" };
+};
+
 /* ------------------------------------------------------------------ */
 /* Tests                                                              */
 /* ------------------------------------------------------------------ */
@@ -487,6 +493,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -543,6 +550,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -601,6 +609,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -633,6 +642,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 				]),
 			]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -654,6 +664,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -682,6 +693,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [editedComment])]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -701,6 +713,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [editedComment])]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -723,6 +736,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
@@ -842,6 +856,7 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			gitHubPort: harness.gitHubPort,
 			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour")]),
 			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
 			agentPort: harness.port,
 			standingDaemon: true,
 		});
