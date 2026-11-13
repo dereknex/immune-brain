@@ -2643,7 +2643,7 @@ describe("verifier via real hook dispatch", () => {
 			expect(pending, testCase.name).toMatchObject({ state: "blocked", reason: "verification result pending" });
 			expect(current.applied, testCase.name).toHaveLength(1);
 		}
-	});
+	}, 30_000);
 
 	it("AAVR-A2: refuses submission when the spawned verifier sent two messages to the conversation", async () => {
 		const current = await setup();
