@@ -10,7 +10,7 @@ import { runBatchGitPreflight } from "../plugins/immune-brain/runtime/unattended
 import { changeIdentity, identitiesEqual, integrateLaneCommit } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 import { resolveLaneParallel } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
-import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
+import { createLaneWorktree, ensureReservedLaneWorktree, plannedLane } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 const ref = "refs/heads/imm/parent";
 function git(root: string, ...args: string[]): string {
@@ -166,6 +166,55 @@ describe("Parent branch batches", () => {
 				expect(existsSync(join(fx.root, ".git/refs/heads/user-new"))).toBe(false);
 			}
 		} finally { spy.mockRestore(); fx.cleanup(); }
+	});
+
+	// Issue #426 F7: the reservation is in the record before any resource exists, so a
+	// tick stopped at any point of creation is completed or adopted, never refused.
+	for (const stoppedAfter of ["reservation", "directory", "branch", "worktree"] as const)
+	it(`resumes a reserved Lane interrupted after its ${stoppedAfter}`, () => {
+		const fx = fixture();
+		try {
+			const planned = plannedLane(fx.root, "parent", "child");
+			const reservation = { ...planned, base_head: fx.base };
+			if (stoppedAfter === "worktree") createLaneWorktree(fx.root, "parent", "child", fx.base);
+			else {
+				if (stoppedAfter !== "reservation") mkdirSync(planned.path, { recursive: true });
+				if (stoppedAfter === "branch") git(fx.root, "update-ref", `refs/heads/${planned.branch}`, fx.base);
+			}
+			const checkout = fx.snapshot();
+			expect(ensureReservedLaneWorktree(fx.root, reservation)).toBe(planned.path);
+			expect(git(planned.path, "symbolic-ref", "HEAD")).toBe(`refs/heads/${planned.branch}`);
+			expect(git(planned.path, "rev-parse", "HEAD")).toBe(fx.base);
+			expect(fx.snapshot()).toEqual(checkout);
+			const settled = fx.resources();
+			expect(ensureReservedLaneWorktree(fx.root, reservation)).toBe(planned.path);
+			expect(fx.resources()).toEqual(settled);
+		} finally { fx.cleanup(); }
+	});
+
+	for (const drift of ["moved-branch", "moved-lane", "other-branch", "user-files", "symbolic-branch"] as const)
+	it(`refuses a reserved Lane whose resources no longer match (${drift}) and changes nothing`, () => {
+		const fx = fixture();
+		try {
+			const planned = plannedLane(fx.root, "parent", "child");
+			const reservation = { ...planned, base_head: fx.base };
+			if (drift === "moved-branch") {
+				git(fx.root, "commit", "-q", "--allow-empty", "-m", "user");
+				git(fx.root, "update-ref", `refs/heads/${planned.branch}`, git(fx.root, "rev-parse", "HEAD"));
+			} else if (drift === "user-files") {
+				mkdirSync(planned.path, { recursive: true });
+				writeFileSync(join(planned.path, "keep.txt"), "user\n");
+			} else if (drift === "symbolic-branch") git(fx.root, "symbolic-ref", `refs/heads/${planned.branch}`, "refs/heads/main");
+			else {
+				createLaneWorktree(fx.root, "parent", "child", fx.base);
+				if (drift === "moved-lane") git(planned.path, "commit", "-q", "--allow-empty", "-m", "lane");
+				else git(planned.path, "checkout", "-q", "-b", "user-branch");
+			}
+			const before = fx.resources();
+			expect(() => ensureReservedLaneWorktree(fx.root, reservation)).toThrow("does not match its recorded reservation");
+			expect(fx.resources()).toEqual(before);
+			if (drift === "user-files") expect(readFileSync(join(planned.path, "keep.txt"), "utf8")).toBe("user\n");
+		} finally { fx.cleanup(); }
 	});
 
 	it("does not refresh the coordinator index when a clean tracked file has stale stat data", () => {

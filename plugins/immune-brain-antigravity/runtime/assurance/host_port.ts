@@ -36,6 +36,8 @@ export interface HostReviewReservation {
 	dispatch: unknown;
 	/** Set by a Host that dispatches Review to a CLI process instead of an in-process agent. */
 	review_command?: string;
+	/** Set by a Host that dispatches findings verification to a CLI process (verification CLI stage). */
+	verification_command?: string;
 	review_profile?: ReviewProfile;
 	/** The actor identity the Kernel records for this reservation's verdict. */
 	review_actor_id?: string;
@@ -47,7 +49,7 @@ export interface HostReviewReservation {
  */
 export class ReviewPreparationError extends Error {
 	constructor(
-		readonly code: "review_profile_required" | "review_host_unavailable",
+		readonly code: "review_profile_required" | "review_host_unavailable" | "review_transport_unavailable",
 		message: string,
 		readonly recovery_action: string,
 	) {

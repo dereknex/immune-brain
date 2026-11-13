@@ -54,11 +54,33 @@ export interface CreateSessionInput {
 	hostArgs: string[];
 	/** The single explicit `drive` entry for the Lane's task, and nothing else. */
 	entry: string;
-	/** Submit the entry again in this existing session instead of creating another. */
+	/**
+	 * Submit the entry again in this existing session instead of creating
+	 * another. A provider that can restarts an exited Host in the same place
+	 * first; one that cannot refuses, and the caller creates a new session.
+	 */
 	resume?: SessionHandle;
+	/** Extra environment for the Host, applied when the session is created; ignored on resume. */
+	env?: Record<string, string>;
 }
 
-export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean } & Observation) | Refusal;
+/**
+ * `entry_submitted: false` means the session exists but needs the user before
+ * its entry: a dialog, or a Host that has not reported yet. `attention` says
+ * what the provider observed and how the user can look at the session.
+ */
+export type CreateSessionResult = ({ ok: true; handle: SessionHandle; entry_submitted: boolean; attention?: string; viewer?: ViewerResult } & Observation) | Refusal;
+
+/** Whether a provider without a screen of its own opened a tab the user can watch the session in. */
+export type ViewerResult = { opened: true } | { opened: false; reason: string };
+
+/**
+ * Opens, without taking focus, a tab in the Parent's workspace that runs one
+ * viewing command (such as `hc attach <address>`). Not waited on, not a
+ * session, and never a source of state. Supplied by the Herdr adapter, the
+ * only module that spawns `herdr`.
+ */
+export type SessionViewer = (input: { cwd: string; label: string; argv: string[]; env?: Record<string, string> }) => Promise<StopResult>;
 export type ObserveResult = ({ ok: true } & Observation) | Refusal;
 export type InstructionResult = ({ ok: true } & Observation) | Refusal;
 /**
@@ -67,6 +89,16 @@ export type InstructionResult = ({ ok: true } & Observation) | Refusal;
  * `events_lost`: the provider dropped events; reconcile before acting.
  */
 export type Transition = "changed" | "exited" | "timeout" | "events_lost";
+export interface RunCommandInput {
+	cwd: string;
+	/** A short human label, at most 32 characters. */
+	label: string;
+	argv: string[];
+	env?: Record<string, string>;
+}
+export type RunCommandResult = { ok: true; handle: SessionHandle; exit_code: number } | Refusal;
+
+export interface AwaitOptions { timeoutMs?: number; signal?: AbortSignal }
 export type AwaitResult = ({ ok: true; transition: Transition } & Observation) | Refusal;
 export type ReadResult = { ok: true; text: string; source: OutputSource } | Refusal;
 export type StopResult = { ok: true } | Refusal;
@@ -74,14 +106,18 @@ export type CloseResult = { ok: true } | Refusal;
 export type ReconcileEntry = { handle: SessionHandle } & Observation & { refused?: RefusalCode };
 export type ReconcileResult = { ok: true; sessions: ReconcileEntry[] } | Refusal;
 
-/** The Executor close rule. Every fact must hold; they are Kernel and batch facts, not provider facts. */
-export interface CloseProof {
-	created_by_parent: boolean;
-	child_integrated: boolean;
-	release_handoff_issued: boolean;
-	audit_pair_reachable: boolean;
-	/** Where the close is recorded (batch report entry, tick report). */
-	record: string;
+/**
+ * The Executor close rule's record. The batch runner decides the rule from
+ * Kernel and batch facts (the child is integrated, its audit pair is reachable
+ * from the batch head) and records the close in `session_closes` at the tick
+ * that integrates the child. `imm-session close` checks these two fields
+ * against that record before calling the provider; the provider adds the third
+ * fact: the handle is its own, so only a session the Parent created closes.
+ */
+export interface CloseRecord {
+	task_id: string;
+	/** `session_closes[].at` from the batch record. */
+	recorded_at: string;
 }
 
 export interface SupervisedSessionPort {
@@ -92,16 +128,20 @@ export interface SupervisedSessionPort {
 
 	// ── required capabilities ──
 	createSession(input: CreateSessionInput): Promise<CreateSessionResult>;
-	/** Sends one text instruction only to an owned session observed `idle`; otherwise sends nothing. */
+	/** Sends one text instruction only to an owned session observed `idle` or `done`; otherwise sends nothing. */
 	sendInstruction(handle: SessionHandle, text: string): Promise<InstructionResult>;
-	/** Returns once the session is not `working` (at once if it already is not), or at the timeout. */
-	awaitTransition(handle: SessionHandle, options?: { timeoutMs?: number }): Promise<AwaitResult>;
+	/**
+	 * Returns once the session is not `working` (at once if it already is not),
+	 * or at the timeout. An aborted `signal` ends the wait early as `timeout`
+	 * and leaves no provider process behind.
+	 */
+	awaitTransition(handle: SessionHandle, options?: AwaitOptions): Promise<AwaitResult>;
 	/** For people to read. Never Kernel progress evidence. */
-	readOutput(handle: SessionHandle, source: OutputSource): Promise<ReadResult>;
+	readOutput(handle: SessionHandle, source: OutputSource, options?: { lines?: number }): Promise<ReadResult>;
 	/** Reports `unknown` when no state is available; never invents `idle` or `done`. */
 	observeState(handle: SessionHandle): Promise<ObserveResult>;
 	stopSession(handle: SessionHandle): Promise<StopResult>;
-	closeSession(handle: SessionHandle, proof: CloseProof): Promise<CloseResult>;
+	closeSession(handle: SessionHandle, record: CloseRecord): Promise<CloseResult>;
 	/** Lists only the handles the caller owns; there is no "all sessions" listing. */
 	reconcile(owned: SessionHandle[]): Promise<ReconcileResult>;
 
@@ -113,6 +153,12 @@ export interface SupervisedSessionPort {
 	manageWorktree?(action: "create" | "open" | "remove", path: string): Promise<StopResult>;
 	reportState?(handle: SessionHandle, state: SessionState): Promise<StopResult>;
 	attachSession?(handle: SessionHandle): Promise<StopResult>;
+	/**
+	 * Runs one command (not an agent) in a new session the user can watch, and
+	 * returns once it has finished, with its exit status. The command's own
+	 * files are the result; the session's output is for people only.
+	 */
+	runCommand?(input: RunCommandInput): Promise<RunCommandResult>;
 	/** Reserved and unfilled: verdicts return through the file protocol. */
 	readonly structuredResult?: never;
 }
@@ -136,6 +182,7 @@ export const OPTIONAL_CAPABILITIES = [
 	"manageWorktree",
 	"reportState",
 	"attachSession",
+	"runCommand",
 ] as const;
 
 export type OptionalCapability = (typeof OPTIONAL_CAPABILITIES)[number];
@@ -160,10 +207,14 @@ export function refuse(code: RefusalCode, reason: string, handle?: SessionHandle
 	return handle === undefined ? { ok: false, code, reason } : { ok: false, code, reason, handle };
 }
 
-/** The instruction rule shared by every adapter: only an `idle` session receives text. */
+/**
+ * The instruction rule shared by every adapter: only a session ready for input
+ * receives text. `done` is ready too: it is idle with a finished turn not yet
+ * seen, and on providers without a "seen" action it never becomes `idle`.
+ */
 export function instructionRefusal(handle: SessionHandle, observed: Observation): Refusal | null {
-	if (observed.state === "idle") return null;
-	return refuse("state_refused", `session is ${observed.state}; an instruction is sent only to an idle session and nothing was sent`, handle);
+	if (observed.state === "idle" || observed.state === "done") return null;
+	return refuse("state_refused", `session is ${observed.state}; an instruction is sent only to an idle or done session and nothing was sent`, handle);
 }
 
 /** The resume rule: the entry is submitted again only to a session that has stopped working without a dialog. */
@@ -172,16 +223,14 @@ export function resumeRefusal(handle: SessionHandle, observed: Observation): Ref
 	return refuse("state_refused", `session is ${observed.state}; the entry is resubmitted only to an idle or done session and nothing was sent`, handle);
 }
 
-/** The Executor close rule, checked before any provider is asked to close. */
-export function closeProofRefusal(handle: SessionHandle, proof: CloseProof): Refusal | null {
+/** The close record must be the runner's: a task id and a canonical timestamp. */
+export function closeRecordRefusal(handle: SessionHandle, record: CloseRecord | undefined): Refusal | null {
 	const unmet: string[] = [];
-	if (proof.created_by_parent !== true) unmet.push("created_by_parent");
-	if (proof.child_integrated !== true) unmet.push("child_integrated");
-	if (proof.release_handoff_issued !== true) unmet.push("release_handoff_issued");
-	if (proof.audit_pair_reachable !== true) unmet.push("audit_pair_reachable");
-	if (typeof proof.record !== "string" || proof.record.trim() === "") unmet.push("record");
+	if (typeof record?.task_id !== "string" || !/^[a-z0-9][a-z0-9._-]*$/i.test(record.task_id)) unmet.push("task_id");
+	const at = record?.recorded_at;
+	if (typeof at !== "string" || !Number.isFinite(Date.parse(at)) || new Date(Date.parse(at)).toISOString() !== at) unmet.push("recorded_at");
 	if (unmet.length === 0) return null;
-	return refuse("close_unproven", `close rule not met: ${unmet.join(", ")}`, handle);
+	return refuse("close_unproven", `no recorded session close: ${unmet.join(", ")}; take task_id and at from the batch report's session_closes`, handle);
 }
 
 export function validateCreateInput(input: CreateSessionInput): Refusal | null {
@@ -189,6 +238,10 @@ export function validateCreateInput(input: CreateSessionInput): Refusal | null {
 	if (!input.label || input.label.length > 32) return refuse("invalid_input", "label must be 1 to 32 characters");
 	if (!(EXECUTOR_HOSTS as readonly string[]).includes(input.host)) return refuse("invalid_input", `host must be one of ${EXECUTOR_HOSTS.join(", ")}`);
 	if (!input.entry || input.entry.trim() === "") return refuse("invalid_input", "entry is required");
+	for (const [key, value] of Object.entries(input.env ?? {})) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return refuse("invalid_input", `env name ${JSON.stringify(key)} is not a valid variable name`);
+		if (typeof value !== "string" || /[\0\n\r]/.test(value)) return refuse("invalid_input", `env ${key} must be a single-line string`);
+	}
 	return null;
 }
 

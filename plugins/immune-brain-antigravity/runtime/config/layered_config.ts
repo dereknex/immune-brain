@@ -17,6 +17,9 @@ const has = (o: Obj | undefined, k: string) => !!o && Object.hasOwn(o, k);
 const envName = /^[A-Z_][A-Z0-9_]*$/;
 
 /** The Review profile `lanes` resolves to, or null when no `review_host` is set. No model-distinctness rule (BR-DEC-2). */
+/** Defaults of the Lane keys that have one; every other key defaults to null. */
+const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
+
 export function chooseReviewer(lanes: { review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf }): ReviewProfile | null {
 	const host = lanes.review_host.value as ReviewProfile["host"] | null;
 	if (!host) return null;
@@ -110,13 +113,15 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
 	validKeys(ul, ["profiles", "active"], userPath, "lanes", "lanes");
 	validKeys(ol, ["active"], userPath, `projects.${projectKey}.lanes`, "lanes");
-	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort"];
+	const laneKeys = ["max_parallel", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "review_transport", "advisory_transport", "review_verifier_model"];
 	validKeys(pl, laneKeys, projectPath, "lanes", "lanes");
 	validKeys(batch, ["final_verification"], projectPath, "batch", "batch");
 	const validateLane = (o: Obj, file: string, path: string) => {
 		validKeys(o, laneKeys, file, path, "lanes");
 		for (const [k, v] of Object.entries(o)) {
-			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : true;
+			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0
+				// ADR 0038: a supervised-session transport names its provider; no value is auto-detected.
+				: k === "review_transport" ? v === "process" || v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
 			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
 		}
 	};
@@ -220,13 +225,13 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		if (dependent && projectValue !== undefined && laneProfile?.[hostKey] !== undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host overridden by higher layer"); projectValue = undefined; }
 		if (dependent && userValue !== undefined && laneProfile?.[hostKey] === undefined) { diag("not_applied", "warning", userPath, `lanes.${key}`, "host must be set in the same layer"); }
 		if (dependent && projectValue !== undefined && pl[hostKey] === undefined) { diag("not_applied", "warning", projectPath, `lanes.${key}`, "host must be set in the same layer"); projectValue = undefined; }
-		lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [key === "max_parallel" ? 1 : undefined, "default"]);
+		lanes[key] = choose([dependent && laneProfile?.[hostKey] === undefined ? undefined : userValue, active.source], [projectValue, "project"], [LANE_DEFAULTS[key], "default"]);
 	}
 	if (failed.has("lanes")) {
 		lanes.active = leaf(null, "default");
 		lanes.profiles = leaf({}, "default");
 		lanes.project_defaults = leaf({}, "default");
-		for (const key of laneKeys) lanes[key] = leaf(key === "max_parallel" ? 1 : null, "default");
+		for (const key of laneKeys) lanes[key] = leaf(LANE_DEFAULTS[key] ?? null, "default");
 	}
 	const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
 	const bindings: Obj = {};

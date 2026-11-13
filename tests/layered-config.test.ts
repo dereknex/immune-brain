@@ -331,3 +331,18 @@ test("preload isolates configuration and required ADRs and tracked project confi
 	expect(existsSync("docs/adr/0034-layered-configuration.md")).toBe(true);
 	expect(resolveConfig(process.cwd()).initiative_carrier).toEqual({ value: "github", source: "project" });
 });
+
+test("supervised-session transports default off and accept only a named provider (#426 S2, S4)", () => {
+	const f = fixture();
+	f.project({ git_integration: "auto" });
+	expect(f.read().lanes.review_transport).toEqual({ value: "process", source: "default" });
+	expect(f.read().lanes.advisory_transport).toEqual({ value: "subagent", source: "default" });
+	f.project({ lanes: { review_transport: "herdr", advisory_transport: "herdr" } });
+	expect(f.read().lanes.review_transport).toEqual({ value: "herdr", source: "project" });
+	expect(f.read().lanes.advisory_transport).toEqual({ value: "herdr", source: "project" });
+	for (const [key, value] of [["review_transport", "session"], ["advisory_transport", "process"], ["review_transport", "herdr-core"]] as const) {
+		f.project({ lanes: { [key]: value } });
+		const c = f.read();
+		expect({ key, flagged: c.diagnostics.some(d => d.severity === "error" && d.key_path === `lanes.${key}`) }).toEqual({ key, flagged: true });
+	}
+});

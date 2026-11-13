@@ -353,6 +353,25 @@ prompt digests never belong in this external handoff. If
 `docs/initiatives/<slug>.md` exists, publication fails with a carrier conflict;
 Local mode performs zero GitHub operations.
 
+A Local carrier is written in the one shape `drive` reads, never as a table:
+each approved Slice is a `## <slice-id>: <result>` section that names exactly
+one TaskIntent under `Tasks:` and may add one `Blocked by: <task-id>, <task-id>`
+line naming Tasks of the same Initiative. Other prose may surround these lines.
+A Slice table, a missing `Tasks:` list, or several Tasks in one Slice leaves the
+batch unprojectable, so the Planner rewrites the carrier into this shape before
+the handoff rather than leaving the Parent to repair it.
+
+```markdown
+## A: Alpha exists
+Tasks:
+- initiative-alpha
+
+## B: Beta follows alpha
+Blocked by: initiative-alpha
+Tasks:
+- initiative-beta
+```
+
 The batch result includes an execution recommendation: the first unblocked Task,
 a stable dependency order, and parallel groups. Report that recommendation and
 stop; the user enrolls the recommended first TaskIntent through a literal-user

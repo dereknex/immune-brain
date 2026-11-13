@@ -19,10 +19,14 @@ Every new batch uses runtime-created Lanes. Fixed Parent/Lane names do not prove
 ownership: a same-tip Parent can be reused only with a validated matching batch
 record at its recorded delivery tip. A settled record proves resource provenance,
 not authorization for new work. Existing unbound Lane paths or branches are
-collisions, even when clean and at the requested base. Creation is exclusive;
-if interrupted before the binding is persisted, retain the orphan and refuse
-automatic adoption. After binding, resume revalidates the recorded Lane path,
-branch and Git lineage instead of treating its location as proof of ownership.
+collisions, even when clean and at the requested base. Creation is exclusive,
+and the runtime records the Lane's path, branch and base in the batch record
+before creating anything; a later tick completes or adopts only resources that
+still match that reservation (the reserved branch at the reserved base, checked
+out in the reserved worktree) and refuses anything else. An unreserved orphan
+is retained and never adopted. After binding, resume revalidates the recorded
+Lane path, branch and Git lineage instead of treating its location as proof of
+ownership.
 No collision authorizes deletion, overwriting, renaming or resetting user resources.
 
 Before confirmation, select capacity
@@ -276,16 +280,22 @@ Instruction-file lane directives are not read.
 | `executor_host` | `claude-code`, `pi` or `antigravity` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type, else another allowlisted Host the `lane-steward` reported available |
 | `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi` | The Executor Host's own default |
+| `review_host`, `review_model`, `review_effort` | the selected profile's Review fields | The Parent passes them as `review_host`, `review_model` and `review_effort` when it starts a batch. The batch records them as `review_profile`, the native confirmation shows them, and every CLI Review of the batch's Lanes runs on them; a resume keeps the recorded profile. A model or effort without `review_host` is refused. | Review resolves `lanes.active` when it is prepared |
 
 Each field resolves on its own, in order: literal request, selected user Lane
 profile, project `lanes` defaults, then the default above. Select the profile
 named by the request, else `projects[<key>].lanes.active`, else `lanes.active`,
 else none. Use `lanes.profiles.value` for the selected profile and
 `lanes.project_defaults.value` for project values, even when the resolver's
-active profile has shadowed them. Recompute the fields and host-pairing warnings
-for the selected profile and request rather than reusing values or `not_applied`
-warnings computed for a different active profile. A request naming an unknown
-profile is reported and starts no batch. Project Lane values are defaults, not caps.
+active profile has shadowed them. Recompute the fields and host-pairing
+warnings for the selected profile and request rather than reusing values or
+`not_applied` warnings computed for a different active profile. A lane batch
+records the Executor fields the Parent passes as `executor_preferences` when it
+starts; every Executor generation of the batch, including one started after a
+Lane decision, runs on them. When they name an `executor_host`, the runtime
+does not consult `lanes.active`, so a model or effort of the active profile is
+not reported as `not_applied`. A request naming an unknown profile is reported
+and starts no batch. Project Lane values are defaults, not caps.
 
 A model or effort applies only with an `executor_host` from the same layer. If
 a higher layer overrides that host, report the model or effort as `not_applied`
@@ -352,7 +362,10 @@ Parent's own Host type, and use another available one when it is not available,
 naming the Host chosen in the report. The child's QA and Review then run under that
 Executor Host's own Assurance adapter in the Lane. The Executor Host loads the
 same Immune-Brain plugin or package the Parent runs: a Parent started from a
-local plugin directory passes that same directory to the Executor Host. The
+local plugin directory passes that same directory to the Executor Host. A Pi
+session loads one Immune-Brain only: when that directory and an installed Pi
+package both load, the first loaded (the `-e` directory) is used and the other
+registers nothing and shows a notice naming both. The
 Parent adds no permission or trust option of its own; the Executor Host runs
 under the user's own settings, with the model and effort of its own defaults
 unless [Lane Preferences](#lane-preferences) resolve them. How the Parent obtains a supervised session
@@ -386,6 +399,17 @@ with a runtime-owned Executor keep that process until settlement; never add a ta
 For a single-task user decision, follow [Parent decision relay](#single-task-lane)
 and resume the existing tab after the native decision is applied.
 
+The Parent coordinates; it never does a child's work. An `executor` handoff is
+started in that child's Lane session as below, never implemented, edited or
+tested in the Parent's own session or checkout. A refused or rejected report is
+answered with its recovery action or reported to the user: the Parent never
+resets, rebases or moves a Parent or Lane branch, and never removes or prunes a
+worktree or a branch (`git reset`, `git branch -D`, `git worktree remove` and
+`git worktree prune` are the user's). A child with no active claim is a Kernel
+fact the report explains through its next obligation, not a missing TaskIntent:
+the Parent does not search `.imm/` or ask the user for requirements because of
+it.
+
 Inside Herdr the Parent drives each Lane session through the
 [Supervised Session Port](docs/reference/supervised-session-port.md) with
 `imm-session --provider herdr`; the runtime and the `lane-steward` never do.
@@ -408,17 +432,36 @@ read. For each `executor` handoff without a live session:
    from a directory names it `/immune-brain:drive`, Pi names it `/skill:drive`
    and Antigravity names it `/drive`. Keep `task_id → handle`
    from the result; the handle is opaque and is not authority.
-3. Supervise with `imm-session await <handle> --provider herdr` as a Host
-   background command, so its return re-invokes the Parent. Start it only after
-   the create reported `entry_submitted: true` and `state: "working"`: a wait
-   attached to a session that is not working returns at once. Do not loop on
-   `imm-session observe` or read the session's output to judge progress.
+3. Supervise with one `imm-session await <handle>... --provider herdr` over the
+   handles of every live Lane session; it returns at the first transition and
+   names that session's `handle`. How it runs depends on the Parent Host:
+   - A Parent Host whose background command re-invokes it when the command ends
+     (Claude Code) runs it as a Host background command, so its return
+     re-invokes the Parent.
+   - A Parent Host without that (Pi, whose bash tool is not woken when a
+     background process ends, and any Host not known to re-invoke) runs it in
+     the foreground with `--timeout-ms 600000`. A `timeout` return is no
+     transition: the Parent calls `start_unattended_batch`, answers anything
+     the user said meanwhile, and runs the wait again. It never polls
+     `imm-session observe` instead.
+
+   Start it only after the create reported `entry_submitted: true` and
+   `state: "working"`: a wait attached to a session that is not working returns
+   at once. Do not loop on `imm-session observe` or read the session's output to
+   judge progress.
 
 A create that reports `entry_submitted: false`, or a `blocked` state at any
 time, means the tab shows a dialog only the user may answer: workspace trust,
 sign-in, a permission request, a question, or a native confirmation such as an
-Intent revision gate. The Parent sends that tab no keys and no prompt, and never
-answers such a dialog for the user. As soon as the wait returns `blocked` it
+Intent revision gate. A create may also report `entry_submitted: false` with
+state `unknown` and an `attention` text: the Host reported nothing at startup,
+which some Hosts do while they show a dialog; the Parent relays that text and
+treats the session exactly like a blocked one. On `herdr` that text can also
+mean Herdr typed the entry into a sign-in or selection dialog it did not see as
+blocked, so after the user has answered, the Parent asks whether the Executor
+Host took up the entry before resubmitting it. The Parent sends that tab no keys
+and no prompt, and never answers such a dialog for the user. As soon as the
+wait returns `blocked`, or the create returned `entry_submitted: false`, it
 tells the user which tab and `task_id` is waiting and what the dialog asks,
 without waiting to be asked, leaves the tab open, and continues the other Lanes;
 once the user has answered, it resubmits the entry with the same create and
@@ -426,12 +469,16 @@ once the user has answered, it resubmits the entry with the same create and
 wait. `idle` or `done` is a session end for the rules below, although the tab
 stays open: the Parent calls `start_unattended_batch`, and a relaunch submits the
 entry again in the same tab instead of creating another, with
-`--resume <handle>`. When that report shows the child
+`--resume <handle>`. When the Executor Host has exited and its shell is back in
+the tab, the same `--resume` starts the Host there again before submitting the
+entry; when the tab's pane is gone, `--resume` is refused (`state_refused`) and
+the Parent creates a new session for that `task_id`. When that report shows the child
 neither settled nor waiting on a user decision, the Parent tells the user which
 tab and `task_id` went idle and what the Kernel projection still requires.
 
 The Parent may send one text instruction to a Lane session, and only while it is
-`idle` and its child is still running in the Lane: a correction to the
+`idle` or `done` (a finished turn not yet seen) and its child is still running in
+the Lane: a correction to the
 Executor's approach, never an answer to a dialog. It first calls
 `start_unattended_batch` with `lane_instruction` (`task_id`, `text`, `kind`
 `instruction` or `correction`, and the `session_state` it just observed with
@@ -462,9 +509,12 @@ Single tasks outside a batch keep their existing budget behavior, and Review
 independence is unchanged. A Review rework budget that the Kernel turns into a
 `replan_required` decision still needs the user's own native decision.
 
-Every live Lane session keeps exactly one `imm-session await` armed, so `blocked`
-and idle-without-settlement wake the Parent on their own; a Parent that has
-nothing else to do still ends its turn with those waits armed. A wait that returns
+Every live Lane session is covered by exactly one armed `imm-session await` (one
+call covers several sessions), so `blocked` and idle-without-settlement wake the
+Parent on their own. After a return the Parent handles that session and runs the
+wait again over every session still live. A background-wait Parent that has
+nothing else to do still ends its turn with the wait armed; a foreground-wait
+Parent keeps waiting in bounded rounds instead. A wait that returns
 `exited` means the Host process is gone, never that the child finished. A wait
 that returns `unknown` ends nothing: the Parent calls `start_unattended_batch`
 and re-arms the wait, and when the next wait returns `unknown` again it tells
@@ -472,10 +522,21 @@ the user which tab and `task_id` Herdr cannot classify. A
 `provider_error` or `timeout` proves nothing about delivery; inspect the session
 with `imm-session observe` before repeating a command.
 
-The Parent only creates: it closes no tab, including the tabs it created, and
-every tab stays open for the user to read and close. It splits no pane and
-creates no workspace. The Parent never invokes `herdr` itself, and outside
-Herdr it never invokes `imm-session`.
+The Parent closes a tab only under the Executor close rule, and only one it
+created. At the tick that integrates a child whose audit pair is reachable from
+the batch head, the runner records that session's close in the report's
+`session_closes` (`task_id`, `at`); the record is there even when that tick
+finishes the batch, so the Parent never re-enters a finished batch to ask.
+Once the wait has returned that session `idle`, `done` or `exited`, the Parent
+runs `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`
+from the coordinator checkout; `imm-session` reads the batch record and closes
+only a session it lists. `start_unattended_batch` with `lane_session_close`
+(`task_id`) still answers for a running batch: the same record if one exists,
+a refusal otherwise. A refused close leaves the tab open. Every other tab (a parked, failed,
+stopped or not yet integrated child's, and any tab the Parent did not create)
+stays open for the user to read and close. Closing a session removes no Lane and
+no branch. It splits no pane and creates no workspace. The Parent never invokes
+`herdr` itself, and outside Herdr it never invokes `imm-session`.
 
 Supervision is event-driven. Each session end is the cue to call
 `start_unattended_batch` again with the same Initiative, and that report is the
@@ -486,8 +547,8 @@ the Parent starts it once more; after a second end without Kernel progress, or
 when the report shows the child waiting on a user decision or an open Review
 reservation, it stops relaunching and reports that child to the user while its
 siblings continue. The Parent stops no session: when the report shows a child
-parked or settled while its session is still working, the Parent tells the user
-which tab and `task_id` to close. A session that stays open changes no Kernel
+parked, or settled without integration, while its session is still working, the
+Parent tells the user which tab and `task_id` to close. A session that stays open changes no Kernel
 or batch state, so the next report states what remains. Handles are not
 authority: after an interruption
 the Parent calls `start_unattended_batch` first and launches only for the
@@ -532,9 +593,16 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   no process exit. The Lane and branches remain retained after delivery because
   Herdr session state is never exit proof.
 - **Synchronous runtime supervision outside Herdr.** The
-  runtime spawns one non-interactive Executor (`claude --print` or `pi --print`)
-  with the Lane as working directory and `drive <task_id>` as its only prompt,
-  and waits for it inside the Host tool call. Arguments come only from the
+  runtime spawns one non-interactive Executor (`claude --print` or the
+  antigravity print entry) with the Lane as working directory and
+  `drive <task_id>` as its only prompt, and waits for it inside the Host tool
+  call. A Pi Executor outside Herdr is never spawned: Pi writes to the Kernel
+  only in its TUI, so the runtime reports reason `lane_executor_requires_tui`
+  and hands the Lane to the user under the no-supervised-session rule above.
+  The child stays enrolled, nothing is parked, and the report keeps its
+  `executor` handoff with the Lane path and `task_id`; the user runs
+  `/skill:drive <task_id>` in interactive pi in that Lane and calls
+  `start_unattended_batch` again when it finishes. Arguments come only from the
   loaded plugin location and [Lane Preferences](#lane-preferences), which the
   runtime resolves itself; the Parent passes none. Existing runtime-owned tasks
   keep this supervision even when resumed inside Herdr. The report carries `lane_supervision` with `generation`, `state`
@@ -571,7 +639,12 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   resumes in the same Lane with a new generation.
 - **Parent decision relay.** When the Lane's Executor stops on a literal-user
   decision, the report carries `lane_decision_required` (task, run and record
-  revision, authorization and pending decisions). The
+  revision, authorization and pending decisions). A headless Executor has no
+  native gate, so its `approve_breaking_intent_revision` call only leaves a
+  request bound to the current record; the report then carries `requested`
+  with the complete `next_intent`, which the Parent passes to its own
+  `approve_breaking_intent_revision` gate. A request older than the current
+  record is ignored, and an applied decision clears it. The
   Parent answers on its own Host with the native-gate tool the facts call for:
   `request_authorization`, `approve_breaking_intent_revision` with the complete
   next intent, or a stop request, each passing the Lane's `task_id` and the

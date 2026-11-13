@@ -20,13 +20,13 @@ A provider missing any of these, or implementing another port protocol, is refus
 
 | Capability | Precondition | Postcondition | Fail-closed |
 | --- | --- | --- | --- |
-| `createSession` | Lane `cwd`; one explicit `drive` entry; label ≤ 32 characters | Exactly one live session rooted in the Lane, the entry submitted once, state reported | Refusal and no session; never a detached job, in-process subagent or serial in-place work. A start dialog reports `entry_submitted: false`, `blocked`. With `resume`, the entry is resubmitted in the same session only when it is `idle` or `done` |
-| `sendInstruction` | Owned handle; the adapter observes `idle` immediately before sending; the Parent recorded the instruction first (`lane_instruction` accepted) | Delivered, with the state after delivery | Any other state: `state_refused`, nothing sent |
-| `awaitTransition` | Owned handle | Returns once the session is not `working` (at once if it already is not): `changed`, `exited`, `timeout` or `events_lost` | `timeout` and `exited` carry `unknown`; `exited` is a process signal, never a verdict or settlement |
+| `createSession` | Lane `cwd`; one explicit `drive` entry; label ≤ 32 characters | Exactly one live session rooted in the Lane, the entry submitted once, state reported | Refusal and no session; never a detached job, in-process subagent or serial in-place work. A start dialog reports `entry_submitted: false`, `blocked`. With `resume`, the entry is resubmitted in the same session only when it is `idle` or `done`; a provider that can restarts an exited Host in place first (Herdr), and one that cannot refuses (`state_refused`, herdr-core) so the caller creates a new session. `env` sets extra Host environment at creation |
+| `sendInstruction` | Owned handle; the adapter observes `idle` or `done` (a finished turn not yet seen) immediately before sending; the Parent recorded the instruction first (`lane_instruction` accepted) | Delivered, with the state after delivery | Any other state: `state_refused`, nothing sent |
+| `awaitTransition` | Owned handle | Returns once the session is not `working` (at once if it already is not): `changed`, `exited`, `timeout` or `events_lost` | `timeout` and `exited` carry `unknown`; `exited` is a process signal, never a verdict or settlement. An aborted signal ends the wait as `timeout` and terminates any provider process it started |
 | `readOutput` | Owned handle | Text labelled `visible` or `scrollback` | For people only; never progress evidence |
 | `observeState` | Owned handle | State and provenance | No readable state is `unknown`, never an invented `idle` or `done` |
 | `stopSession` | Owned handle | Soft interrupt, then the provider's hard stop | Foreign handle: `not_owned` |
-| `closeSession` | Owned handle and every Executor close fact: created by the Parent, child integrated, release handoff issued, audit pair reachable on the batch branch, close recorded | Session resources released | `close_unproven` naming each unmet fact; `imm-session` offers no close verb until the close rule is adopted by the Loop contract |
+| `closeSession` | Owned handle (the Parent created it) and the batch runner's accepted close record (`task_id`, `recorded_at`): the runner's `decideLaneSessionClose` admits only an integrated child whose audit pair is reachable from the batch head, once, and records the close in `session_closes` before answering | Session resources released, recorded; the Lane and its branch untouched | Missing or malformed record: `close_unproven`, nothing closed. The rule no longer waits for a Lane release handoff: Parent-branch batches never issue one, since Lanes are retained for the user (ADR 0027) |
 | `reconcile` | The caller's own handles | The last known state of each | A foreign handle is listed `unknown` with `refused: not_owned`; there is no "all sessions" listing |
 
 ### Optional capabilities
@@ -41,7 +41,8 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 | `snapshot` | `reconcile`; a mismatch is `unknown` and wakes the user |
 | `manageWorktree` | The Lane's own provisioning (`lane-steward`) |
 | `reportState` | Provider detection only; a provider whose only state source is self-report must declare it in the admission matrix |
-| `attachSession` | No effect on Parent scheduling |
+| `attachSession` | No effect on Parent scheduling; `imm-session attach` refuses with `provider_unavailable` |
+| `runCommand` | A command (not an agent) runs in a new watched session and returns its exit status once finished. Without it, a caller runs the command as a plain process; `imm-session run` refuses with `provider_unavailable` |
 
 `structuredResult` is reserved and unfilled: verdicts return through the file protocol, and a provider that fills it is refused.
 
@@ -54,29 +55,32 @@ A missing optional capability takes its degrade path, and the degrade is stated 
 ```text
 imm-session <verb> --provider herdr|herdr-core [options]
   probe
-  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [-- <host arguments>]
+  create --cwd <lane_path> --label <name> --host claude-code|pi|antigravity --entry <drive entry> [--resume <handle>] [--env KEY=VALUE]... [-- <host arguments>]
   send <handle> --text <instruction>
-  await <handle> [--timeout-ms <ms>]
+  await <handle>... [--timeout-ms <ms>]
   observe <handle>
-  read <handle> [--source visible|scrollback]
+  run --cwd <dir> --label <name> [--env KEY=VALUE]... -- <command> [args...]
+  read <handle> [--source visible|scrollback] [--lines <n>] [--extract advisory]
+  attach <handle>
   stop <handle>
+  close <handle> --batch <batch_id> --task <task_id> --recorded-at <session_closes[].at> [--root <coordinator checkout>]
   reconcile <handle>...
 ```
 
-Each call admits and probes the provider, runs one verb and prints one JSON object. Exit `0` on success, `1` on a refusal, `2` on a usage error.
+Each call admits and probes the provider, runs one verb and prints one JSON object. `await` over several handles returns the first transition with its `handle` (a shared `timeout` names none) and aborts the other waits, terminating their provider processes before it exits; this lets a Parent Host that a background command cannot re-invoke (Pi) wait for all its Lanes in the foreground, in bounded rounds. Exit `0` on success, `1` on a refusal, `2` on a usage error.
 
 ## Provider mapping
 
 ### Herdr TUI (`herdr`)
 
-`runtime/session/herdr_provider.ts`, pinned to Herdr protocol `22` (Herdr 0.9.x). Admission requires `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, a `herdr` executable and `herdr api schema --json` stating a pinned top-level `protocol`. A handle names the Parent's workspace, tab and pane; any other workspace is `not_owned`. The adapter's `HERDR_CLI` table is the one place a command is spelled.
+`runtime/session/herdr_provider.ts`, pinned to Herdr protocol `22` (Herdr 0.9.x). Admission requires `HERDR_ENV=1`, `HERDR_WORKSPACE_ID`, a `herdr` executable and `herdr api schema --json` stating a pinned top-level `protocol`. A handle names the Parent's workspace, tab, pane and a random token that is also written into the tab label at creation (`<label> [imm:<token>]`). Every verb first reads `pane get` (the pane is in that workspace and tab) and `tab get` (the label carries the token); any other pane, including the Parent's own, is `not_owned`. A session whose pane is gone is only observed (`unknown`), awaited (`exited`), stopped or closed; nothing is sent to it. The adapter's `HERDR_CLI` table is the one place a command is spelled.
 
 Every spelling and response shape below is checked against the Herdr 0.9.5 CLI reference and API schema (`docs/reports/issue-426-herdr-provider-probe.md`). A success prints `{"id","result":{...}}` on stdout; a server error prints `{"id","error":{"code","message"}}` on stderr and exits `1`. State is read from `.result.agent.agent_status`, whose vocabulary is the port's own five states.
 
 | Port | Herdr command |
 | --- | --- |
-| `createSession` | `tab create --workspace <ws> --cwd <lane> --label <name> --no-focus` (IDs at `.result.tab.tab_id`, `.result.root_pane.pane_id`), `agent start <agent-name> --kind claude\|pi\|agy --pane <pane> -- <args>` (`claude-code`, `pi`, `antigravity`), `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`. The agent name is the label folded to `[a-z][a-z0-9_-]{0,31}`; `agent_not_ready` is a dialog |
-| `sendInstruction` | `agent get <pane>`, then `agent prompt` as above only when `idle`; Herdr's own `agent_blocked` refusal is `state_refused` |
+| `createSession` | `tab create --workspace <ws> --cwd <lane> --label "<name> [imm:<token>]" [--env K=V]... --no-focus` (IDs at `.result.tab.tab_id`, `.result.root_pane.pane_id`), `agent start <agent-name> --kind claude\|pi\|agy --pane <pane> -- <args>` (`claude-code`, `pi`, `antigravity`), `agent prompt <pane> <entry> --wait --until working --until blocked --timeout 30000`. The agent name is the label folded to `[a-z][a-z0-9_-]{0,31}`; `agent_not_ready` is a dialog. `agent_prompt_stalled` on the entry (a sign-in or selection dialog Herdr reads as idle took the text, #426 F1) keeps the tab and returns `entry_submitted: false`, `unknown` and an `attention` text; on `send` it stays `provider_error`. On `resume`, an exited Host (`agent get` answers `agent_not_found` or `agent_not_running` while the pane lives) is started again with `agent start` in the same pane before the entry; a gone pane is `state_refused` |
+| `sendInstruction` | `agent get <pane>`, then `agent prompt` as above only when `idle` or `done`; Herdr's own `agent_blocked` refusal is `state_refused` |
 | `awaitTransition` | `agent wait <pane> --until idle --until done --until blocked --until unknown [--timeout <ms>]`: Herdr's default ignores `unknown`, the port does not. `timeout` and `pane_not_found` / `agent_not_running` / `agent_not_found` map to `timeout` and `exited` |
 | `readOutput` | `pane read <pane> --source visible\|recent-unwrapped`, which prints terminal text |
 | `observeState` | `agent get <pane>`; provenance `detected`. Herdr reads Claude Code and Antigravity state from the screen, and Pi state from its Herdr integration when installed, else from the screen |
@@ -84,6 +88,7 @@ Every spelling and response shape below is checked against the Herdr 0.9.5 CLI r
 | `closeSession` | `tab close <tab>`; a `confirmation_required` answer is a `provider_error` |
 | `reconcile` | `agent get` per owned handle |
 | `sendKeys` | `agent send-keys <pane> <key>` |
+| `runCommand` | `tab create` as for `createSession` (token label, `--env`), `pane run <pane> "<command>; printf 'IMM_%s_%s_%s\\n' <token> DONE \"$?\""`, then `pane wait-output <pane> --regex 'IMM_<token>_DONE_[0-9]+' --source recent --lines 400`; the status is read from `.result.matched_line`. `printf` assembles the sentinel at run time, so the echoed command line never matches. The tab stays open for the user |
 | `snapshot` | Not wired; Herdr offers `api snapshot`, to adopt with event subscriptions |
 | `waitForState`, `subscribeEvents`, `manageWorktree`, `attachSession` | Not implemented in this adapter; degrade as above |
 | `reportState` | Not applicable: Herdr TUI state is `detected` |
@@ -98,8 +103,8 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 
 | Port | `hc` command | Note |
 | --- | --- | --- |
-| `createSession` | `<host> --version`, then `run --bg --json --no-parent --name <name> --cwd <lane> --label imm-session=<token> -- <host> <args>`, then `get` until the Host's first report, then `send <t> <entry> --if idle` | The Host must be at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, else `provider_unavailable` and nothing starts. A first report of `blocked` returns `entry_submitted: false`; no report within 30 s is `start_failed` with the entry unsent. The name is the label folded to core's `a-z 0-9 - _` |
-| `sendInstruction` | `send <t> <text> --if idle` | Core itself refuses any other state (`status_mismatch`, `blocked`) and sends nothing; no check-then-act race. `--force`, which may answer a dialog, is never sent |
+| `createSession` | `<host> --version`, then `run --bg --json --no-parent --name <name> --cwd <lane> --label imm-session=<token> -- [env K=V...] <host> <args>`, then `get` until the Host's first report, then `send <t> <entry> --if idle` | The Host must be at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, else `provider_unavailable` and nothing starts. A first report of `blocked` returns `entry_submitted: false`; no report within 30 s keeps the terminal and returns `entry_submitted: false`, state `unknown` and an `attention` text pointing at the viewer tab, or naming `hc attach <address>` outside Herdr (Claude Code 2.1.322 shows workspace trust that way); after the user answers, `resume` submits the entry. The name is the label folded to core's `a-z 0-9 - _`. `resume` of a finished terminal is `state_refused`: core cannot restart it in place |
+| `sendInstruction` | `send <t> <text> --if idle` when observed `idle`; plain `send <t> <text>` when observed `done`, because `--if` cannot name `done` | Core itself refuses `blocked` (and, with `--if idle`, any other state) and sends nothing. The `done` case keeps a check-then-act race against a turn starting in between. `--force`, which may answer a dialog, is never sent |
 | `awaitTransition` | `wait <t> [--timeout <seconds>]` | `reason` `exit` is `exited`; `timeout` is `timeout` when the Parent set a bound, otherwise core's own 180-second check-in and the wait continues; a `message` to a waiting Parent also continues |
 | `readOutput` | `read <t> --lines 0` (visible) or `--lines 200` (scrollback) | |
 | `observeState` | `get <t>` | Provenance `reported`; no report, `error` or a finished terminal is `unknown` |
@@ -107,7 +112,8 @@ Admission requires `hc schema --json` to state version 0.1.19 or newer, protocol
 | `closeSession` | `kill <t>` when live, then `rm <t>` | |
 | `reconcile` | `get` per owned handle | |
 | `sendKeys` | `keys <t> <key>` | |
-| `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState`, `attachSession` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
+| `attachSession` | Inside Herdr: `hc attach <t>` in a new unfocused Herdr tab in the Parent's workspace, opened by the Herdr adapter (`herdr tab create ... --no-focus`, `herdr pane run <pane> "hc attach <t> && exit"`) | Core draws nothing, and `hc attach` takes over the terminal that runs it, so it never runs in the Parent's own. A new session gets one viewer before its first status poll, so a startup dialog shows there; the result carries `viewer: { opened }`, and a viewer that fails to open never fails the session. `HC_SESSION` and the `XDG_*` directories are passed to the tab so it reaches the same core. Outside Herdr nothing opens and the refusal names `hc attach <t>` for another terminal; the Herdr provider has no separate viewer, its sessions are already tabs |
+| `subscribeEvents`, `snapshot`, `manageWorktree`, `waitForState` | Not implemented | Degrade as above; core offers `events.subscribe`, and no snapshot |
 | `reportState` | Not applicable | The Host reports OSC 7501 itself |
 
 ## Admission matrix
@@ -116,18 +122,20 @@ A role is admitted per provider, not globally. The close rule is a Kernel fact o
 
 | Role | Needs | `herdr` | `herdr-core` |
 | --- | --- | --- | --- |
-| executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity` | Executor Host at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, which report OSC 7501 natively after a feature probe core answers; admitted only after a live run shows `blocked` for every dialog kind (permission, workspace trust, sign-in). An older Host has no state on core. No Immune-Brain integration is needed; should a Host drop native support, one would live in the herdr-core adapter |
-| authority | create, await with a reliable completion signal, file-protocol verdict | Not admitted (controlled experiment only) | Only if the verifier self-reports `done`; `exited` is not a completion signal |
-| advisory | create, send, read, observe | Not admitted until the dispatch protocol defines it | Same OSC 7501 condition as executor |
+| executor | create, await, observe, stop, close | Admitted for `claude-code`, `pi` and `antigravity`; the sign-in dialog is the one G3 gap (below, #496) | Executor Host at least Claude Code 2.1.295, Pi 1.1.0 or Antigravity CLI 1.4.0, which report OSC 7501 natively after a feature probe core answers; admitted only after a live run shows `blocked` for every dialog kind (permission, workspace trust, sign-in). An older Host has no state on core. No Immune-Brain integration is needed; should a Host drop native support, one would live in the herdr-core adapter |
+| authority | create, await with a reliable completion signal, file-protocol verdict | The authority Review's script may run in a session through `runCommand` when `lanes.review_transport: herdr` (#426 S4): its completion signal is the command's exit status and the verdict stays the script's output and exit files. So does findings verification after a CLI Review (#426 S3, ADR 0039), in a `verify <task_id>` tab; whether it runs at all stays `review_verifier` | Only if the verifier self-reports `done`; `exited` is not a completion signal |
+| advisory | create, send, read (scrollback with `--extract advisory`), observe, stop | Admitted when `lanes.advisory_transport: herdr` (#426 S2; `subagent-dispatch-protocol.md` "Advisory Child In A Supervised Session"); experimental, opt-in | Same OSC 7501 condition as executor |
 
-Measured 2026-11-10 (`docs/reports/issue-426-herdr-provider-probe.md`): no Executor Host is admitted on `herdr-core` yet. Claude Code 2.1.322 shows the workspace trust dialog without reporting any status for 30 s, so `create` is `start_failed`, not `blocked`; Pi 1.5.0 and Antigravity CLI 1.5.3 have not been observed on the permission or sign-in dialog. On `herdr`, all three Hosts pass G1, G2 and G4, and G3 is measured for workspace trust only. Both roles on `herdr-core` therefore stay unadmitted until a live run reports `blocked` for every dialog kind.
+Measured 2026-11-10 to 2026-11-13 (`docs/reports/issue-426-herdr-provider-probe.md`). On `herdr-core` no Executor Host is admitted yet (#495): Claude Code 2.1.322 shows the workspace trust and sign-in dialogs without reporting any status for 30 s, so `create` keeps the terminal and returns `entry_submitted: false` with `unknown` and an `attention` text, never `blocked`; the permission dialog does report `blocked` (`status.kind = permission`). Pi 1.5.2 and Antigravity CLI 1.5.5 have not been observed there on the permission or sign-in dialog. Both roles on `herdr-core` stay unadmitted until a live run reports `blocked` for every dialog kind.
+
+On `herdr`, all three Hosts pass G1, G2 and G4. G3 holds for workspace trust (Claude Code and Antigravity, about 4 s) and for permission (Claude Code 4.3 s, Antigravity reported `blocked` in the v4 run); Pi has neither a permission nor a sign-in dialog. The sign-in dialog is not reported as `blocked` for Claude Code or Antigravity: Herdr reads it as `idle`. The executor admission on `herdr` keeps that one gap rather than withdrawing: `create` then returns `entry_submitted: false` with `unknown` and an `attention` text and never sends the entry into the dialog, so the Parent waits for the user instead of driving a signed-out Host. Closing the gap needs Herdr to report sign-in as `blocked` (#496).
 
 ## Invariants
 
 - The Kernel, the batch runtime, the Host adapters and the `lane-steward` import nothing from `runtime/session/`; only the CLI router does.
 - Only `runtime/session/herdr_provider.ts` spawns `herdr`, and no packaged contract spells a `herdr` command.
 - No session handle or heartbeat is written to the batch record.
-- An instruction reaches only an `idle` session; a dialog is never answered by the Parent.
+- An instruction reaches only an `idle` or `done` session; a dialog is never answered by the Parent.
 - `unknown` is a wake and ordering signal only, never terminal proof.
 
 ## Side Effects

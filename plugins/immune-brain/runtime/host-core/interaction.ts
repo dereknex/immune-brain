@@ -119,6 +119,8 @@ export interface NativeConfirmationInput {
 			parallel_groups: string[][];
 			serialized: Array<{ task_id: string; overlaps_with: string[] }>;
 			final_verification?: string[];
+			/** The Review profile the batch fixes at confirmation (#426 F14). */
+			review_profile?: import("../config/layered_config").ReviewProfile;
 		};
 		re_confirmation_required?: string[];
 		recovery?: string;

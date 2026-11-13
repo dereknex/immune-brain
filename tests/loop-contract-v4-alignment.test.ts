@@ -54,7 +54,10 @@ describe("loop contract v4 alignment", () => {
 		expect(dist).toContain("Authority Review is a separate CLI process, not an Agent call");
 		expect(dist).toContain("run the returned `review_command` from your own shell");
 		expect(dist).toContain("in the background when that shell tool would otherwise time out");
-		expect(dist).toContain("Findings verification keeps its Host subagent dispatch");
+		// ADR 0039: verification after a CLI Review is a CLI process; otherwise it keeps the Host subagent.
+		expect(dist).toContain("Findings verification after a CLI Review is a CLI process too (ADR 0039)");
+		expect(dist).toContain("A verification that follows no CLI Review keeps its Host subagent dispatch through `agent_params`");
+		expect(dist).toContain("On `verification_ready` with a `verification_command`, run it exactly as `review_command`");
 		expect(dist).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
 		expect(dist).not.toContain("The reserved prompt is dispatched verbatim");
 		expect(dist).not.toContain("All internal Agent envelopes use `run_in_background: false`");

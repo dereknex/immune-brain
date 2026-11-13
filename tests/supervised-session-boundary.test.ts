@@ -49,6 +49,7 @@ describe("Supervised Session Port boundary", () => {
 			`${SESSION}/fake_provider.ts`,
 			`${SESSION}/herdr_core_provider.ts`,
 			`${SESSION}/herdr_provider.ts`,
+			`${SESSION}/marked_result.ts`,
 			`${SESSION}/supervised_session_port.ts`,
 		]);
 		const outside = session.flatMap(file => targets(file.path, file.source)
@@ -73,5 +74,19 @@ describe("Supervised Session Port boundary", () => {
 			...files(`${PLUGIN}/skills`, [".md"]),
 		].filter(file => file.path !== PORT_REFERENCE && HERDR_COMMAND.test(file.source)).map(file => file.path);
 		expect(spelled).toEqual([HERDR_ADAPTER]);
+	});
+});
+
+describe("session exec", () => {
+	test("an aborted command is terminated and resolves at once", async () => {
+		const { runCommand } = await import("../plugins/immune-brain/runtime/session/exec");
+		const controller = new AbortController();
+		const started = Date.now();
+		const running = runCommand(process.env, "sleep", ["30"], controller.signal);
+		setTimeout(() => controller.abort(), 100);
+		expect(await running).toMatchObject({ aborted: true, code: null });
+		expect(Date.now() - started).toBeLessThan(3_000);
+		const lingering = Bun.spawnSync(["pgrep", "-x", "-f", "sleep 30"]).stdout.toString().trim();
+		expect(lingering).toBe("");
 	});
 });

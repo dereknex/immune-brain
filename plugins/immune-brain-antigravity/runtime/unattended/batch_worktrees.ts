@@ -1,7 +1,7 @@
 // Runtime-owned worktrees for Parent-branch batches (ADR 0027).
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { observeEnrollmentTaskIntent } from "../kernel/intent";
 import { readBoundActiveSpec } from "../kernel/spec_binding";
 import { readSecureProjectFile } from "../kernel/storage";
@@ -54,6 +54,53 @@ export function createLaneWorktree(root: string, slug: string, taskId: string, h
 		git(root, ["worktree", "add", path, branch]);
 	} catch (error) {
 		throw new Error(`${error instanceof Error ? error.message : String(error)}; unbound Lane reservation retained at ${path}`, { cause: error });
+	}
+	return path;
+}
+
+/** Where a runtime-created Lane for this child lives and which branch it uses. */
+export function plannedLane(root: string, slug: string, taskId: string): { path: string; branch: string } {
+	parentBranchRef(slug);
+	parentBranchRef(taskId);
+	return { path: join(worktreeDirectory(root), slug, taskId), branch: `imm-lane/${slug}/${taskId}` };
+}
+
+/**
+ * Completes or adopts a Lane whose reservation the batch record already holds
+ * (issue #426 F7). The record names the path, branch and base before anything
+ * is created, so an interruption between creating the resources and binding
+ * them is resumed here instead of failing as an unbound collision. Only the
+ * reserved branch at the reserved base, in the reserved worktree, is adopted;
+ * anything else is retained and refused.
+ */
+export function ensureReservedLaneWorktree(root: string, reservation: { path: string; branch: string; base_head: string }): string {
+	const { path, branch, base_head: head } = reservation;
+	const ref = `refs/heads/${branch}`;
+	const refused = (why: string) => new Error(`batch_worktree_failed: ${path} (${ref}) does not match its recorded reservation: ${why}; resource retained`);
+	const listed = git(root, ["worktree", "list", "--porcelain", "-z"]).split("\0");
+	const registered = listed.includes(`worktree ${path}`);
+	if (spawnSync("git", ["-C", root, "symbolic-ref", "--quiet", ref], { encoding: "utf8" }).status === 0) throw refused("its branch is a symbolic ref");
+	const tip = spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8" });
+	const branchTip = tip.status === 0 ? tip.stdout.trim() : null;
+	if (registered) {
+		if (branchTip === null) throw refused("its branch is missing");
+		const checkedOut = spawnSync("git", ["-C", path, "symbolic-ref", "--quiet", "HEAD"], { encoding: "utf8" });
+		const laneHead = spawnSync("git", ["-C", path, "rev-parse", "HEAD"], { encoding: "utf8" });
+		if (checkedOut.stdout.trim() !== ref) throw refused("another branch is checked out");
+		if (laneHead.stdout.trim() !== head || branchTip !== head) throw refused("it moved off its reserved base");
+		return path;
+	}
+	const entry = lstatSync(path, { throwIfNoEntry: false });
+	if (entry && (!entry.isDirectory() || entry.isSymbolicLink() || readdirSync(path).length > 0)) throw refused("its path holds something else");
+	if (branchTip !== null && branchTip !== head) throw refused("its branch moved off the reserved base");
+	mkdirSync(dirname(path), { recursive: true });
+	if (realpathSync(dirname(path)) !== dirname(path)) throw refused("its directory contains a symlink");
+	if (!entry) mkdirSync(path);
+	try {
+		if (branchTip === null) git(root, ["update-ref", "--no-deref", ref, head, "0".repeat(40)]);
+		git(root, ["worktree", "add", path, branch]);
+	} catch (error) {
+		throw new Error(`${error instanceof Error ? error.message : String(error)}; reserved Lane retained at ${path}`, { cause: error });
 	}
 	return path;
 }

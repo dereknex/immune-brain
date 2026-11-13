@@ -44,7 +44,7 @@ export function herdrSubject(extraState: Record<string, unknown> = {}): SessionS
 	} as Record<string, string>;
 	const read = () => JSON.parse(readFileSync(stateFile, "utf8"));
 	const write = (state: unknown) => writeFileSync(stateFile, JSON.stringify(state));
-	const paneOf = (handle: SessionHandle) => handle.split("/").pop()!;
+	const paneOf = (handle: SessionHandle) => decodeURIComponent(handle.split("/")[2]);
 	const update = (handle: SessionHandle, fn: (pane: Record<string, unknown>) => void) => {
 		const state = read();
 		fn(state.panes[paneOf(handle)]);
@@ -62,7 +62,7 @@ export function herdrSubject(extraState: Record<string, unknown> = {}): SessionS
 			submitted: handle => read().panes[paneOf(handle)]?.prompts ?? [],
 			sessionCount: () => Object.keys(read().panes).length,
 			blockNextStart: () => { const state = read(); state.not_ready_next = true; write(state); },
-			foreignHandle: () => encodeHerdrHandle({ workspace: "w-user", tab: "t9", pane: "p9" }),
+			foreignHandle: () => encodeHerdrHandle({ workspace: "w-user", tab: "t9", pane: "p9", token: "guessed" }),
 		},
 		cleanup: () => rmSync(dir, { recursive: true, force: true }),
 	};

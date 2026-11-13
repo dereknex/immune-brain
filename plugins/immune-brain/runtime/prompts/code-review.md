@@ -6,6 +6,8 @@ immutable Git revision and bounded evidence supplied by the Parent. For
 `base_head`, `review_commit`, its single parent, `review_tree`, and
 `manifest_digest`, then inspect source only with read-only Git commands such as
 `git diff <base_head> <review_commit>` and `git show <review_commit>:<path>`.
+Run one Git command at a time from the current working directory, with no `-C`,
+no pipes and no redirection, and `--no-pager` only as the first argument.
 Never read live worktree bytes as evidence, enumerate neighborhood files, or
 infer task ownership from unchanged paths. Read an unchanged path only when an
 acceptance assertion, changed caller, or same state machine directly requires

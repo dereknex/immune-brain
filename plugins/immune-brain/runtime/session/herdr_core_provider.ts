@@ -17,7 +17,8 @@
 import { randomBytes } from "node:crypto";
 import { parseJson, parseVersion, pick, runCommand, versionAtLeast, type CommandExec, type ExecResult } from "./exec";
 import {
-	closeProofRefusal,
+	closeRecordRefusal,
+	instructionRefusal,
 	isSessionState,
 	refuse,
 	resumeRefusal,
@@ -29,7 +30,9 @@ import {
 	type Refusal,
 	type SessionHandle,
 	type SessionState,
+	type SessionViewer,
 	type SupervisedSessionPort,
+	type ViewerResult,
 } from "./supervised_session_port";
 
 export const HERDR_CORE_MIN_VERSION: [number, number, number] = [0, 1, 19];
@@ -71,7 +74,12 @@ export interface HerdrCoreProviderOptions {
 	readyTimeoutMs?: number;
 	pollMs?: number;
 	sleep?: (ms: number) => Promise<void>;
+	/** Opens a tab the user can watch a session in; absent outside Herdr. */
+	viewer?: SessionViewer;
 }
+
+/** Variables that choose which core `hc` talks to; a viewer tab needs the Parent's. */
+export const HC_SELECTION_ENV = ["HC_SESSION", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_CONFIG_HOME"] as const;
 
 interface CoreIds { address: string; token: string }
 
@@ -120,14 +128,14 @@ function newToken(): string {
 }
 
 export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions): SupervisedSessionPort {
-	const exec: CommandExec = options.exec ?? ((command, args) => runCommand(options.env, command, args));
+	const exec: CommandExec = options.exec ?? ((command, args, signal) => runCommand(options.env, command, args, signal));
 	const readyTimeoutMs = options.readyTimeoutMs ?? HERDR_CORE_READY_TIMEOUT_MS;
 	const pollMs = options.pollMs ?? 250;
 	const sleep = options.sleep ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
 	const isRefusal = (value: unknown): value is Refusal => typeof value === "object" && value !== null && (value as Refusal).ok === false;
 
-	const hc = async (args: string[]): Promise<ExecResult | Refusal> => {
-		const result = await exec("hc", args);
+	const hc = async (args: string[], signal?: AbortSignal): Promise<ExecResult | Refusal> => {
+		const result = await exec("hc", args, signal);
 		if (result.missing) return refuse("provider_unavailable", "the hc executable is not on PATH");
 		return result;
 	};
@@ -160,6 +168,14 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 		const json = parseJson(result.stdout);
 		if (pick(json, ["started"]) === true) return { state: "working", provenance: "reported" };
 		return coreState(pick(json, ["status"]));
+	};
+
+	const selection = Object.fromEntries(HC_SELECTION_ENV.flatMap(key => (options.env[key] ? [[key, options.env[key]!]] : [])));
+	/** Core draws nothing; `hc attach` would take over the caller's own terminal, so it runs in a new unfocused tab. */
+	const openViewer = async (address: string, name: string, cwd: string): Promise<ViewerResult> => {
+		if (!options.viewer) return { opened: false, reason: `not inside Herdr; watch it with \`hc attach ${address}\` in another terminal` };
+		const opened = await options.viewer({ cwd, label: `${name} (hc ${address})`, argv: ["hc", "attach", address], env: selection });
+		return opened.ok ? { opened: true } : { opened: false, reason: opened.reason };
 	};
 
 	const hostVersionRefusal = async (host: ExecutorHostKind): Promise<Refusal | null> => {
@@ -204,6 +220,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (input.resume !== undefined) {
 				const found = await owned(input.resume);
 				if (isRefusal(found)) return found;
+				// Core cannot restart a finished terminal in place; the caller creates a new session.
+				if (pick(found.terminal, ["state"]) === "finished") {
+					return refuse("state_refused", "the session's terminal finished; core cannot restart it in place; nothing was sent; create a new session", input.resume);
+				}
 				const current = observed(found.terminal);
 				const refused = resumeRefusal(input.resume, current);
 				if (refused) return refused;
@@ -214,12 +234,18 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const tooOld = await hostVersionRefusal(input.host);
 			if (tooOld) return tooOld;
 			const token = newToken();
-			const started = await hc(HC_CLI.run(herdrCoreName(input.label), input.cwd, token, [HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs]));
+			// `hc run` takes no environment; `env` sets it for the Host alone.
+			const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
+			const argv = [...(envPrefix.length > 0 ? ["env", ...envPrefix] : []), HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
+			const started = await hc(HC_CLI.run(herdrCoreName(input.label), input.cwd, token, argv));
 			if (isRefusal(started)) return started;
 			if (started.code !== 0) return refuse("start_failed", `hc run failed: ${failure(started)}`);
 			const address = pick(parseJson(started.stdout), ["address"]);
 			if (typeof address !== "string" || !address) return refuse("start_failed", "hc run returned no address");
 			const handle = encodeHerdrCoreHandle({ address, token });
+			// Open the viewer before anything can need the user: a startup dialog shows there.
+			const viewer = options.viewer ? await openViewer(address, herdrCoreName(input.label), input.cwd) : undefined;
+			const shown = viewer ? { viewer } : {};
 			// Wait for the Host's first status report; before it, core cannot tell idle from a dialog.
 			const deadline = Date.now() + readyTimeoutMs;
 			for (;;) {
@@ -227,14 +253,21 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 				if (isRefusal(found)) return { ...found, handle };
 				if (pick(found.terminal, ["state"]) === "finished") return refuse("start_failed", "the Executor Host exited before it reported a status", handle);
 				const current = observed(found.terminal);
-				if (current.state === "blocked") return { ok: true, handle, entry_submitted: false, ...current };
+				if (current.state === "blocked") return { ok: true, handle, entry_submitted: false, ...current, ...shown };
 				if (current.state === "idle") {
 					const after = await send(handle, address, input.entry, "idle");
 					if (isRefusal(after)) return after;
-					return { ok: true, handle, entry_submitted: true, ...after };
+					return { ok: true, handle, entry_submitted: true, ...after, ...shown };
 				}
 				if (Date.now() >= deadline) {
-					return refuse("start_failed", `the Executor Host reported no idle status within ${readyTimeoutMs} ms; the entry was not submitted`, handle);
+					// Silence is observed, not a dialog guessed: Claude Code 2.1.322 shows its
+					// workspace trust dialog without any OSC 7501 report. Keep the terminal so
+					// the user can look and answer; `--resume` then submits the entry.
+					return {
+						ok: true, handle, entry_submitted: false, state: "unknown", provenance: "none",
+						attention: `The Executor Host reported no status within ${readyTimeoutMs} ms and the entry was not submitted. It may be waiting on a startup dialog (such as workspace trust) or report no status at all; look ${viewer?.opened ? "in its viewer tab" : `with \`hc attach ${address}\` in another terminal`}, answer it there, then resume this session.`,
+						...shown,
+					};
 				}
 				await sleep(pollMs);
 			}
@@ -243,8 +276,12 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (!text.trim()) return refuse("invalid_input", "instruction text is empty", handle);
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			// `--if idle` makes core itself refuse any other state, with nothing sent.
-			const after = await send(handle, found.ids.address, text, "idle");
+			const current = observed(found.terminal);
+			const refused = instructionRefusal(handle, current);
+			if (refused) return refused;
+			// `--if idle` makes core itself refuse any other state. `--if` cannot name
+			// `done`, so a done session is sent to plainly; core still refuses `blocked`.
+			const after = await send(handle, found.ids.address, text, current.state === "idle" ? "idle" : undefined);
 			if (isRefusal(after)) return after;
 			return { ok: true, ...after };
 		},
@@ -253,8 +290,9 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (isRefusal(found)) return found;
 			const bounded = waitOptions?.timeoutMs !== undefined && waitOptions.timeoutMs > 0;
 			for (;;) {
-				const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions!.timeoutMs! / 1000 : undefined));
+				const result = await hc(HC_CLI.wait(found.ids.address, bounded ? waitOptions!.timeoutMs! / 1000 : undefined), waitOptions?.signal);
 				if (isRefusal(result)) return result;
+				if (result.aborted) return { ok: true, transition: "timeout", state: "unknown", provenance: "none" };
 				if (result.code !== 0) {
 					if (hcErrorKind(result) === "finished") return { ok: true, transition: "exited", state: "unknown", provenance: "none" };
 					return refuse("provider_error", `hc wait failed: ${failure(result)}`, handle);
@@ -272,10 +310,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 				return { ok: true, transition: "changed", ...coreState(pick(json, ["status"])) };
 			}
 		},
-		async readOutput(handle, source) {
+		async readOutput(handle, source, readOptions) {
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : SCROLLBACK_LINES));
+			const result = await hc(HC_CLI.read(found.ids.address, source === "visible" ? 0 : readOptions?.lines ?? SCROLLBACK_LINES));
 			if (isRefusal(result)) return result;
 			if (result.code !== 0) return refuse("provider_error", `hc read failed: ${failure(result)}`, handle);
 			const text = pick(parseJson(result.stdout), ["text"]);
@@ -285,6 +323,16 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
 			return { ok: true, ...observed(found.terminal) };
+		},
+		/** Opens another viewer tab, for instance after the user closed the first one. */
+		async attachSession(handle) {
+			const found = await owned(handle);
+			if (isRefusal(found)) return found;
+			if (pick(found.terminal, ["state"]) === "finished") return refuse("state_refused", "the session's terminal finished; there is nothing to watch", handle);
+			const name = String(pick(found.terminal, ["name"]) ?? "lane");
+			const cwd = String(pick(found.terminal, ["cwd"]) ?? options.env.PWD ?? process.cwd());
+			const viewer = await openViewer(found.ids.address, name, cwd);
+			return viewer.opened ? { ok: true } : refuse("provider_unavailable", viewer.reason, handle);
 		},
 		async stopSession(handle) {
 			const found = await owned(handle);
@@ -297,10 +345,10 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			if (killed.code !== 0 && hcErrorKind(killed) !== "finished") return refuse("provider_error", `hc kill failed: ${failure(killed)}`, handle);
 			return { ok: true };
 		},
-		async closeSession(handle, proof) {
+		async closeSession(handle, record) {
 			const found = await owned(handle);
 			if (isRefusal(found)) return found;
-			const unproven = closeProofRefusal(handle, proof);
+			const unproven = closeRecordRefusal(handle, record);
 			if (unproven) return unproven;
 			if (pick(found.terminal, ["state"]) !== "finished") {
 				const killed = await hc(HC_CLI.kill(found.ids.address));

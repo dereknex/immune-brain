@@ -11,7 +11,7 @@ import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBa
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
 import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
-import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
+import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorChoice, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
@@ -50,6 +50,8 @@ export async function completedParentReport(root: string, initiativeSlug: string
 		children: batch.children, commits: batch.commits, final_verification: batch.final_verification_result,
 		...(sync ? { tracker: sync } : {}),
 		...(retained.length ? { lane_refusals: retained } : {}),
+		// The Parent closes Lane tabs only from this list (#426 F18).
+		...(isLaneBatchRecord(batch) && batch.session_closes?.length ? { session_closes: batch.session_closes } : {}),
 		reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
 		next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
 		created_at: new Date().toISOString(), ...(isLaneBatchRecord(batch) ? { max_parallel: batch.max_parallel, handoffs: [] } : {}),
@@ -150,6 +152,12 @@ export interface StartBatchInput {
 	 * the recorded list in either execution mode.
 	 */
 	final_verification?: string[];
+	/**
+	 * Lane mode: the Review profile resolved from the request-selected Lane
+	 * profile, recorded when a new batch starts; a resume keeps the recorded one
+	 * (#426 F14).
+	 */
+	review_profile?: import("../config/layered_config").ReviewProfile;
 	/** Bounds each final command; absent, the verifier's own default applies. Not a Host tool parameter. */
 	final_verification_timeout_ms?: number;
 	/**
@@ -158,6 +166,7 @@ export interface StartBatchInput {
 	 * never sent to a blocked or working session.
 	 */
 	lane_instruction?: import("./batch_lanes").LaneInstructionRequest;
+	lane_session_close?: import("./batch_lanes").LaneSessionCloseRequest;
 }
 
 /** The one tracker effect a lane batch may cause: closing an integrated child's Issue. */
@@ -210,15 +219,29 @@ function afterExecutorExit(advanced: BatchLaneRunReport, observed: BatchLaneRunR
 		lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
 }
 
+/**
+ * The Executor of a supervised Lane generation (#426 F16). `preferences` are the batch's recorded Executor
+ * preferences, else the request's: the Parent resolved them from the request-selected Lane profile, so when they
+ * name an Executor Host `lanes.active` is not consulted and its model or effort is not reported as `not_applied`.
+ * Null when the `lanes` section is invalid.
+ */
+export function laneExecutorChoice(root: string, preferences: ExecutorPreferences | undefined, parentHost: ExecutorHost): ExecutorChoice | null {
+	const config = resolveConfig(root);
+	if (!config.lanes.valid) return null;
+	const project = config.lanes.project_defaults.value as ExecutorPreferences;
+	if (preferences?.executor_host) return chooseExecutor([preferences, project], parentHost);
+	const active = config.lanes.active.value;
+	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+	return chooseExecutor([preferences ?? {}, profile, project], parentHost);
+}
+
 async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {
 	const options = input.supervision!;
 	const child = report.children.find(c => c.task_id === input.initiative_slug && c.lane);
 	if (!child?.lane) return report;
-	const config = resolveConfig(input.root);
-	if (!config.lanes.valid) return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-	const active = config.lanes.active.value;
-	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-	const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
+	const recorded = readAnyBatchRunState(input.root, input.batch_id);
+	const choice = laneExecutorChoice(input.root, (recorded && isLaneBatchRecord(recorded) ? recorded.executor_preferences : undefined) ?? options.request, options.parentHost);
+	if (!choice) return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
 	const store = laneGenerationStore(input.root, input.batch_id);
 	const observation = await superviseLane(options.supervisor, {
 		key: `${input.root}\0${input.batch_id}`, repository: input.root, lanePath: child.lane.path, taskId: child.task_id,
@@ -239,11 +262,18 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	} else if (observation.state === "unavailable" || observation.state === "unobservable") {
 		report = { ...report, reason: batchReason(observation.state === "unavailable" ? "lane_executor_unavailable" : "lane_executor_unobservable").reason };
 	}
+	// #426 D5: a Pi Executor outside Herdr is handed to the user. The child stays enrolled, the executor
+	// handoff (Lane path and task_id) stays in the report, and no lane_refusals entry is added.
+	if (observation.reason === "lane_executor_requires_tui") {
+		const tui = batchReason("lane_executor_requires_tui");
+		return { ...report, reason: tui.reason, next_action: tui.recovery_action.replaceAll("<task_id>", child.task_id),
+			lane_supervision: { ...observation, not_applied: choice.not_applied } } as unknown as BatchLaneRunReport;
+	}
 	// Spec drive-always-lanes D11: an Executor that stopped on a literal-user decision is answered at this Host's native gate.
 	let decision: LaneDecisionFacts | null = null;
 	if (observation.state === "exited" && !observation.reason) {
 		const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-		if (read.error === null) decision = laneDecisionFacts(child.task_id, read.projection);
+		if (read.error === null) decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
 	}
 	// Spec drive-always-lanes D7: a Lane whose Executor did not exit normally under supervision is kept and said so.
 	const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
@@ -251,7 +281,8 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	return { ...report, handoffs: report.handoffs.filter(handoff => handoff.role !== "executor"),
 		...(kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {}),
 		...(decision ? { lane_decision_required: decision } : {}),
-		next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` :
+		next_action: decision?.requested ? `The Lane Executor asks for a breaking intent revision (record ${decision.record_revision}). Call approve_breaking_intent_revision for ${decision.task_id} in the current Host with record_revision ${decision.record_revision} and lane_decision_required.requested.next_intent as next_intent; it opens the native gate and continues the Lane.` :
+			decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` :
 			observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
 			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
 			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
@@ -294,7 +325,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			if (child?.lane) {
 				const read = await input.kernel.projectTask(child.lane.path, child.task_id);
 				if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
-				const decision = laneDecisionFacts(child.task_id, read.projection);
+				const decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
 				if (decision) return { ...report, lane_decision_required: decision,
 					handoffs: report.handoffs.filter(h => h.role !== "executor"),
 					next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.` } as unknown as BatchRunReport;

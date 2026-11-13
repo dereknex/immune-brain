@@ -167,9 +167,13 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    Parent cannot issue its own QA or Review pass. A `review_preparation_failed`
    result with `review_profile_required` means no `lanes.review_host` resolves:
    set it in the active user lane profile or in `.imm/config.json`, then call
-   `advance_assurance`; QA settlement is retained. On `verification_ready`,
-   invoke its exact `agent_params` as one foreground verifier, then call
-   `submit_verification` without a result to use the Host-observed receipt.
+   `advance_assurance`; QA settlement is retained. On `verification_ready`
+   with a `verification_command`, run it exactly as `review_command` (your own
+   shell, in the background when the shell tool would otherwise time out), then
+   call `submit_verification` without a result; a `verification result pending`
+   answer means it has not exited yet. Without one, invoke its exact
+   `agent_params` as one foreground verifier, then call `submit_verification`
+   without a result to use the Host-observed receipt.
    Follow a returned `review_ready` or `awaiting_user` through the same loop.
 4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
    material and critical work additionally require fresh independent Review.
@@ -282,7 +286,13 @@ is recorded as a separate follow-up rather than resolved here.
   with delegation fields remain readable and retireable (ADR 0028).
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
-  enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
+  enrolled intent sidecars or ask for chat pre-confirmation. In a headless Lane
+  Executor session the call opens no gate and returns
+  `lane_decision_requested`: the request is left for the Parent, so end the
+  session without retrying. A later generation that finds the revision already
+  committed (`status` `projection.intent_revision` above the claim's enrolled
+  revision) continues the Execution Loop; resubmitting it returns
+  `intent_revision_committed` with the user's confirmation. A breaking revision
   is used when the authority subject changes, including acceptance or a bound
   Spec change; scope-only changes keeping the bound Spec path are compatible.
   A defect inside the existing goal and acceptance is rework under the
@@ -382,6 +392,12 @@ hash; the skill compares it with its own and answers
 `REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
 install carries different rules. The process writes its output under a temporary
 name and its exit status last, so a present exit file marks a complete output.
+With `lanes.review_transport: herdr` the returned `review_command` instead runs
+that same script through `imm-session run --provider herdr` in a new Herdr tab
+the user can watch (#426 S4); it still exits once the script has, and the
+output and exit files remain the only result. Outside Herdr that setting makes
+Review preparation fail with `review_transport_unavailable` and its recovery
+action; it never falls back to a hidden process.
 Releasing the reservation removes the packet, the script and the output with the
 evidence directory; the manifest bytes remain unchanged. A finished review
 releases its reservation without a Review round when the process exits non-zero
@@ -391,9 +407,15 @@ paths), or when the reviewer reports a contract mismatch. Restore the listed
 paths to the reviewed state, then call `advance_assurance`. A process that has
 not exited is not an error: `submit_review` retains the reservation. A blocked
 `submit_review` is recovered only through its returned `recovery_action`.
-Findings verification keeps its Host subagent dispatch: `verification_ready`
-returns the verifier's `agent_params`, submitted through
-`submit_verification` as the Host observes it.
+Findings verification after a CLI Review is a CLI process too (ADR 0039):
+`verification_ready` returns `verification_command`, which runs one fresh,
+read-only print session of the reviewer Host on the selected verifier model
+(`lanes.review_verifier_model` when set, so it differs from the reviewer's) and
+writes its output and exit status the same way. `submit_verification` reads
+those bytes twice and binds them as the receipt; a failed or silent verifier
+keeps every finding. With `lanes.review_transport: herdr` it runs in a Herdr
+tab like the Review (#426 S3). A verification that follows no CLI Review keeps
+its Host subagent dispatch through `agent_params`.
 
 Role dispatches follow the user's interaction language: include
 `"interaction_language"` in the `dispatch_role` or routed role context with

@@ -144,6 +144,7 @@ Seams: S1 `tests/layering-rules-contract.test.ts`, `tests/runtime-layering-bound
 ## User scenarios
 
 - **BR-SCN-1** (Slice S2, `automated` → `host-core-verifier-observation` AC3). Actor: Antigravity developer. Given an enrolled task whose Review returned blocking findings, with the review-verifier dispatched through `invoke_subagent`. When the verifier subagent finishes and the developer calls `submit_verification`. Then the tool result reports an accepted verification receipt instead of "reserved foreground Agent was not observed".
+  - Superseded in part by [ADR 0039](../adr/0039-verification-cli-stage.md) (#426 S3): a verification that follows a CLI Review is now a CLI process, so the `invoke_subagent` verifier remains only for a verification that follows no CLI Review (ADR 0039 D6). The hook receipt path stays covered at the Host level in `tests/antigravity-assurance-conformance.test.ts` ("verifier via real hook dispatch").
 
 ## Brainstorm Trace
 

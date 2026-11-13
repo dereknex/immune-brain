@@ -4,6 +4,9 @@ status: accepted
 
 # Authority Review as a Review-Profile CLI Stage
 
+**Amended:** Decision 9 by [ADR 0039](0039-verification-cli-stage.md): findings
+verification after a CLI Review is now a CLI process as well.
+
 **Status update:** this ADR partially supersedes
 [ADR 0006](0006-unattended-review-dispatch-authority.md) (its rejected
 alternative "the runtime invokes the reviewer model" is not the shape here, but

@@ -287,7 +287,13 @@ describe("single-task Lane contract text (Spec drive-always-lanes S6)", () => {
 			"`approve_breaking_intent_revision`",
 			"rebinds the single-task batch's approved identity",
 			"`lane_decision_stale`",
+			"A Pi Executor outside Herdr is never spawned",
+			"reports reason `lane_executor_requires_tui`",
+			"hands the Lane to the user under the no-supervised-session rule",
+			"`/skill:drive <task_id>` in interactive pi",
 		]) expect(lane).toContain(claim);
+		// #426 F9: Pi never runs as a non-interactive Executor, so the contract must not name one.
+		expect(lane).not.toContain("pi --print");
 		const supervision = flatText(section(BATCH_CONTRACT, "#### Lane Executor Supervision"));
 		expect(supervision).toContain("single-task Lanes recorded with `executor_mode: \"interactive\"` inside Herdr");
 		const herdr = flatText(section(BATCH_CONTRACT, "##### Herdr Lane Tabs"));
@@ -558,9 +564,15 @@ describe("unattended batch contract text", () => {
 			// final verification commands, and coordinator instructions (retro #195, #200, #201).
 			"restores",
 			"interventions",
+			// Lane sessions the coordinator closed under the Executor close rule (#426 S1).
+			"session_closes",
 			"final_verification",
 			// The recorded verification outcome and the bounded Parent repair tasks it produced.
 			"final_verification_result",
+			// #426 F14: the Review Host/model/effort the batch request selected, read by its Lane Review.
+			"review_profile",
+			// #426 F16: the Executor Host/model/effort the batch request selected, read by every Lane generation.
+			"executor_preferences",
 			"repair_tasks",
 			// ADR 0028: legacy delegation evidence stays readable, with no current grant.
 			"revision_delegation",

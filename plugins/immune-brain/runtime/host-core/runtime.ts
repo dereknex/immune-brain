@@ -16,7 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConfig } from "../config/layered_config";
+import { resolveConfig, type ReviewProfile } from "../config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences, type ExecutorHost } from "../unattended/lane_supervisor";
 import type { AssuranceHostPort } from "../assurance/host_port";
 
@@ -93,8 +93,9 @@ import {
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
+import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, writeLaneDecisionRequest } from "../unattended/lane_decision_request";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer } from "../unattended/batch_lanes";
+import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
 import { retireStaleBatch } from "../unattended/batch_disposition";
 import { runEntryManifest, type RunEntryManifest } from "../unattended/run_entry_manifest";
 import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../unattended/batch_state";
@@ -718,6 +719,8 @@ export class HostRuntime {
 	 * Executor generation starts. Any other task keeps the in-place path.
 	 */
 	async authorize(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
+		if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
+			return this.requestLaneDecision(taskId, extra);
 		const relayed = ["request_authorization", "approve_breaking_intent_revision", "stop"].includes(operation) && !this.options.laneRoot
 			? findLaneRelayTarget(this.cwd, taskId) : null;
 		if (!relayed) return this.authorizeInRoot(taskId, operation, meta, extra);
@@ -738,6 +741,37 @@ export class HostRuntime {
 		} finally {
 			await laneRuntime.shutdown();
 		}
+	}
+
+	/**
+	 * #426 F19: a headless Lane Executor has no native gate, so its Host cancels one at once and the Kernel
+	 * records nothing. The revision is checked as the gate would check it, then left in the Lane as a request
+	 * the Parent relays to the literal user. Nothing is staged, written to the sidecar or granted.
+	 */
+	private async requestLaneDecision(taskId: string, extra: Record<string, unknown>) {
+		const nextIntent = extra.next_intent ? parseProjectTaskIntent(this.cwd, extra.next_intent) : undefined;
+		if (!nextIntent) throw new Error("approve_breaking_intent_revision requires next_intent");
+		const prior = await readTaskIntentForRecord(this.cwd, taskId);
+		if (classifyIntentRevision(prior.intent, nextIntent) !== "breaking") {
+			// A later generation resubmitting the revision the Parent already committed is told so, not refused:
+			// the record holds the exact intent and the literal user's approval; the claim keeps the enrolled revision.
+			const record = readTaskRecordRaw(this.cwd, taskId).record;
+			const approval = record?.intent_ref.content_hash === canonicalIntentHash(nextIntent)
+				? [...record.history].reverse().find(event => event.type === "approve_breaking_intent_revision" && event.authority?.authority_kind === "user")
+				: undefined;
+			if (approval)
+				return { state: "intent_revision_committed", task_id: taskId, intent_revision: nextIntent.revision,
+					confirmation_ref: approval.authority!.confirmation_ref, approved_at: approval.at,
+					next: "The literal user already approved this revision at the Parent's gate. status projection.intent_revision is current; the claim keeps the enrolled revision. Do not request it again; continue the Execution Loop from status." };
+			throw new Error("approve_breaking_intent_revision requires a breaking revision");
+		}
+		const projection = await this.project(taskId);
+		if (projection.error || !projection.claim) throw new Error(projection.error ?? "no active backend claim");
+		if (projection.projection.lifecycle !== "active") throw new Error(`cannot request a revision while lifecycle is ${projection.projection.lifecycle}`);
+		const request = writeLaneDecisionRequest(this.cwd, { task_id: taskId, operation: "approve_breaking_intent_revision",
+			record_revision: projection.projection.record_revision, next_intent: nextIntent, requested_at: new Date().toISOString() });
+		return { state: "lane_decision_requested", task_id: taskId, record_revision: request.record_revision,
+			next: "This headless Lane session has no native gate. The Parent shows the revision to the literal user at its own gate. End this session now; do not retry, edit the intent or work around the revision." };
 	}
 
 	private async authorizeInRoot(taskId: string, operation: string, meta: ToolMeta, extra: Record<string, unknown> = {}) {
@@ -1002,7 +1036,7 @@ export class HostRuntime {
 	async startUnattendedBatch(
 		initiativeSlug: string,
 		meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest } = {},
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest } = {},
 	): Promise<HostBatchStartResult> {
 		if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 		return this.startPreparedBatch(initiativeSlug, meta, options);
@@ -1010,7 +1044,7 @@ export class HostRuntime {
 
 	private async startPreparedBatch(
 		initiativeSlug: string, meta: ToolMeta,
-		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; lane_instruction?: LaneInstructionRequest; confirmationPreview?: boolean },
+		options: { plan_source?: "single_task"; stop?: boolean; executor?: ExecutorPreferences; reuseOnly?: boolean; max_parallel?: number; lane_offers?: LaneOffer[]; final_verification?: string[]; review_profile?: ReviewProfile; lane_instruction?: LaneInstructionRequest; lane_session_close?: LaneSessionCloseRequest; confirmationPreview?: boolean },
 	): Promise<HostBatchStartResult> {
 		throwIfCancelled(meta.signal);
 		const reuseOnly = options.reuseOnly === true;
@@ -1214,6 +1248,7 @@ export class HostRuntime {
 											parallel_groups: facts.parallel_groups,
 											serialized: facts.scope_conflicts,
 											...(options.final_verification ? { final_verification: options.final_verification } : {}),
+											...(options.review_profile ? { review_profile: options.review_profile } : {}),
 										},
 									}
 								: {}),
@@ -1339,11 +1374,13 @@ export class HostRuntime {
 			kernel: kernelPort,
 			git: this.batchGit,
 			...(options.final_verification ? { final_verification: options.final_verification } : {}),
+			...(options.review_profile ? { review_profile: options.review_profile } : {}),
 			...(options.max_parallel !== undefined
 				? {
 						max_parallel: options.max_parallel,
 						...(options.plan_source ? {} : { tracker: this.batchTracker ?? createBatchTrackerPort(this.cwd, initiativeSlug) }),
 						...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
+						...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
 					}
 				: {}),
 			...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),

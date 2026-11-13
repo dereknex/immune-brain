@@ -1,0 +1,66 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "issue-426-review-git-and-pi-tui",
+  "owner": "user",
+  "goal": "Implement docs/specs/issue-426-review-git-and-pi-tui.spec.md: claude-code reviewers and verifiers can run the read-only git forms models emit (#426 F10); a Pi Executor outside Herdr is handed to the user with lane_executor_requires_tui instead of a print-mode run that cannot settle (#426 F9); the #426 report and validation plan record F8 as a test configuration error.",
+  "acceptance": [
+    {
+      "id": "RGT-A1",
+      "assertion": "Per D1 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: for the claude-code profile, reviewArguments and verificationArguments each pass exactly twelve --allowedTools rules, the six Bash(git <sub>:*) rules for show, diff, log, cat-file, rev-parse and ls-tree plus the same six as Bash(git --no-pager <sub>:*), and both lists are equal. Negative cases pinned in tests: no rule starts with Bash(git -C, no rule names a non-git command, no rule is a bare Bash, --tools stays Read,Grep,Glob,Bash and --permission-mode stays dontAsk. The pi and antigravity reviewer and verifier argv are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RGT-A2",
+      "assertion": "Per D2 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: the authority-review skill, the code-review role prompt and the review-verifier role prompt each instruct the role to run one git command at a time from the current working directory, without -C, pipes or redirection, with --no-pager only as the first argument; a test fails when any of the three loses that instruction. The dist/role-prompts mirrors match their runtime/prompts sources, and any test that pins the review contract hash is updated to the new value.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/cli-review-dispatch.test.ts tests/role-prompt-bridge.test.ts && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RGT-A3",
+      "assertion": "Per D4 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: superviseLane with an Executor choice of host pi on an active Lane that has no open user decision returns state unavailable, generation null, exit null and reason lane_executor_requires_tui, without calling LaneSupervisor.run, starting a process or writing the generation store (the test's supervisor double fails if run is called). Controls: the same call with host claude-code still starts a generation; with host pi on a Lane whose lifecycle is not active, or that awaits the user, it returns the existing exited observation with no reason.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/lane-supervisor.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RGT-A4",
+      "assertion": "Per D5 of docs/specs/issue-426-review-git-and-pi-tui.spec.md (BR-SCN-2): a single-task start_unattended_batch under runtime supervision (not interactive) whose resolved executor host is pi returns reason lane_executor_requires_tui, keeps the child enrolled rather than parked to needs_human, keeps the executor handoff with the Lane path and task_id, adds no lane_refusals entry, and its next_action tells the user to run /skill:drive <task_id> in interactive pi in that Lane and call start_unattended_batch again. Re-entry after the Lane's run is no longer active advances the batch without starting a process. The decision relay returns the same reason in lane_relay.lane_supervision. BATCH_REASONS includes lane_executor_requires_tui as blocked with that recovery action.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-batch.test.ts\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"tests/unattended-batch-run.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RGT-A5",
+      "assertion": "Per D3 and D6 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: dist/drive-batch.md no longer says the runtime spawns pi --print outside Herdr and states that a Pi Executor outside Herdr is reported with lane_executor_requires_tui and handed to the user under the no-supervised-session rule, pinned by a contract test; the generated Claude bundle and the antigravity artifact match their sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RGT-A6",
+      "assertion": "Per D7 of docs/specs/issue-426-review-git-and-pi-tui.spec.md: docs/reports/issue-426-herdr-provider-probe.md marks F8 as a non-defect (test configuration error) citing ADR 0037 and layered_config.ts, and records F9 and F10 with their root cause and fix (lane_executor_requires_tui, the --no-pager allow-list), keeping the existing uncommitted edits; section 7 of docs/reports/issue-426-local-validation-plan.md selects the reviewer through an active user lane profile (lanes.profiles and lanes.active) or the request instead of telling the tester to put the review keys into .imm/config.json.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"r=docs/reports/issue-426-herdr-provider-probe.md; p=docs/reports/issue-426-local-validation-plan.md; s=$(sed -n '/^## 7\\\\./,/^## 8\\\\./p' \\\"$p\\\"); grep -q lane_executor_requires_tui \\\"$r\\\" && grep -q -- '--no-pager' \\\"$r\\\" && grep -q 'ADR 0037' \\\"$r\\\" && printf '%s' \\\"$s\\\" | grep -q 'lanes.profiles' && ! printf '%s' \\\"$s\\\" | grep -q '改为下面的内容并提交'\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/issue-426-review-git-and-pi-tui.md",
+    "docs/plans/issue-426-review-git-and-pi-tui.intent.json",
+    "docs/reports/issue-426-herdr-provider-probe.md",
+    "docs/reports/issue-426-local-validation-plan.md",
+    "docs/specs/issue-426-review-git-and-pi-tui.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/dist/role-prompts/review-verifier.md",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/review-verifier.md",
+    "plugins/immune-brain/runtime/unattended/batch_reasons.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "plugins/immune-brain/runtime/unattended/lane_supervisor.ts",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/lane-supervisor.test.ts",
+    "tests/single-task-lane-batch.test.ts",
+    "tests/single-task-lane-decision.test.ts",
+    "tests/unattended-batch-run.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "scope_size_reason": "Two small fixes that close the #426 third-round defects together: they share the report rows, the release changeset and one live re-run, and only the reviewer allow-list changes a trust boundary. The count is high because each side carries its prompt mirrors, reason table and three focused test files.",
+  "risk": "material",
+  "revision": 1
+}
