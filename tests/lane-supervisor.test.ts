@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseExecutor, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { chooseExecutor, executorArguments, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 
 const dirs: string[] = [];
 const oldPath = process.env.PATH;
@@ -22,6 +22,10 @@ describe("Lane Executor supervision", () => {
 		expect(chooseExecutor([{ executor_model: "wrong" }, { executor_host: "pi", executor_effort: "high" },
 			{ executor_host: "claude-code", executor_model: "other" }], "claude-code"))
 			.toEqual({ host: "pi", effort: "high", not_applied: ["executor_model"] });
+	});
+	it("places antigravity --print immediately before the prompt so CLI flags precede it", () => {
+		expect(executorArguments({ host: "antigravity", model: "Gemini 3.8 Flash (Low)", effort: "high", not_applied: [] }, "/plugin", "task-1"))
+			.toEqual(["--dangerously-skip-permissions", "--model", "Gemini 3.8 Flash (Low)", "--effort", "high", "--print", "/drive task-1"]);
 	});
 	it("refuses a missing Executor without reserving a generation", async () => {
 		const { dir, store } = fixture();
@@ -126,7 +130,7 @@ describe("Lane Executor supervision", () => {
 				await new Promise(resolve => setTimeout(resolve, 10));
 			const argv = readFileSync(join(dir, "args.txt"), "utf8").trim().split("\n");
 			const expectedArgs = host === "antigravity"
-				? [dir, "--print", "--dangerously-skip-permissions", "--model", "model", "--effort", "high", "/drive task"]
+				? [dir, "--dangerously-skip-permissions", "--model", "model", "--effort", "high", "--print", "/drive task"]
 				: [dir, "--print", ...(host === "claude-code" ? ["--plugin-dir", "/plugin"] : []), "--model", "model",
 					host === "claude-code" ? "--effort" : "--thinking", "high", `${host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} task`];
 			expect(argv).toEqual(expectedArgs);

@@ -49,23 +49,23 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 	ports: {
 		P1: {
 			port: "P1",
-			level: "conformance-only",
-			evidence: "Conformance-tested MCP tools and Hook handlers; live certification pending S8 (#469)",
+			level: "certified",
+			evidence: "Live-certified on agy 1.5.8: MCP tools, PreInvocation/PreToolUse/PostToolUse/Stop hooks, and plugin validation pass (#469)",
 		},
 		P2: {
 			port: "P2",
 			level: "conformance-only",
-			evidence: "Conformance-tested native confirmation grant files and MCP elicitation; live certification pending S8 (#469)",
+			evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)",
 		},
 		P3: {
 			port: "P3",
-			level: "conformance-only",
-			evidence: "Conformance-tested verifier observation via hook event log; live observation pending S8 (#451)",
+			level: "certified",
+			evidence: "Live-certified on agy 1.5.8: async verifier observation via PreToolUse/PostToolUse hook event log (#451)",
 		},
 		P4: {
 			port: "P4",
-			level: "conformance-only",
-			evidence: "Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8",
+			level: "certified",
+			evidence: "Live-certified on agy 1.5.8: shared continuation state machine with task/Parent binding, native failure pause, and seven-Stop limit (D7)",
 		},
 		P5: {
 			port: "P5",
@@ -74,18 +74,18 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 		},
 		P6: {
 			port: "P6",
-			level: "conformance-only",
-			evidence: "Conformance-tested Lane Executor spawn via configured executor host",
+			level: "certified",
+			evidence: "Live-certified on agy 1.5.8: Managed lifecycle (Enrollment, QA, Review, completion) and Lane Executor execution",
 		},
 		P7: {
 			port: "P7",
-			level: "conformance-only",
-			evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8",
+			level: "certified",
+			evidence: "Live-certified on agy 1.5.8: shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3)",
 		},
 		P8: {
 			port: "P8",
-			level: "unsupported",
-			evidence: "PreInvocation returns empty steps; active-task notice and model-callable Skill entry pending S8 probe (D10)",
+			level: "certified",
+			evidence: "Live-probed on agy 1.5.8: PreInvocation injects activeTaskNotice via injectSteps.systemMessage on invocationNum 0; no model-callable Skill tool exists (D10)",
 		},
 		P9: {
 			port: "P9",

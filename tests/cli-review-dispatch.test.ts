@@ -401,7 +401,7 @@ describe("review arguments", () => {
 		expect(claudeArgv).toContain("--no-session-persistence");
 		expect(claudeArgv).toContain("--settings");
 		const agyArgv = reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12);
-		expect(agyArgv).toEqual(["--print", "--model", "m", "--effort", "high", `/authority-review ${packet}`]);
+		expect(agyArgv).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
 
 		// Bound: Bash is NOT described as argument-restricted (narrowed tools only)
 		expect(argv[argv.indexOf("--tools") + 1]).toBe("read,grep,find,ls,bash");

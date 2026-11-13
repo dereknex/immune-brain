@@ -18,7 +18,7 @@ import {
 } from "./review_host";
 import {
 	antigravityPostToolUseHook,
-	antigravityPreInvocationHook,
+	antigravityPreInvocationHookAsync,
 	antigravityPreToolUseHookAsync,
 	consumeNativeConfirmation,
 	consumePhaseAdmission,
@@ -186,7 +186,7 @@ async function dispatchHookPayload(payload: Record<string, unknown>): Promise<st
 
 	// PreInvocation: has lastUserInput or invocationNum
 	if ("invocationNum" in payload || "lastUserInput" in payload) {
-		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
+		const result = await antigravityPreInvocationHookAsync(payload as unknown as AntigravityPreInvocationPayload);
 		return JSON.stringify(result);
 	}
 

@@ -17906,10 +17906,10 @@ function chooseExecutor(layers, fallback) {
 function executorArguments(choice, pluginDir, taskId) {
   if (choice.host === "antigravity") {
     return [
-      "--print",
       "--dangerously-skip-permissions",
       ...choice.model ? ["--model", choice.model] : [],
       ...choice.effort ? ["--effort", choice.effort] : [],
+      "--print",
       `/drive ${taskId}`
     ];
   }
@@ -21283,6 +21283,41 @@ import { join as join36 } from "node:path";
 init_batch_final_verification();
 init_assurance_projection();
 
+// plugins/immune-brain/runtime/assurance/active_task_notice.ts
+init_storage();
+init_batch_preflight();
+var MAX_SCOPE_ENTRIES = 12;
+async function activeTaskNotice(root) {
+  let taskId;
+  try {
+    taskId = readActiveClaimTaskId(root);
+  } catch {
+    return null;
+  }
+  if (!taskId)
+    return null;
+  let lifecycle = "unknown";
+  let artifactState = "unknown";
+  let scope = [];
+  try {
+    const record = readTaskRecordRaw(root, taskId).record;
+    if (record) {
+      lifecycle = record.lifecycle;
+      artifactState = record.artifact_state;
+      scope = [...record.intent_snapshot.scope_hint];
+    }
+  } catch {}
+  if (lifecycle === "done" || lifecycle === "stopped")
+    return null;
+  const shown = scope.slice(0, MAX_SCOPE_ENTRIES).join(", ") + (scope.length > MAX_SCOPE_ENTRIES ? ", ..." : "");
+  return [
+    `Immune-Brain: Managed task ${taskId} is active in this workspace (lifecycle ${lifecycle}, artifacts ${artifactState}).`,
+    "Ordinary input does not resume it, and another session may be running its assurance right now.",
+    `Before committing or modifying files inside its scope${shown ? ` (${shown})` : ""}, read its status and tell the user that this task is active and which obligation it is waiting on.`,
+    "Only an explicit drive entry continues it."
+  ].join(" ");
+}
+
 // plugins/immune-brain/runtime/assurance/run_continuation.ts
 init_workspace_scope();
 init_batch_schedule();
@@ -22407,9 +22442,9 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], skillPa
     ];
   }
   return [
-    "--print",
     ...model,
     ...profile.effort ? ["--effort", profile.effort] : [],
+    "--print",
     `/authority-review ${packetPath}`
   ];
 }
@@ -23802,23 +23837,23 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
   ports: {
     P1: {
       port: "P1",
-      level: "conformance-only",
-      evidence: "Conformance-tested MCP tools and Hook handlers; live certification pending S8 (#469)"
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: MCP tools, PreInvocation/PreToolUse/PostToolUse/Stop hooks, and plugin validation pass (#469)"
     },
     P2: {
       port: "P2",
       level: "conformance-only",
-      evidence: "Conformance-tested native confirmation grant files and MCP elicitation; live certification pending S8 (#469)"
+      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)"
     },
     P3: {
       port: "P3",
-      level: "conformance-only",
-      evidence: "Conformance-tested verifier observation via hook event log; live observation pending S8 (#451)"
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: async verifier observation via PreToolUse/PostToolUse hook event log (#451)"
     },
     P4: {
       port: "P4",
-      level: "conformance-only",
-      evidence: "Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8"
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: shared continuation state machine with task/Parent binding, native failure pause, and seven-Stop limit (D7)"
     },
     P5: {
       port: "P5",
@@ -23827,18 +23862,18 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
     },
     P6: {
       port: "P6",
-      level: "conformance-only",
-      evidence: "Conformance-tested Lane Executor spawn via configured executor host"
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: Managed lifecycle (Enrollment, QA, Review, completion) and Lane Executor execution"
     },
     P7: {
       port: "P7",
-      level: "conformance-only",
-      evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8"
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3)"
     },
     P8: {
       port: "P8",
-      level: "unsupported",
-      evidence: "PreInvocation returns empty steps; active-task notice and model-callable Skill entry pending S8 probe (D10)"
+      level: "certified",
+      evidence: "Live-probed on agy 1.5.8: PreInvocation injects activeTaskNotice via injectSteps.systemMessage on invocationNum 0; no model-callable Skill tool exists (D10)"
     },
     P9: {
       port: "P9",
@@ -24849,10 +24884,28 @@ async function consumeNativeConfirmation(input, root = tmpdir9()) {
   };
 }
 function antigravityPreInvocationHook(payload, locations = {}) {
-  const prompt = payload.lastUserInput ?? "";
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  const storeRoot = locations.root ?? tmpdir9();
+  const isRecordedFollowUp = payload.invocationNum !== undefined && payload.invocationNum > 0 && Boolean(payload.conversationId) && readPhaseEntryState(payload.conversationId, storeRoot) !== NO_PHASE_ENTRY;
+  if (!isRecordedFollowUp) {
+    const prompt = payload.lastUserInput ?? "";
+    const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+    recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  }
   return { injectSteps: [], terminationBehavior: "" };
+}
+async function antigravityPreInvocationHookAsync(payload, locations = {}) {
+  const base = antigravityPreInvocationHook(payload, locations);
+  if (payload.invocationNum !== undefined && payload.invocationNum !== 0) {
+    return base;
+  }
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  const notice = await activeTaskNotice(cwd);
+  if (!notice)
+    return base;
+  return {
+    injectSteps: [{ systemMessage: { systemMessage: notice } }],
+    terminationBehavior: ""
+  };
 }
 async function antigravityPostToolUseHook(payload, locations = {}) {
   if (payload.stepIdx === undefined || !payload.conversationId)
@@ -25232,7 +25285,7 @@ async function dispatchHookPayload(payload) {
     return JSON.stringify(result);
   }
   if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = antigravityPreInvocationHook(payload);
+    const result = await antigravityPreInvocationHookAsync(payload);
     return JSON.stringify(result);
   }
   return "{}";

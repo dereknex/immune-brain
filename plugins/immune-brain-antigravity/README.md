@@ -34,9 +34,10 @@ The native reviewer and review-verifier definitions are read-only and have no sh
 Immutable Git access and review-packet hash verification by those native roles are not
 certified: the shared Review prompt expects immutable Git commands and packet hash
 checks that a shell-less native role cannot run. This package does not grant shell tools,
-copy source into the review packet, or change shared Review authority, and it does not
-certify the complete Managed lifecycle (Enrollment, QA, Review, completion) on Antigravity.
-Package checks verify the read-only restrictions and this disclosure, not real model behavior.
+copy source into the review packet, or change shared Review authority. The complete
+Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified
+on Antigravity via [docs/reports/antigravity-live-certification.md](../../docs/reports/antigravity-live-certification.md).
+Package checks verify the read-only restrictions, live certification binding, and this disclosure.
 
 ### Review CLI residual risk (`review_host: antigravity`)
 

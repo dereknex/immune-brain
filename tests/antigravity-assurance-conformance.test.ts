@@ -17,6 +17,7 @@ import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/ho
 import {
 	antigravityPostToolUseHook,
 	antigravityPreInvocationHook,
+	antigravityPreInvocationHookAsync,
 	antigravityPreToolUseHook,
 	antigravityPreToolUseHookAsync,
 	consumeNativeConfirmation,
@@ -238,6 +239,95 @@ describe("Antigravity Harness Conformance", () => {
 				expect(missingStep.reason).toContain("Tool invocation identity (stepIdx) is missing");
 			} finally {
 				rmSync(root, { recursive: true, force: true });
+			}
+		});
+
+		it("injects activeTaskNotice on PreInvocation turn start without activating drive state (D10)", async () => {
+			const root = mkdtempSync(join(tmpdir(), "p8-notice-store-"));
+			const workspace = mkdtempSync(join(tmpdir(), "p8-notice-ws-"));
+			try {
+				execFileSync("git", ["init", "-q"], { cwd: workspace });
+				execFileSync("git", ["config", "user.email", "test@immune-brain.local"], { cwd: workspace });
+				execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+				writeFileSync(join(workspace, "base.txt"), "seed\n");
+				execFileSync("git", ["add", "."], { cwd: workspace });
+				execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: workspace });
+
+				// Idle workspace without active task returns empty injectSteps.
+				const idleRes = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-idle", invocationNum: 0, lastUserInput: "hello", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(idleRes).toEqual({ injectSteps: [], terminationBehavior: "" });
+				expect(readPhaseEntryState("conv-idle", root)?.run_live).toBe(false);
+
+				// Enroll an active task in the workspace.
+				mkdirSync(join(workspace, "docs/plans"), { recursive: true });
+				writeFileSync(
+					join(workspace, "docs/plans/p8-active-task.intent.json"),
+					JSON.stringify({
+						contract: "assurance_kernel/task_intent/v1",
+						task_id: "p8-active-task",
+						goal: "test active notice",
+						acceptance: [{
+							id: "AC1",
+							assertion: "pass",
+							verification: JSON.stringify({
+								contract: "assurance_kernel/verification_descriptor/v2",
+								command: { executable: "true", argv: [], cwd: ".", timeout_ms: 5000, max_output_bytes: 1024 },
+								environment: { prepare: null, writable_paths: [] },
+							}),
+						}],
+						scope_hint: ["base.txt"],
+						risk: "routine",
+						revision: 1,
+						owner: "user",
+					}),
+				);
+				execFileSync("git", ["add", "docs/plans/p8-active-task.intent.json"], { cwd: workspace });
+				await enrollTaskForTest(workspace, "p8-active-task");
+
+				const turnStart = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-active-ordinary", invocationNum: 0, lastUserInput: "explain base.txt", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(turnStart).toMatchObject({
+					injectSteps: [{ systemMessage: { systemMessage: expect.stringContaining("p8-active-task") } }],
+					terminationBehavior: "",
+				});
+				expect(readPhaseEntryState("conv-active-ordinary", root)?.run_live).toBe(false);
+
+				// Mid-turn follow-up invocations (invocationNum > 0) do not re-inject
+				// and preserve active `.continuation` state written after tool calls.
+				const contFile = join(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash("conv-drive-midturn")}.continuation`);
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 0, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				appendPrivate(contFile, cacheDir(root, ANTIGRAVITY_CACHE_DIR), JSON.stringify({ sequence: 1 }) + "\n");
+				expect(existsSync(contFile)).toBe(true);
+
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 1, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(existsSync(contFile)).toBe(true);
+
+				// A fresh user turn (invocationNum === 0) resets `.continuation`.
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 0, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(existsSync(contFile)).toBe(false);
+
+				const midTurn = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-active-ordinary", invocationNum: 1, lastUserInput: "explain base.txt", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(midTurn).toEqual({ injectSteps: [], terminationBehavior: "" });
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(workspace, { recursive: true, force: true });
 			}
 		});
 

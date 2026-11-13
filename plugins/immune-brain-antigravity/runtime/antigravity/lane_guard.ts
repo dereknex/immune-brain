@@ -12,6 +12,7 @@ import {
 import { parseFinalVerification } from "../unattended/batch_final_verification";
 import type { InitiativeObservationReader } from "../unattended/types";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
+import { activeTaskNotice } from "../assurance/active_task_notice";
 import { releasesRunBinding } from "../assurance/run_continuation";
 import { localSkillExists, readAliasFile } from "../assurance/alias_file";
 import {
@@ -555,10 +556,44 @@ export function antigravityPreInvocationHook(
 	payload: AntigravityPreInvocationPayload,
 	locations: PhaseEntryLocations = {},
 ): { injectSteps?: unknown[]; terminationBehavior?: string } {
-	const prompt = payload.lastUserInput ?? "";
-	const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-	recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+	const storeRoot = locations.root ?? tmpdir();
+	// Real Antigravity turns re-fire PreInvocation on mid-turn tool follow-ups
+	// and Stop continuations with `invocationNum > 0` and the same `lastUserInput`.
+	// Once this conversation already holds an entry log, skip re-recording so
+	// active `.continuation` state and grants are not cleared mid-turn.
+	const isRecordedFollowUp =
+		payload.invocationNum !== undefined &&
+		payload.invocationNum > 0 &&
+		Boolean(payload.conversationId) &&
+		readPhaseEntryState(payload.conversationId, storeRoot) !== NO_PHASE_ENTRY;
+	if (!isRecordedFollowUp) {
+		const prompt = payload.lastUserInput ?? "";
+		const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+		recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+	}
 	return { injectSteps: [], terminationBehavior: "" };
+}
+
+/**
+ * Turn-start PreInvocation hook: records phase entry and, when the workspace
+ * holds an active Managed task, injects the shared read-only active-task notice
+ * as a systemMessage step on turn start (`invocationNum === 0` or omitted).
+ */
+export async function antigravityPreInvocationHookAsync(
+	payload: AntigravityPreInvocationPayload,
+	locations: PhaseEntryLocations = {},
+): Promise<{ injectSteps?: unknown[]; terminationBehavior?: string }> {
+	const base = antigravityPreInvocationHook(payload, locations);
+	if (payload.invocationNum !== undefined && payload.invocationNum !== 0) {
+		return base;
+	}
+	const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+	const notice = await activeTaskNotice(cwd);
+	if (!notice) return base;
+	return {
+		injectSteps: [{ systemMessage: { systemMessage: notice } }],
+		terminationBehavior: "",
+	};
 }
 
 export async function antigravityPostToolUseHook(

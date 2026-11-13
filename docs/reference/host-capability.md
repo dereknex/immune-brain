@@ -18,14 +18,14 @@ This reference documents the capability contract and evidence levels for Immune-
 
 | Port | Capability | Claude Code | Antigravity | Pi |
 | --- | --- | --- | --- | --- |
-| P1 | call correlation/phase admission | `certified` | `conformance-only` | `certified` |
+| P1 | call correlation/phase admission | `certified` | `certified` | `certified` |
 | P2 | native confirmation | `certified` | `conformance-only` | `certified` |
-| P3 | verifier observation | `certified` | `conformance-only` | `conformance-only` |
-| P4 | run continuation | `certified` | `conformance-only` | `conformance-only` |
+| P3 | verifier observation | `certified` | `certified` | `conformance-only` |
+| P4 | run continuation | `certified` | `certified` | `conformance-only` |
 | P5 | Review/Verify CLI isolation | `certified` | `guard-only` | `guard-only` |
-| P6 | Lane Executor spawn | `certified` | `conformance-only` | `conformance-only` |
-| P7 | private cache storage | `certified` | `conformance-only` | `certified` |
-| P8 | active-task/model-entry Host integration | `certified` | `unsupported` | `certified` |
+| P6 | Lane Executor spawn | `certified` | `certified` | `conformance-only` |
+| P7 | private cache storage | `certified` | `certified` | `certified` |
+| P8 | active-task/model-entry Host integration | `certified` | `certified` | `certified` |
 | P9 | background wake | `unsupported` | `unsupported` | `unsupported` |
 
 ## Detailed Evidence and Limitations
@@ -35,7 +35,7 @@ This reference documents the capability contract and evidence levels for Immune-
 _Correlation of tool calls and host events with phase admission gates_
 
 - **Claude Code** (`certified`): Live Hook correlation (PreToolUse/PostToolUse) with session:stepIdx and phase admission
-- **Antigravity** (`conformance-only`): Conformance-tested MCP tools and Hook handlers; live certification pending S8 (#469)
+- **Antigravity** (`certified`): Live-certified on agy 1.5.8: MCP tools, PreInvocation/PreToolUse/PostToolUse/Stop hooks, and plugin validation pass (#469)
 - **Pi** (`certified`): Native in-process Extension API tool handlers with live TUI correlation and phase admission
 
 ### P2 — native confirmation
@@ -43,7 +43,7 @@ _Correlation of tool calls and host events with phase admission gates_
 _Interactive native host dialog for literal-user confirmation_
 
 - **Claude Code** (`certified`): Native interactive confirmation dialog via confirm_dialog and HostConfirmationRef
-- **Antigravity** (`conformance-only`): Conformance-tested native confirmation grant files and MCP elicitation; live certification pending S8 (#469)
+- **Antigravity** (`conformance-only`): Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)
 - **Pi** (`certified`): Native in-process ctx.ui.confirm interactive confirmation dialog
 
 ### P3 — verifier observation
@@ -51,7 +51,7 @@ _Interactive native host dialog for literal-user confirmation_
 _Observation of subagent dispatch and verification receipt settlement_
 
 - **Claude Code** (`certified`): Verifier observation state machine through hook event log
-- **Antigravity** (`conformance-only`): Conformance-tested verifier observation via hook event log; live observation pending S8 (#451)
+- **Antigravity** (`certified`): Live-certified on agy 1.5.8: async verifier observation via PreToolUse/PostToolUse hook event log (#451)
 - **Pi** (`conformance-only`): Conformance-tested Pi verifier observation via in-memory typed event log and shared VerifierObservation (D4)
 
 ### P4 — run continuation
@@ -59,7 +59,7 @@ _Observation of subagent dispatch and verification receipt settlement_
 _State-machine driven continuation across tool turns and stop boundaries_
 
 - **Claude Code** (`certified`): Run continuation state machine through hook event log and automated stop
-- **Antigravity** (`conformance-only`): Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8
+- **Antigravity** (`certified`): Live-certified on agy 1.5.8: shared continuation state machine with task/Parent binding, native failure pause, and seven-Stop limit (D7)
 - **Pi** (`conformance-only`): Shared continuation persistence and events with task/Parent binding, native failure pause and common boundary limits (D6)
 
 ### P5 — Review/Verify CLI isolation
@@ -75,7 +75,7 @@ _Isolated CLI execution for authority review and verifier processes_
 _Spawning isolated Lane Executor processes in child worktrees_
 
 - **Claude Code** (`certified`): Lane Executor process spawn in isolated worktree
-- **Antigravity** (`conformance-only`): Conformance-tested Lane Executor spawn via configured executor host
+- **Antigravity** (`certified`): Live-certified on agy 1.5.8: Managed lifecycle (Enrollment, QA, Review, completion) and Lane Executor execution
 - **Pi** (`conformance-only`): Conformance-tested Lane Executor spawn via pi CLI
 
 ### P7 — private cache storage
@@ -83,7 +83,7 @@ _Spawning isolated Lane Executor processes in child worktrees_
 _Tamper-resistant storage for authority correlation and grant state_
 
 - **Claude Code** (`certified`): Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks
-- **Antigravity** (`conformance-only`): Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3); live certification pending S8
+- **Antigravity** (`certified`): Live-certified on agy 1.5.8: shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3)
 - **Pi** (`certified`): Native in-process Extension API state with no filesystem trust boundary (D1)
 
 ### P8 — active-task/model-entry Host integration
@@ -91,7 +91,7 @@ _Tamper-resistant storage for authority correlation and grant state_
 _Host-native active-task guidance injection and model skill-entry admission_
 
 - **Claude Code** (`certified`): PreInvocation active-task notice and prompt injection
-- **Antigravity** (`unsupported`): PreInvocation returns empty steps; active-task notice and model-callable Skill entry pending S8 probe (D10)
+- **Antigravity** (`certified`): Live-probed on agy 1.5.8: PreInvocation injects activeTaskNotice via injectSteps.systemMessage on invocationNum 0; no model-callable Skill tool exists (D10)
 - **Pi** (`certified`): Native Task Rail in TUI and interactive extension commands
 
 ### P9 — background wake

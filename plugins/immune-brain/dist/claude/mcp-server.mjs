@@ -17921,10 +17921,10 @@ function chooseExecutor(layers, fallback) {
 function executorArguments(choice, pluginDir, taskId) {
   if (choice.host === "antigravity") {
     return [
-      "--print",
       "--dangerously-skip-permissions",
       ...choice.model ? ["--model", choice.model] : [],
       ...choice.effort ? ["--effort", choice.effort] : [],
+      "--print",
       `/drive ${taskId}`
     ];
   }
@@ -23385,9 +23385,9 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], skillPa
     ];
   }
   return [
-    "--print",
     ...model,
     ...profile.effort ? ["--effort", profile.effort] : [],
+    "--print",
     `/authority-review ${packetPath}`
   ];
 }

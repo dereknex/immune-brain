@@ -115,10 +115,12 @@ export function reviewArguments(
 			`/skill:authority-review ${packetPath}`,
 		];
 	}
+	// Antigravity (`agy`) parses `--print <prompt>` as taking the very next
+	// argument as the prompt, so option flags precede `--print` (verified on agy 1.5.8).
 	return [
-		"--print",
 		...model,
 		...(profile.effort ? ["--effort", profile.effort] : []),
+		"--print",
 		`/authority-review ${packetPath}`,
 	];
 }

@@ -22,10 +22,10 @@ export function chooseExecutor(layers: ExecutorPreferences[], fallback: Executor
 export function executorArguments(choice: ExecutorChoice, pluginDir: string, taskId: string): string[] {
 	if (choice.host === "antigravity") {
 		return [
-			"--print",
 			"--dangerously-skip-permissions",
 			...(choice.model ? ["--model", choice.model] : []),
 			...(choice.effort ? ["--effort", choice.effort] : []),
+			"--print",
 			`/drive ${taskId}`,
 		];
 	}
