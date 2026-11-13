@@ -10,7 +10,12 @@ import {
 	type McpRuntimeOptions,
 	type ServeStdioOptions,
 } from "../host-core/mcp_runtime";
-import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "./review_host";
+import {
+	AntigravityReviewHost,
+	antigravityHookEventLog,
+	resolveAsyncVerifierResults,
+	type AntigravityHookEvent,
+} from "./review_host";
 import {
 	antigravityPostToolUseHook,
 	antigravityPreInvocationHook,
@@ -127,8 +132,65 @@ function appendSubagentStart(toolCall: { name: string; args?: Record<string, unk
 		agentId: String(payload.stepIdx),
 		...(typeof args.Prompt === "string" ? { prompt: args.Prompt } : {}),
 		...(typeof args.Model === "string" ? { model: args.Model } : {}),
+		...(typeof payload.artifactDirectoryPath === "string" && payload.artifactDirectoryPath
+			? { artifactDirectoryPath: payload.artifactDirectoryPath }
+			: {}),
 	};
 	antigravityHookEventLog().append(event);
+}
+
+async function dispatchHookPayload(payload: Record<string, unknown>): Promise<string> {
+	// D1: the payload's own shape decides the response, most specific first. A tool
+	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
+	// PreInvocation; a Stop marker outranks the PreInvocation marker.
+	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
+		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
+
+		// PostToolUse observation: this Host's terminal event for a dispatch.
+		// Only record an inline result when it is non-empty; on agy 1.5.7 invoke_subagent
+		// returns asynchronously without a result and resolves via `.system_generated/`.
+		if ("stepIdx" in payload && ("error" in payload || "result" in payload)) {
+			if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
+				const result = typeof payload.result === "string" ? payload.result : "";
+				if (result.trim().length > 0) {
+					const args = toolCall.args ?? {};
+					const model = typeof args.Model === "string" ? args.Model : undefined;
+					const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
+					const event: AntigravityHookEvent = {
+						type: "result",
+						sessionId: String(payload.conversationId ?? ""),
+						agentId: String(payload.stepIdx ?? ""),
+						result,
+						...(model ? { model } : {}),
+						...(prompt ? { prompt } : {}),
+					};
+					antigravityHookEventLog().append(event);
+				}
+			}
+			await antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload);
+			return "{}";
+		}
+
+		// PreToolUse: an allowed subagent dispatch is the start event of the call
+		// the matching PostToolUse terminates (Spec D4).
+		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload);
+		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
+		return JSON.stringify(result);
+	}
+
+	// Stop hook: has terminationReason, executionNum, or fullyIdle
+	if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
+		const result = await antigravityRunContinuationHook(payload as unknown as AntigravityStopPayload);
+		return JSON.stringify(result);
+	}
+
+	// PreInvocation: has lastUserInput or invocationNum
+	if ("invocationNum" in payload || "lastUserInput" in payload) {
+		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
+		return JSON.stringify(result);
+	}
+
+	return "{}";
 }
 
 export async function runHook(): Promise<void> {
@@ -147,57 +209,13 @@ export async function runHook(): Promise<void> {
 
 	if (!payload) return;
 
-	// D1: the payload's own shape decides the response, most specific first. A tool
-	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
-	// PreInvocation; a Stop marker outranks the PreInvocation marker.
-	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
-		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
-
-		// PostToolUse observation: this Host's terminal event for a dispatch.
-		if ("stepIdx" in payload && ("error" in payload || "result" in payload)) {
-			if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
-				const args = toolCall.args ?? {};
-				const model = typeof args.Model === "string" ? args.Model : undefined;
-				const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
-				const result = typeof payload.result === "string" ? payload.result : "";
-				const event: AntigravityHookEvent = {
-					type: "result",
-					sessionId: String(payload.conversationId ?? ""),
-					agentId: String(payload.stepIdx ?? ""),
-					result,
-					...(model ? { model } : {}),
-					...(prompt ? { prompt } : {}),
-				};
-				antigravityHookEventLog().append(event);
-			}
-			await antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload);
-			stdout.write("{}\n");
-			return;
-		}
-
-		// PreToolUse: an allowed subagent dispatch is the start event of the call
-		// the matching PostToolUse terminates (Spec D4).
-		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload);
-		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
+	const reply = await dispatchHookPayload(payload);
+	try {
+		resolveAsyncVerifierResults(payload);
+	} catch {
+		// Async verifier resolution fails closed without crashing the hook process.
 	}
-
-	// Stop hook: has terminationReason, executionNum, or fullyIdle
-	if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
-		const result = await antigravityRunContinuationHook(payload as unknown as AntigravityStopPayload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
-	}
-
-	// PreInvocation: has lastUserInput or invocationNum
-	if ("invocationNum" in payload || "lastUserInput" in payload) {
-		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
-	}
-
-	stdout.write("{}\n");
+	stdout.write(`${reply}\n`);
 }
 
 // Only this module's own entrypoint starts the Antigravity server: the bundle

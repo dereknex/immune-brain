@@ -9,6 +9,7 @@ import {
 	ANTIGRAVITY_CACHE_DIR,
 	AntigravityReviewHost,
 	antigravityHookEventLog,
+	MAX_ASYNC_VERIFIER_FILE_BYTES,
 	VERIFIER_AGENT,
 	type AntigravityHookEvent,
 } from "../plugins/immune-brain/runtime/antigravity/review_host";
@@ -2138,6 +2139,19 @@ describe("hook dispatch writes subagent events", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	it("AAVR-A2: PostToolUse with no result field or empty result never appends a result event", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-empty-result-"));
+		try {
+			dispatch(root, preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }));
+			dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), error: "" });
+			dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), error: "", result: "" });
+			dispatch(root, { ...preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }), error: "", result: "   " });
+			expect(antigravityHookEventLog(root).list("c").map((event) => event.type)).toEqual(["start"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
 });
 
@@ -2408,6 +2422,267 @@ describe("verifier via real hook dispatch", () => {
 		const accepted = await current.runtime.submitVerification(TASK, undefined);
 		expect(accepted).toMatchObject({ state: "rework" });
 		expect(current.applied.at(-1)).toMatchObject({ actor: `antigravity:${STEP_IDX}` });
+	});
+
+	function asyncBrainDir(conversation = CONVERSATION): string {
+		const brain = scratchDir("brain");
+		const artifactDir = join(brain, conversation);
+		mkdirSync(join(artifactDir, ".system_generated", "subagents"), { recursive: true });
+		mkdirSync(join(artifactDir, ".system_generated", "messages", "undelivered"), { recursive: true });
+		return artifactDir;
+	}
+
+	function writeSpawnRecord(
+		artifactDir: string,
+		childId: string,
+		overrides: { spawnStepIndex?: number; typeName?: string; conversationId?: string } = {},
+	): void {
+		writeFileSync(
+			join(artifactDir, ".system_generated", "subagents", `${childId}.json`),
+			JSON.stringify({
+				conversationId: overrides.conversationId ?? childId,
+				subagentDescriptor: { typeName: overrides.typeName ?? VERIFIER_AGENT, role: "Review Verifier" },
+				state: "SUBAGENT_STATE_ALIVE",
+				spawnStepIndex: overrides.spawnStepIndex ?? STEP_IDX,
+			}),
+		);
+	}
+
+	function writeChildMessage(
+		artifactDir: string,
+		messageId: string,
+		message: { sender: string; recipient: string; content: string },
+	): void {
+		writeFileSync(
+			join(artifactDir, ".system_generated", "messages", `${messageId}.json`),
+			JSON.stringify({ id: messageId, ...message }),
+		);
+	}
+
+	function asyncPreAndPost(
+		cache: string,
+		dispatch: { TypeName: string; Prompt: string; Model: string },
+		artifactDir: string,
+	): void {
+		expect(hook(cache, { ...dispatchEvent(dispatch), artifactDirectoryPath: artifactDir })).toBe('{"decision":"allow"}');
+		expect(hook(cache, { ...dispatchEvent(dispatch), error: "", artifactDirectoryPath: artifactDir })).toBe("{}");
+	}
+
+	it("AAVR-A1: resolves asynchronous verifier result from spawn record and child message across hooks without duplicate refusal", async () => {
+		const current = await setup();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-1";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		expect(antigravityHookEventLog(current.cache).list(CONVERSATION).map((e) => e.type)).toEqual(["start"]);
+
+		const pending = await current.runtime.submitVerification(TASK, undefined);
+		expect(pending).toMatchObject({ state: "blocked", reason: "verification result pending" });
+
+		// Live agy 1.5.7 layout also contains read.json and background self-sent noise.
+		writeFileSync(join(artifactDir, ".system_generated", "messages", "read.json"), JSON.stringify({ "msg-1": true }));
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+
+		// Further hook payloads run (e.g. PreInvocation / PreToolUse before submit_verification).
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+		// Bound: additional hook payloads after resolution append no second result event.
+		hook(current.cache, { conversationId: CONVERSATION, executionNum: 2, fullyIdle: true, artifactDirectoryPath: artifactDir });
+		hook(current.cache, {
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "submit_verification", Arguments: { task_id: TASK } } },
+			stepIdx: STEP_IDX + 1,
+			conversationId: CONVERSATION,
+			artifactDirectoryPath: artifactDir,
+		});
+
+		const logged = antigravityHookEventLog(current.cache).list(CONVERSATION);
+		const resultEvents = logged.filter((e) => e.type === "result");
+		expect(resultEvents).toHaveLength(1);
+		expect(resultEvents[0]?.result).toBe(verdict);
+
+		const settled = await current.runtime.submitVerification(TASK, undefined);
+		expect(settled).toMatchObject({ state: "rework", summary: CLAIM });
+		expect(current.applied.at(-1)).toMatchObject({
+			role: "review",
+			decision: "rework",
+			kept: [expect.stringContaining("review-1")],
+			actor: `antigravity:${STEP_IDX}`,
+		});
+		expect(current.applied.at(-1)?.failure).toBeUndefined();
+	});
+
+	it("AAVR-A2: fails closed and stays pending when async correlation or safety checks fail", async () => {
+		const cases: Array<{ name: string; prepare: (caseDir: string, verdict: string) => string }> = [
+			{
+				name: "only self-sent message exists",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "self-1", { sender: CONVERSATION, recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message recipient differs from conversationId",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: "other-conversation", content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "spawnStepIndex differs from dispatch stepIdx",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1", { spawnStepIndex: STEP_IDX + 1 });
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "spawn typeName is not immune-brain-review-verifier",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1", { typeName: "immune-brain-reviewer" });
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "artifactDirectoryPath basename differs from conversationId",
+				prepare: (_dir, verdict) => {
+					const wrongDir = asyncBrainDir("different-conversation");
+					writeSpawnRecord(wrongDir, "child-1");
+					writeChildMessage(wrongDir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return wrongDir;
+				},
+			},
+			{
+				name: "artifactDirectoryPath itself is a symlink",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					const symlinkParent = scratchDir("sym-brain");
+					const symlinkPath = join(symlinkParent, CONVERSATION);
+					symlinkSync(dir, symlinkPath);
+					return symlinkPath;
+				},
+			},
+			{
+				name: ".system_generated component is a symlink",
+				prepare: (dir, verdict) => {
+					const target = scratchDir("sym-sys");
+					mkdirSync(join(target, "subagents"), { recursive: true });
+					mkdirSync(join(target, "messages"), { recursive: true });
+					writeFileSync(join(target, "subagents", "child-1.json"), JSON.stringify({
+						conversationId: "child-1",
+						subagentDescriptor: { typeName: VERIFIER_AGENT },
+						spawnStepIndex: STEP_IDX,
+					}));
+					writeFileSync(join(target, "messages", "msg-1.json"), JSON.stringify({
+						id: "msg-1", sender: "child-1", recipient: CONVERSATION, content: verdict,
+					}));
+					rmSync(join(dir, ".system_generated"), { recursive: true, force: true });
+					symlinkSync(target, join(dir, ".system_generated"));
+					return dir;
+				},
+			},
+			{
+				name: "spawn file is unparsable JSON",
+				prepare: (dir, verdict) => {
+					writeFileSync(join(dir, ".system_generated", "subagents", "child-1.json"), "{not valid json");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message file is unparsable JSON",
+				prepare: (dir) => {
+					writeSpawnRecord(dir, "child-1");
+					writeFileSync(join(dir, ".system_generated", "messages", "msg-1.json"), "{not valid json");
+					return dir;
+				},
+			},
+			{
+				name: "spawn file exceeds adapter byte bound",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeFileSync(
+						join(dir, ".system_generated", "subagents", "child-1.json"),
+						" ".repeat(MAX_ASYNC_VERIFIER_FILE_BYTES + 1),
+					);
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message file exceeds adapter byte bound",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", {
+						sender: "child-1",
+						recipient: CONVERSATION,
+						content: verdict + " ".repeat(MAX_ASYNC_VERIFIER_FILE_BYTES + 1),
+					});
+					return dir;
+				},
+			},
+		];
+
+		for (const testCase of cases) {
+			const current = await setup();
+			const baseDir = asyncBrainDir();
+			const verdict = verifierResult(current);
+			const artifactDir = testCase.prepare(baseDir, verdict);
+
+			asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+			hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+			const events = antigravityHookEventLog(current.cache).list(CONVERSATION);
+			expect(events.filter((e) => e.type === "result"), testCase.name).toHaveLength(0);
+
+			const pending = await current.runtime.submitVerification(TASK, undefined);
+			expect(pending, testCase.name).toMatchObject({ state: "blocked", reason: "verification result pending" });
+			expect(current.applied, testCase.name).toHaveLength(1);
+		}
+	});
+
+	it("AAVR-A2: refuses submission when the spawned verifier sent two messages to the conversation", async () => {
+		const current = await setup();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-two";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+		writeChildMessage(artifactDir, "msg-2", { sender: childId, recipient: CONVERSATION, content: verdict });
+
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		const res = await current.runtime.submitVerification(TASK, undefined);
+		expect(res).toMatchObject({ state: "rework" });
+		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
+		expect(current.host.reasons).toContain("multiple verifier messages observed for spawned verifier");
+		// Reservation was released so neither message can settle on a retry.
+		const retry = await current.runtime.submitVerification(TASK, undefined);
+		expect(retry).toMatchObject({ state: "blocked", reason: "no active verification operation" });
+	});
+
+	it("AAVR-A2: refuses submission when a second verifier message arrives before submitVerification", async () => {
+		const current = await setup();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-seq";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		writeChildMessage(artifactDir, "msg-2", { sender: childId, recipient: CONVERSATION, content: verdict });
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 3, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
 	});
 
 	describe("stopBoundary", () => {

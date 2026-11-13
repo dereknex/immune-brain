@@ -20614,6 +20614,11 @@ function runMcpEntry(profile, entrySuffixes) {
     serveStdio(profile);
 }
 
+// plugins/immune-brain/runtime/antigravity/review_host.ts
+import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync10, readSync as readSync2 } from "node:fs";
+import { tmpdir as tmpdir6 } from "node:os";
+import { basename as basename3, join as join29, resolve as resolve16 } from "node:path";
+
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
 import { lstatSync as lstatSync18, readdirSync as readdirSync9, rmSync as rmSync10 } from "node:fs";
 import { dirname as dirname15, join as join28 } from "node:path";
@@ -21016,8 +21021,8 @@ class VerifierObservation {
 }
 
 // plugins/immune-brain/runtime/antigravity/review_host.ts
-import { tmpdir as tmpdir6 } from "node:os";
 var VERIFIER_AGENT = "immune-brain-review-verifier";
+var MAX_ASYNC_VERIFIER_FILE_BYTES = 256 * 1024;
 var ANTIGRAVITY_CACHE_DIR = "immune-brain-antigravity";
 function antigravityHookEventLog(root = tmpdir6()) {
   return new FileHookEventLog(ANTIGRAVITY_CACHE_DIR, root);
@@ -21033,8 +21038,221 @@ var ANTIGRAVITY_VERIFIER_PROFILE = {
     Model: model
   }),
   decode: (event) => event,
-  resolveResult: (observed) => ({ ok: true, result: observed.result.result })
+  resolveResult: (observed) => {
+    if (observed.host.result.type === "result" && observed.host.result.refusal) {
+      return { ok: false, reason: observed.host.result.refusal, release: true };
+    }
+    return { ok: true, result: observed.result.result };
+  }
 };
+function isOwnedNonSymlinkDir(dirPath) {
+  try {
+    const stat = lstatSync19(dirPath);
+    return !stat.isSymbolicLink() && stat.isDirectory() && ownedByUs(stat);
+  } catch {
+    return false;
+  }
+}
+function readBoundedJsonObject(filePath, maxBytes = MAX_ASYNC_VERIFIER_FILE_BYTES) {
+  let fd;
+  try {
+    fd = openSync8(filePath, constants9.O_RDONLY | constants9.O_NOFOLLOW | constants9.O_NONBLOCK);
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync5(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || stat.size < 0 || stat.size > maxBytes)
+      return null;
+    const buf = Buffer.alloc(maxBytes + 1);
+    let total = 0;
+    while (total <= maxBytes) {
+      const n = readSync2(fd, buf, total, buf.length - total, total);
+      if (n === 0)
+        break;
+      total += n;
+    }
+    if (total > maxBytes)
+      return null;
+    const parsed = JSON.parse(buf.subarray(0, total).toString("utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return null;
+    return parsed;
+  } catch {
+    return null;
+  } finally {
+    closeSync8(fd);
+  }
+}
+function resolveValidatedSystemDir(artifactDirectoryPath, conversationId) {
+  if (typeof artifactDirectoryPath !== "string" || !artifactDirectoryPath || !conversationId)
+    return null;
+  const normalized = resolve16(artifactDirectoryPath);
+  if (basename3(normalized) !== conversationId)
+    return null;
+  if (!isOwnedNonSymlinkDir(normalized))
+    return null;
+  const sysDir = join29(normalized, ".system_generated");
+  if (!isOwnedNonSymlinkDir(sysDir))
+    return null;
+  return sysDir;
+}
+function readSpawnRecords(subagentsDir) {
+  if (!isOwnedNonSymlinkDir(subagentsDir))
+    return null;
+  let entries;
+  try {
+    entries = readdirSync10(subagentsDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const records = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".json"))
+      continue;
+    if (entry.isSymbolicLink() || !entry.isFile())
+      return null;
+    const obj = readBoundedJsonObject(join29(subagentsDir, entry.name));
+    if (!obj)
+      return null;
+    const descriptor = typeof obj.subagentDescriptor === "object" && obj.subagentDescriptor !== null && !Array.isArray(obj.subagentDescriptor) ? obj.subagentDescriptor : null;
+    records.push({
+      conversationId: typeof obj.conversationId === "string" ? obj.conversationId : "",
+      spawnStepIndex: typeof obj.spawnStepIndex === "number" && Number.isInteger(obj.spawnStepIndex) ? obj.spawnStepIndex : -1,
+      typeName: descriptor && typeof descriptor.typeName === "string" ? descriptor.typeName : ""
+    });
+  }
+  return records;
+}
+function readChildMessages(messagesDir) {
+  if (!isOwnedNonSymlinkDir(messagesDir))
+    return null;
+  let entries;
+  try {
+    entries = readdirSync10(messagesDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const messages = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".json"))
+      continue;
+    if (entry.isSymbolicLink() || !entry.isFile())
+      return null;
+    const obj = readBoundedJsonObject(join29(messagesDir, entry.name));
+    if (!obj)
+      return null;
+    if (entry.name === "read.json" && obj.sender === undefined && obj.recipient === undefined && obj.content === undefined) {
+      continue;
+    }
+    messages.push({
+      id: typeof obj.id === "string" && obj.id.length > 0 ? obj.id : entry.name,
+      sender: typeof obj.sender === "string" ? obj.sender : "",
+      recipient: typeof obj.recipient === "string" ? obj.recipient : "",
+      content: typeof obj.content === "string" ? obj.content : null
+    });
+  }
+  return messages;
+}
+function resolveAsyncVerifierResults(payload, log = antigravityHookEventLog()) {
+  const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : "";
+  if (!conversationId)
+    return;
+  const events = log.list(conversationId);
+  const startsByAgent = new Map;
+  const resultsByAgent = new Map;
+  for (const event of events) {
+    if (event.type === "start" && event.agent === VERIFIER_AGENT) {
+      startsByAgent.set(event.agentId, event);
+    } else if (event.type === "result") {
+      const list = resultsByAgent.get(event.agentId) ?? [];
+      list.push(event);
+      resultsByAgent.set(event.agentId, list);
+    }
+  }
+  if (startsByAgent.size === 0)
+    return;
+  const dirCache = new Map;
+  const loadDir = (sysDir) => {
+    if (dirCache.has(sysDir))
+      return dirCache.get(sysDir);
+    const spawns = readSpawnRecords(join29(sysDir, "subagents"));
+    const messages = spawns ? readChildMessages(join29(sysDir, "messages")) : null;
+    const loaded = spawns && messages ? { spawns, messages } : null;
+    dirCache.set(sysDir, loaded);
+    return loaded;
+  };
+  for (const [agentId, start] of startsByAgent) {
+    const stepIdx = Number(agentId);
+    if (!Number.isInteger(stepIdx) || String(stepIdx) !== agentId)
+      continue;
+    const existingResults = resultsByAgent.get(agentId) ?? [];
+    if (existingResults.some((e) => !e.messageId || Boolean(e.refusal)) || existingResults.length >= 2) {
+      continue;
+    }
+    const rawArtifactDir = payload.artifactDirectoryPath !== undefined ? payload.artifactDirectoryPath : start.artifactDirectoryPath;
+    const sysDir = resolveValidatedSystemDir(rawArtifactDir, conversationId);
+    if (!sysDir)
+      continue;
+    const dir = loadDir(sysDir);
+    if (!dir)
+      continue;
+    const stepSpawns = dir.spawns.filter((s) => s.spawnStepIndex === stepIdx);
+    if (stepSpawns.length !== 1)
+      continue;
+    const spawn = stepSpawns[0];
+    if (spawn.typeName !== VERIFIER_AGENT || !spawn.conversationId || spawn.conversationId === conversationId) {
+      continue;
+    }
+    const childMessages = dir.messages.filter((m) => m.sender === spawn.conversationId && m.recipient === conversationId);
+    const modelProps = start.model ? { model: start.model } : {};
+    const promptProps = start.prompt ? { prompt: start.prompt } : {};
+    if (existingResults.length === 1) {
+      const recordedId = existingResults[0].messageId;
+      if (childMessages.length === 0 || childMessages.length === 1 && childMessages[0].id === recordedId) {
+        continue;
+      }
+      const other = childMessages.find((m) => m.id !== recordedId) ?? childMessages[0];
+      log.append({
+        type: "result",
+        sessionId: conversationId,
+        agentId,
+        result: other.content && other.content.trim().length > 0 ? other.content : "[refused: multiple verifier messages]",
+        messageId: other.id,
+        refusal: "multiple verifier messages observed for spawned verifier",
+        ...modelProps,
+        ...promptProps
+      });
+      continue;
+    }
+    if (childMessages.length === 0)
+      continue;
+    if (childMessages.length === 1) {
+      const msg = childMessages[0];
+      if (msg.content === null || msg.content.trim().length === 0)
+        continue;
+      log.append({
+        type: "result",
+        sessionId: conversationId,
+        agentId,
+        result: msg.content,
+        messageId: msg.id,
+        ...modelProps,
+        ...promptProps
+      });
+      continue;
+    }
+    log.append({
+      type: "result",
+      sessionId: conversationId,
+      agentId,
+      result: "[refused: multiple verifier messages]",
+      refusal: "multiple verifier messages observed for spawned verifier",
+      ...modelProps,
+      ...promptProps
+    });
+  }
+}
 
 class AntigravityReviewHost {
   host = "antigravity";
@@ -21058,10 +21276,10 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync20, lstatSync as lstatSync20, readdirSync as readdirSync10, realpathSync as realpathSync22 } from "node:fs";
+import { existsSync as existsSync20, lstatSync as lstatSync21, readdirSync as readdirSync11, realpathSync as realpathSync22 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir9 } from "node:os";
-import { join as join35 } from "node:path";
+import { join as join36 } from "node:path";
 init_batch_final_verification();
 init_assurance_projection();
 
@@ -21379,36 +21597,36 @@ function decideRunContinuation(previous, observation) {
 }
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join29 } from "node:path";
+import { closeSync as closeSync9, constants as constants10, fstatSync as fstatSync6, openSync as openSync9, readSync as readSync3, statSync as statSync6 } from "node:fs";
+import { join as join30 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
   try {
-    fd = openSync8(path, constants9.O_RDONLY | constants9.O_NONBLOCK);
+    fd = openSync9(path, constants10.O_RDONLY | constants10.O_NONBLOCK);
   } catch (error) {
     if (isAbsent(error))
       return null;
     throw error;
   }
   try {
-    const stat = fstatSync5(fd);
+    const stat = fstatSync6(fd);
     if (!stat.isFile())
       throw new Error(`alias is not a regular file: ${path}`);
     if (stat.size > maxBytes)
       throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
     const buf = Buffer.alloc(maxBytes + 1);
-    const read = readSync2(fd, buf, 0, buf.length, 0);
+    const read = readSync3(fd, buf, 0, buf.length, 0);
     if (read > maxBytes)
       throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
     return buf.toString("utf8", 0, read);
   } finally {
-    closeSync8(fd);
+    closeSync9(fd);
   }
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join29(dir, name, "SKILL.md"));
+    statSync6(join30(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -21424,7 +21642,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync18, readFileSync as readFileSync24, writeFileSync as writeFileSync13 } from "node:fs";
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { dirname as dirname17, join as join33, resolve as resolve17 } from "node:path";
+import { dirname as dirname17, join as join34, resolve as resolve18 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -21499,11 +21717,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join30 } from "node:path";
+import { join as join31 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync22(join30(root, relativePath)),
+    bytes: readFileSync22(join31(root, relativePath)),
     index_state: execFileSync13("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -21511,7 +21729,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync11(join30(root, snapshot.path), snapshot.bytes);
+  writeFileSync11(join31(root, snapshot.path), snapshot.bytes);
   execFileSync13("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -21523,7 +21741,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync22(join30(root, snapshot.path));
+  const restoredBytes = readFileSync22(join31(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -21919,7 +22137,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync16 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join32 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -21939,7 +22157,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync16(join31(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync16(join32(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -22117,10 +22335,10 @@ init_layered_config();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync17, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync19, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants11, existsSync as existsSync17, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync19, rmSync as rmSync11, writeFileSync as writeFileSync12 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir7 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname16, join as join32, resolve as resolve16 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname16, join as join33, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -22134,9 +22352,9 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 function resolveAuthorityReviewSkillPath(moduleDir = dirname16(fileURLToPath4(import.meta.url))) {
   const candidates = [
-    resolve16(moduleDir, "../../skills/authority-review/SKILL.md"),
-    resolve16(moduleDir, "../skills/authority-review/SKILL.md"),
-    resolve16(moduleDir, "skills/authority-review/SKILL.md")
+    resolve17(moduleDir, "../../skills/authority-review/SKILL.md"),
+    resolve17(moduleDir, "../skills/authority-review/SKILL.md"),
+    resolve17(moduleDir, "skills/authority-review/SKILL.md")
   ];
   for (const candidate of candidates) {
     if (existsSync17(candidate))
@@ -22197,9 +22415,9 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], skillPa
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join32(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join33(dir || ".", name)).find((path) => {
     try {
-      accessSync4(path, constants10.X_OK);
+      accessSync4(path, constants11.X_OK);
       return true;
     } catch {
       return false;
@@ -22259,12 +22477,12 @@ class CliReviewHost {
     if (!executable)
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const tree = reviewTreeState(root);
-    const directory = realpathSync19(mkdtempSync6(join32(tmpdir7(), "imm-cli-review-")));
+    const directory = realpathSync19(mkdtempSync6(join33(tmpdir7(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join32(directory, "packet.md");
-    const script = join32(directory, "review.sh");
-    const output = join32(directory, `review-output-${request.operationId}.txt`);
-    const exitFile = join32(directory, `review-exit-${request.operationId}`);
+    const packet = join33(directory, "packet.md");
+    const script = join33(directory, "review.sh");
+    const output = join33(directory, `review-output-${request.operationId}.txt`);
+    const exitFile = join33(directory, `review-exit-${request.operationId}`);
     const contractHash = currentReviewContractHash();
     writeFileSync12(packet, `review_contract_hash: ${contractHash}
 
@@ -22462,7 +22680,7 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join33(root, priorIntent.intent_ref.path);
+  const sidecar = join34(root, priorIntent.intent_ref.path);
   const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
@@ -22709,7 +22927,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync18(join33(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync18(join34(this.cwd, ".imm", "audit", taskId)))
         execFileSync15("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -22793,7 +23011,7 @@ class HostRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve17(dirname17(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve18(dirname17(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
@@ -22862,7 +23080,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join33(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join34(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -23345,7 +23563,7 @@ class HostRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve17(dirname17(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve18(dirname17(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -23631,16 +23849,16 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
 });
 
 // plugins/immune-brain/runtime/antigravity/run_continuation.ts
-import { closeSync as closeSync9, fstatSync as fstatSync6, openSync as openSync9, readSync as readSync3, realpathSync as realpathSync21 } from "node:fs";
+import { closeSync as closeSync10, fstatSync as fstatSync7, openSync as openSync10, readSync as readSync4, realpathSync as realpathSync21 } from "node:fs";
 import { tmpdir as tmpdir8 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/run_continuation_session.ts
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync19, lstatSync as lstatSync19, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync12 } from "node:fs";
+import { existsSync as existsSync19, lstatSync as lstatSync20, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync12 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join34 } from "node:path";
+import { join as join35 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
@@ -23656,15 +23874,15 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join35(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
   if (!existsSync19(path))
     return;
   if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
     return;
   try {
-    const stat = lstatSync19(path);
+    const stat = lstatSync20(path);
     if (stat.isFile() && ownedByUs(stat))
       rmSync12(path);
   } catch {}
@@ -23674,7 +23892,7 @@ function readLast(path, dir) {
     throw new Error("continuation directory could not be verified");
   let stat;
   try {
-    stat = lstatSync19(path);
+    stat = lstatSync20(path);
   } catch (error) {
     if (error.code === "ENOENT")
       return null;
@@ -23987,12 +24205,12 @@ function stopBoundary(payload) {
   const transcriptPath = payload.transcriptPath ?? payload.transcript_path;
   if (typeof transcriptPath === "string" && transcriptPath) {
     try {
-      const fd = openSync9(transcriptPath, "r");
+      const fd = openSync10(transcriptPath, "r");
       try {
-        const stat = fstatSync6(fd);
+        const stat = fstatSync7(fd);
         if (stat.isFile() && stat.size > 0) {
           const bytes = Buffer.alloc(Math.min(stat.size, 256 * 1024));
-          readSync3(fd, bytes, 0, bytes.length, Math.max(0, stat.size - bytes.length));
+          readSync4(fd, bytes, 0, bytes.length, Math.max(0, stat.size - bytes.length));
           for (const line of bytes.toString("utf8").trim().split(`
 `).reverse()) {
             let value;
@@ -24012,7 +24230,7 @@ ${value.uuid}`);
           }
         }
       } finally {
-        closeSync9(fd);
+        closeSync10(fd);
       }
     } catch {}
   }
@@ -24419,10 +24637,10 @@ ${details.join(`
 `)}`;
 }
 function entryLogPath(sessionId, root) {
-  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function parseAdmissionId(admissionId) {
   const match = /^(.+):(\d+):([a-z_]+)$/.exec(admissionId);
@@ -24437,7 +24655,7 @@ function parseAdmissionId(admissionId) {
   return { conversation, stepIdx, operation: opRaw };
 }
 function confirmationPath(conversation, admissionId, root) {
-  return join35(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
+  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
 function dropConversationConfirmations(conversationId, root) {
   if (!conversationId)
@@ -24447,25 +24665,25 @@ function dropConversationConfirmations(conversationId, root) {
     return;
   const prefix = `${sessionHash(conversationId)}.`;
   try {
-    for (const file of readdirSync10(dir)) {
+    for (const file of readdirSync11(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
-        dropPrivate(join35(dir, file));
+        dropPrivate(join36(dir, file));
       }
     }
   } catch {}
 }
 function antigravityLocalNames(cwd, home) {
-  const roots = [join35(cwd, ".agents"), join35(home, ".agents"), join35(home, ".gemini/config")];
+  const roots = [join36(cwd, ".agents"), join36(home, ".agents"), join36(home, ".gemini/config")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join35(root, "commands", `${name}.md`));
+        const body = readAliasFile(join36(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join35(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join36(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir9()) {
@@ -24473,7 +24691,7 @@ function readPhaseEntryState(sessionId, root = tmpdir9()) {
     return null;
   const path = entryLogPath(sessionId, root);
   try {
-    lstatSync20(path);
+    lstatSync21(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }
@@ -24513,7 +24731,7 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
   if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
-    const contPath = join35(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+    const contPath = join36(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
     dropPrivate(contPath);
   }
   let workspace = null;
@@ -24818,7 +25036,7 @@ async function prepareRetireConfirmation(conversationId, sync) {
 async function prepareTaskAuthorityConfirmation(conversationId, sync) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const taskId = String(call.opArgs.task_id ?? "");
-  if (!existsSync20(join35(cwd, ".imm")))
+  if (!existsSync20(join36(cwd, ".imm")))
     return { decision: "allow" };
   let workspaceRealpath;
   try {
@@ -24975,9 +25193,49 @@ function appendSubagentStart(toolCall, payload) {
     agent: typeof args.TypeName === "string" ? args.TypeName : "",
     agentId: String(payload.stepIdx),
     ...typeof args.Prompt === "string" ? { prompt: args.Prompt } : {},
-    ...typeof args.Model === "string" ? { model: args.Model } : {}
+    ...typeof args.Model === "string" ? { model: args.Model } : {},
+    ...typeof payload.artifactDirectoryPath === "string" && payload.artifactDirectoryPath ? { artifactDirectoryPath: payload.artifactDirectoryPath } : {}
   };
   antigravityHookEventLog().append(event);
+}
+async function dispatchHookPayload(payload) {
+  if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
+    const toolCall = payload.toolCall;
+    if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
+      if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
+        const result = typeof payload.result === "string" ? payload.result : "";
+        if (result.trim().length > 0) {
+          const args = toolCall.args ?? {};
+          const model = typeof args.Model === "string" ? args.Model : undefined;
+          const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
+          const event = {
+            type: "result",
+            sessionId: String(payload.conversationId ?? ""),
+            agentId: String(payload.stepIdx ?? ""),
+            result,
+            ...model ? { model } : {},
+            ...prompt ? { prompt } : {}
+          };
+          antigravityHookEventLog().append(event);
+        }
+      }
+      await antigravityPostToolUseHook(payload);
+      return "{}";
+    }
+    const result = await antigravityPreToolUseHookAsync(payload);
+    if (result.decision === "allow")
+      appendSubagentStart(toolCall, payload);
+    return JSON.stringify(result);
+  }
+  if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
+    const result = await antigravityRunContinuationHook(payload);
+    return JSON.stringify(result);
+  }
+  if ("invocationNum" in payload || "lastUserInput" in payload) {
+    const result = antigravityPreInvocationHook(payload);
+    return JSON.stringify(result);
+  }
+  return "{}";
 }
 async function runHook() {
   const lines = [];
@@ -24996,49 +25254,11 @@ async function runHook() {
   }
   if (!payload)
     return;
-  if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
-    const toolCall = payload.toolCall;
-    if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
-      if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
-        const args = toolCall.args ?? {};
-        const model = typeof args.Model === "string" ? args.Model : undefined;
-        const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
-        const result = typeof payload.result === "string" ? payload.result : "";
-        const event = {
-          type: "result",
-          sessionId: String(payload.conversationId ?? ""),
-          agentId: String(payload.stepIdx ?? ""),
-          result,
-          ...model ? { model } : {},
-          ...prompt ? { prompt } : {}
-        };
-        antigravityHookEventLog().append(event);
-      }
-      await antigravityPostToolUseHook(payload);
-      stdout2.write(`{}
-`);
-      return;
-    }
-    const result = await antigravityPreToolUseHookAsync(payload);
-    if (result.decision === "allow")
-      appendSubagentStart(toolCall, payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
-    const result = await antigravityRunContinuationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = antigravityPreInvocationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  stdout2.write(`{}
+  const reply = await dispatchHookPayload(payload);
+  try {
+    resolveAsyncVerifierResults(payload);
+  } catch {}
+  stdout2.write(`${reply}
 `);
 }
 runMcpEntry(ANTIGRAVITY_MCP_PROFILE, ["/antigravity/mcp_server.ts", "/antigravity/mcp-server.mjs"]);
