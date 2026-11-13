@@ -18061,10 +18061,10 @@ function chooseExecutor(layers, fallback) {
 function executorArguments(choice, pluginDir, taskId) {
   if (choice.host === "antigravity") {
     return [
-      "--print",
       "--dangerously-skip-permissions",
       ...choice.model ? ["--model", choice.model] : [],
       ...choice.effort ? ["--effort", choice.effort] : [],
+      "--print",
       `/drive ${taskId}`
     ];
   }
@@ -23465,9 +23465,9 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginD
     ];
   }
   return [
-    "--print",
     ...model,
     ...profile.effort ? ["--effort", profile.effort] : [],
+    "--print",
     `/authority-review ${packetPath}`
   ];
 }
@@ -23497,7 +23497,7 @@ function verificationArguments(profile, model, packetPath, turnBudget) {
   }
   if (profile.host === "pi")
     return ["--print", "--no-session", ...modelFlag, instruction];
-  return ["--print", ...modelFlag, instruction];
+  return [...modelFlag, "--print", instruction];
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];

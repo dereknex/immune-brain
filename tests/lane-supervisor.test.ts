@@ -126,7 +126,7 @@ describe("Lane Executor supervision", () => {
 				await new Promise(resolve => setTimeout(resolve, 10));
 			const argv = readFileSync(join(dir, "args.txt"), "utf8").trim().split("\n");
 			const expectedArgs = host === "antigravity"
-				? [dir, "--print", "--dangerously-skip-permissions", "--model", "model", "--effort", "high", "/drive task"]
+				? [dir, "--dangerously-skip-permissions", "--model", "model", "--effort", "high", "--print", "/drive task"]
 				: [dir, "--print", ...(host === "claude-code" ? ["--plugin-dir", "/plugin"] : []), "--model", "model",
 					host === "claude-code" ? "--effort" : "--thinking", "high", `${host === "claude-code" ? "/immune-brain:drive" : "/skill:drive"} task`];
 			expect(argv).toEqual(expectedArgs);

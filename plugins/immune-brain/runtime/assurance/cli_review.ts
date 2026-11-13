@@ -101,10 +101,11 @@ export function reviewArguments(
 			`/skill:authority-review ${packetPath}`,
 		];
 	}
+	// agy's `--print` takes the next argument as its prompt: every flag goes before it (#426 F15).
 	return [
-		"--print",
 		...model,
 		...(profile.effort ? ["--effort", profile.effort] : []),
+		"--print",
 		`/authority-review ${packetPath}`,
 	];
 }
@@ -132,7 +133,7 @@ export function verificationArguments(profile: ReviewProfile, model: string, pac
 		];
 	}
 	if (profile.host === "pi") return ["--print", "--no-session", ...modelFlag, instruction];
-	return ["--print", ...modelFlag, instruction];
+	return [...modelFlag, "--print", instruction];
 }
 
 /** Resolve the reviewer executable from PATH as the Lane supervisor does; absent means unavailable. */

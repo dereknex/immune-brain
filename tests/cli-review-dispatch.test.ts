@@ -465,7 +465,9 @@ describe("#426 reviewer and verifier git allow-list", () => {
 		]);
 		expect(verificationArguments({ host: "pi" }, "m", packet, 12)).toEqual(["--print", "--no-session", "--model", "m", instruction]);
 		expect(reviewArguments({ host: "antigravity" }, packet, 12)).toEqual(["--print", `/authority-review ${packet}`]);
-		expect(verificationArguments({ host: "antigravity" }, "m", packet, 12)).toEqual(["--print", "--model", "m", instruction]);
+		expect(verificationArguments({ host: "antigravity" }, "m", packet, 12)).toEqual(["--model", "m", "--print", instruction]);
+		// agy reads the argument after `--print` as the prompt, so no flag may follow it (#426 F15).
+		expect(reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12)).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
 	});
 });
 
