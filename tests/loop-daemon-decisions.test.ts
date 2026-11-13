@@ -171,6 +171,7 @@ describe("S6 slot parking and structured question publication (BR-SCN-4, D7)", (
 			run_id: RUN_ID,
 			record_revision: REVISION,
 			task_id: TASK_ID,
+			options: q.options,
 		});
 	});
 
