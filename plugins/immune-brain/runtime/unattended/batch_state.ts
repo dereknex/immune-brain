@@ -13,7 +13,7 @@ import type { TaskIntentV1 } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
-import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ExecutorPreferences, LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
 import type { ReviewProfile } from "../config/layered_config";
 
 const REVIEW_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
@@ -49,6 +49,29 @@ export function reviewProfileFromArgs(args: Record<string, unknown>): ReviewProf
 	return parseBatchReviewProfile({ host: args.review_host,
 		...(args.review_model !== undefined ? { model: args.review_model } : {}),
 		...(args.review_effort !== undefined ? { effort: args.review_effort } : {}) });
+}
+
+const EXECUTOR_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
+
+/**
+ * The Executor preferences a lane batch fixes when it starts (#426 F16): the
+ * Parent resolves them from the request-selected Lane profile, so every Executor
+ * generation, including one started after a Lane decision, runs on them instead
+ * of whatever `lanes.active` names. Throws on a malformed value; returns
+ * undefined when none is given.
+ */
+export function parseBatchExecutorPreferences(value: unknown): ExecutorPreferences | undefined {
+	if (value === undefined) return undefined;
+	const prefs = value as Record<string, unknown>;
+	const text = (v: unknown): boolean => v === undefined || (typeof v === "string" && v.trim() !== "");
+	if (typeof value !== "object" || value === null || Array.isArray(value)
+		|| Object.keys(prefs).some(key => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort")
+		|| (prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)))
+		|| !text(prefs.executor_model) || !text(prefs.executor_effort))
+		throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
+	return { ...(prefs.executor_host ? { executor_host: prefs.executor_host as ExecutorPreferences["executor_host"] } : {}),
+		...(prefs.executor_model ? { executor_model: prefs.executor_model as string } : {}),
+		...(prefs.executor_effort ? { executor_effort: prefs.executor_effort as string } : {}) };
 }
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
@@ -312,6 +335,8 @@ export interface BatchLaneRunStateRecord {
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
 	/** Review profile resolved from the request-selected Lane profile; fixed when the batch starts (#426 F14). */
 	review_profile?: ReviewProfile;
+	/** Executor preferences resolved from the request-selected Lane profile; fixed when the batch starts (#426 F16). */
+	executor_preferences?: ExecutorPreferences;
 	repair_tasks?: Array<{ task_id: string; run_id: string }>;
 	/** Legacy v2 fields, preserved for reading and retirement only (D20). */
 	revision_delegation?: { confirmation_time: string };
@@ -740,6 +765,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
 		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
 	try { parseBatchReviewProfile(record.review_profile); } catch { throw new Error(`batch run state ${batchId} has an invalid review_profile`); }
+	try { parseBatchExecutorPreferences(record.executor_preferences); } catch { throw new Error(`batch run state ${batchId} has an invalid executor_preferences`); }
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
 		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
 	if (record.batch_id !== batchId)
@@ -1000,6 +1026,7 @@ export function prepareBatchLaneRunState(input: {
 	now: string;
 	final_verification?: string[];
 	review_profile?: ReviewProfile;
+	executor_preferences?: ExecutorPreferences;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -1030,6 +1057,7 @@ export function prepareBatchLaneRunState(input: {
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
 		...(input.review_profile ? { review_profile: { ...input.review_profile } } : {}),
+		...(input.executor_preferences && Object.keys(input.executor_preferences).length ? { executor_preferences: { ...input.executor_preferences } } : {}),
 		intent_identities: batchIntentIdentities(input.children),
 		created_at: input.now,
 		updated_at: input.now,

@@ -287,10 +287,15 @@ profile, project `lanes` defaults, then the default above. Select the profile
 named by the request, else `projects[<key>].lanes.active`, else `lanes.active`,
 else none. Use `lanes.profiles.value` for the selected profile and
 `lanes.project_defaults.value` for project values, even when the resolver's
-active profile has shadowed them. Recompute the fields and host-pairing warnings
-for the selected profile and request rather than reusing values or `not_applied`
-warnings computed for a different active profile. A request naming an unknown
-profile is reported and starts no batch. Project Lane values are defaults, not caps.
+active profile has shadowed them. Recompute the fields and host-pairing
+warnings for the selected profile and request rather than reusing values or
+`not_applied` warnings computed for a different active profile. A lane batch
+records the Executor fields the Parent passes as `executor_preferences` when it
+starts; every Executor generation of the batch, including one started after a
+Lane decision, runs on them. When they name an `executor_host`, the runtime
+does not consult `lanes.active`, so a model or effort of the active profile is
+not reported as `not_applied`. A request naming an unknown profile is reported
+and starts no batch. Project Lane values are defaults, not caps.
 
 A model or effort applies only with an `executor_host` from the same layer. If
 a higher layer overrides that host, report the model or effort as `not_applied`

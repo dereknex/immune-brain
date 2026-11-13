@@ -337,6 +337,7 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 | F12 | claude-code verifier 读不到自己的 verification packet | 缺陷（已修复） | 2026-11-12 v4 在 `~/imm-probe/L4` 用 PR 头 `ac6be56af5` 的 `verificationArguments` 跑真实 `claude`，packet 按生产写到 `tmpdir()/imm-cli-verify-*`：`permission_denials` 为 `Read …/verify-packet.md`，verifier 以散文作答，没有 JSON；同一运行加 `--add-dir <packet 目录>` 后 `git --no-pager show`、`git diff` 通过、`git -C` 被拒，返回预期 JSON（证据 `~/imm-probe/evidence/v4/smoke-args/`）。reviewer 早已带 `--add-dir`，verifier 漏了。修复：claude-code verifier argv 带 `--add-dir dirname(packet)`，verify 目录与 review 目录一样取 `realpath`（`runtime/assurance/cli_review.ts`）。Pi 与 antigravity 的 argv 不变。 |
 | F13 | claude-code reviewer 加载用户安装的旧版 `authority-review` skill | 缺陷（已修复，契约随之修订） | 2026-11-12 v4 `probe-m2`：Parent 以 `--plugin-dir` 跑 PR 头，reviewer argv 不带 `--plugin-dir`，加载用户级 immune-brain 8.1.2（skill 契约哈希 `sha256:2e4d13dd…`），而 Kernel 期望 `sha256:6012cd08…`；两次 Review 都以 `review_contract_mismatch` 释放（证据 `~/imm-probe/evidence/v4/m2-notes.md`）。原 spec 明确不带 `--plugin-dir`（`docs/specs/review-cli-stage.spec.md` D5），按用户决定修订。实测 `claude --plugin-dir` 会盖过同名已安装插件（init 只列出 inline 8.1.3）。修复：claude-code reviewer argv 带 `--plugin-dir <runtime 所在 Claude 插件根>`（`runtimeClaudePluginDir` 在 `runtime/plugin_source_skew.ts`，调用点 `runtime/assurance/cli_review.ts`）；无 Claude 清单时（antigravity 镜像）不带。 |
 | F14 | Lane Review 不跟随 drive 请求选定的 Lane profile | 缺陷（已修复，契约随之修订） | 2026-11-12 v4 `probe-m3`：请求 `use lane profile review-probe`（Review 为 claude-code / sonnet），Executor 按 profile 跑 haiku，但 Review 记录的 `reviewer_model` 是 `claude-opus-5-5`，来自当时的 `lanes.active`（证据 `~/imm-probe/evidence/v4/m3-notes.md`）。根因：`prepareReview` 在 Lane 里调用 `chooseReviewer(resolveConfig(root).lanes)`，batch 记录不存 profile，违反 `dist/drive-batch.md` Lane Preferences「请求点名的 profile 优先」。m1 走 antigravity 同因。修复：`start_unattended_batch` 新增 `review_host` / `review_model` / `review_effort`，新 lane batch 记为 `review_profile` 并在确认门显示；`laneBatchReviewProfile`（`runtime/unattended/batch_state.ts`）在 Lane 内取绑定该 Lane 的在途 batch 的 profile，缺省才回退层级配置（`runtime/assurance/cli_review.ts`）。实测复跑（`f6d41c014b`，v4 `probe-m4`，同一请求）：batch 记录 `review_profile = {host: claude-code, model: claude-sonnet-5-5, effort: low}`，Review 记录 `reviewer_model = claude-sonnet-5-5`（证据 `~/imm-probe/evidence/v4/m4-notes.md`）。 |
+| F16 | Lane Executor 不完全跟随请求选定的 Lane profile | 缺陷（已修复，契约随之修订） | 2026-11-13 代码审查（v4 观察 1 的根因）：`superviseSingle`（`runtime/unattended/batch_runner.ts`）按「请求 → **active profile** → 项目默认」叠层选 Executor，请求已给出 Host 时 active profile 的 model / effort 仍被报成 `not_applied`（v4 `tui/D1.report.json` 与 `D1.ps.log` 对照），违反 `dist/drive-batch.md` Lane Preferences「按选定 profile 重算 `not_applied`」。更重的一面：Lane 决定转发后起下一代 Executor（`runtime/unattended/lane_decision.ts`）只叠 active profile 与项目默认，完全不看请求，batch 记录也不存 Executor 偏好；请求选 claude-code、active 为 antigravity 时，决定之后的一代会换成 agy（推断，未实测）。修复：新 lane batch 把请求的 Executor 偏好记为 `executor_preferences`；两处都经 `laneExecutorChoice` 取「记录 → 请求」，其中带 `executor_host` 时只与项目默认叠层，不再读 `lanes.active`。由 `tests/lane-supervisor.test.ts` 覆盖；真实复跑未做。 |
 
 F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督行为本轮未复测（BR-DEFER-2）。F10 的十二条 allow-list 与 F11 的关 hook 参数由自动化测试覆盖，并用真实 `claude` 做过一次 argv 级冒烟（上表 F11）；完整的 Review 复跑仍然延后（BR-SCN-1）。
 
@@ -361,7 +362,7 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | Review / advisory | S2-a、S2-b、S2-c、S4-a | S2 全部通过；S4-a 的会话传输成立；claude-code reviewer 路径在 v4 `probe-m3`、`probe-m4` 结算成功（F10–F14 修复后） |
 | Review / verifier | S3-a、S3-b、S3-c、S3-d | **未验证**（三次 material 尝试未产生 rework，第三次撞 F10；v4 `probe-m3`、`probe-m4` 的 claude-code Review 均无 blocking finding，verifier 未运行。决定不再靠模型出错强行触发：verifier 参数与流程只由自动化测试覆盖，F12 的 packet 可读性仅做过 argv 级验证） |
 | Herdr 外 | F9、BR-DEFER-2（claude）、S4-b | 通过（v4，2026-11-13，`f6d41c01`；证据 `~/imm-probe/evidence/v4/outside-herdr-notes.md`、`tui/`） |
-| Herdr 外 | BR-DEFER-2（antigravity） | **失败 → F15**：agy 两代 Executor 约 3 s 内 exit 2，child park `lane_executor_no_progress`；修复后真实复跑未做 |
+| Herdr 外 | BR-DEFER-2（antigravity） | 首轮**失败 → F15**：agy 两代 Executor 约 3 s 内 exit 2，child park `lane_executor_no_progress`。F15 修复后（`5a67a6cf02`）真实复跑通过：argv 为 `agy --dangerously-skip-permissions --model gemini-4-hydrogen --effort high --print /drive probe-d2`，generation 1 exit 0，QA A1 通过，child 集成为 `f391765`，batch completed（`tui/F15b.*`）；probe-d2 为 routine，未触发 Review |
 
 ### 2. 五个门的结论
 
@@ -389,7 +390,8 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | **F12** | claude-code verifier 的 packet 在仓库外，`dontAsk` 拒绝 Read | 已修：verifier argv 带 `--add-dir <packet 目录>`；argv 级冒烟通过（v4 `smoke-args`），完整 Review 复跑未做（BR-SCN-1） |
 | **F13** | claude-code reviewer 加载用户安装的旧版 skill，契约哈希不符 | 已修：reviewer argv 带 runtime 的 `--plugin-dir`；完整 Review 已实测：v4 `probe-m3`、`probe-m4` 均无 `review_contract_mismatch`，Review 被接受（`177e692fed`、`f6d41c014b`） |
 | **F14** | Lane Review 用 `lanes.active` 而非请求选定的 profile | 已修并实测：`probe-m4` 的 Review 用请求选定的 sonnet（`f6d41c014b`） |
-| **F15** | antigravity 的 `--print` 后紧跟 flag，agy 把该 flag 当 prompt 并 exit 2 | 已修：Lane Executor（`lane_supervisor.ts` `executorArguments`）、带 model 的 reviewer 与 verifier（`cli_review.ts`）都把 `--print` 移到 prompt 之前；agy 1.5.7 复现 exit 2（`tui/D2.agy-argv-repro.err`），flag 前置后 exit 0；真实 Lane 复跑未做 |
+| **F15** | antigravity 的 `--print` 后紧跟 flag，agy 把该 flag 当 prompt 并 exit 2 | 已修：Lane Executor（`lane_supervisor.ts` `executorArguments`）、带 model 的 reviewer 与 verifier（`cli_review.ts`）都把 `--print` 移到 prompt 之前；agy 1.5.7 复现 exit 2（`tui/D2.agy-argv-repro.err`），flag 前置后 exit 0；真实 Lane 复跑通过（v4 `probe-d2`，`tui/F15b.*`）；antigravity reviewer / verifier 的同类改动未经真实 Review 触发，仅由测试覆盖 |
+| **F16** | Lane Executor 叠层仍读 `lanes.active`：`not_applied` 误报，Lane 决定后的一代不看请求 | 已修：batch 记录 `executor_preferences`，`superviseSingle` 与决定转发共用 `laneExecutorChoice`；单元测试覆盖，真实复跑未做 |
 
 ### 4. 准入决定
 
@@ -404,10 +406,10 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 - 每次回收到的对话框（trust、权限、登录）都由用户本人回答；C-1 测试期间临时把本分支副本装到用户级，测试后已恢复原安装。
 - 为跑 S3 临时加了用户级 profile `r4probe` 并切 active，结束后已还原为 `deepseek`。
 - v4 的 Herdr 外用例（2026-11-13）由 `~/imm-probe/drive_tui.py` 在 pty 里驱动 `claude --permission-mode auto`，剥离 `HERDR_ENV` / `HERDR_WORKSPACE_ID`；**原生确认门由驱动脚本按 Enter 通过，不是人工点击**（门文案留在 `tui/F9.log`、`F9.attempt1-gate-hang.log`）。S4-b 临时在 active profile 加 `review_transport: herdr`，跑完已还原。
-- v4 观察（未定性，未修）：(1) 请求点名 profile 且 Executor 实际按它运行时，父报告仍列 `not_applied: [executor_model, executor_effort]`，因为 active profile 也定义了这两键（`D1.ps.log` 与 `D1.report.json` 对照），提示有误导；(2) `lanes.review_transport` 只从 active profile / 项目层解析，不随请求选定的 profile；是否违反 Lane Preferences 契约未核实；(3) 工作已集成进 base 后再 drive 同一 intent，`advance_assurance` 返回 `review revision carries no task change`（`tui/S4B-attempt1.*`），符合预期。
+- v4 观察：(1) 请求点名 profile 且 Executor 实际按它运行时，父报告仍列 `not_applied: [executor_model, executor_effort]`，因为 active profile 也定义了这两键（`D1.ps.log` 与 `D1.report.json` 对照）——已定性为 F16 的一部分并修复；(2) `lanes.review_transport` 只从 active profile / 项目层解析，不随请求选定的 profile；现行契约的 Lane Preferences 表不含该字段（`dist/drive-batch.md` Lane Preferences，`drive.md` 只说读 `lanes.review_transport`），故不违约，记为设计缺口，未修；(3) 工作已集成进 base 后再 drive 同一 intent，`advance_assurance` 返回 `review revision carries no task change`（`tui/S4B-attempt1.*`），符合预期。
 
 ### 6. 剩余工作
 
-1. ~~用真实 claude-code reviewer 复跑 F10（BR-SCN-1）~~（v4 `probe-m3`、`probe-m4` 已完成；reviewer 会话无 transcript，`inspected_paths` / `permission_denials` 未验证）。~~Herdr 外 F9、BR-DEFER-2（claude）~~（v4 通过）；BR-DEFER-2（antigravity）待 F15 修复后真实复跑。
+1. ~~用真实 claude-code reviewer 复跑 F10（BR-SCN-1）~~（v4 `probe-m3`、`probe-m4` 已完成；reviewer 会话无 transcript，`inspected_paths` / `permission_denials` 未验证）。~~Herdr 外 F9、BR-DEFER-2（claude）~~（v4 通过）；~~BR-DEFER-2（antigravity）~~（F15 修复后 v4 `probe-d2` 通过；首轮复跑因驱动 TUI 退出连带杀掉同进程组的 agy 而中断，证据 `tui/F15-attempt1.*`，与被测代码无关）。
 2. S3-a/b/c/d 不再安排实测（见上表，未验证）。~~S4-b~~（v4 `probe-m0b` 通过：两次 `review_transport_unavailable`，stop 后 Lane `stopped`、QA attestation 保留）。
 3. 补测 Pi / Antigravity 的权限与登录对话框（需要各自 host 的隔离配置），以及 C-3 的 Claude Code 并行组合。

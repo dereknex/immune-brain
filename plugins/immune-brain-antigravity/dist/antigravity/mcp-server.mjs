@@ -6518,6 +6518,19 @@ function reviewProfileFromArgs(args) {
     ...args.review_effort !== undefined ? { effort: args.review_effort } : {}
   });
 }
+function parseBatchExecutorPreferences(value) {
+  if (value === undefined)
+    return;
+  const prefs = value;
+  const text = (v) => v === undefined || typeof v === "string" && v.trim() !== "";
+  if (typeof value !== "object" || value === null || Array.isArray(value) || Object.keys(prefs).some((key) => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort") || prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)) || !text(prefs.executor_model) || !text(prefs.executor_effort))
+    throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
+  return {
+    ...prefs.executor_host ? { executor_host: prefs.executor_host } : {},
+    ...prefs.executor_model ? { executor_model: prefs.executor_model } : {},
+    ...prefs.executor_effort ? { executor_effort: prefs.executor_effort } : {}
+  };
+}
 function classifyBatchRunStateContract(contract) {
   if (contract === "assurance_kernel/batch_run_state/v1")
     return "v1";
@@ -6747,6 +6760,11 @@ function validateLaneRecordShape(value, batchId) {
   } catch {
     throw new Error(`batch run state ${batchId} has an invalid review_profile`);
   }
+  try {
+    parseBatchExecutorPreferences(record.executor_preferences);
+  } catch {
+    throw new Error(`batch run state ${batchId} has an invalid executor_preferences`);
+  }
   if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
     throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
   if (record.batch_id !== batchId)
@@ -6917,6 +6935,7 @@ function prepareBatchLaneRunState(input) {
     commits: [],
     ...input.final_verification?.length ? { final_verification: [...input.final_verification] } : {},
     ...input.review_profile ? { review_profile: { ...input.review_profile } } : {},
+    ...input.executor_preferences && Object.keys(input.executor_preferences).length ? { executor_preferences: { ...input.executor_preferences } } : {},
     intent_identities: batchIntentIdentities(input.children),
     created_at: input.now,
     updated_at: input.now
@@ -7128,7 +7147,7 @@ function canonicalReportBytes(report) {
 function isTerminalBatchState(state) {
   return state === "completed" || state === "budget_stopped" || state === "failed" || state === "rejected" || state === "superseded";
 }
-var REVIEW_HOSTS, BatchRuntimeTooOldError, BATCH_ID_PATTERN, CHILD_RUN_STATES, BATCH_RUN_STATES, ISO_TIMESTAMP_PATTERN, isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v), isHash = (v) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v), isRevision = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0, isCommit = (v) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v), LANE_CHILD_STATES, LANE_BOUND_STATES, REVIEWABLE_CHILD_STATES;
+var REVIEW_HOSTS, EXECUTOR_HOSTS, BatchRuntimeTooOldError, BATCH_ID_PATTERN, CHILD_RUN_STATES, BATCH_RUN_STATES, ISO_TIMESTAMP_PATTERN, isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v), isHash = (v) => typeof v === "string" && /^sha256:[0-9a-f]{64}$/.test(v), isRevision = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0, isCommit = (v) => typeof v === "string" && /^[0-9a-f]{40}$/.test(v), LANE_CHILD_STATES, LANE_BOUND_STATES, REVIEWABLE_CHILD_STATES;
 var init_batch_state = __esm(() => {
   init_storage();
   init_batch_final_verification();
@@ -7137,6 +7156,7 @@ var init_batch_state = __esm(() => {
   init_runtime_contracts();
   init_batch_reasons();
   REVIEW_HOSTS = new Set(["pi", "claude-code", "antigravity"]);
+  EXECUTOR_HOSTS = new Set(["pi", "claude-code", "antigravity"]);
   BatchRuntimeTooOldError = class BatchRuntimeTooOldError extends Error {
     path;
     contract;
@@ -18019,7 +18039,6 @@ function cleanupSingleTaskLane(input) {
 
 // plugins/immune-brain/runtime/unattended/lane_decision.ts
 init_storage();
-init_layered_config();
 init_batch_preflight();
 init_batch_reasons();
 init_batch_state();
@@ -18382,17 +18401,26 @@ function afterExecutorExit(advanced, observed) {
     lane_supervision: observed.lane_supervision
   };
 }
+function laneExecutorChoice(root, preferences, parentHost) {
+  const config = resolveConfig(root);
+  if (!config.lanes.valid)
+    return null;
+  const project = config.lanes.project_defaults.value;
+  if (preferences?.executor_host)
+    return chooseExecutor([preferences, project], parentHost);
+  const active = config.lanes.active.value;
+  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+  return chooseExecutor([preferences ?? {}, profile, project], parentHost);
+}
 async function superviseSingle(input, report) {
   const options = input.supervision;
   const child = report.children.find((c) => c.task_id === input.initiative_slug && c.lane);
   if (!child?.lane)
     return report;
-  const config = resolveConfig(input.root);
-  if (!config.lanes.valid)
+  const recorded = readAnyBatchRunState(input.root, input.batch_id);
+  const choice = laneExecutorChoice(input.root, (recorded && isLaneBatchRecord(recorded) ? recorded.executor_preferences : undefined) ?? options.request, options.parentHost);
+  if (!choice)
     return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-  const active = config.lanes.active.value;
-  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-  const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
   const store = laneGenerationStore(input.root, input.batch_id);
   const observation = await superviseLane(options.supervisor, {
     key: `${input.root}\x00${input.batch_id}`,
@@ -18634,12 +18662,9 @@ async function relayLaneDecision(input) {
   }
   if (interactive)
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const config = resolveConfig(input.root);
-  if (!config.lanes.valid)
+  const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
+  if (!choice)
     return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-  const active = config.lanes.active.value;
-  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-  const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
   const observation = await superviseLane(input.supervisor, {
     key: `${input.root}\x00${target.batch_id}`,
     repository: input.root,
@@ -19380,7 +19405,8 @@ async function runLaneBatch(input, persisted) {
       max_parallel: limit,
       now: input.now,
       ...input.final_verification?.length ? { final_verification: input.final_verification } : {},
-      ...input.review_profile ? { review_profile: input.review_profile } : {}
+      ...input.review_profile ? { review_profile: input.review_profile } : {},
+      ...input.supervision?.request ? { executor_preferences: input.supervision.request } : {}
     });
   }
   const persist = () => {

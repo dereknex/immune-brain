@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chooseExecutor, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { parseBatchExecutorPreferences, parseBatchLaneRunState, prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 const dirs: string[] = [];
 const oldPath = process.env.PATH;
@@ -178,5 +180,47 @@ describe("Pi Executor outside Herdr (#426 D4)", () => {
 		const result = await superviseLane(supervisor, input(dir, store, async () => projection, "pi"));
 		expect(result).toEqual({ state: "exited", generation: null, exit: null });
 		expect(run).not.toHaveBeenCalled();
+	});
+});
+
+// --- #426 F16: every Lane generation runs on the batch's recorded Executor preferences ---
+
+describe("#426 F16 batch Executor preferences", () => {
+	const oldXdg = process.env.XDG_CONFIG_HOME;
+	afterAll(() => { if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = oldXdg; });
+	/** A checkout whose user config makes an antigravity profile active, with model and effort set. */
+	function activeAntigravity() {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "lane-f16-"))); dirs.push(dir);
+		mkdirSync(join(dir, "xdg", "immune-brain"), { recursive: true });
+		writeFileSync(join(dir, "xdg", "immune-brain", "config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1",
+			lanes: { active: "gemini", profiles: { gemini: { executor_host: "antigravity", executor_model: "gemini-x", executor_effort: "high" } } } }));
+		process.env.XDG_CONFIG_HOME = join(dir, "xdg");
+		mkdirSync(join(dir, "repo"));
+		return join(dir, "repo");
+	}
+
+	it("a request-selected Executor Host ignores the active profile and reports nothing from it as not_applied", () => {
+		expect(laneExecutorChoice(activeAntigravity(), { executor_host: "claude-code", executor_model: "sonnet", executor_effort: "high" }, "pi"))
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "high", not_applied: [] });
+	});
+
+	it("without a selected Executor Host the active profile still applies", () => {
+		const root = activeAntigravity();
+		expect(laneExecutorChoice(root, undefined, "pi")).toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: [] });
+		expect(laneExecutorChoice(root, { executor_model: "stray" }, "pi"))
+			.toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: ["executor_model"] });
+	});
+
+	it("a lane batch records the preferences and refuses a malformed value", () => {
+		const child = { task_id: "t", slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
+			intent_path: "docs/plans/t.intent.json", intent_revision: 1, intent_content_hash: `sha256:${"0".repeat(64)}` };
+		const time = "2026-11-13T00:00:00.000Z";
+		const record = prepareBatchLaneRunState({ batch_id: "f16", initiative_slug: "t", children: [child], plan_digest: `sha256:${"1".repeat(64)}`,
+			base_head: "0".repeat(40), confirmation_time: time, now: time, budget: { max_children: 1, qa_failure_limit: 2 }, max_parallel: 1,
+			executor_preferences: { executor_host: "claude-code", executor_model: "sonnet" } });
+		expect(parseBatchLaneRunState(JSON.stringify(record), "f16").executor_preferences).toEqual({ executor_host: "claude-code", executor_model: "sonnet" });
+		expect(() => parseBatchLaneRunState(JSON.stringify({ ...record, executor_preferences: { executor_host: "codex" } }), "f16"))
+			.toThrow("invalid executor_preferences");
+		expect(parseBatchExecutorPreferences(undefined)).toBeUndefined();
 	});
 });

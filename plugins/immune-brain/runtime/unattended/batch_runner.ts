@@ -11,7 +11,7 @@ import { laneRejectionReport, retainedLaneAction, retainedLaneNotices, runLaneBa
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, readAnyBatchRunState, writeBatchRunReport, type BatchLaneRunReport, type BatchRunReport } from "./batch_state";
 import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
-import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
+import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorChoice, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
@@ -217,15 +217,29 @@ function afterExecutorExit(advanced: BatchLaneRunReport, observed: BatchLaneRunR
 		lane_supervision: observed.lane_supervision } as unknown as BatchRunReport;
 }
 
+/**
+ * The Executor of a supervised Lane generation (#426 F16). `preferences` are the batch's recorded Executor
+ * preferences, else the request's: the Parent resolved them from the request-selected Lane profile, so when they
+ * name an Executor Host `lanes.active` is not consulted and its model or effort is not reported as `not_applied`.
+ * Null when the `lanes` section is invalid.
+ */
+export function laneExecutorChoice(root: string, preferences: ExecutorPreferences | undefined, parentHost: ExecutorHost): ExecutorChoice | null {
+	const config = resolveConfig(root);
+	if (!config.lanes.valid) return null;
+	const project = config.lanes.project_defaults.value as ExecutorPreferences;
+	if (preferences?.executor_host) return chooseExecutor([preferences, project], parentHost);
+	const active = config.lanes.active.value;
+	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
+	return chooseExecutor([preferences ?? {}, profile, project], parentHost);
+}
+
 async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {
 	const options = input.supervision!;
 	const child = report.children.find(c => c.task_id === input.initiative_slug && c.lane);
 	if (!child?.lane) return report;
-	const config = resolveConfig(input.root);
-	if (!config.lanes.valid) return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
-	const active = config.lanes.active.value;
-	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-	const choice = chooseExecutor([options.request ?? {}, profile, config.lanes.project_defaults.value], options.parentHost);
+	const recorded = readAnyBatchRunState(input.root, input.batch_id);
+	const choice = laneExecutorChoice(input.root, (recorded && isLaneBatchRecord(recorded) ? recorded.executor_preferences : undefined) ?? options.request, options.parentHost);
+	if (!choice) return { ...report, batch_state: "rejected", reason: "lane_config_invalid", next_action: "Correct the Lane configuration and retry." };
 	const store = laneGenerationStore(input.root, input.batch_id);
 	const observation = await superviseLane(options.supervisor, {
 		key: `${input.root}\0${input.batch_id}`, repository: input.root, lanePath: child.lane.path, taskId: child.task_id,

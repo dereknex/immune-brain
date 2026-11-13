@@ -6,12 +6,11 @@
 
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { resolveConfig } from "../config/layered_config";
 import { findExistingActiveBatch } from "./batch_preflight";
 import { batchReason } from "./batch_reasons";
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, rebindSingleTaskIdentity } from "./batch_state";
-import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
-import { stopSingleTaskSupervisor } from "./batch_runner";
+import { LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
+import { laneExecutorChoice, stopSingleTaskSupervisor } from "./batch_runner";
 
 type Projection = AssuranceProjectionResult["projection"];
 
@@ -141,11 +140,8 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	}
 	if (interactive)
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const config = resolveConfig(input.root);
-	if (!config.lanes.valid) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const active = config.lanes.active.value;
-	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-	const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
+	const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
+	if (!choice) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
 	const observation = await superviseLane(input.supervisor, {
 		key: `${input.root}\0${target.batch_id}`, repository: input.root, lanePath: target.lane_path, taskId: input.taskId,
 		choice, pluginDir: input.pluginDir, store: laneGenerationStore(input.root, target.batch_id), baseline: "",

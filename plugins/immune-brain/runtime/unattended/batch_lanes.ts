@@ -1001,6 +1001,7 @@ export async function runLaneBatch(
 			now: input.now,
 			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
 			...(input.review_profile ? { review_profile: input.review_profile } : {}),
+			...(input.supervision?.request ? { executor_preferences: input.supervision.request } : {}),
 		});
 	}
 
