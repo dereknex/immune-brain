@@ -57,7 +57,11 @@ import {
 	createDefaultRelayInputFactory,
 	dispatchDecisions,
 	LOOP_DISPATCH_RECORD_CONTRACT,
+	type LaneRuntimeFactory,
 } from "../plugins/immune-brain/runtime/loop_daemon/dispatch.ts";
+
+/** A Host adapter's Lane-root runtime stand-in; the relays under test stub `relayDecision`. */
+const stubLaneRuntime: LaneRuntimeFactory = () => ({ authorize: async () => ({}), shutdown: async () => {} });
 import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor.ts";
 import {
 	createFakeLoopGitHubPort,
@@ -547,6 +551,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				guardFacts,
 				dryRun: false,
 				now: TS,
+				laneRuntime: stubLaneRuntime,
 				relayDecision: async (input: any) => {
 					relayCalled = true;
 					capturedInput = input;
@@ -2013,6 +2018,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				guardFacts,
 				dryRun: false,
 				now: TS,
+				laneRuntime: stubLaneRuntime,
 				relayDecision: async () => ({ relayed: false }),
 			});
 
@@ -2021,7 +2027,11 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(res.dispatches[0].outcome).toBe("failed");
 		});
 
-		it("apply_lane_decision_reply uses production default relayLaneDecision and factory without throwing", async () => {
+		for (const relayCase of [
+			{ name: "uses production default relayLaneDecision and factory without throwing", laneRuntime: stubLaneRuntime, detail: "relay reply failed" },
+			{ name: "fails closed when no Host adapter injected a Lane runtime", laneRuntime: undefined, detail: "relay_input_factory_required" },
+		])
+		it(`apply_lane_decision_reply ${relayCase.name}`, async () => {
 			const { root, stateDir, loopConfig, cleanup } = makeWorkspace({
 				loopConfig: { mode: "assist" },
 			});
@@ -2077,9 +2087,11 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				shutdown_requested: false,
 			};
 
-			// Notice: neither relayDecision nor relayInputFactory is passed.
-			// relayLaneDecision finds no lane in the temp workspace, returning { relayed: false } cleanly without crashing.
+			// Notice: neither relayDecision nor relayInputFactory is passed; at most the adapter's Lane runtime is.
+			// relayLaneDecision finds no lane in the temp workspace, returning { relayed: false } cleanly without crashing;
+			// with no Lane runtime the reply is refused before any relay instead of authorizing as an unchosen Host.
 			const res = await dispatchDecisions({
+				...(relayCase.laneRuntime ? { laneRuntime: relayCase.laneRuntime } : {}),
 				root,
 				stateDir,
 				loopConfig,
@@ -2096,14 +2108,28 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(res.dispatches.length).toBe(1);
 			expect(res.dispatches[0].handler).toBe("apply_lane_decision_reply");
 			expect(res.dispatches[0].outcome).toBe("failed");
-			expect(res.dispatches[0].detail).toContain("relay reply failed");
+			expect(res.dispatches[0].detail).toContain(relayCase.detail);
 		});
 
 		it("createDefaultRelayInputFactory constructs grounded LaneRelayInput", async () => {
 			const { root, cleanup } = makeWorkspace();
 			cleanupFns.push(cleanup);
 
-			const factory = createDefaultRelayInputFactory(root, "task-100", { commentId: 5555 });
+			const runtimeCalls: Array<{ cwd: string; laneRoot?: boolean; authorized: unknown[] }> = [];
+			const factory = createDefaultRelayInputFactory(root, "task-100", {
+				commentId: 5555,
+				laneRuntime: (options) => {
+					const call = { cwd: options.cwd, laneRoot: options.laneRoot, authorized: [] as unknown[] };
+					runtimeCalls.push(call);
+					return {
+						authorize: async (...args) => {
+							call.authorized.push(args);
+							return { state: "authorized" };
+						},
+						shutdown: async () => {},
+					};
+				},
+			});
 			const input = factory("request_authorization", "sha256:rev-100", {
 				operation: "request_authorization",
 				option_id: "proceed",
@@ -2128,6 +2154,18 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			const proj = await input.project(root, "task-100");
 			expect(proj.contract).toBe("assurance_kernel/assurance_projection/v1");
 			expect(proj.error).not.toBeUndefined();
+
+			// apply authorizes through the injected Lane-root runtime, never a Host the daemon picked itself
+			await input.apply({ lane_path: join(root, "lane") } as Parameters<typeof input.apply>[0]);
+			expect(runtimeCalls).toHaveLength(1);
+			expect(runtimeCalls[0].cwd).toBe(join(root, "lane"));
+			expect(runtimeCalls[0].laneRoot).toBe(true);
+			expect(runtimeCalls[0].authorized[0]).toEqual([
+				"task-100",
+				"request_authorization",
+				expect.objectContaining({ taskId: "task-100" }),
+				{ record_revision: "sha256:rev-100", chosen_option: "proceed" },
+			]);
 		});
 
 		it("budget_exhausted cross-tick accumulation holds candidates when max_dispatches_per_day is reached", async () => {
@@ -2629,6 +2667,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				gitHubPort: fakePort,
 				snapshotOverride: snapshotValid,
 				guardFacts: { daemon_identity: "daemon-bot" },
+				laneRuntime: stubLaneRuntime,
 				relayDecision: async () => {
 					relayCalled = true;
 					return {
@@ -2774,6 +2813,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 				gitHubPort: fakePort,
 				snapshotOverride: snapshot,
 				guardFacts: { daemon_identity: "daemon-bot" },
+				laneRuntime: stubLaneRuntime,
 				relayDecision: async () => {
 					relayCalled = true;
 					return {

@@ -21,9 +21,8 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ClaudeRuntime } from "../claude/kernel_ports.ts";
 import { resolveConfig, type LoopConfig } from "../config/layered_config.ts";
-import { diffSnapshotOf, type ToolMeta } from "../host-core/runtime.ts";
+import { diffSnapshotOf, type HostRuntimeOptions, type ToolMeta } from "../host-core/runtime.ts";
 import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor.ts";
@@ -147,6 +146,18 @@ export function detectBaseBranch(root: string): string {
 	return "main";
 }
 
+/** The Lane-root runtime one relay authorizes through; a Host adapter supplies it. */
+export interface LaneDecisionAuthorizer {
+	authorize(taskId: string, operation: string, meta: ToolMeta, extra?: Record<string, unknown>): Promise<unknown>;
+	shutdown(): Promise<void>;
+}
+
+/**
+ * Builds the Lane-root runtime for one relay. Host-neutral daemon code never
+ * imports a Host adapter, so the composition root injects this factory.
+ */
+export type LaneRuntimeFactory = (options: HostRuntimeOptions) => LaneDecisionAuthorizer;
+
 /**
  * Create a grounded default RelayInputFactory for single-task Lane decision relays.
  */
@@ -156,7 +167,8 @@ export function createDefaultRelayInputFactory(
 	options: {
 		commentId?: number;
 		meta?: ToolMeta;
-	} = {},
+		laneRuntime: LaneRuntimeFactory;
+	},
 ): RelayInputFactory<unknown> {
 	const config = resolveConfig(root);
 	const activeProfile = config.lanes.active.value ? config.lanes.profiles.value[config.lanes.active.value] : undefined;
@@ -171,7 +183,7 @@ export function createDefaultRelayInputFactory(
 		expectedRecordRevision: rev,
 		project: (lanePath: string, id: string) => projectAssurance(lanePath, id, diffSnapshotOf),
 		apply: async (target: LaneRelayTarget) => {
-			const laneRuntime = new ClaudeRuntime({
+			const laneRuntime = options.laneRuntime({
 				cwd: target.lane_path,
 				laneRoot: true,
 				parentHost,
@@ -228,6 +240,12 @@ export interface DispatchDecisionsOptions {
 	judgingAgent?: JudgingAgentFn;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
+	/**
+	 * The Host adapter's Lane-root runtime for the default relay factory. With
+	 * neither this nor `relayInputFactory`, a verified reply fails closed with
+	 * `relay_input_factory_required` instead of authorizing as an unchosen Host.
+	 */
+	laneRuntime?: LaneRuntimeFactory;
 }
 
 function recordOwnerReversalLabel(
@@ -710,9 +728,12 @@ export async function dispatchDecisions(
 							relayDecision: options.relayDecision ?? relayLaneDecision,
 						},
 						options.relayInputFactory ??
-							createDefaultRelayInputFactory(options.root, taskId, {
-								commentId: event.comment_id,
-							}),
+							(options.laneRuntime
+								? createDefaultRelayInputFactory(options.root, taskId, {
+										commentId: event.comment_id,
+										laneRuntime: options.laneRuntime,
+									})
+								: undefined),
 					);
 
 					if (outcome.action === "relayed" && outcome.relay_outcome?.relayed !== false) {
@@ -822,9 +843,12 @@ export async function dispatchDecisions(
 						relayDecision: options.relayDecision ?? relayLaneDecision,
 					},
 					options.relayInputFactory ??
-						createDefaultRelayInputFactory(options.root, taskId, {
-							commentId: event.comment_id,
-						}),
+						(options.laneRuntime
+							? createDefaultRelayInputFactory(options.root, taskId, {
+									commentId: event.comment_id,
+									laneRuntime: options.laneRuntime,
+								})
+							: undefined),
 				);
 
 				if (outcome.action === "relayed" && outcome.relay_outcome?.relayed !== false) {

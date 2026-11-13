@@ -32,7 +32,7 @@ import {
 	loadPublishedPlanDigests,
 	type AgentHandlerPort,
 } from "./agent_handlers.ts";
-import { dispatchDecisions, type RelayInputFactory } from "./dispatch.ts";
+import { dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } from "./dispatch.ts";
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
@@ -95,6 +95,8 @@ export async function runLoopDaemonCli(
 		sleep?: (seconds: number) => Promise<void> | void;
 		relayDecision?: typeof relayLaneDecision;
 		relayInputFactory?: RelayInputFactory<unknown>;
+		/** The Host adapter's Lane-root runtime for Lane decision relays. */
+		laneRuntime?: LaneRuntimeFactory;
 		/** The S9 agent port; the executable composes the production one. */
 		agentPort?: AgentHandlerPort;
 		/** True only inside the standing `imm-loop run` process. */
@@ -615,6 +617,7 @@ Options:
 				judgingAgent: options?.judgingAgent,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
+				laneRuntime: options?.laneRuntime,
 			});
 
 			const outputPayload = {
@@ -741,6 +744,7 @@ Options:
 				standingDaemon: options?.standingDaemon === true,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
+				laneRuntime: options?.laneRuntime,
 				state,
 			});
 
@@ -855,11 +859,18 @@ Options:
 	};
 }
 
-// The executable composes the decision-model seam; a library caller injects its
-// own `classify`, and an absent one leaves Tier 2 at its deterministic baseline.
-if (fileURLToPath(import.meta.url) === process.argv[1]) {
-	const root = process.cwd();
-	const command = process.argv[2];
+/**
+ * The `imm-loop` executable, entered through `v4_runtime.ts cli imm-loop`. It
+ * composes the decision-model seam; a library caller injects its own `classify`,
+ * and an absent one leaves Tier 2 at its deterministic baseline. It wires no
+ * Lane-root Host runtime: host-neutral code never imports a Host adapter, so a
+ * verified Lane decision reply fails closed until an adapter injects one.
+ */
+export async function runLoopDaemonExecutable(
+	argv: string[],
+	root: string = process.cwd(),
+): Promise<{ stdout: string; stderr: string; returncode: number }> {
+	const command = argv[0];
 	// The agent port belongs to the live daemon: a `tick`, `run`, or `reconcile`
 	// from this executable dispatches agent-backed handlers through real sessions.
 	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
@@ -882,11 +893,15 @@ if (fileURLToPath(import.meta.url) === process.argv[1]) {
 			});
 		}
 	}
-	const result = await runLoopDaemonCli(process.argv.slice(2), root, {
+	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),
 		...(agentPort ? { agentPort } : {}),
 		...(judgingAgent ? { judgingAgent } : {}),
 	});
+}
+
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
+	const result = await runLoopDaemonExecutable(process.argv.slice(2), process.cwd());
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);
 	process.exit(result.returncode);

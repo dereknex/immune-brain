@@ -10,6 +10,7 @@
  *   - `imm-plan --routing-status --json` (strict Git-owned route projection)
  *   - `imm-plan <plan-path> [--json]` (read-only Plan validation)
  *   - `imm-tracker` (opt-in, one-way, non-authoritative GitHub Issue projection)
+ *   - `imm-loop` (the ADR 0039 Loop Daemon CLI; records, never Kernel authority)
  *
  * Every retired v3 mutating command (`imm-work`, `imm-review`, `imm-migrate`,
  * `imm-finish`, `imm-autowork`, `imm-heal`, `imm-check-child-output`,
@@ -235,6 +236,10 @@ async function runCli(command: string, args: string[], root: string): Promise<{
 		const { runSessionCli } = await import("./session/cli");
 		return runSessionCli(args, process.env);
 	}
+	if (command === "imm-loop") {
+		const { runLoopDaemonExecutable } = await import("./loop_daemon/cli");
+		return runLoopDaemonExecutable(args, root);
+	}
 	return {
 		stdout: "",
 		stderr: `Unknown Immune-Brain v4 command: ${command}\n`,
@@ -337,6 +342,13 @@ async function main(argv: string[]): Promise<number> {
 								"imm-session create --provider herdr --cwd <lane_path> --label <name> --host claude-code --entry \"<drive entry> <task_id>\" -- <host arguments>",
 								"imm-session await <handle> --provider herdr",
 							],
+						},
+						{
+							name: "imm-loop",
+							description:
+								"The Loop Daemon (ADR 0039): observe GitHub, judge events and dispatch admitted handlers under `loop.mode`. Its decisions and dispatches are records, never Kernel authority.",
+							json_output: true,
+							examples: ["imm-loop tick --dry-run --json", "imm-loop run", "imm-loop status --json"],
 						},
 					],
 				},

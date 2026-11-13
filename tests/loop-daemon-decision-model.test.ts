@@ -59,8 +59,8 @@ import { loadLoopDecisions, loadLoopDispatches } from "../plugins/immune-brain/r
 import type { LoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 
-const TS = "2026-11-13T00:00:00.000Z";
-const DAY_LATER = "2026-11-14T00:00:01.000Z";
+const TS = "2025-11-13T00:00:00.000Z";
+const DAY_LATER = "2025-11-14T00:00:01.000Z";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {

@@ -16,7 +16,7 @@ import type { LoopConfig } from "../config/layered_config.ts";
 import type { relayLaneDecision } from "../unattended/lane_decision.ts";
 import type { AgentHandlerPort } from "./agent_handlers.ts";
 import { buildDecisionRecord, type LoopDecisionRecord } from "./decision_record.ts";
-import { dispatchDecisions, type LoopDispatchRecord, type RelayInputFactory } from "./dispatch.ts";
+import { dispatchDecisions, type LaneRuntimeFactory, type LoopDispatchRecord, type RelayInputFactory } from "./dispatch.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import { evaluateGuards, firstBlock, GUARD_FALLBACKS, type GuardFacts } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
@@ -71,6 +71,7 @@ export interface ReconcileSkippedOptions {
 	standingDaemon?: boolean;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
+	laneRuntime?: LaneRuntimeFactory;
 	/** Explicit state override if caller already loaded state. */
 	state?: LoopDaemonState;
 }
@@ -340,6 +341,7 @@ export async function reconcileSkippedDecisions(
 			judgingAgent: options.judgingAgent,
 			relayDecision: options.relayDecision,
 			relayInputFactory: options.relayInputFactory,
+			laneRuntime: options.laneRuntime,
 		});
 		dispatches = dispatchResult.dispatches;
 	}

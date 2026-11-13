@@ -49,7 +49,8 @@ command:
 4. An alias body enters a phase only when it carries exactly one distinct marked
    mention (`/drive`, `immune-brain:drive`, `skill:drive`) of a phase skill. A
    bare prose word such as "drive the build" is not a mention.
-5. Old names, including `imm-loop`, are recognized nowhere.
+5. Old names, including `imm-loop`, are recognized nowhere as a Skill, alias
+   or entry. The one reuse is the Loop Daemon below.
 
 A local-name reader that cannot read fails closed: no entry and no token from
 the shadowable form. The skills guide's naming checklist gains a fifth check: no
@@ -61,3 +62,14 @@ Users who named old skills in their own commands or prompt templates edit them
 by hand; the 6.0.0 breaking note says so. `/immune-brain:drive` on Claude Code is
 the shadow-proof entry. Dated history keeps the old names; `CONTEXT.md` maps
 them.
+
+## Amendment: the Loop Daemon reuses `imm-loop` (loop-daemon, ADR 0039)
+
+[ADR 0039](0039-loop-daemon.md) names its headless daemon `imm-loop`. The name
+is a CLI and a GitHub directive, never a Skill: no Skill, alias, prompt entry or
+phase recognizes it, so decision 5 holds for every entry surface. It may appear
+only as the `bin/imm-loop` executable, the `imm-loop` command that
+`runtime/v4_runtime.ts` routes, and inside `runtime/loop_daemon/` (its commands,
+`@imm-loop` owner directives and `imm-loop/<issue>` branches). Anywhere else the
+current surface still names no `imm-loop`; `tests/skill-dist-consistency.test.ts`
+enforces exactly these three places.
