@@ -235,7 +235,7 @@ G3 登录细节（A5/B5）：`--env CLAUDE_CONFIG_DIR=<空目录>` 生效（Herd
 | C-1 | 副本去重覆盖不到“显式 `-e` + 已安装 package” | 已修（按进程认领）；第三轮两份修复版副本共存 `exit=0`，旧副本仍冲突 | `.pi-extension/single-copy.ts` |
 | F8 | 配置解析顺序：active 用户 profile 覆盖项目 `lanes.*`（预期 project 优先），且 profile 设 `review_host` 时项目的 `review_verifier_model` 被丢弃 | 非缺陷：键写错了层（ADR 0037），见“修复（第三轮实测之后）” | `runtime/config/layered_config.ts:178-182` |
 | F9 | Herdr 外的非交互 Executor 完成后被判 `lane_executor_no_progress`，Lane 无 `task-record.json` | 已修：起进程前拒绝 `pi`，返回 `lane_executor_requires_tui`；未实测 | 上文 S4-b 行与 F9 条目 |
-| F10 | claude-code reviewer 的评审结论被判 coverage 不足（两轮后 park），无 findings/verify | 已修：git allow-list 加 `--no-pager` 形式；真实模型复跑未做（BR-SCN-1） | `runtime/assurance/coordinator.ts:1551,1741`；上文 S3 行与 F10 条目 |
+| F10 | claude-code reviewer 的评审结论被判 coverage 不足（两轮后 park），无 findings/verify | 已修：git allow-list 加 `--no-pager` 形式；真实模型复跑见 F11–F14（v4 `probe-m3`、`probe-m4`，BR-SCN-1） | `runtime/assurance/coordinator.ts:1551,1741`；上文 S3 行与 F10 条目 |
 
 ## 修复（第二轮实测之后，2026-11-11）
 
@@ -336,7 +336,7 @@ R3（并行 batch 与 S1 关闭）、R4（S2、S3、S4 走会话）、C-1（显�
 | F11 | 修了 F10 之后，在装有用户级 PreToolUse hook 的机器上，claude-code reviewer/verifier 仍然所有 git 都被拒 | 缺陷（已修复） | 2026-11-12 用 `2118d025be` 的 reviewer 参数直接跑 `claude --print --permission-mode dontAsk`：默认用户设置下 `git --no-pager show`、`git diff` 全部被拒，`permission_denials` 里的命令带 `rtk` 前缀——用户的 `rtk hook claude` 把 `git …` 改写成 `rtk git …`，十二条 `Bash(git …:*)` 都匹配不上；加 `--setting-sources project,local` 或 `--settings '{"disableAllHooks":true}'` 后同样的命令通过，`git -C` 仍被拒。修复：reviewer 与 verifier 的 claude-code argv 都带 `--settings '{"disableAllHooks":true}'`（`REVIEW_HOST_SETTINGS`，`runtime/assurance/cli_review.ts`）。receipt 来自 output 文件而非 hook，关 hook 不丢任何证据；同条件下 `immune-brain:authority-review` 仍出现在 init 的 slash_commands 里。Pi 与 antigravity 的 argv 不变。 |
 | F12 | claude-code verifier 读不到自己的 verification packet | 缺陷（已修复） | 2026-11-12 v4 在 `~/imm-probe/L4` 用 PR 头 `ac6be56af5` 的 `verificationArguments` 跑真实 `claude`，packet 按生产写到 `tmpdir()/imm-cli-verify-*`：`permission_denials` 为 `Read …/verify-packet.md`，verifier 以散文作答，没有 JSON；同一运行加 `--add-dir <packet 目录>` 后 `git --no-pager show`、`git diff` 通过、`git -C` 被拒，返回预期 JSON（证据 `~/imm-probe/evidence/v4/smoke-args/`）。reviewer 早已带 `--add-dir`，verifier 漏了。修复：claude-code verifier argv 带 `--add-dir dirname(packet)`，verify 目录与 review 目录一样取 `realpath`（`runtime/assurance/cli_review.ts`）。Pi 与 antigravity 的 argv 不变。 |
 | F13 | claude-code reviewer 加载用户安装的旧版 `authority-review` skill | 缺陷（已修复，契约随之修订） | 2026-11-12 v4 `probe-m2`：Parent 以 `--plugin-dir` 跑 PR 头，reviewer argv 不带 `--plugin-dir`，加载用户级 immune-brain 8.1.2（skill 契约哈希 `sha256:2e4d13dd…`），而 Kernel 期望 `sha256:6012cd08…`；两次 Review 都以 `review_contract_mismatch` 释放（证据 `~/imm-probe/evidence/v4/m2-notes.md`）。原 spec 明确不带 `--plugin-dir`（`docs/specs/review-cli-stage.spec.md` D5），按用户决定修订。实测 `claude --plugin-dir` 会盖过同名已安装插件（init 只列出 inline 8.1.3）。修复：claude-code reviewer argv 带 `--plugin-dir <runtime 所在 Claude 插件根>`（`runtimeClaudePluginDir` 在 `runtime/plugin_source_skew.ts`，调用点 `runtime/assurance/cli_review.ts`）；无 Claude 清单时（antigravity 镜像）不带。 |
-| F14 | Lane Review 不跟随 drive 请求选定的 Lane profile | 缺陷（已修复，契约随之修订） | 2026-11-12 v4 `probe-m3`：请求 `use lane profile review-probe`（Review 为 claude-code / sonnet），Executor 按 profile 跑 haiku，但 Review 记录的 `reviewer_model` 是 `claude-opus-5-5`，来自当时的 `lanes.active`（证据 `~/imm-probe/evidence/v4/m3-notes.md`）。根因：`prepareReview` 在 Lane 里调用 `chooseReviewer(resolveConfig(root).lanes)`，batch 记录不存 profile，违反 `dist/drive-batch.md` Lane Preferences「请求点名的 profile 优先」。m1 走 antigravity 同因。修复：`start_unattended_batch` 新增 `review_host` / `review_model` / `review_effort`，新 lane batch 记为 `review_profile` 并在确认门显示；`laneBatchReviewProfile`（`runtime/unattended/batch_state.ts`）在 Lane 内取绑定该 Lane 的在途 batch 的 profile，缺省才回退层级配置（`runtime/assurance/cli_review.ts`）。实测复跑未做。 |
+| F14 | Lane Review 不跟随 drive 请求选定的 Lane profile | 缺陷（已修复，契约随之修订） | 2026-11-12 v4 `probe-m3`：请求 `use lane profile review-probe`（Review 为 claude-code / sonnet），Executor 按 profile 跑 haiku，但 Review 记录的 `reviewer_model` 是 `claude-opus-5-5`，来自当时的 `lanes.active`（证据 `~/imm-probe/evidence/v4/m3-notes.md`）。根因：`prepareReview` 在 Lane 里调用 `chooseReviewer(resolveConfig(root).lanes)`，batch 记录不存 profile，违反 `dist/drive-batch.md` Lane Preferences「请求点名的 profile 优先」。m1 走 antigravity 同因。修复：`start_unattended_batch` 新增 `review_host` / `review_model` / `review_effort`，新 lane batch 记为 `review_profile` 并在确认门显示；`laneBatchReviewProfile`（`runtime/unattended/batch_state.ts`）在 Lane 内取绑定该 Lane 的在途 batch 的 profile，缺省才回退层级配置（`runtime/assurance/cli_review.ts`）。实测复跑（`f6d41c014b`，v4 `probe-m4`，同一请求）：batch 记录 `review_profile = {host: claude-code, model: claude-sonnet-5-5, effort: low}`，Review 记录 `reviewer_model = claude-sonnet-5-5`（证据 `~/imm-probe/evidence/v4/m4-notes.md`）。 |
 
 F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督行为本轮未复测（BR-DEFER-2）。F10 的十二条 allow-list 与 F11 的关 hook 参数由自动化测试覆盖，并用真实 `claude` 做过一次 argv 级冒烟（上表 F11）；完整的 Review 复跑仍然延后（BR-SCN-1）。
 
@@ -358,8 +358,8 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | Loop · 插件副本 | C-1 | 通过（两份修复版共存）；旧安装副本仍冲突 |
 | Loop · 连续 batch | F7 回归（同仓第 2、3 个 batch） | 通过 |
 | Loop · Host 变体 | antigravity Executor、Claude Code Parent（后台 await） | 各通过一次 |
-| Review / advisory | S2-a、S2-b、S2-c、S4-a | S2 全部通过；S4-a 的会话传输成立（reviewer 为 pi 时结算成功，claude 路径撞 F10） |
-| Review / verifier | S3-a、S3-b、S3-c、S3-d | **未验证**（三次 material 尝试未产生 rework；第三次撞 F10） |
+| Review / advisory | S2-a、S2-b、S2-c、S4-a | S2 全部通过；S4-a 的会话传输成立；claude-code reviewer 路径在 v4 `probe-m3`、`probe-m4` 结算成功（F10–F14 修复后） |
+| Review / verifier | S3-a、S3-b、S3-c、S3-d | **未验证**（三次 material 尝试未产生 rework，第三次撞 F10；v4 `probe-m3`、`probe-m4` 的 claude-code Review 均无 blocking finding，verifier 未运行。决定不再靠模型出错强行触发：verifier 参数与流程只由自动化测试覆盖，F12 的 packet 可读性仅做过 argv 级验证） |
 | Herdr 外 | S4-b | **未验证**（F9） |
 
 ### 2. 五个门的结论
@@ -383,11 +383,11 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | C-1 | 显式 `-e` + 已安装 package 冲突退出 | 已修（按进程认领）；旧副本缺认领代码时仍会冲突 |
 | **F8** | active 用户 profile 覆盖项目 `lanes.*`，预期 project 优先 | 非缺陷：优先级符合 ADR 0037，测试把键写错了层（`layered_config.ts:178-182`） |
 | **F9** | Herdr 外非交互 Executor 与 `tui_required` 矛盾，批永不结算 | 已修：返回 `lane_executor_requires_tui`，子任务留在 `enrolled`；未实测 |
-| **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | 已修：根因是 `dontAsk` 拒绝 `git --no-pager`；真实模型复跑未做（BR-SCN-1） |
-| **F11** | 用户级 PreToolUse hook 改写 git 命令，reviewer 的 git allow-list 全部失配 | 已修：claude-code reviewer/verifier 带 `--settings '{"disableAllHooks":true}'`；argv 级冒烟通过，完整 Review 复跑未做（BR-SCN-1） |
+| **F10** | claude-code reviewer 的评审结论被判 coverage 不足，两轮后 park | 已修：根因是 `dontAsk` 拒绝 `git --no-pager`；真实模型复跑在 F11–F14 修复后通过（v4 `probe-m3`、`probe-m4`，BR-SCN-1） |
+| **F11** | 用户级 PreToolUse hook 改写 git 命令，reviewer 的 git allow-list 全部失配 | 已修：claude-code reviewer/verifier 带 `--settings '{"disableAllHooks":true}'`；argv 级冒烟通过；完整 Review 已实测（v4 `probe-m3`，`177e692fed`）：reviewer 摘要写明核对了 commit 父提交和 tree，git 在 dontAsk 下可用（证据 `~/imm-probe/evidence/v4/m3-notes.md`） |
 | **F12** | claude-code verifier 的 packet 在仓库外，`dontAsk` 拒绝 Read | 已修：verifier argv 带 `--add-dir <packet 目录>`；argv 级冒烟通过（v4 `smoke-args`），完整 Review 复跑未做（BR-SCN-1） |
-| **F13** | claude-code reviewer 加载用户安装的旧版 skill，契约哈希不符 | 已修：reviewer argv 带 runtime 的 `--plugin-dir`；完整 Review 复跑待 v4 `probe-m2` 重新发起 |
-| **F14** | Lane Review 用 `lanes.active` 而非请求选定的 profile | 已修：batch 记录 `review_profile`，Lane Review 优先用它；实测复跑待新的 v4 用例 |
+| **F13** | claude-code reviewer 加载用户安装的旧版 skill，契约哈希不符 | 已修：reviewer argv 带 runtime 的 `--plugin-dir`；完整 Review 已实测：v4 `probe-m3`、`probe-m4` 均无 `review_contract_mismatch`，Review 被接受（`177e692fed`、`f6d41c014b`） |
+| **F14** | Lane Review 用 `lanes.active` 而非请求选定的 profile | 已修并实测：`probe-m4` 的 Review 用请求选定的 sonnet（`f6d41c014b`） |
 
 ### 4. 准入决定
 
@@ -404,6 +404,6 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 
 ### 6. 剩余工作
 
-1. 用真实 claude-code reviewer 复跑 F10（BR-SCN-1）；在 Herdr 外实测 F9 的 `lane_executor_requires_tui`，并补测 `claude --print` 与 antigravity（BR-DEFER-2）。
-2. 重跑 S3-a/b（含 `verifier_actor` / `verifier_model` / `model_relation`）、S3-c（verify tab 里 Ctrl+C）、S3-d（`review_transport: process`）、S4-b（`review_transport_unavailable`）。
+1. ~~用真实 claude-code reviewer 复跑 F10（BR-SCN-1）~~（v4 `probe-m3`、`probe-m4` 已完成；reviewer 会话无 transcript，`inspected_paths` / `permission_denials` 未验证）。在 Herdr 外实测 F9 的 `lane_executor_requires_tui`，并补测 `claude --print` 与 antigravity（BR-DEFER-2）。
+2. S3-a/b/c/d 不再安排实测（见上表，未验证）。仍待实测：S4-b（`review_transport_unavailable`）。
 3. 补测 Pi / Antigravity 的权限与登录对话框（需要各自 host 的隔离配置），以及 C-3 的 Claude Code 并行组合。
