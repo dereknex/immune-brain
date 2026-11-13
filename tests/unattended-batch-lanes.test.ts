@@ -475,6 +475,9 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
 			const reopened = await completedParentReport(fx.repo, SLUG, reader, tracker) as unknown as BatchLaneRunReport;
 			expect(reopened).toMatchObject({ batch_state: "completed", lane_refusals: [retainedA, retainedB] });
+			// #426 F18: the rebuilt Parent report keeps the recorded closes, or the Parent never closes the tabs.
+			expect(done.session_closes?.map(c => c.task_id)).toEqual(["task-a", "task-b"]);
+			expect(reopened.session_closes).toEqual(done.session_closes);
 			expect(reopened.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed");
 			expect(resources()).toEqual(kept);
 			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);

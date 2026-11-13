@@ -18481,6 +18481,7 @@ async function completedParentReport(root, initiativeSlug, readInitiative, track
     final_verification: batch.final_verification_result,
     ...sync ? { tracker: sync } : {},
     ...retained.length ? { lane_refusals: retained } : {},
+    ...isLaneBatchRecord(batch) && batch.session_closes?.length ? { session_closes: batch.session_closes } : {},
     reason: sync?.status === "failed" ? "Local Parent completion proved; tracker synchronization failed" : null,
     next_action: (sync?.status === "failed" ? sync.message : "Parent delivery and final verification passed") + (retained.length ? "." : "") + retainedLaneAction(retained),
     created_at: new Date().toISOString(),

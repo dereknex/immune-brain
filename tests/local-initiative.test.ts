@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtime/github_issue_tracker";
@@ -190,6 +190,25 @@ describe("batch plan from a Local Initiative", () => {
 			// With no carrier file the default reader goes to GitHub, which this bare repository cannot answer.
 			await expect(observeInitiative(root, SLUG)).rejects.toThrow();
 			expect(hasLocalInitiative(root, SLUG)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("draw-up Local carrier shape", () => {
+	it("documents an example carrier that drive's parser reads", () => {
+		const contract = readFileSync(join(import.meta.dir, "../plugins/immune-brain/dist/draw-up.md"), "utf8");
+		const example = /A Local carrier is written[\s\S]*?```markdown\n([\s\S]*?)```/.exec(contract)?.[1];
+		expect(example).toBeDefined();
+		const root = mkdtempSync(join(tmpdir(), "drawup-carrier-"));
+		try {
+			mkdirSync(join(root, "docs/initiatives"), { recursive: true });
+			writeFileSync(join(root, "docs/initiatives/example.md"), example!);
+			expect(observeLocalInitiative(root, "example").tasks).toEqual([
+				{ task_id: "initiative-alpha", slice_id: "A", blocked_by: [] },
+				{ task_id: "initiative-beta", slice_id: "B", blocked_by: ["initiative-alpha"] },
+			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
