@@ -569,6 +569,8 @@ describe("unattended batch contract text", () => {
 			"final_verification",
 			// The recorded verification outcome and the bounded Parent repair tasks it produced.
 			"final_verification_result",
+			// #426 F14: the Review Host/model/effort the batch request selected, read by its Lane Review.
+			"review_profile",
 			"repair_tasks",
 			// ADR 0028: legacy delegation evidence stays readable, with no current grant.
 			"revision_delegation",
