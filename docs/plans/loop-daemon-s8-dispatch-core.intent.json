@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s8-dispatch-core",
+  "owner": "user",
+  "goal": "Connect imm-loop tick and run to their handlers: read the loop config with a mode gate and owner-identity refusal, populate guard facts, schedule and lease judged handlers, execute the deterministic handlers through one GitHub write port, update the status Issue in place, and record every dispatch, under S8 (D10) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S8-AC1",
+      "assertion": "Source GAP-1 to GAP-4; meet S8 and D10 items 3-6 in docs/specs/loop-daemon.spec.md (SCN-5): under loop.mode assist a live tick fills GuardFacts (allowed_actors, allowed_associations, daemon_identity, budget_exhausted, retry_counts, unresolved_blockers, shutdown_requested) from config, the authenticated GitHub login and local state; admits judged handlers only through scheduleLoopWork() and an acquired lease; executes escalate (create or edit by key), relay_lane_decision_question, apply_lane_decision_reply, open_pr, mark_pr_ready, close_out, owner pause/resume/retry/ignore and the in-place status Issue through one GitHub write port; records agent-backed handlers as agent_port_unavailable with no side effect; and appends assurance_kernel/loop_dispatch_record/v1 rows to .imm/state/loop/dispatches.jsonl with mode 0600.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-dispatch.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S8-AC2",
+      "assertion": "Source GAP-3 and GAP-4; meet D10 items 1-2 in docs/specs/loop-daemon.spec.md: a live tick or run exits non-zero with zero GitHub writes under loop.mode off, when the authenticated daemon login is in loop.allowed_actors, or when that login cannot be read; loop.mode observe records decisions and skipped_mode dispatches with zero GitHub writes; --dry-run and status keep working under every mode; run uses loop.interval_seconds unless --interval overrides it; a candidate overlapping an active lease is recorded held.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-dispatch.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s8-dispatch-core.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/github_port.ts",
+    "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+    "plugins/immune-brain/runtime/loop_daemon/state.ts",
+    "tests/loop-daemon-boundary.test.ts",
+    "tests/loop-daemon-dispatch.test.ts",
+    "tests/loop-daemon-judge.test.ts",
+    "tests/loop-daemon-observe.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

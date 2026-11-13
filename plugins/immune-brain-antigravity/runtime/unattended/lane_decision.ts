@@ -36,6 +36,19 @@ export function laneDecisionFacts(taskId: string, projection: Projection): LaneD
 		open_user_decision_count: projection.open_user_decision_count, replan_required_ids: [...projection.replan_required_ids] };
 }
 
+/**
+ * Returns whether the decision facts represent a user_only gate (D7).
+ * All literal-user decisions in laneDecisionFacts are user_only gates.
+ */
+export function isUserOnlyDecision(facts: LaneDecisionFacts | null): boolean {
+	if (!facts) return false;
+	return (
+		facts.authorization.state !== "none" ||
+		facts.open_user_decision_count > 0 ||
+		facts.replan_required_ids.length > 0
+	);
+}
+
 export interface LaneRelayTarget {
 	batch_id: string;
 	task_id: string;

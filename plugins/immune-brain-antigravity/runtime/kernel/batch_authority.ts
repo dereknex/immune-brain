@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createCapabilityRegistry } from "./capability_registry";
-import { isLiteralUserActor } from "./actor_identity";
+import { isCompositionRootActor } from "./actor_identity";
 import type { BaseCapabilityBinding, EnrollmentCapabilityBinding } from "./enrollment_authority";
 import { preparePiCanary, type PiCanaryPreparation } from "./pi_canary_prepare";
 import { intentAuthorityHash, readTaskIntent } from "./intent";
@@ -222,9 +222,14 @@ export function createBatchAuthorityRegistry(): BatchAuthorityRegistry {
 				requireNonEmpty(binding);
 				// Both the canonical literal-user spelling and the historical `user`
 				// spelling are read, so a batch authorized before the convergence keeps
-				// validating; new bindings are written canonically.
-				if (!isLiteralUserActor(binding.actor_id))
-					throw new Error("batch authorization requires a literal-user actor_id");
+				// validating; new bindings are written canonically. The Loop daemon is
+				// the one other origin (ADR 0039 Decision 2): it starts Managed work with
+				// no interactive session, so its batch carries its own actor rather than
+				// a literal-user act it never obtained.
+				if (!isCompositionRootActor(binding.actor_id))
+					throw new Error(
+						"batch authorization requires a literal-user actor_id or the loop-daemon composition root",
+					);
 				if (!GIT_COMMIT_ID.test(binding.base_head))
 					throw new Error("batch authorization base_head must be a committed 40-hex commit id");
 				validateBudget(binding.budget);

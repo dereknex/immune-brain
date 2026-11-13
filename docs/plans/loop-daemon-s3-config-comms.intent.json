@@ -1,0 +1,26 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s3-config-comms",
+  "owner": "user",
+  "goal": "Deliver .imm/config.json loop validation, same-UID degraded identity detection, standing publication grant, in-place status Issue updates, marker-keyed escalation deduplication, and REST API-verified @imm-loop owner commands under S3 (D3) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S3-AC1",
+      "assertion": "Source BR-REQ-3, BR-DEFER-1, BR-DEFER-2; meet S3 and D3 in docs/specs/loop-daemon.spec.md: layered_config.ts validates the loop configuration block and rejects auto_enroll_max_risk: critical; identity.ts enters degraded posture under same-UID execution (blocking policy_auto and merge_pr while permitting plan/question publication); status_issue.ts edits the single loop-status Issue in place; escalation.ts deduplicates by escalation-key marker; and owner_commands.ts verifies REST user.login and author_association before accepting @imm-loop commands.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-config-comms.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s3-config-comms.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/layered_config.ts",
+    "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+    "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+    "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts",
+    "plugins/immune-brain/runtime/loop_daemon/status_issue.ts",
+    "tests/loop-daemon-config-comms.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

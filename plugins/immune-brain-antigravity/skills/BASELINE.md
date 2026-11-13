@@ -109,7 +109,11 @@ classifying a non-mutating request.
 Require exact host confirmation only for privileged effects. For ordinary
 non-Kernel operations, an explicit user approval already covering the same
 operation, target, and impact is sufficient; ask again only for a material delta.
-A generic continuation or configured preference is not blanket authorization.
+A generic continuation or configured preference is not blanket authorization;
+however, when the repository configuration declares a bounded standing grant
+enumerating exact operations, targets, and impacts (such as the Loop daemon's
+standing publication grant under ADR 0039), that declared authorization satisfies
+this boundary.
 Mandatory native gates and hash-bound manifest approvals still apply.
 Privileged effects include:
 

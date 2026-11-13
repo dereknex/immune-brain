@@ -1,0 +1,21 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s7-repair",
+  "owner": "user",
+  "goal": "Deliver headless fix-pr repair dispatch for daemon-opened PRs (CI failure local reproduction and fix, conflict rebase, review comment disposition vs escalation, 2-attempt cap per (head_sha, failure_signature), mark_pr_ready, and close_out) under S7 (D8) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S7-AC1",
+      "assertion": "Source BR-REQ-5; meet S7 and D8 in docs/specs/loop-daemon.spec.md: repair_agent.ts handles daemon-managed PRs on imm/* and imm-loop/* by reproducing and repairing failing CI checks locally, rebasing base-branch conflicts, addressing in-scope review comments or escalating scope changes, enforcing a strict 2-attempt cap per (head_sha, failure_signature) before escalating, and executing mark_pr_ready and close_out.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s7-repair.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+    "tests/loop-daemon-repair.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

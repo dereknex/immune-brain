@@ -271,7 +271,13 @@ function isLiteralUserActor(actorId) {
 function canonicalActorId(actorId) {
   return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
 }
-var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS;
+function isUnattendedCompositionRoot(actorId) {
+  return actorId === LOOP_DAEMON_ACTOR_ID;
+}
+function isCompositionRootActor(actorId) {
+  return isLiteralUserActor(actorId) || isUnattendedCompositionRoot(actorId);
+}
+var LITERAL_USER_ACTOR_ID = "literal-user", LITERAL_USER_SPELLINGS, LOOP_DAEMON_ACTOR_ID = "loop-daemon";
 var init_actor_identity = __esm(() => {
   LITERAL_USER_SPELLINGS = new Set([LITERAL_USER_ACTOR_ID, "user"]);
 });
@@ -1066,12 +1072,13 @@ function stableStringify(value) {
 }
 
 // plugins/immune-brain/runtime/kernel/types.ts
-var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
+var TASK_PHASES, TASK_LIFECYCLES, TASK_ARTIFACT_STATES, TASK_RISKS, ENROLLMENT_CONFIRMATION_SOURCES, TASK_INTENT_CONTRACT_V1 = "assurance_kernel/task_intent/v1", TASK_RECORD_CONTRACT_V2 = "assurance_kernel/task_record/v2", TASK_RECORD_CONTRACT_V3 = "assurance_kernel/task_record/v3", TASK_RECORD_CONTRACT_V4 = "assurance_kernel/task_record/v4", REVIEW_REVISION_IDENTITY_CONTRACT = "assurance_kernel/review_revision_identity/v1", REDUCED_MUTATION_BRAND, MUTATION_AUTHORITY_CAPABILITY_BRAND;
 var init_types = __esm(() => {
   TASK_PHASES = ["working", "review", "done", "stopped"];
   TASK_LIFECYCLES = ["active", "done", "stopped"];
   TASK_ARTIFACT_STATES = ["active", "frozen"];
   TASK_RISKS = ["routine", "material", "critical"];
+  ENROLLMENT_CONFIRMATION_SOURCES = ["user_session", "tracker_approval", "policy_auto"];
   REDUCED_MUTATION_BRAND = Symbol("assurance-kernel-reduced-mutation-v2");
   MUTATION_AUTHORITY_CAPABILITY_BRAND = Symbol("assurance-kernel-mutation-authority-capability");
 });
@@ -2449,7 +2456,7 @@ function parseTaskRecordAtVersion(raw, version) {
     "attestations",
     "findings",
     "history",
-    ...version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : []
+    ...version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance", "confirmation_source"] : []
   ], "record", violations);
   const expectedContract = version === 4 ? TASK_RECORD_CONTRACT_V4 : TASK_RECORD_CONTRACT_V3;
   if (value.contract !== expectedContract)
@@ -2521,6 +2528,15 @@ function parseTaskRecordAtVersion(raw, version) {
     budgetExtension = positiveInteger2(value.review_round_budget_extension, "record.review_round_budget_extension", violations);
   }
   const residualRiskAcceptance = value.residual_risk_acceptance === undefined ? undefined : parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+  let confirmationSource;
+  if (value.confirmation_source !== undefined) {
+    if (version !== 4)
+      violations.push("record.confirmation_source is only valid on a v4 record");
+    else if (!ENROLLMENT_CONFIRMATION_SOURCES.includes(value.confirmation_source))
+      violations.push(`record.confirmation_source must be one of ${ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
+    else
+      confirmationSource = value.confirmation_source;
+  }
   if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
     violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
   if (residualRiskAcceptance) {
@@ -2570,6 +2586,7 @@ function parseTaskRecordAtVersion(raw, version) {
     ...version === 4 ? { git_base_head: gitBaseHead } : {},
     ...version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {},
     ...version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {},
+    ...version === 4 && confirmationSource !== undefined ? { confirmation_source: confirmationSource } : {},
     attestations,
     findings,
     history
@@ -5466,8 +5483,8 @@ function createBatchAuthorityRegistry() {
   const inner = createCapabilityRegistry(BATCH_AUTHORITY_CAPABILITY_BRAND, {
     validateBinding(binding) {
       requireNonEmpty(binding);
-      if (!isLiteralUserActor(binding.actor_id))
-        throw new Error("batch authorization requires a literal-user actor_id");
+      if (!isCompositionRootActor(binding.actor_id))
+        throw new Error("batch authorization requires a literal-user actor_id or the loop-daemon composition root");
       if (!GIT_COMMIT_ID.test(binding.base_head))
         throw new Error("batch authorization base_head must be a committed 40-hex commit id");
       validateBudget(binding.budget);
@@ -7733,6 +7750,185 @@ var init_batch_final_verification = __esm(() => {
   DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 });
 
+// plugins/immune-brain/runtime/decision_model/thresholds.ts
+var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A14_AMBIGUOUS_USER_INTENT, A15_TASK_GRANULARITY, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, A18_EVENT_PREFILTER, A19_OWNER_COMMENT_INTENT, A20_ISSUE_DUPLICATE_PAIR, POINT_REGISTRY;
+var init_thresholds = __esm(() => {
+  A1_REVIEW_FINDING_PRESCREEN = {
+    id: "a1_review_finding_prescreen",
+    question_type: "choice",
+    input_category: "finding",
+    options: ["likely_true", "likely_false", "uncertain"],
+    criteria: {
+      likely_true: "The finding describes a reachable defect",
+      likely_false: "The finding does not describe a reachable defect",
+      uncertain: "The evidence does not support either conclusion"
+    },
+    instructions: "Given a review finding's trigger, caller chain, and violated invariant, which option best describes it?",
+    threshold_set: { version: "a1/v0", values: null }
+  };
+  A14_PR_COMMENT_TRIAGE = {
+    id: "a14_pr_comment_triage",
+    question_type: "choice",
+    input_category: "pr_comment",
+    options: ["blocking", "nit", "out_of_scope", "duplicate"],
+    criteria: {
+      blocking: "Must change before merge",
+      nit: "Optional polish",
+      out_of_scope: "Valid but belongs to another change",
+      duplicate: "Restates an earlier comment in the same PR"
+    },
+    instructions: "Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
+    threshold_set: {
+      version: "a14/v1",
+      values: { blocking: 0.8, nit: 0.8, out_of_scope: 0.8, duplicate: 0.8 }
+    }
+  };
+  A15_ISSUE_TRIAGE = {
+    id: "a15_issue_triage",
+    question_type: "choice",
+    input_category: "issue_text",
+    options: ["duplicate", "needs_spec", "ready_for_agent"],
+    criteria: {
+      duplicate: "Restates an issue that already exists",
+      needs_spec: "Too under-specified to implement; needs a spec first",
+      ready_for_agent: "Specified well enough for an agent to implement as written"
+    },
+    instructions: "Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
+    threshold_set: { version: "a15/v0", values: null }
+  };
+  A14_AMBIGUOUS_USER_INTENT = {
+    id: "a14_ambiguous_user_intent",
+    question_type: "choice",
+    input_category: "pr_comment",
+    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+    criteria: {
+      clear_single_task: "The comment requests one change that one Lane can make",
+      needs_initiative_decomposition: "The comment requests work that must be split into several tasks first",
+      needs_clarification: "The comment's intent is too ambiguous to act on"
+    },
+    instructions: "Given a review comment on a daemon pull request, which option best describes what its author is asking for?",
+    threshold_set: { version: "a14-intent/v0", values: null }
+  };
+  A15_TASK_GRANULARITY = {
+    id: "a15_task_granularity",
+    question_type: "choice",
+    input_category: "issue_text",
+    options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+    criteria: {
+      clear_single_task: "The issue is one task an agent can implement as written",
+      needs_initiative_decomposition: "The issue describes work that must be split into several tasks first",
+      needs_clarification: "The issue is too under-specified to plan"
+    },
+    instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
+    threshold_set: {
+      version: "a15-granularity/v1",
+      values: {
+        clear_single_task: 0.75,
+        needs_initiative_decomposition: 0.75,
+        needs_clarification: 0.75
+      }
+    }
+  };
+  A16_REVISIT_CHAIN_CLASS = {
+    id: "a16_revisit_chain_class",
+    question_type: "choice",
+    input_category: "session_event",
+    options: ["avoidable_friction", "necessary_decision", "error_recovery", "unknown"],
+    criteria: {
+      avoidable_friction: "The user stepped in only because the workflow stalled or asked something it could have resolved itself",
+      necessary_decision: "The user stepped in to make a decision only they could make",
+      error_recovery: "The user stepped in to recover from a failed or errored step",
+      unknown: "The located fields do not support any other class"
+    },
+    instructions: "Given one revisit candidate chain (the task, how often the same task resumed, the last tool result before the stop and the length of the user's reply), which option best describes why the user resumed the task?",
+    threshold_set: { version: "a16/v0", values: null }
+  };
+  A4_FINDING_EQUIVALENCE = {
+    id: "a4_finding_equivalence",
+    question_type: "choice",
+    input_category: "finding",
+    options: ["same_invariant", "new_defect", "out_of_contract"],
+    criteria: {
+      same_invariant: "Violates the same invariant class as an earlier finding of the same run",
+      new_defect: "A distinct defect that no earlier finding covers",
+      out_of_contract: "Outside the accepted contract of the task"
+    },
+    instructions: "Given the target blocking review finding and the earlier findings of the same run, which option best describes the target finding: the same invariant class as an earlier finding, a new defect, or outside the task's accepted contract?",
+    threshold_set: { version: "a4/v0", values: null }
+  };
+  A17_REVIEW_FINDING_KIND = {
+    id: "a17_review_finding_kind",
+    question_type: "choice",
+    input_category: "finding",
+    options: ["acceptance", "security_boundary"],
+    criteria: { acceptance: "Violates an acceptance assertion", security_boundary: "Violates a security boundary" },
+    instructions: "Classify the violated invariant using only the finding trigger and caller chain; do not infer the reviewer's declared kind.",
+    threshold_set: { version: "a17/v0", values: null }
+  };
+  A18_EVENT_PREFILTER = {
+    id: "a18_event_prefilter",
+    question_type: "choice",
+    input_category: "session_event",
+    options: ["actionable", "ignore"],
+    criteria: {
+      actionable: "The event requires daemon action or triage",
+      ignore: "The event is noisy, informational, or requires no action"
+    },
+    instructions: "Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
+    threshold_set: { version: "a18/v1", values: { ignore: 0.9 } }
+  };
+  A19_OWNER_COMMENT_INTENT = {
+    id: "a19_owner_comment_intent",
+    question_type: "choice",
+    input_category: "issue_text",
+    options: ["approve_plan", "request_plan_revision", "answer_lane_decision", "command", "discussion"],
+    criteria: {
+      approve_plan: "The owner intends to approve the proposed plan",
+      request_plan_revision: "The owner requests changes or revision to the proposed plan",
+      answer_lane_decision: "The owner answers an in-Lane decision or clarification question",
+      command: "The owner issues a direct daemon command",
+      discussion: "General discussion not requiring execution"
+    },
+    instructions: "Given a comment from a verified repository owner, which option best describes the author's intent?",
+    threshold_set: {
+      version: "a19/v1",
+      values: {
+        approve_plan: 0.8,
+        request_plan_revision: 0.8,
+        answer_lane_decision: 0.8,
+        command: 0.8,
+        discussion: 0.8
+      }
+    }
+  };
+  A20_ISSUE_DUPLICATE_PAIR = {
+    id: "a20_issue_duplicate_pair",
+    question_type: "choice",
+    input_category: "issue_text",
+    options: ["duplicate", "related", "unrelated"],
+    criteria: {
+      duplicate: "The candidate issue describes the same underlying problem as the existing issue",
+      related: "The candidate issue is related but addresses a different problem",
+      unrelated: "The candidate issue is unrelated to the existing issue"
+    },
+    instructions: "Given two GitHub issues, which option best describes their relationship?",
+    threshold_set: { version: "a20/v1", values: { duplicate: 0.85 } }
+  };
+  POINT_REGISTRY = {
+    [A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
+    [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
+    [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
+    [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
+    [A14_AMBIGUOUS_USER_INTENT.id]: A14_AMBIGUOUS_USER_INTENT,
+    [A15_TASK_GRANULARITY.id]: A15_TASK_GRANULARITY,
+    [A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
+    [A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
+    [A18_EVENT_PREFILTER.id]: A18_EVENT_PREFILTER,
+    [A19_OWNER_COMMENT_INTENT.id]: A19_OWNER_COMMENT_INTENT,
+    [A20_ISSUE_DUPLICATE_PAIR.id]: A20_ISSUE_DUPLICATE_PAIR
+  };
+});
+
 // plugins/immune-brain/runtime/decision_model/contract.ts
 function isSensitiveCategory(value) {
   return SENSITIVE_CATEGORIES.includes(value);
@@ -7748,6 +7944,7 @@ function unavailable(reason, detail) {
 }
 var NON_SENSITIVE_CATEGORIES, SENSITIVE_CATEGORIES, PROVIDER_KINDS;
 var init_contract = __esm(() => {
+  init_thresholds();
   NON_SENSITIVE_CATEGORIES = ["pr_comment", "issue_text", "command_text", "session_event"];
   SENSITIVE_CATEGORIES = ["finding", "diff", "goal_scope", "spec_source"];
   PROVIDER_KINDS = ["clef", "fake", "jev"];
@@ -7944,95 +8141,6 @@ var init_config = __esm(() => {
   init_contract();
 });
 
-// plugins/immune-brain/runtime/decision_model/thresholds.ts
-var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, POINT_REGISTRY;
-var init_thresholds = __esm(() => {
-  A1_REVIEW_FINDING_PRESCREEN = {
-    id: "a1_review_finding_prescreen",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["likely_true", "likely_false", "uncertain"],
-    criteria: {
-      likely_true: "The finding describes a reachable defect",
-      likely_false: "The finding does not describe a reachable defect",
-      uncertain: "The evidence does not support either conclusion"
-    },
-    instructions: "Given a review finding's trigger, caller chain, and violated invariant, which option best describes it?",
-    threshold_set: { version: "a1/v0", values: null }
-  };
-  A14_PR_COMMENT_TRIAGE = {
-    id: "a14_pr_comment_triage",
-    question_type: "choice",
-    input_category: "pr_comment",
-    options: ["blocking", "nit", "out_of_scope", "duplicate"],
-    criteria: {
-      blocking: "Must change before merge",
-      nit: "Optional polish",
-      out_of_scope: "Valid but belongs to another change",
-      duplicate: "Restates an earlier comment in the same PR"
-    },
-    instructions: "Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
-    threshold_set: { version: "a14/v0", values: null }
-  };
-  A15_ISSUE_TRIAGE = {
-    id: "a15_issue_triage",
-    question_type: "choice",
-    input_category: "issue_text",
-    options: ["duplicate", "needs_spec", "ready_for_agent"],
-    criteria: {
-      duplicate: "Restates an issue that already exists",
-      needs_spec: "Too under-specified to implement; needs a spec first",
-      ready_for_agent: "Specified well enough for an agent to implement as written"
-    },
-    instructions: "Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
-    threshold_set: { version: "a15/v0", values: null }
-  };
-  A16_REVISIT_CHAIN_CLASS = {
-    id: "a16_revisit_chain_class",
-    question_type: "choice",
-    input_category: "session_event",
-    options: ["avoidable_friction", "necessary_decision", "error_recovery", "unknown"],
-    criteria: {
-      avoidable_friction: "The user stepped in only because the workflow stalled or asked something it could have resolved itself",
-      necessary_decision: "The user stepped in to make a decision only they could make",
-      error_recovery: "The user stepped in to recover from a failed or errored step",
-      unknown: "The located fields do not support any other class"
-    },
-    instructions: "Given one revisit candidate chain (the task, how often the same task resumed, the last tool result before the stop and the length of the user's reply), which option best describes why the user resumed the task?",
-    threshold_set: { version: "a16/v0", values: null }
-  };
-  A4_FINDING_EQUIVALENCE = {
-    id: "a4_finding_equivalence",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["same_invariant", "new_defect", "out_of_contract"],
-    criteria: {
-      same_invariant: "Violates the same invariant class as an earlier finding of the same run",
-      new_defect: "A distinct defect that no earlier finding covers",
-      out_of_contract: "Outside the accepted contract of the task"
-    },
-    instructions: "Given the target blocking review finding and the earlier findings of the same run, which option best describes the target finding: the same invariant class as an earlier finding, a new defect, or outside the task's accepted contract?",
-    threshold_set: { version: "a4/v0", values: null }
-  };
-  A17_REVIEW_FINDING_KIND = {
-    id: "a17_review_finding_kind",
-    question_type: "choice",
-    input_category: "finding",
-    options: ["acceptance", "security_boundary"],
-    criteria: { acceptance: "Violates an acceptance assertion", security_boundary: "Violates a security boundary" },
-    instructions: "Classify the violated invariant using only the finding trigger and caller chain; do not infer the reviewer's declared kind.",
-    threshold_set: { version: "a17/v0", values: null }
-  };
-  POINT_REGISTRY = {
-    [A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
-    [A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
-    [A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
-    [A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
-    [A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
-    [A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE
-  };
-});
-
 // plugins/immune-brain/runtime/config/project_identity.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { realpathSync as realpathSync10 } from "node:fs";
@@ -8148,12 +8256,12 @@ function resolveConfig(root, options = {}) {
     for (const s of ["decision_models", "lanes", "initiative_carrier"])
       failed.add(s);
   if (project === null)
-    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "review_verifier"])
+    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
       failed.add(s);
   if (user)
     validKeys(user, ["contract", "decision_models", "lanes", "initiative_carrier", "projects"], userPath, "", "user_file");
   if (project)
-    validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "review_verifier"], projectPath, "", "project_file");
+    validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
   const projects = section(user?.projects, userPath, "projects", "user_file");
   for (const [key, value] of Object.entries(projects))
     if (!object3(value)) {
@@ -8169,6 +8277,8 @@ function resolveConfig(root, options = {}) {
   const ol = section(override.lanes, userPath, `projects.${projectKey}.lanes`, "lanes");
   const pl = section(project?.lanes, projectPath, "lanes", "lanes");
   const batch = section(project?.batch, projectPath, "batch", "batch");
+  const loop = section(project?.loop, projectPath, "loop", "loop");
+  const loopBudget = section(loop.budget, projectPath, "loop.budget", "loop");
   validKeys(ud, ["profiles", "default_profile", "bindings", "egress"], userPath, "decision_models", "decision_models");
   validKeys(od, ["default_profile", "bindings", "egress"], userPath, `projects.${projectKey}.decision_models`, "decision_models");
   validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
@@ -8254,6 +8364,27 @@ function resolveConfig(root, options = {}) {
     invalid(projectPath, "batch.final_verification", "expected at most eight command strings");
     failed.add("batch");
   }
+  const integerWithin = (v, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= min && v <= max;
+  const distinctLogins = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
+  validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "budget"], projectPath, "loop", "loop");
+  validKeys(loopBudget, ["max_ticks_per_day", "max_dispatches_per_day"], projectPath, "loop.budget", "loop");
+  const loopChecks = [
+    ["mode", !has(loop, "mode") || LOOP_MODES.includes(loop.mode), `expected one of ${LOOP_MODES.join(", ")}`],
+    ["interval_seconds", !has(loop, "interval_seconds") || integerWithin(loop.interval_seconds, 15), "expected an integer of at least 15"],
+    ["max_concurrent", !has(loop, "max_concurrent") || integerWithin(loop.max_concurrent, 1, 8), "expected an integer between 1 and 8"],
+    ["max_ready_buffer", !has(loop, "max_ready_buffer") || integerWithin(loop.max_ready_buffer, 1, 20), "expected an integer between 1 and 20"],
+    ["max_pr_buffer", !has(loop, "max_pr_buffer") || integerWithin(loop.max_pr_buffer, 1, 20), "expected an integer between 1 and 20"],
+    ["auto_enroll_max_risk", !has(loop, "auto_enroll_max_risk") || LOOP_AUTO_ENROLL_MAX_RISKS.includes(loop.auto_enroll_max_risk), "expected none or routine; material and critical require tracker_approval"],
+    ["allowed_actors", !has(loop, "allowed_actors") || distinctLogins(loop.allowed_actors), "expected distinct non-empty GitHub logins"],
+    ["allowed_associations", !has(loop, "allowed_associations") || distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v) => LOOP_ASSOCIATIONS.includes(v)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`]
+  ];
+  for (const [key, value] of Object.entries(loopBudget))
+    loopChecks.push([`budget.${key}`, integerWithin(value, 1), "expected a positive integer"]);
+  for (const [key, ok, message] of loopChecks)
+    if (!ok) {
+      invalid(projectPath, `loop.${key}`, message);
+      failed.add("loop");
+    }
   for (const [key, entry] of Object.entries(projects)) {
     if (key === projectKey || !object3(entry))
       continue;
@@ -8277,7 +8408,7 @@ function resolveConfig(root, options = {}) {
     for (const s of ["decision_models", "lanes", "initiative_carrier"])
       failed.add(s);
   if (failed.has("project_file"))
-    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "review_verifier"])
+    for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
       failed.add(s);
   if (failed.has("decision_models"))
     for (const o of [ud, od, pd])
@@ -8440,9 +8571,10 @@ function resolveConfig(root, options = {}) {
   const decisionModels = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
   if (options.checkEnv)
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
-  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
+  const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
+  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, DEFAULT_LOOP_CONFIG;
 var init_layered_config = __esm(() => {
   init_config();
   init_contract();
@@ -8450,6 +8582,20 @@ var init_layered_config = __esm(() => {
   init_project_identity();
   envName = /^[A-Z_][A-Z0-9_]*$/;
   LANE_DEFAULTS = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
+  LOOP_MODES = ["off", "observe", "assist", "autonomous"];
+  LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
+  LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
+  DEFAULT_LOOP_CONFIG = {
+    mode: "off",
+    interval_seconds: 60,
+    max_concurrent: 2,
+    max_ready_buffer: 5,
+    max_pr_buffer: 5,
+    auto_enroll_max_risk: "none",
+    allowed_actors: [],
+    allowed_associations: [...LOOP_ASSOCIATIONS],
+    budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
+  };
 });
 
 // plugins/immune-brain/runtime/git_integration_preference.ts
@@ -21489,6 +21635,94 @@ init_storage();
 init_intent();
 init_canary_application();
 init_authority_port();
+// plugins/immune-brain/runtime/kernel/enrollment_confirmation.ts
+init_no_touch();
+init_risk_floor();
+var ok = { ok: true };
+var refuse3 = (reason) => ({ ok: false, reason });
+function timestamp2(value) {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+function isPositiveInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+function verifyTrackerApproval(proof, policy) {
+  if (!isPositiveInteger(proof.issue_number) || !isPositiveInteger(proof.comment_id))
+    return refuse3(`tracker_approval_proof_shape: issue_number and comment_id must be positive integers`);
+  if (policy.daemon_identity === "")
+    return refuse3("tracker_approval_policy_shape: daemon identity is empty");
+  if (proof.actor_login === policy.daemon_identity)
+    return refuse3(`tracker_approval_daemon_authored: ${proof.actor_login}`);
+  if (!policy.allowed_actors.includes(proof.actor_login))
+    return refuse3(`tracker_approval_actor_not_allowed: ${proof.actor_login}`);
+  if (!policy.allowed_associations.includes(proof.author_association))
+    return refuse3(`tracker_approval_association_not_allowed: ${proof.author_association}`);
+  const created = timestamp2(proof.created_at);
+  const published = timestamp2(policy.plan_published_at);
+  if (created === null || published === null)
+    return refuse3("tracker_approval_timestamp_invalid: created_at and plan_published_at must be timestamps");
+  if (created <= published)
+    return refuse3(`tracker_approval_predates_plan: ${proof.created_at} is not after ${policy.plan_published_at}`);
+  if (proof.updated_at !== proof.created_at)
+    return refuse3(`tracker_approval_comment_edited: updated_at ${proof.updated_at} differs from created_at`);
+  if (proof.plan_digest !== policy.plan_digest)
+    return refuse3(`tracker_approval_digest_mismatch: ${proof.plan_digest} is not the published ${policy.plan_digest}`);
+  return ok;
+}
+var POLICY_AUTO_MAX_RISK = "routine";
+function verifyPolicyAuto(policy, risk) {
+  if (policy.mode !== "autonomous")
+    return refuse3(`policy_auto_mode_not_autonomous: loop.mode is ${policy.mode}`);
+  if (policy.identity_posture !== "isolated")
+    return refuse3(`policy_auto_requires_isolated_identity: ${policy.identity_posture}`);
+  if (policy.auto_enroll_max_risk !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_disabled: loop.auto_enroll_max_risk is ${policy.auto_enroll_max_risk}`);
+  if (risk.declared !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_requires_routine_risk: declared ${risk.declared}`);
+  if (risk.elevated !== POLICY_AUTO_MAX_RISK)
+    return refuse3(`policy_auto_requires_routine_risk: elevated ${risk.elevated}`);
+  return ok;
+}
+function noTouchScopeMatches(scopeHint, declared) {
+  const forbidden = [NO_TOUCH_PATH, ...declared];
+  const literal = (entry) => entry.replace(/\/\*\*$/, "").replace(/\/\*$/, "").replace(/\/$/, "");
+  return scopeHint.filter((entry) => {
+    const path = literal(entry);
+    if (path === "" || !entry)
+      return false;
+    if (noTouchPaths([path], forbidden).length > 0)
+      return true;
+    return forbidden.some((declaration) => declaration.startsWith(`${path}/`));
+  });
+}
+function verifyEnrollmentConfirmation(root, input, intent) {
+  if (input.source === "user_session")
+    return ok;
+  if (input.source === "tracker_approval") {
+    if (!input.tracker_approval)
+      return refuse3("tracker_approval_missing_proof: a tracker approval needs a comment proof and its policy");
+    return verifyTrackerApproval(input.tracker_approval.proof, input.tracker_approval.policy);
+  }
+  if (input.source !== "policy_auto")
+    return refuse3(`unknown_confirmation_source: ${String(input.source)}`);
+  if (!input.policy_auto)
+    return refuse3("policy_auto_missing_policy: policy_auto needs loop.mode, the risk cap and the identity posture");
+  let declaredNoTouch;
+  try {
+    declaredNoTouch = readNoTouch(root);
+  } catch (error) {
+    return refuse3(`policy_auto_no_touch_unreadable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const elevated = raiseRisk(intent.risk, scopeRiskFloor(intent.scope_hint, readRiskFloor(root)));
+  const verdict = verifyPolicyAuto(input.policy_auto, { declared: intent.risk, elevated });
+  if (!verdict.ok)
+    return verdict;
+  const touched = noTouchScopeMatches(intent.scope_hint, declaredNoTouch);
+  if (touched.length > 0)
+    return refuse3(`policy_auto_touches_no_touch: ${touched.join(", ")}`);
+  return ok;
+}
 
 // plugins/immune-brain/runtime/kernel/enrollment_authority.ts
 var ENROLLMENT_CAPABILITY_BRAND = Symbol.for("assurance-kernel.enrollment-capability-brand");
@@ -21672,6 +21906,16 @@ function runEnrollmentPreconditionChecks(root, input, capability, registry, mode
       const binding = inspectSpecBinding(intent.intent);
       if (!binding.ok)
         fail(binding.message, new Error(binding.message));
+      if (input.confirmation) {
+        const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
+          risk: intent.intent.risk,
+          scope_hint: intent.intent.scope_hint
+        });
+        if (!verdict.ok) {
+          const message = `confirmation: ${verdict.reason}`;
+          fail(message, new Error(message));
+        }
+      }
     }
     try {
       gitBaseHead = readGitHead(root);
@@ -21728,7 +21972,8 @@ function buildTaskRecordV4(input, intent, gitBaseHead) {
     git_base_head: gitBaseHead,
     attestations: [],
     findings: [],
-    history: []
+    history: [],
+    ...input.confirmation && input.confirmation.source !== "user_session" ? { confirmation_source: input.confirmation.source } : {}
   };
 }
 function runEnrollmentRehearsal(root, input, capability, registry) {
@@ -21753,7 +21998,7 @@ function enrollmentEventId(taskId, now) {
 }
 var CANCELLATION_BOUNDARY = Promise.resolve();
 async function enrollTask(root, registry, request) {
-  const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
+  const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
   const capability = registry.issue(binding);
   const input = {
     task_id: binding.task_id,
@@ -21764,6 +22009,7 @@ async function enrollTask(root, registry, request) {
     capability_binding: binding,
     ...batch ? { batch } : {},
     ...disclosed_scope_paths ? { disclosed_scope_paths } : {},
+    ...confirmation ? { confirmation } : {},
     now
   };
   const { eventId, digest } = digestForEnrollment(input);

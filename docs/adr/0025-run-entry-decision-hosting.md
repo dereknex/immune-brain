@@ -4,6 +4,12 @@ status: accepted
 
 # Run-Entry Decision Hosting
 
+**Status update:** amended by [ADR 0039](0039-loop-daemon.md). Publication
+becomes a scoped standing publication grant when enabled in tracked configuration;
+Enrollment gains `tracker_approval` and `policy_auto` confirmation sources so
+execution can start unattended without an interactive native dialog when policy
+preconditions and risk floors are met.
+
 Accepted on 2026-10-17 by the repository owner (decisions Q1–Q14 in
 `docs/specs/run-entry-decision-hosting.spec.md`), for Initiative #264. It
 amends [ADR 0005](0005-unattended-initiative-batch-run.md) §6,
@@ -48,6 +54,10 @@ therefore must not be the only literal-user act behind starting execution.
    plan already moved past, which preserves every child state and commit;
    that residual is accepted. Push, PR creation, credential
    use and `approve_breaking_intent_revision` keep their own confirmation.
+   (Under [ADR 0039](0039-loop-daemon.md), the Loop daemon may publish branches and
+   open PRs without per-operation confirmation when standing publication is enabled
+   in tracked repository configuration, and routine/material/critical tasks may
+   enroll via `policy_auto` or `tracker_approval`.)
    Gates that collect a user choice rather than a yes/no — rework exits and
    Lane revision delegation, which the batch gate collects — stay.
 3. **The token lives as long as the run, with no time limit.** It survives

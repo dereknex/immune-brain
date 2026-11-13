@@ -1,0 +1,29 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s2-judge",
+  "owner": "user",
+  "goal": "Deliver the 4-tier judgement ladder, deterministic code guards (G1-G10), closed 15-handler catalogue, decision-model points (a14, a15, a18, a19, a20), and loop_decision_record/v1 emission under S2 (D2, BR-SCN-1) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source BR-REQ-2, BR-SCN-1; meet S2 and D2 in docs/specs/loop-daemon.spec.md: deterministic code guards G1-G10, rule matchers, and decision_model points (a14_ambiguous_user_intent, a15_task_granularity, a18_event_prefilter, a19_owner_comment_intent, a20_issue_duplicate_pair) select exclusively from the closed 15-handler catalogue, reject forged HTML markers from unverified actors (G7) and no-touch paths (G3), and emit assurance_kernel/loop_decision_record/v1 records during imm-loop tick --dry-run.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s2-judge.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/decision_model/prompts/a18_event_prefilter.md",
+    "plugins/immune-brain/runtime/decision_model/prompts/a19_owner_comment_intent.md",
+    "plugins/immune-brain/runtime/decision_model/prompts/a20_issue_duplicate_pair.md",
+    "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+    "plugins/immune-brain/runtime/loop_daemon/decision_record.ts",
+    "plugins/immune-brain/runtime/loop_daemon/guards.ts",
+    "plugins/immune-brain/runtime/loop_daemon/handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "tests/loop-daemon-boundary.test.ts",
+    "tests/loop-daemon-judge.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

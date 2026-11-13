@@ -1,0 +1,31 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s0-contracts",
+  "goal": "Accept docs/adr/0039-loop-daemon.md (renumbered from 0038 per BR-DEC-3) and docs/proposals/loop-agent.md, and apply bounded loop-daemon contract amendments to ADR 0005, 0006, 0019, 0025, CONTEXT.md, BASELINE.md, fix-pr skill, decision_model/contract.ts, and decision-model-core.spec.md under S0 (D1) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S0-AC1",
+      "assertion": "Source BR-REQ-1, BR-REQ-2, BR-DEC-2, BR-DEC-3; meet S0 and D1 in docs/specs/loop-daemon.spec.md: docs/adr/0039-loop-daemon.md and docs/proposals/loop-agent.md exist and are accepted while docs/adr/0038-supervised-session-port.md remains intact; ADR 0005, 0006, 0019, 0025, CONTEXT.md, BASELINE.md, plugins/immune-brain/skills/fix-pr/SKILL.md, and docs/specs/decision-model-core.spec.md carry the loop-daemon amendments; and plugins/immune-brain/runtime/decision_model/contract.ts registers a18_event_prefilter, a19_owner_comment_intent, and a20_issue_duplicate_pair while rejecting unknown point IDs.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-contracts.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "BASELINE.md",
+    "CONTEXT.md",
+    "docs/adr/0005-unattended-initiative-batch-run.md",
+    "docs/adr/0006-unattended-review-dispatch-authority.md",
+    "docs/adr/0019-explicit-run-entry-owns-enrollment.md",
+    "docs/adr/0025-run-entry-decision-hosting.md",
+    "docs/adr/0039-loop-daemon.md",
+    "docs/plans/loop-daemon-s0-contracts.intent.json",
+    "docs/proposals/loop-agent.md",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/decision_model/contract.ts",
+    "plugins/immune-brain/skills/fix-pr/SKILL.md",
+    "tests/decision-model.test.ts",
+    "tests/loop-daemon-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

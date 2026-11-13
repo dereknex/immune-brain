@@ -1,0 +1,262 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s3-config-comms",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s3-config-comms",
+    "goal": "Deliver .imm/config.json loop validation, same-UID degraded identity detection, standing publication grant, in-place status Issue updates, marker-keyed escalation deduplication, and REST API-verified @imm-loop owner commands under S3 (D3) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Source BR-REQ-3, BR-DEFER-1, BR-DEFER-2; meet S3 and D3 in docs/specs/loop-daemon.spec.md: layered_config.ts validates the loop configuration block and rejects auto_enroll_max_risk: critical; identity.ts enters degraded posture under same-UID execution (blocking policy_auto and merge_pr while permitting plan/question publication); status_issue.ts edits the single loop-status Issue in place; escalation.ts deduplicates by escalation-key marker; and owner_commands.ts verifies REST user.login and author_association before accepting @imm-loop commands.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-config-comms.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s3-config-comms.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/layered_config.ts",
+      "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+      "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts",
+      "plugins/immune-brain/runtime/loop_daemon/status_issue.ts",
+      "tests/loop-daemon-config-comms.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s3-config-comms.intent.json",
+    "content_hash": "sha256:866593b154f19babe680d18f6f826f66b146506b6d449468dd55ae2cb71b1606"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:866593b154f19babe680d18f6f826f66b146506b6d449468dd55ae2cb71b1606",
+  "git_base_head": "a60d2429ce9d6b821fe42143ed1343d1b5b69385",
+  "attestations": [
+    {
+      "id": "approval-qa-7aa74c4c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:866593b154f19babe680d18f6f826f66b146506b6d449468dd55ae2cb71b1606",
+      "diff_hash": "sha256:0ac502393b9a0acb7bb8aea1b6b870d833852650fd844369a20cbc70f9d4c030",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:ea7e78a03619645cb42d8c1d3dfc067873f7d16337944fd67d013a36a27df89e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:ea7e78a03619645cb42d8c1d3dfc067873f7d16337944fd67d013a36a27df89e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-83b92e03",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:866593b154f19babe680d18f6f826f66b146506b6d449468dd55ae2cb71b1606",
+      "diff_hash": "sha256:b181b33f5f8d24ec55dfecc8c494a39006825acd730bff0ef0a28b81ff651496",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:64a3cde8171cd502e68cdc7bebf3e3029ab1fc1975fc856c91286cc98ac56271",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:64a3cde8171cd502e68cdc7bebf3e3029ab1fc1975fc856c91286cc98ac56271"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d3d6af5a",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:866593b154f19babe680d18f6f826f66b146506b6d449468dd55ae2cb71b1606",
+      "diff_hash": "sha256:b181b33f5f8d24ec55dfecc8c494a39006825acd730bff0ef0a28b81ff651496",
+      "actor_id": "cli:claude-code:65b02217-b1e9-4614-98f5-af13ab26e92e",
+      "summary": "S3-AC1 is met: the loop config block is validated, auto_enroll_max_risk rejects material and critical (spec line 180), same-UID execution degrades to a posture that refuses policy_auto and merge_pr but allows plan and question publication, and the status Issue is updated in place; escalations are deduplicated by marker and owner commands are checked against REST login and author_association through isVerifiedActor; the Antigravity mirror and dist bundles match the source; blast radius medium (layered_config.ts effective_config shape gains a loop field, and cli.ts guard facts now take identity_posture from a live check).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a60d2429ce9d6b821fe42143ed1343d1b5b69385",
+        "review_commit": "e917cffbdee16f0aec2b5bc8e97e1bbae2458a79",
+        "review_tree": "4effc20567769bc28340c951d652197e5f767c89",
+        "manifest_digest": "sha256:62a6dc637201d39ae491a1f9b4fa280a1bbbd67034176fe04217a8635227bd74"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d977b2b24163-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "Escalation and status-Issue lookup accept the marker from any author. A third party who copies the marker can make the daemon skip its own escalation or edit an Issue that party opened, instead of using a daemon-authored carrier.",
+          "anchor": "sha256:42feea12cfc67ce50e377e9502068406447c41c1e067b319f2827423af796477",
+          "evidence": {
+            "trigger": "A non-daemon user comments renderEscalationBody(escalationKey({kind,target,detail}), message) using the public subject fields → planEscalation returns action skip for that comment_id, and the daemon never posts its own escalation; likewise an Issue opened before the daemon's with the loop-status marker becomes the canonical status Issue",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/escalation.ts:planEscalation",
+              "plugins/immune-brain/runtime/loop_daemon/escalation.ts:parseEscalationKey",
+              "plugins/immune-brain/runtime/loop_daemon/status_issue.ts:planStatusIssue",
+              "plugins/immune-brain/runtime/loop_daemon/status_issue.ts:isLoopStatusIssue"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-d977b2b24163-2-review-2",
+          "acceptance_id": "S3-AC1",
+          "summary": "The approve argument is the next token after the command, even across a newline, and nothing checks it against the published plan digest here. Binding the token to the plan is left to the later S5 record_approval step.",
+          "anchor": "sha256:ed7905a7d3c984f3ffaa245c0f82c104802e84c8e32ffca849ff3bde371ad506",
+          "evidence": {
+            "trigger": "A verified owner comments '@imm-loop approve\\n\\nthanks' → parseOwnerCommand captures argument 'thanks', and resolveOwnerCommand accepts it and returns handler enroll_and_drive",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts:parseOwnerCommand",
+              "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts:resolveOwnerCommand",
+              "plugins/immune-brain/runtime/loop_daemon/judgement.ts:matchTier1"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:648691c70522dd4ef1138e34619746cbe17e65c29083d649b8b06267490642fb"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-1f7d4a66342f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S3-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "A rejected @imm-loop command, such as an edited comment or an approve with no digest, is not kept out of the handlers. matchTier1 returns null for it, so the comment falls through to the Tier 2 a18/a19 decision model, which can map it to enroll_and_drive. At base, every @imm-loop comment was settled at Tier 1, and approve went to noop_record.",
+      "anchor": "sha256:c8e5cc059a5ffa5398f4a00c03a216d3b760dccb946ca001d899a693b0e2f987",
+      "evidence": {
+        "trigger": "A verified owner (allowlisted login, OWNER association) posts an E3_OWNER_COMMENT with body '@imm-loop approve sha256:plan-a' and updated_at !== created_at, or posts '@imm-loop approve' with no digest. G7 passes because it checks only the actor (guards.ts:203). resolveOwnerCommand returns handler null with 'comment was edited after posting' or 'approve names no plan digest'. matchTier1 (judgement.ts, E3 case: `if (resolved.handler === null) return null`) then sends the comment to judgeTier2, and classifyOwnerComment sends the body to a19_owner_comment_intent. If a19 answers approve_plan, the result is tier 2 with handler enroll_and_drive. That breaks D3.4 / spec line 226 ('an edited comment is strictly rejected per ADR 0039 Decision 9') and the module's own contract that the caller keeps rejections out of the handler catalogue. At base a60d2429, the same comment resolved at Tier 1 to noop_record. No judgeEvent test covers an edited or digest-less command. Fix: when a command is parsed but rejected, Tier 1 should return noop_record or escalate, never null, and a judgeEvent test should pin this.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:judgeEvent",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:matchTier1",
+          "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts:resolveOwnerCommand",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:judgeTier2",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts:classifyOwnerComment"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S3-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s3-config-comms:2026-11-11T17:25:32.776Z",
+      "at": "2026-11-11T17:25:32.776Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s3-config-comms.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s3-config-comms:2026-11-11T17:25:41.208Z",
+      "at": "2026-11-11T17:25:41.208Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7aa74c4c\naction_v2_sha256:5f868e5ebfd8073d420350d6bd1a773256a39117d48f6531b96bdf0f230b30d0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-50b73ffdb31ea29d",
+        "issued_at": "2026-11-11T17:25:41.208Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s3-config-comms:2026-11-11T17:29:15.621Z",
+      "at": "2026-11-11T17:29:15.621Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:0f4e1e6f20319c91a702a07b021300ddc12458d378e62bae97a87d074e2e1e4b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:bac4e067-c9ec-4fae-925b-70ebdd6c2033",
+        "confirmation_ref": "pi-confirm-f36b10a186f7b6ec",
+        "issued_at": "2026-11-11T17:29:15.621Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "a60d2429ce9d6b821fe42143ed1343d1b5b69385",
+        "review_commit": "94e2c82a85e94a0086d01be4320c798cd528e212",
+        "review_tree": "639164202c2fc61f15357250d81f969f54bc4a3b",
+        "manifest_digest": "sha256:20760c806c50c821d1d957b1bd470b5ff0445e135fb59778bb7632f92445a168"
+      },
+      "review_started_at": "2026-11-11T17:27:29.542Z",
+      "review_submitted_at": "2026-11-11T17:29:14.940Z",
+      "reviewer_model": "opus"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s3-config-comms:2026-11-11T17:29:52.890Z",
+      "at": "2026-11-11T17:29:52.890Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-1f7d4a66342f-1-review-1\naction_v2_sha256:1e64d06a6a4c0abf116b81d0771539f752a34f31b8c2ad20c2261049f3e29752"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s3-config-comms:2026-11-11T17:30:00.781Z",
+      "at": "2026-11-11T17:30:00.781Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s3-config-comms.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s3-config-comms:2026-11-11T17:30:08.202Z",
+      "at": "2026-11-11T17:30:08.202Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-83b92e03\naction_v2_sha256:865d532fbc46a5e8b52c214cb32445c41d3313c7e9eb80c15c8e11283a343924",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-3533ad8b4d349c6e",
+        "issued_at": "2026-11-11T17:30:08.203Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s3-config-comms:2026-11-11T17:31:37.434Z",
+      "at": "2026-11-11T17:31:37.434Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d3d6af5a\naction_v2_sha256:6140748f92e78a1146ddcf71721702779593948ac0b27b10cde75a1e1a875bc7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:65b02217-b1e9-4614-98f5-af13ab26e92e",
+        "confirmation_ref": "pi-confirm-98c59c40ab127168",
+        "issued_at": "2026-11-11T17:31:37.434Z"
+      },
+      "review_started_at": "2026-11-11T17:30:10.848Z",
+      "review_submitted_at": "2026-11-11T17:31:36.781Z",
+      "reviewer_model": "opus"
+    },
+    {
+      "id": "complete:loop-daemon-s3-config-comms:2026-11-11T17:31:39.334Z",
+      "at": "2026-11-11T17:31:39.334Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6fce3bea1ca4dd2f29656415ead8a807e2cb639fc3d50043059d7272b7650c57"
+    }
+  ]
+}

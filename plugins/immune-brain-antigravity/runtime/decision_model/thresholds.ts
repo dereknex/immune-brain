@@ -31,7 +31,10 @@ export const A14_PR_COMMENT_TRIAGE: ApplicationPoint = {
 	},
 	instructions:
 		"Given the target review comment, its thread discussion and the earlier comments of the same pull request, which option best describes the target comment?",
-	threshold_set: { version: "a14/v0", values: null },
+	threshold_set: {
+		version: "a14/v1",
+		values: { blocking: 0.8, nit: 0.8, out_of_scope: 0.8, duplicate: 0.8 },
+	},
 };
 
 export const A15_ISSUE_TRIAGE: ApplicationPoint = {
@@ -47,6 +50,52 @@ export const A15_ISSUE_TRIAGE: ApplicationPoint = {
 	instructions:
 		"Given the issue title and body, which option best describes how the issue should be triaged: a duplicate of an existing issue, in need of a spec before work can start, or ready for an agent to implement?",
 	threshold_set: { version: "a15/v0", values: null },
+};
+
+/**
+ * Loop-daemon triage point (loop-daemon.spec.md D2 Tier 2): the intent behind a
+ * review comment on a daemon PR. Registered alongside the pre-existing
+ * `a14_pr_comment_triage`, which stays bound to the `fix-pr` repair loop.
+ */
+export const A14_AMBIGUOUS_USER_INTENT: ApplicationPoint = {
+	id: "a14_ambiguous_user_intent",
+	question_type: "choice",
+	input_category: "pr_comment",
+	options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+	criteria: {
+		clear_single_task: "The comment requests one change that one Lane can make",
+		needs_initiative_decomposition: "The comment requests work that must be split into several tasks first",
+		needs_clarification: "The comment's intent is too ambiguous to act on",
+	},
+	instructions:
+		"Given a review comment on a daemon pull request, which option best describes what its author is asking for?",
+	threshold_set: { version: "a14-intent/v0", values: null },
+};
+
+/**
+ * Loop-daemon triage point (loop-daemon.spec.md D2 Tier 2): the granularity of
+ * one issue. Registered alongside the pre-existing `a15_issue_triage`, which
+ * stays bound to the interactive issue triage.
+ */
+export const A15_TASK_GRANULARITY: ApplicationPoint = {
+	id: "a15_task_granularity",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["clear_single_task", "needs_initiative_decomposition", "needs_clarification"],
+	criteria: {
+		clear_single_task: "The issue is one task an agent can implement as written",
+		needs_initiative_decomposition: "The issue describes work that must be split into several tasks first",
+		needs_clarification: "The issue is too under-specified to plan",
+	},
+	instructions: "Given an issue title and body, which option best describes the granularity of the work it asks for?",
+	threshold_set: {
+		version: "a15-granularity/v1",
+		values: {
+			clear_single_task: 0.75,
+			needs_initiative_decomposition: 0.75,
+			needs_clarification: 0.75,
+		},
+	},
 };
 
 export const A16_REVISIT_CHAIN_CLASS: ApplicationPoint = {
@@ -90,11 +139,71 @@ export const A17_REVIEW_FINDING_KIND: ApplicationPoint = {
 	threshold_set: { version: "a17/v0", values: null },
 };
 
+export const A18_EVENT_PREFILTER: ApplicationPoint = {
+	id: "a18_event_prefilter",
+	question_type: "choice",
+	input_category: "session_event",
+	options: ["actionable", "ignore"],
+	criteria: {
+		actionable: "The event requires daemon action or triage",
+		ignore: "The event is noisy, informational, or requires no action",
+	},
+	instructions:
+		"Given a GitHub event or notification, which option best describes whether the daemon must act on it?",
+	threshold_set: { version: "a18/v1", values: { ignore: 0.9 } },
+};
+
+export const A19_OWNER_COMMENT_INTENT: ApplicationPoint = {
+	id: "a19_owner_comment_intent",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["approve_plan", "request_plan_revision", "answer_lane_decision", "command", "discussion"],
+	criteria: {
+		approve_plan: "The owner intends to approve the proposed plan",
+		request_plan_revision: "The owner requests changes or revision to the proposed plan",
+		answer_lane_decision: "The owner answers an in-Lane decision or clarification question",
+		command: "The owner issues a direct daemon command",
+		discussion: "General discussion not requiring execution",
+	},
+	instructions:
+		"Given a comment from a verified repository owner, which option best describes the author's intent?",
+	threshold_set: {
+		version: "a19/v1",
+		values: {
+			approve_plan: 0.8,
+			request_plan_revision: 0.8,
+			answer_lane_decision: 0.8,
+			command: 0.8,
+			discussion: 0.8,
+		},
+	},
+};
+
+export const A20_ISSUE_DUPLICATE_PAIR: ApplicationPoint = {
+	id: "a20_issue_duplicate_pair",
+	question_type: "choice",
+	input_category: "issue_text",
+	options: ["duplicate", "related", "unrelated"],
+	criteria: {
+		duplicate: "The candidate issue describes the same underlying problem as the existing issue",
+		related: "The candidate issue is related but addresses a different problem",
+		unrelated: "The candidate issue is unrelated to the existing issue",
+	},
+	instructions:
+		"Given two GitHub issues, which option best describes their relationship?",
+	threshold_set: { version: "a20/v1", values: { duplicate: 0.85 } },
+};
+
 export const POINT_REGISTRY: PointRegistry = {
 	[A17_REVIEW_FINDING_KIND.id]: A17_REVIEW_FINDING_KIND,
 	[A1_REVIEW_FINDING_PRESCREEN.id]: A1_REVIEW_FINDING_PRESCREEN,
 	[A14_PR_COMMENT_TRIAGE.id]: A14_PR_COMMENT_TRIAGE,
 	[A15_ISSUE_TRIAGE.id]: A15_ISSUE_TRIAGE,
+	[A14_AMBIGUOUS_USER_INTENT.id]: A14_AMBIGUOUS_USER_INTENT,
+	[A15_TASK_GRANULARITY.id]: A15_TASK_GRANULARITY,
 	[A16_REVISIT_CHAIN_CLASS.id]: A16_REVISIT_CHAIN_CLASS,
 	[A4_FINDING_EQUIVALENCE.id]: A4_FINDING_EQUIVALENCE,
+	[A18_EVENT_PREFILTER.id]: A18_EVENT_PREFILTER,
+	[A19_OWNER_COMMENT_INTENT.id]: A19_OWNER_COMMENT_INTENT,
+	[A20_ISSUE_DUPLICATE_PAIR.id]: A20_ISSUE_DUPLICATE_PAIR,
 };

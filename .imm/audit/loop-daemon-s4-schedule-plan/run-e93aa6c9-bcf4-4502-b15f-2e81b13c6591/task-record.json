@@ -1,0 +1,587 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s4-schedule-plan",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s4-schedule-plan",
+    "goal": "Deliver the continuous priority scheduler, atomic dispatch leases, slot/buffer/budget and scopesOverlap() enforcement, cached read-only codebase analysis, and headless draw-up plan publication on imm-loop/<issue> under S4 (D4) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Source BR-REQ-1; meet S4 and D4 in docs/specs/loop-daemon.spec.md: scheduler.ts enforces priority ordering, max_concurrent slots, max_ready_buffer, max_pr_buffer, daily budget limits, and scopesOverlap() across active leases; leases.ts acquires and reclaims .imm/state/loop/leases/<target>.lease.json; analysis_agent.ts caches read-only findings under .imm/state/loop/analysis/; and plan_drafter.ts authors validated TaskIntents on imm-loop/<issue> and posts a plan summary with plan_digest.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-schedule-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s4-schedule-plan.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leases.ts",
+      "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain/runtime/loop_daemon/scheduler.ts",
+      "tests/loop-daemon-schedule-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s4-schedule-plan.intent.json",
+    "content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+  "git_base_head": "d1643b450822847508e8d1a078a3d1a58b887ec3",
+  "attestations": [
+    {
+      "id": "approval-qa-9ea5aa00",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+      "diff_hash": "sha256:dc38d2745bbbb2240a9b838702a6fb72c6b3514418462214a8543c552dad78e2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:33415e3bee5a94019a5aa8d362bc9c8697f3b31e28357773b23679f74d717864",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:33415e3bee5a94019a5aa8d362bc9c8697f3b31e28357773b23679f74d717864"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-18e96d84",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+      "diff_hash": "sha256:cd6d4764d45f2809b5257914ca3a7d29a0ba29f537e9292a50fc32dc942fb99e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:1dfdb0fecb2dcf3f6ba794395e584b12737be37a677de8b0662120c3ba7aa30a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:1dfdb0fecb2dcf3f6ba794395e584b12737be37a677de8b0662120c3ba7aa30a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-df430b57",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+      "diff_hash": "sha256:a6fb5d8e17809eb3eab2d42e06011189767c595e0ff3953e09aa5d16c47b921a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:205a975b273c6d6e1b3cd3c289b32477386e1cae0819ae887e68da139dcd2ed3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:205a975b273c6d6e1b3cd3c289b32477386e1cae0819ae887e68da139dcd2ed3"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3372e115",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+      "diff_hash": "sha256:4543cc969ff3c5c8e358739781361a119aeee9050335d5951e73a77bc79ae35d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:61246d3d95e5a29abf52162aff25faa900920ac0875dfd3c44f672d81e423e2f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:61246d3d95e5a29abf52162aff25faa900920ac0875dfd3c44f672d81e423e2f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ed44c194",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e0c7edfe5a24ab02239fb34b606b8a21e1069e5240fa0b1ee5a576dee9eb34d9",
+      "diff_hash": "sha256:4543cc969ff3c5c8e358739781361a119aeee9050335d5951e73a77bc79ae35d",
+      "actor_id": "cli:pi:7526959e-8550-4760-b4c5-87cabde480b3",
+      "summary": "Medium blast radius: the complete round-4 delta to load-bearing plugins/immune-brain/runtime/loop_daemon/leases.ts and its regression coverage preserves monotonic gate generations without changing public lease APIs; immutable provenance verified and earlier-round coverage carried forward.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d1643b450822847508e8d1a078a3d1a58b887ec3",
+        "review_commit": "21f73e309ae66eaa4be04c86cf814813e10058d2",
+        "review_tree": "ef83b59019dccd23ebb0db5a3ee90d85f5597238",
+        "manifest_digest": "sha256:d131529a1646b438539d2d543cdee470e239af2bf39d098402c6ff3b57376fd6"
+      },
+      "reviewer_verdict_sha256": "sha256:0b8c581408d8e60858ae88bc3a68809d5a3f362c49c573f735c4572d08af59a0"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-41856aaa8116-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Cap dispatches by the remaining daily budget and add a test with fewer remaining dispatches than eligible candidates.",
+      "anchor": "sha256:fd0698d040e66f47b1e68ae9d2632c235c2308533bf03a8f7d4e9ec354d20675",
+      "evidence": {
+        "trigger": "dispatches_today=4, max_dispatches_per_day=5, max_concurrent=2, and two non-overlapping eligible candidates → both are dispatched and budget_after.dispatches_today becomes 6, exceeding the daily limit because G2 is evaluated only before the batch.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#scheduleLoopWork",
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#budgetExhausted"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-41856aaa8116-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Reserve PR-buffer capacity for each ready-task dispatch and add a same-tick boundary test.",
+      "anchor": "sha256:e3ed761f274e1c616099cdd25b8be24bcb77869690808f029052653d7862740c",
+      "evidence": {
+        "trigger": "open_daemon_prs=4, max_pr_buffer=5, max_concurrent=2, and two enroll_and_drive candidates with disjoint scopes → both dispatch because open_daemon_prs is never incremented; when both lanes open their PRs, the daemon has 6 open PRs despite a cap of 5.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#scheduleLoopWork"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-41856aaa8116-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Require the matching host token for heartbeat and release, and test that omitting it cannot mutate another owner's lease.",
+      "anchor": "sha256:e7e54aea49b44631cc56b246a32e1813507c88eb7340efbb644ce93d95c89aa3",
+      "evidence": {
+        "trigger": "A lease owned by host-a exists and heartbeatLoopLease(stateDir, targetId) or releaseLoopLease(stateDir, targetId) is called without options.host_token → the heartbeat is refreshed or the lease is deleted because authentication is skipped when the token is undefined.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#heartbeatLoopLease",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#releaseLoopLease"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-41856aaa8116-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Make heartbeat/reclaim atomic against one another and add an interleaving test; state.ts#saveLease is directly implicated because its unconditional rename overwrites the current lease.",
+      "anchor": "sha256:469b65b220ebbdd59ad8155b1155278e3ccf09aa8535fdcc686b92a63035e2a8",
+      "evidence": {
+        "trigger": "Process A loads the old lease in heartbeatLoopLease; process B reclaims it and successfully acquires a new lease; process A then reaches state.ts#saveLease → A's stale lease replaces B's newly acquired lease, so B believes it owns the target while the old owner's lease is restored.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#heartbeatLoopLease",
+          "plugins/immune-brain/runtime/loop_daemon/state.ts#saveLease",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#acquireLoopLease"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-41856aaa8116-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Reject malformed overlap results instead of treating missing overlap evidence as disjoint, and pin the external-boundary case with a test.",
+      "anchor": "sha256:295bbd3e21bdd9cd64cae10e22f5382eff58c48195a4d30ec556e0b9337809b6",
+      "evidence": {
+        "trigger": "For multiple intents, the overlap kernel call returns exit_code=0 with json={} or json={overlaps:null} → draftAndPublishPlan skips refusal and posts the plan comment even though the kernel supplied no evidence that the intents do not overlap.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts#draftAndPublishPlan",
+          "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts#postComment"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-caecbb8d76f4-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The per-tick budget projection never advances ticks_today, so persisting the documented budget_after result defeats max_ticks_per_day; advance the tick counter and pin successive ticks with a test.",
+      "anchor": "sha256:cf30252c5b208d33855a4fde767375e0eeb702b1906a82fa365d8a983b052a62",
+      "evidence": {
+        "trigger": "With ticks_today=0, max_ticks_per_day=1, available slots, and one schedulable candidate, scheduleLoopWork dispatches but returns budget_after.ticks_today=0 → persisting that result makes the next tick start at 0 again and dispatch instead of halting via G2 after the first allowed tick.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#scheduleLoopWork",
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#ScheduleResult.budget_after"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-caecbb8d76f4-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Owner-event priority overrides the closed handler filter, allowing handlers the scheduler explicitly must never dispatch; preserve the null classification for those handlers and add a regression test.",
+      "anchor": "sha256:4d31a206c0a4fe032d1907694411d71477a811c19535dd2ac2fd4d595368237c",
+      "evidence": {
+        "trigger": "A candidate {target_id:\"issue-1\",handler:\"noop_record\",event_kind:\"E3_OWNER_COMMENT\"} with a free slot and available budget → candidatePriority returns owner_control and scheduleLoopWork includes issue-1 in dispatched, consuming a worker slot and dispatch budget even though noop_record is not schedulable.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#candidatePriority",
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts#scheduleLoopWork"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-caecbb8d76f4-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Stale-gate takeover can remove a different holder's newly acquired gate, breaking mutual exclusion between lease mutations; make takeover ownership-safe and test the interleaving.",
+      "anchor": "sha256:6cb68ab41ea25f9f58fb446015ec810ef42a83dfee6d192904e80effaf03364b",
+      "evidence": {
+        "trigger": "A live gate is older than 30 seconds; daemon B reads it and judges it abandoned, then its original owner releases it and daemon C acquires a new gate before B's rmSync → B deletes C's gate and successfully claims its own, leaving B and C both believing they hold the target gate and able to heartbeat, release, or reclaim concurrently.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#acquireGate",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#heartbeatLoopLease",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#reclaimExpiredLeases"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-02f8ea8967e9-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Lease mutual exclusion is still unsafe: replacing token-checked release with path-only unlink lets a delayed former holder delete a reused live generation gate; the new post-claim scan does not cover this release-side invariant.",
+      "anchor": "sha256:56819d0afd25bab11a7814590a85cf3feba20faaebddf8e1d3aae802ac28db79",
+      "evidence": {
+        "trigger": "Process A holds .issue-7.gate.1 for over 30s; B treats it as abandoned, uses and releases gate.2 after removing gate.1; C then acquires a new gate.1; A resumes and releaseGate(gate.1) deletes C's live gate, allowing D to acquire gate.1 and heartbeat/reclaim concurrently with C → overlapping mutations can restore a stale lease or lose a reclaim. Add a regression test that resumes a former holder after its generation path has been reused and asserts the new holder's gate remains.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#acquireGate",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#releaseGate",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#heartbeatLoopLease",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts#reclaimExpiredLeases"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s4-schedule-plan:2026-11-12T05:30:24.104Z",
+      "at": "2026-11-12T05:30:24.104Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s4-schedule-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s4-schedule-plan:2026-11-12T05:30:31.554Z",
+      "at": "2026-11-12T05:30:31.554Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9ea5aa00\naction_v2_sha256:6cc6b0e560c79deeb0e259f1c5102122b3486b3dcc55746aedcff814dcec1f3c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-0e7aa456f250c1cb",
+        "issued_at": "2026-11-12T05:30:31.554Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s4-schedule-plan:2026-11-12T05:36:28.634Z",
+      "at": "2026-11-12T05:36:28.634Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ef55a1bfd003df273eb70c3caa869a1769f669039e3814986f7ce852c72069ae",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:b34bbf00-283d-4f39-8547-eb5d19f4c00c",
+        "confirmation_ref": "pi-confirm-f3ad0b2cc171e1bb",
+        "issued_at": "2026-11-12T05:36:28.634Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d1643b450822847508e8d1a078a3d1a58b887ec3",
+        "review_commit": "2bcffcd6cbbcd39ccac52eef4db9cb8c71f6be4a",
+        "review_tree": "4c03f3301f1e54f7916af2929acf1fa4339e591b",
+        "manifest_digest": "sha256:8345f31507c78e01fb3c5bec62397d37f84839b01e855f55982d83a3d72f1823"
+      },
+      "review_started_at": "2026-11-12T05:30:33.774Z",
+      "review_submitted_at": "2026-11-12T05:36:28.027Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:38:21.653Z",
+      "at": "2026-11-12T05:38:21.653Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41856aaa8116-1-review-1\naction_v2_sha256:7213c847f876d33e08823b58940c2b701993b18fc08c0b641bcc14e779532b19"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:38:30.780Z",
+      "at": "2026-11-12T05:38:30.780Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41856aaa8116-2-review-2\naction_v2_sha256:079e126fd346107632a35da95d5c7f79e914291fe693d31fc4a6abae201dac19"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:38:33.239Z",
+      "at": "2026-11-12T05:38:33.239Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41856aaa8116-3-review-3\naction_v2_sha256:c55d8d2b25d0fa23ec52e686c149095ea598191c10e01f31e1067b6427301ac4"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:38:36.281Z",
+      "at": "2026-11-12T05:38:36.281Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41856aaa8116-4-review-4\naction_v2_sha256:128dc07d6e5022556aa4bb1d79a1a8eaf4bd83b0f1f7e7ea9d6f074498964dbc"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:38:38.563Z",
+      "at": "2026-11-12T05:38:38.563Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-41856aaa8116-5-review-5\naction_v2_sha256:a71a9b9e5a8984c565fa8b58992875657a604b844607dec84c993c2a590ddfc0"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s4-schedule-plan:2026-11-12T05:38:47.383Z",
+      "at": "2026-11-12T05:38:47.383Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s4-schedule-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s4-schedule-plan:2026-11-12T05:38:55.054Z",
+      "at": "2026-11-12T05:38:55.054Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-18e96d84\naction_v2_sha256:1beabcbfb685273127d51ea0c91b8b16b712371b04ce9fce4fb5231f93e816f7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-9e5b190340660e67",
+        "issued_at": "2026-11-12T05:38:55.054Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s4-schedule-plan:2026-11-12T05:45:38.289Z",
+      "at": "2026-11-12T05:45:38.289Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:543edce22b936ae1d6c52f5074b338294f22aad0039167a23b81b009ce6e07b7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:62ef5863-05fb-4fb0-95bb-5994051279c7",
+        "confirmation_ref": "pi-confirm-b940acce9e1da55e",
+        "issued_at": "2026-11-12T05:45:38.289Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d1643b450822847508e8d1a078a3d1a58b887ec3",
+        "review_commit": "9c52492d4cf174c7803b84166add0cbf065ac65d",
+        "review_tree": "d7aae7566ec710646d389bfffe2d51d3d19d8512",
+        "manifest_digest": "sha256:bf041c482f49ceb9c8c287af8d2aff3cb78f720c778eca521663b5039720e9c1"
+      },
+      "review_started_at": "2026-11-12T05:38:57.461Z",
+      "review_submitted_at": "2026-11-12T05:45:37.727Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:47:23.045Z",
+      "at": "2026-11-12T05:47:23.045Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-caecbb8d76f4-1-review-1\naction_v2_sha256:ccacc615a3c882d7ab320560cbb37eb8117b78dd6d799f2828f4d6a87477ef5b"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:47:25.334Z",
+      "at": "2026-11-12T05:47:25.334Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-caecbb8d76f4-2-review-2\naction_v2_sha256:427e40333b7d3fa92633daf28b4d104268a8cabd57894db54b267f4c38f1b47d"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:47:27.695Z",
+      "at": "2026-11-12T05:47:27.695Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-caecbb8d76f4-3-review-3\naction_v2_sha256:8480f6e3295f22bb814c6d7afb938986ee3d5c21c9d51c1df08f3fccdce81679"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s4-schedule-plan:2026-11-12T05:47:37.088Z",
+      "at": "2026-11-12T05:47:37.088Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s4-schedule-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s4-schedule-plan:2026-11-12T05:47:43.942Z",
+      "at": "2026-11-12T05:47:43.942Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-df430b57\naction_v2_sha256:6f708d99b2dc6c694a827f396d3218afd46142b983ac2be8ecac7febe36ca76e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-e244779c04a36fd5",
+        "issued_at": "2026-11-12T05:47:43.942Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s4-schedule-plan:2026-11-12T05:55:38.203Z",
+      "at": "2026-11-12T05:55:38.203Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:4c5bbdf8077f323967f8984ff8febc3d6d32b7657f6fe62648a1a9432a9ac0c6",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:9f569d5f-5af5-4e1f-9636-42f5cc04e85f",
+        "confirmation_ref": "pi-confirm-c7c0507a4ba85d37",
+        "issued_at": "2026-11-12T05:55:38.203Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d1643b450822847508e8d1a078a3d1a58b887ec3",
+        "review_commit": "a3547e0d2dd4cdd1dbeeecd12e37606a2810ed00",
+        "review_tree": "42bd2392dfae205b59e765c8da456734a07b8f3b",
+        "manifest_digest": "sha256:93d945b3cf22ddce8510de7e10f6fa3d7ea059e477a8073a0f0d04431c13e4e6"
+      },
+      "review_started_at": "2026-11-12T05:47:46.235Z",
+      "review_submitted_at": "2026-11-12T05:55:37.663Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s4-schedule-plan:2026-11-12T05:57:41.054Z",
+      "at": "2026-11-12T05:57:41.054Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-02f8ea8967e9-1-review-1\naction_v2_sha256:76d078a131319ba078cc81da82f440651a3f37618e3956902fba631957dcd455"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s4-schedule-plan:2026-11-12T05:57:47.990Z",
+      "at": "2026-11-12T05:57:47.990Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s4-schedule-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s4-schedule-plan:2026-11-12T05:57:54.395Z",
+      "at": "2026-11-12T05:57:54.395Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3372e115\naction_v2_sha256:9131af3fb16fce0db2804d2f591c49bfd05ed2cbb841bbcd63a829c712e9eb74",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-6ef74de7d35cb7a9",
+        "issued_at": "2026-11-12T05:57:54.395Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s4-schedule-plan:2026-11-12T06:02:08.312Z",
+      "at": "2026-11-12T06:02:08.312Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ed44c194\naction_v2_sha256:dfb7a96c55947399b6e029ae45b61a460c15aacf1716297777e6bfe45c40f8fc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:7526959e-8550-4760-b4c5-87cabde480b3",
+        "confirmation_ref": "pi-confirm-6bc03c4c206605bb",
+        "issued_at": "2026-11-12T06:02:08.312Z"
+      },
+      "review_started_at": "2026-11-12T05:57:56.681Z",
+      "review_submitted_at": "2026-11-12T06:02:07.787Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:loop-daemon-s4-schedule-plan:2026-11-12T06:02:09.861Z",
+      "at": "2026-11-12T06:02:09.861Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fdfb13fd2d92739727d3f445fbca76aa8f0214cf9443edffc2062c476acacd63"
+    }
+  ]
+}

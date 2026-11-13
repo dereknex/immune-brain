@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s1-observe",
+  "owner": "user",
+  "goal": "Deliver GitHub observation polling, event normalization (E1-E11), .imm/state/loop/ lock and state persistence, rebuildLoopState() recovery, and the imm-loop CLI (tick, status, --dry-run) under S1 (D2) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "Source BR-REQ-1; meet S1 and D2 in docs/specs/loop-daemon.spec.md: imm-loop tick --dry-run and imm-loop status --json normalize GitHub tracker/PR observations into E1-E11 events, persist .imm/state/loop/state.json and daemon.lock with 0600 permissions, refuse concurrent ticks when daemon.lock is held by a live PID, and reconstruct watermarks and active leases via rebuildLoopState() after .imm/state/loop/ deletion without re-dispatching active work.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-observe.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s1-observe.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/bin/imm-loop",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/events.ts",
+    "plugins/immune-brain/runtime/loop_daemon/lock.ts",
+    "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+    "plugins/immune-brain/runtime/loop_daemon/rebuild.ts",
+    "plugins/immune-brain/runtime/loop_daemon/state.ts",
+    "plugins/immune-brain/runtime/loop_daemon/types.ts",
+    "tests/loop-daemon-observe.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
