@@ -639,7 +639,12 @@ Spec drive-always-lanes D1 to D11 and ADR 0027 own the details below.
   resumes in the same Lane with a new generation.
 - **Parent decision relay.** When the Lane's Executor stops on a literal-user
   decision, the report carries `lane_decision_required` (task, run and record
-  revision, authorization and pending decisions). The
+  revision, authorization and pending decisions). A headless Executor has no
+  native gate, so its `approve_breaking_intent_revision` call only leaves a
+  request bound to the current record; the report then carries `requested`
+  with the complete `next_intent`, which the Parent passes to its own
+  `approve_breaking_intent_revision` gate. A request older than the current
+  record is ignored, and an applied decision clears it. The
   Parent answers on its own Host with the native-gate tool the facts call for:
   `request_authorization`, `approve_breaking_intent_revision` with the complete
   next intent, or a stop request, each passing the Lane's `task_id` and the

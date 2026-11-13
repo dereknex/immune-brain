@@ -262,6 +262,7 @@
         "plugins/immune-brain-antigravity/runtime/unattended/checkout_delivery.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/lane_cleanup.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/lane_decision.ts",
+        "plugins/immune-brain-antigravity/runtime/unattended/lane_decision_request.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/lane_supervisor.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/lane_workspace.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/run_entry_manifest.ts",

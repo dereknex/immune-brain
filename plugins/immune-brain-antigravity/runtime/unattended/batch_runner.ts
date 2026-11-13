@@ -273,7 +273,7 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	let decision: LaneDecisionFacts | null = null;
 	if (observation.state === "exited" && !observation.reason) {
 		const read = await input.kernel.projectTask(child.lane.path, child.task_id);
-		if (read.error === null) decision = laneDecisionFacts(child.task_id, read.projection);
+		if (read.error === null) decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
 	}
 	// Spec drive-always-lanes D7: a Lane whose Executor did not exit normally under supervision is kept and said so.
 	const kept = observation.state === "stopped" || observation.state === "unobservable" || observation.state === "unavailable" || !!observation.reason;
@@ -281,7 +281,8 @@ async function superviseSingle(input: StartBatchInput, report: BatchLaneRunRepor
 	return { ...report, handoffs: report.handoffs.filter(handoff => handoff.role !== "executor"),
 		...(kept && condition ? { lane_refusals: [{ task_id: child.task_id, path: child.lane.path, reason: retainedLaneReason(condition) }] } : {}),
 		...(decision ? { lane_decision_required: decision } : {}),
-		next_action: decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` :
+		next_action: decision?.requested ? `The Lane Executor asks for a breaking intent revision (record ${decision.record_revision}). Call approve_breaking_intent_revision for ${decision.task_id} in the current Host with record_revision ${decision.record_revision} and lane_decision_required.requested.next_intent as next_intent; it opens the native gate and continues the Lane.` :
+			decision ? `The Lane waits on a user decision (record ${decision.record_revision}). Call request_authorization for ${decision.task_id} in the current Host with record_revision ${decision.record_revision}; it opens the native gate and continues the Lane.` :
 			observation.state === "running" ? "Call start_unattended_batch again to continue supervising this generation." :
 			observation.state === "unobservable" ? batchReason("lane_executor_unobservable").recovery_action :
 			observation.state === "unavailable" ? batchReason("lane_executor_unavailable").recovery_action : report.next_action,
@@ -324,7 +325,7 @@ export async function startBatch(input: StartBatchInput): Promise<BatchRunReport
 			if (child?.lane) {
 				const read = await input.kernel.projectTask(child.lane.path, child.task_id);
 				if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
-				const decision = laneDecisionFacts(child.task_id, read.projection);
+				const decision = laneDecisionFacts(child.task_id, read.projection, child.lane.path);
 				if (decision) return { ...report, lane_decision_required: decision,
 					handoffs: report.handoffs.filter(h => h.role !== "executor"),
 					next_action: `The Lane waits on a user decision (record ${decision.record_revision}). Use the current Host's native decision gate for ${decision.task_id}; then resume the existing interactive Lane session.` } as unknown as BatchRunReport;

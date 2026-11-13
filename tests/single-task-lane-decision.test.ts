@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { computeBatchPlanDigest, createBatchAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/batch_authority";
 import { canonicalIntentHash, intentAuthorityHash, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
@@ -15,6 +15,7 @@ import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-b
 import { readAnyBatchRunState, rebindSingleTaskIdentity, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { LaneDecisionStaleError, laneDecisionFacts, relayLaneDecision, type LaneDecisionOperation } from "../plugins/immune-brain/runtime/unattended/lane_decision";
+import { laneDecisionRequestPath, writeLaneDecisionRequest } from "../plugins/immune-brain/runtime/unattended/lane_decision_request";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
 import { findLaneRelayTarget } from "../plugins/immune-brain/runtime/unattended/lane_decision";
@@ -283,6 +284,18 @@ describe("single-task Lane decision relay (S5)", () => {
 		expect(laneDecisionFacts(TASK, projectionBody({ lifecycle: "done" }))).toBeNull();
 		expect(laneDecisionFacts(TASK, waiting())).toMatchObject({ task_id: TASK, record_revision: "r1", open_user_decision_count: 1 });
 	});
+
+	it("counts a headless Executor's revision request only while it binds the current record (#426 F19)", () => {
+		const lane = realpathSync(mkdtempSync(join(tmpdir(), "imm-lane-request-")));
+		roots.push(lane);
+		const next_intent = JSON.parse(intentJson(2, "A1 holds, revised"));
+		writeLaneDecisionRequest(lane, { task_id: TASK, operation: "approve_breaking_intent_revision", record_revision: "r1", next_intent, requested_at: CONFIRMED_AT });
+		expect(laneDecisionFacts(TASK, projectionBody({ record_revision: "r1" }))).toBeNull();
+		expect(laneDecisionFacts(TASK, projectionBody({ record_revision: "r1" }), lane)).toMatchObject({ record_revision: "r1",
+			requested: { operation: "approve_breaking_intent_revision", next_intent: { revision: 2 } } });
+		expect(laneDecisionFacts(TASK, projectionBody({ record_revision: "r2" }), lane)).toBeNull();
+		expect(laneDecisionFacts("other-task", projectionBody({ record_revision: "r1" }), lane)).toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -342,7 +355,7 @@ function hostFixture(kind: "unresolved_user_decision" | "replan_required" = "unr
 	].join("\n");
 	for (const name of ["claude", "pi"]) { const path = join(bin, name); writeFileSync(path, script); chmodSync(path, 0o755); }
 	process.env.PATH = `${bin}:${oldPath}`;
-	return { root, spawns: () => existsSync(spawnsFile) ? readFileSync(spawnsFile, "utf8").split("\n").filter(Boolean) : [],
+	return { root, spawnsFile, spawns: () => existsSync(spawnsFile) ? readFileSync(spawnsFile, "utf8").split("\n").filter(Boolean) : [],
 		/** What one interactive TUI run leaves in the Lane; a Pi Executor outside Herdr never runs (D4). */
 		seed: (kind: "unresolved_user_decision" | "replan_required", lane: string) =>
 			execFileSync(process.execPath, [join(bin, "seed.ts"), lane, TASK, kind], { stdio: "ignore" }) };
@@ -548,6 +561,94 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(stopped.lane_relay).toMatchObject({ operation: "stop", applied: true, lane_supervision: { state: "stopped", generation: supervised ? 2 : null } });
 			expect(readTaskTombstone(target.lane_path, TASK)).toMatchObject({ terminal_lifecycle: "stopped" });
 			expect(existsSync(target.lane_path)).toBe(true);
+		} finally { await h.stopBatch(); }
+	}, 40000);
+});
+
+/**
+ * #426 F19: the first generation is the real Claude Code MCP runtime of a headless Lane Executor. It asks for a
+ * breaking revision; a headless Host cancels any native gate, so every gate it opens is counted in `gatesFile`.
+ * Later generations stay alive.
+ */
+function headlessRevisionFixture() {
+	const f = hostFixture();
+	const bin = dirname(f.spawnsFile);
+	const gatesFile = join(bin, "executor-gates");
+	const resubmitFile = join(bin, "executor-resubmit");
+	const claude = join(import.meta.dir, "../plugins/immune-brain/runtime/claude");
+	writeFileSync(join(bin, "executor.ts"), [
+		`import { appendFileSync, mkdtempSync } from "node:fs";`,
+		`import { tmpdir } from "node:os";`,
+		`import { join } from "node:path";`,
+		`import { createMcpRuntime } from ${JSON.stringify(join(claude, "mcp_server"))};`,
+		`import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt } from ${JSON.stringify(join(claude, "lane_guard"))};`,
+		`import { writeFileSync } from "node:fs";`,
+		`const [lane, taskId, nextIntent, gatesFile, resubmitFile] = process.argv.slice(2);`,
+		`const entry = mkdtempSync(join(tmpdir(), "imm-f19-entry-"));`,
+		`const session = { session_id: "f19-executor", cwd: lane };`,
+		`recordPhaseEntryPrompt({ hook_event_name: "UserPromptSubmit", prompt: "/drive", ...session }, { root: entry, home: entry });`,
+		`const runtime = createMcpRuntime({`,
+		`	consumePhaseAdmission(id, op) { phaseEntryGateHookOutput({ hook_event_name: "PreToolUse", tool_name: "mcp__plugin_immune-brain_immune-brain__" + op, tool_use_id: id, ...session }, { root: entry }); return consumePhaseAdmission(id, op, entry); },`,
+		`	cwd: lane, env: { ...process.env, ...${JSON.stringify(HOST_ENV)} }, interactive: true,`,
+		`	requestConfirmation: async () => { appendFileSync(gatesFile, "gate\\n"); return { decision: "decline", requestId: "headless" }; },`,
+		`});`,
+		`runtime.bindClientHandshake({ version: "2.1.236", interactive: true, protocolVersion: "2025-06-18" });`,
+		`const result = await runtime.callTool("approve_breaking_intent_revision", { task_id: taskId, next_intent: JSON.parse(nextIntent) }, { toolCallId: "f19-revision" });`,
+		`if (resubmitFile) { writeFileSync(resubmitFile, String(result?.state ?? result?.error)); process.exit(0); }`,
+		`process.exit(result?.state === "lane_decision_requested" ? 0 : 5);`,
+	].join("\n"));
+	const script = [
+		"#!/bin/sh",
+		`echo "$PWD" >> ${JSON.stringify(f.spawnsFile)}`,
+		`n=$(wc -l < ${JSON.stringify(f.spawnsFile)} | tr -d ' ')`,
+		`if [ "$n" -ge 3 ]; then exec /bin/sleep 30; fi`,
+		`[ "$IMM_LANE_EXECUTOR" = headless ] || exit 4`,
+		`run() { ${JSON.stringify(process.execPath)} ${JSON.stringify(join(bin, "executor.ts"))} "$PWD" ${JSON.stringify(TASK)} '${intentJson(2, "A1 holds after the breaking revision").replace(/\n/g, "")}' ${JSON.stringify(gatesFile)} "$@"; }`,
+		// The second generation resubmits the revision the Parent already committed, then stays alive.
+		`if [ "$n" -eq 2 ]; then run ${JSON.stringify(resubmitFile)}; exec /bin/sleep 30; fi`,
+		`run; exit $?`,
+		"",
+	].join("\n");
+	writeFileSync(join(bin, "claude"), script);
+	return { ...f, executorGates: () => existsSync(gatesFile) ? readFileSync(gatesFile, "utf8").split("\n").filter(Boolean).length : 0,
+		resubmitted: async () => { for (let i = 0; i < 100 && !existsSync(resubmitFile); i++) await Bun.sleep(100); return existsSync(resubmitFile) ? readFileSync(resubmitFile, "utf8") : null; } };
+}
+
+describe("a headless Lane Executor's breaking revision reaches the Parent's gate (#426 F19)", () => {
+	let herdrEnv: string | undefined;
+	beforeEach(() => { herdrEnv = process.env.HERDR_ENV; delete process.env.HERDR_ENV; });
+	afterEach(() => { if (herdrEnv === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = herdrEnv; });
+
+	it("records the request without a gate, one Parent gate commits it, and the next generation finds it committed", async () => {
+		const f = headlessRevisionFixture();
+		const h = claudeHarness(f.root);
+		try {
+			let started = await h.start();
+			expect(started.state).toBe("started");
+			for (let attempt = 0; attempt < 30 && !started.report.lane_decision_required && started.report.lane_supervision?.state === "running"; attempt++)
+				started = await h.start();
+			const target = findLaneRelayTarget(f.root, TASK)!;
+			const required = started.report.lane_decision_required;
+			expect(f.spawns()).toHaveLength(1);
+			expect(f.executorGates()).toBe(0);
+			expect(required?.requested).toMatchObject({ operation: "approve_breaking_intent_revision", next_intent: { revision: 2 } });
+			expect(started.report.next_action).toContain("approve_breaking_intent_revision");
+			expect(readTaskRecordRaw(target.lane_path, TASK).record!.intent_snapshot.revision).toBe(1);
+			const opened = h.gates.length;
+			const relayed = await h.relay("approve_breaking_intent_revision", { record_revision: required.record_revision, next_intent: required.requested.next_intent });
+			expect(relayed.error).toBeUndefined();
+			expect(h.gates.length - opened).toBe(1);
+			expect(relayed.lane_relay).toMatchObject({ operation: "approve_breaking_intent_revision", applied: true, rebound: true, lane_supervision: { state: "running", generation: 2 } });
+			expect(readTaskRecordRaw(target.lane_path, TASK).record!.intent_snapshot.revision).toBe(2);
+			expect(existsSync(laneDecisionRequestPath(target.lane_path))).toBe(false);
+			expect(f.spawns()).toHaveLength(2);
+			// Leaving the request was progress: the next generation does not start one exit away from the no-progress park.
+			const supervisors = join(f.root, ".imm", "state", "lane-supervisors");
+			const [generation] = readdirSync(supervisors).map(name => JSON.parse(readFileSync(join(supervisors, name), "utf8")));
+			expect(generation).toMatchObject({ generation: 2, no_progress: 0 });
+			// The next generation that resubmits the committed revision is told it is committed, with no gate.
+			expect(await f.resubmitted()).toBe("intent_revision_committed");
+			expect(f.executorGates()).toBe(0);
 		} finally { await h.stopBatch(); }
 	}, 40000);
 });

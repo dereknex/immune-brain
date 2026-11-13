@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
+import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, readLaneDecisionRequest } from "./lane_decision_request";
 
 export type ExecutorHost = "claude-code" | "pi" | "antigravity";
 export interface ExecutorPreferences { executor_host?: ExecutorHost; executor_model?: string; executor_effort?: string }
@@ -104,7 +105,7 @@ export class LaneSupervisor {
 			});
 			const generation = current.generation;
 			const child = spawn(executable, executorArguments(input.choice, input.pluginDir, input.taskId),
-				{ cwd: input.lanePath, stdio: "ignore" });
+				{ cwd: input.lanePath, stdio: "ignore", env: { ...process.env, [LANE_EXECUTOR_ENV]: LANE_EXECUTOR_HEADLESS } });
 			const started = new Promise<boolean>(resolve => { child.once("spawn", () => resolve(true)); child.once("error", () => resolve(false)); });
 			if (!child.pid) {
 				await started;
@@ -204,16 +205,21 @@ export async function superviseLane(
 		return { ...value, handled_generation: value.generation, no_progress: advanced ? 0 : value.no_progress + 1 };
 	});
 	let projection = await project();
+	// #426 F19: a headless Executor's breaking-revision request waits on the Parent's gate like a Kernel decision.
+	const requested = (p: typeof projection) => readLaneDecisionRequest(input.lanePath, input.taskId, p.record_revision) !== null;
+	const waitsOnUser = (p: typeof projection) => p.lifecycle !== "active" || p.next_obligation === "awaiting_user" || p.open_user_decision_count > 0 || requested(p);
+	// A generation that leaves a decision request has progressed even though the record has not moved yet.
+	const progressed = (p: typeof projection, baseline: string) => p.record_revision !== baseline || requested(p);
 	const deadline = Date.now() + input.waitMs;
 	for (;;) {
 		const before = input.store.read();
 		if (before?.no_progress && before.no_progress >= 2 && before.handled_generation === before.generation)
 			return { state: "exited", generation: before.generation, exit: before.exit, reason: "lane_executor_no_progress" };
 		const mayBeLive = before && ["starting", "running", "unobservable"].includes(before.state);
-		if (!input.stop && !mayBeLive && (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0)) {
+		if (!input.stop && !mayBeLive && waitsOnUser(projection)) {
 			// An exit seen only between calls is accounted for here as well: otherwise a decision answered in the same
 			// call would re-attach to this exit instead of starting the next generation (Spec D11).
-			if (before?.state === "exited") markHandled(before, projection.record_revision !== before.baseline);
+			if (before?.state === "exited") markHandled(before, progressed(projection, before.baseline));
 			return { state: "exited", generation: before?.generation ?? null, exit: before?.exit ?? null };
 		}
 		// #426 D4: Pi writes to the Kernel only in its TUI, so `pi --print` outside Herdr can never settle.
@@ -226,10 +232,9 @@ export async function superviseLane(
 		const generation = input.store.read();
 		if (!generation || generation.generation !== observation.generation || generation.state !== "exited") throw new Error("lane_executor_generation_changed");
 		projection = await project();
-		const advanced = projection.record_revision !== generation.baseline;
+		const advanced = progressed(projection, generation.baseline);
 		const observed = markHandled(generation, advanced);
-		if (projection.lifecycle !== "active" || projection.next_obligation === "awaiting_user" || projection.open_user_decision_count > 0 || advanced)
-			return observation;
+		if (waitsOnUser(projection) || advanced) return observation;
 		if (observed.no_progress >= 2) return { ...observation, reason: "lane_executor_no_progress" };
 	}
 }

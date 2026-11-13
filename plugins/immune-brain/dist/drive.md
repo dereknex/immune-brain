@@ -286,7 +286,13 @@ is recorded as a separate follow-up rather than resolved here.
   with delegation fields remain readable and retireable (ADR 0028).
 - Invoke `approve_breaking_intent_revision` with the complete next intent
   directly; the native Host gate is the single user decision. Do not overwrite
-  enrolled intent sidecars or ask for chat pre-confirmation. A breaking revision
+  enrolled intent sidecars or ask for chat pre-confirmation. In a headless Lane
+  Executor session the call opens no gate and returns
+  `lane_decision_requested`: the request is left for the Parent, so end the
+  session without retrying. A later generation that finds the revision already
+  committed (`status` `projection.intent_revision` above the claim's enrolled
+  revision) continues the Execution Loop; resubmitting it returns
+  `intent_revision_committed` with the user's confirmation. A breaking revision
   is used when the authority subject changes, including acceptance or a bound
   Spec change; scope-only changes keeping the bound Spec path are compatible.
   A defect inside the existing goal and acceptance is rework under the
