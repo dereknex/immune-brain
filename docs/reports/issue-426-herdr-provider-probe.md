@@ -362,7 +362,7 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | Review / advisory | S2-a、S2-b、S2-c、S4-a | S2 全部通过；S4-a 的会话传输成立；claude-code reviewer 路径在 v4 `probe-m3`、`probe-m4` 结算成功（F10–F14 修复后） |
 | Review / verifier | S3-a、S3-b、S3-c、S3-d | **未验证**（三次 material 尝试未产生 rework，第三次撞 F10；v4 `probe-m3`、`probe-m4` 的 claude-code Review 均无 blocking finding，verifier 未运行。决定不再靠模型出错强行触发：verifier 参数与流程只由自动化测试覆盖，F12 的 packet 可读性仅做过 argv 级验证） |
 | Herdr 外 | F9、BR-DEFER-2（claude）、S4-b | 通过（v4，2026-11-13，`f6d41c01`；证据 `~/imm-probe/evidence/v4/outside-herdr-notes.md`、`tui/`） |
-| Herdr 外 | BR-DEFER-2（antigravity） | 首轮**失败 → F15**：agy 两代 Executor 约 3 s 内 exit 2，child park `lane_executor_no_progress`。F15 修复后（`5a67a6cf02`）真实复跑通过：argv 为 `agy --dangerously-skip-permissions --model gemini-4-hydrogen --effort high --print /drive probe-d2`，generation 1 exit 0，QA A1 通过，child 集成为 `f391765`，batch completed（`tui/F15b.*`）；probe-d2 为 routine，未触发 Review |
+| Herdr 外 | BR-DEFER-2（antigravity） | 首轮**失败 → F15**：agy 两代 Executor 约 3 s 内 exit 2，child park `lane_executor_no_progress`。F15 修复后（`5a67a6cf02`）真实复跑通过：argv 为 `agy --dangerously-skip-permissions --model gemini-4-hydrogen --effort high --print /drive probe-d2`，generation 1 exit 0，QA A1 通过，child 集成为 `f391765`，batch completed（`tui/F15b.*`，此轮有人工重置 Lane 与移除幻影 supervisor 记录）。最终采用无人工干预的单会话复测 `probe-d2c`（同形状 routine 任务，intent `ff6993f`，代码 `5a67a6cf`）：Parent 在一个 turn 内调用 `start_unattended_batch` 19 次完成监督，argv `agy --dangerously-skip-permissions --model gemini-4-hydrogen --effort high --print /drive probe-d2c`，generation 1 exit 0，QA A1 通过，child 集成为 `e5543f9`，batch completed（`tui/F15d.*`）；routine 任务，未触发 Review |
 
 ### 2. 五个门的结论
 
@@ -390,7 +390,7 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 | **F12** | claude-code verifier 的 packet 在仓库外，`dontAsk` 拒绝 Read | 已修：verifier argv 带 `--add-dir <packet 目录>`；argv 级冒烟通过（v4 `smoke-args`），完整 Review 复跑未做（BR-SCN-1） |
 | **F13** | claude-code reviewer 加载用户安装的旧版 skill，契约哈希不符 | 已修：reviewer argv 带 runtime 的 `--plugin-dir`；完整 Review 已实测：v4 `probe-m3`、`probe-m4` 均无 `review_contract_mismatch`，Review 被接受（`177e692fed`、`f6d41c014b`） |
 | **F14** | Lane Review 用 `lanes.active` 而非请求选定的 profile | 已修并实测：`probe-m4` 的 Review 用请求选定的 sonnet（`f6d41c014b`） |
-| **F15** | antigravity 的 `--print` 后紧跟 flag，agy 把该 flag 当 prompt 并 exit 2 | 已修：Lane Executor（`lane_supervisor.ts` `executorArguments`）、带 model 的 reviewer 与 verifier（`cli_review.ts`）都把 `--print` 移到 prompt 之前；agy 1.5.7 复现 exit 2（`tui/D2.agy-argv-repro.err`），flag 前置后 exit 0；真实 Lane 复跑通过（v4 `probe-d2`，`tui/F15b.*`）；antigravity reviewer / verifier 的同类改动未经真实 Review 触发，仅由测试覆盖 |
+| **F15** | antigravity 的 `--print` 后紧跟 flag，agy 把该 flag 当 prompt 并 exit 2 | 已修：Lane Executor（`lane_supervisor.ts` `executorArguments`）、带 model 的 reviewer 与 verifier（`cli_review.ts`）都把 `--print` 移到 prompt 之前；agy 1.5.7 复现 exit 2（`tui/D2.agy-argv-repro.err`），flag 前置后 exit 0；真实 Lane 复跑通过（v4 `probe-d2`，`tui/F15b.*`；无人工干预的单会话复测 `probe-d2c`，`tui/F15d.*`）；antigravity reviewer / verifier 的同类改动未经真实 Review 触发，仅由测试覆盖 |
 | **F16** | Lane Executor 叠层仍读 `lanes.active`：`not_applied` 误报，Lane 决定后的一代不看请求 | 已修：batch 记录 `executor_preferences`，`superviseSingle` 与决定转发共用 `laneExecutorChoice`；单元测试覆盖，真实复跑未做 |
 
 ### 4. 准入决定
@@ -410,6 +410,6 @@ F9 只在 Pi 上验证；`claude --print` 与 antigravity 在 Herdr 外的监督
 
 ### 6. 剩余工作
 
-1. ~~用真实 claude-code reviewer 复跑 F10（BR-SCN-1）~~（v4 `probe-m3`、`probe-m4` 已完成；reviewer 会话无 transcript，`inspected_paths` / `permission_denials` 未验证）。~~Herdr 外 F9、BR-DEFER-2（claude）~~（v4 通过）；~~BR-DEFER-2（antigravity）~~（F15 修复后 v4 `probe-d2` 通过；首轮复跑因驱动 TUI 退出连带杀掉同进程组的 agy 而中断，证据 `tui/F15-attempt1.*`，与被测代码无关）。
+1. ~~用真实 claude-code reviewer 复跑 F10（BR-SCN-1）~~（v4 `probe-m3`、`probe-m4` 已完成；reviewer 会话无 transcript，`inspected_paths` / `permission_denials` 未验证）。~~Herdr 外 F9、BR-DEFER-2（claude）~~（v4 通过）；~~BR-DEFER-2（antigravity）~~（F15 修复后 v4 `probe-d2` 通过，`probe-d2c` 单会话无干预复测通过；首轮复跑因驱动 TUI 退出连带杀掉同进程组的 agy 而中断，证据 `tui/F15-attempt1.*`，与被测代码无关）。
 2. S3-a/b/c/d 不再安排实测（见上表，未验证）。~~S4-b~~（v4 `probe-m0b` 通过：两次 `review_transport_unavailable`，stop 后 Lane `stopped`、QA attestation 保留）。
 3. 补测 Pi / Antigravity 的权限与登录对话框（需要各自 host 的隔离配置），以及 C-3 的 Claude Code 并行组合。
