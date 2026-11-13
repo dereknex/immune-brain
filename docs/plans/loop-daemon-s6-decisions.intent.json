@@ -1,0 +1,22 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s6-decisions",
+  "owner": "user",
+  "goal": "Deliver in-Lane literal-user decision detection via laneDecisionFacts, slot parking, structured GitHub question publication bound to (run_id, record_revision), and verified owner reply relay via relayLaneDecision under S6 (D7, BR-SCN-4) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S6-AC1",
+      "assertion": "Source BR-REQ-5, BR-SCN-4; meet S6 and D7 in docs/specs/loop-daemon.spec.md: when a supervised Lane pauses on a user_only decision in laneDecisionFacts, decision_relay.ts parks the active concurrency slot, posts a structured GitHub Issue comment carrying run_id and record_revision, verifies the replying owner login/association and matching (run_id, record_revision), and relays the decision via relayLaneDecision while rejecting non-owner or stale-revision replies.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decisions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s6-decisions.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+    "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+    "tests/loop-daemon-decisions.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

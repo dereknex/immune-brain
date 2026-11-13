@@ -1,0 +1,427 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s8-dispatch-core",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s8-dispatch-core",
+    "goal": "Connect imm-loop tick and run to their handlers: read the loop config with a mode gate and owner-identity refusal, populate guard facts, schedule and lease judged handlers, execute the deterministic handlers through one GitHub write port, update the status Issue in place, and record every dispatch, under S8 (D10) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S8-AC1",
+        "assertion": "Source GAP-1 to GAP-4; meet S8 and D10 items 3-6 in docs/specs/loop-daemon.spec.md (SCN-5): under loop.mode assist a live tick fills GuardFacts (allowed_actors, allowed_associations, daemon_identity, budget_exhausted, retry_counts, unresolved_blockers, shutdown_requested) from config, the authenticated GitHub login and local state; admits judged handlers only through scheduleLoopWork() and an acquired lease; executes escalate (create or edit by key), relay_lane_decision_question, apply_lane_decision_reply, open_pr, mark_pr_ready, close_out, owner pause/resume/retry/ignore and the in-place status Issue through one GitHub write port; records agent-backed handlers as agent_port_unavailable with no side effect; and appends assurance_kernel/loop_dispatch_record/v1 rows to .imm/state/loop/dispatches.jsonl with mode 0600.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-dispatch.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S8-AC2",
+        "assertion": "Source GAP-3 and GAP-4; meet D10 items 1-2 in docs/specs/loop-daemon.spec.md: a live tick or run exits non-zero with zero GitHub writes under loop.mode off, when the authenticated daemon login is in loop.allowed_actors, or when that login cannot be read; loop.mode observe records decisions and skipped_mode dispatches with zero GitHub writes; --dry-run and status keep working under every mode; run uses loop.interval_seconds unless --interval overrides it; a candidate overlapping an active lease is recorded held.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-dispatch.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\",\n      \"tests/loop-daemon-boundary.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s8-dispatch-core.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/github_port.ts",
+      "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+      "plugins/immune-brain/runtime/loop_daemon/state.ts",
+      "tests/loop-daemon-boundary.test.ts",
+      "tests/loop-daemon-dispatch.test.ts",
+      "tests/loop-daemon-judge.test.ts",
+      "tests/loop-daemon-observe.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s8-dispatch-core.intent.json",
+    "content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+  "git_base_head": "b0dd519cd0903a5c8b1ddafe5b31ccdc549c21c5",
+  "attestations": [
+    {
+      "id": "approval-qa-775f679e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:8835bb8111cc1eeca2063e43956c5ce6bf753b03b1fb9dbe44a5855e6b3cfe72",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:dd41a3ed9b031183a77c11aa288f5b3e9790e33d4f21625b3a048dfdebee4cdd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:dd41a3ed9b031183a77c11aa288f5b3e9790e33d4f21625b3a048dfdebee4cdd"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:dd41a3ed9b031183a77c11aa288f5b3e9790e33d4f21625b3a048dfdebee4cdd"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-af5c3437",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:fcfd590a3e12896d4930d945d2a2ca96800a0f0655a310fea1261ba606bfc94f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5cf7c19b48bc312b972cf46f4f4bea44461913709dd6277d9c7dac0b4a0dc011",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5cf7c19b48bc312b972cf46f4f4bea44461913709dd6277d9c7dac0b4a0dc011"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5cf7c19b48bc312b972cf46f4f4bea44461913709dd6277d9c7dac0b4a0dc011"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-4eb57d4e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:f10c4c84f517f497d3b25d13211b9aa495569bfb1f25116dfdd95f7bd915f4e4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:01a5a1ab649846ab9948114f1801afb7ff78484dd4f2cdb0226fdda2691c4308",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:01a5a1ab649846ab9948114f1801afb7ff78484dd4f2cdb0226fdda2691c4308"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:01a5a1ab649846ab9948114f1801afb7ff78484dd4f2cdb0226fdda2691c4308"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-41020355",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:7cb678fd65f97592c45d3ef2b0df2c35ace57ead2bd445cab40e5328b6a6ff8e",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:22e58826ef9a2d074c0aff7fae1ca072c28e7a719e21cb45b1935fd27a6f70aa",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:22e58826ef9a2d074c0aff7fae1ca072c28e7a719e21cb45b1935fd27a6f70aa"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:22e58826ef9a2d074c0aff7fae1ca072c28e7a719e21cb45b1935fd27a6f70aa"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-211f293b",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:07ae369e5b83146dfb9569537b72f4bca6fac297fa4d16fe100b0b60e16e6f3b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e15a8af472ac71ec3875897075c180d8344e1d6c7eaf40a966ebdee4043dab33",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e15a8af472ac71ec3875897075c180d8344e1d6c7eaf40a966ebdee4043dab33"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e15a8af472ac71ec3875897075c180d8344e1d6c7eaf40a966ebdee4043dab33"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c71eb7cd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:5ac6744bd6a2ac379b19b42c75ae7050b6c07359bf2851669fa1fa411fe785fa",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e8a347efcf66faa4e0fa65d713bda6c9333b36486324fed9828a62b58e91e8a8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e8a347efcf66faa4e0fa65d713bda6c9333b36486324fed9828a62b58e91e8a8"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e8a347efcf66faa4e0fa65d713bda6c9333b36486324fed9828a62b58e91e8a8"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-ee45a0e3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:b96b1682033424a70f6af50dbff209cd70cc2c3d7137424ff83b0a74b2a7026b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:56e5de512c40b6dfb28d28582a7bc1d022c70e32f97f8977b542e5b409b72240",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:56e5de512c40b6dfb28d28582a7bc1d022c70e32f97f8977b542e5b409b72240"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:56e5de512c40b6dfb28d28582a7bc1d022c70e32f97f8977b542e5b409b72240"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-54360804",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:63b4a5c79944a0980b7e914d27feca212832ddc6ae1cb7fd22936776f55687cb",
+      "diff_hash": "sha256:b96b1682033424a70f6af50dbff209cd70cc2c3d7137424ff83b0a74b2a7026b",
+      "actor_id": "cli:claude-code:53844238-faaa-4a7f-a915-db63b529deb0",
+      "summary": "Provenance verified (686cfb265c tree 7a4f40a971, sole parent b0dd519cd0). S8-AC1: the tick fills GuardFacts from config, the gh login and local state, admits non-noop handlers only through scheduleLoopWork plus acquireLoopLease, runs the deterministic handlers through one LoopGitHubPort, records agent-backed handlers as agent_port_unavailable, and appends 0600 dispatch rows. S8-AC2: off mode, owner-identity and unreadable-login cases refuse before any write; observe records skipped_mode; dry-run and status work in every mode; interval_seconds is used unless --interval overrides it; a lease overlap is recorded held. Tests cover each. Blast radius: tier high; load-bearing paths are cli.ts tick/run, dispatch.ts GitHub writes, the guards.ts G8 revision lookup and scheduler.ts admission.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "b0dd519cd0903a5c8b1ddafe5b31ccdc549c21c5",
+        "review_commit": "686cfb265c27cfff36e0b43504c88e0f89e287b7",
+        "review_tree": "7a4f40a97141f27c781d341b4d9afc29df4f1995",
+        "manifest_digest": "sha256:c5ae8fab3fcba209137cb7cb966c5c40dcced7b5a2a24a2be51ff407b5b63b04"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-2e46c08df343-1-review-1",
+          "acceptance_id": "S8-AC1",
+          "summary": "Owner retry and ignore are recorded as 'executed' but change no state, while D10 item 5 calls them state mutations. In production, retry resolves to repair_pr_ci, so the noop retry branch is reachable only from hand-built test decisions.",
+          "anchor": "sha256:3f2fe170b39c8276791ba592cb9ba60e07362fe1c1f7b7d5abe3e71990032b73",
+          "evidence": {
+            "trigger": "A verified '@imm-loop ignore' comment produces a dispatch row with outcome executed and detail 'ignored by owner command', but nothing is persisted, so a later tick treats the target exactly as before",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/owner_commands.ts:resolveOwnerCommand"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S8-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-2e46c08df343-2-review-2",
+          "acceptance_id": "S8-AC1",
+          "summary": "A failed status Issue create or edit is silently swallowed: nothing is written to dispatches.jsonl or stderr.",
+          "anchor": "sha256:b29e1cac461fb78b0a45b4c4c78d9c8f151b66d49039d20485f14430462d9a81",
+          "evidence": {
+            "trigger": "gitHubPort.createIssue or editIssue throws (for example a gh auth or rate-limit error) → the empty catch drops it, and the tick reports success with no record that the status update failed",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/status_issue.ts:planStatusIssue",
+              "plugins/immune-brain/runtime/loop_daemon/github_port.ts:createLoopGitHubPort"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S8-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-2e46c08df343-3-review-3",
+          "acceptance_id": "S8-AC1",
+          "summary": "The status Issue lookup depends on the observer's 100-issue limit, and the issue is created without a label. Once more than 100 newer issues push it out of the snapshot, the daemon creates a duplicate status Issue instead of editing the existing one.",
+          "anchor": "sha256:66915a21a76f2e7d8c3188b5e595748ce9befad3303e04a211c5a35cc703d19a",
+          "evidence": {
+            "trigger": "A repository with more than 100 issues newer than the status Issue → snapshot.issues lacks the marker issue → planStatusIssue returns create → a second 'Loop daemon status' issue is opened",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/observer.ts:pollIssuesFromGithub",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/github_port.ts:createIssue"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S8-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-2e46c08df343-4-review-4",
+          "acceptance_id": "S8-AC2",
+          "summary": "The owner-identity refusal compares logins case-sensitively. The live tick and run refusal tests also inject guardFacts.daemon_identity rather than reading the login from 'gh api user'; only the unreadable-login test goes through that real seam.",
+          "anchor": "sha256:e0fdb3376b3c2efada0025e521f0cc646c2dae4061d79a0b50b7ba145adc898e",
+          "evidence": {
+            "trigger": "loop.allowed_actors contains 'Daemon-Bot' and gh api user returns 'daemon-bot' → includes() is false → the live tick proceeds instead of refusing",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+              "plugins/immune-brain/runtime/loop_daemon/identity.ts:readAuthenticatedGithubLogin"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S8-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:45856d6160cd27ab76d5b316924dbdf46870f2615d3876bcf3b68b0ba9e8e15f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s8-dispatch-core:2026-11-12T13:15:15.264Z",
+      "at": "2026-11-12T13:15:15.264Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s8-dispatch-core.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T13:15:30.845Z",
+      "at": "2026-11-12T13:15:30.845Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-775f679e\naction_v2_sha256:07015e57fa9f12c5fd99a2f5dfafb06b178d6903ed7be8b4c04ba607e05db152",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T13:15:30.845Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T13:36:46.521Z",
+      "at": "2026-11-12T13:36:46.521Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-af5c3437\naction_v2_sha256:0ba5aecd0cbff2fc43015bf3479ff014857473b0001a59bf08adf80bafb5edc1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T13:36:46.522Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T13:41:21.593Z",
+      "at": "2026-11-12T13:41:21.593Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4eb57d4e\naction_v2_sha256:4ff3ac5162ee8909a6c3e8a1fb180008aaafa63cf97fe2e56e6000afd0322714",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T13:41:21.593Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T14:09:22.000Z",
+      "at": "2026-11-12T14:09:22.000Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-41020355\naction_v2_sha256:3d07ad2139fd700c9c6bf0929ff6d06c3aaa93047e505daa9a8c73bb6148d81c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:09:22.000Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T14:23:25.977Z",
+      "at": "2026-11-12T14:23:25.977Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-211f293b\naction_v2_sha256:17cd1781f632e5a9fbb37a3383fb4b99780ae0338a9584e368df0e53a1ebc4c2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:23:25.978Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T14:26:09.303Z",
+      "at": "2026-11-12T14:26:09.303Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c71eb7cd\naction_v2_sha256:fee3e5d37d1f195e4ccbebc4ed19a52f144ed45969d9db5abfde18d785695a56",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:26:09.303Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T14:30:07.067Z",
+      "at": "2026-11-12T14:30:07.067Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ee45a0e3\naction_v2_sha256:5dfb0eecb6f247adb48e3eaf8d1e590550d1d266d54cc40b15122de721d495b2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:30:07.067Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s8-dispatch-core:2026-11-12T14:32:36.417Z",
+      "at": "2026-11-12T14:32:36.417Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-54360804\naction_v2_sha256:8e0c936c6d468746f6508898a55ec8648e696545042a25f47c0163b7bef89c03",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:53844238-faaa-4a7f-a915-db63b529deb0",
+        "confirmation_ref": "antigravity:cli:claude-code:53844238-faaa-4a7f-a915-db63b529deb0",
+        "issued_at": "2026-11-12T14:32:36.418Z"
+      },
+      "review_started_at": "2026-11-12T14:30:10.811Z",
+      "review_submitted_at": "2026-11-12T14:32:34.826Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-daemon-s8-dispatch-core:2026-11-12T14:32:40.283Z",
+      "at": "2026-11-12T14:32:40.283Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b976c7d2c568686cd6ee0e1243bec206393ae6ed7d1d7ef61a1e89e25f1136b3"
+    }
+  ]
+}

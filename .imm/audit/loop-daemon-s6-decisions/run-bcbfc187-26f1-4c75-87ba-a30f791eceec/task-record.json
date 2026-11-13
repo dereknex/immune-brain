@@ -1,0 +1,375 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s6-decisions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s6-decisions",
+    "goal": "Deliver in-Lane literal-user decision detection via laneDecisionFacts, slot parking, structured GitHub question publication bound to (run_id, record_revision), and verified owner reply relay via relayLaneDecision under S6 (D7, BR-SCN-4) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S6-AC1",
+        "assertion": "Source BR-REQ-5, BR-SCN-4; meet S6 and D7 in docs/specs/loop-daemon.spec.md: when a supervised Lane pauses on a user_only decision in laneDecisionFacts, decision_relay.ts parks the active concurrency slot, posts a structured GitHub Issue comment carrying run_id and record_revision, verifies the replying owner login/association and matching (run_id, record_revision), and relays the decision via relayLaneDecision while rejecting non-owner or stale-revision replies.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decisions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s6-decisions.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+      "plugins/immune-brain/runtime/unattended/lane_decision.ts",
+      "tests/loop-daemon-decisions.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s6-decisions.intent.json",
+    "content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+  "git_base_head": "2f8ad53672e397eb45bf4bc652751fa1d6c1daa5",
+  "attestations": [
+    {
+      "id": "approval-qa-5fdaaadb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+      "diff_hash": "sha256:9178dae1d6da75f510a7e3d207a92544d981f5db06f2990242cb87edad227dac",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:3aaf2c6381c4794ce5d32d7827996810bd80d398601a2c4ede83a9424b05811f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:3aaf2c6381c4794ce5d32d7827996810bd80d398601a2c4ede83a9424b05811f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-20468d99",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+      "diff_hash": "sha256:7e4e960adac624c07ba70f0b993f4f1386f39e801bf8047e1b14793b3b2becb0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:c89cfe45765ba21aec09e23a8aecc7f6845fdab8471f131312f5de84da7cd348",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:c89cfe45765ba21aec09e23a8aecc7f6845fdab8471f131312f5de84da7cd348"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-b06a78c2",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+      "diff_hash": "sha256:64d5f8e26f94cc1f51e6b7af8af3bf88fbff5c86a6ca2fccb3b439f7616ee9e0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:2bf0410315697a01725c7847c4bf6708b33fc5cad68a927f83b654d9665c9fef",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:2bf0410315697a01725c7847c4bf6708b33fc5cad68a927f83b654d9665c9fef"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-8c0c399f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+      "diff_hash": "sha256:6ad31f24e79227928dec8f6fc6e528eda10e0906ac12854af4cd8ea8d7c3d635",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9c1ab30fd4658765450249829988a4ae75fb2c1a4e5b5dfc480893dc72ea15e7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9c1ab30fd4658765450249829988a4ae75fb2c1a4e5b5dfc480893dc72ea15e7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b786f1e9",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8a4c956991ec182a9e44ccd348acd32c159f788ffaf5314c893cd224d6c6741d",
+      "diff_hash": "sha256:6ad31f24e79227928dec8f6fc6e528eda10e0906ac12854af4cd8ea8d7c3d635",
+      "actor_id": "cli:antigravity:18b6611c-40aa-43c8-b7a1-6fbb11f3acd2",
+      "summary": "S6-AC1 satisfied across slot parking, structured question publication, marker-stripped offered-option verification, stale-revision rejection, and non-fabricated relayLaneDecision forwarding; blast radius: tier medium, load-bearing paths plugins/immune-brain/runtime/loop_daemon/decision_relay.ts, plugins/immune-brain/runtime/loop_daemon/leases.ts, plugins/immune-brain/runtime/loop_daemon/scheduler.ts, and plugins/immune-brain/runtime/unattended/lane_decision.ts (no migrations or persisted TaskRecord shape changes).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2f8ad53672e397eb45bf4bc652751fa1d6c1daa5",
+        "review_commit": "8fc6ce37ad21b500da539f6f7becb9e244d8022b",
+        "review_tree": "d6b6d85f6c26db099deee8ea19e6643b3eb3ab9c",
+        "manifest_digest": "sha256:c6712c1b062319f97874dde4e12e7d55bc213f8b6678fb2f85486c9426cdca1e"
+      },
+      "reviewer_verdict_sha256": "sha256:a6f43262f02de49b2ab3fd8f8408e579ca7cc2a53ff1953b81309e1d8a7023df"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-b6f79a8f2a11-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S6-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Parking a Lane does not free its concurrency slot: scheduleLoopWork still counts parked_for_decision leases as busy, so another worker cannot start while a decision is pending.",
+      "anchor": "sha256:2ceaeb069f868d5a64edafd26d73f78b578458844c907c1ffc7d405df013e86a",
+      "evidence": {
+        "trigger": "Run with max_concurrent=1. publishLaneDecisionQuestion parks the only lease, setting status to parked_for_decision. The next scheduleLoopWork tick builds busy from active_leases.filter(status !== \"releasing\") (scheduler.ts:134, unchanged; I read it because it is the slot accounting that consumes this lease state). The parked lease still counts toward slots, so no new candidate is dispatched. D7 and the leases.ts doc comment both say parking releases the active concurrency slot. tests/loop-daemon-decisions.test.ts only checks the lease status string and never tests slot accounting.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:publishLaneDecisionQuestion",
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:parkLaneSlot",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts:parkLoopLeaseForDecision",
+          "plugins/immune-brain/runtime/loop_daemon/scheduler.ts:scheduleLoopWork"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S6-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-b6f79a8f2a11-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S6-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "handleLaneDecisionReply reports a successful relay without calling relayLaneDecision when relayInputFactory is omitted, then sets the lease back to active.",
+      "anchor": "sha256:de0ee4854c92c4d663c967743e6da02dad1b6988d4a207b6196effc4223faf11",
+      "evidence": {
+        "trigger": "A verified owner reply with matching (run_id, record_revision) is handled with deps that include stateDir and hostToken but no relayInputFactory. The else branch builds a fake outcome {relayed:true, lane_relay:{batch_id:\"batch-s6\", applied:true}} without calling relayLaneDecision, then resumeLaneSlot sets the lease to active. The caller gets action \"relayed\" and an active slot, but the Lane never received the decision and stays paused. Acceptance S6-AC1 requires the decision to be relayed via relayLaneDecision; this fallback fabricates that success instead.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:handleLaneDecisionReply",
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:resumeLaneSlot",
+          "plugins/immune-brain/runtime/loop_daemon/leases.ts:resumeLoopLeaseFromDecision"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S6-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e7d7b29d988c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S6-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "handleLaneDecisionReply discards the owner's chosen option: relayInputFactory receives only (operation, record_revision), so relayLaneDecision cannot tell one option from another that maps to the same operation; the chosen option is also never checked against the options that were posted.",
+      "anchor": "sha256:efe1d0d1e2572ebdb4ec412f86f64e69f25c073196ea81157656dc329e7a8151",
+      "evidence": {
+        "trigger": "A verified owner replies '@imm-loop select opt-1' or '@imm-loop select opt-2' (or any free text such as 'Looks good', which becomes selected_option = the whole body) to a question whose options both resolve to request_authorization. verifyLaneDecisionReply returns the same operation for both, and handleLaneDecisionReply calls relayInputFactory(verification.operation, verification.record_revision) without verification.selected_option. relayLaneDecision is then called with identical input for different owner decisions, so the owner's choice (for example accept vs dismiss, or grant_rounds vs accept_residual_risk) is not relayed, and an option the question never offered is accepted as verified. Spec D7 step 3 (docs/specs/loop-daemon.spec.md:246) says the daemon parses the chosen option and relays it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:handleLaneDecisionReply",
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:verifyLaneDecisionReply",
+          "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts:resolveDecisionOperation",
+          "plugins/immune-brain/runtime/unattended/lane_decision.ts:relayLaneDecision"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S6-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s6-decisions:2026-11-12T07:54:06.449Z",
+      "at": "2026-11-12T07:54:06.449Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s6-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s6-decisions:2026-11-12T07:54:18.380Z",
+      "at": "2026-11-12T07:54:18.380Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5fdaaadb\naction_v2_sha256:641172fdcc8bfb9a95d9625ed71caa6f916c867f0d13fe69b1c3da071a03d60f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T07:54:18.380Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s6-decisions:2026-11-12T07:55:58.260Z",
+      "at": "2026-11-12T07:55:58.260Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:943a7f1972b89c5f46577cfe83abee03e82ae4463b4c2aca5a7029d5101a9f6f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:690161d9-f6ff-4809-8e88-1098d17efba3",
+        "confirmation_ref": "antigravity:cli:claude-code:690161d9-f6ff-4809-8e88-1098d17efba3",
+        "issued_at": "2026-11-12T07:55:58.260Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2f8ad53672e397eb45bf4bc652751fa1d6c1daa5",
+        "review_commit": "4d7fa697b5d79f5b1e8f62a2333c1ca4402c439c",
+        "review_tree": "fda6d36799822963ad0dd0fa817eee1e4501f67b",
+        "manifest_digest": "sha256:20f1c1976ad1ffaad085c2f7d17f4de30cfed83e2a8f6334fec7b63d34fdde1f"
+      },
+      "review_started_at": "2026-11-12T07:54:20.707Z",
+      "review_submitted_at": "2026-11-12T07:55:57.231Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s6-decisions:2026-11-12T07:57:30.304Z",
+      "at": "2026-11-12T07:57:30.304Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b6f79a8f2a11-1-review-1\naction_v2_sha256:c85a31218d98ed1081ea4224a6ec162cc73cf59d4c0f09935e76990f21624811"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s6-decisions:2026-11-12T07:57:36.802Z",
+      "at": "2026-11-12T07:57:36.802Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-b6f79a8f2a11-2-review-2\naction_v2_sha256:3d4a6cb12c37cd9e733d2378ed087da861b5376f50fd1dd69152a2601f1404ce"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s6-decisions:2026-11-12T07:57:46.605Z",
+      "at": "2026-11-12T07:57:46.605Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s6-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s6-decisions:2026-11-12T07:57:57.709Z",
+      "at": "2026-11-12T07:57:57.709Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-20468d99\naction_v2_sha256:a068f774a88de2635f3992813cf15ae4880ee21e0b02e7516b85eda9da3ba612",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T07:57:57.709Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s6-decisions:2026-11-12T07:59:07.786Z",
+      "at": "2026-11-12T07:59:07.786Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:df267640c3c581eb9275ea5bad202dd5ac7631322a74e493985e0bdfd2a43717",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:e210faa8-aeec-43e2-98d8-f84aea8a717a",
+        "confirmation_ref": "antigravity:cli:claude-code:e210faa8-aeec-43e2-98d8-f84aea8a717a",
+        "issued_at": "2026-11-12T07:59:07.786Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "2f8ad53672e397eb45bf4bc652751fa1d6c1daa5",
+        "review_commit": "d66340a44f9af60698a5e9667fea88b7a21357dd",
+        "review_tree": "30b9af404789c475818517c5b1d92430c5834bed",
+        "manifest_digest": "sha256:761eda7a9f1ec529c2df40f79910c2d95493eb7ed640fb21d592c525d9564d6b"
+      },
+      "review_started_at": "2026-11-12T07:58:01.840Z",
+      "review_submitted_at": "2026-11-12T07:59:07.119Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s6-decisions:2026-11-12T08:01:18.417Z",
+      "at": "2026-11-12T08:01:18.417Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e7d7b29d988c-1-review-1\naction_v2_sha256:a52de8b4398ed5d0dbf7df4f64a8464b263debba246245ce529fe665f5f997e3"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s6-decisions:2026-11-12T08:01:40.537Z",
+      "at": "2026-11-12T08:01:40.537Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s6-decisions.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s6-decisions:2026-11-12T08:01:49.415Z",
+      "at": "2026-11-12T08:01:49.415Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b06a78c2\naction_v2_sha256:11ea62c63a2aae3c46676f68fa35cdb2dffc6b53db83520ac3eb3f4dcec6fa7b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T08:01:49.415Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s6-decisions:2026-11-12T08:35:45.565Z",
+      "at": "2026-11-12T08:35:45.565Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8c0c399f\naction_v2_sha256:054385957820128ec6fb555ad7defd794c4d0f81963140dd7b5a9c25b0576d58",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T08:35:45.565Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s6-decisions:2026-11-12T08:42:00.497Z",
+      "at": "2026-11-12T08:42:00.497Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b786f1e9\naction_v2_sha256:22775318605a9959b20fda6ee5b8acb3a20ccfd05072807a50c9f3801beca2ec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:18b6611c-40aa-43c8-b7a1-6fbb11f3acd2",
+        "confirmation_ref": "antigravity:cli:antigravity:18b6611c-40aa-43c8-b7a1-6fbb11f3acd2",
+        "issued_at": "2026-11-12T08:42:00.497Z"
+      },
+      "review_started_at": "2026-11-12T08:37:03.562Z",
+      "review_submitted_at": "2026-11-12T08:41:59.191Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "complete:loop-daemon-s6-decisions:2026-11-12T08:42:02.817Z",
+      "at": "2026-11-12T08:42:02.817Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aa7f1dbe09c22e49bda3ba4798f6fb79bd3dabc61f9ab969143815d789cb47be"
+    }
+  ]
+}

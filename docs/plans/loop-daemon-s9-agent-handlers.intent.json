@@ -1,0 +1,30 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s9-agent-handlers",
+  "owner": "user",
+  "goal": "Add a headless Host session runner that reads completion only from checkable evidence and bind the agent-backed handlers (analyze_codebase, triage_issue, draft_plan, publish_plan_for_approval, enroll_and_drive with tracker_approval or policy_auto under the standing run process, repair_pr_ci, repair_pr_conflict, address_pr_review, owner replan and approve) to the S8 dispatch core, under S9 (D11) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S9-AC1",
+      "assertion": "Source GAP-1, GAP-5 and GAP-6; meet S9 and D11 items 1-3 and 5 in docs/specs/loop-daemon.spec.md (SCN-6): with a fake session provider and GitHub fixtures, successive ticks of the standing run process carry a new Issue through analyze_codebase, draft_plan via imm-kernel intent author, plan summary publication, a REST-read /approve <digest> comment turned into a tracker_approval_proof, enrollTask, dispatchLoopDrive() to settlement with the Executor exit recorded, and open_pr on imm/<slug>; sessions receive only the daemon's GitHub credential.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-agent-handlers.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S9-AC2",
+      "assertion": "Source GAP-5, GAP-6 and GAP-12; meet D11 items 1, 3 and 4 in docs/specs/loop-daemon.spec.md: an approval with a stale digest, an edited comment, or a daemon-authored comment does not enroll; a one-shot tick records requires_standing_daemon instead of driving a Lane; a session that exits without its expected output file, Git head, or validation result is recorded failed regardless of its output text; repair handlers keep the S7 two-attempt cap; and a review comment whose path is outside the TaskIntent scope_hint escalates instead of being applied.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-agent-handlers.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s9-agent-handlers.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "tests/loop-daemon-agent-handlers.test.ts",
+    "tests/loop-daemon-dispatch.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

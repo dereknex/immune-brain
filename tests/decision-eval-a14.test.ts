@@ -110,7 +110,7 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 			profile: "default",
 			provider_kind: "fake",
 			model: "fake",
-			threshold_set_version: "a14/v0",
+			threshold_set_version: "a14/v1",
 			counts: { total: 5, labelled: 4, unlabeled: 1, decided: 3, unavailable: { provider_error: 1 } },
 		});
 		expect(report.corpus_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -134,7 +134,7 @@ describe("A14 eval report (AC6; BR-SCN-1)", () => {
 
 		const md = readFileSync(join(out, "a14-2026-11-01.md"), "utf8");
 		expect(md).toContain("| Baseline (all_blocking) |");
-		expect(md).toContain("- `acme/widgets#7/comment/2` gold nit, choice nit (blocking=0.100, nit=0.700, out_of_scope=0.100, duplicate=0.100); model fake, model version null, threshold set a14/v0, truncation unknown");
+		expect(md).toContain("- `acme/widgets#7/comment/2` gold nit, choice nit (blocking=0.100, nit=0.700, out_of_scope=0.100, duplicate=0.100); model fake, model version null, threshold set a14/v1, truncation unknown");
 		expect(md).toContain("- `acme/widgets#7/comment/4` gold duplicate, unavailable: provider_error");
 	});
 

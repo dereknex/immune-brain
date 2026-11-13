@@ -546,7 +546,7 @@ describe("plugin package runtime cutover parity", () => {
 		expect(ts.status).toBe(0);
 		const commands = JSON.parse(ts.stdout).commands;
 		const names = commands.map((command: any) => command.name).sort();
-		expect(names).toEqual(["imm-kernel", "imm-plan", "imm-session", "imm-tracker"]);
+		expect(names).toEqual(["imm-kernel", "imm-loop", "imm-plan", "imm-session", "imm-tracker"]);
 		// The removed command names are no longer advertised in any form.
 		expect(JSON.parse(ts.stdout).retired).toBeUndefined();
 		const kernel = commands.find(

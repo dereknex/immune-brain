@@ -10,7 +10,7 @@ description: Use when the user explicitly requests Immune-Brain repair of GitHub
 Repair blockers on one GitHub pull request without creating or mutating
 TaskIntent, TaskRecord, Kernel, Spec, or Plan authority. An already active
 Managed task remains owned by `drive`; stop and direct the user there when
-the target PR is part of that task.
+the target PR is part of that task. Under unattended execution (ADR 0039), the Loop daemon may enter `fix-pr` headlessly only for pull requests it opened itself on configured branch prefixes, bounded by its 2-attempt repair cap.
 
 ## Workflow
 

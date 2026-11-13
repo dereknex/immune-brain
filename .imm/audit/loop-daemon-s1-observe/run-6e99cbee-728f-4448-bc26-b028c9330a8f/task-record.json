@@ -1,0 +1,1045 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s1-observe",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s1-observe",
+    "goal": "Deliver GitHub observation polling, event normalization (E1-E11), .imm/state/loop/ lock and state persistence, rebuildLoopState() recovery, and the imm-loop CLI (tick, status, --dry-run) under S1 (D2) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S1-AC1",
+        "assertion": "Source BR-REQ-1; meet S1 and D2 in docs/specs/loop-daemon.spec.md: imm-loop tick --dry-run and imm-loop status --json normalize GitHub tracker/PR observations into E1-E11 events, persist .imm/state/loop/state.json and daemon.lock with 0600 permissions, refuse concurrent ticks when daemon.lock is held by a live PID, and reconstruct watermarks and active leases via rebuildLoopState() after .imm/state/loop/ deletion without re-dispatching active work.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-observe.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s1-observe.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/bin/imm-loop",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/events.ts",
+      "plugins/immune-brain/runtime/loop_daemon/lock.ts",
+      "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+      "plugins/immune-brain/runtime/loop_daemon/rebuild.ts",
+      "plugins/immune-brain/runtime/loop_daemon/state.ts",
+      "plugins/immune-brain/runtime/loop_daemon/types.ts",
+      "tests/loop-daemon-observe.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s1-observe.intent.json",
+    "content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+  "git_base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+  "review_round_budget_extension": 3,
+  "attestations": [
+    {
+      "id": "approval-qa-790e4857",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:31137557b9dd6a75e42c7ca30b19427eba8da009db2379f05886a0d3046faed1",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:fd982cf6ddf81880af6236ea7f417a74aff8dd8b56b78d688751191ff13d36d9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:fd982cf6ddf81880af6236ea7f417a74aff8dd8b56b78d688751191ff13d36d9"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1b705a4c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:3e072c73907d6c4625a31dc8beb61ff4ba43a61671653285e6349dc5c3779b6a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:3cdf4f850afa807848e0d73a2a41c4c1b57b53f4d90a02b64c2bc845f752efa7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:3cdf4f850afa807848e0d73a2a41c4c1b57b53f4d90a02b64c2bc845f752efa7"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7fa49883",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:a9e0b6219c2a2000c33ddcbef6682123bdf4c8b60e3a43afbba74a651d55e7d4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:97de4e5ebef2266f7e56c3721f9ca414b948f3ffa19319e328b394e84689a648",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:97de4e5ebef2266f7e56c3721f9ca414b948f3ffa19319e328b394e84689a648"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-3adafaeb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:2c993c18226238e40a9a9e3e876565b14b2ee6147dc643a457a418a2b7ad3008",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:0d1bf59f651cf29983c996fda2f5bfc204f6d7ca4f49d4535a1921ca815ca40a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:0d1bf59f651cf29983c996fda2f5bfc204f6d7ca4f49d4535a1921ca815ca40a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-eefac959",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:9717829cae141f6ebbd71c720dc5eb583f9b31985741785fc1dcc59d0d8ed3a9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:a8585fe77928872a79729a1af149ae368ec31ed9eeb12e31081592094f008b6d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:a8585fe77928872a79729a1af149ae368ec31ed9eeb12e31081592094f008b6d"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-58e50add",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:ecda2cdba372d2d6b71ce3dcb44045ba641ede50830af879ecf9932fa4f89f5d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:5cc8dcf98c4892cd427dd0a0fb763d847d3f2f0945a1ae0a3ed2661b141bfab4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:5cc8dcf98c4892cd427dd0a0fb763d847d3f2f0945a1ae0a3ed2661b141bfab4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a62f51b9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:774f88431e9026fecf44038475381e0c3c058f5f2b059af440ec068271a2a0c4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e335dd4e306736a4b3dbb278cea5258960b8f80a43af1c80a79772af34b1f237",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e335dd4e306736a4b3dbb278cea5258960b8f80a43af1c80a79772af34b1f237"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-2a942014",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d2a6a07a243c6d7814be7885d225f9fa5ad972fedeab732c313a2530844e275",
+      "diff_hash": "sha256:774f88431e9026fecf44038475381e0c3c058f5f2b059af440ec068271a2a0c4",
+      "actor_id": "cli:pi:32b6708e-851b-46b6-a38c-9abc8653f152",
+      "summary": "Round-7 monotonic reclaim generations preserve single-instance stale-lock recovery, including dead-claim races; blast radius medium, centered on the daemon.lock protocol in lock.ts and its regression coverage.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "7fd17720da0a885e8c6e040740dbc5ac27d3e49e",
+        "review_tree": "25c8bdd4d56dfe2e059a7176e9069e2f1346d072",
+        "manifest_digest": "sha256:1f87cb1451e6e32034a0fff85f9b9f6188d8f5a1cecb81715a0d872d0baa2804"
+      },
+      "reviewer_verdict_sha256": "sha256:714ead9d45dd5e221eabc82e79255643d8126b5ef3de1f27063508b040a65a52"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f1bab41b1a47-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Live Issue polling drops native blocked_by edges, so blocked ready-labeled Issues become E5_READY_TASK; fetch the edges and add transport-to-normalizer coverage.",
+      "anchor": "sha256:97e097a5bfdc12a5b01ecdab11d973fb5cc9c38bfb13010b15dc1680b38c218d",
+      "evidence": {
+        "trigger": "A GitHub Issue labeled ready-for-agent has an unresolved native blocked_by edge → pollIssuesFromGithub does not request that data and substitutes [], so normalizeEvents emits E5_READY_TASK for blocked work.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts:pollIssuesFromGithub",
+          "plugins/immune-brain/runtime/loop_daemon/events.ts:normalizeEvents"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1bab41b1a47-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "PR polling substitutes general discussion comments for review threads, losing real E10 events and potentially misclassifying discussion comments; poll review threads and test both cases.",
+      "anchor": "sha256:69c6d7ae83ae65f8c8fb73c80d289937b2c02e771f740a07cf136a41d3006e78",
+      "evidence": {
+        "trigger": "An inline review comment is added to an imm/* PR → the requested gh comments field contains general PR discussion rather than inline review threads, so no E10_PR_REVIEW_COMMENT is produced for the actual review.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts:pollPRsFromGithub",
+          "plugins/immune-brain/runtime/loop_daemon/events.ts:normalizeEvents"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1bab41b1a47-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "GitHub polling failures are silently converted into empty successful observations; propagate the failure and pin nonzero gh exits with a CLI test.",
+      "anchor": "sha256:62e9e65dfbdb0a355357ce6d499dad0ee3b1e4b78802305098eee17f80b4e7a9",
+      "evidence": {
+        "trigger": "gh issue list exits nonzero or throws during imm-loop tick → pollIssuesFromGithub returns [], and the CLI still saves the tick and returns success with an incomplete event set instead of reporting that observation failed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts:pollIssuesFromGithub",
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts:observeGithub",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1bab41b1a47-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The standing run command deadlocks every normal tick on its own daemon.lock; execute the tick under the held lock and cover one standing-loop iteration.",
+      "anchor": "sha256:c246752c83226411b7490ce117e5928a9736a2f121e5ec731ecdad763f9b58a0",
+      "evidence": {
+        "trigger": "Run imm-loop run without --dry-run → run acquires daemon.lock and its nested tick tries to acquire the same lock held by the current live PID, so every iteration returns concurrent tick rejected and observes nothing.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli(run)",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli(tick)",
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts:acquireDaemonLock"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f1bab41b1a47-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "MERGEABLE alone incorrectly emits E11 ready while checks are pending or absent; require the declared readiness conditions and add a pending-check negative test.",
+      "anchor": "sha256:703333c148b82b1de8c741675b41a7804d2bc76cad50a1634e1a6096013ccc86",
+      "evidence": {
+        "trigger": "An open imm/* PR is MERGEABLE with pending checks and no failed conclusions → normalizeEvents emits E11_PR_READY_OR_MERGED with status ready even though checks have not passed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/events.ts:normalizeEvents"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90cd29ea1a4a-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Fetch inline review comments at the GitHub polling seam and add a polling-to-normalization regression test; actual gh observations currently cannot produce E10.",
+      "anchor": "sha256:f190af74a6bb6e2fb963243a10a3955a3bcd2a0831a4d694c081d6184d0abe77",
+      "evidence": {
+        "trigger": "Polling-to-normalization invariant: an open imm/* PR has a new inline diff comment but no review body → pollPRsFromGithub() does not request reviewComments/reviewThreads and therefore leaves review_comments empty, so normalizeEvents() emits no E10_PR_REVIEW_COMMENT. The review-2 fix injects review_comments directly into normalizeEvents() and does not cover GitHub acquisition; docs/specs/loop-daemon.spec.md D2 explicitly requires review-thread polling.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+          "plugins/immune-brain/runtime/loop_daemon/events.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90cd29ea1a4a-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Advance prs_updated_at from all relevant PR observations and add a two-tick test; PR discussion and review-body events currently repeat on every tick.",
+      "anchor": "sha256:15a60fe6290839826ff937fe77c9c24ee95cd0a03efaa2059f46c1ced64fc4fe",
+      "evidence": {
+        "trigger": "Cross-tick PR watermark invariant: a daemon PR has a discussion comment or review body but no inline review_comments → calculateNewWatermarks() leaves prs_updated_at null, so the next tick treats the same comment as new again and appends a duplicate event_id to events.jsonl. The review-2 single-snapshot normalization test does not cover persisted watermarks; docs/specs/loop-daemon.spec.md D2 requires observation watermarks.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+          "plugins/immune-brain/runtime/loop_daemon/events.ts",
+          "plugins/immune-brain/runtime/loop_daemon/state.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90cd29ea1a4a-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Make stale-lock reclamation atomic and test simultaneous reclaimers; two concurrent ticks can both acquire after one deletes the other's fresh lock.",
+      "anchor": "sha256:7ddf066830b1969acc358b1e1bb7e6308dbd780f7494cca27cf583859950fbe0",
+      "evidence": {
+        "trigger": "Atomic stale-lock handoff invariant: two ticks both inspect the same dead-PID lock; tick A removes it and creates its live lock, then tick B executes its already-authorized rmSync and removes A's fresh lock before creating its own → both acquisitions succeed and concurrent ticks run. Existing live-PID and sequential stale-lock tests do not cover this interleaving required by the concurrency negative control in docs/specs/loop-daemon.spec.md.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90cd29ea1a4a-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Reconstruct active-work leases from open remote daemon PRs and test without a local branch or active run record; rebuild currently discards that evidence.",
+      "anchor": "sha256:7a80d50263efe9382379879f4582e2571283c4fb7e20f7a00f74f71e656b716e",
+      "evidence": {
+        "trigger": "Remote-PR rebuild invariant: after .imm/state/loop/ deletion, an open GitHub PR on imm/task exists only remotely and its run is settled or absent → listLocalBranches() returns no matching branch, the run scan contributes no lease, and the PR loop examines only review comments, so rebuildLoopState() returns no active lease for task and loses the marker preventing re-dispatch. The existing rebuild fixture masks this because active run.json reconstructs the lease first; docs/specs/loop-daemon.spec.md D2 requires open PR evidence during rebuild.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain/runtime/loop_daemon/rebuild.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-90cd29ea1a4a-5-review-5",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Implement the required ETag/If-None-Match conditional polling and cover unchanged-resource revalidation at the transport seam.",
+      "anchor": "sha256:9ebd844adb16b297c100403f618a6f91df7b70ff7750b7e376897a81d537a691",
+      "evidence": {
+        "trigger": "Conditional-polling invariant: any tick against unchanged GitHub resources issues full gh issue list and gh pr list requests without ETag validators, while calculateNewWatermarks() only copies the previous etag_by_resource and rebuildLoopState() resets it to {} → no conditional request or 304 path exists and etag_by_resource never records validators. Current transport tests cover payload mapping and failures, not this requirement; docs/specs/loop-daemon.spec.md D2 explicitly requires ETag/If-None-Match polling.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+          "plugins/immune-brain/runtime/loop_daemon/rebuild.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-845b061675aa-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Conditional-observation completeness gap: the new issues ETag path consumes a REST list as though it contained the GraphQL comments and dependency edges required by D2.",
+      "anchor": "sha256:bf2709b7f5832e39ff6ef58bf20cf5e53e4d8dfdf765323f0a463e0d22c907b0",
+      "evidence": {
+        "trigger": "After an ETag is stored, a ready-for-agent issue with a native blocked_by edge and a new owner comment returns HTTP 200 from the conditional REST issues request → parseRawIssues receives no comments or GraphQL blockedBy/parent fields, normalizes blocked_by to [], and normalizeEvents emits E5_READY_TASK for the still-blocked issue while omitting the comment's E3/E4/E7 event; the prior standard-list behavior does not cover this new conditional-200 path.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+          "plugins/immune-brain/runtime/loop_daemon/events.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-845b061675aa-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Stale-lock mutual-exclusion gap: timeout recovery permits two reclaimers to believe they own the same mutex and both acquire daemon.lock.",
+      "anchor": "sha256:4b3e86919fc6771de44fec56e4ea772b2d4ffa39fd3ffa37a8bd91cc428f81c0",
+      "evidence": {
+        "trigger": "A stale daemon.lock is being reclaimed while its .reclaim.lock mtime becomes older than 10 seconds → a second reclaimer removes and recreates the mutex; both reclaimers can recheck the dead lock before either writes, then the second rmSync deletes the first reclaimer's freshly created live lock and writes its own, so both calls return acquired:true and concurrent ticks are admitted. The new mutex covers simultaneous mkdir callers but not this timeout/ownership variant of the same reclamation invariant.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-845b061675aa-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Rebuild lease-identity gap: the new remote-PR reconstruction uses a different target_id for imm-loop branches than the existing local-branch reconstruction.",
+      "anchor": "sha256:0616e0a25f8675b2b4ac1329c15e332c0367cf098bd3988ba5feb4083b6d1220",
+      "evidence": {
+        "trigger": "A repository has local branch imm-loop/123 and an open remote PR for that same branch, with no run record → the local scan creates active lease issue-123 while the new PR scan creates a second active lease 123, leaving duplicate active-work identities instead of one lease that prevents re-dispatch; the remote-only test does not cover the local-plus-remote interaction.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/rebuild.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-845b061675aa-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "PR watermark coverage gap: the new updated_at mapping cannot observe live PR updates because the gh pr list field selection omits updatedAt.",
+      "anchor": "sha256:3b8741de178df8589d9483b2cdbf70ee22b2d75b7f091f96c64827ad6783cd06",
+      "evidence": {
+        "trigger": "An open PR's title or body is updated while it has no comments, reviews, inline comments, or mergedAt → the requested gh pr list JSON contains no updatedAt, so RawPR.updated_at remains undefined and calculateNewWatermarks/rebuildLoopState leave prs_updated_at unchanged instead of reconstructing the GraphQL updatedAt watermark required by D2; the new comment/review tests do not cover a PR-only update.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+          "plugins/immune-brain/runtime/loop_daemon/rebuild.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e4ab5649cbb5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 4,
+      "summary": "Stale-lock reclamation can rename aside a freshly acquired live lock and then overwrite another new lock, allowing concurrent ticks; prevent reclamation from renaming a replacement lock and pin the three-party race with a test.",
+      "anchor": "sha256:721d4345c7eebfb02de047dd0fb8e78685b5be1083c5329b59f463597b041dca",
+      "evidence": {
+        "trigger": "A and B both inspect the same stale daemon.lock → A renames it and creates A's live lock → B acts on its earlier inspection and renames A's live lock aside → C creates C's lock while daemon.lock is absent → B detects A's live PID and restores it with renameSync, replacing C's lock → both A and C have acquired=true and can run concurrent ticks while only A's lock remains visible.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts",
+          "acquireDaemonLock",
+          "renameSync(lockPath, uniqueReclaimPath)"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f9b072e27dc7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 5,
+      "summary": "Single-instance mutual exclusion remains violable because the new reclamation claim is created and populated non-atomically; add an interleaved two-reclaimer regression test.",
+      "anchor": "sha256:fcdf63df4219eb3830c51d0d1133332bcadd9c6ba5c3e8de4e330427495902aa",
+      "evidence": {
+        "trigger": "Two live processes reclaim the same stale daemon.lock, and process B reads .reclaim.<staleToken>.lock after process A's openSync but before A's writeFileSync → JSON.parse fails on the empty claim, B unlinks A's still-open claim and creates its own; if both recheck the stale daemon.lock before either rename, both rename their temporary locks and return acquired:true, with B overwriting A's live lock. The round-5 fix coordinates only claims containing a readable live PID, so it does not cover this claim-initialization variant of the mutual-exclusion invariant; the added A/B/C test is sequential and cannot reach it.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts:acquireDaemonLock"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-2455e83f8de2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S1-AC1",
+      "source": "review",
+      "review_round": 6,
+      "summary": "Stale-reclamation mutual exclusion remains incomplete: two concurrent dead-claim recoverers can both acquire the daemon lock; the populated-claim fix covers live-claimer observation but not atomic dead-claim takeover.",
+      "anchor": "sha256:caa0c56148469aed54ea5c71c5976a7b7b2ad2caf115764547355105fb2be91a",
+      "evidence": {
+        "trigger": "Processes B and C both find the same stale daemon.lock and an existing reclaim claim with a dead PID; after both read that claim as dead, B removes it and links B's claim, then C removes B's live claim and links C's claim, and both recheck the original stale lock before either rename → both rename their temporary locks and return acquired:true, admitting concurrent ticks instead of rejecting all but one. Add a regression that interleaves two dead-claim recoverers; the delivered live-claimer test does not reach this takeover path.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/lock.ts"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S1-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T14:28:46.039Z:replan-required",
+      "kind": "replan_required",
+      "status": "resolved",
+      "acceptance_id": null,
+      "source": "kernel",
+      "review_round": 6,
+      "summary": "Review exhausted its 5-round rework budget; a durable replan is required.",
+      "replan_cause": "budget_exhausted"
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T13:36:58.138Z",
+      "at": "2026-11-11T13:36:58.138Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T13:37:08.469Z",
+      "at": "2026-11-11T13:37:08.469Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-790e4857\naction_v2_sha256:ebccca0fddec5cde04e5c31da72cabedc3d2f96f6d3428ec33994d2c8764932c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T13:37:08.469Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T13:42:33.549Z",
+      "at": "2026-11-11T13:42:33.549Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:965740d7a5ad014b7516897e584f9cd3baf87ef323b489ca145c620dee278801",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:5e100223-6160-46c9-a8a1-391654b08670",
+        "confirmation_ref": "antigravity:cli:pi:5e100223-6160-46c9-a8a1-391654b08670",
+        "issued_at": "2026-11-11T13:42:33.549Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "0540dd7a8f5b42a2484faf0b9d8d9ac04ac51c28",
+        "review_tree": "8190ef925f867fee6498b3d3f760fecee446f731",
+        "manifest_digest": "sha256:0f73533a4e3b48106e4a571153606ef009d4fa8e628f63c5b63ace149a66e06c"
+      },
+      "review_started_at": "2026-11-11T13:37:10.808Z",
+      "review_submitted_at": "2026-11-11T13:42:32.979Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T13:45:14.433Z",
+      "at": "2026-11-11T13:45:14.433Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1bab41b1a47-1-review-1\naction_v2_sha256:d8769686793e709729a9c211ac20ca40f45bdbefeec538b0b6e0fec1f51adadb"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T13:45:19.744Z",
+      "at": "2026-11-11T13:45:19.744Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1bab41b1a47-2-review-2\naction_v2_sha256:0518c5a22597f7adbf5ec51a60e2b701a090c7cec5f9577a1fc44313e5ee08c9"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T13:45:24.776Z",
+      "at": "2026-11-11T13:45:24.776Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1bab41b1a47-3-review-3\naction_v2_sha256:53589c898be936660366b97b25167587ad7d2c7a4d66cae08e3c95dcb83621fb"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T13:45:29.010Z",
+      "at": "2026-11-11T13:45:29.010Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1bab41b1a47-4-review-4\naction_v2_sha256:3094d129214f2304c73084d597cc7982d324e43024bcf8f08c2381ab3f3c92c6"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T13:45:32.900Z",
+      "at": "2026-11-11T13:45:32.900Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f1bab41b1a47-5-review-5\naction_v2_sha256:d7450ebdd8e41bf85fe36e8c3de6bbb9f11356a2eb8f20c797a201209ea986e7"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T13:45:49.478Z",
+      "at": "2026-11-11T13:45:49.478Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T13:45:56.091Z",
+      "at": "2026-11-11T13:45:56.091Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1b705a4c\naction_v2_sha256:954651ec0452c9d3e5d0c480d4543819292605377127729d71e33768d572d395",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T13:45:56.091Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T13:55:06.616Z",
+      "at": "2026-11-11T13:55:06.616Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:2745a3d9a5abf03c7a90defb5b8018ff957d6da305575dc2967792107a8425fa",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:94e341ea-8c6f-4ada-960f-7702c989116d",
+        "confirmation_ref": "antigravity:cli:pi:94e341ea-8c6f-4ada-960f-7702c989116d",
+        "issued_at": "2026-11-11T13:55:06.616Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "01039f871abe8060873dced48c5edc771604a04d",
+        "review_tree": "06ab4e509d27adaaf5ab2db6e92979076958ab5f",
+        "manifest_digest": "sha256:fd2392ec3a83d420c79af818c155aaa34fc48228b80fb4ad9f4552e806df78f0"
+      },
+      "review_started_at": "2026-11-11T13:45:58.306Z",
+      "review_submitted_at": "2026-11-11T13:55:06.040Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:01:28.938Z",
+      "at": "2026-11-11T14:01:28.938Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90cd29ea1a4a-1-review-1\naction_v2_sha256:4ee743ccab1637c5bf2a9253ce0464fb9de5b3148f0661a7415a714ee6fc859f"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:01:32.987Z",
+      "at": "2026-11-11T14:01:32.987Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90cd29ea1a4a-2-review-2\naction_v2_sha256:eec28e06361cf09c077be6ab455335db7c01227b7db0c1335f3a7561afe3752c"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:01:40.305Z",
+      "at": "2026-11-11T14:01:40.305Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90cd29ea1a4a-3-review-3\naction_v2_sha256:7db06764f57f238a6c976e4df052bab394cb188ca71574bad476bcf985ea3265"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:01:44.510Z",
+      "at": "2026-11-11T14:01:44.510Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90cd29ea1a4a-4-review-4\naction_v2_sha256:6b61f78b846376f7b66b5f5559fefbeac9d3ac37fb4ff1b7d9f74c3d95265e11"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:01:50.148Z",
+      "at": "2026-11-11T14:01:50.148Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-90cd29ea1a4a-5-review-5\naction_v2_sha256:eea02abacaaa2317b3f2753a3fc99ad42475aa19ae0de4c539bdc4323d028def"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T14:02:00.212Z",
+      "at": "2026-11-11T14:02:00.212Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:02:07.441Z",
+      "at": "2026-11-11T14:02:07.441Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7fa49883\naction_v2_sha256:c98bf089ebf8bc5410700857acf80a5aa9aa2fa7c376a8eac5da8ea70cfc18eb",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T14:02:07.441Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T14:06:41.311Z",
+      "at": "2026-11-11T14:06:41.311Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:f44f7bc2ac08a4c768e694aae7542adfe423368550c956a8f2229886327d80be",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:ff8c66af-cec6-4d0d-a3e1-71dc20611478",
+        "confirmation_ref": "antigravity:cli:pi:ff8c66af-cec6-4d0d-a3e1-71dc20611478",
+        "issued_at": "2026-11-11T14:06:41.311Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "1600cc9d859dd49f5ea18635f63863f90e47d594",
+        "review_tree": "ce8608fb0c2a60f327af568913de0a153888c662",
+        "manifest_digest": "sha256:441e5b091a9922561574d6db8cc1440c55867e2b2313f0cddde035f579d81a75"
+      },
+      "review_started_at": "2026-11-11T14:02:09.758Z",
+      "review_submitted_at": "2026-11-11T14:06:40.670Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:11:48.254Z",
+      "at": "2026-11-11T14:11:48.254Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-845b061675aa-1-review-1\naction_v2_sha256:195e4a434f6aacf29c8ec1b5589f56ba553e268f993c61fdb14a25c305b5cc9b"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:11:56.157Z",
+      "at": "2026-11-11T14:11:56.157Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-845b061675aa-2-review-2\naction_v2_sha256:ce53cb90fd72dd45379dc7c7c4fc931305e217fd52ce4c128f9ad51002f6e19e"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:12:01.066Z",
+      "at": "2026-11-11T14:12:01.066Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-845b061675aa-3-review-3\naction_v2_sha256:f664f0d9586a8232c6cb4e43b9b69c0f6e086d8ce3e171126277304e1c6f7d9e"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:12:04.842Z",
+      "at": "2026-11-11T14:12:04.842Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-845b061675aa-4-review-4\naction_v2_sha256:9b025ff543fabb5d5aba3f2086c13e2d067802739f3aa0a88a99c4e329a7b141"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T14:12:14.696Z",
+      "at": "2026-11-11T14:12:14.696Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:12:21.807Z",
+      "at": "2026-11-11T14:12:21.807Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3adafaeb\naction_v2_sha256:d2a008b40fcea2d34eb670995f20e5aa40a38a4c42249b148ce0f1e01aa11e73",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T14:12:21.807Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T14:16:26.169Z",
+      "at": "2026-11-11T14:16:26.169Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_4\naction_v2_sha256:455bf87b0f50ed8f078b16eadfe1ee60f565bb7d42d5ff5701e92a04fa6a4c94",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:0b0b0242-89a6-4976-9a6f-4953e94cf9dd",
+        "confirmation_ref": "antigravity:cli:pi:0b0b0242-89a6-4976-9a6f-4953e94cf9dd",
+        "issued_at": "2026-11-11T14:16:26.169Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "773c7f900fdfd93a6f3b18d93d2e0dc6d7ea87fa",
+        "review_tree": "b3e8223e3fb9f06eae456f311f176f7a61bf06a4",
+        "manifest_digest": "sha256:850fbad38948c1cd3464d56922a4c717e03e790f806ce3f0c1d276e10c9ad2bb"
+      },
+      "review_started_at": "2026-11-11T14:12:24.306Z",
+      "review_submitted_at": "2026-11-11T14:16:25.525Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:18:20.310Z",
+      "at": "2026-11-11T14:18:20.310Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e4ab5649cbb5-1-review-1\naction_v2_sha256:13df1eb185c0f3061514365a6144efd8583dc3077de4bc4a22b3b431ceb3844c"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T14:18:27.788Z",
+      "at": "2026-11-11T14:18:27.788Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:18:35.654Z",
+      "at": "2026-11-11T14:18:35.654Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-eefac959\naction_v2_sha256:9dbd773a93febb362c5b44a9be75bc3ab641319e784e74f08921880d77a4c69d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T14:18:35.654Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T14:21:39.450Z",
+      "at": "2026-11-11T14:21:39.450Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_5\naction_v2_sha256:f95b87c48f7214dc087dae70d134ae6acbbfc07df3e9cc89fe081a7c9694788a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:e8cdbac9-7f59-4802-ac05-acad23c0b71b",
+        "confirmation_ref": "antigravity:cli:pi:e8cdbac9-7f59-4802-ac05-acad23c0b71b",
+        "issued_at": "2026-11-11T14:21:39.450Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "6380179a64b80b0cd40445a3631a36174dbd2abe",
+        "review_tree": "462be8f0cd9127a660daa73c8ede7ffdc85c1909",
+        "manifest_digest": "sha256:168ca2a05053c361778aebf84812827f7bfd7abd1849867c60ce32ac6cdb6dd5"
+      },
+      "review_started_at": "2026-11-11T14:18:38.043Z",
+      "review_submitted_at": "2026-11-11T14:21:38.830Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:23:33.824Z",
+      "at": "2026-11-11T14:23:33.824Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f9b072e27dc7-1-review-1\naction_v2_sha256:50a946ee1bb304b5c9e4566c51aa760bc006a05ec4251c229f2097b5e02afc74"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T14:23:43.374Z",
+      "at": "2026-11-11T14:23:43.374Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:23:50.973Z",
+      "at": "2026-11-11T14:23:50.973Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-58e50add\naction_v2_sha256:960eeb91bff1152740cbc2873992cba1bfb1cc54cf34615a87d88e6f37146900",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T14:23:50.973Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s1-observe:2026-11-11T14:28:46.039Z",
+      "at": "2026-11-11T14:28:46.039Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review_round_6\naction_v2_sha256:3af990694c86d01ddf0b7e4bf2b7f542b19e68fd7c633b774afd36a66fb5aad5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:5ce57b13-1872-48b6-96e5-11595d1f94bb",
+        "confirmation_ref": "antigravity:cli:pi:5ce57b13-1872-48b6-96e5-11595d1f94bb",
+        "issued_at": "2026-11-11T14:28:46.039Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c0feb4d497cce16b4099fe04f1958efcbae85719",
+        "review_commit": "bd57f15d3c20656681d5da82b980fa66268895b2",
+        "review_tree": "0cc992767d0448779d8734d93b85b2662c10488f",
+        "manifest_digest": "sha256:02d58998c7c8becb760256d259ac71d244483edf496c91f43d471fc2481109fa"
+      },
+      "review_started_at": "2026-11-11T14:23:53.370Z",
+      "review_submitted_at": "2026-11-11T14:28:45.452Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "authorize_rework:loop-daemon-s1-observe:2026-11-11T14:29:08.208Z",
+      "at": "2026-11-11T14:29:08.208Z",
+      "type": "authorize_rework",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "request_rework:loop-daemon-s1-observe:2026-11-11T14:28:46.039Z:replan-required\naction_v2_sha256:f3dadee58d045a18d20f0bdf5582c9ffa964ddcdd9cc0acc53e822e64b81c588",
+      "authority": {
+        "authority_kind": "user",
+        "actor_id": "literal-user",
+        "confirmation_ref": "antigravity-confirm-1a31555702feb037",
+        "issued_at": "2026-11-11T14:29:09.323Z"
+      }
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s1-observe:2026-11-11T14:32:17.665Z",
+      "at": "2026-11-11T14:32:17.665Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-2455e83f8de2-1-review-1\naction_v2_sha256:4f40b0d865ff86360755e1d20219af67e59668cb761373b045e2856ca8451dfd"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s1-observe:2026-11-11T14:32:29.762Z",
+      "at": "2026-11-11T14:32:29.762Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s1-observe.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:32:37.433Z",
+      "at": "2026-11-11T14:32:37.433Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a62f51b9\naction_v2_sha256:99f38630e0224a3ef1be14d6de8d71e3b34af6d3b6b7388bd936bf848064fa66",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T14:32:37.433Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s1-observe:2026-11-11T14:36:47.472Z",
+      "at": "2026-11-11T14:36:47.472Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-2a942014\naction_v2_sha256:da9f6231967f21a9da302d8b58e49743946152a0248f5d274d4a1488c9ba234f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:32b6708e-851b-46b6-a38c-9abc8653f152",
+        "confirmation_ref": "antigravity:cli:pi:32b6708e-851b-46b6-a38c-9abc8653f152",
+        "issued_at": "2026-11-11T14:36:47.472Z"
+      },
+      "review_started_at": "2026-11-11T14:32:40.040Z",
+      "review_submitted_at": "2026-11-11T14:36:46.830Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:loop-daemon-s1-observe:2026-11-11T14:36:49.498Z",
+      "at": "2026-11-11T14:36:49.498Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:639da8efa1d18b33203e96a9746785c8da999c830de6c6a1a266425988773f46"
+    }
+  ]
+}

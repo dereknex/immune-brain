@@ -1,0 +1,198 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s10-decision-model",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s10-decision-model",
+    "goal": "Apply ADR 0039 Decisions 5-7 to the daemon's decision-model points: per-point hand-set thresholds acting only on the correctable direction, a read-only judging agent for low-confidence, truncated, disabled or unavailable answers, the production classifier with full envelope provenance, periodic reconciliation of model-skipped events with correction labels, and the a20, PR review triage and free-text Lane reply bindings, under S10 (D12) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S10-AC1",
+        "assertion": "Source GAP-7 to GAP-10; meet S10 and D12 items 1-4 in docs/specs/loop-daemon.spec.md (SCN-7): a18, a15_task_granularity, a20, a19 and a14_pr_comment_triage carry the D12 hand-set thresholds at threshold_set version /v1 and act only on the listed directions; an answer below threshold, with truncation other than none, from a point absent in decision_models.enabled_points, or unavailable goes to the judging agent, whose handler is validated against the closed catalogue; the live tick uses createDecisionModelClassifier and records probabilities, profile, model, model_version, threshold_set_version and truncation; imm-loop reconcile and run re-check model-skipped decisions, dispatch overrides through the normal guards and scheduler, and append labels.jsonl rows (mode 0600) loadable by scripts/decision-eval/harness.ts loadCorpus().",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decision-model.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S10-AC2",
+        "assertion": "Source GAP-11 and GAP-12; meet D12 items 1, 2 and 5 in docs/specs/loop-daemon.spec.md: an a19 approve_plan or command answer at any confidence yields one deduplicated format reminder and never enroll_and_drive; an invalid or unavailable judging agent runs no side-effecting handler and falls back to the point baseline or escalate; a20 candidates come from deterministic lexical similarity over open Issues; E10 uses a14_pr_comment_triage and address_pr_review reuses its recorded answer; an unparsed Lane decision reply resolves through a19 then the judging agent and still binds to the parked (run_id, record_revision); CI log text is never sent to the decision model.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decision-model.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s10-decision-model.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/decision_record.ts",
+      "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+      "plugins/immune-brain/runtime/loop_daemon/duplicate_candidates.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judging_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/labels.ts",
+      "plugins/immune-brain/runtime/loop_daemon/reconcile.ts",
+      "tests/decision-model.test.ts",
+      "tests/loop-daemon-decision-model.test.ts",
+      "tests/loop-daemon-judge.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s10-decision-model.intent.json",
+    "content_hash": "sha256:c6349b788f8601d088edc6f0961c3a89b80e802de1c190eb699205b206abca99"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c6349b788f8601d088edc6f0961c3a89b80e802de1c190eb699205b206abca99",
+  "git_base_head": "97723f9f8dbbfc90d9d06258a52e3e7db42ac440",
+  "attestations": [
+    {
+      "id": "approval-qa-2202d7d6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c6349b788f8601d088edc6f0961c3a89b80e802de1c190eb699205b206abca99",
+      "diff_hash": "sha256:415f70a166a0689f37b35f0e554e5f1817f35449106cdae6491b48f674357a93",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:edd7c53bfd1705dc19b42cfcf5204a155b19e9da4ea8b068bb27fda878d34a83",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S10-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:edd7c53bfd1705dc19b42cfcf5204a155b19e9da4ea8b068bb27fda878d34a83"
+        },
+        {
+          "acceptance_id": "S10-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:edd7c53bfd1705dc19b42cfcf5204a155b19e9da4ea8b068bb27fda878d34a83"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7ce01c01",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c6349b788f8601d088edc6f0961c3a89b80e802de1c190eb699205b206abca99",
+      "diff_hash": "sha256:415f70a166a0689f37b35f0e554e5f1817f35449106cdae6491b48f674357a93",
+      "actor_id": "cli:claude-code:ecaa7798-7cb0-4aed-9165-d52d0440fb42",
+      "summary": "Provenance verified (c490536 sole parent 97723f9, tree 79ae73d); D12 /v1 thresholds, correctable-direction gating, judging-agent routing with catalogue validation and baselines, envelope provenance via createDecisionModelClassifier, reconcile+labels.jsonl 0600, a19 format reminder, lexical a20 candidates, a14_pr_comment_triage reuse and unparsed Lane reply binding match S10-AC1/AC2 and spec D12 items 1-5; blast radius high: judgement.ts/dispatch.ts/cli.ts decision routing plus persisted loop_decision_record fields, labels.jsonl and reconcile.json state.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "97723f9f8dbbfc90d9d06258a52e3e7db42ac440",
+        "review_commit": "c490536afe96fe93d0f9d379b7178e7e7ada8c4f",
+        "review_tree": "79ae73d0d0eea1477555bce6b2c2f3b96a22ca79",
+        "manifest_digest": "sha256:1f13e5440745a5836b23591ef88a890c50949299480ba290c0f20020d652ab36"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-022966d2b1e2-1-review-1",
+          "acceptance_id": "S10-AC2",
+          "summary": "Reconcile override path lacks the judgement.ts a19 guard that rewrites a judged enroll_and_drive into a format reminder; enrollment still requires the D11 digest proof or policy_auto, so the authority boundary holds.",
+          "anchor": "sha256:04c13d990aeea9d1e4416eba06a9710d2532589700e88a54cee2a1fbe8f00e45",
+          "evidence": {
+            "trigger": "a19 'discussion' noop_record kept_for_reconciliation; at reconcile the judging agent returns handler enroll_and_drive → overrideDecision handler enroll_and_drive is dispatched instead of the a19 format reminder judgement.ts applies on the tick path",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/reconcile.ts:reconcileSkippedDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:enrollAndDrive"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S10-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-022966d2b1e2-2-review-2",
+          "acceptance_id": "S10-AC1",
+          "summary": "labels.jsonl mixes points in one file and uses ids prefixed reconcile:/owner: rather than the bare decision id named in D12 item 4; loadCorpus() with one point's labels throws corpus_invalid once rows of another point exist, and tests only cover single-point files.",
+          "anchor": "sha256:e7098c5c51ab5dd04fb2a63e9d18746c76b655bd9a8685d6db6f47520a9d3976",
+          "evidence": {
+            "trigger": "reconcile appends an a18 row (gold actionable) and an a19 row (gold request_plan_revision) → loadCorpus(text, a18 options) throws corpus_invalid on the a19 row unless the caller filters by point first",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/reconcile.ts:reconcileSkippedDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/labels.ts:appendLoopLabel",
+              "scripts/decision-eval/harness.ts:loadCorpus"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S10-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-022966d2b1e2-3-review-3",
+          "acceptance_id": "S10-AC1",
+          "summary": "Dry-run paths are not side-effect-free for local state: run --dry-run never persists last_reconcile_at, so it reconciles (invoking judging sessions without budget consumption) on every iteration, and owner-reversal labels are appended even under tick --dry-run.",
+          "anchor": "sha256:ba89f463759f00878eb71a3fb77816de1597ef00ea183824ff57671daf84c94a",
+          "evidence": {
+            "trigger": "imm-loop run --dry-run with no prior reconcile.json and pending kept decisions → shouldRunScheduledReconcile returns true every iteration and judging sessions rerun each interval; tick --dry-run with a verified @imm-loop ignore → labels.jsonl row written",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:runLoopDaemonCli",
+              "plugins/immune-brain/runtime/loop_daemon/reconcile.ts:shouldRunScheduledReconcile",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:recordOwnerReversalLabel"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S10-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:8b4c245e101de2e9f4edcbebd4064a7ef9751ec02aeed122cfef07bc85c00cfd"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s10-decision-model:2026-11-13T01:48:32.374Z",
+      "at": "2026-11-13T01:48:32.374Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s10-decision-model.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s10-decision-model:2026-11-13T01:49:02.934Z",
+      "at": "2026-11-13T01:49:02.934Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2202d7d6\naction_v2_sha256:03edf1e7d64b5491eb983e6d020fd4964a68a81a1fc65bf6db4108f556861e45",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-13T01:49:02.935Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s10-decision-model:2026-11-13T01:52:36.810Z",
+      "at": "2026-11-13T01:52:36.810Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7ce01c01\naction_v2_sha256:2133fb73fb1d4aa005bbcdb8483b793c571221c1b888eed6c600b2d2af6598b7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:ecaa7798-7cb0-4aed-9165-d52d0440fb42",
+        "confirmation_ref": "antigravity:cli:claude-code:ecaa7798-7cb0-4aed-9165-d52d0440fb42",
+        "issued_at": "2026-11-13T01:52:36.810Z"
+      },
+      "review_started_at": "2026-11-13T01:49:09.288Z",
+      "review_submitted_at": "2026-11-13T01:52:34.890Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-daemon-s10-decision-model:2026-11-13T01:52:41.570Z",
+      "at": "2026-11-13T01:52:41.570Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5fba0bdb3968775e123e92f20757a7e2bacc86704d85f25554c14773a4839207"
+    }
+  ]
+}
