@@ -13,7 +13,7 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { CliReviewHost, resolveAuthorityReviewSkillPath, reviewArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -689,10 +689,10 @@ describe("default cli dispatch", () => {
  */
 const RETIRED_SWITCH = ["IMMUNE_BRAIN", "REVIEW", "DISPATCH"].join("_");
 
-const piAdvance = async (root: string, risk: Risk = "material") => {
+const piAdvance = async (root: string, env: Record<string, string | undefined>, risk: Risk = "material") => {
 	const fixture = fixtureFor(root, { risk });
-	const progression = new AssuranceProgression({ ...fixture.ports, authorityOverrides: fixture.ports as never });
-	return await progression.advance(TASK, ctx(root)) as never;
+	const runtime = new PiRuntime({ cwd: root, env, ports: fixture.ports, authorityOverrides: fixture.ports as never });
+	return await runtime.advance(TASK) as never;
 };
 
 const antigravityAdvance = async (root: string, env: Record<string, string | undefined>, risk: Risk = "material") => {
@@ -706,7 +706,7 @@ describe("cli only dispatch", () => {
 		const root = reviewRepo("pi", { review_model: "model-x" });
 		onPath(fakeReviewer("exit 0"));
 		const env = { ...ROOT_ENV, [RETIRED_SWITCH]: "subagent" };
-		for (const ready of [await piAdvance(root), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
+		for (const ready of [await piAdvance(root, env), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
 			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
 			expect(typeof ready.review_command).toBe("string");
 			expect(ready).not.toHaveProperty("agent_params");
