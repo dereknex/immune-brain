@@ -43,7 +43,7 @@ _Correlation of tool calls and host events with phase admission gates_
 _Interactive native host dialog for literal-user confirmation_
 
 - **Claude Code** (`certified`): Native interactive confirmation dialog via confirm_dialog and HostConfirmationRef
-- **Antigravity** (`conformance-only`): Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)
+- **Antigravity** (`conformance-only`): Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); not live-certified (#469)
 - **Pi** (`certified`): Native in-process ctx.ui.confirm interactive confirmation dialog
 
 ### P3 — verifier observation

@@ -46,6 +46,7 @@ import {
 } from "../host-core/private_file";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
+import { checkNativeGateSurfacing, type AncestorProcessReader } from "./tool_permission";
 import {
 	antigravityRunContinuationPostToolUse,
 	antigravityRunContinuationPreToolUse,
@@ -117,6 +118,7 @@ export interface PhaseEntryLocations {
 	root?: string;
 	home?: string;
 	readInitiative?: InitiativeObservationReader;
+	readAncestorArgs?: AncestorProcessReader;
 }
 
 export interface AntigravityPreInvocationPayload {
@@ -731,6 +733,35 @@ export function antigravityPreToolUseHook(
 	return { decision: "allow" };
 }
 
+function issueNativeConfirmationForceAsk(
+	conversation: string,
+	stepIdx: number,
+	admissionId: string,
+	workspace: string,
+	confirmInput: NativeConfirmationInput,
+	root: string,
+	locations: PhaseEntryLocations,
+	choices: {
+		verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
+		reworkChoice?: ReworkChoice;
+	} = {},
+): PreToolUseHookDecision {
+	const surfacing = checkNativeGateSurfacing({
+		home: locations.home,
+		readAncestorArgs: locations.readAncestorArgs,
+	});
+	if (!surfacing.ok) {
+		return { decision: "deny", reason: surfacing.reason };
+	}
+	if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, choices)) {
+		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+	}
+	return {
+		decision: "force_ask",
+		reason: formatAntigravityConfirmationReason(confirmInput, choices),
+	};
+}
+
 async function prepareBatchConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
@@ -787,15 +818,13 @@ async function prepareBatchConfirmation(
 		await previewRuntime.shutdown();
 	}
 	if (!confirmInput) return { decision: "allow" };
-	if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
-		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-	}
-	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+	return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
 
 async function prepareRetireConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
+	locations: PhaseEntryLocations,
 ): Promise<PreToolUseHookDecision> {
 	const { call, state, cwd, root, stepIdx, admissionId } = sync;
 	// ADR 0025: a live entry token stands in for the native gate on retire_stale_batch.
@@ -822,15 +851,13 @@ async function prepareRetireConfirmation(
 		await previewRuntime.shutdown();
 	}
 	if (!confirmInput) return { decision: "allow" };
-	if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
-		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-	}
-	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+	return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
 
 async function prepareTaskAuthorityConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
+	locations: PhaseEntryLocations,
 ): Promise<PreToolUseHookDecision> {
 	const { call, cwd, root, stepIdx, admissionId } = sync;
 	const taskId = String(call.opArgs.task_id ?? "");
@@ -891,16 +918,16 @@ async function prepareTaskAuthorityConfirmation(
 		reworkChoice = parsed;
 	}
 
-	if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
-		verifierChoice,
-		reworkChoice,
-	})) {
-		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-	}
-	return {
-		decision: "force_ask",
-		reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice }),
-	};
+	return issueNativeConfirmationForceAsk(
+		conversationId,
+		stepIdx,
+		admissionId,
+		workspaceRealpath,
+		confirmInput,
+		root,
+		locations,
+		{ verifierChoice, reworkChoice },
+	);
 }
 
 export async function antigravityPreToolUseHookAsync(
@@ -911,17 +938,27 @@ export async function antigravityPreToolUseHookAsync(
 	const sync = evaluatePreToolUseSync(payload, locations);
 	if (sync.done && sync.result.decision === "deny") return sync.result;
 	const contDecision = await antigravityRunContinuationPreToolUse(payload, root);
-	if (contDecision && contDecision.decision === "deny") return contDecision;
+	if (contDecision && contDecision.decision === "deny") {
+		if (!sync.done && isGatedTool(sync.call.operation)) {
+			dropPrivate(admissionPath(sync.admissionId, root));
+		}
+		return contDecision;
+	}
 	if (sync.done) return sync.result;
+	let decision: PreToolUseHookDecision;
 	try {
 		if (sync.call.operation === "start_unattended_batch") {
-			return await prepareBatchConfirmation(payload.conversationId, sync, locations);
+			decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
+		} else if (sync.call.operation === "retire_stale_batch") {
+			decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);
+		} else {
+			decision = await prepareTaskAuthorityConfirmation(payload.conversationId, sync, locations);
 		}
-		if (sync.call.operation === "retire_stale_batch") {
-			return await prepareRetireConfirmation(payload.conversationId, sync);
-		}
-		return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
 	} catch {
 		return { decision: "allow" };
 	}
+	if (decision.decision === "deny" && isGatedTool(sync.call.operation)) {
+		dropPrivate(admissionPath(sync.admissionId, root));
+	}
+	return decision;
 }

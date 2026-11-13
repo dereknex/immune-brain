@@ -52,3 +52,12 @@ not certified.
 
 Hook commands run from the plugin directory (`node "./dist/antigravity/mcp-server.mjs" --hook`)
 and need no `PLUGIN_ROOT`. The MCP server is resolved with `${PLUGIN_ROOT}`.
+
+### Managed native gates
+
+Managed operations requiring literal-user native confirmation (`force_ask` in `PreToolUse`)
+require `"toolPermission": "request-review"` in `~/.gemini/antigravity-cli/settings.json`
+and an interactive `agy` session (nearest `agy` ancestor process started without
+`--dangerously-skip-permissions`, `--print`, or `-p`). Otherwise the `PreToolUse` hook
+denies the operation without writing a confirmation grant; `strict` and `proceed-in-sandbox`
+remain refused until live confirmation-dialog evidence is verified.

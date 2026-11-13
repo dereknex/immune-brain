@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
+import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
 	createMcpRuntime as createHostMcpRuntime,
@@ -26,6 +27,7 @@ import {
 	type AntigravityPreInvocationPayload,
 	type AntigravityPreToolUsePayload,
 	type AntigravityStopPayload,
+	type PhaseEntryLocations,
 } from "./lane_guard";
 import { antigravityRunContinuationHook, readRunToolSession } from "./run_continuation";
 import { CORE_CONTRACT, MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
@@ -121,7 +123,11 @@ function metaProgressStep(meta: Record<string, unknown> | undefined): number | n
 }
 
 /** Append the start event for a subagent dispatch that may complete the same `stepIdx`. */
-function appendSubagentStart(toolCall: { name: string; args?: Record<string, unknown> }, payload: Record<string, unknown>): void {
+function appendSubagentStart(
+	toolCall: { name: string; args?: Record<string, unknown> },
+	payload: Record<string, unknown>,
+	root?: string,
+): void {
 	if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent") return;
 	if (typeof payload.stepIdx !== "number") return;
 	const args = toolCall.args ?? {};
@@ -136,10 +142,19 @@ function appendSubagentStart(toolCall: { name: string; args?: Record<string, unk
 			? { artifactDirectoryPath: payload.artifactDirectoryPath }
 			: {}),
 	};
-	antigravityHookEventLog().append(event);
+	antigravityHookEventLog(root).append(event);
 }
 
-async function dispatchHookPayload(payload: Record<string, unknown>): Promise<string> {
+export interface AntigravityRunHookOptions {
+	locations?: PhaseEntryLocations;
+	input?: Readable;
+	output?: Writable;
+}
+
+async function dispatchHookPayload(
+	payload: Record<string, unknown>,
+	locations: PhaseEntryLocations = {},
+): Promise<string> {
 	// D1: the payload's own shape decides the response, most specific first. A tool
 	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
 	// PreInvocation; a Stop marker outranks the PreInvocation marker.
@@ -164,38 +179,47 @@ async function dispatchHookPayload(payload: Record<string, unknown>): Promise<st
 						...(model ? { model } : {}),
 						...(prompt ? { prompt } : {}),
 					};
-					antigravityHookEventLog().append(event);
+					antigravityHookEventLog(locations.root).append(event);
 				}
 			}
-			await antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload);
+			await antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload, locations);
 			return "{}";
 		}
 
 		// PreToolUse: an allowed subagent dispatch is the start event of the call
 		// the matching PostToolUse terminates (Spec D4).
-		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload);
-		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
+		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload, locations);
+		if (result.decision === "allow") appendSubagentStart(toolCall, payload, locations.root);
 		return JSON.stringify(result);
 	}
 
 	// Stop hook: has terminationReason, executionNum, or fullyIdle
 	if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
-		const result = await antigravityRunContinuationHook(payload as unknown as AntigravityStopPayload);
+		const result = await antigravityRunContinuationHook(
+			payload as unknown as AntigravityStopPayload,
+			locations.root,
+		);
 		return JSON.stringify(result);
 	}
 
 	// PreInvocation: has lastUserInput or invocationNum
 	if ("invocationNum" in payload || "lastUserInput" in payload) {
-		const result = await antigravityPreInvocationHookAsync(payload as unknown as AntigravityPreInvocationPayload);
+		const result = await antigravityPreInvocationHookAsync(
+			payload as unknown as AntigravityPreInvocationPayload,
+			locations,
+		);
 		return JSON.stringify(result);
 	}
 
 	return "{}";
 }
 
-export async function runHook(): Promise<void> {
+export async function runHook(options: AntigravityRunHookOptions = {}): Promise<void> {
+	const input = options.input ?? stdin;
+	const output = options.output ?? stdout;
+	const locations = options.locations ?? {};
 	const lines: string[] = [];
-	const rl = createInterface({ input: stdin, terminal: false });
+	const rl = createInterface({ input, terminal: false });
 	for await (const line of rl) lines.push(line);
 	const raw = lines.join("\n").trim();
 	if (!raw) return;
@@ -209,13 +233,13 @@ export async function runHook(): Promise<void> {
 
 	if (!payload) return;
 
-	const reply = await dispatchHookPayload(payload);
+	const reply = await dispatchHookPayload(payload, locations);
 	try {
-		resolveAsyncVerifierResults(payload);
+		resolveAsyncVerifierResults(payload, antigravityHookEventLog(locations.root));
 	} catch {
 		// Async verifier resolution fails closed without crashing the hook process.
 	}
-	stdout.write(`${reply}\n`);
+	output.write(`${reply}\n`);
 }
 
 // Only this module's own entrypoint starts the Antigravity server: the bundle

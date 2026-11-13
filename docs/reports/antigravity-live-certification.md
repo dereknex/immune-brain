@@ -5,7 +5,7 @@
 - **Generated At**: `2026-11-13T10:09:44.182Z`
 - **Host / Version**: `antigravity` `1.5.8` (model: `Gemini 3.8 Flash (Low)`)
 - **Plugin Package**: `plugins/immune-brain-antigravity` v`8.1.3`
-- **Plugin Bundle Digest**: `sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c`
+- **Plugin Bundle Digest**: `sha256:7cd4b798fe98bc23424b292f7669824e6cc3422387bc9d94db1261fe4ddf98dd`
 - **Measured Final Projection**: `lifecycle=done`, `artifact_state=frozen`, `terminal_proof_verified=true`
 
 ## Phase Results
@@ -45,8 +45,8 @@
 
 ## Known Gaps
 
-- **Port P2 (native confirmation) is not certified.** A manual BR-SCN-4 rerun on 2026-11-13 used interactive `agy` 1.5.8 (no `--print`, no permission-skip flag) with the bundle above and a sandbox task `br-scn-4-native-gate`. The Managed `stop` completed with `authority_kind=user`, `actor_id=literal-user`, `confirmation_ref=antigravity-confirm-8eb975aaf0524c5f`, but no native dialog appeared. The agy log recorded `Always-proceed: auto-approving tool confirmation "McpTool" at step 3` under the user setting `toolPermission=always-proceed`. The adapter cannot tell a human-answered `force_ask` from a Host auto-approval, so it records an auto-approval as literal-user confirmation. P2 stays `conformance-only` until the adapter fails closed when confirmation is auto-approved and a human-answered BR-SCN-4 run is recorded.
-- **Bundle digest after the P2 downgrade.** The live probes above ran on bundle `sha256:0f2a2788235fe8044495ebcf84b9fe89cd25fbe2da5bc357297b6af684ffbdd8`. The recorded digest `sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c` is the rebuilt bundle after Port P2 moved back to `conformance-only`; the two bundles differ only in the P2 `level` and `evidence` strings of `ANTIGRAVITY_CAPABILITY` (2 lines), with no runtime behavior change.
+- **Port P2 (native confirmation) is not certified.** A manual BR-SCN-4 rerun on 2026-11-13 used interactive `agy` 1.5.8 (no `--print`, no permission-skip flag) with the bundle above and a sandbox task `br-scn-4-native-gate`. The Managed `stop` completed with `authority_kind=user`, `actor_id=literal-user`, `confirmation_ref=antigravity-confirm-8eb975aaf0524c5f`, but no native dialog appeared. The agy log recorded `Always-proceed: auto-approving tool confirmation "McpTool" at step 3` under the user setting `toolPermission=always-proceed`. The adapter now refuses native gates (returning `deny` with no confirmation grant written) unless `~/.gemini/antigravity-cli/settings.json` has `toolPermission === "request-review"` and the nearest ancestor `agy` process is interactive (without `--dangerously-skip-permissions`, `--print`, or `-p`). P2 stays `conformance-only` until a live human-answered `request-review` BR-SCN-4 run is recorded.
+- **Bundle digest after the native-gate surfacing refusal.** The live probes above ran on bundle `sha256:0f2a2788235fe8044495ebcf84b9fe89cd25fbe2da5bc357297b6af684ffbdd8` (and the intermediate P2 downgrade ran on `sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c`). The recorded digest `sha256:7cd4b798fe98bc23424b292f7669824e6cc3422387bc9d94db1261fe4ddf98dd` is the rebuilt bundle after adding this fail-closed native-gate surfacing check (and updating Port P2 capability evidence); the difference from the live-measured bundle is solely the P2 `level`/`evidence` strings in `ANTIGRAVITY_CAPABILITY` plus this refusal before writing native confirmation grants or returning `force_ask`.
 
 ## Executed Commands
 
@@ -69,7 +69,7 @@
   "certification_task_id": "antigravity-live-certification",
   "host_id": "antigravity",
   "host_version": "1.5.8",
-  "plugin_digest": "sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c",
+  "plugin_digest": "sha256:7cd4b798fe98bc23424b292f7669824e6cc3422387bc9d94db1261fe4ddf98dd",
   "plugin_version": "8.1.3",
   "agy_model": "Gemini 3.8 Flash (Low)",
   "commands": [

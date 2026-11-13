@@ -55,7 +55,7 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 		P2: {
 			port: "P2",
 			level: "conformance-only",
-			evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)",
+			evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); not live-certified (#469)",
 		},
 		P3: {
 			port: "P3",

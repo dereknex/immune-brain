@@ -21276,10 +21276,10 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync20, lstatSync as lstatSync21, readdirSync as readdirSync11, realpathSync as realpathSync22 } from "node:fs";
+import { existsSync as existsSync20, lstatSync as lstatSync22, readdirSync as readdirSync11, realpathSync as realpathSync22 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir9 } from "node:os";
-import { join as join36 } from "node:path";
+import { homedir as homedir3, tmpdir as tmpdir9 } from "node:os";
+import { join as join37 } from "node:path";
 init_batch_final_verification();
 init_assurance_projection();
 
@@ -23843,7 +23843,7 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
     P2: {
       port: "P2",
       level: "conformance-only",
-      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files and MCP elicitation; not live-certified: agy 1.5.8 toolPermission=always-proceed auto-approves force_ask without a dialog (#469)"
+      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); not live-certified (#469)"
     },
     P3: {
       port: "P3",
@@ -24523,6 +24523,156 @@ class AntigravityRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/antigravity/tool_permission.ts
+import { execFileSync as execFileSync16 } from "node:child_process";
+import { lstatSync as lstatSync21, readFileSync as readFileSync25 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join36 } from "node:path";
+var REQUIRED_TOOL_PERMISSION = "request-review";
+var UNCERTIFIED_TOOL_PERMISSIONS = new Set(["strict", "proceed-in-sandbox"]);
+var DISALLOWED_AGY_FLAGS = ["--dangerously-skip-permissions", "--print", "-p"];
+var MAX_ANCESTOR_DEPTH = 64;
+function antigravitySettingsPath(home = homedir2()) {
+  return join36(home, ".gemini", "antigravity-cli", "settings.json");
+}
+function fail(cause, remediation) {
+  return {
+    ok: false,
+    cause,
+    remediation,
+    reason: `Native confirmation gate cannot surface (${cause}). Remediation: ${remediation}`
+  };
+}
+function isAgyExecutable(executable) {
+  const cleaned = executable.trim().replace(/^["']|["']$/g, "");
+  if (!cleaned)
+    return false;
+  const base = cleaned.split(/[\\/]/).pop() ?? "";
+  return base === "agy" || base === "agy.exe";
+}
+function findDisallowedFlags(args) {
+  const found = [];
+  for (const arg of args) {
+    if (arg === "--")
+      break;
+    for (const flag of DISALLOWED_AGY_FLAGS) {
+      if (arg === flag) {
+        if (!found.includes(flag))
+          found.push(flag);
+        break;
+      }
+      if (arg.startsWith(`${flag}=`)) {
+        const value = arg.slice(flag.length + 1);
+        if (value !== "false" && value !== "0") {
+          if (!found.includes(flag))
+            found.push(flag);
+        }
+        break;
+      }
+    }
+  }
+  return found;
+}
+function readAncestorProcessArgs() {
+  const ancestors = [];
+  const seen = new Set;
+  let pid = process.ppid;
+  while (Number.isSafeInteger(pid) && pid > 1 && !seen.has(pid) && ancestors.length < MAX_ANCESTOR_DEPTH) {
+    seen.add(pid);
+    const out = execFileSync16("ps", ["-ww", "-o", "ppid=,args=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    const line = out.split(/\r?\n/).find((entry) => entry.trim().length > 0);
+    if (!line) {
+      throw new Error(`ps returned no process row for pid ${pid}`);
+    }
+    const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(line);
+    if (!match) {
+      throw new Error(`unexpected ps output for pid ${pid}: ${line}`);
+    }
+    const nextPpid = Number(match[1]);
+    const tokens = match[2].trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      ancestors.push(tokens);
+    }
+    pid = nextPpid;
+  }
+  return ancestors;
+}
+function readToolPermission(settingsPath, remediation) {
+  let raw;
+  try {
+    const stat = lstatSync21(settingsPath);
+    if (!stat.isFile()) {
+      return fail(`Antigravity settings path is not a regular file (${settingsPath})`, remediation);
+    }
+    raw = readFileSync25(settingsPath, "utf8");
+  } catch (error) {
+    const code = error?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return fail(`Antigravity settings.json is missing (${settingsPath})`, remediation);
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return fail(`Antigravity settings.json could not be read (${settingsPath}): ${detail}`, remediation);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return fail(`Antigravity settings.json is unparsable JSON (${settingsPath})`, remediation);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return fail(`Antigravity settings.json must be a JSON object (${settingsPath})`, remediation);
+  }
+  if (!Object.hasOwn(parsed, "toolPermission") || parsed.toolPermission === undefined) {
+    return fail(`toolPermission key is missing in ${settingsPath}`, remediation);
+  }
+  const permission = parsed.toolPermission;
+  if (typeof permission !== "string") {
+    const kind = permission === null ? "null" : Array.isArray(permission) ? "array" : typeof permission;
+    return fail(`toolPermission in ${settingsPath} must be a string (got ${kind})`, remediation);
+  }
+  if (permission !== REQUIRED_TOOL_PERMISSION) {
+    if (UNCERTIFIED_TOOL_PERMISSIONS.has(permission)) {
+      return fail(`toolPermission is "${permission}" in ${settingsPath}, which is refused until live confirmation-dialog evidence is verified`, remediation);
+    }
+    return fail(`toolPermission is "${permission}" in ${settingsPath}, which auto-approves or does not surface a native confirmation dialog`, remediation);
+  }
+  return { ok: true };
+}
+function checkNativeGateSurfacing(options = {}) {
+  const home = options.home ?? homedir2();
+  const settingsPath = antigravitySettingsPath(home);
+  const remediation = `Set "toolPermission": "${REQUIRED_TOOL_PERMISSION}" in ${settingsPath} and run an interactive agy session (without --dangerously-skip-permissions, --print, or -p).`;
+  const settingsCheck = readToolPermission(settingsPath, remediation);
+  if (!settingsCheck.ok)
+    return settingsCheck;
+  const reader = options.readAncestorArgs ?? readAncestorProcessArgs;
+  let ancestors;
+  try {
+    ancestors = reader();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return fail(`unable to inspect ancestor processes: ${detail}`, remediation);
+  }
+  if (!Array.isArray(ancestors)) {
+    return fail("unable to inspect ancestor processes: invalid ancestor list", remediation);
+  }
+  for (const argv of ancestors) {
+    if (!Array.isArray(argv) || argv.length === 0 || typeof argv[0] !== "string")
+      continue;
+    if (!isAgyExecutable(argv[0]))
+      continue;
+    const disallowed = findDisallowedFlags(argv.slice(1));
+    if (disallowed.length > 0) {
+      return fail(`nearest ancestor agy process was started with ${disallowed.join(", ")}, which prevents interactive native confirmation dialogs`, remediation);
+    }
+    return { ok: true, settingsPath, agyArgv: argv };
+  }
+  return fail("no ancestor agy process was found, so no interactive native confirmation dialog can surface", remediation);
+}
+
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 var PRIVILEGED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
@@ -24672,10 +24822,10 @@ ${details.join(`
 `)}`;
 }
 function entryLogPath(sessionId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join37(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join37(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function parseAdmissionId(admissionId) {
   const match = /^(.+):(\d+):([a-z_]+)$/.exec(admissionId);
@@ -24690,7 +24840,7 @@ function parseAdmissionId(admissionId) {
   return { conversation, stepIdx, operation: opRaw };
 }
 function confirmationPath(conversation, admissionId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
+  return join37(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
 function dropConversationConfirmations(conversationId, root) {
   if (!conversationId)
@@ -24702,23 +24852,23 @@ function dropConversationConfirmations(conversationId, root) {
   try {
     for (const file of readdirSync11(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
-        dropPrivate(join36(dir, file));
+        dropPrivate(join37(dir, file));
       }
     }
   } catch {}
 }
 function antigravityLocalNames(cwd, home) {
-  const roots = [join36(cwd, ".agents"), join36(home, ".agents"), join36(home, ".gemini/config")];
+  const roots = [join37(cwd, ".agents"), join37(home, ".agents"), join37(home, ".gemini/config")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join36(root, "commands", `${name}.md`));
+        const body = readAliasFile(join37(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join36(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join37(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir9()) {
@@ -24726,7 +24876,7 @@ function readPhaseEntryState(sessionId, root = tmpdir9()) {
     return null;
   const path = entryLogPath(sessionId, root);
   try {
-    lstatSync21(path);
+    lstatSync22(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }
@@ -24763,10 +24913,10 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
     return false;
   const storeRoot = locations.root ?? tmpdir9();
   dropConversationConfirmations(conversationId, storeRoot);
-  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
+  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir3()), "antigravity");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
   if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
-    const contPath = join36(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+    const contPath = join37(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
     dropPrivate(contPath);
   }
   let workspace = null;
@@ -24996,6 +25146,22 @@ function evaluatePreToolUseSync(payload, locations = {}) {
   const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
   return { done: false, call, state: null, root, cwd, stepIdx: payload.stepIdx, admissionId };
 }
+function issueNativeConfirmationForceAsk(conversation, stepIdx, admissionId, workspace, confirmInput, root, locations, choices = {}) {
+  const surfacing = checkNativeGateSurfacing({
+    home: locations.home,
+    readAncestorArgs: locations.readAncestorArgs
+  });
+  if (!surfacing.ok) {
+    return { decision: "deny", reason: surfacing.reason };
+  }
+  if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, choices)) {
+    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+  }
+  return {
+    decision: "force_ask",
+    reason: formatAntigravityConfirmationReason(confirmInput, choices)
+  };
+}
 async function prepareBatchConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const opArgs = call.opArgs;
@@ -25048,12 +25214,9 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
-    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-  }
-  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
-async function prepareRetireConfirmation(conversationId, sync) {
+async function prepareRetireConfirmation(conversationId, sync, locations) {
   const { call, state, cwd, root, stepIdx, admissionId } = sync;
   if (state?.token)
     return { decision: "allow" };
@@ -25081,15 +25244,12 @@ async function prepareRetireConfirmation(conversationId, sync) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root)) {
-    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-  }
-  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
-async function prepareTaskAuthorityConfirmation(conversationId, sync) {
+async function prepareTaskAuthorityConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const taskId = String(call.opArgs.task_id ?? "");
-  if (!existsSync20(join36(cwd, ".imm")))
+  if (!existsSync20(join37(cwd, ".imm")))
     return { decision: "allow" };
   let workspaceRealpath;
   try {
@@ -25144,16 +25304,7 @@ ${reworkExitLines(confirmInput.reworkExits).join(`
     }
     reworkChoice = parsed;
   }
-  if (!writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
-    verifierChoice,
-    reworkChoice
-  })) {
-    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
-  }
-  return {
-    decision: "force_ask",
-    reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice })
-  };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations, { verifierChoice, reworkChoice });
 }
 async function antigravityPreToolUseHookAsync(payload, locations = {}) {
   const root = locations.root ?? tmpdir9();
@@ -25161,21 +25312,30 @@ async function antigravityPreToolUseHookAsync(payload, locations = {}) {
   if (sync.done && sync.result.decision === "deny")
     return sync.result;
   const contDecision = await antigravityRunContinuationPreToolUse(payload, root);
-  if (contDecision && contDecision.decision === "deny")
+  if (contDecision && contDecision.decision === "deny") {
+    if (!sync.done && isGatedTool(sync.call.operation)) {
+      dropPrivate(admissionPath(sync.admissionId, root));
+    }
     return contDecision;
+  }
   if (sync.done)
     return sync.result;
+  let decision;
   try {
     if (sync.call.operation === "start_unattended_batch") {
-      return await prepareBatchConfirmation(payload.conversationId, sync, locations);
+      decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
+    } else if (sync.call.operation === "retire_stale_batch") {
+      decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);
+    } else {
+      decision = await prepareTaskAuthorityConfirmation(payload.conversationId, sync, locations);
     }
-    if (sync.call.operation === "retire_stale_batch") {
-      return await prepareRetireConfirmation(payload.conversationId, sync);
-    }
-    return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
   } catch {
     return { decision: "allow" };
   }
+  if (decision.decision === "deny" && isGatedTool(sync.call.operation)) {
+    dropPrivate(admissionPath(sync.admissionId, root));
+  }
+  return decision;
 }
 
 // plugins/immune-brain/runtime/antigravity/mcp_server.ts
@@ -25234,7 +25394,7 @@ function metaProgressStep(meta) {
   const match = /:(\d+)$/.exec(token);
   return match ? Number(match[1]) : null;
 }
-function appendSubagentStart(toolCall, payload) {
+function appendSubagentStart(toolCall, payload, root) {
   if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent")
     return;
   if (typeof payload.stepIdx !== "number")
@@ -25249,9 +25409,9 @@ function appendSubagentStart(toolCall, payload) {
     ...typeof args.Model === "string" ? { model: args.Model } : {},
     ...typeof payload.artifactDirectoryPath === "string" && payload.artifactDirectoryPath ? { artifactDirectoryPath: payload.artifactDirectoryPath } : {}
   };
-  antigravityHookEventLog().append(event);
+  antigravityHookEventLog(root).append(event);
 }
-async function dispatchHookPayload(payload) {
+async function dispatchHookPayload(payload, locations = {}) {
   if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
     const toolCall = payload.toolCall;
     if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
@@ -25269,30 +25429,33 @@ async function dispatchHookPayload(payload) {
             ...model ? { model } : {},
             ...prompt ? { prompt } : {}
           };
-          antigravityHookEventLog().append(event);
+          antigravityHookEventLog(locations.root).append(event);
         }
       }
-      await antigravityPostToolUseHook(payload);
+      await antigravityPostToolUseHook(payload, locations);
       return "{}";
     }
-    const result = await antigravityPreToolUseHookAsync(payload);
+    const result = await antigravityPreToolUseHookAsync(payload, locations);
     if (result.decision === "allow")
-      appendSubagentStart(toolCall, payload);
+      appendSubagentStart(toolCall, payload, locations.root);
     return JSON.stringify(result);
   }
   if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
-    const result = await antigravityRunContinuationHook(payload);
+    const result = await antigravityRunContinuationHook(payload, locations.root);
     return JSON.stringify(result);
   }
   if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = await antigravityPreInvocationHookAsync(payload);
+    const result = await antigravityPreInvocationHookAsync(payload, locations);
     return JSON.stringify(result);
   }
   return "{}";
 }
-async function runHook() {
+async function runHook(options = {}) {
+  const input = options.input ?? stdin2;
+  const output = options.output ?? stdout2;
+  const locations = options.locations ?? {};
   const lines = [];
-  const rl = createInterface({ input: stdin2, terminal: false });
+  const rl = createInterface({ input, terminal: false });
   for await (const line of rl)
     lines.push(line);
   const raw = lines.join(`
@@ -25307,11 +25470,11 @@ async function runHook() {
   }
   if (!payload)
     return;
-  const reply = await dispatchHookPayload(payload);
+  const reply = await dispatchHookPayload(payload, locations);
   try {
-    resolveAsyncVerifierResults(payload);
+    resolveAsyncVerifierResults(payload, antigravityHookEventLog(locations.root));
   } catch {}
-  stdout2.write(`${reply}
+  output.write(`${reply}
 `);
 }
 runMcpEntry(ANTIGRAVITY_MCP_PROFILE, ["/antigravity/mcp_server.ts", "/antigravity/mcp-server.mjs"]);

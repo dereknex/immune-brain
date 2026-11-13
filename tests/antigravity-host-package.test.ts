@@ -389,6 +389,12 @@ describe("Antigravity hook dispatch and observation", () => {
 		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "fixture"], { cwd: repo });
 
 		const env = isolatedEnv();
+		const settingsDir = join(env.HOME, ".gemini", "antigravity-cli");
+		mkdirSync(settingsDir, { recursive: true });
+		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
+		const fakeBin = scratchDir("ps-bin");
+		writeFileSync(join(fakeBin, "ps"), '#!/bin/sh\necho "1 /usr/local/bin/agy"\n', { mode: 0o755 });
+		env.PATH = `${fakeBin}:${env.PATH}`;
 		const hook = hookRunner(copy, env);
 		const conversationId = "conv-pkg-confirm";
 		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive pkg-task", workspacePaths: [repo] }))
