@@ -1,0 +1,20 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-capability-derived-registration",
+  "owner": "user",
+  "goal": "Declare docs/reference/host-capability.md, rendered by scripts/render-host-capability.ts, as a derived output in docs/agents/derived-files.json so batch integration regenerates the capability table instead of parking two Lanes that both change capability rows with batch_integration_conflict \"conflicts include undeclared outputs\" (batch #481, S8 vs S5). Out of scope: the render script, the capability declarations and table content, and batch-start declaration_head semantics. no user-visible change: this edits repository tooling metadata and its test; the rendered reference document is unchanged.",
+  "acceptance": [
+    {
+      "id": "HCDR-A1",
+      "assertion": "docs/agents/derived-files.json, read through the strict readDerivedFiles reader, has exactly one entry whose outputs include HOST_CAPABILITY_PATH exported by scripts/render-host-capability.ts (docs/reference/host-capability.md); that entry's outputs are exactly that path, its generate is bun scripts/render-host-capability.ts, its check is bun scripts/render-host-capability.ts --check, and its sources include scripts/render-host-capability.ts, plugins/immune-brain/runtime/host-core/capability.ts, plugins/immune-brain/runtime/claude/capability.ts, plugins/immune-brain/runtime/antigravity/capability.ts and plugins/immune-brain/.pi-extension/pi-capability.ts. Running the declared check argv from the repository root exits 0 on the current tree. The extended test in tests/derived-files.test.ts (next to the existing repository Claude bundle declaration test) fails when the entry is missing, when the output path differs from HOST_CAPABILITY_PATH, or when a listed source is dropped. The existing Claude and Antigravity package derived-files tests stay green. Done looks like: a maintainer reads one host-capability-reference entry in the registry and the repository derived-files test passes.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/agents/derived-files.json",
+    "docs/plans/host-capability-derived-registration.intent.json",
+    "tests/derived-files.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

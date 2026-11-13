@@ -1,0 +1,120 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "host-capability-derived-registration",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "host-capability-derived-registration",
+    "goal": "Declare docs/reference/host-capability.md, rendered by scripts/render-host-capability.ts, as a derived output in docs/agents/derived-files.json so batch integration regenerates the capability table instead of parking two Lanes that both change capability rows with batch_integration_conflict \"conflicts include undeclared outputs\" (batch #481, S8 vs S5). Out of scope: the render script, the capability declarations and table content, and batch-start declaration_head semantics. no user-visible change: this edits repository tooling metadata and its test; the rendered reference document is unchanged.",
+    "acceptance": [
+      {
+        "id": "HCDR-A1",
+        "assertion": "docs/agents/derived-files.json, read through the strict readDerivedFiles reader, has exactly one entry whose outputs include HOST_CAPABILITY_PATH exported by scripts/render-host-capability.ts (docs/reference/host-capability.md); that entry's outputs are exactly that path, its generate is bun scripts/render-host-capability.ts, its check is bun scripts/render-host-capability.ts --check, and its sources include scripts/render-host-capability.ts, plugins/immune-brain/runtime/host-core/capability.ts, plugins/immune-brain/runtime/claude/capability.ts, plugins/immune-brain/runtime/antigravity/capability.ts and plugins/immune-brain/.pi-extension/pi-capability.ts. Running the declared check argv from the repository root exits 0 on the current tree. The extended test in tests/derived-files.test.ts (next to the existing repository Claude bundle declaration test) fails when the entry is missing, when the output path differs from HOST_CAPABILITY_PATH, or when a listed source is dropped. The existing Claude and Antigravity package derived-files tests stay green. Done looks like: a maintainer reads one host-capability-reference entry in the registry and the repository derived-files test passes.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/derived-files.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/agents/derived-files.json",
+      "docs/plans/host-capability-derived-registration.intent.json",
+      "tests/derived-files.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/host-capability-derived-registration.intent.json",
+    "content_hash": "sha256:0387be84a6fc063c00613ea15017e4c534076cc6351bb56b069f6e3c3ad03052"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:0387be84a6fc063c00613ea15017e4c534076cc6351bb56b069f6e3c3ad03052",
+  "git_base_head": "8116d1cc322b9d168293aff6c9f7700901f0aee7",
+  "attestations": [
+    {
+      "id": "approval-qa-d56edce0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0387be84a6fc063c00613ea15017e4c534076cc6351bb56b069f6e3c3ad03052",
+      "diff_hash": "sha256:15b98fa48a61a3a2d3a21670b72aa4c095dd865376fe079b30d509aeb0cc75b6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:9855060166f489956fc695b8d70e500527fa57a569ba5342eb449a997a9b420a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "HCDR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:9855060166f489956fc695b8d70e500527fa57a569ba5342eb449a997a9b420a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-10834fcc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:0387be84a6fc063c00613ea15017e4c534076cc6351bb56b069f6e3c3ad03052",
+      "diff_hash": "sha256:15b98fa48a61a3a2d3a21670b72aa4c095dd865376fe079b30d509aeb0cc75b6",
+      "actor_id": "cli:claude-code:161323c8-c522-4fc7-a6f9-4e0a14e1a615",
+      "summary": "Provenance verified (single parent 8116d1cc, tree cc9d2c14). The host-capability-reference entry declares exactly HOST_CAPABILITY_PATH with the required generate/check argv and all five sources, which exist in the review tree. The new test asserts a single match, the exact outputs, generate, check and each source, and that the check exits 0. Importing HOST_CAPABILITY_PATH runs no side effects because main() is guarded by import.meta.main. Blast radius: low, limited to the registry metadata docs/agents/derived-files.json and one test.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8116d1cc322b9d168293aff6c9f7700901f0aee7",
+        "review_commit": "e192e092dbdb227efd00758bd39b3dbb7094d40f",
+        "review_tree": "cc9d2c147cb646caea429eabaf44ba3bf4d95fa3",
+        "manifest_digest": "sha256:ce76842bb4a9e81dc1cf439a8e91c7dcbf52099a69a631b86fc4534bc39f108e"
+      },
+      "reviewer_verdict_sha256": "sha256:99970846de694cd1f95f266fe1df4fb44d3979873a85dcc4a892424f0610695f"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:host-capability-derived-registration:2026-11-13T01:51:53.799Z",
+      "at": "2026-11-13T01:51:53.799Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/host-capability-derived-registration.intent.json"
+    },
+    {
+      "id": "record_approval:host-capability-derived-registration:2026-11-13T01:52:24.902Z",
+      "at": "2026-11-13T01:52:24.902Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d56edce0\naction_v2_sha256:87e04127febe4289869e4c22e96f7c8e68a0e1918ba16f0f6c6da57f8792c5d2",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-13T01:52:24.902Z"
+      }
+    },
+    {
+      "id": "record_approval:host-capability-derived-registration:2026-11-13T01:53:06.801Z",
+      "at": "2026-11-13T01:53:06.801Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-10834fcc\naction_v2_sha256:609da61cadb6d60d205970cb3d3275467124c0a1c35995c92ac1f80b98c6322d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:161323c8-c522-4fc7-a6f9-4e0a14e1a615",
+        "confirmation_ref": "antigravity:cli:claude-code:161323c8-c522-4fc7-a6f9-4e0a14e1a615",
+        "issued_at": "2026-11-13T01:53:06.801Z"
+      },
+      "review_started_at": "2026-11-13T01:52:27.620Z",
+      "review_submitted_at": "2026-11-13T01:53:06.188Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:host-capability-derived-registration:2026-11-13T01:53:08.358Z",
+      "at": "2026-11-13T01:53:08.358Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:15858bb9038b70c7901c5d30f6900616f9d3a13e1052fd0c357ac03a6e8a4d4d"
+    }
+  ]
+}

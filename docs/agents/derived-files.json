@@ -263,6 +263,32 @@
           "--check"
         ]
       }
+    },
+    {
+      "id": "host-capability-reference",
+      "sources": [
+        "scripts/render-host-capability.ts",
+        "plugins/immune-brain/runtime/host-core/capability.ts",
+        "plugins/immune-brain/runtime/claude/capability.ts",
+        "plugins/immune-brain/runtime/antigravity/capability.ts",
+        "plugins/immune-brain/.pi-extension/pi-capability.ts"
+      ],
+      "outputs": [
+        "docs/reference/host-capability.md"
+      ],
+      "generate": {
+        "executable": "bun",
+        "argv": [
+          "scripts/render-host-capability.ts"
+        ]
+      },
+      "check": {
+        "executable": "bun",
+        "argv": [
+          "scripts/render-host-capability.ts",
+          "--check"
+        ]
+      }
     }
   ]
 }
