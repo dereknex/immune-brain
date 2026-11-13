@@ -245,12 +245,13 @@ export function makeAssuranceHarness(overrides: Partial<{
 		},
 		submitReview: async (taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions) => {
 			piRuntime.bindWorkspace(ctx.cwd);
-			return piRuntime.submitReview(taskId, verdictInput);
+			return withSettleCommit(ctx.cwd, taskId, await coordinator.submitReview(taskId, ctx, verdictInput, options));
 		},
 		submitMediated: (taskId: string, ctx: HostContext, verdictInput: unknown) => {
 			piRuntime.bindWorkspace(ctx.cwd);
 			return piRuntime.submitReview(taskId, verdictInput);
 		},
+		releaseStoppedReview: (taskId: string) => coordinator.releaseStoppedReview(taskId),
 		submitVerification: async (taskId: string, ctx: HostContext, result?: string) => {
 			piRuntime.bindWorkspace(ctx.cwd);
 			return piRuntime.submitVerification(taskId, result);

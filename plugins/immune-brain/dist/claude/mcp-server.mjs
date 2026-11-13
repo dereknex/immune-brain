@@ -22158,7 +22158,7 @@ init_batch_state();
 import { existsSync as existsSync16, lstatSync as lstatSync20, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync11 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { join as join32 } from "node:path";
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
 var blank = () => ({

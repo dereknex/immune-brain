@@ -25,7 +25,7 @@ import { bindRun, decideRunContinuation, observeParentRun, scopedSourceDigest,
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
-const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
 const NATIVE_FAILURE_LIMIT = 3;

@@ -60,7 +60,7 @@ _State-machine driven continuation across tool turns and stop boundaries_
 
 - **Claude Code** (`certified`): Run continuation state machine through hook event log and automated stop
 - **Antigravity** (`conformance-only`): Shared continuation state machine with task/Parent binding, native failure pause and seven-Stop limit (D7); live certification pending S8
-- **Pi** (`conformance-only`): Conformance-tested dedicated Pi run continuation; shared continuation alignment pending S5 (D6)
+- **Pi** (`conformance-only`): Shared continuation persistence and events with task/Parent binding, native failure pause and common boundary limits (D6)
 
 ### P5 — Review/Verify CLI isolation
 

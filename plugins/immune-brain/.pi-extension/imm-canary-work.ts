@@ -779,10 +779,10 @@ export default function (
 	const continuation = registerPiRunContinuation(pi, {
 		entry: (text, root) => recognizePhaseEntry(text, piLocalNames(root), "pi"),
 		revokeEntry: revokePiPhaseEntry,
+		entryState: (sessionId) => piPhaseEntries().get(sessionId) ?? null,
 	});
-	bindPiSelectedParent((_toolCallId, root, slug) => {
-		const sessionId = piSessionId(railContext);
-		return continuation.selectedParent(root, sessionId, slug);
+	bindPiSelectedParent((toolCallId, root, slug) => {
+		return continuation.selectedParent(toolCallId, root, slug);
 	});
 	pi.registerCommand("imm-tasks", {
 		handler: async (_args: string, ctx?: ExtensionContext) => {

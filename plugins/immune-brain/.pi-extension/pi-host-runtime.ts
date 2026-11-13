@@ -17,6 +17,7 @@ import type { VerifierEvent } from "../runtime/host-core/verifier_observation";
 import { LaneSupervisor } from "../runtime/unattended/lane_supervisor";
 import { PiReviewHost } from "./pi-canary-assurance-progression";
 import { probeHost } from "./pi-capability";
+import { selectedPiParent as selectedPiParentFromContinuation } from "./pi-run-continuation";
 
 export const PI_LANE_WAIT_MS = 5_000;
 /** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
@@ -34,7 +35,9 @@ export function bindPiSelectedParent(fn: (toolCallId: string, root: string, slug
 }
 
 export function selectedPiParent(toolCallId: string, root: string, slug: string): boolean {
-	return currentSelectedPiParent ? currentSelectedPiParent(toolCallId, root, slug) : false;
+	return currentSelectedPiParent
+		? currentSelectedPiParent(toolCallId, root, slug)
+		: selectedPiParentFromContinuation(toolCallId, root, slug);
 }
 
 /** The Pi composition root: every Pi-specific fact the shared runtime needs. */

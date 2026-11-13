@@ -43,7 +43,7 @@ export const PI_CAPABILITY: HostCapabilityDeclaration = validateHostCapabilityDe
 		P4: {
 			port: "P4",
 			level: "conformance-only",
-			evidence: "Conformance-tested dedicated Pi run continuation; shared continuation alignment pending S5 (D6)",
+			evidence: "Shared continuation persistence and events with task/Parent binding, native failure pause and common boundary limits (D6)",
 		},
 		P5: {
 			port: "P5",

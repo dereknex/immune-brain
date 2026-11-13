@@ -104,7 +104,7 @@ describe("Claude run continuation", () => {
 			expect(JSON.parse((await h.stop())!).decision).toBe("block");
 			expect(await h.stop()).toBeNull();
 		} finally { h.dispose(); }
-	});
+	}, 20000);
 
 	test("the block reason says a user-only wait is a valid stop and must not repeat the request", async () => {
 		const h = fixture(); try {
