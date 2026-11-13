@@ -11,7 +11,9 @@
  *     - mark_pr_ready and close_out (repair_agent.ts)
  *     - owner pause/resume/retry/ignore (state mutation)
  *     - per-tick status Issue in-place update (planStatusIssue())
- *   - Records agent-backed handlers as agent_port_unavailable with no side effect
+ *   - Marks agent-backed handlers `agent_port_unavailable` when the caller wires
+ *     no S9 agent port, and dispatches them through `agent_handlers.ts` when it does
+ *     (that port records `requires_standing_daemon` for a one-shot tick, D11 item 3)
  *   - Appends assurance_kernel/loop_dispatch_record/v1 rows to .imm/state/loop/dispatches.jsonl (0600)
  */
 
@@ -26,6 +28,7 @@ import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { type LoopDecisionRecord } from "./decision_record.ts";
+import type { AgentHandlerPort } from "./agent_handlers.ts";
 import {
 	handleLaneDecisionReply,
 	publishLaneDecisionQuestion,
@@ -83,6 +86,7 @@ export type LoopDispatchOutcome =
 	| "skipped_mode"
 	| "held"
 	| "agent_port_unavailable"
+	| "requires_standing_daemon"
 	| "failed";
 
 export interface LoopDispatchRecord {
@@ -210,6 +214,10 @@ export interface DispatchDecisionsOptions {
 	guardFacts: GuardFacts;
 	dryRun: boolean;
 	now?: string;
+	/** The S9 agent port; absent keeps agent-backed handlers at `agent_port_unavailable`. */
+	agentPort?: AgentHandlerPort;
+	/** True only inside the standing `imm-loop run` process, which owns the Lane supervisor. */
+	standingDaemon?: boolean;
 	relayDecision?: typeof relayLaneDecision;
 	relayInputFactory?: RelayInputFactory<unknown>;
 }
@@ -791,12 +799,28 @@ export async function dispatchDecisions(
 					res.reason,
 				);
 			} else if (isAgentBackedHandler(decision.handler)) {
-				emitDispatch(
-					decision.decision_id,
-					decision.handler,
-					"agent_port_unavailable",
-					"agent port unavailable (deferred to S9)",
-				);
+				if (!options.agentPort) {
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"agent_port_unavailable",
+						"agent port unavailable",
+					);
+				} else {
+					const handled = await options.agentPort.handle(decision.handler, {
+						root: options.root,
+						stateDir,
+						loopConfig,
+						snapshot,
+						guardFacts,
+						gitHubPort,
+						event,
+						decision,
+						now,
+						standing_daemon: options.standingDaemon === true,
+					});
+					emitDispatch(decision.decision_id, decision.handler, handled.outcome, handled.detail);
+				}
 			} else {
 				emitDispatch(
 					decision.decision_id,

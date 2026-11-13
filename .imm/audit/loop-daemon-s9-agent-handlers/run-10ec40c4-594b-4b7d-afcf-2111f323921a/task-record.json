@@ -1,0 +1,135 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s9-agent-handlers",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s9-agent-handlers",
+    "goal": "Add a headless Host session runner that reads completion only from checkable evidence and bind the agent-backed handlers (analyze_codebase, triage_issue, draft_plan, publish_plan_for_approval, enroll_and_drive with tracker_approval or policy_auto under the standing run process, repair_pr_ci, repair_pr_conflict, address_pr_review, owner replan and approve) to the S8 dispatch core, under S9 (D11) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S9-AC1",
+        "assertion": "Source GAP-1, GAP-5 and GAP-6; meet S9 and D11 items 1-3 and 5 in docs/specs/loop-daemon.spec.md (SCN-6): with a fake session provider and GitHub fixtures, successive ticks of the standing run process carry a new Issue through analyze_codebase, draft_plan via imm-kernel intent author, plan summary publication, a REST-read /approve <digest> comment turned into a tracker_approval_proof, enrollTask, dispatchLoopDrive() to settlement with the Executor exit recorded, and open_pr on imm/<slug>; sessions receive only the daemon's GitHub credential.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-agent-handlers.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S9-AC2",
+        "assertion": "Source GAP-5, GAP-6 and GAP-12; meet D11 items 1, 3 and 4 in docs/specs/loop-daemon.spec.md: an approval with a stale digest, an edited comment, or a daemon-authored comment does not enroll; a one-shot tick records requires_standing_daemon instead of driving a Lane; a session that exits without its expected output file, Git head, or validation result is recorded failed regardless of its output text; repair handlers keep the S7 two-attempt cap; and a review comment whose path is outside the TaskIntent scope_hint escalates instead of being applied.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-agent-handlers.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s9-agent-handlers.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "tests/loop-daemon-agent-handlers.test.ts",
+      "tests/loop-daemon-dispatch.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s9-agent-handlers.intent.json",
+    "content_hash": "sha256:7a362ecd666ad36a52240c9ead064cb81dd09249665cbc5bd84e68f47dc25010"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7a362ecd666ad36a52240c9ead064cb81dd09249665cbc5bd84e68f47dc25010",
+  "git_base_head": "29c510e52309e6e28dbae428d6d25c9e1135f269",
+  "attestations": [
+    {
+      "id": "approval-qa-fd27a3f4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7a362ecd666ad36a52240c9ead064cb81dd09249665cbc5bd84e68f47dc25010",
+      "diff_hash": "sha256:1c15a5e792abd1520316a9e93b481f8add9a58b1ff1facf15fe853a05788de44",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:e7d48a994cd4e8b3703ee9ff7789a5739c1358d2fc064b14fde88bf8b6b343fd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S9-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e7d48a994cd4e8b3703ee9ff7789a5739c1358d2fc064b14fde88bf8b6b343fd"
+        },
+        {
+          "acceptance_id": "S9-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:e7d48a994cd4e8b3703ee9ff7789a5739c1358d2fc064b14fde88bf8b6b343fd"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-d73516db",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7a362ecd666ad36a52240c9ead064cb81dd09249665cbc5bd84e68f47dc25010",
+      "diff_hash": "sha256:1c15a5e792abd1520316a9e93b481f8add9a58b1ff1facf15fe853a05788de44",
+      "actor_id": "cli:pi:f23e9fa8-9094-423a-b282-c2bdf6b2e465",
+      "summary": "S9 agent-backed handlers compose cleanly on the S8 dispatch core with evidence-only session outcomes, REST-read tracker approval (stale/edited/daemon-authored refused at G8 and verifyTrackerApproval), a standing-daemon gate before enrollment, S7 repair caps, and fail-closed scope-gated review escalation; blast radius medium on agent_handlers.ts, dispatch.ts, cli.ts and the loop plan publication record.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "29c510e52309e6e28dbae428d6d25c9e1135f269",
+        "review_commit": "e04d688d07f3cd638ef4b60cc525cc60efd2ee8a",
+        "review_tree": "b187066c78f353ae60b3e2fb95fb94bf72ba3e8a",
+        "manifest_digest": "sha256:751cf44e1c54355d1d6305eb360f2bb261fca76ec41399e60d9c05487b7fbe26"
+      },
+      "reviewer_verdict_sha256": "sha256:5803368f992df02af7b5eec402d88229d1d6cca0ca4ecbb87b05073f207edabc"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s9-agent-handlers:2026-11-12T16:51:25.236Z",
+      "at": "2026-11-12T16:51:25.236Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s9-agent-handlers.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s9-agent-handlers:2026-11-12T16:51:49.190Z",
+      "at": "2026-11-12T16:51:49.190Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fd27a3f4\naction_v2_sha256:017e86125e5a37a9fa9a1708abf35aedd5706cf0f411773083effdfabb0389a6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi-confirm-b26fc0a2461be11a",
+        "issued_at": "2026-11-12T16:51:49.191Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s9-agent-handlers:2026-11-12T16:54:15.282Z",
+      "at": "2026-11-12T16:54:15.282Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-d73516db\naction_v2_sha256:662ed6765e0b25e362392dbd36cf198d14572c03295689b22d86bd5b5d2d4154",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:f23e9fa8-9094-423a-b282-c2bdf6b2e465",
+        "confirmation_ref": "pi-confirm-ad710900e58ae3b5",
+        "issued_at": "2026-11-12T16:54:15.282Z"
+      },
+      "review_started_at": "2026-11-12T16:51:52.347Z",
+      "review_submitted_at": "2026-11-12T16:54:14.666Z",
+      "reviewer_model": "deepseek-v4-pro"
+    },
+    {
+      "id": "complete:loop-daemon-s9-agent-handlers:2026-11-12T16:54:16.993Z",
+      "at": "2026-11-12T16:54:16.993Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:41005b1c1ef8726d2a2589655c01ecc70e6d34680169bfc49df3bac472d23cf2"
+    }
+  ]
+}

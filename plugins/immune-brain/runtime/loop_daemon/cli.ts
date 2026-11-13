@@ -22,6 +22,12 @@ import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
+import {
+	createAgentHandlerPort,
+	createDefaultAgentHandlerDeps,
+	loadPublishedPlanDigests,
+	type AgentHandlerPort,
+} from "./agent_handlers.ts";
 import { dispatchDecisions, type RelayInputFactory } from "./dispatch.ts";
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
@@ -74,6 +80,10 @@ export async function runLoopDaemonCli(
 		sleep?: (seconds: number) => Promise<void> | void;
 		relayDecision?: typeof relayLaneDecision;
 		relayInputFactory?: RelayInputFactory<unknown>;
+		/** The S9 agent port; the executable composes the production one. */
+		agentPort?: AgentHandlerPort;
+		/** True only inside the standing `imm-loop run` process. */
+		standingDaemon?: boolean;
 	},
 ): Promise<CliOutput> {
 	const absoluteRoot = resolve(root);
@@ -475,6 +485,10 @@ Options:
 				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
 				retry_counts: loadRepairRetries(stateDir),
 				unresolved_blockers,
+				expected_plan_digests: {
+					...loadPublishedPlanDigests(stateDir),
+					...(options?.guardFacts?.expected_plan_digests ?? {}),
+				},
 				expected_record_revisions: {
 					...expected_record_revisions,
 					...(options?.guardFacts?.expected_record_revisions ?? {}),
@@ -513,6 +527,8 @@ Options:
 				guardFacts: facts,
 				dryRun: isDryRun,
 				now: recordedAt,
+				agentPort: options?.agentPort,
+				standingDaemon: options?.standingDaemon === true,
 				relayDecision: options?.relayDecision,
 				relayInputFactory: options?.relayInputFactory,
 			});
@@ -596,6 +612,7 @@ Options:
 					{
 						...options,
 						lockHeld: true,
+						standingDaemon: true,
 						shutdownRequested: isShut,
 						isShutdownRequested: checkShutdown,
 					},
@@ -634,8 +651,17 @@ Options:
 // own `classify`, and an absent one leaves Tier 2 at its deterministic baseline.
 if (fileURLToPath(import.meta.url) === process.argv[1]) {
 	const root = process.cwd();
+	const command = process.argv[2];
+	// The agent port belongs to the live daemon: a `tick` or `run` from this
+	// executable dispatches agent-backed handlers through real sessions, and
+	// `enroll_and_drive` still refuses to drive outside `run`.
+	const agentPort =
+		command === "tick" || command === "run"
+			? createAgentHandlerPort(createDefaultAgentHandlerDeps(root))
+			: undefined;
 	const result = await runLoopDaemonCli(process.argv.slice(2), root, {
 		classify: createDecisionModelClassifier(root),
+		...(agentPort ? { agentPort } : {}),
 	});
 	if (result.stdout) process.stdout.write(result.stdout);
 	if (result.stderr) process.stderr.write(result.stderr);

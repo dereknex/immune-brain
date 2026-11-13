@@ -44,6 +44,8 @@ export interface GuardFacts {
 	allowed_associations?: string[];
 	daemon_identity?: string | null;
 	expected_plan_digest?: string | null;
+	/** Per-Issue published plan digests; G8 reads this one before the single-value fallback. */
+	expected_plan_digests?: Record<number, string>;
 	expected_record_revision?: string | null;
 	expected_record_revisions?: Record<string, string>;
 	worktree_dirty?: boolean;
@@ -206,7 +208,7 @@ export function evaluateGuards(event: NormalizedLoopEvent, facts: GuardFacts = {
 
 	if (event.kind === "E4_PLAN_APPROVED") {
 		// Fail closed: an approval is only evidence when it names the published digest.
-		const expected = facts.expected_plan_digest ?? null;
+		const expected = facts.expected_plan_digests?.[event.issue_number] ?? facts.expected_plan_digest ?? null;
 		const stale = expected === null || event.plan_digest !== expected;
 		verdict("G8", stale, expected === null ? "no published plan digest to match" : stale ? `plan digest ${event.plan_digest} is not the published ${expected}` : "plan digest matches the published plan");
 	} else if (event.kind === "E7_LANE_DECISION_REPLIED") {
