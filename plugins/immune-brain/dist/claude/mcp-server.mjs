@@ -8486,13 +8486,13 @@ function resolveConfig(root, options = {}) {
     return value;
   };
   if (user === null)
-    for (const s of ["decision_models", "lanes", "initiative_carrier"])
+    for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"])
       failed.add(s);
   if (project === null)
     for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
       failed.add(s);
   if (user)
-    validKeys(user, ["contract", "decision_models", "lanes", "initiative_carrier", "projects"], userPath, "", "user_file");
+    validKeys(user, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "projects"], userPath, "", "user_file");
   if (project)
     validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
   const projects = section(user?.projects, userPath, "projects", "user_file");
@@ -8585,10 +8585,11 @@ function resolveConfig(root, options = {}) {
       invalid(file, path, "expected github or local");
       failed.add("initiative_carrier");
     }
-  if (project && has(project, "git_integration") && project.git_integration !== "manual" && project.git_integration !== "auto") {
-    invalid(projectPath, "git_integration", "expected manual or auto");
-    failed.add("git_integration");
-  }
+  for (const [o, file, path] of [[user, userPath, "git_integration"], [project, projectPath, "git_integration"]])
+    if (o && has(o, "git_integration") && o.git_integration !== "manual" && o.git_integration !== "auto") {
+      invalid(file, path, "expected manual or auto");
+      failed.add("git_integration");
+    }
   if (project && has(project, "review_verifier") && project.review_verifier !== "off" && project.review_verifier !== "on") {
     invalid(projectPath, "review_verifier", "expected off or on");
     failed.add("review_verifier");
@@ -8638,7 +8639,7 @@ function resolveConfig(root, options = {}) {
     }
   }
   if (failed.has("user_file"))
-    for (const s of ["decision_models", "lanes", "initiative_carrier"])
+    for (const s of ["decision_models", "lanes", "initiative_carrier", "git_integration"])
       failed.add(s);
   if (failed.has("project_file"))
     for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
@@ -8789,11 +8790,12 @@ function resolveConfig(root, options = {}) {
   };
   const gitLegacy = directive(/^\s*[-*]\s+Git integration:\s*(.*?)\s*$/i);
   const carrierLegacy = directive(/^\s*[-*]\s+Initiative carrier default:\s*(.*?)\s*$/i);
+  const gitExplicitlySet = has(user ?? undefined, "git_integration") || has(project ?? undefined, "git_integration");
   if (gitLegacy)
-    legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !has(project ?? undefined, "git_integration"));
+    legacy(gitLegacy.file, [{ layer: "project", key: "git_integration" }], !gitExplicitlySet);
   if (carrierLegacy)
     legacy(carrierLegacy.file, [{ layer: "project", key: "initiative_carrier" }], !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier"));
-  if (gitLegacy && !has(project ?? undefined, "git_integration") && !["manual", "auto"].includes(gitLegacy.value)) {
+  if (gitLegacy && !gitExplicitlySet && !["manual", "auto"].includes(gitLegacy.value)) {
     invalid(gitLegacy.file, "git_integration", "invalid legacy directive");
     failed.add("git_integration");
   }
@@ -8805,7 +8807,7 @@ function resolveConfig(root, options = {}) {
   if (options.checkEnv)
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
   const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
-  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
+  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }
 var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, DEFAULT_LOOP_CONFIG;
 var init_layered_config = __esm(() => {
@@ -8834,9 +8836,10 @@ var init_layered_config = __esm(() => {
 // plugins/immune-brain/runtime/git_integration_preference.ts
 function readGitIntegrationPreference(root) {
   const config = resolveConfig(root);
-  const error = config.diagnostics.find((d) => d.severity === "error" && (d.file === ".imm/config.json" && (d.key_path === "git_integration" || ["$", "contract"].includes(d.key_path) || !d.key_path.includes(".") && d.message.endsWith("unknown key")) || (d.file === "AGENTS.md" || d.file === "CLAUDE.md") && d.key_path === "git_integration"));
+  const userFile = config.files.user;
+  const error = config.diagnostics.find((d) => d.severity === "error" && (d.file === userFile && (d.key_path === "git_integration" || ["$", "contract"].includes(d.key_path) || d.key_path === "projects" && d.message.endsWith(": expected object") || !d.key_path.includes(".") && d.message.endsWith(": unknown key") || d.key_path.startsWith("projects.") && !/\.(decision_models|lanes)(\.|$)/.test(d.key_path) && (d.message.endsWith(": expected object") || d.message.endsWith(": unknown key"))) || d.file === ".imm/config.json" && (d.key_path === "git_integration" || ["$", "contract"].includes(d.key_path) || !d.key_path.includes(".") && d.message.endsWith("unknown key")) || (d.file === "AGENTS.md" || d.file === "CLAUDE.md") && d.key_path === "git_integration"));
   const legacy = config.git_integration.source.startsWith("legacy:") ? config.git_integration.source.slice(7) : null;
-  const source = error?.file === ".imm/config.json" || config.git_integration.source === "project" ? ".imm/config.json" : error?.file === "AGENTS.md" || legacy === "AGENTS.md" ? "AGENTS.md" : error?.file === "CLAUDE.md" || legacy === "CLAUDE.md" ? "CLAUDE.md" : null;
+  const source = error?.file === userFile || !error && config.git_integration.source === "user" ? userFile : error?.file === ".imm/config.json" || config.git_integration.source === "project" ? ".imm/config.json" : error?.file === "AGENTS.md" || legacy === "AGENTS.md" ? "AGENTS.md" : error?.file === "CLAUDE.md" || legacy === "CLAUDE.md" ? "CLAUDE.md" : null;
   return {
     mode: config.git_integration.value,
     source,

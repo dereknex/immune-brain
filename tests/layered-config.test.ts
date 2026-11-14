@@ -107,7 +107,7 @@ test.each([
 	const c = f.read(true), output = JSON.stringify(c);
 	expect(c.diagnostics.some(d => d.severity === "error" && d.file === f.userPath && d.key_path === path)).toBe(true);
 	expect(output).not.toContain("sk-live-123");
-	expect(c.git_integration.value).toBe("auto");
+	expect(c.git_integration.value).toBe(path === "$" || path === "contract" ? "manual" : "auto");
 });
 
 test.each(["constructor", "toString", "__proto__"])("lane profile %s must be an own property in new and legacy files", name => {
@@ -344,5 +344,52 @@ test("supervised-session transports default off and accept only a named provider
 		f.project({ lanes: { [key]: value } });
 		const c = f.read();
 		expect({ key, flagged: c.diagnostics.some(d => d.severity === "error" && d.key_path === `lanes.${key}`) }).toEqual({ key, flagged: true });
+	}
+});
+
+test("user top-level git_integration overrides project and legacy, and fails closed when invalid", () => {
+	const f = fixture();
+	execFileSync("git", ["remote", "add", "origin", "git@github.com:O/R.git"], { cwd: f.root });
+	writeFileSync(join(f.root, "AGENTS.md"), "- Git integration: auto\n");
+	execFileSync("git", ["add", "AGENTS.md"], { cwd: f.root });
+	f.project({ git_integration: "manual" });
+	f.user({ git_integration: "auto" });
+	let c = f.read();
+	expect(c.git_integration).toEqual({ value: "auto", source: "user" });
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "legacy_source_ignored", file: "AGENTS.md", key_path: "git_integration" }));
+
+	f.project({ git_integration: "auto" });
+	f.user({ git_integration: "manual" });
+	c = f.read();
+	expect(c.git_integration).toEqual({ value: "manual", source: "user" });
+
+	f.user({});
+	c = f.read();
+	expect(c.git_integration).toEqual({ value: "auto", source: "project" });
+
+	const cli = resolve("plugins/immune-brain/bin/imm-kernel");
+	const configHome = join(temp, "xdg-git-integration");
+	mkdirSync(join(configHome, "immune-brain"), { recursive: true });
+	const userPath = join(configHome, "immune-brain/config.json");
+	const env = { ...process.env, XDG_CONFIG_HOME: configHome };
+	const runCli = () => spawnSync(cli, ["config", "--json"], { cwd: f.root, encoding: "utf8", env });
+
+	writeFileSync(userPath, JSON.stringify({ contract: "immune_brain/user_config/v1", git_integration: "manual" }));
+	let cliResult = runCli();
+	expect(cliResult.status).toBe(0);
+	expect(JSON.parse(cliResult.stdout).git_integration).toEqual({ value: "manual", source: "user" });
+
+	for (const [label, body, keyPath] of [
+		["invalid value", JSON.stringify({ contract: "immune_brain/user_config/v1", git_integration: "sometimes" }), "git_integration"],
+		["per-project override", JSON.stringify({ contract: "immune_brain/user_config/v1", projects: { "github.com/O/R": { git_integration: "auto" } } }), "projects.github.com/O/R.git_integration"],
+		["malformed json", "{", "$"],
+		["wrong contract", JSON.stringify({ contract: "bad/v1", git_integration: "auto" }), "contract"],
+	] as const) {
+		writeFileSync(userPath, body);
+		cliResult = runCli();
+		expect({ label, status: cliResult.status }).toEqual({ label, status: 1 });
+		const parsed = JSON.parse(cliResult.stdout);
+		expect(parsed.git_integration).toEqual({ value: "manual", source: "default" });
+		expect(parsed.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", severity: "error", file: userPath, key_path: keyPath }));
 	}
 });

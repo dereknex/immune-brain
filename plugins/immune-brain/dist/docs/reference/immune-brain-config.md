@@ -34,6 +34,7 @@ and subagent preferences stay in the Host's agent instruction files (see
       "cheap": { "max_parallel": 2, "executor_host": "pi", "executor_effort": "low" }
     }
   },
+  "git_integration": "manual",
   "initiative_carrier": "github",
   "projects": {
     "github.com/owner/repo": {
@@ -46,7 +47,8 @@ and subagent preferences stay in the Host's agent instruction files (see
 ```
 
 - Every key is optional except `contract`. An unknown key at any level is
-  invalid.
+  invalid. `git_integration` is top-level only; setting it under `projects` is
+  rejected as an unknown key.
 - Profiles are defined only at the top level. A `projects` entry may select a
   profile (`default_profile`, `bindings`, `lanes.active`) but not define one.
 - A `*_env` value names an environment variable (`^[A-Z_][A-Z0-9_]*$`); the file
@@ -85,7 +87,7 @@ request; the Parent or the Planner applies them on top of the resolved files.
 | personal | `decision_models.default_profile`, `decision_models.bindings.<point>`, `lanes.active` | request → user per-project → user |
 | personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort`, `lanes.review_host`, `lanes.review_model`, `lanes.review_effort`, `lanes.review_verifier_model`, `lanes.review_transport`, `lanes.advisory_transport` | request → selected user Lane profile → project `lanes` → default |
 | repository fact | `initiative_carrier` | request → project → user per-project → user → none (the Planner asks) |
-| policy | `git_integration` | project → default (`manual`) |
+| personal | `git_integration` | user → project → default (`manual`) |
 | policy | `decision_models.enabled_points` | project → default (every registered point) |
 | policy ceiling | `decision_models.egress.<kind>` | project list, intersected with the user per-project list if set, else with the user list if set |
 | repository fact | `batch.final_verification` | request → project → test and type-check commands the repository instruction file names in prose → none |
@@ -280,13 +282,22 @@ final report list the same paths as `outside_routine_allowlist` next to
 
 ## Git Integration
 
-`git_integration` in the tracked `.imm/config.json` decides whether the runtime
-writes commits to your branch on its own:
+Top-level `git_integration` in `~/.config/immune-brain/config.json` or tracked
+`.imm/config.json` decides whether the runtime writes commits to your branch on
+its own (`user → project → legacy → default`):
+
+```json
+{ "contract": "immune_brain/user_config/v1", "git_integration": "manual" }
+```
 
 ```json
 { "contract": "immune_brain/project_config/v1", "git_integration": "manual" }
 ```
 
+- `user` overrides `project` when set at the top level of the user file
+  (`projects.<key>.git_integration` is rejected as an unknown key). An invalid
+  `user` file or invalid `user.git_integration` fails closed to `manual` even
+  when `.imm/config.json` sets `auto`.
 - `manual` is the default. The runtime writes no commit outside batches.
   Enrollment stages its TaskIntent and Spec inside the Lane instead of
   committing them; storage-layout migration leaves its diff in the working tree
@@ -296,16 +307,18 @@ writes commits to your branch on its own:
   as `imm(<task-id>): settled delivery`. Enrollment writes no commit in either
   mode: the repository HEAD stays the task's Git base.
 - An invalid value behaves as `manual` and is reported as a diagnostic.
-- The status Tool reports the resolved preference as `git_integration`.
+- The status Tool reports the resolved preference as `git_integration` (with
+  the user config file path as `source` when resolved from or failed by the
+  user file).
 - An unborn HEAD refuses `drive` until the first commit exists: the Lane starts
   at the user's HEAD, so nothing creates an empty root commit or stages in the
   user's stead.
 
 The legacy line `- Git integration: manual` (or `auto`) in the tracked root
-`AGENTS.md`, else `CLAUDE.md`, is still read when `.imm/config.json` sets no
-value, with a `deprecated_config_source` warning. ADR 0024 records the decision;
-ADR 0034 moves it to the project file and ADR 0036 retires the
-Enrollment commits it described.
+`AGENTS.md`, else `CLAUDE.md`, is still read when neither the user file nor
+`.imm/config.json` sets a value, with a `deprecated_config_source` warning. ADR
+0024 records the decision; ADR 0034 moves it to layered configuration and ADR
+0036 retires the Enrollment commits it described.
 
 ## Other Preferences
 
