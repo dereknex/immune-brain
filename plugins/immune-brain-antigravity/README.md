@@ -36,8 +36,7 @@ certified: the shared Review prompt expects immutable Git commands and packet ha
 checks that a shell-less native role cannot run. This package does not grant shell tools,
 copy source into the review packet, or change shared Review authority. The complete
 Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified
-on Antigravity via [docs/reports/antigravity-live-certification.md](../../docs/reports/antigravity-live-certification.md).
-Package checks verify the read-only restrictions, live certification binding, and this disclosure.
+on Antigravity. Package checks verify the read-only restrictions and this disclosure.
 
 ### Review CLI residual risk (`review_host: antigravity`)
 

@@ -132,12 +132,12 @@ describe("Antigravity artifact boundary (AC1)", () => {
 		expect(nativeBodies.sort()).toEqual(sharedBodies.sort());
 	});
 
-	it("discloses that native reviewer/verifier Git and packet-hash access is not certified and links live certification", () => {
+	it("discloses that native reviewer/verifier Git and packet-hash access is not certified", () => {
 		const readme = readFileSync(join(ARTIFACT, "README.md"), "utf8").replace(/\s+/g, " ");
 		expect(readme).toContain("Known limitation: native reviewer and verifier");
 		expect(readme).toContain("Immutable Git access and review-packet hash verification by those native roles are not certified");
 		expect(readme).toContain("complete Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified on Antigravity");
-		expect(readme).toContain("docs/reports/antigravity-live-certification.md");
+		expect(readme).not.toContain("antigravity-live-certification.md");
 	});
 
 	it("discloses Review CLI residual risk, absence of restriction flags, and untracked-file limits (S7 AC2, D9)", () => {
