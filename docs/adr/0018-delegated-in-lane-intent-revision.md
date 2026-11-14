@@ -93,7 +93,9 @@ Three accepted decisions stood in the way:
   cover a bounded class of later revision approvals. That is the deliberate
   change, and it is opt-in per batch.
 - **#178, "a `plan_digest` change continues to fail closed".** Narrowed to every
-  change not produced by a delegated revision recorded on the same batch.
+  change not produced by a delegated revision recorded on the same batch or by
+  a single-task Lane rebind (`lane_rebinds`) approved at the Parent's native
+  gate.
 
 ## Consequences
 
@@ -129,7 +131,11 @@ decider; nothing answers a dialog in a tab.
 A breaking revision approved this way also rebinds the single-task batch's
 approved intent identity (`rebindSingleTaskIdentity`) from the revision the Kernel
 committed in the Lane record, so the next tick does not refuse `plan_changed`
-or `batch_child_authority_changed`. `plan_digest` is not touched. Replaying the
+or `batch_child_authority_changed`. In the same locked write, the rebind
+recomputes `plan_digest` over the updated child identity and records the digests
+before and after in `lane_rebinds`; that change is covered by the literal-user
+Parent gate that approved the revision. Resume reads a rebound child's identity
+and risk from the record without writing the checkout `TaskIntent`. Replaying the
 same identity changes nothing and an older revision is `lane_decision_stale`.
 A decision answered against a record revision that is no longer current, or whose
 Lane record moved while the gate was open, is `lane_decision_stale` and applies

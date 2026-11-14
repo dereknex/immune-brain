@@ -1,0 +1,50 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "lane-rebind-resume",
+  "goal": "Issue #500 (Spec docs/specs/lane-rebind-resume.spec.md, D1-D8; BR-REQ-1, BR-REQ-2, BR-DEC-1, BR-DEC-2, BR-SCN-1). A single-task drive batch whose Lane committed a breaking intent revision, approved by the literal user at the Parent's native gate, resumes after a non-terminal park instead of refusing plan_changed. rebindSingleTaskIdentity recomputes plan_digest in its single locked atomic write and appends a lane_rebinds entry with the digest before and after; resume takes a rebound child's identity and risk from the record in every child state; the batch report exposes lane_rebinds; ADR 0018's single-task amendment is revised. The checkout TaskIntent is never written. Out: Initiative batches (ADR 0028 clause 5), terminal runs after a Kernel stop, the F19 relay (PR #449), and healing records rebound before this change, which keep failing closed with plan_changed and recover through retire_stale_batch.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (D1, D2). Done looks like: a rebound single-task record binds the revision-2 identity and records the binding change. Seam: tests/single-task-lane-decision.test.ts rebind unit test, calling rebindSingleTaskIdentity and reading back with readAnyBatchRunState. Positive: after rebinding revision 2, record.plan_digest equals computeBatchPlanDigest over the record's children joined with the revision-2 identity and differs from the digest before; lane_rebinds holds exactly one entry with task_id, from_revision 1, to_revision 2, from_digest equal to the previous plan_digest, to_digest equal to the new plan_digest, the committed content hash and the committed revision's risk. Negative: rebinding an older revision throws lane_decision_stale and leaves the record bytes unchanged; a record whose plan_digest was replaced with a different well-formed sha256 digest that no longer matches its own identities throws lane_decision_rebind_failed and leaves the record bytes unchanged. Bound: replaying the already-recorded revision-2 identity leaves the record bytes unchanged and adds no second entry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"-t\",\n      \"rebinds the batch's approved identity once a breaking revision is committed in the Lane\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (D3). Done looks like: only a well-formed lane_rebinds on a single-task record parses. Seam: tests/single-task-lane-decision.test.ts, readAnyBatchRunState over records written to the Kernel store. Positive: the record AC1's rebind wrote parses. Negative, each refused as invalid: a record whose last lane_rebinds to_digest differs from plan_digest; a record without plan_source single_task carrying lane_rebinds; an entry whose to_revision is not greater than from_revision; an entry whose risk is not routine, material or critical.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"-t\",\n      \"validates lane_rebinds invariants when reading batch run state\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (D4, D5; BR-SCN-1, BR-REQ-1, BR-REQ-2). Done looks like: after an approved in-Lane breaking revision and a needs_human park, the next drive start resumes and its report shows the rebind to revision 2. Seam: tests/single-task-lane-decision.test.ts Claude-Host relay harness (waitingHostLane, h.relay, h.start). Positive: relay approve_breaking_intent_revision to revision 2, park the child with parkLaneForExecutor(root, batch_id, task, 'lane_executor_no_progress'), then h.start(): the report's batch_state is running, its reason is not batchReason('plan_changed').reason, the serialized result does not contain plan_changed, and report.lane_rebinds[0].to_revision is 2. Negative: the same sequence on the code before this change refuses plan_changed (test written first). Bound: the number of native gates the resuming h.start() opens equals the number the same fixture opens when parked the same way without any revision.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"-t\",\n      \"resumes a parked single-task Lane after an approved breaking revision without plan_changed or extra gates\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (D4; BR-REQ-2). Done looks like: the still-running re-attach after a relayed breaking revision keeps working once plan_digest moves to revision 2. Seam: the existing Claude-Host test in tests/single-task-lane-decision.test.ts 'relays a breaking revision through one gate, rebinds the batch identity and does not refuse plan_changed afterwards'. Positive: after the relay, h.start() reports batch_state running with lane_supervision running at generation 2 and no plan_changed. Negative: the record's plan_digest after the relay differs from the plan_digest before it, so the test fails if resume still reads the checkout revision-1 identity. Bound: the relay opens exactly one native gate.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/single-task-lane-decision.test.ts\",\n      \"-t\",\n      \"relays a breaking revision through one gate, rebinds the batch identity and does not refuse plan_changed afterwards\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Spec AC5 (D7). Done looks like: ADR 0018's single-task amendment states that the rebind recomputes plan_digest and records lane_rebinds. Positive: docs/adr/0018-delegated-in-lane-intent-revision.md contains lane_rebinds. Negative: it no longer contains the sentence fragment '`plan_digest` is not touched'.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q 'lane_rebinds' docs/adr/0018-delegated-in-lane-intent-revision.md && ! grep -qF '`plan_digest` is not touched' docs/adr/0018-delegated-in-lane-intent-revision.md\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 10000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/lane-rebind-resume.md",
+    "docs/adr/0018-delegated-in-lane-intent-revision.md",
+    "docs/plans/lane-rebind-resume.intent.json",
+    "docs/specs/lane-rebind-resume.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/unattended/batch_lanes.ts",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/single-task-lane-decision.test.ts"
+  ],
+  "risk": "material",
+  "revision": 2,
+  "owner": "user"
+}

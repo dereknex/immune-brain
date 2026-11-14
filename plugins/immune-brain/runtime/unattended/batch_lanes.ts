@@ -706,6 +706,7 @@ function laneReport(
 		...(extra.sessionClose ? { lane_session_close: extra.sessionClose } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
+		...(record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {}),
 		next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked"
 			? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.`
 			: TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),

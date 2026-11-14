@@ -6876,6 +6876,26 @@ function validateIntentIdentities(record, batchId) {
   if (record.intent_identities !== undefined && (!isObject(record.intent_identities) || Object.values(record.intent_identities).some((i) => !isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash || i.intent_authority_hash !== undefined && !isHash(i.intent_authority_hash))))
     throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
 }
+function validateLaneRebinds(record, batchId) {
+  if (record.lane_rebinds === undefined)
+    return;
+  if (record.plan_source !== "single_task")
+    throw new Error(`batch run state ${batchId} carries lane_rebinds without plan_source single_task`);
+  if (!Array.isArray(record.lane_rebinds) || record.lane_rebinds.some((r) => !isObject(r) || !isCanonicalTimestamp(r.at) || typeof r.task_id !== "string" || !r.task_id || !isRevision(r.from_revision) || !isRevision(r.to_revision) || r.to_revision <= r.from_revision || !isHash(r.from_digest) || !isHash(r.to_digest) || !isHash(r.intent_content_hash) || r.intent_authority_hash !== undefined && !isHash(r.intent_authority_hash) || typeof r.risk !== "string" || !TASK_RISKS.includes(r.risk)))
+    throw new Error(`batch run state ${batchId} has an invalid lane_rebinds list`);
+  const rebinds = record.lane_rebinds;
+  if (rebinds.length > 0 && rebinds[rebinds.length - 1].to_digest !== record.plan_digest)
+    throw new Error(`batch run state ${batchId} plan_digest does not match its last lane_rebind`);
+  const lastByTask = new Map;
+  for (const entry of rebinds)
+    lastByTask.set(entry.task_id, entry);
+  const identities = record.intent_identities;
+  for (const [taskId, last] of lastByTask) {
+    const identity = identities?.[taskId];
+    if (!identity || identity.intent_revision !== last.to_revision || identity.intent_content_hash !== last.intent_content_hash || identity.intent_authority_hash !== last.intent_authority_hash)
+      throw new Error(`batch run state ${batchId} lane_rebinds does not match intent_identities for ${taskId}`);
+  }
+}
 function validateRepairTasks(record) {
   if (record.repair_tasks === undefined)
     return;
@@ -7101,6 +7121,7 @@ function validateLaneRecordShape(value, batchId) {
     throw new Error(`batch run state ${batchId} has an invalid reseals list`);
   if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
     throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+  validateLaneRebinds(record, batchId);
   const seenTaskIds = new Set;
   for (const child of record.children) {
     if (typeof child !== "object" || child === null || typeof child.task_id !== "string" || !child.task_id || typeof child.slice_id !== "string" || !child.slice_id)
@@ -7311,27 +7332,63 @@ function parkLaneForExecutor(root, batchId, taskId, reason) {
     return stored;
   });
 }
+function planChildrenWithIdentities(children, identities) {
+  if (!identities)
+    return null;
+  const result = [];
+  for (const child of children) {
+    const id = identities[child.task_id];
+    if (!id)
+      return null;
+    result.push({
+      task_id: child.task_id,
+      intent_path: id.intent_path,
+      intent_revision: id.intent_revision,
+      intent_content_hash: id.intent_content_hash,
+      ...id.intent_authority_hash ? { intent_authority_hash: id.intent_authority_hash } : {},
+      blocked_by: [...child.blocked_by]
+    });
+  }
+  return result;
+}
 function rebindSingleTaskIdentity(root, batchId, input) {
   const path = statePath(batchId);
   return withKernelStoreLock(root, () => {
     const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
     const recorded = record.intent_identities?.[input.task_id];
-    if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id && child.lane))
+    const currentChildren = planChildrenWithIdentities(record.children, record.intent_identities);
+    if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || !currentChildren || input.intent.task_id !== input.task_id || !record.children.some((child) => child.task_id === input.task_id && child.lane) || computeBatchPlanDigest(currentChildren) !== record.plan_digest)
       throw new Error(batchReason("lane_decision_rebind_failed").reason);
     if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash)
       return record;
     if (input.intent.revision <= recorded.intent_revision)
       throw new Error(batchReason("lane_decision_stale").reason);
+    const now = new Date().toISOString();
     const identity = {
       intent_path: recorded.intent_path,
       intent_revision: input.intent.revision,
       intent_content_hash: input.content_hash,
       ...recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}
     };
+    const nextIdentities = { ...record.intent_identities, [input.task_id]: identity };
+    const nextDigest = computeBatchPlanDigest(planChildrenWithIdentities(record.children, nextIdentities));
+    const rebind = {
+      at: now,
+      task_id: input.task_id,
+      from_revision: recorded.intent_revision,
+      to_revision: input.intent.revision,
+      from_digest: record.plan_digest,
+      to_digest: nextDigest,
+      intent_content_hash: input.content_hash,
+      ...identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {},
+      risk: input.intent.risk
+    };
     const stored = {
       ...record,
-      updated_at: new Date().toISOString(),
-      intent_identities: { ...record.intent_identities, [input.task_id]: identity }
+      plan_digest: nextDigest,
+      updated_at: now,
+      intent_identities: nextIdentities,
+      lane_rebinds: [...record.lane_rebinds ?? [], rebind]
     };
     validateLaneRecordShape(stored, batchId);
     writeFileAtomically(root, path, canonicalBytes(stored));
@@ -7437,6 +7494,7 @@ var init_batch_state = __esm(() => {
   init_batch_final_verification();
   init_batch_authority();
   init_intent();
+  init_types();
   init_runtime_contracts();
   init_batch_reasons();
   REVIEW_HOSTS = new Set(["pi", "claude-code", "antigravity"]);
@@ -17305,8 +17363,30 @@ async function projectPlanSurface(input) {
     };
     const authorized = recordedAuthorityHashes(existingBatch);
     const unenrolled = new Set(["pending", "lane_admitted", "skipped_blocked", "needs_human"]);
+    const lastRebindByTask = new Map;
+    if (isLaneBatchRecord(existingBatch) && existingBatch.lane_rebinds) {
+      for (const entry of existingBatch.lane_rebinds)
+        lastRebindByTask.set(entry.task_id, entry);
+    }
     try {
       recoveryChildren = existingBatch.children.map((c) => {
+        const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
+        const lastRebind = lastRebindByTask.get(c.task_id);
+        const recordedIdentity = existingBatch.intent_identities?.[c.task_id];
+        if (lastRebind && recordedIdentity) {
+          riskByTask.set(c.task_id, lastRebind.risk);
+          return {
+            task_id: c.task_id,
+            slice_id: c.slice_id,
+            status: isDone ? "already_settled" : "enrollable",
+            blocked_by: [...c.blocked_by],
+            reason: c.reason ?? null,
+            intent_path: recordedIdentity.intent_path,
+            intent_revision: recordedIdentity.intent_revision,
+            intent_content_hash: recordedIdentity.intent_content_hash,
+            ...recordedIdentity.intent_authority_hash ? { intent_authority_hash: recordedIdentity.intent_authority_hash } : {}
+          };
+        }
         const intentPath = `docs/plans/${c.task_id}.intent.json`;
         let read = {
           intent: { revision: 1, risk: "material" },
@@ -17331,7 +17411,6 @@ async function projectPlanSurface(input) {
           }
         }
         riskByTask.set(c.task_id, read.intent?.risk ?? "material");
-        const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
         return {
           task_id: c.task_id,
           slice_id: c.slice_id,
@@ -19359,6 +19438,7 @@ function laneReport(record, reason, nextAction, extra = {}) {
     ...extra.sessionClose ? { lane_session_close: extra.sessionClose } : {},
     ...record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {},
     ...record.reseals?.length ? { reseals: record.reseals } : {},
+    ...record.lane_rebinds?.length ? { lane_rebinds: record.lane_rebinds } : {},
     next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked" ? `Review the final report; coordinator return stopped: ${record.final_report.return_to_coordinator.reason}. The Parent branch is retained.` : TERMINAL_NEXT_ACTIONS[record.batch_state] ?? "Inspect the batch run state.")) + retainedLaneAction(extra.refusals),
     created_at: record.updated_at
   };

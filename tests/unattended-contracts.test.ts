@@ -594,6 +594,8 @@ describe("unattended batch contract text", () => {
 			"delegated_revisions",
 			"intent_identities",
 			"reseals",
+			// Issue #500 / Spec lane-rebind-resume: single-task plan_digest rebind history.
+			"lane_rebinds",
 			"created_at",
 			"updated_at",
 		]);

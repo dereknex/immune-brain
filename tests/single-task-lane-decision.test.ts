@@ -12,7 +12,7 @@ import { createDefaultBatchGitPort, type BatchRunnerGitPort } from "../plugins/i
 import { createDefaultLaneGitPort } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import { startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
-import { readAnyBatchRunState, rebindSingleTaskIdentity, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { parkLaneForExecutor, readAnyBatchRunState, rebindSingleTaskIdentity, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { LaneDecisionStaleError, laneDecisionFacts, relayLaneDecision, type LaneDecisionOperation } from "../plugins/immune-brain/runtime/unattended/lane_decision";
 import { laneDecisionRequestPath, writeLaneDecisionRequest } from "../plugins/immune-brain/runtime/unattended/lane_decision_request";
@@ -96,8 +96,8 @@ function kernel(): BatchRunnerKernelPort & { lanes: Map<string, string> } {
 	return state as unknown as BatchRunnerKernelPort & { lanes: Map<string, string> };
 }
 
-function request(repo: string, base: string, fx: { kernel: ReturnType<typeof kernel>; git: BatchRunnerGitPort }): StartBatchInput {
-	const intent = readTaskIntent(repo, TASK);
+function request(repo: string, base: string, fx: { kernel: ReturnType<typeof kernel>; git: BatchRunnerGitPort }, intentOverride?: ReturnType<typeof readTaskIntent>): StartBatchInput {
+	const intent = intentOverride ?? readTaskIntent(repo, TASK);
 	const children: BatchPlanChild[] = [{ task_id: TASK, slice_id: TASK, blocked_by: [], status: "enrollable", reason: null,
 		intent_path: intent.intent_ref.path, intent_revision: intent.intent_ref.revision,
 		intent_content_hash: canonicalIntentHash(intent.intent), intent_authority_hash: intentAuthorityHash(intent.intent) }];
@@ -132,7 +132,7 @@ function executors(script: string) {
 async function waitingLane(executor_mode?: "interactive") {
 	const { repo, base } = fixture();
 	const k = kernel();
-	const args = () => ({ ...request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) }), executor_mode });
+	const args = (intentOverride?: ReturnType<typeof readTaskIntent>) => ({ ...request(repo, base, { kernel: k, git: Object.assign(createDefaultBatchGitPort(), { lane: createDefaultLaneGitPort() }) }, intentOverride), executor_mode });
 	const first = laneReport(await startBatch(args()));
 	const lane = first.children[0]!.lane!.path;
 	return { repo, base, lane, args, first };
@@ -267,16 +267,89 @@ describe("single-task Lane decision relay (S5)", () => {
 		const { repo, lane, args } = await waitingLane();
 		writeFileSync(join(lane, `docs/plans/${TASK}.intent.json`), intentJson(2, "A1 holds, revised"));
 		const revised = readTaskIntent(lane, TASK);
-		const record = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunReport & { batch_id: string };
+		const record = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord;
 		expect(record.batch_id).toBe(BATCH_ID);
+		const stateFile = join(repo, ".imm", "state", "batches", `${BATCH_ID}.json`);
+		const digestBefore = record.plan_digest;
+
 		rebindSingleTaskIdentity(repo, BATCH_ID, { task_id: TASK, intent: revised.intent, content_hash: revised.intent_ref.content_hash });
-		// Replaying the committed identity changes nothing; an older revision is stale.
+		const reboundBytes = readFileSync(stateFile, "utf8");
+		const rebound = readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord;
+		const expectedDigest = computeBatchPlanDigest(rebound.children.map((c) => ({
+			task_id: c.task_id,
+			intent_path: rebound.intent_identities![c.task_id]!.intent_path,
+			intent_revision: revised.intent.revision,
+			intent_content_hash: revised.intent_ref.content_hash,
+			intent_authority_hash: intentAuthorityHash(revised.intent),
+			blocked_by: c.blocked_by,
+		})));
+		expect(rebound.plan_digest).toBe(expectedDigest);
+		expect(rebound.plan_digest).not.toBe(digestBefore);
+		expect(rebound.lane_rebinds).toHaveLength(1);
+		expect(rebound.lane_rebinds?.[0]).toMatchObject({
+			task_id: TASK,
+			from_revision: 1,
+			to_revision: 2,
+			from_digest: digestBefore,
+			to_digest: expectedDigest,
+			intent_content_hash: revised.intent_ref.content_hash,
+			risk: revised.intent.risk,
+		});
+
+		// Replaying the committed identity leaves record bytes unchanged and adds no second entry.
 		rebindSingleTaskIdentity(repo, BATCH_ID, { task_id: TASK, intent: revised.intent, content_hash: revised.intent_ref.content_hash });
+		expect(readFileSync(stateFile, "utf8")).toBe(reboundBytes);
+		expect((readAnyBatchRunState(repo, BATCH_ID) as BatchLaneRunStateRecord).lane_rebinds).toHaveLength(1);
+
+		// An older revision is stale and leaves record bytes unchanged.
 		const older = readTaskIntent(repo, TASK);
 		expect(() => rebindSingleTaskIdentity(repo, BATCH_ID, { task_id: TASK, intent: older.intent, content_hash: older.intent_ref.content_hash })).toThrow("lane_decision_stale");
-		const next = laneReport(await startBatch(args()));
+		expect(readFileSync(stateFile, "utf8")).toBe(reboundBytes);
+
+		const next = laneReport(await startBatch(args(revised)));
 		expect(next.reason ?? "").not.toContain("batch_child_authority_changed");
 		expect(next.batch_state).not.toBe("needs_human");
+		expect(next.lane_rebinds?.[0]?.to_revision).toBe(2);
+
+		// A record whose plan_digest no longer matches its own identities fails closed without writing.
+		const tamperedDigest = `sha256:${"a".repeat(64)}`;
+		const tampered = { ...rebound, plan_digest: tamperedDigest, lane_rebinds: undefined };
+		writeFileSync(stateFile, `${JSON.stringify(tampered, null, 2)}\n`);
+		const tamperedBytes = readFileSync(stateFile, "utf8");
+		writeFileSync(join(lane, `docs/plans/${TASK}.intent.json`), intentJson(3, "A1 holds, v3"));
+		const v3 = readTaskIntent(lane, TASK);
+		expect(() => rebindSingleTaskIdentity(repo, BATCH_ID, { task_id: TASK, intent: v3.intent, content_hash: v3.intent_ref.content_hash })).toThrow("lane_decision_rebind_failed");
+		expect(readFileSync(stateFile, "utf8")).toBe(tamperedBytes);
+	});
+
+	it("validates lane_rebinds invariants when reading batch run state", async () => {
+		const { repo, lane } = await waitingLane();
+		const stateFile = join(repo, ".imm", "state", "batches", `${BATCH_ID}.json`);
+		writeFileSync(join(lane, `docs/plans/${TASK}.intent.json`), intentJson(2, "A1 holds, revised"));
+		const revised = readTaskIntent(lane, TASK);
+		const rebound = rebindSingleTaskIdentity(repo, BATCH_ID, { task_id: TASK, intent: revised.intent, content_hash: revised.intent_ref.content_hash });
+		expect(readAnyBatchRunState(repo, BATCH_ID)).toEqual(rebound);
+		const validEntry = rebound.lane_rebinds![0]!;
+
+		// Last entry's to_digest differs from plan_digest.
+		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, to_digest: `sha256:${"b".repeat(64)}` }] }, null, 2)}\n`);
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
+
+		// Record without plan_source single_task carrying lane_rebinds.
+		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, plan_source: undefined, lane_rebinds: [validEntry] }, null, 2)}\n`);
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
+
+		// Entry whose to_revision is not greater than from_revision.
+		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, from_revision: 2, to_revision: 2 }] }, null, 2)}\n`);
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
+
+		// Entry whose risk is not routine, material or critical.
+		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, risk: "extreme" }] }, null, 2)}\n`);
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
+
+		// Last entry for a task disagrees with intent_identities.
+		writeFileSync(stateFile, `${JSON.stringify({ ...rebound, lane_rebinds: [{ ...validEntry, from_revision: 2, to_revision: 3 }] }, null, 2)}\n`);
+		expect(() => readAnyBatchRunState(repo, BATCH_ID)).toThrow();
 	});
 
 	it("derives the waiting facts only from the Kernel projection", () => {
@@ -528,6 +601,7 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(after.intent_identities?.[TASK]?.intent_content_hash).toBe(lane.intent_ref.content_hash);
 			expect(after.intent_identities?.[TASK]?.intent_revision).toBe(2);
 			expect(after.intent_identities?.[TASK]?.intent_content_hash).not.toBe(before.intent_identities?.[TASK]?.intent_content_hash);
+			expect(after.plan_digest).not.toBe(before.plan_digest);
 			const next = await h.start();
 			expect(next.report.reason).not.toBe(batchReason("plan_changed").reason);
 			expect(JSON.stringify(next)).not.toContain("plan_changed");
@@ -535,6 +609,36 @@ for (const host of ["claude", "pi"] as const) describe(`single-task Lane decisio
 			expect(next.report.lane_supervision).toMatchObject(supervised
 				? { state: "running", generation: 2 } : { state: "unavailable", generation: null, reason: "lane_executor_requires_tui" });
 			expect(f.spawns()).toHaveLength(supervised ? 2 : 0);
+		} finally { await h.stopBatch(); }
+	}, 40000);
+
+	if (supervised) it("resumes a parked single-task Lane after an approved breaking revision without plan_changed or extra gates", async () => {
+		const control = await waitingHostLane("unresolved_user_decision");
+		let controlGates = 0;
+		try {
+			expect((await control.h.relay("request_authorization")).error).toBeUndefined();
+			parkLaneForExecutor(control.f.root, control.target.batch_id, TASK, "lane_executor_no_progress");
+			const gatesBefore = control.h.gates.length;
+			const controlResume = await control.h.start();
+			controlGates = control.h.gates.length - gatesBefore;
+			expect(controlResume.report.batch_state).toBe("running");
+		} finally { await control.h.stopBatch(); }
+
+		const { f, h, started, target } = await waitingHostLane("replan_required");
+		try {
+			const required = started.report.lane_decision_required;
+			const revised = JSON.parse(intentJson(2, "A1 holds after the breaking revision"));
+			const relayed = await h.relay("approve_breaking_intent_revision", { record_revision: required.record_revision, next_intent: revised });
+			expect(relayed.error).toBeUndefined();
+			parkLaneForExecutor(f.root, target.batch_id, TASK, "lane_executor_no_progress");
+			const gatesBefore = h.gates.length;
+			const resumed = await h.start();
+			expect(JSON.stringify(resumed)).not.toContain("plan_changed");
+			expect(resumed.report.batch_state).toBe("running");
+			expect(resumed.report.reason).not.toBe(batchReason("plan_changed").reason);
+			expect(h.gates.length - gatesBefore).toBe(controlGates);
+			expect(resumed.report.lane_rebinds?.[0]?.to_revision).toBe(2);
+			expect(readTaskIntent(f.root, TASK).intent.revision).toBe(1);
 		} finally { await h.stopBatch(); }
 	}, 40000);
 
