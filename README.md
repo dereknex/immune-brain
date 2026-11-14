@@ -497,7 +497,7 @@ The three repair/maintenance skills are host-native: they never create a managed
 #### `revisit` — workflow health
 
 - **Trigger:** explicit request for a workflow-health retro or workflow-friction diagnosis.
-- **What it does:** locates and verifies evidence chains from pi session logs and optional committed audit, then recommends one improvement or reports insufficient evidence. Usage and rework counts are locating context, not causes. It ranks no models. Read-only. Not a diff review.
+- **What it does:** locates and verifies evidence chains from Pi, Claude Code, and Antigravity CLI session logs and optional committed audit, then recommends one improvement or reports insufficient evidence. Usage and rework counts are locating context, not causes. It ranks no models. Read-only. Not a diff review.
 
 ---
 

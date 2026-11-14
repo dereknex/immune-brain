@@ -1,22 +1,24 @@
 #!/usr/bin/env bun
 /**
- * Workflow-health retro over recent pi sessions: usage, rework signal and finding totals.
+ * Workflow-health retro over recent Host sessions (Pi, Claude Code, Antigravity CLI): usage, rework signal and finding totals.
  *
- * Usage: bun review_retro.ts <days> [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
+ * Usage: bun review_retro.ts <days> [--host <pi|claude|antigravity>]... [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]...
  *                                   [--audit <project-root> [--sessions] [--sample <n>]]
  *
  * Without --audit the session report runs. With --audit the committed-audit report runs (HEAD of one project,
  * see audit_reader.ts) and session logs are read only when --sessions is also given.
  *
  * Counting rules (the 口径 that keeps the numbers honest):
- *   session              = one pi JSONL file; its header `cwd` drives --project / --exclude
+ *   session              = one transcript JSONL file; Pi reads header cwd, Claude reads entry cwd,
+ *                          Antigravity reads conversation_metadata WorkspaceURIs[0] (else unknown)
  *   window               = timestamps parsed to epoch ms (ISO with any offset, or numeric ms);
  *                          a line with a missing or unparsable timestamp is skipped and counted
- *   review executed      = Agent(subagent_type="Review", any case) tool call
+ *   review executed      = Agent(subagent_type="Review", any case) tool call on Pi/Claude
+ *                          (Antigravity invoke_subagent is not counted as a review dispatch)
  *   kernel:submit_review = the *registration* of a review; rounds/task is registrations per (cwd, task_id),
  *                          registrations without a task_id are counted separately
- *   author               = the model behind the most recent edit/write/multiedit/apply_patch before a
- *                          review or finding; kept on events for downstream readers, never ranked
+ *   author               = the model behind the most recent edit tool call before a review or finding;
+ *                          kept on events for downstream readers, never ranked
  *   findings             = submit_review verdict.findings plus legacy record_finding, deduped per session,
  *                          harness bookkeeping split out; a submit_review without a verdict takes the observed
  *                          receipt (the verdict JSON in the latest Review Agent toolResult), as the Kernel does
@@ -26,9 +28,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AuditRun, AuditUsageError, readCommittedAudit, type ReviewFinding, SKIP_REASONS } from "./audit_reader.ts";
-import { readSession, parseTimestamp, type SessionEvent, type SessionFilter } from "./session_evidence.ts";
-export { readSession } from "./session_evidence.ts";
-export type { SessionEvent, SessionFilter, SessionRead } from "./session_evidence.ts";
+import { type Host, parseTimestamp, readHostSession, type SessionEvent, type SessionFilter } from "./session_evidence.ts";
+export { KERNEL_OPS, parsePythonRepr, readAntigravitySession, readClaudeSession, readHostSession, readSession } from "./session_evidence.ts";
+export type { Host, SessionEvent, SessionFilter, SessionRead } from "./session_evidence.ts";
 
 const JITTER =
 	/(?:review(?:er)? agent|reserved foreground agent)\b[^.\n]{0,80}?\b(?:missing|cleaned[- ]?up|not found|not observed|no longer exists?|disappeared)\b|\b(?:missing|cleaned[- ]?up)\b[^.\n]{0,40}?review(?:er)? agent|\bempty (?:review )?verdict\b|\bverdict (?:was |is )?empty\b/i;
@@ -39,11 +41,21 @@ function bump(map: Map<string, number>, key: string, n = 1): void {
 	map.set(key, (map.get(key) ?? 0) + n);
 }
 
+export type ResolvedHost = { host: Host; root: string; layout: Host };
+
+export const STANDARD_HOST_ROOTS: Record<Host, string> = {
+	pi: ".pi/agent/sessions",
+	claude: ".claude/projects",
+	antigravity: ".gemini/antigravity-cli/brain",
+};
+const HOST_ORDER: readonly Host[] = ["pi", "claude", "antigravity"];
+
 type Args = {
 	days: number;
 	since: number;
 	until: number;
 	json: boolean;
+	hosts: Host[];
 	root: string;
 	project: string;
 	exclude: string[];
@@ -53,7 +65,21 @@ type Args = {
 };
 
 const USAGE =
-	"usage: review_retro.ts <days> [--root <dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]";
+	"usage: review_retro.ts <days> [--host <pi|claude|antigravity>]... [--root <dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]";
+
+export function resolveHosts(args: { hosts: readonly Host[]; root: string }, home = homedir()): ResolvedHost[] {
+	if (args.root) {
+		if (args.hosts.length > 1) throw new Error(`--root cannot be combined with multiple --host values; ${USAGE}`);
+		const host = args.hosts[0] ?? "pi";
+		return [{ host, root: args.root, layout: host }];
+	}
+	if (args.hosts.length > 0) {
+		return args.hosts.map((host) => ({ host, root: join(home, STANDARD_HOST_ROOTS[host]), layout: host }));
+	}
+	return HOST_ORDER
+		.map((host) => ({ host, root: join(home, STANDARD_HOST_ROOTS[host]), layout: host }))
+		.filter((entry) => existsSync(entry.root));
+}
 
 function parseArgs(argv: string[]): Args {
 	const out: Args = {
@@ -61,7 +87,8 @@ function parseArgs(argv: string[]): Args {
 		since: Number.NaN,
 		until: Number.NaN,
 		json: false,
-		root: join(homedir(), ".pi/agent/sessions"),
+		hosts: [],
+		root: "",
 		project: "",
 		exclude: [],
 		audit: "",
@@ -77,9 +104,17 @@ function parseArgs(argv: string[]): Args {
 			const parsed = parseTimestamp(value);
 			if (!Number.isFinite(parsed)) throw new Error(USAGE);
 			if (a === "--since") out.since = parsed; else out.until = parsed;
-		}
-		else if (a === "--root") out.root = argv[++i] ?? "";
-		else if (a === "--project") out.project = argv[++i] ?? "";
+		} else if (a === "--host") {
+			const v = argv[++i] ?? "";
+			if (v !== "pi" && v !== "claude" && v !== "antigravity") {
+				throw new Error(`--host must be pi, claude, or antigravity; ${USAGE}`);
+			}
+			if (!out.hosts.includes(v)) out.hosts.push(v);
+		} else if (a === "--root") {
+			const v = argv[++i] ?? "";
+			if (!v) throw new Error(`--root needs a value; ${USAGE}`);
+			out.root = v;
+		} else if (a === "--project") out.project = argv[++i] ?? "";
 		else if (a === "--exclude") {
 			const v = argv[++i] ?? "";
 			if (!v) throw new Error(`--exclude needs a value; ${USAGE}`);
@@ -94,6 +129,7 @@ function parseArgs(argv: string[]): Args {
 		} else if (a.startsWith("-")) throw new Error(`unknown flag: ${a}`);
 		else rest.push(a);
 	}
+	if (out.root && out.hosts.length > 1) throw new Error(`--root cannot be combined with multiple --host values; ${USAGE}`);
 	const now = Date.now();
 	if (rest.length) {
 		out.days = Number(rest[0]);
@@ -109,12 +145,20 @@ function parseArgs(argv: string[]): Args {
 	return out;
 }
 
-function listJsonl(root: string): string[] {
-	if (!existsSync(root)) return [];
+function listHostSessions(entry: ResolvedHost): string[] {
+	if (!existsSync(entry.root)) return [];
 	const paths: string[] = [];
-	for (const dir of readdirSync(root, { withFileTypes: true })) {
+	if (entry.layout === "antigravity") {
+		for (const dir of readdirSync(entry.root, { withFileTypes: true })) {
+			if (!dir.isDirectory()) continue;
+			const transcript = join(entry.root, dir.name, ".system_generated", "logs", "transcript_full.jsonl");
+			if (existsSync(transcript)) paths.push(transcript);
+		}
+		return paths.sort();
+	}
+	for (const dir of readdirSync(entry.root, { withFileTypes: true })) {
 		if (!dir.isDirectory()) continue;
-		const folder = join(root, dir.name);
+		const folder = join(entry.root, dir.name);
 		for (const name of readdirSync(folder)) {
 			if (name.endsWith(".jsonl")) paths.push(join(folder, name));
 		}
@@ -349,36 +393,51 @@ function candidates(events: SessionEvent[]): CandidateGroup[] {
 
 async function sessionReport(args: Args): Promise<string> {
 	const filter: SessionFilter = { cutMs: args.since, untilMs: args.until, project: args.project, exclude: args.exclude };
+	const resolvedHosts = resolveHosts({ hosts: args.hosts, root: args.root });
+	const hostCounts = new Map<ResolvedHost, number>();
 	const tools = new Map<string, number>(), tasks = new Set<string>(), findRaw = new Map<string, number>(), findUniq = new Map<string, Set<string>>();
-	const sessions: { path: string; cwd: string; session_id: string }[] = [], events: SessionEvent[] = [];
+	const sessions: { host: Host; path: string; cwd: string; session_id: string }[] = [], events: SessionEvent[] = [];
 	let files = 0, skipped = 0, turns = 0, edits = 0, registrations = 0, anonymous = 0;
-	for (const path of listJsonl(args.root)) {
-		const session = await readSession(path, filter);
-		if (!session) continue;
-		if (session.used) {
-			files++;
-			sessions.push({ path, cwd: session.cwd, session_id: session.session_id });
-		}
-		events.push(...session.events);
-		skipped += session.skipped; turns += session.turns; edits += session.edits;
-		for (const [name, n] of session.tools) bump(tools, name, n);
-		for (const ev of session.events) {
-			if (ev.type === "registration") {
-				registrations++;
-				if (ev.taskId) tasks.add(`${session.cwd}\0${ev.taskId}`); else anonymous++;
-			} else if (ev.type === "finding") {
-				const kind = ev.markers.includes("bookkeeping") ? "bookkeeping" : ev.kind;
-				bump(findRaw, kind);
-				const uniq = findUniq.get(kind) ?? new Set<string>(); uniq.add(`${path}\0${ev.summary.slice(0, 160)}`); findUniq.set(kind, uniq);
+	for (const entry of resolvedHosts) {
+		let count = 0;
+		for (const path of listHostSessions(entry)) {
+			const session = await readHostSession(entry.host, path, filter);
+			if (!session) continue;
+			if (session.used) {
+				count++;
+				files++;
+				sessions.push({ host: entry.host, path, cwd: session.cwd, session_id: session.session_id });
+			}
+			events.push(...session.events);
+			skipped += session.skipped; turns += session.turns; edits += session.edits;
+			for (const [name, n] of session.tools) bump(tools, name, n);
+			for (const ev of session.events) {
+				if (ev.type === "registration") {
+					registrations++;
+					if (ev.taskId) tasks.add(`${session.cwd}\0${ev.taskId}`); else anonymous++;
+				} else if (ev.type === "finding") {
+					const kind = ev.markers.includes("bookkeeping") ? "bookkeeping" : ev.kind;
+					bump(findRaw, kind);
+					const uniq = findUniq.get(kind) ?? new Set<string>(); uniq.add(`${path}\0${ev.summary.slice(0, 160)}`); findUniq.set(kind, uniq);
+				}
 			}
 		}
+		hostCounts.set(entry, count);
 	}
 	const window = { since: new Date(args.since).toISOString(), until: new Date(args.until).toISOString() };
 	const groups = candidates(events);
-	if (args.json) return `${JSON.stringify({ contract: "immune_brain/revisit_evidence/v2", window, scope: { root: args.root, project: args.project, exclude: args.exclude }, skipped_lines: skipped, sessions, events, candidates: groups }, null, 2)}\n`;
+	const scope = {
+		root: args.root || resolvedHosts[0]?.root || "",
+		hosts: resolvedHosts.map(({ host, root, layout }) => ({ host, root, layout })),
+		project: args.project,
+		exclude: args.exclude,
+	};
+	if (args.json) return `${JSON.stringify({ contract: "immune_brain/revisit_evidence/v2", window, scope, skipped_lines: skipped, sessions, events, candidates: groups }, null, 2)}\n`;
 	const lines: string[] = [], emit = (s = "") => lines.push(s);
 	const filters = [...(args.project ? [`project~${args.project}`] : []), ...args.exclude.map(s => `exclude~${s}`)];
-	emit(`window: ${window.since} <= t < ${window.until} | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped} | root: ${args.root}`);
+	const rootSuffix = args.root ? ` | root: ${args.root}` : resolvedHosts.length === 1 ? ` | root: ${resolvedHosts[0]!.root}` : "";
+	emit(`window: ${window.since} <= t < ${window.until} | sessions with activity: ${files} | skipped lines (no usable timestamp): ${skipped}${rootSuffix}`);
+	for (const entry of resolvedHosts) emit(`host: ${entry.host} ${entry.root} sessions=${hostCounts.get(entry) ?? 0}`);
 	emit(`filters: ${filters.length ? filters.join(", ") : "none"}`);
 	emit("block/advis = submit_review verdict.findings plus legacy record_finding, deduped per session");
 	emit(""); emit("=== candidate chains (locating only; not causes) ===");

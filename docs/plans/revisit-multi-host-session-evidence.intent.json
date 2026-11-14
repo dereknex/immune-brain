@@ -1,0 +1,56 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "revisit-multi-host-session-evidence",
+  "owner": "user",
+  "goal": "Upstream Brainstorm manifest BR-REQ-1/BR-REQ-2, decisions BR-DEC-1..BR-DEC-5 (docs/specs/revisit-multi-host-session-evidence.spec.md). revisit's session report reads Pi, Claude Code and Antigravity CLI transcripts instead of Pi only, so a Lane that ran on a non-Pi Host appears in a workflow-health retro. Counting rules, report sections and --audit stay unchanged; the only machine-contract change is an additive `host` field on immune_brain/revisit_evidence/v2 (BR-DEC-4). With no --host and no --root every existing standard root is scanned and the header prints one host line per tree; --root alone still means this Pi tree only (BR-DEC-2). Delegated technical choices grounded in read-only probes: Kernel ops normalize to name imm_kernel_canary plus op across Hosts (Claude mcp__...__<op>, Antigravity call_mcp_tool with ServerName immune-brain); edit tools extend to Claude Edit/Write/MultiEdit and Antigravity edit_file/write_file/replace_file_content/write_to_file; Antigravity Python-repr Arguments is parsed by a bounded reader and an unparsable value yields the event without arguments; Antigravity cwd is conversation_metadata WorkspaceURIs[0] with file:// stripped, absent metadata yields unknown (BR-DEC-3); Antigravity invoke_subagent is not counted as a review dispatch and the limitation is recorded in the contract. Antigravity GUI protobuf SQLite transcripts are out of scope (BR-OUT-1), as are model ranking, derived metrics and snapshot/diff (BR-OUT-2); per-host split columns are deferred (BR-DEFER-1). Spec docs/specs/revisit-multi-host-session-evidence.spec.md is the Technical Design baseline.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "resolveHosts({hosts: [], root: \"\"}, fakeHome) over a fake home holding all three standard trees returns Pi, Claude and Antigravity with their roots; an empty fake home returns nothing; --host claude --root <dir> resolves exactly one entry.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "The Claude fixture yields one registration for its task, its blocking finding, one edit author and one review dispatch; a tool_use name outside the known Kernel ops and edit tools contributes no registration or finding and throws nothing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "The Antigravity fixture yields one registration from call_mcp_tool/immune-brain..., the task id from Arguments, and the cwd from WorkspaceURIs[0] with file:// stripped; an unparsable Arguments yields the event without arguments; a conversation id absent from the metadata yields cwd unknown and a counted session.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "--root <dir> alone prints exactly one pi host line and scans no other tree; --root with two --host values exits non-zero with the usage string; --host claude on a missing root reports zero sessions without throwing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "--json still emits immune_brain/revisit_evidence/v2, every sessions[] and events[] entry carries a non-empty host, and scope.hosts lists the resolved trees.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC6",
+      "assertion": "dist/revisit.md names the three Hosts, the --root-means-Pi rule and the two Antigravity limitations; loader link anchors still resolve and the regenerated Antigravity package mirror matches its source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/skill-dist-consistency.test.ts && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/revisit-multi-host-session-evidence.md",
+    "CONTEXT.md",
+    "README.md",
+    "docs/plans/revisit-multi-host-session-evidence.intent.json",
+    "docs/specs/revisit-multi-host-session-evidence.spec.md",
+    "docs/user_manual.md",
+    "plugins/immune-brain/dist/revisit.md",
+    "plugins/immune-brain/skills/revisit/SKILL.md",
+    "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+    "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+    "tests/fixtures/review-retro-antigravity/brain/c1/.system_generated/logs/transcript_full.jsonl",
+    "tests/fixtures/review-retro-antigravity/cache/conversation_metadata.json",
+    "tests/fixtures/review-retro-claude/proj/c1.jsonl",
+    "tests/review-retro-analyzer.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

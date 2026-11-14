@@ -1,0 +1,220 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-multi-host-session-evidence",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-multi-host-session-evidence",
+    "goal": "Upstream Brainstorm manifest BR-REQ-1/BR-REQ-2, decisions BR-DEC-1..BR-DEC-5 (docs/specs/revisit-multi-host-session-evidence.spec.md). revisit's session report reads Pi, Claude Code and Antigravity CLI transcripts instead of Pi only, so a Lane that ran on a non-Pi Host appears in a workflow-health retro. Counting rules, report sections and --audit stay unchanged; the only machine-contract change is an additive `host` field on immune_brain/revisit_evidence/v2 (BR-DEC-4). With no --host and no --root every existing standard root is scanned and the header prints one host line per tree; --root alone still means this Pi tree only (BR-DEC-2). Delegated technical choices grounded in read-only probes: Kernel ops normalize to name imm_kernel_canary plus op across Hosts (Claude mcp__...__<op>, Antigravity call_mcp_tool with ServerName immune-brain); edit tools extend to Claude Edit/Write/MultiEdit and Antigravity edit_file/write_file/replace_file_content/write_to_file; Antigravity Python-repr Arguments is parsed by a bounded reader and an unparsable value yields the event without arguments; Antigravity cwd is conversation_metadata WorkspaceURIs[0] with file:// stripped, absent metadata yields unknown (BR-DEC-3); Antigravity invoke_subagent is not counted as a review dispatch and the limitation is recorded in the contract. Antigravity GUI protobuf SQLite transcripts are out of scope (BR-OUT-1), as are model ranking, derived metrics and snapshot/diff (BR-OUT-2); per-host split columns are deferred (BR-DEFER-1). Spec docs/specs/revisit-multi-host-session-evidence.spec.md is the Technical Design baseline.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "resolveHosts({hosts: [], root: \"\"}, fakeHome) over a fake home holding all three standard trees returns Pi, Claude and Antigravity with their roots; an empty fake home returns nothing; --host claude --root <dir> resolves exactly one entry.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "The Claude fixture yields one registration for its task, its blocking finding, one edit author and one review dispatch; a tool_use name outside the known Kernel ops and edit tools contributes no registration or finding and throws nothing.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "The Antigravity fixture yields one registration from call_mcp_tool/immune-brain..., the task id from Arguments, and the cwd from WorkspaceURIs[0] with file:// stripped; an unparsable Arguments yields the event without arguments; a conversation id absent from the metadata yields cwd unknown and a counted session.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "--root <dir> alone prints exactly one pi host line and scans no other tree; --root with two --host values exits non-zero with the usage string; --host claude on a missing root reports zero sessions without throwing.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "--json still emits immune_brain/revisit_evidence/v2, every sessions[] and events[] entry carries a non-empty host, and scope.hosts lists the resolved trees.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC6",
+        "assertion": "dist/revisit.md names the three Hosts, the --root-means-Pi rule and the two Antigravity limitations; loader link anchors still resolve and the regenerated Antigravity package mirror matches its source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/skill-dist-consistency.test.ts && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/revisit-multi-host-session-evidence.md",
+      "CONTEXT.md",
+      "README.md",
+      "docs/plans/revisit-multi-host-session-evidence.intent.json",
+      "docs/specs/revisit-multi-host-session-evidence.spec.md",
+      "docs/user_manual.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/SKILL.md",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+      "tests/fixtures/review-retro-antigravity/brain/c1/.system_generated/logs/transcript_full.jsonl",
+      "tests/fixtures/review-retro-antigravity/cache/conversation_metadata.json",
+      "tests/fixtures/review-retro-claude/proj/c1.jsonl",
+      "tests/review-retro-analyzer.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-multi-host-session-evidence.intent.json",
+    "content_hash": "sha256:7fd445a93e11bdf0c33657fd19e69e26f216c15331f5e789f8e9e9dcf7a294f4"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:7fd445a93e11bdf0c33657fd19e69e26f216c15331f5e789f8e9e9dcf7a294f4",
+  "git_base_head": "855c004f6f3851dbc528e0fa5a9b4504260ebb9c",
+  "attestations": [
+    {
+      "id": "approval-qa-d84ea68a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fd445a93e11bdf0c33657fd19e69e26f216c15331f5e789f8e9e9dcf7a294f4",
+      "diff_hash": "sha256:f1a678566e0c4ea9b04b5986ce346103b1695fe62a2e56e59c8f3fa70813c34d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        },
+        {
+          "acceptance_id": "AC6",
+          "status": "passed",
+          "summary": "host-attested QA: all 7 project verification check(s) passed; execution=sha256:9d7856e6a62c9b9ef1a8cff5fb8218078c863719491b9440ee5defe97c57f082"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-eb4721f2",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:7fd445a93e11bdf0c33657fd19e69e26f216c15331f5e789f8e9e9dcf7a294f4",
+      "diff_hash": "sha256:f1a678566e0c4ea9b04b5986ce346103b1695fe62a2e56e59c8f3fa70813c34d",
+      "actor_id": "cli:claude-code:25427934-5f2f-4d1c-aeb3-0445e30940c4",
+      "summary": "Provenance verified (b3ecf71e parent 855c004f, tree c365b23f); the diff meets AC1-AC6: resolveHosts discovery, Claude and Antigravity readers with Kernel-op normalization, bounded repr parser, the --root-means-Pi rule, additive host and scope.hosts fields on v2, and the docs plus a byte-identical Antigravity mirror (same blob OIDs); blast radius medium, load-bearing session_evidence.ts, review_retro.ts and the additive revisit_evidence/v2 JSON shape.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "855c004f6f3851dbc528e0fa5a9b4504260ebb9c",
+        "review_commit": "b3ecf71e1c61fd2f065bd01e72743b9569238d46",
+        "review_tree": "c365b23f0c4a47e391770112a5636d3f56a31082",
+        "manifest_digest": "sha256:7184a759fc2eb0f9f21773ba881c20a2e1f315570e45496e8545ff2caeb96518"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-f36b5a2148f8-1-review-1",
+          "acceptance_id": "AC4",
+          "summary": "The shared emit helpers also change the Pi path: stop_applied now accepts op 'stop' and a missing result.state, and isReviewSubagent accepts the immune-brain:immune-brain-review and immune-brain:immune-brain-code-review subagent types. Spec D1/D6 say Pi counters and candidate chains stay untouched and Pi-only reports stay text-identical; these changes are arguably more correct but were never authorized and no test pins them.",
+          "anchor": "sha256:de553d9af4d5d166ec0db57019e804a4120b01925f74c33a2c27d9c3e3715fcf",
+          "evidence": {
+            "trigger": "A Pi session with an imm_kernel_canary op 'stop' result {lifecycle:'stopped'} and no state, followed by user input and another kernel call, used to emit a user_resume candidate and now emits none. A Pi Agent call with subagent_type 'immune-brain:immune-brain-review' now emits a review event and captures a receipt where before it did neither.",
+            "caller_chain": [
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:readSession",
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:emitToolResult",
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:isReviewSubagent",
+              "plugins/immune-brain/skills/revisit/scripts/review_retro.ts:candidates"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC4"
+            }
+          }
+        },
+        {
+          "id": "review-f36b5a2148f8-2-review-2",
+          "acceptance_id": "AC3",
+          "summary": "On Antigravity no review receipt can ever be observed: invoke_subagent is not a review dispatch and GENERIC results carry no call id. So any submit_review that relies on the Host-observed receipt instead of an inline verdict raises review_without_verdict. dist/revisit.md records the two limitations but not this effect on that candidate kind.",
+          "anchor": "sha256:9efb4bdb50f3854d271b9e3d2b0edcad61ffe5ab63bdce8dc1bb3381c65371a4",
+          "evidence": {
+            "trigger": "An Antigravity transcript with call_mcp_tool ToolName submit_review whose Arguments has no 'verdict' key produces registration.without_verdict=true and a review_without_verdict candidate chain, even though the Kernel accepted a receipt-based verdict.",
+            "caller_chain": [
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:readAntigravitySession",
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:emitToolCall",
+              "plugins/immune-brain/skills/revisit/scripts/review_retro.ts:candidates"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:c327f75c583e013d8f261c912cc1bedd20f66ff086a78e80badefdfbda4e6481"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-multi-host-session-evidence:2026-11-14T14:02:50.015Z",
+      "at": "2026-11-14T14:02:50.015Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-multi-host-session-evidence.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-multi-host-session-evidence:2026-11-14T14:03:03.327Z",
+      "at": "2026-11-14T14:03:03.327Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d84ea68a\naction_v2_sha256:9ac4d882b1f8a5f4cadcad05733663a32935408ef9c3f42ce60eb5b7c4a6851d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-14T14:03:03.327Z"
+      }
+    },
+    {
+      "id": "record_approval:revisit-multi-host-session-evidence:2026-11-14T15:36:41.914Z",
+      "at": "2026-11-14T15:36:41.914Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-eb4721f2\naction_v2_sha256:af6cfdece594156bc9f3c4480b92fd678cba81559e099902e847532ede237954",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:25427934-5f2f-4d1c-aeb3-0445e30940c4",
+        "confirmation_ref": "antigravity:cli:claude-code:25427934-5f2f-4d1c-aeb3-0445e30940c4",
+        "issued_at": "2026-11-14T15:36:41.914Z"
+      },
+      "review_started_at": "2026-11-14T15:35:07.883Z",
+      "review_submitted_at": "2026-11-14T15:36:40.720Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:revisit-multi-host-session-evidence:2026-11-14T15:36:45.310Z",
+      "at": "2026-11-14T15:36:45.310Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:5ad313391571c659ac9e2864dabd68a2ca6592fd7d5951893881698e0360c9d8"
+    }
+  ]
+}

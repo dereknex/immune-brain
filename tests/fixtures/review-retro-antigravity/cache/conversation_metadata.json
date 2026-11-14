@@ -1,0 +1,11 @@
+{
+  "conversations": {
+    "c1": {
+      "summary": {
+        "WorkspaceURIs": [
+          "file:///tmp/antigravity-app"
+        ]
+      }
+    }
+  }
+}

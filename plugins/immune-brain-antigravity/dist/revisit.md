@@ -1,11 +1,11 @@
 ---
 name: revisit
-description: Use when the user explicitly requests an Immune-Brain workflow-health retro and workflow-friction diagnosis over recent pi session logs.
+description: Use when the user explicitly requests an Immune-Brain workflow-health retro and workflow-friction diagnosis over recent Host session logs.
 ---
 
 # Immune-Brain: Revisit
 
-Diagnose workflow friction from Pi session logs and, with `--audit`, committed
+Diagnose workflow friction from Pi, Claude Code and Antigravity CLI session logs and, with `--audit`, committed
 terminal runs over a user-supplied window. It ranks no models. This
 is a standalone host-native analysis entry, not a Managed Path continuation
 and not an `drive` internal-role dispatch. It reviews no diff — a diff
@@ -13,15 +13,18 @@ review is `code-review`.
 
 ## Boundary
 
-Allowed: read pi session JSONL under `~/.pi/agent/sessions` (or `--root`),
+Allowed: read session JSONL across the three supported Hosts — Pi (`~/.pi/agent/sessions`),
+Claude Code (`~/.claude/projects`), and Antigravity CLI (`~/.gemini/antigravity-cli/brain` plus
+`~/.gemini/antigravity-cli/cache/conversation_metadata.json`) — or `--root`,
 read the committed `.imm/audit/` of one named project at HEAD through
 `--audit <project-root>` (ADR 0032, `docs/adr/0032-revisit-reads-committed-audit.md` in the source repository),
 run the bundled analyzer, and write a stdout report.
 
 Blocked: code, test, Spec, Plan, or `.imm/` edits; session-log writes;
 Kernel, TaskIntent, or TaskRecord mutation; Compounder or scheduled runs;
-reading live `.imm/` state, SQLite or the authority store; working-tree audit
-files; derived review metrics (rounds-to-pass median or p95, shares, per-model
+reading live `.imm/` state, SQLite or the authority store (including Antigravity GUI
+protobuf SQLite transcripts under `~/.gemini/antigravity/conversations/*.db`, which are out of scope);
+working-tree audit files; derived review metrics (rounds-to-pass median or p95, shares, per-model
 breakdowns).
 
 An already active Managed task remains owned by `drive`. This Skill does
@@ -56,8 +59,22 @@ No daemon, no cron, no CI, no automatic commit.
 These rules keep numbers comparable across runs. Read the analyzer header
 aloud in the report so the 口径 stays visible.
 
-- One session file is one session; its header `cwd` drives `--project` and
-  `--exclude`.
+- One transcript file is one session on every Host. Its `cwd` drives
+  `--project` and `--exclude`: Pi reads header `cwd`, Claude Code reads entry
+  `cwd`, and Antigravity CLI reads `conversations[<id>].summary.WorkspaceURIs[0]`
+  from `conversation_metadata.json` with `file://` stripped (absent metadata or
+  a missing id yields `unknown`, which `--project`/`--exclude` do not match).
+- Kernel operations normalize to `name: "imm_kernel_canary"` and `op: "<op>"`
+  across Hosts: Pi `imm_kernel_canary`, Claude Code `mcp__…__<op>`, and
+  Antigravity CLI `call_mcp_tool` with `ServerName` starting with
+  `immune-brain` and `ToolName` in the Kernel op set. Antigravity `Arguments`
+  Python-repr strings are parsed by a bounded reader; an unparsable value
+  yields the event without arguments instead of failing the run.
+- Claude Code `tool_result` blocks live inside `user` entries; a `user` entry
+  carrying only `tool_result` blocks counts as tool results, not `user_input`.
+  On Antigravity CLI, `invoke_subagent` is not counted as a `review` dispatch
+  and `GENERIC` tool-output steps carry no call id, so tool results are never
+  joined to their calls (`call_line: null`).
 - Timestamps are parsed to epoch milliseconds (ISO strings with any offset, or
   numeric milliseconds) and compared with the window. A line with a missing or
   unparsable timestamp is skipped and counted in the header
@@ -77,8 +94,10 @@ aloud in the report so the 口径 stays visible.
   `recorded cleanly`, `receipt recorded`, `round recorded`, or `no finding(s)`
   receive a bookkeeping marker (unverified), excluded from `blocking` /
   `advisory` totals without changing their structured kind.
-- The analyzer records the last editor model (`edit`, `write`, `multiedit`,
-  `apply_patch`) as an `author` field on each review and finding event. When a
+- The analyzer records the last editor model (Pi `edit`, `write`, `multiedit`,
+  `apply_patch`; Claude Code `Edit`, `Write`, `MultiEdit`; Antigravity CLI
+  `edit_file`, `write_file`, `replace_file_content`, `write_to_file`) as an
+  `author` field on each review and finding event. When a
   session carries `violated.kind` on blocking findings, the report adds one
   `review quality` section listing, per author model, the `acceptance` / and
   `security_boundary` counts, plus `resolve` / `refute` /
@@ -129,25 +148,34 @@ Run the bundled analyzer with `bun`. The session reader imports only `node:` API
 Kernel's `readAuditTaskPair`, so Bun is the supported runtime.
 
 ```
-bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <iso>]) [--json] [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]
+bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <iso>]) [--json] [--host <pi|claude|antigravity>]... [--root <sessions-dir>] [--project <substr>] [--exclude <substr>]... [--audit <project-root> [--sessions] [--sample <n>]]
 ```
 
 - `<days>` must be `> 0`; it resolves one absolute window. `--since` and `--until` select a reproducible half-open ISO window; `--until` defaults to now.
 - `--json` outputs the `immune_brain/revisit_evidence/v2` session evidence
   document instead of the text report: line pointers, sessions with activity in
   the window, and candidates grouped by kind and key (`occurrences` plus every
-  chain). A resume after an `error` or `aborted` stop is an `error_resume`; a
+  chain). Every `sessions[]` and `events[]` entry carries a non-empty `host`
+  field, and `scope.hosts` lists the resolved trees. A resume after an `error`
+  or `aborted` stop is an `error_resume`; a
   `user_resume` chain also carries `last_result`, `last_result_is_error`,
   `last_result_state` and `reply_chars` to locate it. The text report prints
   one line per group and at most five groups per kind.
-- Every `events[]` entry carries `session`, `line`, `entry_id`, `timestamp`,
+- Every `events[]` entry carries `host`, `session`, `line`, `entry_id`, `timestamp`,
   `role`, `cwd`, `task_id`, `run_id` and `type`: `user_input` (`skill`,
   `instruction`, `chars`); `tool_call` (`tool_call_id`, `name`, `op`,
   `author`); `tool_result` (`tool_call_id`, `call_line`, `is_error`, and
   `state`, `lifecycle`, `batch_id`, `batch_state`, `stop_applied` when
   present); `turn_end` (`stop_reason`); `review`; `registration`; `finding`.
   Result text is not copied into events; read it at `session#line`.
-- `--root` defaults to `~/.pi/agent/sessions`.
+- `--host <pi|claude|antigravity>` (repeatable) restricts the scan to the named
+  Host(s); `--host` on a missing root reports zero sessions without throwing.
+  With neither `--host` nor `--root`, every existing standard root is scanned
+  (`~/.pi/agent/sessions`, `~/.claude/projects`, `~/.gemini/antigravity-cli/brain`)
+  and the header prints one `host: <name> <root> sessions=<n>` line per tree.
+- `--root <dir>` alone keeps meaning "this Pi tree only" (`host: pi`); with one
+  `--host`, it scans `<dir>` using that Host's reader. Combining `--root` with
+  more than one `--host` value is a usage error.
 - `--project` keeps sessions whose `cwd` contains the substring.
 - `--exclude` drops sessions whose `cwd` contains the substring; repeat it for
   several. Combined with `--project`, a session must match the project and none
@@ -265,3 +293,9 @@ Re-run with a new window when the user wants a later period.
 
 The personal python prototype under `~/.pi/agent/skills/review-retro/` is
 not this Skill and is not modified by it.
+
+Antigravity CLI limitations: (1) `invoke_subagent` is not counted as a review
+dispatch because sampled transcripts do not identify a review role reliably;
+(2) `GENERIC` tool-output steps carry no call id, so tool results are not
+joined to their calls (`call_line: null`). Antigravity GUI SQLite protobuf
+transcripts (`~/.gemini/antigravity/conversations/*.db`) are out of scope.

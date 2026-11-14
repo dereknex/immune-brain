@@ -1,12 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { readSession, run } from "../plugins/immune-brain/skills/revisit/scripts/review_retro.ts";
+import {
+	readAntigravitySession,
+	readClaudeSession,
+	readSession,
+	resolveHosts,
+	run,
+} from "../plugins/immune-brain/skills/revisit/scripts/review_retro.ts";
 
 const ROOT = resolve(import.meta.dir, "fixtures/review-retro");
+const CLAUDE_ROOT = resolve(import.meta.dir, "fixtures/review-retro-claude");
+const ANTIGRAVITY_BRAIN_ROOT = resolve(import.meta.dir, "fixtures/review-retro-antigravity/brain");
 const CONTRACT_ROOT = resolve(import.meta.dir, "fixtures/review-retro-contract");
 const QUALITY_ROOT = resolve(import.meta.dir, "fixtures/review-retro-quality");
+const SCRIPT_PATH = resolve(import.meta.dir, "../plugins/immune-brain/skills/revisit/scripts/review_retro.ts");
 const WIDE_WINDOW = { cutMs: 0, project: "", exclude: [] };
 
 function turn(timestamp: unknown, call: { name: string; id: string; arguments?: unknown }, model = "m1"): string {
@@ -383,6 +393,180 @@ describe("review-retro analyzer", () => {
 			expect(report).toContain("user inputs: 0");
 			expect(report).toContain("blocking: 0 | advisory: 0 | bookkeeping marker (unverified): 1");
 		} finally { cleanup(); }
+	});
+
+	test("AC1: resolveHosts discovers all three standard trees, returns empty on empty home, and honors --host with --root", () => {
+		const fakeHome = mkdtempSync(join(tmpdir(), "retro-home-"));
+		try {
+			expect(resolveHosts({ hosts: [], root: "" }, fakeHome)).toEqual([]);
+			const piRoot = join(fakeHome, ".pi/agent/sessions");
+			const claudeRoot = join(fakeHome, ".claude/projects");
+			const agRoot = join(fakeHome, ".gemini/antigravity-cli/brain");
+			mkdirSync(piRoot, { recursive: true });
+			mkdirSync(claudeRoot, { recursive: true });
+			mkdirSync(agRoot, { recursive: true });
+			expect(resolveHosts({ hosts: [], root: "" }, fakeHome)).toEqual([
+				{ host: "pi", root: piRoot, layout: "pi" },
+				{ host: "claude", root: claudeRoot, layout: "claude" },
+				{ host: "antigravity", root: agRoot, layout: "antigravity" },
+			]);
+			expect(resolveHosts({ hosts: ["claude"], root: "/custom/claude" }, fakeHome)).toEqual([
+				{ host: "claude", root: "/custom/claude", layout: "claude" },
+			]);
+		} finally {
+			rmSync(fakeHome, { recursive: true, force: true });
+		}
+	});
+
+	test("AC2: reads Claude Code fixture with Kernel op normalization, edit author, review dispatch, and unknown tool resilience", async () => {
+		const session = await readClaudeSession(join(CLAUDE_ROOT, "proj/c1.jsonl"), WIDE_WINDOW);
+		expect(session).not.toBeNull();
+		expect(session!.host).toBe("claude");
+		expect(session!.cwd).toBe("/tmp/claude-app");
+		expect(session!.session_id).toBe("c1");
+		expect(session!.edits).toBe(1);
+		const regs = session!.events.filter((e) => e.type === "registration");
+		expect(regs).toHaveLength(1);
+		expect(regs[0]).toMatchObject({ host: "claude", taskId: "cl-t1", author: "claude-sonnet-5-5" });
+		const findings = session!.events.filter((e) => e.type === "finding");
+		expect(findings).toHaveLength(1);
+		expect(findings[0]).toMatchObject({ host: "claude", kind: "blocking", summary: "claude blocking defect", author: "claude-sonnet-5-5" });
+		const reviews = session!.events.filter((e) => e.type === "review");
+		expect(reviews).toHaveLength(1);
+		expect(reviews[0]).toMatchObject({ host: "claude", author: "claude-sonnet-5-5" });
+		// Tool-result-only user entries do not emit user_input; only the opening text prompt counts.
+		expect(session!.events.filter((e) => e.type === "user_input")).toHaveLength(1);
+		// Unknown tool_use (Read, unknown_op) contributes no registration or finding.
+		expect(session!.events.some((e) => e.type === "tool_call" && e.name === "Read" && e.op === null)).toBe(true);
+		expect(session!.events.some((e) => e.type === "tool_call" && e.name === "mcp__plugin_immune-brain_immune-brain__unknown_op" && e.op === null)).toBe(true);
+
+		const out = await run(["--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--host", "claude", "--root", CLAUDE_ROOT]);
+		expect(out).toContain(`host: claude ${CLAUDE_ROOT} sessions=1`);
+		expect(out).toContain("1.0 rounds/task");
+		expect(out).toContain("blocking: 1 | advisory: 0 | bookkeeping marker (unverified): 0");
+	});
+
+	test("AC3: reads Antigravity fixture, Python-repr Arguments, WorkspaceURIs cwd, unparsable Arguments, and absent metadata", async () => {
+		const session = await readAntigravitySession(
+			join(ANTIGRAVITY_BRAIN_ROOT, "c1/.system_generated/logs/transcript_full.jsonl"),
+			WIDE_WINDOW,
+		);
+		expect(session).not.toBeNull();
+		expect(session!.host).toBe("antigravity");
+		expect(session!.cwd).toBe("/tmp/antigravity-app");
+		expect(session!.session_id).toBe("c1");
+		expect(session!.edits).toBe(1);
+		const regs = session!.events.filter((e) => e.type === "registration");
+		expect(regs).toHaveLength(1);
+		expect(regs[0]).toMatchObject({ host: "antigravity", taskId: "ag-t1", author: "gemini-4-hydrogen-high" });
+		const findings = session!.events.filter((e) => e.type === "finding");
+		expect(findings).toHaveLength(1);
+		expect(findings[0]).toMatchObject({ host: "antigravity", kind: "blocking", summary: "antigravity blocking defect" });
+		// Unparsable Arguments still yields the normalized tool_call event without arguments.
+		const unparsableCall = session!.events.find((e) => e.type === "tool_call" && e.name === "imm_kernel_canary" && e.op === "status");
+		expect(unparsableCall).toMatchObject({ host: "antigravity", task_id: "unknown" });
+		// Antigravity invoke_subagent is not counted as a review dispatch, and GENERIC results carry call_line: null.
+		expect(session!.events.filter((e) => e.type === "review")).toHaveLength(0);
+		const results = session!.events.filter((e) => e.type === "tool_result");
+		expect(results.length).toBeGreaterThan(0);
+		expect(results.every((r) => r.type === "tool_result" && r.call_line === null)).toBe(true);
+
+		// Absent conversation id in metadata (and absent metadata file) yields cwd "unknown" and a counted session.
+		const tempRoot = mkdtempSync(join(tmpdir(), "retro-ag-missing-"));
+		try {
+			const missingIdPath = join(tempRoot, "brain/absent-id/.system_generated/logs/transcript_full.jsonl");
+			mkdirSync(join(tempRoot, "brain/absent-id/.system_generated/logs"), { recursive: true });
+			mkdirSync(join(tempRoot, "cache"), { recursive: true });
+			cpSync(join(ANTIGRAVITY_BRAIN_ROOT, "c1/.system_generated/logs/transcript_full.jsonl"), missingIdPath);
+			cpSync(resolve(ANTIGRAVITY_BRAIN_ROOT, "../cache/conversation_metadata.json"), join(tempRoot, "cache/conversation_metadata.json"));
+			const absentSession = await readAntigravitySession(missingIdPath, WIDE_WINDOW);
+			expect(absentSession).not.toBeNull();
+			expect(absentSession!.cwd).toBe("unknown");
+			expect(absentSession!.used).toBe(true);
+
+			const report = await run(["--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--host", "antigravity", "--root", join(tempRoot, "brain")]);
+			expect(report).toContain("sessions: 1 |");
+			expect(report).toContain("1.0 rounds/task");
+
+			rmSync(join(tempRoot, "cache"), { recursive: true, force: true });
+			const noMetaSession = await readAntigravitySession(missingIdPath, WIDE_WINDOW);
+			expect(noMetaSession!.cwd).toBe("unknown");
+		} finally {
+			rmSync(tempRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("AC4 & AC5 & BR-SCN-1: CLI host/root rules, multi-host merged report, and additive v2 JSON contract", async () => {
+		// --root alone prints exactly one host: pi line and scans no other tree.
+		const piOnly = await run(["--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--root", ROOT]);
+		const piHostLines = piOnly.split("\n").filter((l) => l.startsWith("host: "));
+		expect(piHostLines).toEqual([`host: pi ${ROOT} sessions=2`]);
+
+		// --root with two --host values rejects / exits non-zero with the usage string.
+		await expect(run(["1", "--host", "pi", "--host", "claude", "--root", ROOT])).rejects.toThrow(/usage:/);
+		const badCli = spawnSync("bun", [SCRIPT_PATH, "1", "--host", "pi", "--host", "claude", "--root", ROOT], { encoding: "utf8" });
+		expect(badCli.status).not.toBe(0);
+		expect(badCli.stderr).toContain("usage:");
+
+		// --host claude on a missing root reports zero sessions without throwing.
+		const emptyHome = mkdtempSync(join(tmpdir(), "retro-empty-home-"));
+		try {
+			const missingRootCli = spawnSync(
+				"bun",
+				[SCRIPT_PATH, "--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--host", "claude"],
+				{ encoding: "utf8", env: { ...process.env, HOME: emptyHome } },
+			);
+			expect(missingRootCli.status).toBe(0);
+			expect(missingRootCli.stdout).toContain(`host: claude ${join(emptyHome, ".claude/projects")} sessions=0`);
+			expect(missingRootCli.stdout).toContain("sessions: 0 |");
+		} finally {
+			rmSync(emptyHome, { recursive: true, force: true });
+		}
+
+		// BR-SCN-1 & AC5: fake home holding Pi, Claude, and Antigravity merges totals, emits host headers, and populates v2 JSON host fields.
+		const multiHome = mkdtempSync(join(tmpdir(), "retro-multi-home-"));
+		try {
+			cpSync(ROOT, join(multiHome, ".pi/agent/sessions"), { recursive: true });
+			cpSync(CLAUDE_ROOT, join(multiHome, ".claude/projects"), { recursive: true });
+			cpSync(ANTIGRAVITY_BRAIN_ROOT, join(multiHome, ".gemini/antigravity-cli/brain"), { recursive: true });
+			cpSync(resolve(ANTIGRAVITY_BRAIN_ROOT, "../cache"), join(multiHome, ".gemini/antigravity-cli/cache"), { recursive: true });
+
+			const mergedCli = spawnSync(
+				"bun",
+				[SCRIPT_PATH, "--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z"],
+				{ encoding: "utf8", env: { ...process.env, HOME: multiHome } },
+			);
+			expect(mergedCli.status).toBe(0);
+			const hostLines = mergedCli.stdout.split("\n").filter((l) => l.startsWith("host: "));
+			expect(hostLines).toEqual([
+				`host: pi ${join(multiHome, ".pi/agent/sessions")} sessions=2`,
+				`host: claude ${join(multiHome, ".claude/projects")} sessions=1`,
+				`host: antigravity ${join(multiHome, ".gemini/antigravity-cli/brain")} sessions=1`,
+			]);
+			expect(mergedCli.stdout).toContain("sessions: 4 |");
+			expect(mergedCli.stdout).toContain("blocking: 3 | advisory: 1 | bookkeeping marker (unverified): 1");
+
+			const jsonCli = spawnSync(
+				"bun",
+				[SCRIPT_PATH, "--since", "2000-01-01T00:00:00Z", "--until", "2100-01-01T00:00:00Z", "--json"],
+				{ encoding: "utf8", env: { ...process.env, HOME: multiHome } },
+			);
+			expect(jsonCli.status).toBe(0);
+			const doc = JSON.parse(jsonCli.stdout);
+			expect(doc.contract).toBe("immune_brain/revisit_evidence/v2");
+			expect(doc.scope.hosts).toEqual([
+				{ host: "pi", root: join(multiHome, ".pi/agent/sessions"), layout: "pi" },
+				{ host: "claude", root: join(multiHome, ".claude/projects"), layout: "claude" },
+				{ host: "antigravity", root: join(multiHome, ".gemini/antigravity-cli/brain"), layout: "antigravity" },
+			]);
+			expect(doc.sessions).toHaveLength(4);
+			for (const s of doc.sessions) expect(typeof s.host === "string" && s.host.length > 0).toBe(true);
+			expect(doc.events.length).toBeGreaterThan(0);
+			for (const e of doc.events) expect(typeof e.host === "string" && e.host.length > 0).toBe(true);
+			expect(doc.sessions.map((s: any) => s.host)).toEqual(["pi", "pi", "claude", "antigravity"]);
+		} finally {
+			rmSync(multiHome, { recursive: true, force: true });
+		}
 	});
 
 });

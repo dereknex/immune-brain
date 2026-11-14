@@ -9,7 +9,7 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 - `prune-docs`：在显式 manifest 批准后清理过期当前文档，不创建 Managed authority。
 - `slim`：在显式 manifest 批准后整理 tracked agent instruction 文件，不创建 Managed authority。
 - `prune-tests`：在显式 manifest 批准后合并、参数化或删除冗余测试，不弱化断言，不创建 Managed authority。
-- `revisit`：按模型统计审查负载与项目使用量，只读 session logs，不创建 Managed authority。
+- `revisit`：从 Pi、Claude Code 与 Antigravity CLI session logs 及可选 committed audit 诊断工作流健康度与返工摩擦，不排名模型，只读不创建 Managed authority。
 
 ### `prune-docs`
 
@@ -25,7 +25,7 @@ Immune-Brain 是一套 Skill-explicit Managed 工作流，支持 Pi 与本地交
 
 ### `revisit`
 
-独立按模型排名审查负载，并报告 sessions、turns、编辑量、工具分布与 top projects。默认扫描用户全部 pi session logs，`--project` 按 cwd 子串限定。它不审查 diff、不写 session logs、不进入 Managed Path。
+独立诊断工作流健康度与摩擦链路，报告 sessions、turns、编辑量、工具分布与 candidate chains（不排名模型）。默认自动扫描本机存在的 Pi、Claude Code 与 Antigravity CLI 标准 session logs（可用 `--host` 指定 Host；仅传 `--root` 时按 Pi 目录读取），`--project` 按 cwd 子串限定。它不审查 diff、不写 session logs、不进入 Managed Path。
 
 Executor、QA、Review、learning 和 architecture exploration 都是
 `drive` 使用的内部 runtime roles/tools。Loop 内部 `pr-fix` role 与独立
