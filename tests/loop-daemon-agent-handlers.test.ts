@@ -27,6 +27,7 @@ import type { LoopConfig } from "../plugins/immune-brain/runtime/config/layered_
 import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
 import {
 	createAgentHandlerPort,
+	createDefaultAgentHandlerDeps,
 	readPlanPublication,
 	type AgentDriveRequest,
 	type AgentDriveResult,
@@ -1053,5 +1054,17 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(result.dispatches[0]!.outcome).toBe("failed");
 		expect(result.dispatches[0]!.detail).toContain("unauthorized path");
 		expect(harness.sessions.requests).toHaveLength(0);
+	});
+
+	it("resolves pluginRoot from runtime location so default deps run imm-kernel in external repositories", () => {
+		const workspace = makeWorkspace();
+		cleanups.push(workspace.cleanup);
+		expect(existsSync(join(workspace.root, "plugins", "immune-brain"))).toBe(false);
+
+		const deps = createDefaultAgentHandlerDeps(workspace.root);
+		const inspected = deps.runKernel({ argv: ["inspect", "--json"], cwd: workspace.root });
+
+		expect(inspected.exit_code).toBe(0);
+		expect((inspected.json as any)?.contract).toBe("assurance_kernel/inspect/v1");
 	});
 });

@@ -93,7 +93,7 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 
 ## Naming checklist
 
-新 skill 名必须通过五项检查（#318，2026-10-28 采纳；ADR 0031）：
+新 skill 名必须通过五项检查（#318，2026-10-28 采纳）：
 
 1. 不是 Claude Code 内置命令（例如 `/plan`、`/run`、`/review`）。
 2. 不是 Pi 内置命令（例如 `/plan`）。
@@ -101,12 +101,12 @@ Canary Work 和 Work 不再是用户工作流入口。相关 extension/tool sour
 4. 不与本插件的其他 skill 重名。
 5. 不与本地 local user skill or command 重名：同名的用户或项目 command 会被当作 alias 解析，同名的用户或项目 skill 会让裸名入口不签发运行令牌（Pi 上 `skill:` 前缀同样不签发），只剩 Claude Code 上的 `/immune-brain:<name>` 可用。
 
-名字统一用动词（`clarify → draw-up → drive`），不加 `imm-` 前缀，不设 alias。
+Managed 主链路与常规独立 Skill 使用动词（`clarify → draw-up → drive`），不设兼容 alias；当裸名与宿主内置命令冲突且需与同名守护进程 CLI / GitHub 指令保持一致时，使用 `imm-` 前缀（如 `imm-loop`）。
 
 ## Surface 与验证
 
-`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、八个 `SKILL.md`、
-八个 `dist/<skill>.md` 和 package manifest 必须保持一致。未注册的旧 `dist/*.md`
+`plugins/immune-brain/skills/registry.yaml`、`dist/registry.yaml`、各公开 `SKILL.md`、
+对应 `dist/<skill>.md` 和 package manifest 必须保持一致。未注册的旧 `dist/*.md`
 entry files、旧 Skill directories 和兼容 aliases 必须不存在。
 
 新 skill 立约定（2026-10-27 采纳，源自 google/elephant-goldfish-model 每个 skill

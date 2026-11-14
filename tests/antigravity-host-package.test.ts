@@ -41,7 +41,7 @@ const ROLES = [
 	"immune-brain-review-verifier",
 	"immune-brain-ui-review",
 ];
-const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
 
 const scratch: string[] = [];
 function scratchDir(label: string): string {

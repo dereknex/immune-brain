@@ -175,6 +175,14 @@ export const SKILL_OWNED_ENTRIES: PackagedContractEntry[] = [
 			"Packaged contract is its own authoring source; plugins/immune-brain/skills/revisit/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
 		skill: "revisit",
 	},
+	{
+		packaged: "imm-loop.md",
+		source: null,
+		kind: "owned",
+		reason:
+			"Packaged contract is its own authoring source; plugins/immune-brain/skills/imm-loop/SKILL.md is a minimal loader that references it. Legitimate size difference, no byte identity.",
+		skill: "imm-loop",
+	},
 ];
 
 export const PACKAGED_CONTRACT_ENTRIES: PackagedContractEntry[] = [

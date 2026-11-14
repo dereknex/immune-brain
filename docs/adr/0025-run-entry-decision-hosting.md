@@ -38,8 +38,8 @@ therefore must not be the only literal-user act behind starting execution.
 ## Decision
 
 1. **The literal entry authorizes the run's internal steps.** When the Host input event sees
-   a literal-user `imm-run`, it mints one entry token bound to the session id
-   and the workspace realpath it was typed in. The token sits beside the
+   a literal-user `drive` entry (`imm-run` prior to the `#318` rename), it mints one entry token bound to the session id
+   and the workspace realpath it was typed in. Only a leading slash command enters a phase (`clarify`/`draw-up` → `plan`, `drive` → `run`): `immune-brain:<name>`, `skill:<name>` (unless shadowed on Pi by a same-named local skill), bare `<name>` unless shadowed by a local command alias or skill, or a local command alias whose body contains a single marked phase mention (`/drive`, `immune-brain:drive`, `skill:drive`); standalone skills including `imm-loop` mint no `run` token. The token sits beside the
    session's phase-entry state in the private cache. No MCP tool or tool
    argument can mint or supply one; a tool argument named `entry_token` or
    `native_decision` is refused. A model that writes the cache file by hand

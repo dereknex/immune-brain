@@ -125,6 +125,7 @@ Immune-Brain 提供两种清晰的工作模式：日常轻量编码走 **Host-na
 | Agent 指令文件膨胀 | `/slim` | → 将 tracked `AGENTS.md` / `CLAUDE.md` 压到最小必要上下文 |
 | 测试用例膨胀、重复 | `/prune-tests` | → 只读审计测试，仅合并或删除经审批、有退休或覆盖率证据的条目 |
 | 工作流在哪里遇到阻力、如何改进 | `/revisit` | → 基于会话证据诊断工作流阻力 |
+| 启动、停止或查看仓库后台 Loop 守护进程 | `/imm-loop` | → 通过 `bin/imm-loop` 查看状态/日志、执行 dry-run 或启停后台守护进程 |
 
 > **核心原则：Skill 显式调用**
 > - **普通输入保持 Host-native**：自然语言提问绝不自动绑架流程或发起 Enrollment。你完全自主决定何时开启严格工程保障。
@@ -416,7 +417,7 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 
 ---
 
-## 8 个 Skills
+## 9 个 Skills
 
 | Skill | 类型 | 何时使用 | 职责 |
 |---|---|---|---|
@@ -428,10 +429,11 @@ Immune-Brain 的核心假设是：**不要让弱模型做架构决策，把它�
 | `slim` | 独立 | Agent instruction 膨胀 | 将 tracked AGENTS/CLAUDE/GEMINI.md 压到最小必要上下文 |
 | `prune-tests` | 独立 | 测试膨胀或重复 | 合并、参数化或删除经审批的测试条目，不弱化断言 |
 | `revisit` | 独立 | 工作流阻力诊断 | 追溯证据，推荐一个后续步骤；不对模型排名 |
+| `imm-loop` | 独立 | 后台 Loop 守护进程控制 | 查看状态/日志、运行 dry-run tick，启停与暂停 `bin/imm-loop` |
 
 Executor、QA、Review、Compounder 等为 `drive` 内部调度的角色，无需手动调用。
 
-所有 8 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
+所有 9 个 Skill 均显式调用。新需求开发时：若需求含糊先调 `clarify`，目标清晰直接调 `draw-up`，完成确认后调 `drive` 推进闭环。
 
 ### Managed Path 入口（brainstorm → planner → loop）
 

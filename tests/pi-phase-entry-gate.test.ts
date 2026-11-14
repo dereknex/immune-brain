@@ -242,7 +242,7 @@ describe("Pi phase entry gate", () => {
 		expect(pi.dialogs.count).toBe(0);
 	});
 
-	test("a same-named user or project skill blocks both /drive and /skill:drive (ADR 0031)", async () => {
+	test("a same-named user or project skill blocks both /drive and /skill:drive (ADR 0025)", async () => {
 		for (const where of ["user", "project"] as const) {
 			const root = fixtureRoot();
 			const skillDir = where === "user" ? join(agentDir, "skills", "drive") : join(root, ".pi", "skills", "drive");

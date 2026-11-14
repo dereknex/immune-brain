@@ -242,14 +242,14 @@ _Avoid_: current acceptance field, QA attestation
 
 ## Skill Names
 
-The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). Dated history under `docs/plans`, `docs/specs`, `docs/adr` and `docs/reports` keeps the old names; this table maps them.
+The packaged workflow skills were renamed to bare verbs on 2026-10-28 (#318). Dated history under `docs/plans`, `docs/specs`, `docs/adr` and `docs/reports` keeps the old names; this table maps them. `imm-loop` serves as the background Loop Daemon Skill and CLI ([ADR 0039](docs/adr/0039-loop-daemon.md)).
 
 <!-- skill-rename-map:start -->
 | Old | New |
 |---|---|
 | `imm-brainstorm` | `clarify` |
 | `imm-planner` | `draw-up` |
-| `imm-run` (earlier `imm-loop`) | `drive` |
+| `imm-run` | `drive` |
 | `imm-retro` (earlier `imm-review-retro`) | `revisit` |
 | `imm-doc-slim` (earlier `imm-agent-doc-maintain`) | `slim` |
 | `imm-doc-prune` | `prune-docs` |
@@ -259,7 +259,7 @@ The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). D
 
 ## Architecture Map
 
-- Public entries: `plugins/immune-brain/skills/clarify/`, `draw-up/`, and `drive/` enter or continue the Managed Path; `fix-pr/` is the standalone host-native PR repair Skill, `prune-docs/` is the standalone host-native document maintenance Skill, `slim/` is the standalone host-native agent-instruction maintenance Skill, `prune-tests/` is the standalone host-native test-suite maintenance Skill, and `revisit/` is the standalone host-native workflow-health retro Skill; its `--audit <project-root>` mode reads the committed `.imm/audit/` of one named project at HEAD through `readAuditTaskPair` and reports lifecycle and raw review counts only ([ADR 0032](docs/adr/0032-revisit-reads-committed-audit.md)).
+- Public entries: `plugins/immune-brain/skills/clarify/`, `draw-up/`, and `drive/` enter or continue the Managed Path; `fix-pr/` is the standalone host-native PR repair Skill, `prune-docs/` is the standalone host-native document maintenance Skill, `slim/` is the standalone host-native agent-instruction maintenance Skill, `prune-tests/` is the standalone host-native test-suite maintenance Skill, `revisit/` is the standalone host-native workflow-health retro Skill; its `--audit <project-root>` mode reads the committed `.imm/audit/` of one named project at HEAD through `readAuditTaskPair` and reports lifecycle and raw review counts only ([ADR 0032](docs/adr/0032-revisit-reads-committed-audit.md)), and `imm-loop/` is the standalone daemon-control Skill for inspecting, starting, stopping, and pausing the background Loop Daemon ([ADR 0039](docs/adr/0039-loop-daemon.md)).
 - Planning artifacts: `docs/specs/` stores active Specs; `docs/plans/*.intent.json` stores active TaskIntents despite the historical directory name. Frozen artifacts move under the corresponding `archive/` directories.
 - Kernel authority: `plugins/immune-brain/runtime/kernel/` owns TaskIntent parsing, Enrollment, TaskRecord reduction/storage, claims, projections, and completion.
 - Worktree state: `.imm/state/kernel.sqlite` holds current authority — each run's TaskRecord, workspace ownership, claim state, run identity and terminal proof, written in one transaction per mutation. `.imm/audit/<task-id>/` stores settled terminal evidence (tracked); the database, its WAL/SHM siblings and backups are Git-ignored runtime state, and `.imm/state/tasks/*.json` survives only as retired layout that the explicit migration diagnoses.

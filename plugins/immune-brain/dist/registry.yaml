@@ -74,3 +74,12 @@ skills:
     output_artifacts: [retro_report]
     next_actions: []
     boundary: Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation.
+  - name: imm-loop
+    path: skills/imm-loop/SKILL.md
+    role: coordinate
+    title: Loop Daemon
+    role_class: coordinator
+    canonical: true
+    output_artifacts: [loop_daemon_status]
+    next_actions: [drive, fix-pr]
+    boundary: Manage and observe the repository Loop daemon in the background without minting a foreground Run binding or mutating Kernel authority directly.
