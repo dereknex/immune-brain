@@ -44,7 +44,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const PLUGIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../plugins/immune-brain");
 
 import type { LoopConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
@@ -575,7 +578,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(relayCalled).toBe(true);
 			expect(capturedInput.supervisor).toBeInstanceOf(LaneSupervisor);
 			expect(typeof capturedInput.parentHost).toBe("string");
-			expect(capturedInput.pluginDir).toBe(join(root, "plugins", "immune-brain"));
+			expect(capturedInput.pluginDir).toBe(PLUGIN_DIR);
 			expect(capturedInput.waitMs).toBe(10_000);
 			expect(capturedInput.extra?.chosen_option).toBe("opt-1");
 			const projectRes = await capturedInput.project(root, "issue-88");
@@ -2144,7 +2147,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(input.expectedRecordRevision).toBe("sha256:rev-100");
 			expect(input.supervisor).toBeInstanceOf(LaneSupervisor);
 			expect(typeof input.parentHost).toBe("string");
-			expect(input.pluginDir).toBe(join(root, "plugins", "immune-brain"));
+			expect(input.pluginDir).toBe(PLUGIN_DIR);
 			expect(input.waitMs).toBe(10_000);
 			expect(typeof input.project).toBe("function");
 			expect(typeof input.apply).toBe("function");
