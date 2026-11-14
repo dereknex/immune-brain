@@ -56,6 +56,7 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/skills/drive/SKILL.md",
 				"plugins/immune-brain/skills/draw-up/SKILL.md",
 				"plugins/immune-brain/skills/revisit/SKILL.md",
+				"plugins/immune-brain/skills/imm-loop/SKILL.md",
 				"plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
 				"plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
 				"plugins/immune-brain/skills/revisit/scripts/audit_reader.ts",
@@ -64,6 +65,8 @@ describe("packed artifact loader", () => {
 				"plugins/immune-brain/dist/drive.md",
 				"plugins/immune-brain/dist/draw-up.md",
 				"plugins/immune-brain/dist/revisit.md",
+				"plugins/immune-brain/dist/imm-loop.md",
+				"plugins/immune-brain/bin/imm-loop",
 				"plugins/immune-brain/runtime/kernel/canary_application.ts",
 				"plugins/immune-brain/dist/role-prompts/code-review.md",
 			]) {

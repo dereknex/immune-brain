@@ -36,8 +36,7 @@ certified: the shared Review prompt expects immutable Git commands and packet ha
 checks that a shell-less native role cannot run. This package does not grant shell tools,
 copy source into the review packet, or change shared Review authority. The complete
 Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified
-on Antigravity via [docs/reports/antigravity-live-certification.md](../../docs/reports/antigravity-live-certification.md).
-Package checks verify the read-only restrictions, live certification binding, and this disclosure.
+on Antigravity. Package checks verify the read-only restrictions and this disclosure.
 
 ### Review CLI residual risk (`review_host: antigravity`)
 
@@ -55,12 +54,12 @@ and need no `PLUGIN_ROOT`. The MCP server is resolved with `${PLUGIN_ROOT}`.
 
 ### Managed native gates
 
-Managed operations requiring literal-user native confirmation (`force_ask` in `PreToolUse`)
-require `"toolPermission": "request-review"` in `~/.gemini/antigravity-cli/settings.json`
-and an interactive `agy` session (nearest `agy` ancestor process started without
-`--dangerously-skip-permissions`, `--print`, or `-p`). Otherwise the `PreToolUse` hook
-denies the operation without writing a confirmation grant; `strict` and `proceed-in-sandbox`
-remain refused until live confirmation-dialog evidence is verified.
+Managed operations requiring literal-user native confirmation return `force_ask` from
+`PreToolUse` and write a confirmation grant. Whether a dialog actually surfaces is `agy`'s
+decision: the adapter does not inspect `toolPermission` or the `agy` launch flags. Under
+`always-proceed`, `--dangerously-skip-permissions`, `--print`, or `-p`, `agy` auto-approves
+and the grant is still recorded as a `confirm` reference, so use `request-review` in an
+interactive `agy` session when the record must reflect a human answer.
 
 If `~/.gemini/antigravity-cli/settings.json` also has a `permissions.allow` rule covering
 the Managed call (for example `mcp(immune-brain_immune-brain/stop)`), `agy` skips the

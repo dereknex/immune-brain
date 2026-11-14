@@ -20,7 +20,8 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveConfig, type LoopConfig } from "../config/layered_config.ts";
 import { diffSnapshotOf, type HostRuntimeOptions, type ToolMeta } from "../host-core/runtime.ts";
 import { projectAssurance } from "../kernel/assurance_projection.ts";
@@ -173,7 +174,7 @@ export function createDefaultRelayInputFactory(
 	const config = resolveConfig(root);
 	const activeProfile = config.lanes.active.value ? config.lanes.profiles.value[config.lanes.active.value] : undefined;
 	const parentHost: ExecutorHost = (activeProfile?.executor_host ?? (config.lanes.executor_host.value as ExecutorHost | undefined) ?? "claude-code");
-	const pluginDir = join(root, "plugins", "immune-brain");
+	const pluginDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 	const supervisor = new LaneSupervisor();
 
 	return (op, rev, choice) => ({

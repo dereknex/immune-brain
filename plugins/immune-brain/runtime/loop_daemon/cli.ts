@@ -3,6 +3,9 @@
  *
  * Implements S1 and D2 of docs/specs/loop-daemon.spec.md.
  * Exposes:
+ *   - imm-loop start [--interval <sec>] [--dry-run] [--json]
+ *   - imm-loop stop [--timeout <sec>] [--force] [--json]
+ *   - imm-loop logs [--lines <n>] [--json]
  *   - imm-loop tick [--dry-run] [--json]
  *   - imm-loop status [--json]
  *   - imm-loop pause [--reason <text>]
@@ -12,7 +15,8 @@
  *   - imm-loop run [--interval <sec>] [--dry-run]
  */
 
-import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { chmodSync, closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -43,7 +47,7 @@ import {
 	type JudgingBudgetTracker,
 } from "./judgement.ts";
 import { createSessionJudgingAgent, type JudgingAgentFn } from "./judging_agent.ts";
-import { acquireDaemonLock, readDaemonLock } from "./lock.ts";
+import { acquireDaemonLock, cleanStaleDaemonLock, isPidAlive, readDaemonLock } from "./lock.ts";
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
@@ -53,8 +57,9 @@ import {
 	appendLoopDecision,
 	appendLoopEvent,
 	deleteLease,
+	ensureLoopStateDir,
 	initLoopState,
-	listLeases,
+	inspectLoopDaemonState,
 	loadLoopState,
 	saveLoopState,
 } from "./state.ts";
@@ -68,6 +73,163 @@ export interface CliOutput {
 
 function jsonOutput(payload: unknown): string {
 	return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+function parseStateDirArg(argv: string[]): {
+	args: string[];
+	stateDirArg: string | null;
+	error?: string;
+} {
+	const cleaned: string[] = [];
+	let stateDirArg: string | null = null;
+	for (let i = 0; i < argv.length; i++) {
+		const token = argv[i]!;
+		if (token === "--state-dir") {
+			const val = argv[i + 1];
+			if (!val || val.startsWith("-")) {
+				return { args: argv, stateDirArg: null, error: "Error: --state-dir requires a path\n" };
+			}
+			stateDirArg = val;
+			i++;
+			continue;
+		}
+		if (token.startsWith("--state-dir=")) {
+			const val = token.slice("--state-dir=".length);
+			if (!val) {
+				return { args: argv, stateDirArg: null, error: "Error: --state-dir requires a path\n" };
+			}
+			stateDirArg = val;
+			continue;
+		}
+		cleaned.push(token);
+	}
+	return { args: cleaned, stateDirArg };
+}
+
+function parsePositiveIntFlag(
+	args: string[],
+	flag: string,
+	defaultValue: number,
+	maxValue = Number.MAX_SAFE_INTEGER,
+): { value: number; error?: string } {
+	const eqPrefix = `${flag}=`;
+	const idx = args.findIndex((arg) => arg === flag || arg.startsWith(eqPrefix));
+	if (idx < 0) {
+		return { value: defaultValue };
+	}
+	const token = args[idx]!;
+	const raw = token.startsWith(eqPrefix) ? token.slice(eqPrefix.length) : args[idx + 1];
+	if (!raw || !/^[1-9]\d*$/.test(raw)) {
+		return { value: defaultValue, error: `Error: ${flag} requires a positive integer\n` };
+	}
+	const parsed = Number.parseInt(raw, 10);
+	if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maxValue) {
+		return {
+			value: defaultValue,
+			error:
+				maxValue === Number.MAX_SAFE_INTEGER
+					? `Error: ${flag} requires a positive integer\n`
+					: `Error: ${flag} requires an integer between 1 and ${maxValue}\n`,
+		};
+	}
+	return { value: parsed };
+}
+
+function readLogTailLines(logPath: string, maxLines: number): string[] {
+	if (!existsSync(logPath) || maxLines <= 0) return [];
+	let fd: number | null = null;
+	try {
+		fd = openSync(logPath, "r");
+		const size = fstatSync(fd).size;
+		if (size === 0) return [];
+		const maxBytes = Math.min(size, Math.max(65536, maxLines * 512));
+		const offset = size - maxBytes;
+		const buf = Buffer.allocUnsafe(maxBytes);
+		let bytesReadTotal = 0;
+		while (bytesReadTotal < maxBytes) {
+			const n = readSync(
+				fd,
+				buf,
+				bytesReadTotal,
+				maxBytes - bytesReadTotal,
+				offset + bytesReadTotal,
+			);
+			if (n <= 0) break;
+			bytesReadTotal += n;
+		}
+		let text = buf.toString("utf8", 0, bytesReadTotal);
+		if (offset > 0) {
+			const firstNl = text.indexOf("\n");
+			text = firstNl >= 0 ? text.slice(firstNl + 1) : "";
+		}
+		const lines = text.split(/\r?\n/);
+		if (lines.length > 0 && lines[lines.length - 1] === "") {
+			lines.pop();
+		}
+		return lines.slice(-maxLines);
+	} catch {
+		return [];
+	} finally {
+		if (fd !== null) {
+			try {
+				closeSync(fd);
+			} catch {}
+		}
+	}
+}
+
+export interface SpawnDaemonParams {
+	root: string;
+	stateDir: string;
+	intervalSec: number;
+	dryRun: boolean;
+	logPath: string;
+}
+
+export interface SpawnDaemonHandle {
+	pid: number;
+	hasExited?: () => boolean;
+}
+
+function spawnDetachedDaemonProcess(params: SpawnDaemonParams): SpawnDaemonHandle {
+	const defaultStateDir = join(params.root, ".imm/state/loop");
+	const v4RuntimePath = fileURLToPath(new URL("../v4_runtime.ts", import.meta.url));
+	const childArgs = [
+		v4RuntimePath,
+		"cli",
+		"imm-loop",
+		"run",
+		"--interval",
+		String(params.intervalSec),
+		...(params.dryRun ? ["--dry-run"] : []),
+		...(params.stateDir !== defaultStateDir ? ["--state-dir", params.stateDir] : []),
+	];
+	const logFd = openSync(params.logPath, "a", 0o600);
+	try {
+		try {
+			chmodSync(params.logPath, 0o600);
+		} catch {}
+		const child = spawn(process.execPath, childArgs, {
+			cwd: params.root,
+			env: process.env,
+			detached: true,
+			stdio: ["ignore", logFd, logFd],
+		});
+		if (!child.pid) {
+			throw new Error("spawn returned no PID");
+		}
+		let exited = false;
+		child.once("exit", () => {
+			exited = true;
+		});
+		child.once("error", () => {
+			exited = true;
+		});
+		child.unref();
+		return { pid: child.pid, hasExited: () => exited };
+	} finally {
+		closeSync(logFd);
+	}
 }
 
 export async function runLoopDaemonCli(
@@ -103,30 +265,49 @@ export async function runLoopDaemonCli(
 		standingDaemon?: boolean;
 		/** Deterministic clock seam for reconciliation schedule tests. */
 		now?: () => string;
+		/** Subprocess seams for testing `start` and `stop` lifecycle deterministically. */
+		spawnDaemon?: (params: SpawnDaemonParams) => SpawnDaemonHandle;
+		killProcess?: (pid: number, signal: NodeJS.Signals | number) => void;
+		isProcessAlive?: (pid: number) => boolean;
+		startupTimeoutMs?: number;
+		stopTimeoutMs?: number;
 	},
 ): Promise<CliOutput> {
 	const absoluteRoot = resolve(root);
-	const stateDir = options?.stateDir ?? join(absoluteRoot, ".imm/state/loop");
+	const parsedState = parseStateDirArg(argv);
+	if (parsedState.error) {
+		return { stdout: "", stderr: parsedState.error, returncode: 2 };
+	}
+	const normalizedArgv = parsedState.args;
+	const stateDir =
+		options?.stateDir ??
+		(parsedState.stateDirArg
+			? resolve(absoluteRoot, parsedState.stateDirArg)
+			: join(absoluteRoot, ".imm/state/loop"));
 
-	const command = argv[0];
-	const args = argv.slice(1);
+	const command = normalizedArgv[0];
+	const args = normalizedArgv.slice(1);
 
 	if (!command || command === "--help" || command === "-h" || command === "help") {
 		const usage = `Usage: imm-loop <command> [options]
 
 Commands:
-  tick [--dry-run] [--json]       Run a single observation and event normalization tick
-  status [--json]                 Show loop daemon status, lock, watermarks, and active leases
-  pause [--reason <text>]         Pause the daemon from scheduling new work
-  resume                          Resume scheduling for the daemon
-  retire-lease <target-id>        Manually retire/remove an active lease
-  rebuild [--json]                Reconstruct state and leases from GitHub and repository evidence
-  reconcile [--dry-run] [--json]  Re-check model-skipped decisions with the judging agent
-  run [--interval <sec>]          Run standing loop daemon process
+  start [--interval <sec>] [--dry-run] [--json]  Start detached background loop daemon
+  stop [--timeout <sec>] [--force] [--json]      Stop running background loop daemon
+  logs [--lines <n>] [--json]                    Show recent lines from daemon.log
+  tick [--dry-run] [--json]                      Run a single observation and event normalization tick
+  status [--json]                                Show loop daemon status, lock, watermarks, and active leases
+  pause [--reason <text>]                        Pause the daemon from scheduling new work
+  resume                                         Resume scheduling for the daemon
+  retire-lease <target-id>                       Manually retire/remove an active lease
+  rebuild [--json]                               Reconstruct state and leases from GitHub and repository evidence
+  reconcile [--dry-run] [--json]                 Re-check model-skipped decisions with the judging agent
+  run [--interval <sec>] [--dry-run]             Run standing loop daemon process in foreground
 
 Options:
-  --dry-run                       Do not mutate state, lock, or repository
-  --json                          Output structured JSON
+  --dry-run                                      Do not mutate state, lock, or repository
+  --json                                         Output structured JSON
+  --state-dir <path>                             Override daemon state directory
 `;
 		return { stdout: usage, stderr: "", returncode: command ? 0 : 2 };
 	}
@@ -137,33 +318,77 @@ Options:
 		(resolved.loop?.valid ? (resolved.loop.value as LoopConfig) : null) ??
 		DEFAULT_LOOP_CONFIG;
 
-	if (command === "status") {
-		const isJson = args.includes("--json");
-		const lockInspection = readDaemonLock(stateDir);
-		let state = loadLoopState(stateDir);
-		const leases = listLeases(stateDir);
-
-		if (!state && existsSync(join(stateDir, "state.json"))) {
+	const checkRunPreflight = async (isDryRun: boolean): Promise<CliOutput | null> => {
+		if (!options?.loopConfig && resolved.loop.valid === false) {
 			return {
 				stdout: "",
-				stderr: "Error: .imm/state/loop/state.json is corrupt or unreadable\n",
+				stderr: "Error: invalid loop configuration\n",
 				returncode: 1,
 			};
 		}
 
-		if (!state) {
-			state = initLoopState();
+		if (!isDryRun) {
+			if (loopConfig.mode === "off") {
+				return {
+					stdout: "",
+					stderr: "Error: loop.mode is off\n",
+					returncode: 1,
+				};
+			}
+
+			const gh = options?.gh ?? createGhTransport();
+			const daemonLogin =
+				options?.guardFacts?.daemon_identity ??
+				(await readAuthenticatedGithubLogin(gh, absoluteRoot));
+			if (!daemonLogin) {
+				return {
+					stdout: "",
+					stderr: "Error: unreadable daemon GitHub identity\n",
+					returncode: 1,
+				};
+			}
+
+			if (loopConfig.allowed_actors && loopConfig.allowed_actors.includes(daemonLogin)) {
+				return {
+					stdout: "",
+					stderr: `Error: daemon GitHub identity '${daemonLogin}' is in loop.allowed_actors\n`,
+					returncode: 1,
+				};
+			}
 		}
 
+		return null;
+	};
+
+	if (command === "status") {
+		const isJson = args.includes("--json");
+		const snapshot = inspectLoopDaemonState(stateDir);
+
+		if (snapshot.state_error) {
+			return {
+				stdout: "",
+				stderr: `Error: ${snapshot.state_error}\n`,
+				returncode: 1,
+			};
+		}
+
+		const fallbackState = snapshot.watermarks === null ? initLoopState() : null;
+		const watermarks = snapshot.watermarks ?? fallbackState!.watermarks;
+		const stats = snapshot.stats ?? fallbackState!.stats;
+		const updatedAt = snapshot.updated_at ?? fallbackState!.updated_at;
+		const mode = resolved.loop?.valid === false ? "invalid" : loopConfig.mode;
+
 		const projection = {
-			daemon_running: lockInspection.isLive,
-			lock: lockInspection.lock,
-			paused: state.paused,
-			pause_reason: state.pause_reason,
-			watermarks: state.watermarks,
-			active_leases: leases,
-			stats: state.stats,
-			updated_at: state.updated_at,
+			daemon_running: snapshot.daemon_running,
+			lock: snapshot.lock,
+			mode,
+			paused: snapshot.paused,
+			pause_reason: snapshot.pause_reason,
+			watermarks,
+			active_leases: snapshot.active_leases,
+			stats,
+			updated_at: updatedAt,
+			log_path: snapshot.log_path,
 		};
 
 		if (isJson) {
@@ -171,19 +396,302 @@ Options:
 		}
 
 		const text = `Loop Daemon Status:
-  Daemon Running: ${lockInspection.isLive ? `YES (PID: ${lockInspection.lock?.pid})` : "NO"}
-  Paused: ${state.paused ? `YES (${state.pause_reason || "no reason"})` : "NO"}
-  Active Leases: ${leases.length}
+  Daemon Running: ${snapshot.daemon_running ? `YES (PID: ${snapshot.pid})` : "NO"}
+  Mode: ${mode}
+  Paused: ${snapshot.paused ? `YES (${snapshot.pause_reason || "no reason"})` : "NO"}
+  Active Leases: ${snapshot.active_leases_count}
+  Log: ${snapshot.log_path}
   Watermarks:
-    Issues: ${state.watermarks.issues_updated_at || "none"}
-    Comments: ${state.watermarks.comments_updated_at || "none"}
-    PRs: ${state.watermarks.prs_updated_at || "none"}
+    Issues: ${watermarks.issues_updated_at || "none"}
+    Comments: ${watermarks.comments_updated_at || "none"}
+    PRs: ${watermarks.prs_updated_at || "none"}
   Stats:
-    Total Ticks: ${state.stats.ticks_total}
-    Total Events: ${state.stats.events_observed_total}
-    Last Tick: ${state.stats.last_tick_at || "never"}
+    Total Ticks: ${stats.ticks_total}
+    Total Events: ${stats.events_observed_total}
+    Last Tick: ${stats.last_tick_at || "never"}
 `;
 		return { stdout: text, stderr: "", returncode: 0 };
+	}
+
+	if (command === "logs") {
+		const isJson = args.includes("--json");
+		const linesParsed = parsePositiveIntFlag(args, "--lines", 50, 5000);
+		if (linesParsed.error) {
+			return { stdout: "", stderr: linesParsed.error, returncode: 2 };
+		}
+		const logPath = join(stateDir, "daemon.log");
+		const exists = existsSync(logPath);
+		const lines = exists ? readLogTailLines(logPath, linesParsed.value) : [];
+		if (isJson) {
+			return {
+				stdout: jsonOutput({ exists, log_path: logPath, lines }),
+				stderr: "",
+				returncode: 0,
+			};
+		}
+		return {
+			stdout: lines.length > 0 ? `${lines.join("\n")}\n` : "",
+			stderr: "",
+			returncode: 0,
+		};
+	}
+
+	if (command === "start") {
+		const isDryRun = args.includes("--dry-run");
+		const isJson = args.includes("--json");
+		const intervalParsed = parsePositiveIntFlag(
+			args,
+			"--interval",
+			loopConfig.interval_seconds ?? 60,
+		);
+		if (intervalParsed.error) {
+			return { stdout: "", stderr: intervalParsed.error, returncode: 2 };
+		}
+		const intervalSec = intervalParsed.value;
+		const alive = options?.isProcessAlive ?? isPidAlive;
+		const killFn = options?.killProcess ?? ((pid: number, sig: NodeJS.Signals | number) => process.kill(pid, sig));
+		const logPath = join(stateDir, "daemon.log");
+
+		const lockInspection = readDaemonLock(stateDir);
+		if (lockInspection.exists && lockInspection.lock && alive(lockInspection.lock.pid)) {
+			if (isJson) {
+				return {
+					stdout: jsonOutput({
+						status: "already_running",
+						daemon_running: true,
+						pid: lockInspection.lock.pid,
+						lock: lockInspection.lock,
+						log_path: logPath,
+					}),
+					stderr: "",
+					returncode: 0,
+				};
+			}
+			return {
+				stdout: `Loop daemon already running (PID: ${lockInspection.lock.pid})\n`,
+				stderr: "",
+				returncode: 0,
+			};
+		}
+
+		const preflightError = await checkRunPreflight(isDryRun);
+		if (preflightError) {
+			return preflightError;
+		}
+
+		ensureLoopStateDir(stateDir);
+		const spawner = options?.spawnDaemon ?? spawnDetachedDaemonProcess;
+		let handle: SpawnDaemonHandle;
+		try {
+			handle = spawner({
+				root: absoluteRoot,
+				stateDir,
+				intervalSec,
+				dryRun: isDryRun,
+				logPath,
+			});
+		} catch (error: any) {
+			return {
+				stdout: "",
+				stderr: `Error: failed to spawn loop daemon: ${error?.message || String(error)}\n`,
+				returncode: 1,
+			};
+		}
+
+		const timeoutMs = options?.startupTimeoutMs ?? 10_000;
+		const deadline = Date.now() + timeoutMs;
+		while (true) {
+			const current = readDaemonLock(stateDir);
+			if (current.lock && current.lock.pid === handle.pid && alive(handle.pid)) {
+				if (isJson) {
+					return {
+						stdout: jsonOutput({
+							status: "started",
+							daemon_running: true,
+							pid: handle.pid,
+							interval_seconds: intervalSec,
+							dry_run: isDryRun,
+							lock: current.lock,
+							log_path: logPath,
+						}),
+						stderr: "",
+						returncode: 0,
+					};
+				}
+				return {
+					stdout: `Loop daemon started (PID: ${handle.pid}, log: ${logPath})\n`,
+					stderr: "",
+					returncode: 0,
+				};
+			}
+
+			if (handle.hasExited?.() || !alive(handle.pid)) {
+				const tail = readLogTailLines(logPath, 20);
+				return {
+					stdout: "",
+					stderr:
+						"Error: loop daemon exited before acquiring lock" +
+						(tail.length > 0 ? `:\n${tail.join("\n")}` : "") +
+						"\n",
+					returncode: 1,
+				};
+			}
+
+			if (Date.now() >= deadline) {
+				try {
+					killFn(handle.pid, "SIGTERM");
+				} catch {}
+				return {
+					stdout: "",
+					stderr: "Error: timed out waiting for loop daemon to acquire lock\n",
+					returncode: 1,
+				};
+			}
+
+			await new Promise((res) => setTimeout(res, 25));
+		}
+	}
+
+	if (command === "stop") {
+		const isJson = args.includes("--json");
+		const force = args.includes("--force");
+		const timeoutParsed = parsePositiveIntFlag(args, "--timeout", 10);
+		if (timeoutParsed.error) {
+			return { stdout: "", stderr: timeoutParsed.error, returncode: 2 };
+		}
+		const timeoutMs = args.some((a) => a === "--timeout" || a.startsWith("--timeout="))
+			? timeoutParsed.value * 1000
+			: (options?.stopTimeoutMs ?? 10_000);
+		const alive = options?.isProcessAlive ?? isPidAlive;
+		const killFn = options?.killProcess ?? ((pid: number, sig: NodeJS.Signals | number) => process.kill(pid, sig));
+
+		const sendSignal = (pid: number, signal: NodeJS.Signals): boolean => {
+			try {
+				killFn(pid, signal);
+				return true;
+			} catch (error: any) {
+				if (error?.code === "ESRCH") {
+					return false;
+				}
+				throw error;
+			}
+		};
+
+		const lockInspection = readDaemonLock(stateDir);
+		if (!lockInspection.exists) {
+			if (isJson) {
+				return {
+					stdout: jsonOutput({
+						status: "already_stopped",
+						daemon_running: false,
+						pid: null,
+						stale_lock_cleaned: false,
+					}),
+					stderr: "",
+					returncode: 0,
+				};
+			}
+			return { stdout: "Loop daemon is not running\n", stderr: "", returncode: 0 };
+		}
+
+		if (!lockInspection.lock || !alive(lockInspection.lock.pid)) {
+			const cleaned = cleanStaleDaemonLock(stateDir, lockInspection.lock?.host_token);
+			const deadPid = lockInspection.lock?.pid ?? null;
+			if (isJson) {
+				return {
+					stdout: jsonOutput({
+						status: "already_stopped",
+						daemon_running: false,
+						pid: deadPid,
+						stale_lock_cleaned: cleaned,
+					}),
+					stderr: "",
+					returncode: 0,
+				};
+			}
+			return {
+				stdout: cleaned
+					? "Loop daemon is not running (cleaned stale lock)\n"
+					: "Loop daemon is not running\n",
+				stderr: "",
+				returncode: 0,
+			};
+		}
+
+		const pid = lockInspection.lock.pid;
+		const token = lockInspection.lock.host_token;
+		try {
+			const sent = sendSignal(pid, "SIGTERM");
+			if (!sent) {
+				cleanStaleDaemonLock(stateDir, token);
+				if (isJson) {
+					return {
+						stdout: jsonOutput({ status: "stopped", daemon_running: false, pid }),
+						stderr: "",
+						returncode: 0,
+					};
+				}
+				return { stdout: `Loop daemon stopped (PID: ${pid})\n`, stderr: "", returncode: 0 };
+			}
+		} catch (error: any) {
+			return {
+				stdout: "",
+				stderr: `Error: failed to signal loop daemon (PID ${pid}): ${error?.message || String(error)}\n`,
+				returncode: 1,
+			};
+		}
+
+		const waitUntilDead = async (ms: number): Promise<boolean> => {
+			const deadline = Date.now() + ms;
+			while (alive(pid)) {
+				if (Date.now() >= deadline) return false;
+				await new Promise((res) => setTimeout(res, 25));
+			}
+			return true;
+		};
+
+		if (await waitUntilDead(timeoutMs)) {
+			cleanStaleDaemonLock(stateDir, token);
+			if (isJson) {
+				return {
+					stdout: jsonOutput({ status: "stopped", daemon_running: false, pid }),
+					stderr: "",
+					returncode: 0,
+				};
+			}
+			return { stdout: `Loop daemon stopped (PID: ${pid})\n`, stderr: "", returncode: 0 };
+		}
+
+		if (force) {
+			try {
+				sendSignal(pid, "SIGKILL");
+			} catch (error: any) {
+				return {
+					stdout: "",
+					stderr: `Error: failed to SIGKILL loop daemon (PID ${pid}): ${error?.message || String(error)}\n`,
+					returncode: 1,
+				};
+			}
+			if (await waitUntilDead(1000)) {
+				cleanStaleDaemonLock(stateDir, token);
+				if (isJson) {
+					return {
+						stdout: jsonOutput({ status: "killed", daemon_running: false, pid }),
+						stderr: "",
+						returncode: 0,
+					};
+				}
+				return { stdout: `Loop daemon killed (PID: ${pid})\n`, stderr: "", returncode: 0 };
+			}
+		}
+
+		return {
+			stdout: "",
+			stderr: force
+				? `Error: loop daemon (PID ${pid}) did not exit after SIGKILL\n`
+				: `Error: timed out waiting for loop daemon (PID ${pid}) to stop; pass --force to SIGKILL\n`,
+			returncode: 1,
+		};
 	}
 
 	if (command === "pause") {
@@ -275,42 +783,20 @@ Options:
 	}
 
 	if (command === "tick" || command === "run") {
-		const isDryRun = args.includes("--dry-run");
-
-		if (!options?.loopConfig && resolved.loop.valid === false) {
-			return {
-				stdout: "",
-				stderr: "Error: invalid loop configuration\n",
-				returncode: 1,
-			};
+		if (command === "run") {
+			const intervalCheck = parsePositiveIntFlag(
+				args,
+				"--interval",
+				loopConfig.interval_seconds ?? 60,
+			);
+			if (intervalCheck.error) {
+				return { stdout: "", stderr: intervalCheck.error, returncode: 2 };
+			}
 		}
-
-		if (!isDryRun) {
-			if (loopConfig.mode === "off") {
-				return {
-					stdout: "",
-					stderr: "Error: loop.mode is off\n",
-					returncode: 1,
-				};
-			}
-
-			const gh = options?.gh ?? createGhTransport();
-			const daemonLogin = options?.guardFacts?.daemon_identity ?? (await readAuthenticatedGithubLogin(gh, absoluteRoot));
-			if (!daemonLogin) {
-				return {
-					stdout: "",
-					stderr: "Error: unreadable daemon GitHub identity\n",
-					returncode: 1,
-				};
-			}
-
-			if (loopConfig.allowed_actors && loopConfig.allowed_actors.includes(daemonLogin)) {
-				return {
-					stdout: "",
-					stderr: `Error: daemon GitHub identity '${daemonLogin}' is in loop.allowed_actors\n`,
-					returncode: 1,
-				};
-			}
+		const isDryRun = args.includes("--dry-run");
+		const preflightError = await checkRunPreflight(isDryRun);
+		if (preflightError) {
+			return preflightError;
 		}
 	}
 
@@ -765,11 +1251,15 @@ Options:
 
 	if (command === "run") {
 		const isDryRun = args.includes("--dry-run");
-		const intervalIdx = args.indexOf("--interval");
-		const intervalSec =
-			intervalIdx >= 0 && args[intervalIdx + 1]
-				? Math.max(1, parseInt(args[intervalIdx + 1], 10))
-				: (loopConfig.interval_seconds ?? 60);
+		const intervalParsed = parsePositiveIntFlag(
+			args,
+			"--interval",
+			loopConfig.interval_seconds ?? 60,
+		);
+		if (intervalParsed.error) {
+			return { stdout: "", stderr: intervalParsed.error, returncode: 2 };
+		}
+		const intervalSec = intervalParsed.value;
 
 		const lockResult = acquireDaemonLock(stateDir);
 		if (!lockResult.acquired) {
@@ -782,14 +1272,26 @@ Options:
 
 		let running = true;
 		let shutdownRequested = Boolean(options?.shutdownRequested || options?.isShutdownRequested?.());
+		let sleepTimer: ReturnType<typeof setTimeout> | null = null;
+		let wakeSleep: (() => void) | null = null;
 		const stop = (): void => {
 			running = false;
 			shutdownRequested = true;
-			lockResult.release();
+			if (sleepTimer) {
+				clearTimeout(sleepTimer);
+				sleepTimer = null;
+			}
+			if (wakeSleep) {
+				const wake = wakeSleep;
+				wakeSleep = null;
+				wake();
+			}
 		};
+		const onHup = (): void => {};
 
 		process.on("SIGINT", stop);
 		process.on("SIGTERM", stop);
+		process.on("SIGHUP", onHup);
 
 		const checkShutdown = (): boolean =>
 			shutdownRequested ||
@@ -803,6 +1305,7 @@ Options:
 			while (running) {
 				const isShut = checkShutdown();
 				const nowIso = options?.now?.() ?? new Date().toISOString();
+				lockResult.heartbeat(nowIso);
 				if (!isShut && (!reconciledOnStart || shouldRunScheduledReconcile(stateDir, nowIso))) {
 					reconciledOnStart = true;
 					const recRes = await runLoopDaemonCli(
@@ -810,6 +1313,7 @@ Options:
 						absoluteRoot,
 						{
 							...options,
+							stateDir,
 							lockHeld: true,
 							standingDaemon: true,
 						},
@@ -823,6 +1327,7 @@ Options:
 					absoluteRoot,
 					{
 						...options,
+						stateDir,
 						lockHeld: true,
 						standingDaemon: true,
 						shutdownRequested: isShut,
@@ -839,13 +1344,31 @@ Options:
 				if (options?.singleIteration || !running || isShut || checkShutdown()) {
 					break;
 				}
+				lockResult.heartbeat(options?.now?.() ?? new Date().toISOString());
 				if (!options?.sleep) {
-					await new Promise((res) => setTimeout(res, intervalSec * 1000));
+					await new Promise<void>((res) => {
+						if (checkShutdown()) {
+							res();
+							return;
+						}
+						wakeSleep = res;
+						sleepTimer = setTimeout(() => {
+							sleepTimer = null;
+							if (wakeSleep === res) wakeSleep = null;
+							res();
+						}, intervalSec * 1000);
+					});
 				}
 			}
 		} finally {
+			if (sleepTimer) {
+				clearTimeout(sleepTimer);
+				sleepTimer = null;
+			}
+			wakeSleep = null;
 			process.off("SIGINT", stop);
 			process.off("SIGTERM", stop);
+			process.off("SIGHUP", onHup);
 			lockResult.release();
 		}
 
@@ -870,12 +1393,16 @@ export async function runLoopDaemonExecutable(
 	argv: string[],
 	root: string = process.cwd(),
 ): Promise<{ stdout: string; stderr: string; returncode: number }> {
-	const command = argv[0];
+	const parsedState = parseStateDirArg(argv);
+	const command = parsedState.error ? undefined : parsedState.args[0];
+	const effectiveStateDir = parsedState.stateDirArg
+		? resolve(root, parsedState.stateDirArg)
+		: join(root, ".imm/state/loop");
 	// The agent port belongs to the live daemon: a `tick`, `run`, or `reconcile`
 	// from this executable dispatches agent-backed handlers through real sessions.
 	const needsAgent = command === "tick" || command === "run" || command === "reconcile";
 	const agentPort = needsAgent
-		? createAgentHandlerPort(createDefaultAgentHandlerDeps(root))
+		? createAgentHandlerPort(createDefaultAgentHandlerDeps(root, { stateDir: effectiveStateDir }))
 		: undefined;
 	let judgingAgent: JudgingAgentFn | undefined;
 	if (needsAgent) {
@@ -888,7 +1415,7 @@ export async function runLoopDaemonExecutable(
 				root,
 				provider: createCliAgentSessionProvider({
 					profile: { host, model, effort },
-					log_dir: join(root, ".imm/state/loop/session-logs"),
+					log_dir: join(effectiveStateDir, "session-logs"),
 				}),
 			});
 		}

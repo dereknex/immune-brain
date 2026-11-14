@@ -24,7 +24,8 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveConfig, type LoopConfig } from "../config/layered_config.ts";
 import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts";
@@ -1118,7 +1119,7 @@ export function createDefaultAgentHandlerDeps(
 		model: active?.executor_model ?? config.lanes.executor_model.value ?? null,
 		effort: active?.executor_effort ?? config.lanes.executor_effort.value ?? null,
 	};
-	const pluginRoot = join(root, "plugins", "immune-brain");
+	const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 	const createWorktree: AgentHandlerDeps["createWorktree"] = ({ root: repository, branch, name }) => {
 		const directory = loopWorktreeDirectory(repository);

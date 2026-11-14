@@ -1,4 +1,13 @@
 #!/bin/sh
 set -eu
-PLUGIN_ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  DIR=$(cd -P "$(dirname "$SOURCE")" && pwd)
+  TARGET=$(readlink "$SOURCE")
+  case "$TARGET" in
+    /*) SOURCE="$TARGET" ;;
+    *) SOURCE="$DIR/$TARGET" ;;
+  esac
+done
+PLUGIN_ROOT=$(cd -P "$(dirname "$SOURCE")/.." && pwd)
 exec bun "$PLUGIN_ROOT/runtime/v4_runtime.ts" cli imm-plan "$@"

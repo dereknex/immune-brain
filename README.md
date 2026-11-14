@@ -136,6 +136,7 @@ Immune-Brain provides two clean modes: **Host-native** for daily coding, and **M
 | Agent instructions bloated | `/slim` | → Minimizes tracked `AGENTS.md` / `CLAUDE.md` to essential non-discoverable rules |
 | Test suite bloated with redundant cases | `/prune-tests` | → Audits tests read-only, then merges or deletes only approved entries backed by retirement or coverage evidence |
 | Where workflow friction occurs and what to improve | `/revisit` | → Workflow-friction diagnosis from session evidence |
+| Run or inspect the background Loop daemon for Issues/PRs | `/imm-loop` | → Inspects status/logs or starts/stops the repository Loop daemon via `bin/imm-loop` |
 
 > **Core Principle: Skill-Explicit Entry**
 > - **Ordinary input stays host-native**: Natural language queries never automatically start planning or task enrollment. You choose when to turn on engineering rigor.
@@ -424,7 +425,7 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 
 ---
 
-## The 8 Skills
+## The 9 Skills
 
 | Skill | Type | When to use | What it does |
 |---|---|---|---|
@@ -436,10 +437,11 @@ Without explicit cost levers, multi-agent workflows compound expenses exponentia
 | `slim` | Standalone | Bloated agent instructions | Minimizes tracked AGENTS/CLAUDE/GEMINI.md to necessary context |
 | `prune-tests` | Standalone | Bloated or redundant tests | Merges, parameterizes, or deletes approved test entries without weakening assertions |
 | `revisit` | Standalone | Workflow-friction diagnosis | Traces evidence, recommends one next step; no model ranking |
+| `imm-loop` | Standalone | Background Loop daemon control | Inspects status/logs, runs dry-run ticks, starts/stops/pauses `bin/imm-loop` |
 
 Internal roles (Executor, QA, Review, Compounder) are dispatched by `drive` — you never invoke them directly.
 
-All 8 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
+All 9 skills are invoked explicitly. For new features, start with `clarify` (if requirements are uncertain) or `draw-up` (if requirements are clear), then proceed to `drive` once enrolled.
 
 ### Managed Path entries (brainstorm → planner → loop)
 

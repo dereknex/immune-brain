@@ -89,7 +89,7 @@ function claimWorkspace(cwd: string, taskId: string): void {
 const BATCH_START = "mcp__plugin_immune-brain_immune-brain__start_unattended_batch";
 
 describe("Claude phase entry Skill gate", () => {
-	test("a retired name or an alias without a marked mention mints no run entry (ADR 0031)", () => {
+	test("a retired name, standalone skill, or alias without a marked mention mints no run entry (ADR 0025)", () => {
 		const s = session();
 		for (const prompt of ["/imm-run task-a", "/imm-loop", "/immune-brain:imm-run", "/old", "/prose", "/driver"]) {
 			s.prompt(prompt);

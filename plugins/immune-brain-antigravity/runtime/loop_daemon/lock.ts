@@ -32,6 +32,7 @@ export interface AcquireLockSuccess {
 	acquired: true;
 	lock: LoopDaemonLock;
 	release: () => void;
+	heartbeat: (nowIso?: string) => boolean;
 }
 
 export interface AcquireLockFailure {
@@ -105,6 +106,66 @@ export function findReclaimClaims(
 	}
 }
 
+export function heartbeatDaemonLock(
+	stateDir: string,
+	hostToken: string,
+	nowIso: string = new Date().toISOString(),
+): boolean {
+	const lockPath = join(stateDir, "daemon.lock");
+	const current = readDaemonLock(stateDir);
+	if (
+		!current.lock ||
+		current.lock.host_token !== hostToken ||
+		current.lock.pid !== process.pid
+	) {
+		return false;
+	}
+	const updated: LoopDaemonLock = {
+		...current.lock,
+		heartbeat_at: nowIso,
+	};
+	const tmpLockPath = join(
+		stateDir,
+		`daemon.lock.hb.${process.pid}.${randomUUID()}`,
+	);
+	try {
+		writeFileSync(tmpLockPath, `${JSON.stringify(updated, null, 2)}\n`, {
+			mode: 0o600,
+		});
+		renameSync(tmpLockPath, lockPath);
+		chmodSync(lockPath, 0o600);
+		return true;
+	} catch {
+		try {
+			rmSync(tmpLockPath, { force: true });
+		} catch {}
+		return false;
+	}
+}
+
+export function cleanStaleDaemonLock(
+	stateDir: string,
+	expectedHostToken?: string,
+): boolean {
+	const current = readDaemonLock(stateDir);
+	if (!current.exists || current.isLive) {
+		return false;
+	}
+	if (
+		expectedHostToken &&
+		current.lock &&
+		current.lock.host_token !== expectedHostToken
+	) {
+		return false;
+	}
+	try {
+		rmSync(join(stateDir, "daemon.lock"), { force: true });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 export function acquireDaemonLock(
 	stateDir: string,
 	options?: { hostToken?: string },
@@ -140,6 +201,9 @@ export function acquireDaemonLock(
 		}
 	};
 
+	const heartbeat = (nowIso?: string): boolean =>
+		heartbeatDaemonLock(stateDir, hostToken, nowIso);
+
 	// Prepare our new lock payload in a temporary file in the same directory
 	const tmpLockPath = join(
 		stateDir,
@@ -162,6 +226,7 @@ export function acquireDaemonLock(
 			acquired: true,
 			lock: lockRecord,
 			release,
+			heartbeat,
 		};
 	} catch (error: any) {
 		if (error?.code !== "EEXIST") {
@@ -270,6 +335,7 @@ export function acquireDaemonLock(
 			acquired: true,
 			lock: lockRecord,
 			release,
+			heartbeat,
 		};
 	} catch (error: any) {
 		const current = readDaemonLock(stateDir);

@@ -10,7 +10,7 @@ export type PhaseEntry = "plan" | "run";
 /** The Host this recognition runs for: Pi's `skill:` resolves a same-named local skill first. */
 export type PhaseHost = "claude" | "pi" | "antigravity";
 
-/** The user's and project's local names that can shadow a packaged bare name (ADR 0031). */
+/** The user's and project's local names that can shadow a packaged bare name (ADR 0025). */
 export interface LocalNames {
 	/** Body of a same-named user or project command alias (possibly empty), or nothing when it does not exist; throws when it exists but cannot be read. */
 	alias(name: string): string | null | undefined;
@@ -36,7 +36,7 @@ const PACKAGED: Record<string, PhaseEntry> = {
 const PLUGIN_PREFIX = "immune-brain:";
 const SKILL_PREFIX = "skill:";
 const ALIAS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-// ADR 0031: only a marked mention in an alias body names a phase Skill, never a bare prose word.
+// ADR 0025: only a marked mention in an alias body names a phase Skill, never a bare prose word.
 const SKILL_MENTION = /(?<![A-Za-z0-9_-])(?:\/(?:immune-brain:|skill:)?|immune-brain:|skill:)(draw-up|clarify|drive)(?![A-Za-z0-9_-])/g;
 // The Host-expanded form of a slash command, anchored at the start of the prompt.
 const EXPANDED = /^<command-message>[^<]*<\/command-message>\s*<command-name>\/([^\s<]+)<\/command-name>/;
@@ -72,7 +72,7 @@ function aliasEntry(body: string): PhaseEntry | null {
 
 /**
  * The phase a literal prompt enters, or null. Only a leading slash command
- * counts (ADR 0031): `immune-brain:<name>`; `skill:<name>` unless Pi resolves
+ * counts (ADR 0025): `immune-brain:<name>`; `skill:<name>` unless Pi resolves
  * it to a same-named local skill; a bare packaged name unless a same-named
  * local command (read as an alias) or skill shadows it; or a user alias whose
  * body marks exactly one phase Skill. A mention anywhere else is not an entry.

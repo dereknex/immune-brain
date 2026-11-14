@@ -1,0 +1,152 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "session-agent-name-uniqueness",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "session-agent-name-uniqueness",
+    "goal": "Derive unique <=32-char backend session names from folded label plus ownership token slice in herdr and herdr-core SupervisedSessionPort providers (#502) under docs/specs/session-agent-name-uniqueness.spec.md.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source BR-REQ-1; meet BR-REQ-3, BR-REQ-4, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-OUT-2, and BR-SCN-1 in docs/specs/session-agent-name-uniqueness.spec.md: two live createSession calls with identical label coexist across fake, herdr, and herdr-core; herdrAgentName(label, token) obeys ^[a-z][a-z0-9_-]{0,31}$ across non-alpha prefixes and 32-char truncation; herdr --resume on an exited host reuses found.ids.token; fake-herdr rejects duplicate live agent names with agent_name_taken; and session boundary and advisory contracts stay intact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-conformance.test.ts\",\n      \"tests/supervised-session-herdr.test.ts\",\n      \"tests/supervised-session-advisory.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source BR-REQ-2; meet BR-REQ-4, BR-DEC-1, BR-DEC-2, BR-OUT-3, and BR-SCN-1 in docs/specs/session-agent-name-uniqueness.spec.md: herdrCoreName(label, token) produces 1..32 chars of [a-z0-9_-] ending with a 12-hex token slice across digit-prefixed, punctuation-only, and 32-char labels; concurrent live herdr-core sessions with identical label succeed with consistent viewer tab labels across createSession and attachSession; and fake-herdr-core/hc rejects duplicate live --name values until killed or removed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-herdr-core.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source BR-REQ-5 in docs/specs/session-agent-name-uniqueness.spec.md: docs/reference/supervised-session-port.md updates both herdr and herdr-core createSession naming rows, .changeset/session-agent-name-uniqueness.md is present, and dist doc mirrors, Claude/Antigravity plugin checks, and bun run typecheck pass.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/sync-dist-docs.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun test tests/dist-docs-sync-contract.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/session-agent-name-uniqueness.md",
+      "docs/plans/session-agent-name-uniqueness.intent.json",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/session-agent-name-uniqueness.spec.md",
+      "plugins/immune-brain-antigravity/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain-antigravity/runtime/session/herdr_core_provider.ts",
+      "plugins/immune-brain-antigravity/runtime/session/herdr_provider.ts",
+      "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+      "plugins/immune-brain/runtime/session/herdr_provider.ts",
+      "tests/fixtures/fake-herdr-core/hc",
+      "tests/fixtures/fake-herdr/herdr",
+      "tests/supervised-session-conformance.test.ts",
+      "tests/supervised-session-herdr-core.test.ts",
+      "tests/supervised-session-herdr.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/session-agent-name-uniqueness.intent.json",
+    "content_hash": "sha256:66804158330be2f1ffdf3e1f77dbdc06acfff62a84e7b5df0a0f48e55a0a5eac"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:66804158330be2f1ffdf3e1f77dbdc06acfff62a84e7b5df0a0f48e55a0a5eac",
+  "git_base_head": "121409ea860e458c72e4198ed923793be168e57d",
+  "attestations": [
+    {
+      "id": "approval-qa-fe8f4994",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66804158330be2f1ffdf3e1f77dbdc06acfff62a84e7b5df0a0f48e55a0a5eac",
+      "diff_hash": "sha256:f92fa959329f361c4fd3cf8360de7b91348259fdb8399abee546d241d8957d45",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:32612146d5f21d41bb5ff6dc37b313c166704cec99597ce08feafa13c20d7c6d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:32612146d5f21d41bb5ff6dc37b313c166704cec99597ce08feafa13c20d7c6d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:32612146d5f21d41bb5ff6dc37b313c166704cec99597ce08feafa13c20d7c6d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:32612146d5f21d41bb5ff6dc37b313c166704cec99597ce08feafa13c20d7c6d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-c7ed2556",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:66804158330be2f1ffdf3e1f77dbdc06acfff62a84e7b5df0a0f48e55a0a5eac",
+      "diff_hash": "sha256:f92fa959329f361c4fd3cf8360de7b91348259fdb8399abee546d241d8957d45",
+      "actor_id": "cli:claude-code:f84fea9b-a2c8-411a-aaa3-069a54b965db",
+      "summary": "Provenance verified (aa79d676 parent 121409ea, tree eef07b94). Both providers now build session names as the folded label plus a 12-hex token slice, keeping the 32-character limit and the required character set. herdr --resume restarts with found.ids.token. herdr-core gives createSession and attachSession the same viewer label because both use the stored terminal name. Both fake CLIs reject a duplicate live name and accept it again after close or kill. Docs, changeset and the identical-OID mirrors match. Blast radius: medium, in herdr_provider.ts and herdr_core_provider.ts name derivation, with no change to handle or persisted shape.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "121409ea860e458c72e4198ed923793be168e57d",
+        "review_commit": "aa79d67691ddb1864283c64e9c506629b7c73fff",
+        "review_tree": "eef07b949d2405f3208decd56eb78d609270d045",
+        "manifest_digest": "sha256:ffcda783b6b36f07e7efe0ebaeb1bef43f8835b7fa608756bbb1a348183ecdfc"
+      },
+      "reviewer_verdict_sha256": "sha256:bc6e1c9cd59d44f9e6a63d9979c8be126903085c578d6fde9338e6ccc44348b5"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:session-agent-name-uniqueness:2026-11-14T10:08:45.292Z",
+      "at": "2026-11-14T10:08:45.292Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/session-agent-name-uniqueness.intent.json"
+    },
+    {
+      "id": "record_approval:session-agent-name-uniqueness:2026-11-14T10:10:14.682Z",
+      "at": "2026-11-14T10:10:14.682Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-fe8f4994\naction_v2_sha256:4d9a6481b55ac294e43243acd51d809b5532f51d57c0e15b2ad1c562c54a78ed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-14T10:10:14.683Z"
+      }
+    },
+    {
+      "id": "record_approval:session-agent-name-uniqueness:2026-11-14T10:29:09.821Z",
+      "at": "2026-11-14T10:29:09.821Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-c7ed2556\naction_v2_sha256:1d310e3aed31b768549e679c4c1047acdbb764af8480d477394c2429371912ec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:f84fea9b-a2c8-411a-aaa3-069a54b965db",
+        "confirmation_ref": "antigravity:cli:claude-code:f84fea9b-a2c8-411a-aaa3-069a54b965db",
+        "issued_at": "2026-11-14T10:29:09.821Z"
+      },
+      "review_started_at": "2026-11-14T10:27:54.889Z",
+      "review_submitted_at": "2026-11-14T10:29:08.672Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:session-agent-name-uniqueness:2026-11-14T10:29:12.225Z",
+      "at": "2026-11-14T10:29:12.225Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:8ef9e1dc5a139dc676b13b814b1634ff46c41500f3473b978ccfe3e4fdae4d4c"
+    }
+  ]
+}

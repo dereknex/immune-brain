@@ -1,6 +1,6 @@
 {
   "name": "immune-brain",
-  "version": "8.3.0",
+  "version": "8.3.1",
   "description": "Immune-Brain agent skill system",
   "publishConfig": {
     "access": "public",
@@ -58,6 +58,14 @@
     "#kernel/storage": "./plugins/immune-brain/runtime/kernel/storage.ts",
     "#kernel/intent": "./plugins/immune-brain/runtime/kernel/intent.ts",
     "#kernel/reducer": "./plugins/immune-brain/runtime/kernel/reducer.ts"
+  },
+  "bin": {
+    "imm-loop": "./plugins/immune-brain/bin/imm-loop",
+    "imm-kernel": "./plugins/immune-brain/bin/imm-kernel",
+    "imm-session": "./plugins/immune-brain/bin/imm-session",
+    "imm-tracker": "./plugins/immune-brain/bin/imm-tracker",
+    "imm-plan": "./plugins/immune-brain/bin/imm-plan",
+    "imm-pr-diag": "./plugins/immune-brain/bin/imm-pr-diag"
   },
   "exports": {
     ".": "./README.md",

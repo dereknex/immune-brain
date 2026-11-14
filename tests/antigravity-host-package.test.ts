@@ -41,7 +41,7 @@ const ROLES = [
 	"immune-brain-review-verifier",
 	"immune-brain-ui-review",
 ];
-const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "prune-docs", "prune-tests", "revisit", "slim"];
+const SKILLS = ["authority-review", "clarify", "draw-up", "drive", "fix-pr", "imm-loop", "prune-docs", "prune-tests", "revisit", "slim"];
 
 const scratch: string[] = [];
 function scratchDir(label: string): string {
@@ -132,12 +132,12 @@ describe("Antigravity artifact boundary (AC1)", () => {
 		expect(nativeBodies.sort()).toEqual(sharedBodies.sort());
 	});
 
-	it("discloses that native reviewer/verifier Git and packet-hash access is not certified and links live certification", () => {
+	it("discloses that native reviewer/verifier Git and packet-hash access is not certified", () => {
 		const readme = readFileSync(join(ARTIFACT, "README.md"), "utf8").replace(/\s+/g, " ");
 		expect(readme).toContain("Known limitation: native reviewer and verifier");
 		expect(readme).toContain("Immutable Git access and review-packet hash verification by those native roles are not certified");
 		expect(readme).toContain("complete Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified on Antigravity");
-		expect(readme).toContain("docs/reports/antigravity-live-certification.md");
+		expect(readme).not.toContain("antigravity-live-certification.md");
 	});
 
 	it("discloses Review CLI residual risk, absence of restriction flags, and untracked-file limits (S7 AC2, D9)", () => {
@@ -389,12 +389,6 @@ describe("Antigravity hook dispatch and observation", () => {
 		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "fixture"], { cwd: repo });
 
 		const env = isolatedEnv();
-		const settingsDir = join(env.HOME, ".gemini", "antigravity-cli");
-		mkdirSync(settingsDir, { recursive: true });
-		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
-		const fakeBin = scratchDir("ps-bin");
-		writeFileSync(join(fakeBin, "ps"), '#!/bin/sh\necho "1 /usr/local/bin/agy"\n', { mode: 0o755 });
-		env.PATH = `${fakeBin}:${env.PATH}`;
 		const hook = hookRunner(copy, env);
 		const conversationId = "conv-pkg-confirm";
 		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive pkg-task", workspacePaths: [repo] }))

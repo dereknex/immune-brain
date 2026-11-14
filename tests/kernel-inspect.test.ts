@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runKernelCommand } from "../plugins/immune-brain/runtime/commands/kernel";
+import { acquireDaemonLock } from "../plugins/immune-brain/runtime/loop_daemon/lock";
+import { initLoopState, saveLoopState } from "../plugins/immune-brain/runtime/loop_daemon/state";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { applyScopeRiskFloor, parseRiskFloor, RISK_FLOOR_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/risk_floor";
 import { ROUTINE_CLASSES_DECLARATION_PATH } from "../plugins/immune-brain/runtime/kernel/routine_classes";
@@ -94,6 +96,22 @@ describe("imm-kernel inspect", () => {
 		expect(output.risk.floor_invalid).toBeNull();
 		expect(output.risk.routine_classes).toBeNull();
 		expect(output.risk.outside_routine_allowlist).toEqual([]);
+		expect(output.loop).toEqual({
+			daemon_running: false,
+			pid: null,
+			lock: null,
+			stale_lock: false,
+			paused: false,
+			pause_reason: null,
+			active_leases_count: 0,
+			active_leases: [],
+			watermarks: null,
+			stats: null,
+			updated_at: null,
+			log_path: join(root, ".imm/state/loop/daemon.log"),
+			log_exists: false,
+			state_error: null,
+		});
 		expect(output.unobservable).toEqual({
 			capability: "unobservable",
 			rehearsal: "unobservable",
@@ -104,6 +122,7 @@ describe("imm-kernel inspect", () => {
 		expect(existsSync(join(root, ".imm/state/workspace.json"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/locks"))).toBe(false);
+		expect(existsSync(join(root, ".imm/state/loop"))).toBe(false);
 	});
 
 	it("rejects missing --json and leaves status --json unchanged", () => {
@@ -232,5 +251,48 @@ describe("imm-kernel inspect", () => {
 		expect(output.kernel).toEqual({ claim: null, workspace: { current_working: null } });
 		expect(output.layout.layout).toBe("migration_blocked_active");
 		expect(existsSync(join(root, ".imm/state/journal.jsonl"))).toBe(false);
+	});
+
+	it("reflects active loop daemon lock/state and surfaces corrupt loop state.json without failing inspect", () => {
+		const root = tempRoot();
+		const stateDir = join(root, ".imm/state/loop");
+		const lock = acquireDaemonLock(stateDir);
+		expect(lock.acquired).toBe(true);
+		try {
+			const state = initLoopState();
+			state.paused = true;
+			state.pause_reason = "smoke check";
+			state.stats.ticks_total = 3;
+			saveLoopState(stateDir, state);
+			writeFileSync(join(stateDir, "daemon.log"), "daemon boot\n", { mode: 0o600 });
+
+			const activeRes = runKernelCommand(["inspect", "--json"], root);
+			expect(activeRes.returncode).toBe(0);
+			const activeOutput = JSON.parse(activeRes.stdout);
+			expect(activeOutput.loop).toMatchObject({
+				daemon_running: true,
+				pid: process.pid,
+				stale_lock: false,
+				paused: true,
+				pause_reason: "smoke check",
+				active_leases_count: 0,
+				log_exists: true,
+				state_error: null,
+			});
+			expect(activeOutput.loop.stats.ticks_total).toBe(3);
+		} finally {
+			if (lock.acquired) lock.release();
+		}
+
+		writeFileSync(join(stateDir, "state.json"), "{corrupt json\n", { mode: 0o600 });
+		const corruptRes = runKernelCommand(["inspect", "--json"], root);
+		expect(corruptRes.returncode).toBe(0);
+		const corruptOutput = JSON.parse(corruptRes.stdout);
+		expect(corruptOutput.loop).toMatchObject({
+			daemon_running: false,
+			pid: null,
+			stale_lock: false,
+			state_error: ".imm/state/loop/state.json is corrupt or unreadable",
+		});
 	});
 });

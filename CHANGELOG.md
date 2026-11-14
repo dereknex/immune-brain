@@ -1,5 +1,11 @@
 # Changelog
 
+## 8.3.1
+
+### Patch Changes
+
+- [`8282079`](https://github.com/dereknex/immune-brain/commit/8282079e1d9473ff4ac49ea1fc2b47ac7222094f) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity Managed native gates no longer refuse based on `toolPermission` or the `agy` ancestor process flags; `PreToolUse` always returns `force_ask` and leaves dialog surfacing to `agy`. `permissions.allow` is still read (best effort) for `allow-rule` provenance.
+
 ## 8.3.0
 
 ### Minor Changes

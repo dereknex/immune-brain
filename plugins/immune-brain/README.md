@@ -131,6 +131,7 @@ in the next major release.
 | `slim` | execute; repair; canonical | Minimize tracked agent-instruction context after explicit manifest approval; no Managed authority mutation, contract installation, or reference-document creation. |
 | `prune-tests` | execute; repair; canonical | Audit and prune redundant tests after explicit manifest approval; no Managed authority mutation, production-source change, or assertion weakening. |
 | `revisit` | execute; discovery; canonical | Workflow-friction diagnosis from pi session logs and committed audit evidence. Read-only. No Managed Path mutation. |
+| `imm-loop` | coordinate; coordinator; canonical | Manage and observe the repository Loop daemon in the background without minting a foreground Run binding or mutating Kernel authority directly. |
 <!-- END GENERATED: skill-registry-role-map -->
 
 The authoritative public role manifest is [`skills/registry.yaml`](skills/registry.yaml).

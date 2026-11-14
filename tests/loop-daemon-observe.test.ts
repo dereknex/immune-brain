@@ -22,6 +22,7 @@ import {
 	rmdirSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,6 +62,7 @@ import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/g
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BIN_IMM_LOOP = resolve(ROOT, "plugins/immune-brain/bin/imm-loop");
+const BIN_IMM_KERNEL = resolve(ROOT, "plugins/immune-brain/bin/imm-kernel");
 
 function createMockGhTransport(responses: {
 	issuesJson?: unknown[];
@@ -1613,6 +1615,244 @@ describe("loop daemon observe, normalization, and state persistence (S1)", () =>
 
 			// Clean up
 			resB.release!();
+			expect(existsSync(lockPath)).toBe(false);
+		});
+	});
+
+	describe("daemon lifecycle (start, stop, logs) and global bin symlink", () => {
+		const spawnedPids: number[] = [];
+		const lifecycleDirs: string[] = [];
+
+		afterEach(() => {
+			for (const pid of spawnedPids.splice(0)) {
+				if (isPidAlive(pid)) {
+					try {
+						process.kill(pid, "SIGKILL");
+					} catch {}
+				}
+			}
+			for (const dir of lifecycleDirs.splice(0)) {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("rejects start preflight failures and invalid flags before spawning any child", async () => {
+			const ws = mkdtempSync(join(tmpdir(), "imm-loop-preflight-"));
+			lifecycleDirs.push(ws);
+			let spawnCalled = false;
+			const spySpawn = () => {
+				spawnCalled = true;
+				return { pid: 999999 };
+			};
+
+			const offRes = await runLoopDaemonCli(["start"], ws, {
+				spawnDaemon: spySpawn,
+			});
+			expect(offRes.returncode).toBe(1);
+			expect(offRes.stderr).toContain("Error: loop.mode is off");
+			expect(spawnCalled).toBe(false);
+			expect(existsSync(join(ws, ".imm/state/loop"))).toBe(false);
+
+			const badInterval = await runLoopDaemonCli(["start", "--interval", "0"], ws, {
+				spawnDaemon: spySpawn,
+			});
+			expect(badInterval.returncode).toBe(2);
+			expect(badInterval.stderr).toContain("Error: --interval requires a positive integer");
+			expect(spawnCalled).toBe(false);
+
+			const actorConflict = await runLoopDaemonCli(["start"], ws, {
+				loopConfig: {
+					mode: "assist",
+					interval_seconds: 60,
+					max_concurrent: 2,
+					max_ready_buffer: 5,
+					max_pr_buffer: 5,
+					auto_enroll_max_risk: "none",
+					allowed_actors: ["owner-login"],
+					allowed_associations: ["OWNER"],
+					budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
+				},
+				guardFacts: { daemon_identity: "owner-login" },
+				spawnDaemon: spySpawn,
+			});
+			expect(actorConflict.returncode).toBe(1);
+			expect(actorConflict.stderr).toContain("daemon GitHub identity 'owner-login' is in loop.allowed_actors");
+			expect(spawnCalled).toBe(false);
+
+			const badTimeout = await runLoopDaemonCli(["stop", "--timeout", "abc"], ws);
+			expect(badTimeout.returncode).toBe(2);
+			expect(badTimeout.stderr).toContain("Error: --timeout requires a positive integer");
+
+			const badLines = await runLoopDaemonCli(["logs", "--lines", "9999"], ws);
+			expect(badLines.returncode).toBe(2);
+			expect(badLines.stderr).toContain("Error: --lines requires an integer between 1 and 5000");
+		});
+
+		it("updates daemon.lock heartbeat_at atomically and fails fast when spawned child exits early", async () => {
+			const ws = mkdtempSync(join(tmpdir(), "imm-loop-hb-"));
+			lifecycleDirs.push(ws);
+			const sd = join(ws, ".imm/state/loop");
+			const lock = acquireDaemonLock(sd);
+			expect(lock.acquired).toBe(true);
+			if (lock.acquired) {
+				const stamped = lock.heartbeat("2026-10-01T12:34:56.000Z");
+				expect(stamped).toBe(true);
+				const current = readDaemonLock(sd);
+				expect(current.lock?.heartbeat_at).toBe("2026-10-01T12:34:56.000Z");
+				expect(statSync(join(sd, "daemon.lock")).mode & 0o777).toBe(0o600);
+				lock.release();
+				expect(lock.heartbeat("2026-10-01T12:35:00.000Z")).toBe(false);
+			}
+
+			const earlyExit = await runLoopDaemonCli(["start", "--dry-run"], ws, {
+				startupTimeoutMs: 2000,
+				spawnDaemon: ({ logPath }) => {
+					writeFileSync(logPath, "line-1\nboom in child\n", { mode: 0o600 });
+					return { pid: 99999999, hasExited: () => true };
+				},
+			});
+			expect(earlyExit.returncode).toBe(1);
+			expect(earlyExit.stderr).toContain("Error: loop daemon exited before acquiring lock");
+			expect(earlyExit.stderr).toContain("boom in child");
+		});
+
+		it("exposes root package.json bin entries and runs full detached lifecycle via symlinked binaries", async () => {
+			const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+			expect(pkg.bin).toEqual({
+				"imm-loop": "./plugins/immune-brain/bin/imm-loop",
+				"imm-kernel": "./plugins/immune-brain/bin/imm-kernel",
+				"imm-session": "./plugins/immune-brain/bin/imm-session",
+				"imm-tracker": "./plugins/immune-brain/bin/imm-tracker",
+				"imm-plan": "./plugins/immune-brain/bin/imm-plan",
+				"imm-pr-diag": "./plugins/immune-brain/bin/imm-pr-diag",
+			});
+
+			const wsDir = mkdtempSync(join(tmpdir(), "imm-loop-e2e-ws-"));
+			const binDir = mkdtempSync(join(tmpdir(), "imm-loop-e2e-bin-"));
+			lifecycleDirs.push(wsDir, binDir);
+
+			symlinkSync(BIN_IMM_LOOP, join(binDir, "imm-loop"));
+			symlinkSync(BIN_IMM_KERNEL, join(binDir, "imm-kernel"));
+			const testEnv = {
+				...process.env,
+				PATH: `${binDir}:${process.env.PATH ?? ""}`,
+			};
+
+			const startRes = spawnSync(
+				"imm-loop",
+				["start", "--dry-run", "--interval", "60", "--json"],
+				{ cwd: wsDir, env: testEnv, encoding: "utf8", timeout: 20_000 },
+			);
+			expect({ status: startRes.status, stderr: startRes.stderr }).toEqual({
+				status: 0,
+				stderr: "",
+			});
+			const started = JSON.parse(startRes.stdout);
+			expect(started.status).toBe("started");
+			expect(started.daemon_running).toBe(true);
+			expect(typeof started.pid).toBe("number");
+			expect(started.pid).not.toBe(process.pid);
+			spawnedPids.push(started.pid);
+			expect(isPidAlive(started.pid)).toBe(true);
+
+			const lockPath = join(wsDir, ".imm/state/loop/daemon.lock");
+			expect(existsSync(lockPath)).toBe(true);
+			expect(statSync(lockPath).mode & 0o777).toBe(0o600);
+
+			const startAgainRes = spawnSync(
+				"imm-loop",
+				["start", "--dry-run", "--json"],
+				{ cwd: wsDir, env: testEnv, encoding: "utf8", timeout: 10_000 },
+			);
+			expect(startAgainRes.status).toBe(0);
+			const again = JSON.parse(startAgainRes.stdout);
+			expect(again.status).toBe("already_running");
+			expect(again.pid).toBe(started.pid);
+
+			const inspectRes = spawnSync("imm-kernel", ["inspect", "--json"], {
+				cwd: wsDir,
+				env: testEnv,
+				encoding: "utf8",
+				timeout: 10_000,
+			});
+			expect(inspectRes.status).toBe(0);
+			const inspected = JSON.parse(inspectRes.stdout);
+			expect(inspected.loop.daemon_running).toBe(true);
+			expect(inspected.loop.pid).toBe(started.pid);
+			expect(inspected.loop.stale_lock).toBe(false);
+
+			const logsRes = spawnSync("imm-loop", ["logs", "--lines", "20", "--json"], {
+				cwd: wsDir,
+				env: testEnv,
+				encoding: "utf8",
+				timeout: 10_000,
+			});
+			expect(logsRes.status).toBe(0);
+			const logs = JSON.parse(logsRes.stdout);
+			expect(logs.exists).toBe(true);
+			expect(Array.isArray(logs.lines)).toBe(true);
+
+			const stopBegin = Date.now();
+			const stopRes = spawnSync("imm-loop", ["stop", "--json"], {
+				cwd: wsDir,
+				env: testEnv,
+				encoding: "utf8",
+				timeout: 10_000,
+			});
+			const stopElapsedMs = Date.now() - stopBegin;
+			expect({ status: stopRes.status, stderr: stopRes.stderr }).toEqual({
+				status: 0,
+				stderr: "",
+			});
+			expect(stopElapsedMs).toBeLessThan(3000);
+			const stopped = JSON.parse(stopRes.stdout);
+			expect(stopped).toEqual({
+				status: "stopped",
+				daemon_running: false,
+				pid: started.pid,
+			});
+			expect(isPidAlive(started.pid)).toBe(false);
+			expect(existsSync(lockPath)).toBe(false);
+
+			const stopAgainRes = spawnSync("imm-loop", ["stop", "--json"], {
+				cwd: wsDir,
+				env: testEnv,
+				encoding: "utf8",
+				timeout: 10_000,
+			});
+			expect(stopAgainRes.status).toBe(0);
+			expect(JSON.parse(stopAgainRes.stdout)).toEqual({
+				status: "already_stopped",
+				daemon_running: false,
+				pid: null,
+				stale_lock_cleaned: false,
+			});
+
+			writeFileSync(
+				lockPath,
+				`${JSON.stringify({
+					contract: LOOP_DAEMON_LOCK_CONTRACT,
+					pid: 99999999,
+					hostname: "dead-host",
+					started_at: "2026-11-10T00:00:00Z",
+					host_token: "stale-stop-token",
+					heartbeat_at: "2026-11-10T00:00:00Z",
+				}, null, 2)}\n`,
+				{ mode: 0o600 },
+			);
+			const stopStaleRes = spawnSync("imm-loop", ["stop", "--json"], {
+				cwd: wsDir,
+				env: testEnv,
+				encoding: "utf8",
+				timeout: 10_000,
+			});
+			expect(stopStaleRes.status).toBe(0);
+			expect(JSON.parse(stopStaleRes.stdout)).toEqual({
+				status: "already_stopped",
+				daemon_running: false,
+				pid: 99999999,
+				stale_lock_cleaned: true,
+			});
 			expect(existsSync(lockPath)).toBe(false);
 		});
 	});
