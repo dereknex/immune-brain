@@ -47,7 +47,7 @@ import {
 } from "../host-core/private_file";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
-import { checkNativeGateSurfacing, matchesMcpAllowRule, type AncestorProcessReader } from "./tool_permission";
+import { matchesMcpAllowRule, readAntigravityAllowRules } from "./tool_permission";
 import {
 	antigravityRunContinuationPostToolUse,
 	antigravityRunContinuationPreToolUse,
@@ -119,7 +119,6 @@ export interface PhaseEntryLocations {
 	root?: string;
 	home?: string;
 	readInitiative?: InitiativeObservationReader;
-	readAncestorArgs?: AncestorProcessReader;
 }
 
 export interface AntigravityPreInvocationPayload {
@@ -750,14 +749,8 @@ function issueNativeConfirmationForceAsk(
 		reworkChoice?: ReworkChoice;
 	} = {},
 ): PreToolUseHookDecision {
-	const surfacing = checkNativeGateSurfacing({
-		home: locations.home,
-		readAncestorArgs: locations.readAncestorArgs,
-	});
-	if (!surfacing.ok) {
-		return { decision: "deny", reason: surfacing.reason };
-	}
-	const allowRuleMatched = matchesMcpAllowRule(surfacing.allowRules, IMMUNE_BRAIN_SERVERS, confirmInput.operation);
+	// Whether the dialog surfaces (toolPermission, launch flags) is agy's decision.
+	const allowRuleMatched = matchesMcpAllowRule(readAntigravityAllowRules(locations.home), IMMUNE_BRAIN_SERVERS, confirmInput.operation);
 	if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, { ...choices, allowRuleMatched })) {
 		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
 	}

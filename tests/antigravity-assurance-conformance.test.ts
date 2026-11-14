@@ -46,7 +46,6 @@ import { applyRunContinuationEvent } from "../plugins/immune-brain/runtime/host-
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { createAntigravityMcpRuntime, runHook as runAntigravityHook, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
-import type { AncestorProcessReader } from "../plugins/immune-brain/runtime/antigravity/tool_permission";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
 import * as hostInteraction from "../plugins/immune-brain/runtime/host-core/interaction";
 import { ALLOW_RULE_REQUEST_PREFIX, NativeAuthorityError, entryTokenRequestId, hostConfirmationRef } from "../plugins/immune-brain/runtime/host-core/interaction";
@@ -1684,14 +1683,6 @@ describe("Antigravity Harness Conformance", () => {
 		}
 
 		const conversationId = "conv-gate-1";
-		const interactiveAgy: AncestorProcessReader = () => [["/usr/local/bin/agy"]];
-		function requestReviewHome(label = "home"): string {
-			const home = temp(label);
-			const dir = join(home, ".gemini", "antigravity-cli");
-			mkdirSync(dir, { recursive: true });
-			writeFileSync(join(dir, "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
-			return home;
-		}
 		const meta = (root: string, step?: number) => ({
 			"antigravity.google/conversation_id": conversationId,
 			"antigravity.google/workspace_paths": [root],
@@ -1728,7 +1719,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: TASK } },
 				},
-			}, { root: store, home: requestReviewHome(), readAncestorArgs: interactiveAgy });
+			}, { root: store, home: temp() });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain(`Task: ${TASK}`);
 			expect(hookRes.reason).toContain("Binding digest:");
@@ -1764,7 +1755,7 @@ describe("Antigravity Harness Conformance", () => {
 				scope_hint: ["docs/plans", "base.txt"], risk: "routine", revision: 2 };
 
 			// PreToolUse prepares the breaking revision digest and restores both file bytes and index entry.
-			const home = requestReviewHome("breaking-home");
+			const home = temp("breaking-home");
 			const hookRes = await antigravityPreToolUseHookAsync({
 				conversationId,
 				stepIdx: 7,
@@ -1773,7 +1764,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain_immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
 				},
-			}, { root: store, home, readAncestorArgs: interactiveAgy });
+			}, { root: store, home });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain("Operation: approve_breaking_intent_revision");
 			expect(hookRes.reason).toContain("Intent revision: 2");
@@ -1801,7 +1792,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
 				},
-			}, { root: store, home, readAncestorArgs: interactiveAgy });
+			}, { root: store, home });
 			expect(freshHook.decision).toBe("force_ask");
 			server.send({ jsonrpc: "2.0", id: "breaking-ok", method: "tools/call",
 				params: { name: "approve_breaking_intent_revision", arguments: { task_id: TASK, next_intent: next }, _meta: meta(root, 8) } });
@@ -1830,7 +1821,7 @@ describe("Antigravity Harness Conformance", () => {
 				stepIdx: 4,
 				workspacePaths: [root],
 				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: TASK } } },
-			}, { root: store, home: requestReviewHome("stop-home"), readAncestorArgs: interactiveAgy });
+			}, { root: store, home: temp("stop-home") });
 			expect(stopHook.decision).toBe("force_ask");
 			expect(stopHook.reason).toContain("Operation: stop");
 
@@ -1874,7 +1865,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: batchArgs },
 				},
-			}, { root: store, home: requestReviewHome("batch-home"), readAncestorArgs: interactiveAgy, readInitiative });
+			}, { root: store, home: temp("batch-home"), readInitiative });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain(`Authorize this unattended batch run for ${SLUG}?`);
 			expect(hookRes.reason).toContain(`${CHILD} (S0)`);
@@ -1937,7 +1928,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: args },
 				},
-			}, { root: store, home: requestReviewHome("single-home"), readAncestorArgs: interactiveAgy });
+			}, { root: store, home: temp("single-home") });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain("Preparation digest: sha256:");
 
@@ -2067,7 +2058,7 @@ describe("Antigravity Harness Conformance", () => {
 				},
 			}, { root: store });
 
-			const ac2Home = requestReviewHome("ac2-home");
+			const ac2Home = temp("ac2-home");
 			const hookRes = await antigravityPreToolUseHookAsync({
 				conversationId,
 				stepIdx,
@@ -2076,7 +2067,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
 				},
-			}, { root: store, home: ac2Home, readAncestorArgs: interactiveAgy });
+			}, { root: store, home: ac2Home });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(existsSync(confirmFile)).toBe(true);
 			expect((lstatSync(confirmFile).mode & 0o777)).toBe(0o600);
@@ -2145,7 +2136,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
 				},
-			}, { root: store, home: ac2Home, readAncestorArgs: interactiveAgy });
+			}, { root: store, home: ac2Home });
 
 			const server = wire(root, store, {
 				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
@@ -3050,14 +3041,12 @@ describe("verifier via real hook dispatch", () => {
 					operation: { op: "record_finding", actor_id: "literal-user", finding: { id: "user-decision-1", kind: "unresolved_user_decision", acceptance_id: null, summary: "User must authorize" } },
 				});
 
-				mkdirSync(join(store, ".gemini", "antigravity-cli"), { recursive: true });
-				writeFileSync(join(store, ".gemini", "antigravity-cli", "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
 				const hookRes = await antigravityPreToolUseHookAsync({
 					conversationId,
 					stepIdx: 2,
 					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: TASK } } },
 					workspacePaths: [root],
-				}, { root: store, home: store, readAncestorArgs: () => [["/usr/local/bin/agy"]] });
+				}, { root: store, home: store });
 				expect(hookRes.decision).toBe("force_ask");
 
 				const reply = await handleJsonRpc({
@@ -3395,7 +3384,7 @@ describe("verifier via real hook dispatch", () => {
 		});
 	});
 
-describe("Antigravity native gate surfacing (ANGS-A1)", () => {
+describe("Antigravity native gate delegation (ANGS-A1)", () => {
 	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
 
 	function createTempDir(label: string): string {
@@ -3420,7 +3409,7 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 
 	async function dispatchRealHook(
 		payload: unknown,
-		locations: { root: string; home: string; readAncestorArgs: AncestorProcessReader },
+		locations: { root: string; home: string },
 	): Promise<{ decision?: string; reason?: string }> {
 		const chunks: Buffer[] = [];
 		const input = Readable.from([`${JSON.stringify(payload)}\n`]);
@@ -3466,7 +3455,7 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 		const intent = {
 			contract: "assurance_kernel/task_intent/v1",
 			task_id: taskId,
-			goal: "Verify native gate surfacing fails closed when human dialog cannot surface",
+			goal: "Verify native gates leave dialog surfacing to agy",
 			acceptance: [{ id: "A1", assertion: "Verify native gate", verification: validVerification }],
 			scope_hint: ["README.md"],
 			risk: "material" as const,
@@ -3477,11 +3466,6 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), JSON.stringify(intent, null, 2) + "\n", "utf8");
 		runGit(root, "add", ".");
 		runGit(root, "commit", "-m", "initial commit");
-
-		const interactiveAgy: AncestorProcessReader = () => [
-			["/bin/zsh", "-lc", "bun mcp_server.ts --hook"],
-			["/usr/local/bin/agy", "--model", "gemini"],
-		];
 
 		if (gate === "stop" || gate === "request_authorization") {
 			await enrollTaskForTest(root, taskId);
@@ -3550,7 +3534,7 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 					lastUserInput: `/drive ${taskId}`,
 					workspacePaths: [root],
 				},
-				{ root: store, home, readAncestorArgs: interactiveAgy },
+				{ root: store, home },
 			);
 		}
 
@@ -3574,12 +3558,6 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 			cacheDir(store, ANTIGRAVITY_CACHE_DIR),
 			`${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`,
 		);
-
-		function listConfirmAndAdmitFiles(): string[] {
-			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
-			if (!existsSync(dir)) return [];
-			return readdirSync(dir).filter((name) => name.endsWith(".confirm") || name.endsWith(".admit"));
-		}
 
 		function snapshotState() {
 			if (gate === "retire_stale_batch") {
@@ -3652,8 +3630,6 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 			taskId,
 			initiativeSlug,
 			confirmFilePath,
-			interactiveAgy,
-			listConfirmAndAdmitFiles,
 			snapshotState,
 			callMcpTool,
 			hookPayload,
@@ -3668,16 +3644,11 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
 
 	for (const gate of GATES) {
-		it(`allows ${gate} force_ask, writes confirmation grant, and lets MCP consume it when toolPermission=request-review in interactive agy`, async () => {
+		it(`returns ${gate} force_ask, writes confirmation grant, and lets MCP consume it without any agy settings file`, async () => {
 			const scenario = await setupGateScenario(gate, "pos");
 			try {
-				writeSettingsHome(scenario.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
 				const before = scenario.snapshotState();
-				const decision = await dispatchRealHook(scenario.hookPayload(), {
-					root: scenario.store,
-					home: scenario.home,
-					readAncestorArgs: scenario.interactiveAgy,
-				});
+				const decision = await dispatchRealHook(scenario.hookPayload(), { root: scenario.store, home: scenario.home });
 				expect(decision.decision).toBe("force_ask");
 				expect(existsSync(scenario.confirmFilePath)).toBe(true);
 
@@ -3709,239 +3680,77 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 		});
 	}
 
-	it("inspects the nearest ancestor agy process when checking disallowed flags", async () => {
-		const interactiveNearest = await setupGateScenario("stop", "nearest-ok");
-		const printNearest = await setupGateScenario("stop", "nearest-print");
-		try {
-			writeSettingsHome(interactiveNearest.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
-			const okDecision = await dispatchRealHook(interactiveNearest.hookPayload(), {
-				root: interactiveNearest.store,
-				home: interactiveNearest.home,
-				readAncestorArgs: () => [
-					["/bin/zsh", "-c", "hook"],
-					["/usr/local/bin/agy", "--model", "gemini"],
-					["/usr/local/bin/agy", "--print"],
-				],
-			});
-			expect(okDecision.decision).toBe("force_ask");
-			expect(existsSync(interactiveNearest.confirmFilePath)).toBe(true);
-
-			writeSettingsHome(printNearest.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
-			const denyDecision = await dispatchRealHook(printNearest.hookPayload(), {
-				root: printNearest.store,
-				home: printNearest.home,
-				readAncestorArgs: () => [
-					["/bin/zsh", "-c", "hook"],
-					["/usr/local/bin/agy", "--print"],
-					["/usr/local/bin/agy", "--model", "gemini"],
-				],
-			});
-			expect(denyDecision.decision).toBe("deny");
-			expect(denyDecision.reason).toContain("--print");
-			expect(denyDecision.reason).toContain("Remediation:");
-			expect(printNearest.listConfirmAndAdmitFiles()).toEqual([]);
-		} finally {
-			interactiveNearest.cleanup();
-			printNearest.cleanup();
-		}
-	});
-
-	interface NegativeCase {
-		id: string;
-		settingsRaw: string | null;
-		readAncestorArgs: AncestorProcessReader;
-		expectedCauseFragment: string;
-	}
-
-	const interactiveAncestor: AncestorProcessReader = () => [
-		["/bin/zsh", "-lc", "bun mcp_server.ts --hook"],
-		["/usr/local/bin/agy"],
+	const SETTINGS_VARIANTS: Array<{ id: string; settingsRaw: string }> = [
+		{ id: "always-proceed", settingsRaw: JSON.stringify({ toolPermission: "always-proceed" }) },
+		{ id: "request-review", settingsRaw: JSON.stringify({ toolPermission: "request-review" }) },
+		{ id: "proceed-in-sandbox", settingsRaw: JSON.stringify({ toolPermission: "proceed-in-sandbox" }) },
+		{ id: "strict", settingsRaw: JSON.stringify({ toolPermission: "strict" }) },
+		{ id: "missing-toolPermission-key", settingsRaw: JSON.stringify({ theme: "dark" }) },
+		{ id: "non-string-toolPermission", settingsRaw: JSON.stringify({ toolPermission: 123 }) },
+		{ id: "unparsable-settings-json", settingsRaw: "{not-valid-json" },
 	];
 
-	const NEGATIVE_CASES: NegativeCase[] = [
-		{
-			id: "always-proceed",
-			settingsRaw: JSON.stringify({ toolPermission: "always-proceed" }),
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "always-proceed",
-		},
-		{
-			id: "proceed-in-sandbox",
-			settingsRaw: JSON.stringify({ toolPermission: "proceed-in-sandbox" }),
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "proceed-in-sandbox",
-		},
-		{
-			id: "strict",
-			settingsRaw: JSON.stringify({ toolPermission: "strict" }),
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "strict",
-		},
-		{
-			id: "missing-settings-file",
-			settingsRaw: null,
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "settings.json is missing",
-		},
-		{
-			id: "missing-toolPermission-key",
-			settingsRaw: JSON.stringify({ theme: "dark" }),
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "toolPermission key is missing",
-		},
-		{
-			id: "non-string-toolPermission",
-			settingsRaw: JSON.stringify({ toolPermission: 123 }),
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "must be a string",
-		},
-		{
-			id: "unparsable-settings-json",
-			settingsRaw: "{not-valid-json",
-			readAncestorArgs: interactiveAncestor,
-			expectedCauseFragment: "unparsable JSON",
-		},
-		{
-			id: "agy-dangerously-skip-permissions",
-			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
-			readAncestorArgs: () => [["/usr/local/bin/agy", "--dangerously-skip-permissions"]],
-			expectedCauseFragment: "--dangerously-skip-permissions",
-		},
-		{
-			id: "agy-print",
-			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
-			readAncestorArgs: () => [["/usr/local/bin/agy", "--print"]],
-			expectedCauseFragment: "--print",
-		},
-		{
-			id: "agy-short-p",
-			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
-			readAncestorArgs: () => [["/usr/local/bin/agy", "-p"]],
-			expectedCauseFragment: "-p",
-		},
-		{
-			id: "no-agy-ancestor",
-			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
-			readAncestorArgs: () => [["/bin/zsh"], ["/sbin/launchd"]],
-			expectedCauseFragment: "no ancestor agy process",
-		},
-		{
-			id: "ancestor-reader-throws",
-			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
-			readAncestorArgs: () => {
-				throw new Error("ps inspection failed");
-			},
-			expectedCauseFragment: "ps inspection failed",
-		},
-	];
-
-	for (const gate of GATES) {
-		for (const neg of NEGATIVE_CASES) {
-			it(`denies ${gate} with no grant written when ${neg.id}, and following MCP call refuses cleanly`, async () => {
-				const scenario = await setupGateScenario(gate, neg.id);
-				try {
-					writeSettingsHome(scenario.home, neg.settingsRaw);
-					const beforeState = scenario.snapshotState();
-
-					const decision = await dispatchRealHook(scenario.hookPayload(), {
-						root: scenario.store,
-						home: scenario.home,
-						readAncestorArgs: neg.readAncestorArgs,
-					});
-					expect(decision.decision).toBe("deny");
-					expect(decision.reason).toContain(neg.expectedCauseFragment);
-					expect(decision.reason).toContain("Remediation:");
-					expect(decision.reason).toContain("request-review");
-					expect(existsSync(scenario.confirmFilePath)).toBe(false);
-					expect(scenario.listConfirmAndAdmitFiles()).toEqual([]);
-
-					const reply = await scenario.callMcpTool();
-					const rpc = reply as { error?: unknown; result?: { isError?: boolean; content?: Array<{ text?: string }> } };
-					const refused = Boolean(rpc?.error) || rpc?.result?.isError === true;
-					expect(refused).toBe(true);
-
-					const afterState = scenario.snapshotState();
-					expect(afterState.raw).toBe(beforeState.raw);
-					expect(afterState.literalUserCount).toBe(beforeState.literalUserCount);
-					expect(scenario.listConfirmAndAdmitFiles()).toEqual([]);
-				} finally {
-					scenario.cleanup();
-				}
-			});
-		}
+	for (const variant of SETTINGS_VARIANTS) {
+		it(`does not inspect toolPermission: stop returns force_ask and is consumed when settings are ${variant.id}`, async () => {
+			const scenario = await setupGateScenario("stop", `settings-${variant.id}`);
+			try {
+				writeSettingsHome(scenario.home, variant.settingsRaw);
+				const decision = await dispatchRealHook(scenario.hookPayload(), { root: scenario.store, home: scenario.home });
+				expect(decision.decision).toBe("force_ask");
+				expect(existsSync(scenario.confirmFilePath)).toBe(true);
+				await scenario.callMcpTool();
+				expect(existsSync(scenario.confirmFilePath)).toBe(false);
+				expect(scenario.snapshotState().lifecycle).toBe("stopped");
+			} finally {
+				scenario.cleanup();
+			}
+		});
 	}
 
-	it("enforces native gate surfacing end-to-end via the mcp_server.ts --hook CLI entrypoint", async () => {
-		const okScenario = await setupGateScenario("stop", "cli-ok");
-		const badScenario = await setupGateScenario("stop", "cli-bad");
+	it("returns force_ask through the mcp_server.ts --hook CLI entrypoint under always-proceed without inspecting ancestor processes", async () => {
+		const scenario = await setupGateScenario("stop", "cli");
 		const fakeBin = createTempDir("ps-bin");
 		try {
-			writeSettingsHome(okScenario.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
-			writeSettingsHome(badScenario.home, JSON.stringify({ toolPermission: "always-proceed" }) + "\n");
-
+			writeSettingsHome(scenario.home, JSON.stringify({ toolPermission: "always-proceed" }) + "\n");
+			// A `ps` that would report a non-interactive agy, and fails if ever invoked.
 			const psPath = join(fakeBin, "ps");
-			writeFileSync(psPath, "#!/bin/sh\necho '1 /usr/local/bin/agy'\n", { mode: 0o755 });
+			writeFileSync(psPath, "#!/bin/sh\necho '1 /usr/local/bin/agy --dangerously-skip-permissions --print'\nexit 1\n", { mode: 0o755 });
 			chmodSync(psPath, 0o755);
 
-			const runCli = (home: string, payload: unknown) => {
+			const runCli = (payload: unknown) => {
 				const proc = spawnSync(
 					process.execPath,
 					[join(process.cwd(), "plugins", "immune-brain", "runtime", "antigravity", "mcp_server.ts"), "--hook"],
 					{
 						input: `${JSON.stringify(payload)}\n`,
 						encoding: "utf8",
-						env: {
-							...process.env,
-							HOME: home,
-							PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
-						},
+						env: { ...process.env, HOME: scenario.home, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
 					},
 				);
 				expect(proc.status).toBe(0);
 				return JSON.parse(proc.stdout.trim()) as { decision?: string; reason?: string };
 			};
 
-			const preInv = runCli(badScenario.home, {
+			const preInv = runCli({
 				invocationNum: 0,
-				conversationId: "conv-cli-bad",
-				lastUserInput: `/drive ${badScenario.taskId}`,
-				workspacePaths: [badScenario.root],
+				conversationId: "conv-cli",
+				lastUserInput: `/drive ${scenario.taskId}`,
+				workspacePaths: [scenario.root],
 			});
 			expect(preInv.decision).not.toBe("deny");
 
-			const badDecision = runCli(badScenario.home, {
-				conversationId: "conv-cli-bad",
+			const decision = runCli({
+				conversationId: "conv-cli",
 				stepIdx: 1,
-				workspacePaths: [badScenario.root],
+				workspacePaths: [scenario.root],
 				toolCall: {
 					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: badScenario.taskId, reason: "stop" } },
+					args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: scenario.taskId, reason: "stop" } },
 				},
 			});
-			expect(badDecision.decision).toBe("deny");
-			expect(badDecision.reason).toContain("always-proceed");
-
-			const okPreInv = runCli(okScenario.home, {
-				invocationNum: 0,
-				conversationId: "conv-cli-ok",
-				lastUserInput: `/drive ${okScenario.taskId}`,
-				workspacePaths: [okScenario.root],
-			});
-			expect(okPreInv.decision).not.toBe("deny");
-
-			const okDecision = runCli(okScenario.home, {
-				conversationId: "conv-cli-ok",
-				stepIdx: 1,
-				workspacePaths: [okScenario.root],
-				toolCall: {
-					name: "call_mcp_tool",
-					args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: okScenario.taskId, reason: "stop" } },
-				},
-			});
-			expect(okDecision.decision).toBe("force_ask");
+			expect(decision.decision).toBe("force_ask");
 		} finally {
-			okScenario.cleanup();
-			badScenario.cleanup();
+			scenario.cleanup();
 			rmSync(fakeBin, { recursive: true, force: true });
 		}
 	});
@@ -3973,18 +3782,9 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n", "utf8");
 	}
 
-	function createFakePsBin(psArgsLine: string): string {
-		const fakeBin = createTempDir("ps-bin");
-		const psPath = join(fakeBin, "ps");
-		writeFileSync(psPath, `#!/bin/sh\necho '${psArgsLine}'\n`, { mode: 0o755 });
-		chmodSync(psPath, 0o755);
-		return fakeBin;
-	}
-
 	function runHookCli(
 		home: string,
 		store: string,
-		fakeBin: string,
 		payload: unknown,
 	): Promise<{ decision?: string; reason?: string }> {
 		return new Promise((resolve, reject) => {
@@ -3997,7 +3797,6 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 						...process.env,
 						HOME: home,
 						TMPDIR: store,
-						PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
 					},
 				},
 			);
@@ -4261,14 +4060,12 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		shape: CallShape,
 		settings: Record<string, unknown>,
 		suffix: string,
-		psArgsLine = "1 /usr/local/bin/agy --model gemini",
 	) {
 		const scenario = await setupProvenanceScenario(gate, suffix);
-		const fakeBin = createFakePsBin(psArgsLine);
 		try {
 			writeSettingsHome(scenario.home, settings);
 			if (gate === "start_unattended_batch") {
-				const preInv = await runHookCli(scenario.home, scenario.store, fakeBin, {
+				const preInv = await runHookCli(scenario.home, scenario.store, {
 					invocationNum: 0,
 					conversationId: scenario.conversationId,
 					lastUserInput: `/drive ${scenario.taskId}`,
@@ -4276,7 +4073,7 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 				});
 				expect(preInv.decision).not.toBe("deny");
 			}
-			const decision = await runHookCli(scenario.home, scenario.store, fakeBin, scenario.preToolUsePayload(shape));
+			const decision = await runHookCli(scenario.home, scenario.store, scenario.preToolUsePayload(shape));
 			if (decision.decision !== "force_ask") {
 				return { decision, requestId: null as string | null, confirmationRef: null as string | null, confirmExists: existsSync(scenario.confirmFilePath) };
 			}
@@ -4286,7 +4083,6 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 			return { decision, requestId, confirmationRef, confirmExists: existsSync(scenario.confirmFilePath) };
 		} finally {
 			scenario.cleanup();
-			rmSync(fakeBin, { recursive: true, force: true });
 		}
 	}
 
@@ -4360,7 +4156,6 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 					gate,
 					shape,
 					{
-						toolPermission: "request-review",
 						permissions: { allow: [`mcp(immune-brain_immune-brain/${gate})`] },
 					},
 					`pos-${gate}-${shape}`,
@@ -4390,7 +4185,6 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 				"stop",
 				shape,
 				{
-					toolPermission: "request-review",
 					permissions: { allow: [rule] },
 				},
 				`wc-${label}-${shape}`,
@@ -4403,18 +4197,18 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 
 	it("yields antigravity-confirm- and never allow-rule when rules do not match or settings are malformed", async () => {
 		const cases = [
-			["no-permissions-key", { toolPermission: "request-review" }],
-			["empty-allow-array", { toolPermission: "request-review", permissions: { allow: [] } }],
-			["different-tool-status", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/status)"] } }],
-			["similar-name-stop2", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop2)"] } }],
-			["similar-name-stopx", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stopx)"] } }],
-			["similar-name-stop_all", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop_all)"] } }],
-			["similar-name-sto", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/sto)"] } }],
-			["different-server", { toolPermission: "request-review", permissions: { allow: ["mcp(other-server/stop)", "mcp(other-server/*)", "mcp(immune-brain-other/stop)"] } }],
-			["non-mcp-rules", { toolPermission: "request-review", permissions: { allow: ["command(stop)", "bash(stop)", "stop"] } }],
-			["non-string-entries", { toolPermission: "request-review", permissions: { allow: [null, 123, true, { rule: "mcp(*)" }, ["mcp(*)"]] } }],
-			["allow-not-array", { toolPermission: "request-review", permissions: { allow: "mcp(*)" } }],
-			["permissions-not-object", { toolPermission: "request-review", permissions: ["mcp(*)"] }],
+			["no-permissions-key", {}],
+			["empty-allow-array", { permissions: { allow: [] } }],
+			["different-tool-status", { permissions: { allow: ["mcp(immune-brain_immune-brain/status)"] } }],
+			["similar-name-stop2", { permissions: { allow: ["mcp(immune-brain_immune-brain/stop2)"] } }],
+			["similar-name-stopx", { permissions: { allow: ["mcp(immune-brain_immune-brain/stopx)"] } }],
+			["similar-name-stop_all", { permissions: { allow: ["mcp(immune-brain_immune-brain/stop_all)"] } }],
+			["similar-name-sto", { permissions: { allow: ["mcp(immune-brain_immune-brain/sto)"] } }],
+			["different-server", { permissions: { allow: ["mcp(other-server/stop)", "mcp(other-server/*)", "mcp(immune-brain-other/stop)"] } }],
+			["non-mcp-rules", { permissions: { allow: ["command(stop)", "bash(stop)", "stop"] } }],
+			["non-string-entries", { permissions: { allow: [null, 123, true, { rule: "mcp(*)" }, ["mcp(*)"]] } }],
+			["allow-not-array", { permissions: { allow: "mcp(*)" } }],
+			["permissions-not-object", { permissions: ["mcp(*)"] }],
 		] as const;
 		await runConcurrent(cases, 12, async ([label, settings]) => {
 			const res = await runProvenanceCheck("stop", "call_mcp_tool", settings as Record<string, unknown>, `neg-${label}`);
@@ -4425,36 +4219,17 @@ describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
 		});
 	}, 60_000);
 
-	it("does not relax existing refusals (always-proceed, --print, --dangerously-skip-permissions) even when an allow rule matches", async () => {
+	it("records allow-rule provenance independently of toolPermission, and confirm without a matching rule", async () => {
 		const cases = [
-			[
-				"toolPermission-always-proceed",
-				{ toolPermission: "always-proceed", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
-				"1 /usr/local/bin/agy --model gemini",
-			],
-			[
-				"agy-print",
-				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
-				"1 /usr/local/bin/agy --print",
-			],
-			[
-				"agy-dangerously-skip-permissions",
-				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
-				"1 /usr/local/bin/agy --dangerously-skip-permissions",
-			],
+			["always-proceed-with-rule", { toolPermission: "always-proceed", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)"] } }, true],
+			["strict-with-rule", { toolPermission: "strict", permissions: { allow: ["mcp(*)"] } }, true],
+			["always-proceed-no-rule", { toolPermission: "always-proceed" }, false],
 		] as const;
-		await runConcurrent(cases, 3, async ([label, settings, psArgsLine]) => {
-			const res = await runProvenanceCheck(
-				"stop",
-				"call_mcp_tool",
-				settings as Record<string, unknown>,
-				`refusal-${label}`,
-				psArgsLine,
-			);
-			expect(res.decision.decision, label).toBe("deny");
-			expect(res.confirmExists, label).toBe(false);
-			expect(res.requestId, label).toBeNull();
-			expect(res.confirmationRef, label).toBeNull();
+		await runConcurrent(cases, 3, async ([label, settings, allowRule]) => {
+			const res = await runProvenanceCheck("stop", "call_mcp_tool", settings as Record<string, unknown>, `perm-${label}`);
+			expect(res.decision.decision, label).toBe("force_ask");
+			expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), label).toBe(allowRule);
+			expect(res.confirmationRef, label).toMatch(allowRule ? /^antigravity-allow-rule-[0-9a-f]{16}$/ : /^antigravity-confirm-[0-9a-f]{16}$/);
 		});
 	}, 60_000);
 });

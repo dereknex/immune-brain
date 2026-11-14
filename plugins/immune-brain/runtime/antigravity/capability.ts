@@ -55,7 +55,7 @@ export const ANTIGRAVITY_CAPABILITY: HostCapabilityDeclaration = validateHostCap
 		P2: {
 			port: "P2",
 			level: "conformance-only",
-			evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); when a user permissions.allow rule covers the Managed call and skips the dialog, records the grant with the allow-rule reference kind; not live-certified (#469)",
+			evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; whether the dialog surfaces is agy's own decision (toolPermission, launch flags), so always-proceed or --dangerously-skip-permissions/--print auto-approval is recorded as a confirm grant; when a user permissions.allow rule covers the Managed call and skips the dialog, records the grant with the allow-rule reference kind; not live-certified (#469)",
 		},
 		P3: {
 			port: "P3",
