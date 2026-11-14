@@ -7,9 +7,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
-import { bindsAuthoritySubject } from "../kernel/batch_authority";
+import { bindsAuthoritySubject, computeBatchPlanDigest } from "../kernel/batch_authority";
 import { intentAuthorityHash } from "../kernel/intent";
-import type { TaskIntentV1 } from "../kernel/types";
+import { TASK_RISKS, type TaskIntentV1, type TaskRisk } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
@@ -287,6 +287,22 @@ export interface LaneSessionClose {
 }
 
 /**
+ * Each `plan_digest` rebind committed after a literal-user Parent decision on
+ * a single-task Lane, with the digest before and after (Spec lane-rebind-resume D1, D3).
+ */
+export interface LaneRebind {
+	at: string;
+	task_id: string;
+	from_revision: number;
+	to_revision: number;
+	from_digest: string;
+	to_digest: string;
+	intent_content_hash: string;
+	intent_authority_hash?: string;
+	risk: TaskRisk;
+}
+
+/**
  * Lane-mode batch state. A serial batch never writes this contract; a v1
  * record is never upgraded. Every v1-gated reader skips it by contract.
  */
@@ -345,6 +361,8 @@ export interface BatchLaneRunStateRecord {
 	intent_identities?: Record<string, BatchIntentIdentity>;
 	/** Each `plan_digest` reseal at integration, with the digest before and after. */
 	reseals?: Array<{ at: string; task_id: string; from_digest: string; to_digest: string; intent_revision: number; intent_content_hash: string; intent_authority_hash?: string }>;
+	/** Each single-task `plan_digest` rebind from a Parent literal-user revision decision. */
+	lane_rebinds?: LaneRebind[];
 	created_at: string;
 	updated_at: string;
 }
@@ -451,6 +469,31 @@ function validateIntentIdentities(record: Record<string, unknown>, batchId: stri
 			!isObject(i) || typeof i.intent_path !== "string" || !i.intent_path || !isRevision(i.intent_revision) || typeof i.intent_content_hash !== "string" || !i.intent_content_hash ||
 			(i.intent_authority_hash !== undefined && !isHash(i.intent_authority_hash)))))
 		throw new Error(`batch run state ${batchId} has an invalid intent_identities map`);
+}
+
+function validateLaneRebinds(record: Record<string, unknown>, batchId: string): void {
+	if (record.lane_rebinds === undefined) return;
+	if (record.plan_source !== "single_task")
+		throw new Error(`batch run state ${batchId} carries lane_rebinds without plan_source single_task`);
+	if (!Array.isArray(record.lane_rebinds) || record.lane_rebinds.some((r: unknown) =>
+		!isObject(r) || !isCanonicalTimestamp(r.at) || typeof r.task_id !== "string" || !r.task_id ||
+		!isRevision(r.from_revision) || !isRevision(r.to_revision) || (r.to_revision as number) <= (r.from_revision as number) ||
+		!isHash(r.from_digest) || !isHash(r.to_digest) || !isHash(r.intent_content_hash) ||
+		(r.intent_authority_hash !== undefined && !isHash(r.intent_authority_hash)) ||
+		typeof r.risk !== "string" || !TASK_RISKS.includes(r.risk as TaskRisk)))
+		throw new Error(`batch run state ${batchId} has an invalid lane_rebinds list`);
+	const rebinds = record.lane_rebinds as LaneRebind[];
+	if (rebinds.length > 0 && rebinds[rebinds.length - 1]!.to_digest !== record.plan_digest)
+		throw new Error(`batch run state ${batchId} plan_digest does not match its last lane_rebind`);
+	const lastByTask = new Map<string, LaneRebind>();
+	for (const entry of rebinds) lastByTask.set(entry.task_id, entry);
+	const identities = record.intent_identities as Record<string, BatchIntentIdentity> | undefined;
+	for (const [taskId, last] of lastByTask) {
+		const identity = identities?.[taskId];
+		if (!identity || identity.intent_revision !== last.to_revision || identity.intent_content_hash !== last.intent_content_hash ||
+			identity.intent_authority_hash !== last.intent_authority_hash)
+			throw new Error(`batch run state ${batchId} lane_rebinds does not match intent_identities for ${taskId}`);
+	}
 }
 
 function validateRepairTasks(record: Record<string, unknown>): void {
@@ -879,6 +922,7 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an invalid reseals list`);
 	if (record.reseals?.length && record.reseals[record.reseals.length - 1].to_digest !== record.plan_digest)
 		throw new Error(`batch run state ${batchId} plan_digest does not match its last reseal`);
+	validateLaneRebinds(record, batchId);
 	const seenTaskIds = new Set<string>();
 	for (const child of record.children) {
 		if (
@@ -1155,12 +1199,35 @@ export function parkLaneForExecutor(root: string, batchId: string, taskId: strin
 	});
 }
 
+function planChildrenWithIdentities(
+	children: ReadonlyArray<{ task_id: string; blocked_by: string[] }>,
+	identities: Record<string, BatchIntentIdentity> | undefined,
+): import("../kernel/batch_authority").BatchPlanChild[] | null {
+	if (!identities) return null;
+	const result: import("../kernel/batch_authority").BatchPlanChild[] = [];
+	for (const child of children) {
+		const id = identities[child.task_id];
+		if (!id) return null;
+		result.push({
+			task_id: child.task_id,
+			intent_path: id.intent_path,
+			intent_revision: id.intent_revision,
+			intent_content_hash: id.intent_content_hash,
+			...(id.intent_authority_hash ? { intent_authority_hash: id.intent_authority_hash } : {}),
+			blocked_by: [...child.blocked_by],
+		});
+	}
+	return result;
+}
+
 /**
- * Spec drive-always-lanes D11: the literal user approved a breaking revision of a
- * single task inside its Lane, so the batch's approved identity for that child
- * becomes the revision the Kernel committed. `plan_digest` is not touched: it is
- * derived from the Parent checkout, which a Lane-only revision does not change.
- * Replaying the same identity changes nothing; an older or equal revision with
+ * Spec drive-always-lanes D11 (amended by Spec lane-rebind-resume D1, D2):
+ * the literal user approved a breaking revision of a single task inside its Lane,
+ * so the batch's approved identity for that child becomes the revision the Kernel
+ * committed, `plan_digest` is recomputed in the same locked write, and the before
+ * and after digests are recorded in `lane_rebinds`. Refuses `lane_decision_rebind_failed`
+ * if the record's current digest already disagrees with its recorded identities;
+ * replaying the same identity changes nothing; an older or equal revision with
  * another hash is stale.
  */
 export function rebindSingleTaskIdentity(root: string, batchId: string, input: { task_id: string; intent: TaskIntentV1; content_hash: string }): BatchLaneRunStateRecord {
@@ -1168,15 +1235,36 @@ export function rebindSingleTaskIdentity(root: string, batchId: string, input: {
 	return withKernelStoreLock(root, () => {
 		const record = parseBatchLaneRunState(readSecureProjectFile(root, path), batchId);
 		const recorded = record.intent_identities?.[input.task_id];
-		if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || input.intent.task_id !== input.task_id ||
-			!record.children.some(child => child.task_id === input.task_id && child.lane))
+		const currentChildren = planChildrenWithIdentities(record.children, record.intent_identities);
+		if (record.plan_source !== "single_task" || record.initiative_slug !== input.task_id || !recorded || !currentChildren ||
+			input.intent.task_id !== input.task_id || !record.children.some(child => child.task_id === input.task_id && child.lane) ||
+			computeBatchPlanDigest(currentChildren) !== record.plan_digest)
 			throw new Error(batchReason("lane_decision_rebind_failed").reason);
 		if (recorded.intent_revision === input.intent.revision && recorded.intent_content_hash === input.content_hash) return record;
 		if (input.intent.revision <= recorded.intent_revision) throw new Error(batchReason("lane_decision_stale").reason);
+		const now = new Date().toISOString();
 		const identity: BatchIntentIdentity = { intent_path: recorded.intent_path, intent_revision: input.intent.revision, intent_content_hash: input.content_hash,
 			...(recorded.intent_authority_hash ? { intent_authority_hash: intentAuthorityHash(input.intent) } : {}) };
-		const stored: BatchLaneRunStateRecord = { ...record, updated_at: new Date().toISOString(),
-			intent_identities: { ...record.intent_identities, [input.task_id]: identity } };
+		const nextIdentities = { ...record.intent_identities, [input.task_id]: identity };
+		const nextDigest = computeBatchPlanDigest(planChildrenWithIdentities(record.children, nextIdentities)!);
+		const rebind: LaneRebind = {
+			at: now,
+			task_id: input.task_id,
+			from_revision: recorded.intent_revision,
+			to_revision: input.intent.revision,
+			from_digest: record.plan_digest,
+			to_digest: nextDigest,
+			intent_content_hash: input.content_hash,
+			...(identity.intent_authority_hash ? { intent_authority_hash: identity.intent_authority_hash } : {}),
+			risk: input.intent.risk,
+		};
+		const stored: BatchLaneRunStateRecord = {
+			...record,
+			plan_digest: nextDigest,
+			updated_at: now,
+			intent_identities: nextIdentities,
+			lane_rebinds: [...(record.lane_rebinds ?? []), rebind],
+		};
 		validateLaneRecordShape(stored, batchId);
 		writeFileAtomically(root, path, canonicalBytes(stored));
 		return stored;
@@ -1300,6 +1388,7 @@ export interface BatchLaneRunReport {
 	interventions?: LaneIntervention[];
 	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
 	reseals?: BatchLaneRunStateRecord["reseals"];
+	lane_rebinds?: BatchLaneRunStateRecord["lane_rebinds"];
 	/** Lane sessions the coordinator closed (see BatchLaneRunStateRecord.session_closes). */
 	session_closes?: LaneSessionClose[];
 	/** This tick's decision on the Parent's `lane_session_close`: close the session only when accepted. */

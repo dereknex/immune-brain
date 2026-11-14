@@ -31,7 +31,7 @@ import { observeInitiative, observeSingleTask, projectBatchPlan } from "./batch_
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
-import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord } from "./batch_state";
+import { BatchRuntimeTooOldError, classifyBatchRunStateContract, BATCH_RUN_STATES, batchTopologyDigest, isLaneBatchRecord, isTerminalBatchState, readAnyBatchRunState, recordedAuthorityHashes, type AnyBatchRunStateRecord, type LaneRebind } from "./batch_state";
 import { assertLaneWorktreeAvailable } from "./batch_worktrees";
 import { planLaneLeakRestore } from "./batch_leak_restore";
 import type {
@@ -535,8 +535,29 @@ async function projectPlanSurface(input: {
 		// is read live, so any later subject drift fails the batch plan check.
 		const authorized = recordedAuthorityHashes(existingBatch);
 		const unenrolled = new Set(["pending", "lane_admitted", "skipped_blocked", "needs_human"]);
+		const lastRebindByTask = new Map<string, LaneRebind>();
+		if (isLaneBatchRecord(existingBatch) && existingBatch.lane_rebinds) {
+			for (const entry of existingBatch.lane_rebinds) lastRebindByTask.set(entry.task_id, entry);
+		}
 		try {
 			recoveryChildren = existingBatch.children.map((c) => {
+				const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
+				const lastRebind = lastRebindByTask.get(c.task_id);
+				const recordedIdentity = existingBatch.intent_identities?.[c.task_id];
+				if (lastRebind && recordedIdentity) {
+					riskByTask.set(c.task_id, lastRebind.risk);
+					return {
+						task_id: c.task_id,
+						slice_id: c.slice_id,
+						status: isDone ? ("already_settled" as const) : ("enrollable" as const),
+						blocked_by: [...c.blocked_by],
+						reason: (c.reason ?? null) as BatchPlanChildReason | null,
+						intent_path: recordedIdentity.intent_path,
+						intent_revision: recordedIdentity.intent_revision,
+						intent_content_hash: recordedIdentity.intent_content_hash,
+						...(recordedIdentity.intent_authority_hash ? { intent_authority_hash: recordedIdentity.intent_authority_hash } : {}),
+					} satisfies BatchPlanChild;
+				}
 				const intentPath = `docs/plans/${c.task_id}.intent.json`;
 				let read: { intent: { revision: number; risk: string }; content_hash: string } = {
 					intent: { revision: 1, risk: "material" },
@@ -564,7 +585,6 @@ async function projectPlanSurface(input: {
 				// reconstructed path must never fabricate a risk later.
 				riskByTask.set(c.task_id, read.intent?.risk ?? "material");
 				// A lane child integrated or released is already on the batch branch.
-				const isDone = ["committed", "settled", "integrated", "released"].includes(c.state);
 				return {
 					task_id: c.task_id,
 					slice_id: c.slice_id,
