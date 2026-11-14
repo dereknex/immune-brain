@@ -3,6 +3,7 @@
 // readiness, run against a stand-in `hc` built from herdr-core 0.1.19's docs.
 
 import { afterEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { runSessionCli } from "../plugins/immune-brain/runtime/session/cli";
 import { coreState, createHerdrCoreSessionProvider, herdrCoreName } from "../plugins/immune-brain/runtime/session/herdr_core_provider";
 import { hcCalls, herdrCoreSubject } from "./helpers/fake-herdr-core";
@@ -26,7 +27,8 @@ describe("herdr-core adapter command spelling", () => {
 		const run = calls[0];
 		const token = run[run.indexOf("--label") + 1].replace("imm-session=", "");
 		expect(token).toMatch(/^[0-9a-f]{24}$/);
-		expect(run).toEqual(["run", "--bg", "--json", "--no-parent", "--name", "s1-slice-a", "--cwd", "/lanes/slice-a", "--label", `imm-session=${token}`, "--", "claude", "--plugin-dir", "/p"]);
+		expect(run[run.indexOf("--name") + 1]).toMatch(/^s1-slice-a-[0-9a-f]{12}$/);
+		expect(run).toEqual(["run", "--bg", "--json", "--no-parent", "--name", `s1-slice-a-${token.slice(0, 12)}`, "--cwd", "/lanes/slice-a", "--label", `imm-session=${token}`, "--", "claude", "--plugin-dir", "/p"]);
 		expect(created.handle).toBe(`herdr-core:t1/${token}`);
 		expect(calls.slice(1)).toEqual([["get", "t1", "--json"], ["send", "t1", INPUT.entry, "--if", "idle", "--json"]]);
 	});
@@ -72,12 +74,35 @@ describe("herdr-core adapter command spelling", () => {
 		expect(hcCalls(stateFile).filter(call => call[0] === "read")).toEqual([["read", "t1", "--lines", "0", "--json"], ["read", "t1", "--lines", "200", "--json"]]);
 	});
 
-	it("maps reported words to port states, with error and silence as unknown", () => {
+	it("maps reported words to port states, with error and silence as unknown, and derives unique core names", () => {
 		expect(coreState("blocked")).toEqual({ state: "blocked", provenance: "reported" });
 		expect(coreState("done")).toEqual({ state: "done", provenance: "reported" });
 		expect(coreState("error")).toEqual({ state: "unknown", provenance: "none" });
 		expect(coreState(null)).toEqual({ state: "unknown", provenance: "none" });
-		expect(herdrCoreName("01 Slice/A")).toBe("01-slice-a");
+		const tok = "a1b2c3d4e5f6789012345678";
+		expect(herdrCoreName("01 Slice/A", tok)).toBe("01-slice-a-a1b2c3d4e5f6");
+		expect(herdrCoreName("---", tok)).toBe("lane-a1b2c3d4e5f6");
+		expect(herdrCoreName("___", tok)).toBe("lane-a1b2c3d4e5f6");
+		const longName = herdrCoreName("abcdefghijklmnopqrstuvwxyz012345", tok);
+		expect(longName).toHaveLength(32);
+		expect(longName).toMatch(/^[a-z0-9_-]{1,32}$/);
+		expect(longName).toBe("abcdefghijklmnopqrs-a1b2c3d4e5f6");
+		expect(herdrCoreName("abcdefghijklmnopqr-tuvwxyz", tok)).toBe("abcdefghijklmnopqr-a1b2c3d4e5f6");
+		expect(herdrCoreName("01 Slice/A", "")).toBe("01-slice-a");
+	});
+
+	it("rejects duplicate live --name values in fake-herdr-core/hc until killed", () => {
+		const { env } = subject();
+		const runHc = (args: string[]) => spawnSync("hc", args, { env, encoding: "utf8" });
+		const badName = runHc(["run", "--bg", "--json", "--no-parent", "--name", "BAD NAME", "--cwd", "/lanes/a", "--", "claude"]);
+		expect(badName.status).toBe(1);
+		expect(JSON.parse(badName.stderr)).toMatchObject({ error: { kind: "invalid_name" } });
+		expect(runHc(["run", "--bg", "--json", "--no-parent", "--name", "dup-core", "--cwd", "/lanes/a", "--", "claude"]).status).toBe(0);
+		const duplicate = runHc(["run", "--bg", "--json", "--no-parent", "--name", "dup-core", "--cwd", "/lanes/b", "--", "claude"]);
+		expect(duplicate.status).toBe(1);
+		expect(JSON.parse(duplicate.stderr)).toMatchObject({ error: { kind: "name_taken" } });
+		expect(runHc(["kill", "t1", "--json"]).status).toBe(0);
+		expect(runHc(["run", "--bg", "--json", "--no-parent", "--name", "dup-core", "--cwd", "/lanes/b", "--", "claude"]).status).toBe(0);
 	});
 });
 
@@ -170,7 +195,7 @@ describe("herdr-core viewer tab inside Herdr", () => {
 		const created = await port.createSession(INPUT);
 		expect(created).toMatchObject({ ok: true, entry_submitted: true, viewer: { opened: true } });
 		expect(calls).toHaveLength(1);
-		expect(calls[0]).toMatchObject({ cwd: "/lanes/slice-a", label: "s1-slice-a (hc t1)", argv: ["hc", "attach", "t1"] });
+		expect(calls[0]).toMatchObject({ cwd: "/lanes/slice-a", label: expect.stringMatching(/^s1-slice-a-[0-9a-f]{12} \(hc t1\)$/), argv: ["hc", "attach", "t1"] });
 		await selected.createSession(INPUT);
 		expect(selectedCalls[0]!.env).toMatchObject({ HC_SESSION: "imm-probe" });
 		if (!created.ok) throw new Error(created.reason);
@@ -191,16 +216,31 @@ describe("herdr-core viewer tab inside Herdr", () => {
 		if (result.ok) expect(result.attention).toContain("in its viewer tab");
 	});
 
-	it("attaches again only to a session it owns that is still running", async () => {
+	it("attaches again only to a session it owns that is still running, with matching viewer tab label", async () => {
 		const { port, calls, control } = watched();
 		const created = await port.createSession(INPUT);
 		if (!created.ok) throw new Error(created.reason);
 		expect(await port.attachSession!(created.handle)).toEqual({ ok: true });
 		expect(calls).toHaveLength(2);
+		expect(calls[1]!.label).toBe(calls[0]!.label);
 		expect(await port.attachSession!(control.foreignHandle!())).toMatchObject({ ok: false, code: "not_owned" });
 		control.exit(created.handle);
 		expect(await port.attachSession!(created.handle)).toMatchObject({ ok: false, code: "state_refused" });
 		expect(calls).toHaveLength(2);
+	});
+
+	it("creates concurrent live sessions with identical label and distinct viewer tab labels", async () => {
+		const { port, calls, control } = watched();
+		const first = await port.createSession(INPUT);
+		if (!first.ok) throw new Error(first.reason);
+		const second = await port.createSession(INPUT);
+		if (!second.ok) throw new Error(second.reason);
+		expect(second.handle).not.toBe(first.handle);
+		expect(control.sessionCount()).toBe(2);
+		expect(calls).toHaveLength(2);
+		expect(calls[0]!.label).toMatch(/^s1-slice-a-[0-9a-f]{12} \(hc t1\)$/);
+		expect(calls[1]!.label).toMatch(/^s1-slice-a-[0-9a-f]{12} \(hc t2\)$/);
+		expect(calls[0]!.label).not.toBe(calls[1]!.label);
 	});
 
 	it("outside Herdr opens nothing and names hc attach", async () => {

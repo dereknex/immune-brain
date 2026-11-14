@@ -1,0 +1,42 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "session-agent-name-uniqueness",
+  "owner": "user",
+  "goal": "Derive unique <=32-char backend session names from folded label plus ownership token slice in herdr and herdr-core SupervisedSessionPort providers (#502) under docs/specs/session-agent-name-uniqueness.spec.md.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Source BR-REQ-1; meet BR-REQ-3, BR-REQ-4, BR-DEC-1, BR-DEC-2, BR-OUT-1, BR-OUT-2, and BR-SCN-1 in docs/specs/session-agent-name-uniqueness.spec.md: two live createSession calls with identical label coexist across fake, herdr, and herdr-core; herdrAgentName(label, token) obeys ^[a-z][a-z0-9_-]{0,31}$ across non-alpha prefixes and 32-char truncation; herdr --resume on an exited host reuses found.ids.token; fake-herdr rejects duplicate live agent names with agent_name_taken; and session boundary and advisory contracts stay intact.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-conformance.test.ts\",\n      \"tests/supervised-session-herdr.test.ts\",\n      \"tests/supervised-session-advisory.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Source BR-REQ-2; meet BR-REQ-4, BR-DEC-1, BR-DEC-2, BR-OUT-3, and BR-SCN-1 in docs/specs/session-agent-name-uniqueness.spec.md: herdrCoreName(label, token) produces 1..32 chars of [a-z0-9_-] ending with a 12-hex token slice across digit-prefixed, punctuation-only, and 32-char labels; concurrent live herdr-core sessions with identical label succeed with consistent viewer tab labels across createSession and attachSession; and fake-herdr-core/hc rejects duplicate live --name values until killed or removed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/supervised-session-herdr-core.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Source BR-REQ-5 in docs/specs/session-agent-name-uniqueness.spec.md: docs/reference/supervised-session-port.md updates both herdr and herdr-core createSession naming rows, .changeset/session-agent-name-uniqueness.md is present, and dist doc mirrors, Claude/Antigravity plugin checks, and bun run typecheck pass.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/sync-dist-docs.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun test tests/dist-docs-sync-contract.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/session-agent-name-uniqueness.md",
+    "docs/plans/session-agent-name-uniqueness.intent.json",
+    "docs/reference/supervised-session-port.md",
+    "docs/specs/session-agent-name-uniqueness.spec.md",
+    "plugins/immune-brain-antigravity/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain-antigravity/runtime/session/herdr_core_provider.ts",
+    "plugins/immune-brain-antigravity/runtime/session/herdr_provider.ts",
+    "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/runtime/session/herdr_core_provider.ts",
+    "plugins/immune-brain/runtime/session/herdr_provider.ts",
+    "tests/fixtures/fake-herdr-core/hc",
+    "tests/fixtures/fake-herdr/herdr",
+    "tests/supervised-session-conformance.test.ts",
+    "tests/supervised-session-herdr-core.test.ts",
+    "tests/supervised-session-herdr.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

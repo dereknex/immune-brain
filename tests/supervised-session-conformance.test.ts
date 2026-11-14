@@ -54,6 +54,22 @@ describe.each(SUBJECTS)("Supervised Session Port conformance: %s", (_name, make)
 		expect(control.submitted(result.handle)).toEqual([INPUT.entry]);
 	});
 
+	it("allows concurrent live sessions with identical label and closes both cleanly", async () => {
+		const { port, control } = start();
+		const first = await port.createSession(INPUT);
+		if (!first.ok) throw new Error(`first create refused: ${first.reason}`);
+		control.setState(first.handle, "idle");
+		const second = await port.createSession(INPUT);
+		expect(second).toMatchObject({ ok: true, entry_submitted: true, state: "working", provenance: subject.provenance });
+		if (!second.ok) return;
+		expect(second.handle).not.toBe(first.handle);
+		expect(control.sessionCount()).toBe(2);
+		expect(await port.observeState(first.handle)).toEqual({ ok: true, state: "idle", provenance: subject.provenance });
+		expect(await port.observeState(second.handle)).toEqual({ ok: true, state: "working", provenance: subject.provenance });
+		expect(await port.closeSession(first.handle, PROOF)).toEqual({ ok: true });
+		expect(await port.closeSession(second.handle, PROOF)).toEqual({ ok: true });
+	});
+
 	it("reports a start dialog as blocked without submitting the entry", async () => {
 		const { port, control } = start();
 		control.blockNextStart();

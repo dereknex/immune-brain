@@ -37,6 +37,11 @@ if (verb === "server" && args[0] === "status") { if (state.server_down) fail("un
 if (verb === "run") {
 	const split = args.indexOf("--");
 	const options = args.slice(0, split);
+	const name = flag(options, "--name");
+	if (!/^[a-z0-9_-]{1,32}$/.test(name ?? "")) fail("invalid_name", `invalid terminal name ${name}`);
+	if (Object.values(state.terminals).some((t) => t.state === "live" && t.name === name)) {
+		fail("name_taken", `live terminal name already in use: ${name}`);
+	}
 	const n = (state.counter ?? 0) + 1;
 	state.counter = n;
 	const labels = {};

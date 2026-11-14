@@ -39,7 +39,7 @@ describe("Herdr adapter command spelling", () => {
 		expect(result.handle).toBe(`herdr:w-parent/t1/p1/${token}`);
 		expect(herdrCalls(stateFile)).toEqual([
 			["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/slice-a", "--label", `slice-a [imm:${token}]`, "--no-focus"],
-			["agent", "start", "slice-a", "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
+			["agent", "start", `slice-a-${token}`, "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
 			["agent", "prompt", "p1", "/drive slice-a", "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
 		]);
 	});
@@ -89,14 +89,25 @@ describe("Herdr adapter command spelling", () => {
 		expect(parseHerdrState("")).toBe("unknown");
 	});
 
-	it("folds a tab label into a valid Herdr agent name", async () => {
-		expect(herdrAgentName("S0a")).toBe("s0a");
-		expect(herdrAgentName("01 Slice/A")).toBe("slice-a");
-		expect(herdrAgentName("___")).toBe("lane");
-		expect(herdrAgentName(`a${"b".repeat(40)}`)).toHaveLength(32);
+	it("folds a tab label and token slice into a valid unique Herdr agent name", async () => {
+		const tok = "a1b2c3d4e5f6";
+		expect(herdrAgentName("S0a", tok)).toBe(`s0a-${tok}`);
+		expect(herdrAgentName("01 Slice/A", tok)).toBe(`slice-a-${tok}`);
+		expect(herdrAgentName("123-456", tok)).toBe(`lane-${tok}`);
+		expect(herdrAgentName("---", tok)).toBe(`lane-${tok}`);
+		expect(herdrAgentName("___", tok)).toBe(`lane-${tok}`);
+		expect(herdrAgentName("_99", tok)).toBe(`lane-${tok}`);
+		const longName = herdrAgentName(`a${"b".repeat(40)}`, tok);
+		expect(longName).toHaveLength(32);
+		expect(longName).toMatch(/^[a-z][a-z0-9_-]{0,31}$/);
+		expect(longName).toBe(`a${"b".repeat(18)}-${tok}`);
+		expect(herdrAgentName("abcdefghijklmnopqr-tuvwxyz", tok)).toBe(`abcdefghijklmnopqr-${tok}`);
+		expect(herdrAgentName("S0a", "")).toBe("s0a");
 		const { port, stateFile } = subject();
-		expect(await port.createSession({ ...INPUT, label: "S0a" })).toMatchObject({ ok: true, entry_submitted: true });
-		expect(herdrCalls(stateFile)[1].slice(0, 3)).toEqual(["agent", "start", "s0a"]);
+		const created = await port.createSession({ ...INPUT, label: "S0a" });
+		expect(created).toMatchObject({ ok: true, entry_submitted: true });
+		if (!created.ok) throw new Error(created.reason);
+		expect(herdrCalls(stateFile)[1].slice(0, 3)).toEqual(["agent", "start", `s0a-${tokenOf(created.handle)}`]);
 	});
 
 	it("wakes a wait when Herdr can no longer classify the session", async () => {
@@ -145,8 +156,10 @@ describe("an entry stalled in a dialog (#426 F1)", () => {
 describe("Executor Host coverage", () => {
 	it.each([["claude-code", "claude"], ["pi", "pi"], ["antigravity", "agy"]] as const)("starts a %s Executor as Herdr kind %s", async (host, kind) => {
 		const { port, stateFile } = subject();
-		expect(await port.createSession({ ...INPUT, host })).toMatchObject({ ok: true, entry_submitted: true });
-		expect(acting(herdrCalls(stateFile))[1].slice(0, 5)).toEqual(["agent", "start", "slice-a", "--kind", kind]);
+		const created = await port.createSession({ ...INPUT, host });
+		expect(created).toMatchObject({ ok: true, entry_submitted: true });
+		if (!created.ok) throw new Error(created.reason);
+		expect(acting(herdrCalls(stateFile))[1].slice(0, 5)).toEqual(["agent", "start", `slice-a-${tokenOf(created.handle)}`, "--kind", kind]);
 	});
 
 	it("launches only Executor Hosts the Lane configuration accepts", () => {
@@ -250,21 +263,41 @@ describe("Herdr adapter resume (C-2)", () => {
 		writeFileSync(stateFile, JSON.stringify(state));
 	};
 
-	it("restarts an exited Host in the same pane and submits the entry once", async () => {
+	it("restarts an exited Host in the same pane reusing its ownership token and submits the entry once", async () => {
 		const { port, control, stateFile } = subject();
 		const created = await port.createSession(INPUT);
 		if (!created.ok) throw new Error(created.reason);
+		const token = tokenOf(created.handle);
 		hostExit(stateFile, "p1");
 		expect(await port.observeState(created.handle)).toEqual({ ok: true, state: "unknown", provenance: "none" });
-		expect(await port.createSession({ ...INPUT, resume: created.handle })).toMatchObject({ ok: true, handle: created.handle, entry_submitted: true, state: "working" });
+		const resumed = await port.createSession({ ...INPUT, resume: created.handle });
+		expect(resumed).toMatchObject({ ok: true, handle: created.handle, entry_submitted: true, state: "working" });
+		if (!resumed.ok) throw new Error(resumed.reason);
+		expect(tokenOf(resumed.handle)).toBe(token);
 		expect(control.sessionCount()).toBe(1);
 		expect(control.submitted(created.handle)).toEqual([INPUT.entry, INPUT.entry]);
 		expect(acting(herdrCalls(stateFile)).slice(3)).toEqual([
 			["agent", "get", "p1"],
 			["agent", "get", "p1"],
-			["agent", "start", "slice-a", "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
+			["agent", "start", herdrAgentName(INPUT.label, token), "--kind", "pi", "--pane", "p1", "--", "--model", "m1"],
 			["agent", "prompt", "p1", INPUT.entry, "--wait", "--until", "working", "--until", "blocked", "--timeout", "30000"],
 		]);
+	});
+
+	it("rejects duplicate live agent names with agent_name_taken in fake-herdr until closed", () => {
+		const { env } = subject();
+		const runHerdr = (args: string[]) => spawnSync("herdr", args, { env, encoding: "utf8" });
+		expect(runHerdr(["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/a", "--label", "a", "--no-focus"]).status).toBe(0);
+		expect(runHerdr(["tab", "create", "--workspace", "w-parent", "--cwd", "/lanes/b", "--label", "b", "--no-focus"]).status).toBe(0);
+		const badName = runHerdr(["agent", "start", "123-bad", "--kind", "pi", "--pane", "p1", "--"]);
+		expect(badName.status).toBe(1);
+		expect(JSON.parse(badName.stderr)).toMatchObject({ error: { code: "invalid_agent_name" } });
+		expect(runHerdr(["agent", "start", "dup-name", "--kind", "pi", "--pane", "p1", "--"]).status).toBe(0);
+		const duplicate = runHerdr(["agent", "start", "dup-name", "--kind", "pi", "--pane", "p2", "--"]);
+		expect(duplicate.status).toBe(1);
+		expect(JSON.parse(duplicate.stderr)).toMatchObject({ error: { code: "agent_name_taken" } });
+		expect(runHerdr(["tab", "close", "t1"]).status).toBe(0);
+		expect(runHerdr(["agent", "start", "dup-name", "--kind", "pi", "--pane", "p2", "--"]).status).toBe(0);
 	});
 
 	it("reports a restart dialog as blocked without submitting the entry", async () => {

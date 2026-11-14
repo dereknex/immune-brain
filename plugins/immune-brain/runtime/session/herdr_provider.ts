@@ -53,11 +53,16 @@ const HOST_KIND: Record<ExecutorHostKind, string> = { "claude-code": "claude", p
 
 /**
  * Herdr agent names must match `[a-z][a-z0-9_-]{0,31}`; a tab label has no such
- * rule, so a label like a Slice ID is folded into a valid name.
+ * rule, so a label like a Slice ID is folded and salted with a 12-hex slice
+ * of the session's ownership token so repeated or concurrent labels never collide.
  */
-export function herdrAgentName(label: string): string {
-	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "");
-	return (folded || "lane").slice(0, 32);
+export function herdrAgentName(label: string, token: string): string {
+	const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[^a-z]+/, "").replace(/[-_]+$/g, "") || "lane";
+	if (!suffix) return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+	const prefixBudget = 32 - 1 - suffix.length;
+	const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+	return `${prefix}-${suffix}`;
 }
 
 export const HERDR_CLI = {
@@ -279,8 +284,8 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 		return { ok: true, handle, entry_submitted: true, ...after };
 	};
 	/** Starts the Host in the pane; a result means stop here (dialog or failure), null means go on to submit. */
-	const startHost = async (handle: SessionHandle, pane: string, label: string, host: ExecutorHostKind, hostArgs: string[]) => {
-		const started = await run(HERDR_CLI.agentStart(herdrAgentName(label), HOST_KIND[host], pane, hostArgs));
+	const startHost = async (handle: SessionHandle, pane: string, label: string, host: ExecutorHostKind, hostArgs: string[], token: string) => {
+		const started = await run(HERDR_CLI.agentStart(herdrAgentName(label, token), HOST_KIND[host], pane, hostArgs));
 		if (isRefusal(started)) return { ...started, handle };
 		if (started.code === 0) return null;
 		// The tab shows a dialog only the user may answer; the entry was never submitted.
@@ -320,7 +325,7 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 				const code = got.code === 0 ? undefined : herdrErrorCode(got);
 				if (code && HOST_GONE_CODES.has(code)) {
 					// The Host exited and its shell is back: start it again in the same pane.
-					const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs);
+					const restarted = await startHost(handle, pane, input.label, input.host, input.hostArgs, found.ids.token);
 					if (restarted) return restarted;
 				} else {
 					const current: Observation = got.code === 0 ? detected(parseHerdrState(got.stdout)) : { state: "unknown", provenance: "none" };
@@ -341,7 +346,7 @@ export function createHerdrSessionProvider(options: HerdrProviderOptions): Super
 				return refuse("start_failed", "herdr tab create returned no result.tab.tab_id and result.root_pane.pane_id");
 			}
 			const handle = encodeHerdrHandle({ workspace, tab, pane, token });
-			const started = await startHost(handle, pane, input.label, input.host, input.hostArgs);
+			const started = await startHost(handle, pane, input.label, input.host, input.hostArgs, token);
 			if (started) return started;
 			return submitEntry(handle, pane, input.entry);
 		},
