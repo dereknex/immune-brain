@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +13,10 @@ import {
 } from "../scripts/verify-antigravity-live";
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
+const HAS_AGY = (() => {
+	const proc = spawnSync("agy", ["--version"], { encoding: "utf8", timeout: 10_000 });
+	return !proc.error && proc.status === 0;
+})();
 const tempRoots: string[] = [];
 
 afterAll(() => {
@@ -59,7 +64,7 @@ function createSyntheticRepo(mutateEvidence?: (evidence: LiveCertificationEviden
 }
 
 describe("Antigravity Live Certification Report Validation (AC2)", () => {
-	it("accepts only the current live-verified report matching installed agy and bundle digest", () => {
+	it.skipIf(!HAS_AGY)("accepts only the current live-verified report matching installed agy and bundle digest", () => {
 		const result = validateLiveCertificationReport({ root: REPO_ROOT });
 		expect(result.errors).toEqual([]);
 		expect(result.ok).toBe(true);
@@ -67,6 +72,22 @@ describe("Antigravity Live Certification Report Validation (AC2)", () => {
 		expect(result.evidence?.p8_probe.pre_invocation_supported).toBe(true);
 		expect(result.evidence?.p8_probe.skill_tool_present).toBe(false);
 		expect(result.evidence?.p8_probe.skill_hook_matcher_configured).toBe(false);
+	});
+
+	it("validates checked-in report digest, phases, commands, and audit proofs offline when agy is unavailable", () => {
+		const evidence = parseLiveCertificationReport(readFileSync(resolve(REPO_ROOT, LIVE_REPORT_PATH), "utf8"));
+		const result = validateLiveCertificationReport({
+			root: REPO_ROOT,
+			probeAgy: () => ({
+				ok: true,
+				version: evidence.host_version,
+				rawVersionOutput: `antigravity ${evidence.host_version}`,
+				pluginValidateOk: true,
+			}),
+		});
+		expect(result.errors).toEqual([]);
+		expect(result.ok).toBe(true);
+		expect(result.evidence?.final_projection.lifecycle).toBe("done");
 	});
 
 	it("fails when installed agy CLI is absent or fails version/plugin probe", () => {

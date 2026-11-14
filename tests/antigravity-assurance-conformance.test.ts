@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
@@ -2268,21 +2268,30 @@ describe("verifier via real hook dispatch", () => {
 	const HOOK_ENTRY = join(process.cwd(), "plugins/immune-brain/runtime/antigravity/mcp_server.ts");
 	const SCRATCH: string[] = [];
 	const TMPDIR_BEFORE = process.env.TMPDIR;
+	const BASE_TMP = tmpdir();
 	const PATH_BEFORE = process.env.PATH;
 	const TASK = "antigravity-verifier-task";
 	const STEP_IDX = 7;
 	const CONVERSATION = "conversation-1";
 	const CLAIM = "the delivery violates its acceptance";
 
-	afterAll(() => {
+	function restoreHookEnv(): void {
 		if (TMPDIR_BEFORE === undefined) delete process.env.TMPDIR;
 		else process.env.TMPDIR = TMPDIR_BEFORE;
 		process.env.PATH = PATH_BEFORE;
+	}
+
+	afterEach(() => {
+		restoreHookEnv();
+	});
+
+	afterAll(() => {
+		restoreHookEnv();
 		for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true });
 	});
 
 	function scratchDir(label: string): string {
-		const dir = mkdtempSync(join(tmpdir(), `imm-antigravity-verifier-${label}-`));
+		const dir = mkdtempSync(join(BASE_TMP, `imm-antigravity-verifier-${label}-`));
 		SCRATCH.push(dir);
 		return dir;
 	}
@@ -2830,6 +2839,7 @@ describe("verifier via real hook dispatch", () => {
 		await current.runtime.submitVerification(TASK, undefined);
 		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
 	});
+});
 
 	describe("stopBoundary", () => {
 		it("extracts step_index from transcriptPath", () => {
@@ -3384,7 +3394,6 @@ describe("verifier via real hook dispatch", () => {
 			}
 		});
 	});
-});
 
 describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
