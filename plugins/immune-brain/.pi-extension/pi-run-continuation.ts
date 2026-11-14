@@ -1,180 +1,378 @@
+// Pi run continuation: typed-event mapping over the shared state
+// machine (Spec docs/specs/tri-host-capability-alignment.spec.md D6).
+//
+// Interface: `PI_CACHE_DIR`, `piContinuationHost`, `readRunToolSession`,
+// `selectedPiParent`, `registerPiRunContinuation`.
+// Invariants: every continuation decision re-reads the Kernel; the entry token
+// ends with its session, a pause or a settlement; 7 consecutive settle boundaries pause
+// with Pi-named recovery; tool correlation is one-use and workspace-scoped.
+// Side Effects: reads and writes private session/correlation files under PI_CACHE_DIR.
+// Verification: `bun test tests/pi-run-continuation.test.ts`.
+
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { realpathSync } from "node:fs";
-import { projectTaskStatus } from "../runtime/assurance/coordinator";
-import { readTaskRecordRaw } from "../runtime/kernel/storage";
+import { tmpdir } from "node:os";
 import type { PhaseEntry } from "../runtime/assurance/phase_entry";
-import { readAnyBatchRunState } from "../runtime/unattended/batch_state";
-import { bindRun, decideRunContinuation, observeParentRun, releasesRunBinding, scopedSourceDigest,
-	type RunContinuationState, type ReviewContinuationState } from "../runtime/assurance/run_continuation";
+import { digestOfReviewerBytes } from "../runtime/assurance/review_mediation";
+import { releasesRunBinding } from "../runtime/assurance/run_continuation";
+import {
+	applyRunContinuationEvent,
+	readSessionMetadata,
+	readSessionToolCall,
+	selectedParentSession,
+	type RunContinuationHost,
+} from "../runtime/host-core/run_continuation_session";
 
 type SettleBoundary = {
 	outcome: "completed" | "aborted" | "error";
 	continue: boolean;
 	context: { canContinue: boolean; pendingMessages: unknown[] };
 };
-/** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
-const NATIVE_FAILURE_LIMIT = 3;
-type ContinuationBoundaryResult = { continue?: boolean; entries?: Array<{ type: "custom_message"; customType: string; display: boolean; content: string }> } | void;
+
+type ContinuationBoundaryResult = {
+	continue?: boolean;
+	entries?: Array<{ type: "custom_message"; customType: string; display: boolean; content: string }>;
+} | void;
+
+export const PI_CACHE_DIR = "immune-brain-pi";
+
+const GLOBAL_PI_PHASE_ENTRY_KEY = Symbol.for("immune_brain.pi_phase_entry");
+
+export function getPiPhaseEntries(): Map<string, { run_live?: boolean; token?: string | null; workspace?: string | null }> {
+	const holder = globalThis as unknown as Record<
+		symbol,
+		Map<string, { run_live?: boolean; token?: string | null; workspace?: string | null }> | undefined
+	>;
+	return (holder[GLOBAL_PI_PHASE_ENTRY_KEY] ??= new Map());
+}
+
+export function piContinuationHost(
+	root: string,
+	ports?: {
+		entry_state?(sessionId: string): { run_live?: boolean } | null;
+		revoke_entry?(sessionId: string): void;
+		drop_entry_log?(sessionId: string): void;
+	},
+): RunContinuationHost {
+	return {
+		cache_name: PI_CACHE_DIR,
+		host_name: "Pi",
+		entry_state: (sessionId) => {
+			if (ports?.entry_state) return ports.entry_state(sessionId);
+			const state = getPiPhaseEntries().get(sessionId);
+			return state ?? null;
+		},
+		revoke_entry: (sessionId) => {
+			if (ports?.revoke_entry) ports.revoke_entry(sessionId);
+			getPiPhaseEntries().delete(sessionId);
+		},
+		drop_entry_log: (sessionId) => {
+			if (ports?.drop_entry_log) ports.drop_entry_log(sessionId);
+			getPiPhaseEntries().delete(sessionId);
+		},
+	};
+}
+
+/** Exact PreToolUse correlation; the transport connection ID is never a session. */
+export function readRunToolSession(
+	toolId: string,
+	operation: string,
+	workspace: string,
+	root = tmpdir(),
+): string | null {
+	return readSessionToolCall(piContinuationHost(root), root, toolId, operation, workspace);
+}
+
+export function selectedPiParent(
+	toolId: string,
+	workspace: string,
+	slug: string,
+	root = tmpdir(),
+): boolean {
+	return selectedParentSession(piContinuationHost(root), root, toolId, workspace, slug);
+}
 
 /** Continuation is session memory, never a capability or durable task owner. */
-export function registerPiRunContinuation(pi: ExtensionAPI, ports: {
-	entry(text: string, root: string): PhaseEntry | null;
-	/** ADR 0025: ends the session's entry token at a pause or when the bound run is terminal. */
-	revokeEntry?(sessionId: string): void;
-}): { selectedParent(root: string, sessionId: string, slug: string): boolean } {
-	let entered = false;
-	let state: RunContinuationState | undefined;
-	let hostFailure: string | undefined;
-	const failedGates = new Set<string>();
-	let nativeFailures = 0;
-	/** Counts one failure; only the last one in the budget blocks the gate and pauses at the next boundary. */
-	const failNative = (gate: string, reason: string): boolean => {
-		if (++nativeFailures < NATIVE_FAILURE_LIMIT) return false;
-		failedGates.add(gate); hostFailure = reason; return true;
+export function registerPiRunContinuation(
+	pi: ExtensionAPI,
+	ports: {
+		entry(text: string, root: string): PhaseEntry | null;
+		/** ADR 0025: ends the session's entry token at a pause or when the bound run is terminal. */
+		revokeEntry?(sessionId: string): void;
+		entryState?(sessionId: string): { run_live?: boolean } | null;
+	},
+	options?: {
+		storeRoot?: string;
+	},
+): { selectedParent(toolId: string, workspace: string, slug: string): boolean } {
+	const storeRoot = options?.storeRoot ?? tmpdir();
+	const host = piContinuationHost(storeRoot, {
+		entry_state: ports.entryState ?? ((id) => getPiPhaseEntries().get(id) ?? null),
+		revoke_entry: (id) => {
+			getPiPhaseEntries().delete(id);
+			ports.revokeEntry?.(id);
+		},
+		drop_entry_log: (id) => {
+			getPiPhaseEntries().delete(id);
+		},
+	});
+
+	let activeContext: ExtensionContext | undefined;
+	const pendingCalls = new Map<string, { operation: string; taskId: string | null }>();
+	const pausedNotified = new Set<string>();
+	const userTurns = new Set<string>();
+
+	const readSessionId = (ctx?: ExtensionContext | null): string => {
+		try {
+			const id = ctx?.sessionManager?.getSessionId?.();
+			return typeof id === "string" && id.trim().length > 0 ? id : "";
+		} catch {
+			return "";
+		}
 	};
-	let reviewRecovery: string | undefined;
-	let review: ReviewContinuationState = "unobserved";
-	let reviewerPrompt: string | undefined;
-	let reviewerCallId: string | undefined;
-	const calls = new Map<string, { name: string; task_id?: string; op?: string; initiative_slug?: string }>();
-	const reset = () => { entered = false; state = undefined; hostFailure = undefined; reviewRecovery = undefined;
-		review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; calls.clear(); };
-	pi.on("session_start", () => { failedGates.clear(); nativeFailures = 0; reset(); });
-	pi.on("session_shutdown", () => { failedGates.clear(); nativeFailures = 0; reset(); });
-	pi.on("input", (event, ctx) => {
+
+	pi.on("session_start", async (_event, ctx) => {
+		activeContext = ctx;
+		const sessionId = readSessionId(ctx);
+		if (sessionId) {
+			pausedNotified.delete(sessionId);
+			host.revoke_entry(sessionId);
+			const workspace = ctx?.cwd ? realpathSync(ctx.cwd) : process.cwd();
+			await applyRunContinuationEvent(host, storeRoot, { session_id: sessionId, workspace }, { kind: "session_end" });
+		}
+	});
+
+	pi.on("session_shutdown", async (_event, ctx) => {
+		const prevContext = activeContext;
+		activeContext = ctx ?? activeContext;
+		const sessionId = readSessionId(ctx) || readSessionId(prevContext);
+		if (sessionId) {
+			pausedNotified.delete(sessionId);
+			host.revoke_entry(sessionId);
+			const workspace = ctx?.cwd ? realpathSync(ctx.cwd) : (activeContext?.cwd ? realpathSync(activeContext.cwd) : process.cwd());
+			await applyRunContinuationEvent(host, storeRoot, { session_id: sessionId, workspace }, { kind: "session_end" });
+		}
+	});
+
+	pi.on("input", async (event, ctx) => {
 		if (event.source === "extension") return;
+		activeContext = ctx;
+		const sessionId = readSessionId(ctx);
+		if (!sessionId) return;
+		userTurns.add(sessionId);
+		pausedNotified.delete(sessionId);
 		const entry = ports.entry(event.text, ctx.cwd);
-		if (releasesRunBinding(event.text, entry === "plan" ? "planner" : entry)) { reset(); return; }
-		if (entry === "run") { failedGates.clear(); nativeFailures = 0; reset(); entered = true; }
-	});
-	pi.on("tool_call", (event) => {
-		const gateInput = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
-		const gate = `${event.toolName}:${gateInput.task_id ?? gateInput.initiative_slug ?? ""}:${gateInput.action?.op ?? ""}`;
-		if (failedGates.has(gate)) return { block: true, reason: `This native gate failed ${NATIVE_FAILURE_LIMIT} times under this entry; enter drive explicitly before retrying` };
-		if (!entered) return;
-		if (event.toolName === "Agent" && reviewerPrompt &&
-			(event.input.subagent_type === "Review" || event.input.prompt === reviewerPrompt)) {
-			if (event.input.prompt !== reviewerPrompt || event.input.subagent_type !== "Review" || event.input.run_in_background !== false)
-				return { block: true, reason: "Kernel Review requires the complete exact agent_params from advance_assurance: preserve prompt bytes, subagent_type Review, and run_in_background false. No reviewer was dispatched." };
-			if (reviewerCallId) { review = "rejected"; return { block: true, reason: "Reserved Reviewer already dispatched; wait for its result and submit the verdict before any new dispatch" }; }
-			reviewerCallId = event.toolCallId; review = "running"; return;
+		const releases = releasesRunBinding(event.text, entry === "plan" ? "planner" : entry);
+		if (releases) {
+			host.revoke_entry(sessionId);
+		} else if (entry === "run") {
+			const existing = getPiPhaseEntries().get(sessionId);
+			if (!existing || !existing.run_live || !existing.token) {
+				getPiPhaseEntries().set(sessionId, {
+					run_live: true,
+					token: existing?.token ?? null,
+					workspace: existing?.workspace ?? realpathSync(ctx.cwd),
+				});
+			}
 		}
-		if (!["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
-		const input = event.input as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
-		calls.set(event.toolCallId, { name: event.toolName,
-			task_id: typeof input.task_id === "string" ? input.task_id : undefined,
-			initiative_slug: typeof input.initiative_slug === "string" ? input.initiative_slug : undefined,
-			op: typeof input.action?.op === "string" ? input.action.op : undefined });
+		const workspace = realpathSync(ctx.cwd);
+		await applyRunContinuationEvent(host, storeRoot, { session_id: sessionId, workspace }, {
+			kind: "prompt",
+			releases: releases || entry === "run",
+		});
 	});
-	pi.on("tool_result", async (event, ctx) => {
-		if (entered && event.toolName === "Agent" && event.toolCallId === reviewerCallId) review = "returned";
-		const call = calls.get(event.toolCallId); calls.delete(event.toolCallId);
-		if (!entered || !call) return;
-		if (call.name === "retire_stale_batch") {
-			if (event.isError || (event.details as { state?: string } | undefined)?.state !== "retired")
-				failNative(`${call.name}:${call.initiative_slug ?? ""}:`, "Batch retirement did not apply; inspect the same-Host recovery");
-			return;
-		}
-		if (call.name === "start_unattended_batch") {
-			const result = event.details as { state?: string; batch_id?: string | null; plan_digest?: string; final_verification_commands?: string[] } | undefined;
-			if (!event.isError && result?.state === "native_parent" && typeof result.plan_digest === "string" && call.initiative_slug) {
-				if (!state || state.binding.kind !== "parent") state = bindRun({ kind: "parent", workspace: realpathSync(ctx.cwd),
-					session_id: ctx.sessionManager.getSessionId(), initiative_slug: call.initiative_slug, batch_id: null,
-					plan_digest: result.plan_digest, final_verification: result.final_verification_commands });
+
+	pi.on("tool_call", async (event, ctx) => {
+		activeContext = ctx ?? activeContext;
+		const sessionId = readSessionId(activeContext);
+		if (!sessionId) return;
+		const workspace = activeContext?.cwd ? realpathSync(activeContext.cwd) : process.cwd();
+		const session = { session_id: sessionId, workspace };
+
+		if (event.toolName === "Agent") {
+			const metadata = readSessionMetadata(host, storeRoot, sessionId);
+			if (metadata.state && metadata.reviewer_prompt) {
+				const input = (event.input ?? {}) as { prompt?: unknown; subagent_type?: unknown; run_in_background?: unknown };
+				const inputPrompt = typeof input.prompt === "string" ? input.prompt : "";
+				const promptDigest = digestOfReviewerBytes(inputPrompt);
+				const isReviewAttempt = input.subagent_type === "Review" || promptDigest === metadata.reviewer_prompt;
+				if (!isReviewAttempt) return;
+				if (promptDigest !== metadata.reviewer_prompt || input.subagent_type !== "Review" || input.run_in_background !== false) {
+					return {
+						block: true,
+						reason: "Kernel Review requires the complete exact agent_params from advance_assurance: preserve prompt bytes, subagent_type Review, and run_in_background false. No reviewer was dispatched.",
+					};
+				}
+				if (metadata.reviewer_call_id) {
+					await applyRunContinuationEvent(host, storeRoot, session, {
+						kind: "reviewer",
+						phase: "dispatch",
+						call_id: event.toolCallId,
+						prompt_digest: promptDigest,
+						agent_id: null,
+						asynchronous: false,
+					});
+					return {
+						block: true,
+						reason: "Reserved Reviewer already dispatched; wait for its result and submit the verdict before any new dispatch",
+					};
+				}
+				await applyRunContinuationEvent(host, storeRoot, session, {
+					kind: "reviewer",
+					phase: "dispatch",
+					call_id: event.toolCallId,
+					prompt_digest: promptDigest,
+					agent_id: null,
+					asynchronous: false,
+				});
 				return;
 			}
-			if (event.isError || result?.state !== "started" || !result.batch_id || !call.initiative_slug) {
-				failNative(`${call.name}:${call.initiative_slug ?? ""}:`, "Batch native operation did not apply; inspect the same-Host recovery"); return;
-			}
-			const record = readAnyBatchRunState(ctx.cwd, result.batch_id);
-			if (!record || record.initiative_slug !== call.initiative_slug) { hostFailure = "Batch result has no matching persisted identity"; return; }
-			if (!state || state.binding.kind !== "parent") state = bindRun({ kind: "parent", workspace: realpathSync(ctx.cwd),
-				session_id: ctx.sessionManager.getSessionId(), initiative_slug: record.initiative_slug, batch_id: record.batch_id, plan_digest: record.plan_digest });
 			return;
 		}
-		if (!call.task_id) return;
-		const details = event.details as { state?: unknown; reason?: unknown; recovery_action?: unknown; next_action?: unknown;
-			agent_params?: { prompt?: unknown } } | undefined;
-		if ((event.isError || ["blocked", "cancelled", "rejected", "failed"].includes(String(details?.state))) &&
-			["request_authorization", "approve_breaking_intent_revision", "request_stop"].includes(call.op ?? "")) {
-			failNative(`${call.name}:${call.task_id}:${call.op ?? ""}`,
-				typeof details?.reason === "string" ? details.reason : "Native authority operation failed or was cancelled");
-			return;
+
+		if (!["imm_kernel_canary", "start_unattended_batch", "retire_stale_batch"].includes(event.toolName)) return;
+
+		const input = (event.input ?? {}) as { task_id?: unknown; initiative_slug?: unknown; action?: { op?: unknown } };
+		const operation = event.toolName === "imm_kernel_canary"
+			? (typeof input.action?.op === "string" ? input.action.op : "")
+			: event.toolName;
+		const taskId = typeof input.task_id === "string" ? input.task_id : (typeof input.initiative_slug === "string" ? input.initiative_slug : null);
+
+		pendingCalls.set(event.toolCallId, { operation, taskId });
+
+		const outcome = await applyRunContinuationEvent(host, storeRoot, session, {
+			kind: "tool_call",
+			operation,
+			tool_id: event.toolCallId,
+			task_id: taskId,
+		});
+
+		if (outcome.kind === "deny") {
+			return {
+				block: true,
+				reason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`,
+			};
 		}
-		if (call.op === "advance_assurance" && !event.isError && details?.state === "review_ready") {
-			if (typeof details.agent_params?.prompt === "string" && details.agent_params.prompt !== reviewerPrompt) {
-				reviewerPrompt = details.agent_params.prompt; reviewerCallId = undefined; review = "ready";
-			}
-			reviewRecovery = undefined;
-		}
-		if (["advance_assurance", "submit_review"].includes(call.op ?? "") && details?.state === "review_incomplete") {
-			hostFailure = `review_incomplete: ${String(details.recovery_action)}`;
-			return;
-		}
-		if (call.op === "submit_review") {
-			if (details?.reason === "review_incomplete_retry") {
-				review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; reviewRecovery = undefined;
-			} else if (event.isError || details?.state === "blocked") {
-				review = "rejected";
-				const action = details?.recovery_action ?? details?.next_action;
-				reviewRecovery = typeof action === "string" ? action : undefined;
-			} else {
-				review = "unobserved"; reviewerPrompt = undefined; reviewerCallId = undefined; reviewRecovery = undefined;
-			}
-		}
-		if (state || event.isError) return;
-		const status = await projectTaskStatus(ctx.cwd, call.task_id);
-		if (status.error || status.claim?.task_id !== call.task_id || status.projection.lifecycle !== "active" || !status.projection.run_id) return;
-		state = bindRun({ kind: "task", workspace: realpathSync(ctx.cwd), session_id: ctx.sessionManager.getSessionId(),
-			task_id: call.task_id, run_id: status.projection.run_id });
 	});
-	// shortcut: optional workspace SDK types predate Pi 1.2; remove this declaration when that peer reaches 1.2 (owner: Immune-Brain).
-	const boundaryApi = pi as ExtensionAPI & { on(event: "agent_before_settle", handler: (event: SettleBoundary, ctx: ExtensionContext) => Promise<ContinuationBoundaryResult>): void };
+
+	pi.on("tool_result", async (event, ctx) => {
+		activeContext = ctx ?? activeContext;
+		const sessionId = readSessionId(activeContext);
+		if (!sessionId) return;
+		const workspace = activeContext?.cwd ? realpathSync(activeContext.cwd) : process.cwd();
+		const session = { session_id: sessionId, workspace };
+
+		if (event.toolName === "Agent") {
+			await applyRunContinuationEvent(host, storeRoot, session, {
+				kind: "reviewer",
+				phase: "return",
+				call_id: event.toolCallId,
+				prompt_digest: null,
+				agent_id: null,
+				asynchronous: false,
+			});
+			return;
+		}
+
+		const call = pendingCalls.get(event.toolCallId);
+		pendingCalls.delete(event.toolCallId);
+		if (!call) return;
+
+		const details = (event.details ?? (event as any).result ?? {}) as Record<string, unknown>;
+		const response = call.taskId && !details.initiative_slug
+			? { ...details, initiative_slug: call.taskId }
+			: details;
+
+		await applyRunContinuationEvent(host, storeRoot, session, {
+			kind: "tool_result",
+			operation: call.operation,
+			tool_id: event.toolCallId,
+			response,
+			failed: Boolean(event.isError),
+		});
+	});
+
+	const boundaryApi = pi as ExtensionAPI & {
+		on(
+			event: "agent_before_settle",
+			handler: (event: SettleBoundary, ctx: ExtensionContext) => Promise<ContinuationBoundaryResult>,
+		): void;
+	};
+
 	boundaryApi.on("agent_before_settle", async (event, ctx) => {
-		if (!entered) return;
-		const revoke = () => ports.revokeEntry?.(ctx.sessionManager.getSessionId());
+		const prevContext = activeContext;
+		activeContext = ctx ?? activeContext;
+		const sessionId = readSessionId(ctx) || readSessionId(prevContext);
+		if (!sessionId) return;
+		const workspace = realpathSync(ctx.cwd);
+		const session = { session_id: sessionId, workspace };
+
 		// Spec D13: an interrupted or non-continuable turn ends the entry like a pause.
-		if (event.outcome !== "completed" || !event.context.canContinue) { revoke(); reset(); return; }
-		if (!state) return;
+		if (event.outcome !== "completed" || !event.context.canContinue) {
+			host.revoke_entry(sessionId);
+			await applyRunContinuationEvent(host, storeRoot, session, { kind: "session_end" });
+			return;
+		}
+
 		if (event.continue || event.context.pendingMessages.length) return;
+
 		try {
-			if (state.binding.kind === "parent") {
-				const decision = decideRunContinuation(state, { ...await observeParentRun(state.binding,
-					ctx.sessionManager.getLeafId() ?? "empty-session", review, reviewRecovery), host_failure: hostFailure });
-				state = decision.state;
-				if (decision.action === "settled" || decision.action === "unbound") { if (decision.action === "settled") revoke(); reset(); return; }
-				if (decision.action === "wait") return;
-				if (decision.action === "pause") { revoke(); reset(); return { entries: [{ type: "custom_message", customType: "immune-brain-run-paused", display: true, content: `Parent paused: ${decision.reason}. ${decision.next_action ?? ""}` }] }; }
-				return { continue: true, entries: [{ type: "custom_message", customType: "immune-brain-run-continuation", display: false,
-					content: `Parent remains incomplete. ${decision.next_action}. Continue the authorized Loop and batch; individual Slice settlement does not complete the Parent.` }] };
+			const isUserTurn = userTurns.has(sessionId);
+			userTurns.delete(sessionId);
+			const stop_hook_active = !isUserTurn;
+
+			const outcome = await applyRunContinuationEvent(host, storeRoot, session, {
+				kind: "stop",
+				boundary: () => ctx.sessionManager.getLeafId() ?? "empty-session",
+				stop_hook_active,
+			});
+
+			if (outcome.kind === "continue") {
+				const metadata = readSessionMetadata(host, storeRoot, sessionId);
+				const content = metadata.state?.binding.kind === "parent"
+					? `Parent remains incomplete. ${outcome.next_action}. Continue the authorized Loop and batch; individual Slice settlement does not complete the Parent.`
+					: `Explicit drive remains bound to task ${outcome.label}. Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.`;
+				return {
+					continue: true,
+					entries: [{
+						type: "custom_message",
+						customType: "immune-brain-run-continuation",
+						display: false,
+						content,
+					}],
+				};
 			}
-			const taskId = state.binding.task_id;
-			const status = await projectTaskStatus(ctx.cwd, taskId);
-			const record = await readTaskRecordRaw(ctx.cwd, taskId);
-			if (!record.record && status.projection.lifecycle === "active") throw new Error("bound run has no live TaskRecord");
-			const decision = decideRunContinuation(state, { kind: "task", workspace: realpathSync(ctx.cwd),
-				session_id: ctx.sessionManager.getSessionId(), boundary_id: ctx.sessionManager.getLeafId() ?? "empty-session",
-				status, source_digest: record.record ? scopedSourceDigest(ctx.cwd, record.record.intent_snapshot.scope_hint) : "terminal",
-				review, recovery_action: reviewRecovery, host_failure: hostFailure });
-			state = decision.state;
-			// A terminal bound run spends its entry token; the next run needs a new literal entry.
-			if (decision.action === "settled" || decision.action === "unbound") { if (decision.action === "settled") revoke(); reset(); return; }
-			if (decision.action === "wait") return;
-			if (decision.action === "pause") {
-				revoke();
-				reset();
-				return { entries: [{ type: "custom_message" as const, customType: "immune-brain-run-paused", display: true,
-					content: `Run paused: ${decision.reason}${decision.next_action ? `. Recovery: ${decision.next_action}` : ""}` }] };
+
+			if (outcome.kind === "paused") {
+				if (pausedNotified.has(sessionId)) return;
+				pausedNotified.add(sessionId);
+				return {
+					entries: [{
+						type: "custom_message",
+						customType: "immune-brain-run-paused",
+						display: true,
+						content: `Run paused: ${outcome.reason}`,
+					}],
+				};
 			}
-			return { continue: true, entries: [{ type: "custom_message" as const, customType: "immune-brain-run-continuation", display: false,
-				content: `Explicit drive remains bound to task ${taskId}, run ${state.binding.kind === "task" ? state.binding.run_id : ""}. Kernel settlement is incomplete. ${decision.next_action}. Continue the authorized Loop; report completion only after authoritative settlement.` }] };
+
+			return;
 		} catch (error) {
-			revoke();
-			reset();
-			return { entries: [{ type: "custom_message" as const, customType: "immune-brain-run-paused", display: true,
-				content: `Run paused because continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}` }] };
+			host.revoke_entry(sessionId);
+			return {
+				entries: [{
+					type: "custom_message",
+					customType: "immune-brain-run-paused",
+					display: true,
+					content: `Run paused because continuation facts could not be verified: ${error instanceof Error ? error.message : String(error)}`,
+				}],
+			};
 		}
 	});
-	return { selectedParent: (root, sessionId, slug) => entered && state?.binding.kind === "parent" &&
-		state.binding.workspace === realpathSync(root) && state.binding.session_id === sessionId && state.binding.initiative_slug === slug };
+
+	return {
+		selectedParent: (toolId: string, workspace: string, slug: string) => {
+			return selectedPiParent(toolId, workspace, slug, storeRoot);
+		},
+	};
 }

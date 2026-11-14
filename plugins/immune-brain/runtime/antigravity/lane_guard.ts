@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import {
 import { parseFinalVerification } from "../unattended/batch_final_verification";
 import type { InitiativeObservationReader } from "../unattended/types";
 import { parseReworkChoice, reworkExitLines, type ReworkChoice } from "../kernel/assurance_projection";
+import { activeTaskNotice } from "../assurance/active_task_notice";
 import { releasesRunBinding } from "../assurance/run_continuation";
 import { localSkillExists, readAliasFile } from "../assurance/alias_file";
 import {
@@ -28,15 +29,31 @@ import {
 	type PhaseOperation,
 } from "../assurance/phase_entry";
 import {
+	ALLOW_RULE_REQUEST_PREFIX,
 	isPrivilegedOperation,
 	NativeAuthorityError,
 	type NativeConfirmationInput,
 	type NativeConfirmationResult,
 	type PrivilegedOperation,
 } from "../host-core/interaction";
-import { cacheDir, ensurePrivateDir, sessionHash } from "../host-core/private_file";
+import {
+	appendPrivate,
+	cacheDir,
+	dropPrivate,
+	ensurePrivateDir,
+	readPrivate,
+	sessionHash,
+	writePrivate,
+} from "../host-core/private_file";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
+import { checkNativeGateSurfacing, matchesMcpAllowRule, type AncestorProcessReader } from "./tool_permission";
+import {
+	antigravityRunContinuationPostToolUse,
+	antigravityRunContinuationPreToolUse,
+	isSessionPaused,
+	recordPreToolUseCorrelationSync,
+} from "./run_continuation";
 
 const FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 const PRIVILEGED_MCP_TOOL =
@@ -102,6 +119,7 @@ export interface PhaseEntryLocations {
 	root?: string;
 	home?: string;
 	readInitiative?: InitiativeObservationReader;
+	readAncestorArgs?: AncestorProcessReader;
 }
 
 export interface AntigravityPreInvocationPayload {
@@ -299,12 +317,6 @@ function confirmationPath(conversation: string, admissionId: string, root: strin
 	return join(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
 
-function dropPrivate(path: string): void {
-	try {
-		rmSync(path, { force: true });
-	} catch {}
-}
-
 function dropConversationConfirmations(conversationId: string, root: string): void {
 	if (!conversationId) return;
 	const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
@@ -342,24 +354,23 @@ export function readPhaseEntryState(sessionId: string, root = tmpdir()): PhaseEn
 		return (error as NodeJS.ErrnoException).code === "ENOENT" ? NO_PHASE_ENTRY : null;
 	}
 	if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) return null;
+	let text: string | undefined;
 	try {
-		const text = readFileSync(path, "utf8");
-		return reducePhaseEntryLog(text);
+		text = readPrivate(path);
 	} catch {
 		return null;
 	}
+	return text === undefined ? null : reducePhaseEntryLog(text);
 }
 
 function appendPhaseEntry(sessionId: string, line: string, root: string): boolean {
 	const path = entryLogPath(sessionId, root);
-	ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+	let recorded = false;
 	try {
-		writeFileSync(path, line + "\n", { flag: "a", mode: 0o600 });
-		return true;
-	} catch {
-		dropPrivate(path);
-		return false;
-	}
+		recorded = appendPrivate(path, cacheDir(root, ANTIGRAVITY_CACHE_DIR), line);
+	} catch {}
+	if (!recorded) dropPrivate(path);
+	return recorded;
 }
 
 export function dropPhaseEntryLog(sessionId: string, root = tmpdir()): void {
@@ -381,6 +392,10 @@ export function recordPhaseEntryPrompt(
 	dropConversationConfirmations(conversationId, storeRoot);
 	const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir()), "antigravity");
 	const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+	if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
+		const contPath = join(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+		dropPrivate(contPath);
+	}
 	let workspace: string | null = null;
 	if (entry === "run") {
 		try {
@@ -392,10 +407,17 @@ export function recordPhaseEntryPrompt(
 }
 
 export function consumePhaseAdmission(toolCallId: string, operation: GatedTool, root = tmpdir()): PhaseAdmissionGrant | null {
+	if (!toolCallId || !ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) return null;
 	const path = admissionPath(toolCallId, root);
+	let text: string | undefined;
 	try {
-		const text = readFileSync(path, "utf8");
-		dropPrivate(path);
+		text = readPrivate(path);
+	} catch {
+		return null;
+	}
+	if (text === undefined) return null;
+	dropPrivate(path);
+	try {
 		const parsed = JSON.parse(text);
 		if (parsed.operation !== operation) return null;
 		// D5: the admission is only live while its own conversation still holds the
@@ -419,9 +441,11 @@ function writeConfirmationGrant(
 	choices: {
 		verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
 		reworkChoice?: ReworkChoice;
+		allowRuleMatched?: boolean;
 	} = {},
-): string {
-	const requestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID()}`;
+): string | null {
+	const baseRequestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID()}`;
+	const requestId = choices.allowRuleMatched ? `${ALLOW_RULE_REQUEST_PREFIX}${baseRequestId}` : baseRequestId;
 	const grant: NativeConfirmationGrant = {
 		request_id: requestId,
 		conversation,
@@ -438,8 +462,13 @@ function writeConfirmationGrant(
 		...(choices.reworkChoice ? { rework_choice: choices.reworkChoice } : {}),
 		...(choices.verifierChoice ? { verifier_choice: choices.verifierChoice } : {}),
 	};
-	ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-	writeFileSync(confirmationPath(conversation, admissionId, root), JSON.stringify(grant), { mode: 0o600 });
+	const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+	const path = confirmationPath(conversation, admissionId, root);
+	const written = writePrivate(path, dir, JSON.stringify(grant));
+	if (!written) {
+		dropPrivate(path);
+		return null;
+	}
 	return requestId;
 }
 
@@ -462,14 +491,29 @@ export async function consumeNativeConfirmation(
 			"Antigravity PreToolUse native confirmation grant is missing (step correlation unavailable)",
 		);
 	}
+	if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) {
+		throw new NativeAuthorityError(
+			"interaction_not_opened",
+			"Antigravity PreToolUse native confirmation grant is missing or already consumed",
+		);
+	}
 	const path = confirmationPath(parsedId.conversation, input.admissionId, root);
+	let raw: string | undefined;
+	try {
+		raw = readPrivate(path);
+	} catch {}
+	if (raw === undefined) {
+		dropPrivate(path);
+		throw new NativeAuthorityError(
+			"interaction_not_opened",
+			"Antigravity PreToolUse native confirmation grant is missing or already consumed",
+		);
+	}
+	dropPrivate(path);
 	let grant: NativeConfirmationGrant;
 	try {
-		const raw = readFileSync(path, "utf8");
-		dropPrivate(path);
 		grant = JSON.parse(raw) as NativeConfirmationGrant;
 	} catch {
-		dropPrivate(path);
 		throw new NativeAuthorityError(
 			"interaction_not_opened",
 			"Antigravity PreToolUse native confirmation grant is missing or already consumed",
@@ -518,24 +562,64 @@ export function antigravityPreInvocationHook(
 	payload: AntigravityPreInvocationPayload,
 	locations: PhaseEntryLocations = {},
 ): { injectSteps?: unknown[]; terminationBehavior?: string } {
-	const prompt = payload.lastUserInput ?? "";
-	const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-	recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+	const storeRoot = locations.root ?? tmpdir();
+	// Real Antigravity turns re-fire PreInvocation on mid-turn tool follow-ups
+	// and Stop continuations with `invocationNum > 0` and the same `lastUserInput`.
+	// Once this conversation already holds an entry log, skip re-recording so
+	// active `.continuation` state and grants are not cleared mid-turn.
+	const isRecordedFollowUp =
+		payload.invocationNum !== undefined &&
+		payload.invocationNum > 0 &&
+		Boolean(payload.conversationId) &&
+		readPhaseEntryState(payload.conversationId, storeRoot) !== NO_PHASE_ENTRY;
+	if (!isRecordedFollowUp) {
+		const prompt = payload.lastUserInput ?? "";
+		const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+		recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+	}
 	return { injectSteps: [], terminationBehavior: "" };
 }
 
-export function antigravityPostToolUseHook(
+/**
+ * Turn-start PreInvocation hook: records phase entry and, when the workspace
+ * holds an active Managed task, injects the shared read-only active-task notice
+ * as a systemMessage step on turn start (`invocationNum === 0` or omitted).
+ */
+export async function antigravityPreInvocationHookAsync(
+	payload: AntigravityPreInvocationPayload,
+	locations: PhaseEntryLocations = {},
+): Promise<{ injectSteps?: unknown[]; terminationBehavior?: string }> {
+	const base = antigravityPreInvocationHook(payload, locations);
+	if (payload.invocationNum !== undefined && payload.invocationNum !== 0) {
+		return base;
+	}
+	const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+	const notice = await activeTaskNotice(cwd);
+	if (!notice) return base;
+	return {
+		injectSteps: [{ systemMessage: { systemMessage: notice } }],
+		terminationBehavior: "",
+	};
+}
+
+export async function antigravityPostToolUseHook(
 	payload: AntigravityPostToolUsePayload,
 	locations: PhaseEntryLocations = {},
-): void {
+): Promise<void> {
 	if (payload.stepIdx === undefined || !payload.conversationId) return;
-	const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
-	if (!call) return;
 	const root = locations.root ?? tmpdir();
-	const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
-	dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
-	if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
-		dropPrivate(admissionPath(admissionId, root));
+	const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
+	if (call) {
+		const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+		dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
+		if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
+			dropPrivate(admissionPath(admissionId, root));
+		}
+	}
+	try {
+		await antigravityRunContinuationPostToolUse(payload, root);
+	} catch {
+		// PostToolUse observation failures fail closed without crashing
 	}
 }
 
@@ -573,6 +657,18 @@ function evaluatePreToolUseSync(
 	}
 
 	const root = locations.root ?? tmpdir();
+	const paused = isSessionPaused(payload.conversationId, root);
+	if (paused) {
+		return {
+			done: true,
+			result: {
+				decision: "deny",
+				reason: paused.startsWith("continuation facts could not be verified")
+					? paused
+					: `Run paused: ${paused}; enter drive explicitly before another native gate`,
+			},
+		};
+	}
 	if (isGatedTool(call.operation)) {
 		const state = readPhaseEntryState(payload.conversationId, root);
 		const opName: PhaseOperation = { kind: "tool", name: call.operation };
@@ -595,8 +691,16 @@ function evaluatePreToolUseSync(
 			workspace: state?.workspace,
 			conversation: payload.conversationId,
 		});
-		ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-		writeFileSync(admissionPath(admissionId, root), admitLine, { mode: 0o600 });
+		const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+		const path = admissionPath(admissionId, root);
+		const written = writePrivate(path, dir, admitLine);
+		if (!written) {
+			dropPrivate(path);
+			return {
+				done: true,
+				result: { decision: "deny", reason: `run_entry_required: the admission for this ${call.operation} call could not be recorded securely` },
+			};
+		}
 		return { done: false, call, state, root, cwd, stepIdx: payload.stepIdx, admissionId };
 	}
 
@@ -621,8 +725,46 @@ export function antigravityPreToolUseHook(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
 ): PreToolUseHookDecision {
+	const root = locations.root ?? tmpdir();
 	const sync = evaluatePreToolUseSync(payload, locations);
-	return sync.done ? sync.result : { decision: "allow" };
+	if (sync.done) {
+		if (sync.result.decision !== "deny") {
+			recordPreToolUseCorrelationSync(payload, root);
+		}
+		return sync.result;
+	}
+	recordPreToolUseCorrelationSync(payload, root);
+	return { decision: "allow" };
+}
+
+function issueNativeConfirmationForceAsk(
+	conversation: string,
+	stepIdx: number,
+	admissionId: string,
+	workspace: string,
+	confirmInput: NativeConfirmationInput,
+	root: string,
+	locations: PhaseEntryLocations,
+	choices: {
+		verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
+		reworkChoice?: ReworkChoice;
+	} = {},
+): PreToolUseHookDecision {
+	const surfacing = checkNativeGateSurfacing({
+		home: locations.home,
+		readAncestorArgs: locations.readAncestorArgs,
+	});
+	if (!surfacing.ok) {
+		return { decision: "deny", reason: surfacing.reason };
+	}
+	const allowRuleMatched = matchesMcpAllowRule(surfacing.allowRules, IMMUNE_BRAIN_SERVERS, confirmInput.operation);
+	if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, { ...choices, allowRuleMatched })) {
+		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+	}
+	return {
+		decision: "force_ask",
+		reason: formatAntigravityConfirmationReason(confirmInput, choices),
+	};
 }
 
 async function prepareBatchConfirmation(
@@ -681,13 +823,13 @@ async function prepareBatchConfirmation(
 		await previewRuntime.shutdown();
 	}
 	if (!confirmInput) return { decision: "allow" };
-	writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+	return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
 
 async function prepareRetireConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
+	locations: PhaseEntryLocations,
 ): Promise<PreToolUseHookDecision> {
 	const { call, state, cwd, root, stepIdx, admissionId } = sync;
 	// ADR 0025: a live entry token stands in for the native gate on retire_stale_batch.
@@ -714,13 +856,13 @@ async function prepareRetireConfirmation(
 		await previewRuntime.shutdown();
 	}
 	if (!confirmInput) return { decision: "allow" };
-	writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-	return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+	return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
 
 async function prepareTaskAuthorityConfirmation(
 	conversationId: string,
 	sync: Extract<SyncPreToolUseEvaluation, { done: false }>,
+	locations: PhaseEntryLocations,
 ): Promise<PreToolUseHookDecision> {
 	const { call, cwd, root, stepIdx, admissionId } = sync;
 	const taskId = String(call.opArgs.task_id ?? "");
@@ -781,14 +923,16 @@ async function prepareTaskAuthorityConfirmation(
 		reworkChoice = parsed;
 	}
 
-	writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
-		verifierChoice,
-		reworkChoice,
-	});
-	return {
-		decision: "force_ask",
-		reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice }),
-	};
+	return issueNativeConfirmationForceAsk(
+		conversationId,
+		stepIdx,
+		admissionId,
+		workspaceRealpath,
+		confirmInput,
+		root,
+		locations,
+		{ verifierChoice, reworkChoice },
+	);
 }
 
 /** Diagnostics for a confirmation preview that threw; stderr is not part of the Hook's JSON reply. */
@@ -801,20 +945,34 @@ export async function antigravityPreToolUseHookAsync(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
 ): Promise<PreToolUseHookDecision> {
+	const root = locations.root ?? tmpdir();
 	const sync = evaluatePreToolUseSync(payload, locations);
+	if (sync.done && sync.result.decision === "deny") return sync.result;
+	const contDecision = await antigravityRunContinuationPreToolUse(payload, root);
+	if (contDecision && contDecision.decision === "deny") {
+		if (!sync.done && isGatedTool(sync.call.operation)) {
+			dropPrivate(admissionPath(sync.admissionId, root));
+		}
+		return contDecision;
+	}
 	if (sync.done) return sync.result;
+	let decision: PreToolUseHookDecision;
 	try {
 		if (sync.call.operation === "start_unattended_batch") {
-			return await prepareBatchConfirmation(payload.conversationId, sync, locations);
+			decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
+		} else if (sync.call.operation === "retire_stale_batch") {
+			decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);
+		} else {
+			decision = await prepareTaskAuthorityConfirmation(payload.conversationId, sync, locations);
 		}
-		if (sync.call.operation === "retire_stale_batch") {
-			return await prepareRetireConfirmation(payload.conversationId, sync);
-		}
-		return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
 	} catch (error) {
 		// Fail closed: no grant was written, so the MCP call refuses with
 		// `interaction_not_opened`. Name the real cause so that refusal is diagnosable.
 		reportPreviewFailure(sync.call.operation, error);
 		return { decision: "allow" };
 	}
+	if (decision.decision === "deny" && isGatedTool(sync.call.operation)) {
+		dropPrivate(admissionPath(sync.admissionId, root));
+	}
+	return decision;
 }

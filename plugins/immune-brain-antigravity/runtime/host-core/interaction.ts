@@ -5,7 +5,8 @@
 //
 // Interface: `PRIVILEGED_OPERATIONS`, `isPrivilegedOperation`,
 // `NativeAuthorityError`, `evaluateNativeGate`, `hostConfirmationRef`,
-// `entryTokenRequestId`, `enrollmentNonce`, the native confirmation types.
+// `ALLOW_RULE_REQUEST_PREFIX`, `entryTokenRequestId`, `enrollmentNonce`,
+// the native confirmation types.
 // Invariants: only an exact native decision authorizes; a reference names the
 // kind of literal-user act it binds.
 // Side Effects: none; this module builds values and errors.
@@ -153,6 +154,9 @@ export function entryTokenRequestId(token: string): string {
 	return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
 
+/** Prefix on a confirmation request id when a standing host allow rule bypassed the interactive dialog. */
+export const ALLOW_RULE_REQUEST_PREFIX = "allow-rule:";
+
 /** The exact facts one Kernel-bound confirmation reference binds. */
 export interface ConfirmationRefInput {
 	connectionId: string;
@@ -170,10 +174,15 @@ export interface ConfirmationRefInput {
 /**
  * The Kernel-bound reference of one confirmation, named by the Host that
  * recorded it. A reference backed by an entry token rather than an elicitation
- * is named `entry` so the record shows which kind of literal-user act it binds.
+ * is named `entry`, and one backed by a standing allow rule is named
+ * `allow-rule`, so the record shows which kind of literal-user act it binds.
  */
 export function hostConfirmationRef(host: string, input: ConfirmationRefInput): string {
-	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX)
+		? "entry"
+		: input.requestId.startsWith(ALLOW_RULE_REQUEST_PREFIX)
+			? "allow-rule"
+			: "confirm";
 	return `${host}-${kind}-${createHash("sha256")
 		.update(`${input.connectionId}\0${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.taskId ?? ""}\0${input.initiativeSlug ?? ""}\0${input.intentRevision ?? ""}\0${input.intentContentHash ?? ""}\0${input.bindingDigest ?? ""}\0${input.planDigest ?? ""}`)
 		.digest("hex")

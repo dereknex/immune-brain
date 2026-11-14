@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "pi-authority-fail-closed-repair",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:pi-authority-fail-closed-repair:2026-11-13T06:46:58.124Z",
+  "final_record_hash": "sha256:1a2c4e2c3ddd0f3b4ba0a4f125ceeb9c8b44cf4ec3ba6f2d0bb27c5e2b8cabfa",
+  "terminalized_at": "2026-11-13T06:46:58.124Z"
+}

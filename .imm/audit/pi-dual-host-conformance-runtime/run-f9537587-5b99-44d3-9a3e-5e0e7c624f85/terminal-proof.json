@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "pi-dual-host-conformance-runtime",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:pi-dual-host-conformance-runtime:2026-11-13T07:15:49.734Z",
+  "final_record_hash": "sha256:dd14d9e03696eee9ae6e9e1239204bbd282ebcfb7ec787d1e984e4fb34341acd",
+  "terminalized_at": "2026-11-13T07:15:49.734Z"
+}

@@ -15,7 +15,8 @@ import {
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import {
 	ANTIGRAVITY_ROOT,
 	CANONICAL_FILES,
@@ -131,12 +132,23 @@ describe("Antigravity artifact boundary (AC1)", () => {
 		expect(nativeBodies.sort()).toEqual(sharedBodies.sort());
 	});
 
-	it("discloses that native reviewer/verifier Git and packet-hash access is not certified", () => {
+	it("discloses that native reviewer/verifier Git and packet-hash access is not certified and links live certification", () => {
 		const readme = readFileSync(join(ARTIFACT, "README.md"), "utf8").replace(/\s+/g, " ");
 		expect(readme).toContain("Known limitation: native reviewer and verifier");
 		expect(readme).toContain("Immutable Git access and review-packet hash verification by those native roles are not certified");
-		expect(readme).toContain("does not certify the complete Managed lifecycle");
-		expect(readme).toContain("not real model behavior");
+		expect(readme).toContain("complete Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified on Antigravity");
+		expect(readme).toContain("docs/reports/antigravity-live-certification.md");
+	});
+
+	it("discloses Review CLI residual risk, absence of restriction flags, and untracked-file limits (S7 AC2, D9)", () => {
+		const readme = readFileSync(join(ARTIFACT, "README.md"), "utf8").replace(/\s+/g, " ");
+		expect(readme).toContain("Review CLI residual risk");
+		expect(readme).toContain("`review_host: antigravity`");
+		expect(readme).toContain("`guard-only`");
+		expect(readme).toContain("`agy --print` has no CLI restriction flags");
+		expect(readme).toContain("untracked files are uncovered by the tree guard");
+		expect(readme).toContain("Neither CLI invocation nor native roles provide preventive read-only isolation");
+		expect(readme).toContain("native Antigravity Review is not certified");
 	});
 
 	it("carries no other host's loader components, while runtime/claude implementation stays", () => {
@@ -284,6 +296,63 @@ describe("Antigravity hook dispatch and observation", () => {
 		expect(hook({ conversationId, executionNum: 1, terminationReason: "done", lastUserInput: "stop now", workspacePaths: [scratchDir("idle")] })).toEqual({});
 	});
 
+	it("injects activeTaskNotice on PreInvocation turn start without adding a fictitious Skill matcher (D10)", async () => {
+		const copy = relocate();
+		const workspace = scratchDir("preinvocation-active");
+		execFileSync("git", ["init", "-q"], { cwd: workspace });
+		execFileSync("git", ["config", "user.email", "test@immune-brain.local"], { cwd: workspace });
+		execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+		mkdirSync(join(workspace, "docs/plans"), { recursive: true });
+		writeFileSync(
+			join(workspace, "docs/plans/pkg-p8-task.intent.json"),
+			JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "pkg-p8-task",
+				goal: "verify packaged PreInvocation notice",
+				acceptance: [{
+					id: "AC1",
+					assertion: "pass",
+					verification: JSON.stringify({
+						contract: "assurance_kernel/verification_descriptor/v2",
+						command: { executable: "true", argv: [], cwd: ".", timeout_ms: 5000, max_output_bytes: 1024 },
+						environment: { prepare: null, writable_paths: [] },
+					}),
+				}],
+				scope_hint: ["README.md"],
+				risk: "routine",
+				revision: 1,
+				owner: "user",
+			}),
+		);
+		writeFileSync(join(workspace, "README.md"), "seed\n");
+		execFileSync("git", ["add", "."], { cwd: workspace });
+		execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: workspace });
+		await enrollTaskForTest(workspace, "pkg-p8-task");
+
+		const hooksRaw = readFileSync(join(copy, "hooks.json"), "utf8");
+		expect(hooksRaw).not.toContain('"Skill"');
+
+		const env = isolatedEnv();
+		const hook = hookRunner(copy, env);
+		const onTurnStart = hook({
+			conversationId: "conv-pkg-p8",
+			invocationNum: 0,
+			lastUserInput: "what task is open?",
+			workspacePaths: [workspace],
+		});
+		expect(onTurnStart).toMatchObject({
+			injectSteps: [{ systemMessage: { systemMessage: expect.stringContaining("pkg-p8-task") } }],
+			terminationBehavior: "",
+		});
+		const onFollowUp = hook({
+			conversationId: "conv-pkg-p8",
+			invocationNum: 1,
+			lastUserInput: "what task is open?",
+			workspacePaths: [workspace],
+		});
+		expect(onFollowUp).toEqual({ injectSteps: [], terminationBehavior: "" });
+	});
+
 	it("returns native force_ask confirmation from packaged PreToolUse on a real TaskIntent workspace", () => {
 		const copy = relocate();
 		const preHooks = JSON.parse(readFileSync(join(copy, "hooks.json"), "utf8"))["immune-brain"].PreToolUse as Array<{
@@ -320,6 +389,12 @@ describe("Antigravity hook dispatch and observation", () => {
 		spawnSync("git", ["-c", "user.name=T", "-c", "user.email=t@t", "commit", "-qm", "fixture"], { cwd: repo });
 
 		const env = isolatedEnv();
+		const settingsDir = join(env.HOME, ".gemini", "antigravity-cli");
+		mkdirSync(settingsDir, { recursive: true });
+		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
+		const fakeBin = scratchDir("ps-bin");
+		writeFileSync(join(fakeBin, "ps"), '#!/bin/sh\necho "1 /usr/local/bin/agy"\n', { mode: 0o755 });
+		env.PATH = `${fakeBin}:${env.PATH}`;
 		const hook = hookRunner(copy, env);
 		const conversationId = "conv-pkg-confirm";
 		expect(hook({ conversationId, invocationNum: 1, lastUserInput: "/drive pkg-task", workspacePaths: [repo] }))

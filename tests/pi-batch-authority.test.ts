@@ -9,6 +9,9 @@ import type { GithubInitiativeObservation } from "../plugins/immune-brain/runtim
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { selectedPiParent, registerPiRunContinuation } from "../plugins/immune-brain/.pi-extension/pi-run-continuation";
+import { PI_PROFILE, bindPiSelectedParent } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
+import { recognizePhaseEntry, NO_LOCAL_NAMES } from "../plugins/immune-brain/runtime/assurance/phase_entry";
 
 // Delivery QA has no node_modules; use host seams only when the real package is absent.
 try { await import("typebox"); } catch {
@@ -501,5 +504,84 @@ describe("native Parent final verification gate", () => {
 		expect(await runBatch({ root, initiativeSlug: "native-final", final_verification: undefined, readInitiative: async () => observation,
 			confirmBatch: async () => { throw new Error("recorded Parent commands need no new gate"); } }))
 			.toMatchObject({ state: "native_parent", action: "complete", final_verification_commands: ["bun marker.ts"] });
+	});
+});
+
+describe("Pi selectedParent correlation (AC3, Spec D6)", () => {
+	it("selectedParent returns true for matching tool call, session, workspace, and slug; false for wrong workspace, slug, consumed or missing entry", async () => {
+		const f = fixture("sel-parent");
+		const storeRoot = mkdtempSync(join(tmpdir(), "pi-sel-store-"));
+		roots.push(storeRoot);
+
+		const handlers = new Map<string, Function>();
+		const ctx = {
+			cwd: f.root,
+			sessionManager: { getSessionId: () => "pi-parent-session", getLeafId: () => "leaf-1" },
+		};
+		const revoked: string[] = [];
+		const continuation = registerPiRunContinuation(
+			{ on: (event: string, callback: Function) => handlers.set(event, callback) } as any,
+			{ entry: (text) => recognizePhaseEntry(text, NO_LOCAL_NAMES, "pi"), revokeEntry: (sessionId) => revoked.push(sessionId) },
+			{ storeRoot },
+		);
+		bindPiSelectedParent((toolCallId, root, slug) => continuation.selectedParent(toolCallId, root, slug));
+		const emit = (name: string, event: unknown) => handlers.get(name)?.(event, ctx);
+
+		// Enter /drive
+		await emit("input", { text: "/drive", source: "interactive" });
+
+		// Start unattended batch -> binds Parent in continuation
+		const batchCallId = "batch-call-1";
+		await emit("tool_call", {
+			toolName: "start_unattended_batch",
+			toolCallId: batchCallId,
+			input: { initiative_slug: f.slug },
+		});
+		await emit("tool_result", {
+			toolName: "start_unattended_batch",
+			toolCallId: batchCallId,
+			isError: false,
+			details: {
+				state: "native_parent",
+				initiative_slug: f.slug,
+				plan_digest: "sha256:plan-digest-1",
+				final_verification_commands: ["bun test"],
+			},
+		});
+
+		// Now child task initiates advance_assurance
+		const childCallId = "child-advance-call";
+		await emit("tool_call", {
+			toolName: "imm_kernel_canary",
+			toolCallId: childCallId,
+			input: { task_id: `${f.slug}-c1`, action: { op: "advance_assurance" } },
+		});
+
+		// Positive: exact toolCallId, workspace, and slug matches
+		expect(selectedPiParent(childCallId, f.root, f.slug, storeRoot)).toBe(true);
+		expect(continuation.selectedParent(childCallId, f.root, f.slug)).toBe(true);
+		expect(PI_PROFILE.selectedParent(childCallId, f.root, f.slug)).toBe(true);
+
+		// Negative: wrong slug
+		expect(selectedPiParent(childCallId, f.root, "wrong-slug", storeRoot)).toBe(false);
+
+		// Negative: wrong workspace
+		expect(selectedPiParent(childCallId, tmpdir(), f.slug, storeRoot)).toBe(false);
+
+		// Negative: wrong toolCallId
+		expect(selectedPiParent("unknown-call-id", f.root, f.slug, storeRoot)).toBe(false);
+
+		// Complete the tool call -> correlation is consumed and dropped
+		await emit("tool_result", {
+			toolName: "imm_kernel_canary",
+			toolCallId: childCallId,
+			isError: false,
+			details: { state: "review_ready" },
+		});
+
+		// Negative: consumed correlation returns false
+		expect(selectedPiParent(childCallId, f.root, f.slug, storeRoot)).toBe(false);
+
+		bindPiSelectedParent(null as any);
 	});
 });

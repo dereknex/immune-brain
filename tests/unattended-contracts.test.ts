@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { projectBatchPlan } from "../plugins/immune-brain/runtime/unattended/batch_plan";
 import { batchReason } from "../plugins/immune-brain/runtime/unattended/batch_reasons";
+import { executePiUnattendedBatch } from "../plugins/immune-brain/.pi-extension/imm-unattended-batch";
 
 /**
  * Contract-text conformance for the unattended batch run.
@@ -459,7 +460,7 @@ describe("unattended batch contract text", () => {
 		expect(adr).toContain("Only in-scope content is compared");
 	});
 
-	it("keeps default drive behavior byte-identical when the batch tool is not invoked", () => {
+	it("keeps default drive behavior byte-identical when the batch tool is not invoked", async () => {
 		// The opt-in path is a Tool registration; the loop contract's execution
 		// sequence must not make a batch step mandatory or implicit.
 		for (const contract of [LOOP_CONTRACT, BATCH_CONTRACT]) {
@@ -467,13 +468,27 @@ describe("unattended batch contract text", () => {
 			expect(contract).not.toMatch(/drive must start a batch|先调用 start_unattended_batch/i);
 		}
 
-		// The shipped entry requires a literal-user confirmation; a non-interactive
-		// invocation is refused, so the opt-in cannot happen implicitly. The refusal
-		// text is table-owned: the adapter names the key and the shared table owns the
-		// operator-visible prose, so assert the resolution rather than the spelling.
+		// The shipped entry requires a literal-user confirmation; an invocation
+		// without a native confirmation port is rejected through HostRuntime, so
+		// the opt-in cannot happen implicitly.
 		const piExtension = read("plugins/immune-brain/.pi-extension/imm-unattended-batch.ts");
 		expect(piExtension).toContain("unsupported_host");
-		expect(piExtension).toContain('batchReason("confirmation_port_unavailable")');
+		const noPortRoot = mkdtempSync(join(tmpdir(), "imm-pi-no-port-"));
+		try {
+			const noPortResult = await executePiUnattendedBatch({
+				root: noPortRoot,
+				initiativeSlug: "missing-confirmation-port",
+				interactive: true,
+			});
+			const expected = batchReason("confirmation_port_unavailable");
+			expect(noPortResult).toEqual({
+				state: expected.state,
+				reason: expect.stringContaining(expected.reason),
+				recovery_action: expected.recovery_action,
+			});
+		} finally {
+			rmSync(noPortRoot, { recursive: true, force: true });
+		}
 		expect(batchReason("confirmation_port_unavailable")).toEqual({
 			state: "rejected",
 			reason: "native confirmation port is unavailable",

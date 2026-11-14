@@ -2,11 +2,21 @@ import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import { reviewerTranscripts } from "./helpers/claude-reviewer-transcript";
 import { parseReviewPacketHandle } from "../plugins/immune-brain/runtime/assurance/review_packet";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
-import { afterAll, describe, expect, mock, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, mock, setDefaultTimeout, spyOn, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+	appendPrivate,
+	cacheDir,
+	dropPrivate,
+	ensurePrivateDir,
+	ownedByUs,
+	readPrivate,
+	sessionHash,
+	writePrivate,
+} from "../plugins/immune-brain/runtime/host-core/private_file";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -18,6 +28,7 @@ import { readSettledTaskEvidence, revisionForContent } from "../plugins/immune-b
 import { PassThrough } from "node:stream";
 import { ClaudeReviewHost, claudeHookEventLog } from "../plugins/immune-brain/runtime/claude/review_host";
 import { AntigravityReviewHost, antigravityHookEventLog, type AntigravityHookEvent } from "../plugins/immune-brain/runtime/antigravity/review_host";
+import { PiReviewHost, PI_VERIFIER_AGENT } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { HostRuntime } from "../plugins/immune-brain/runtime/host-core/runtime";
 import { NativeAuthorityError } from "../plugins/immune-brain/runtime/host-core/interaction";
@@ -121,7 +132,8 @@ if (!(await hostPackagesAvailable())) {
 	}));
 }
 
-const { AssuranceProgression } = await import("../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts");
+const { PiRuntime } = await import("../plugins/immune-brain/.pi-extension/pi-host-runtime");
+const { createPiRuntimeDriver } = await import("./helpers/pi-canary-assurance-harness");
 const { default: registerPiBatch, executePiUnattendedBatch: executePiBatch } = await import("../plugins/immune-brain/.pi-extension/imm-unattended-batch");
 const executePiUnattendedBatch = (options: Parameters<typeof executePiBatch>[0]) => executePiBatch({ final_verification: ["bun --version"], ...options });
 const { createPiAssuranceProgressionPorts } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work");
@@ -645,7 +657,7 @@ function sharedKernel(
 		},
 		pi() {
 			const { host: _ignored, ...rest } = portsFor(new ClaudeReviewHost());
-			return new AssuranceProgression({ ...rest, authorityOverrides: rest });
+			return createPiRuntimeDriver({ ...rest, authorityOverrides: rest }, ROOT);
 		},
 		stale() { recordRevision = "stale"; },
 		future() { contract = "assurance_kernel/task_record/v99"; },
@@ -717,11 +729,14 @@ esac
 }
 
 function projectVerificationCoordinator(root: string, host: "pi" | "claude") {
-	const ports = host === "pi"
-		? createPiAssuranceProgressionPorts()
-		: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
+	if (host === "pi") {
+		const ports = createPiAssuranceProgressionPorts();
+		const driver = createPiRuntimeDriver(ports, root);
+		return { coordinator: driver.coordinator, ports };
+	}
+	const ports = new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true }).kernelPorts();
 	return {
-		coordinator: host === "pi" ? new AssuranceProgression({ ...ports, authorityOverrides: ports }) : new AssuranceCoordinator(ports, ports),
+		coordinator: new AssuranceCoordinator(ports, ports),
 		ports,
 	};
 }
@@ -734,7 +749,7 @@ describe("project-owned-verification", () => {
 		const root = projectVerificationFixture(taskId, "pass", { risk: "routine", gitIntegration });
 		const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 		const driver = host === "pi"
-			? new AssuranceProgression(createPiAssuranceProgressionPorts())
+			? createPiRuntimeDriver(createPiAssuranceProgressionPorts(), root).piRuntime
 			: new ClaudeRuntime({ cwd: root, env: HOST_ENV, host: new ClaudeReviewHost(), interactive: true });
 		try {
 			const baseHead = git("rev-parse", "HEAD");
@@ -749,9 +764,7 @@ describe("project-owned-verification", () => {
 			writeEnrollmentBaseline(root, ["tools/future-pm"]);
 			const outsideIndex = git("diff", "--cached", "--", "AGENTS.md");
 			const outsideWorktree = git("diff", "--", "AGENTS.md");
-			const result = driver instanceof ClaudeRuntime
-				? await driver.advance(taskId)
-				: await driver.advance(taskId, { cwd: root } as never);
+			const result = await driver.advance(taskId);
 			expect(result).toMatchObject({ state: "completed" });
 			expect(readSettledTaskEvidence(root, taskId)).toMatchObject({
 				record: { lifecycle: "done" }, proof: { terminal_lifecycle: "done" },
@@ -775,8 +788,7 @@ describe("project-owned-verification", () => {
 			expect(readFileSync(join(root, "unrelated.txt"), "utf8")).toBe("untracked user content\n");
 			expect(git("ls-files", "--others", "--exclude-standard", "--", "unrelated.txt")).toBe("unrelated.txt");
 		} finally {
-			if (driver instanceof ClaudeRuntime) await driver.shutdown();
-			else await driver.onSessionShutdown();
+			await driver.shutdown();
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
@@ -1670,12 +1682,10 @@ describe("dual-host assurance conformance", () => {
 			mkdirSync(join(pLane, "docs/specs"), { recursive: true });
 			writeFileSync(join(pLane, `docs/specs/${sharedReplaySlug}-p-c1.spec.md`), "# Replay fixture Spec\n");
 			execFileSync("git", ["add", `docs/specs/${sharedReplaySlug}-p-c1.spec.md`], { cwd: pLane });
-			await createPiAssuranceProgressionPorts().applyOrdinaryOperation({ cwd: pLane }, {
-				taskId: `${sharedReplaySlug}-p-c1`, operation: { op: "freeze_artifacts", actor_id: "executor" },
-			});
-			const { AssuranceCoordinator: PiCoordinator } = await import("../plugins/immune-brain/runtime/assurance/coordinator");
-			const piProgression = new PiCoordinator(createPiAssuranceProgressionPorts() as never);
-			expect((await piProgression.advance(`${sharedReplaySlug}-p-c1`, { cwd: pLane })).state).toBe("completed");
+			const piLaneRuntime = createPiRuntimeDriver(createPiAssuranceProgressionPorts(), pLane).piRuntime;
+			await piLaneRuntime.freeze(`${sharedReplaySlug}-p-c1`, { cwd: pLane });
+			expect((await piLaneRuntime.advance(`${sharedReplaySlug}-p-c1`)).state).toBe("completed");
+			await piLaneRuntime.shutdown();
 			execFileSync("git", ["add", `.imm/audit/${sharedReplaySlug}-p-c1`], { cwd: pLane });
 			pRes1 = await executePiUnattendedBatch(replayOptions);
 
@@ -2358,18 +2368,25 @@ describe("dual-host assurance conformance", () => {
 		}
 		// Both adapters mint the canonical spelling rather than a second one: after the
 		// shared authorization flow, the batch binding mints it once in the shared
-		// owner both adapters call, and neither adapter spells it itself.
+		// owner both adapters call through HostRuntime, and neither adapter spells it itself.
 		const sharedOwner = readFileSync(
 			resolve("plugins/immune-brain/runtime/unattended/batch_preflight.ts"),
 			"utf8",
 		);
 		expect(sharedOwner.includes("LITERAL_USER_ACTOR_ID")).toBe(true);
-		for (const path of [
-			"plugins/immune-brain/.pi-extension/imm-unattended-batch.ts",
-			"plugins/immune-brain/runtime/host-core/runtime.ts",
-		]) {
+		const sharedRuntime = readFileSync(
+			resolve("plugins/immune-brain/runtime/host-core/runtime.ts"),
+			"utf8",
+		);
+		expect(sharedRuntime.includes("authorizeBatch")).toBe(true);
+		for (const [path, sharedCall] of [
+			["plugins/immune-brain/.pi-extension/imm-unattended-batch.ts", "startUnattendedBatch"],
+			["plugins/immune-brain/.pi-extension/pi-host-runtime.ts", "this.runtime.startUnattendedBatch"],
+			["plugins/immune-brain/runtime/claude/kernel_ports.ts", "this.runtime.startUnattendedBatch"],
+			["plugins/immune-brain/runtime/host-core/runtime.ts", "authorizeBatch"],
+		] as const) {
 			const source = readFileSync(resolve(path), "utf8");
-			expect({ path, shared: source.includes("authorizeBatch") }).toEqual({ path, shared: true });
+			expect({ path, shared: source.includes(sharedCall) }).toEqual({ path, shared: true });
 			expect({ path, hardcoded: /actor_id:\s*"user"/.test(source) }).toEqual({ path, hardcoded: false });
 		}
 	});
@@ -2476,14 +2493,22 @@ describe("dual-host assurance conformance", () => {
 			expect(absent).toBeUndefined();
 			expect(calls).toBe(0);
 
-			// Both Hosts settle through the one shared step.
+			// Both Hosts settle through the one shared step in HostRuntime.
+			expect({
+				path: "plugins/immune-brain/runtime/host-core/runtime.ts",
+				shared: readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8").includes("projectTerminalTrackerState"),
+			}).toEqual({
+				path: "plugins/immune-brain/runtime/host-core/runtime.ts",
+				shared: true,
+			});
 			for (const path of [
-				"plugins/immune-brain/runtime/host-core/runtime.ts",
-				"plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+				"plugins/immune-brain/runtime/claude/kernel_ports.ts",
+				"plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
 			]) {
-				expect({ path, shared: readFileSync(resolve(path), "utf8").includes("projectTerminalTrackerState") }).toEqual({
+				const source = readFileSync(resolve(path), "utf8");
+				expect({ path, delegates: source.includes("this.runtime.advance") && source.includes("this.runtime.submitReview") }).toEqual({
 					path,
-					shared: true,
+					delegates: true,
 				});
 			}
 		} finally {
@@ -2555,7 +2580,7 @@ describe("status stays readable with unstaged scope paths on both Hosts", () => 
 
 /**
  * S2 AC2: the CLI switch is read at each composition root. The Host wiring is
- * real — Pi's `AssuranceProgression`, `ClaudeRuntime` and `AntigravityRuntime` —
+ * real — Pi's `PiRuntime`, `ClaudeRuntime` and `AntigravityRuntime` —
  * and only the Kernel ports are the same synthetic fixtures the conformance
  * drives above, because the reservation shape is what the switch changes.
  */
@@ -2606,6 +2631,323 @@ function cliReviewPorts(root: string): { ports: AssuranceCoordinatorPorts; appli
 	} as unknown as AssuranceCoordinatorPorts;
 	return { ports, applied };
 }
+
+// Spec docs/specs/tri-host-capability-alignment.spec.md S2 AC1 (D3; BR-REQ-2):
+// shared private helpers accept an owned 0700 directory and regular owned 0600
+// files and reject planted symlinks, foreign-owned files, non-regular files and
+// wrong-mode files without ordinary-read fallback.
+describe("shared private file helpers (D3; S2 AC1)", () => {
+	function scratchRoot(): string {
+		return mkdtempSync(join(tmpdir(), "shared-private-file-"));
+	}
+
+	test("ensurePrivateDir: creates owned 0700 directory and accepts existing", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "sub-dir");
+			expect(ensurePrivateDir(target)).toBe(true);
+			const stat = lstatSync(target);
+			expect(stat.isDirectory()).toBe(true);
+			expect((stat.mode & 0o777)).toBe(0o700);
+			expect(ownedByUs(stat)).toBe(true);
+			// Idempotent: accepts existing
+			expect(ensurePrivateDir(target)).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects directory with wrong mode (0755, 0777)", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "mode-dir");
+			mkdirSync(target, 0o755);
+			chmodSync(target, 0o755);
+			expect(ensurePrivateDir(target)).toBe(false);
+			chmodSync(target, 0o777);
+			expect(ensurePrivateDir(target)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects planted symlink directory", () => {
+		const root = scratchRoot();
+		const outside = scratchRoot();
+		try {
+			chmodSync(outside, 0o700);
+			const link = join(root, "sym-dir");
+			symlinkSync(outside, link);
+			expect(ensurePrivateDir(link)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+			rmSync(outside, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects foreign-owned directory", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "foreign-dir");
+			mkdirSync(target, 0o700);
+			chmodSync(target, 0o700);
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(ensurePrivateDir(target)).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("ensurePrivateDir: rejects a regular file at the directory path", () => {
+		const root = scratchRoot();
+		try {
+			const target = join(root, "file-not-dir");
+			writeFileSync(target, "not a dir", { mode: 0o700 });
+			chmodSync(target, 0o700);
+			expect(ensurePrivateDir(target)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: positive round-trip and overwrite with readPrivate", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			const file = join(dir, "grant.json");
+			expect(writePrivate(file, dir, JSON.stringify({ grant: "first", n: 1 }))).toBe(true);
+			const stat = lstatSync(file);
+			expect(stat.isFile()).toBe(true);
+			expect((stat.mode & 0o777)).toBe(0o600);
+			expect(readPrivate(file)).toBe(JSON.stringify({ grant: "first", n: 1 }));
+
+			// Overwriting existing owned 0600 file succeeds
+			expect(writePrivate(file, dir, JSON.stringify({ grant: "second" }))).toBe(true);
+			expect(readPrivate(file)).toBe(JSON.stringify({ grant: "second" }));
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects writing when directory fails ensurePrivateDir", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "bad-dir");
+			mkdirSync(dir, 0o755);
+			chmodSync(dir, 0o755);
+			const file = join(dir, "grant.json");
+			expect(writePrivate(file, dir, "content")).toBe(false);
+			expect(existsSync(file)).toBe(false);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects planted symlink file and preserves target", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const outsideTarget = join(root, "innocent.txt");
+			writeFileSync(outsideTarget, "original-content", { mode: 0o600 });
+			const link = join(dir, "sym-grant.json");
+			symlinkSync(outsideTarget, link);
+
+			expect(writePrivate(link, dir, "malicious-write")).toBe(false);
+			// Target must be completely untouched
+			expect(readFileSync(outsideTarget, "utf8")).toBe("original-content");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects file with wrong mode (0644, 0666, 0700) and preserves content", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			for (const mode of [0o644, 0o666, 0o700]) {
+				const file = join(dir, `mode-${mode.toString(8)}.json`);
+				writeFileSync(file, "initial-bytes");
+				chmodSync(file, mode);
+				expect(writePrivate(file, dir, "overwritten")).toBe(false);
+				expect(readFileSync(file, "utf8")).toBe("initial-bytes");
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects foreign-owned file", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const file = join(dir, "foreign.json");
+			expect(writePrivate(file, dir, "first")).toBe(true);
+
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(writePrivate(file, dir, "foreign-update")).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("writePrivate: rejects non-regular file (directory and FIFO)", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			// Subdirectory at the file path
+			const subDir = join(dir, "file-is-dir");
+			mkdirSync(subDir, 0o700);
+			chmodSync(subDir, 0o700);
+			expect(writePrivate(subDir, dir, "data")).toBe(false);
+
+			// FIFO
+			const fifo = join(dir, "file.fifo");
+			try {
+				execFileSync("mkfifo", [fifo]);
+				chmodSync(fifo, 0o600);
+				expect(writePrivate(fifo, dir, "data")).toBe(false);
+			} catch {}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("appendPrivate: positive round-trip and negative attacks", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			const file = join(dir, "log.jsonl");
+			expect(appendPrivate(file, dir, "line1\n")).toBe(true);
+			expect(appendPrivate(file, dir, "line2\n")).toBe(true);
+			expect(readPrivate(file)).toBe("line1\nline2\n");
+
+			// Rejects planted symlink
+			const target = join(root, "target.txt");
+			writeFileSync(target, "safe", { mode: 0o600 });
+			const link = join(dir, "sym-log.jsonl");
+			symlinkSync(target, link);
+			expect(appendPrivate(link, dir, "attack\n")).toBe(false);
+			expect(readFileSync(target, "utf8")).toBe("safe");
+
+			// Rejects wrong mode
+			const wrongMode = join(dir, "wrong-mode.jsonl");
+			writeFileSync(wrongMode, "existing\n");
+			chmodSync(wrongMode, 0o644);
+			expect(appendPrivate(wrongMode, dir, "extra\n")).toBe(false);
+			expect(readFileSync(wrongMode, "utf8")).toBe("existing\n");
+
+			// Rejects foreign-owned
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(appendPrivate(file, dir, "foreign\n")).toBe(false);
+			} finally {
+				spy.mockRestore();
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("readPrivate: positive and rejects attacks without fallback ordinary read", () => {
+		const root = scratchRoot();
+		try {
+			const dir = join(root, "cache");
+			ensurePrivateDir(dir);
+			const file = join(dir, "good.txt");
+			writeFileSync(file, "hello-world", { mode: 0o600 });
+			chmodSync(file, 0o600);
+			expect(readPrivate(file)).toBe("hello-world");
+
+			// Returns undefined on nonexistent file
+			expect(readPrivate(join(dir, "absent.txt"))).toBeUndefined();
+
+			// Rejects planted symlink (never falls back to ordinary readFileSync)
+			const outside = join(root, "outside.txt");
+			writeFileSync(outside, "secret-data");
+			const link = join(dir, "planted-link.txt");
+			symlinkSync(outside, link);
+			expect(readPrivate(link)).toBeUndefined();
+
+			// Rejects wrong mode files
+			for (const mode of [0o644, 0o666, 0o700, 0o777]) {
+				const wrongFile = join(dir, `mode-${mode.toString(8)}.txt`);
+				writeFileSync(wrongFile, "secret", { mode });
+				chmodSync(wrongFile, mode);
+				expect(readPrivate(wrongFile)).toBeUndefined();
+			}
+
+			// Rejects foreign-owned file
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				expect(readPrivate(file)).toBeUndefined();
+			} finally {
+				spy.mockRestore();
+			}
+
+			// Rejects maxBytes overflow
+			expect(readPrivate(file, 5)).toBeUndefined();
+
+			// Rejects non-regular file (directory)
+			const subDir = join(dir, "subdir");
+			mkdirSync(subDir, 0o700);
+			expect(readPrivate(subDir)).toBeUndefined();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test("dropPrivate: removes owned regular file but preserves symlinks and directories", () => {
+		const root = scratchRoot();
+		try {
+			const file = join(root, "remove-me.txt");
+			writeFileSync(file, "temp", { mode: 0o600 });
+			chmodSync(file, 0o600);
+			dropPrivate(file);
+			expect(existsSync(file)).toBe(false);
+
+			// Planted symlink is preserved, target is preserved
+			const target = join(root, "target-keep.txt");
+			writeFileSync(target, "keep");
+			const link = join(root, "sym-link.txt");
+			symlinkSync(target, link);
+			dropPrivate(link);
+			expect(existsSync(link)).toBe(true);
+			expect(existsSync(target)).toBe(true);
+
+			// Directory is preserved
+			const subDir = join(root, "keep-dir");
+			mkdirSync(subDir, 0o700);
+			dropPrivate(subDir);
+			expect(existsSync(subDir)).toBe(true);
+
+			// Foreign-owned file is preserved
+			const foreignFile = join(root, "foreign-keep.txt");
+			writeFileSync(foreignFile, "foreign", { mode: 0o600 });
+			chmodSync(foreignFile, 0o600);
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				dropPrivate(foreignFile);
+			} finally {
+				spy.mockRestore();
+			}
+			expect(existsSync(foreignFile)).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
 
 // Spec docs/specs/host-neutral-adapter-core.spec.md S1 AC3 (D3): one event log
 // implementation, constructed by each adapter over its own cache directory.
@@ -2772,6 +3114,18 @@ describe("verifier observation", () => {
 		};
 	}
 
+	function piHost(): Driver {
+		const host = new PiReviewHost();
+		const verifier = PI_VERIFIER_AGENT;
+		return {
+			host,
+			start: (sessionId, agentId, prompt, agent = verifier) => host.observe({ type: "start", sessionId, agentId, agent, prompt }),
+			result: (sessionId, agentId, text, prompt, model = MODEL) => host.observe({ type: "result", sessionId, agentId, result: text, model, prompt }),
+			stop: (sessionId, agentId, agent = verifier) => host.observe({ type: "stop", sessionId, agentId, agent }),
+			end: (sessionId) => host.observe({ type: "session_end", sessionId }),
+		};
+	}
+
 	const HOST_SPECS: HostSpec[] = [
 		{
 			label: "claude-code", prefix: "claude", verifier: "immune-brain-review-verifier", make: claudeHost,
@@ -2786,6 +3140,12 @@ describe("verifier observation", () => {
 			label: "antigravity", prefix: "antigravity", verifier: "immune-brain-review-verifier", make: antigravityHost,
 			dispatchPrompt: (reservation) => (reservation.dispatch as { Prompt: string }).Prompt,
 			// BR-SCN-1: PostToolUse is terminal here, so no stop event follows.
+			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
+		},
+		{
+			label: "pi", prefix: "pi", verifier: PI_VERIFIER_AGENT, make: piHost,
+			dispatchPrompt: (reservation) => (reservation.dispatch as { prompt: string }).prompt,
+			// BR-REQ-6 / D4: terminal is "result", so no stop event follows.
 			terminate: (driver, sessionId, agentId, prompt, model) => driver.result(sessionId, agentId, RESULT, prompt, model),
 		},
 	];
@@ -2890,6 +3250,40 @@ describe("verifier observation", () => {
 
 			spec.terminate(driver, "session-1", "agent-1", prompt);
 			expect(inspect(driver, reservation)).toMatchObject({ ok: true, receipt: { actorId: `${spec.prefix}:agent-1` } });
+		});
+
+		test(`${spec.label}: a corrupted packet handle refuses and releases the reservation`, () => {
+			const driver = spec.make();
+			let packetPath = "";
+			const reservation = driver.host.prepareVerification!({
+				taskId: TASK, operationId: OPERATION, prompt: "verifier prompt", model: MODEL,
+				writePacket: (op, prompt) => {
+					const pkt = writeTestReviewPacket(op, prompt);
+					packetPath = pkt.path;
+					return pkt;
+				},
+			});
+			writeFileSync(packetPath, "corrupted content");
+			const prompt = spec.dispatchPrompt(reservation);
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+
+			const inspected = inspect(driver, reservation);
+			expect(inspected.ok).toBe(false);
+			expect(inspected.release).toBe(true);
+		});
+
+		test(`${spec.label}: releasing the reservation removes it and refuses subsequent inspection`, () => {
+			const driver = spec.make();
+			const reservation = prepare(driver);
+			const prompt = spec.dispatchPrompt(reservation);
+
+			driver.start("session-1", "agent-1", prompt);
+			spec.terminate(driver, "session-1", "agent-1", prompt);
+			expect(inspect(driver, reservation)).toMatchObject({ ok: true });
+
+			driver.host.releaseReview!(reservation);
+			expect(inspect(driver, reservation)).toEqual({ ok: false, reason: "reserved foreground Agent was not observed", release: true });
 		});
 	}
 });

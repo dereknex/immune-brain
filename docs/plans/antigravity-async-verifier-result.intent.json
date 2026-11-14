@@ -1,0 +1,38 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-async-verifier-result",
+  "owner": "user",
+  "goal": "Make the Antigravity verifier receipt settle from the subagent's real asynchronous output (#451 follow-up). On live agy 1.5.7 invoke_subagent returns at once, PostToolUse carries no result, and plugins/immune-brain/runtime/antigravity/mcp_server.ts:157-171 writes an empty result event that plugins/immune-brain/runtime/host-core/verifier_observation.ts:146 always refuses, so live verification can never settle. The Antigravity adapter keeps the correlated tool ID ${conversationId}:${stepIdx} (Spec docs/specs/tri-host-capability-alignment.spec.md D7) and resolves the result from the conversation's own spawn record and the message the spawned verifier sent back, read through Antigravity hook payloads; shared verifier_observation.ts semantics and Claude/Pi behavior stay unchanged, and Spec D7 records the asynchronous result source. Live evidence (agy 1.5.7, 2026-11-13, S8 probe sessions a7b187ea and 73d04947): Pre/PostToolUse stepIdx equals the spawn record spawnStepIndex (2) and both carry artifactDirectoryPath <brain>/<conversationId>; the output arrives later as a messages/<id>.json from the child. Out of scope: certification claims, README and live report (S8 reruns after this), primary Review (#440), #469 click-through. no user-visible change: the change is internal hook-to-receipt correlation; users observe it only through the S8 live certification rerun.",
+  "acceptance": [
+    {
+      "id": "AAVR-A1",
+      "assertion": "In the existing \"verifier via real hook dispatch\" block of tests/antigravity-assurance-conformance.test.ts, the real hook entry (plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook) receives a PreToolUse and a PostToolUse for invoke_subagent with the same conversationId and stepIdx, each carrying artifactDirectoryPath pointing at a temporary <brain>/<conversationId> directory, and the PostToolUse carries error \"\" and no result field (the live agy 1.5.7 shape). Positive: runtime.submitVerification stays pending and keeps the reservation; after the fixture writes .system_generated/subagents/<child>.json with conversationId <child>, subagentDescriptor.typeName immune-brain-review-verifier and spawnStepIndex equal to stepIdx, writes .system_generated/messages/<id>.json with sender <child>, recipient <conversationId> and the verdict as content, and one further hook payload for that conversationId runs, submitVerification accepts with actorId antigravity:<stepIdx> and result bytes equal to the message content. Bound: further hook payloads after resolution append no second result event and do not turn the settled receipt into a duplicate-result refusal; a PostToolUse that carries a non-empty result string still settles as before. Fixture shapes follow the live evidence recorded in this TaskIntent's goal. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"verifier via real hook dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AAVR-A2",
+      "assertion": "With the AAVR-A1 setup, the adapter fails closed and submitVerification never settles a receipt when: the only message in the directory is self-sent (sender == recipient == conversationId, as live background-command messages are); the message recipient differs from conversationId; the spawn record's spawnStepIndex differs from the dispatch stepIdx or its typeName is not immune-brain-review-verifier; the artifactDirectoryPath basename differs from the payload conversationId, or the path or a .system_generated component is a symlink; a spawn or message file is unparsable or exceeds the adapter's declared byte bound. When the spawned verifier sent two messages to the conversation, submission is refused rather than settled from either. A PostToolUse with no result field or an empty result never appends a result event. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AAVR-A3",
+      "assertion": "The shared verifier observation and the other Hosts are unchanged and the generated artifacts are current. Positive: the \"verifier observation\" block of tests/dual-host-assurance-conformance.test.ts and the Pi verifier conformance suite pass unchanged; the Antigravity package mirror, its bundled MCP server and the Claude MCP bundle check clean; TypeScript passes. Negative: a stale Antigravity mirror of the changed adapter files or a stale bundle fails the build check. Agreed seams: the \"verifier observation\" block of tests/dual-host-assurance-conformance.test.ts, tests/pi-canary-assurance-advance.test.ts, tests/antigravity-host-package.test.ts, the plugin build checks and typecheck.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/dual-host-assurance-conformance.test.ts -t 'verifier observation' && bun test tests/pi-canary-assurance-advance.test.ts tests/antigravity-host-package.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-async-verifier-result.md",
+    "docs/plans/antigravity-async-verifier-result.intent.json",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/antigravity/review_host.ts",
+    "tests/antigravity-assurance-conformance.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,0 +1,44 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-allow-rule-provenance",
+  "owner": "user",
+  "goal": "Make the Antigravity adapter record how a Managed confirmation was authorised instead of always reading as an in-the-moment user click. Evidence (agy 1.5.8, 2026-11-13, sandbox br-scn-4b): settings.json permissions.allow held mcp(immune-brain_immune-brain/stop), agy skipped the dialog, stop ran, and the record said antigravity-confirm-0dacf2ca41a64422 for literal-user, indistinguishable from a clicked dialog. Repository evidence: hostConfirmationRef (plugins/immune-brain/runtime/host-core/interaction.ts:173) derives the ref kind from a request_id prefix; the grant request_id is minted in writeConfirmationGrant (plugins/immune-brain/runtime/antigravity/lane_guard.ts:432). User decision (option 1, 2026-11-13): a user-written allow rule is a legitimate standing decision, so the hook does not refuse it, it only records the source. Change: after the unchanged toolPermission/--print/-p checks, the PreToolUse hook reads permissions.allow from the same settings.json; when an entry covers the Managed call the grant request_id carries a new allow-rule prefix and hostConfirmationRef yields kind allow-rule (ref antigravity-allow-rule-<hash>); all other refs, including Claude and Pi, stay byte-identical. Delegated technical choice: agy's rule grammar is verified only for mcp(<server>/<tool>); a rule that skipped a dialog but was recorded as a confirmation is the lie being removed, so mcp(<server>/*), mcp(<server>) and mcp(*) also match, while a different tool or server, a longer or shorter similar name and non-mcp rules do not. Scenario: Actor: an Antigravity user who allowed mcp(immune-brain_immune-brain/stop). Given an enrolled active task, When the agent calls stop and agy runs it without a dialog, Then the user reads the task record and sees the authority reference marked allow-rule. P2 stays conformance-only. Out of scope: refusing allow rules, actor_id, authority_kind, Claude/Pi adapters, P2 re-certification.",
+  "acceptance": [
+    {
+      "id": "AARP-A1",
+      "assertion": "Through the real Antigravity hook entry (plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook) with a temporary home, toolPermission request-review and an injected interactive agy ancestor, for the stop, enrollment (start_unattended_batch with task_id), retire_stale_batch and request_authorization gates, called both as call_mcp_tool and as the direct tool name: Positive: with permissions.allow containing mcp(immune-brain_immune-brain/<tool>) the hook returns force_ask, the grant request_id starts with the allow-rule prefix, the following MCP call consumes it, and the recorded confirmation_ref starts with antigravity-allow-rule-; with the exact-form wildcard cases mcp(immune-brain_immune-brain/*), mcp(immune-brain_immune-brain) and mcp(*) the same holds; with no allow rule, or an empty allow list, the grant and ref are exactly as before (antigravity-confirm-). Negative, each case yields antigravity-confirm- and never allow-rule: an allow entry for a different tool (status) of the same server; similar names (stop2, stopx, stop_all, sto); a different server name; command(stop) and other non-mcp entries; non-string entries; permissions.allow that is not an array; permissions missing; and an allow entry on a Managed tool does not relax the existing refusals: with toolPermission always-proceed, with --print and with --dangerously-skip-permissions the hook still denies and writes no grant. Agreed seam: a new describe block in tests/antigravity-assurance-conformance.test.ts whose name contains \"allow rule provenance\".",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"allow rule provenance\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AARP-A2",
+      "assertion": "The shared ref change is confined to the new prefix and existing behavior is preserved: hostConfirmationRef returns kind allow-rule only for a request_id starting with the allow-rule prefix, kind entry for entry-token: and kind confirm for every other value, for hosts antigravity, claude and pi alike, and the sha256 suffix inputs are unchanged so existing refs are byte-identical (asserted by a test whose name contains \"confirmation ref kind\"). Every existing test in tests/antigravity-assurance-conformance.test.ts and tests/antigravity-host-package.test.ts passes, no existing test or expect() is removed or weakened, and the per-file test counts do not fall below those at the enrollment base. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/antigravity-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AARP-A3",
+      "assertion": "Declarations and generated artifacts stay truthful and current. Positive: Antigravity capability P2 (both mirrors of capability.ts) remains conformance-only and its evidence additionally says a user allow rule is recorded with the allow-rule reference kind; plugins/immune-brain-antigravity/README.md states that an allow rule skips the dialog and is recorded as allow-rule; docs/reference/host-capability.md is re-rendered; docs/reports/antigravity-live-certification.md keeps P2 uncertified, carries the rebuilt bundle plugin_digest, and its Known Gaps records the sandbox br-scn-4b observation and this change; the live report validation, the Antigravity mirror and bundle checks, the Claude bundle check, the host capability render check and TypeScript pass. Negative: a stale mirror, bundle, rendered reference or report digest fails its check. Agreed seams: tests/antigravity-live-certification.test.ts, the plugin build checks, scripts/render-host-capability.ts --check, typecheck.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-live-certification.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/render-host-capability.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-allow-rule-provenance.md",
+    "docs/plans/antigravity-allow-rule-provenance.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/reports/antigravity-live-certification.md",
+    "plugins/immune-brain-antigravity/README.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/tool_permission.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/tool_permission.ts",
+    "plugins/immune-brain/runtime/host-core/interaction.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/antigravity-host-package.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

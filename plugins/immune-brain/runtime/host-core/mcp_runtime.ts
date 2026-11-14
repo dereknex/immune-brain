@@ -259,6 +259,10 @@ export interface McpRuntimeOptions {
 	 * profile's private file store.
 	 */
 	consumePhaseAdmission?: (toolCallId: string, operation: GatedTool) => PhaseAdmissionGrant | false | null;
+	/**
+	 * Reads the Hook session for one tool call. Defaults to the profile's implementation.
+	 */
+	readRunToolSession?: (toolCallId: string, operation: string, workspace: string) => string | null;
 	/** The startup identity of this server's own bundle; defaults to the profile's module file. */
 	bundleIdentity?: BundleIdentityWatch;
 	/** Client names whose `initialize` handshake may bind a trusted host version; defaults to the profile's. */
@@ -430,7 +434,8 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 		async callTool(name: string, args: Record<string, unknown>, meta: Partial<ToolMeta> = {}) {
 			const workspace = await resolveWorkspace(meta, meta.signal);
 			if (name !== "status" && bundle.stale()) throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-			const observedSession = profile.readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
+			const readToolSession = options.readRunToolSession ?? profile.readRunToolSession;
+			const observedSession = readToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
 			if (observedSession) hookSessionId = observedSession;
 			if (name === "start_unattended_batch") {
 				if (Object.hasOwn(args, "lane_revision")) throw new Error("unknown parameter: lane_revision");

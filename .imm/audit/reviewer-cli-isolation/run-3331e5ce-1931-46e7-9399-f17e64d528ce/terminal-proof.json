@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "reviewer-cli-isolation",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:reviewer-cli-isolation:2026-11-12T08:06:43.726Z",
+  "final_record_hash": "sha256:d0b551ef1173cbbb3b0e663dbc22a55b794ef44d9e9ba8aa1945c53b80195cf6",
+  "terminalized_at": "2026-11-12T08:06:43.726Z"
+}

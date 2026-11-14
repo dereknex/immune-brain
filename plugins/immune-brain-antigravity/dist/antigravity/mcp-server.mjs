@@ -17800,7 +17800,6 @@ var init_batch_final_report = __esm(() => {
 // plugins/immune-brain/runtime/antigravity/mcp_server.ts
 import { createInterface } from "node:readline";
 import { stdin as stdin2, stdout as stdout2 } from "node:process";
-import { tmpdir as tmpdir9 } from "node:os";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // plugins/immune-brain/runtime/host-core/mcp_runtime.ts
@@ -17993,8 +17992,9 @@ var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
 function entryTokenRequestId(token) {
   return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
+var ALLOW_RULE_REQUEST_PREFIX = "allow-rule:";
 function hostConfirmationRef(host, input) {
-  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : input.requestId.startsWith(ALLOW_RULE_REQUEST_PREFIX) ? "allow-rule" : "confirm";
   return `${host}-${kind}-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
@@ -20350,7 +20350,8 @@ function createMcpRuntime(profile, options = {}) {
       const workspace = await resolveWorkspace(meta, meta.signal);
       if (name !== "status" && bundle.stale())
         throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-      const observedSession = profile.readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
+      const readToolSession = options.readRunToolSession ?? profile.readRunToolSession;
+      const observedSession = readToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
       if (observedSession)
         hookSessionId = observedSession;
       if (name === "start_unattended_batch") {
@@ -21062,122 +21063,22 @@ function runMcpEntry(profile, entrySuffixes) {
     serveStdio(profile);
 }
 
-// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
-import { existsSync as existsSync17, lstatSync as lstatSync18, realpathSync as realpathSync20, renameSync as renameSync6, rmSync as rmSync10 } from "node:fs";
-init_coordinator();
-init_storage();
-init_batch_state();
-import { join as join29 } from "node:path";
+// plugins/immune-brain/runtime/antigravity/review_host.ts
+import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync12, readSync as readSync2 } from "node:fs";
+import { tmpdir as tmpdir6 } from "node:os";
+import { basename as basename4, join as join30, resolve as resolve16 } from "node:path";
 
-// plugins/immune-brain/runtime/assurance/run_continuation.ts
-init_workspace_scope();
-init_batch_schedule();
-init_batch_state();
-init_batch_plan();
-init_batch_git();
-init_coordinator();
-init_batch_preflight();
-init_intent();
-init_storage();
-function releasesRunBinding(prompt, phase) {
-  return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
-}
-
-// plugins/immune-brain/runtime/assurance/review_mediation.ts
-import { createHash as createHash24 } from "node:crypto";
-function extractVerdictJson(input) {
-  if (typeof input === "string") {
-    const first = input.indexOf("{");
-    const last = input.lastIndexOf("}");
-    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
-    if (!cleaned)
-      return null;
-    try {
-      return JSON.parse(cleaned);
-    } catch {
-      return null;
-    }
-  }
-  if (typeof input === "object" && input !== null && !Array.isArray(input))
-    return input;
-  return null;
-}
-function verdictFingerprint(raw) {
-  return JSON.stringify({
-    contract: raw.contract ?? null,
-    role: raw.role ?? null,
-    task_id: raw.task_id ?? null,
-    snapshot_digest: raw.snapshot_digest ?? null,
-    decision: raw.decision ?? null,
-    approval: raw.approval ?? null,
-    findings: raw.findings ?? null,
-    inspected_paths: raw.inspected_paths ?? null,
-    reason: raw.reason ?? null
-  });
-}
-function digestOfReviewerBytes(bytes) {
-  return `sha256:${createHash24("sha256").update(bytes).digest("hex")}`;
-}
-var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
-var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
-var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
-function withReviewRecovery(result, recovery_action) {
-  if (result.state !== "blocked" || result.code === "verdict_invalid")
-    return result;
-  return { ...result, recovery_action };
-}
-async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
-  if (coordinator.active(taskId)?.state === "settlement_unknown") {
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  }
-  const observed = inspect();
-  if (!observed.ok) {
-    if (observed.release)
-      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
-    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
-  }
-  const receiptBytes = observed.receipt.result;
-  const options = {
-    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
-    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
-    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
-    validateReceipt: () => {
-      const current = inspect();
-      if (!current.ok)
-        return {
-          reason: current.reason,
-          release: current.release,
-          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
-        };
-      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
-    }
-  };
-  if (verdictInput === undefined) {
-    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-    }
-    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
-  }
-  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
-  if (!parentValid)
-    return coordinator.submitReview(taskId, ctx, verdictInput);
-  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
-    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
-  }
-  const parentJson = extractVerdictJson(verdictInput);
-  const receiptJson = extractVerdictJson(receiptBytes);
-  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
-    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
-  }
-  return coordinator.submitReview(taskId, ctx, verdictInput, options);
-}
+// plugins/immune-brain/runtime/host-core/hook_event_log.ts
+import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync11 } from "node:fs";
+import { dirname as dirname17, join as join29 } from "node:path";
+import { tmpdir as tmpdir5 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
-import { createHash as createHash25 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { createHash as createHash24 } from "node:crypto";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, rmSync as rmSync10, writeSync } from "node:fs";
 import { join as join28 } from "node:path";
 function sessionHash(sessionId) {
-  return createHash25("sha256").update(sessionId).digest("hex");
+  return createHash24("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
   return join28(root, cacheName);
@@ -21229,6 +21130,35 @@ function appendPrivate(path, dir, line) {
     closeSync7(fd);
   }
 }
+function writePrivate(path, dir, content) {
+  if (!ensurePrivateDir(dir))
+    return false;
+  const flags = constants8.O_WRONLY | constants8.O_CREAT | constants8.O_NOFOLLOW | constants8.O_NONBLOCK;
+  let fd;
+  try {
+    fd = openSync7(path, flags, 384);
+  } catch {
+    return false;
+  }
+  try {
+    const stat = fstatSync4(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || (stat.mode & 511) !== 384)
+      return false;
+    ftruncateSync(fd, 0);
+    return writeSync(fd, content, 0, "utf8") === Buffer.byteLength(content);
+  } catch {
+    return false;
+  } finally {
+    closeSync7(fd);
+  }
+}
+function dropPrivate(path) {
+  try {
+    const stat = lstatSync17(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync10(path, { force: true });
+  } catch {}
+}
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
   try {
@@ -21250,51 +21180,7 @@ function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   }
 }
 
-// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
-var MAX_METADATA_BYTES = 256 * 1024;
-var AUTOMATED_STOP_OBLIGATIONS = ["run_qa", "run_review", "submit_assurance", "resolve_findings"];
-var callPath = (host, toolId, root) => join29(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
-function readLast(path) {
-  let stat;
-  try {
-    stat = lstatSync18(path);
-  } catch (error) {
-    if (error.code === "ENOENT")
-      return null;
-    throw error;
-  }
-  if (!stat.isFile() || !ownedByUs(stat))
-    throw new Error("unsafe continuation metadata");
-  if (stat.size > MAX_METADATA_BYTES)
-    return null;
-  const text = readPrivate(path, MAX_METADATA_BYTES);
-  if (text === undefined)
-    throw new Error("continuation metadata could not be read");
-  const lines = text.trim().split(`
-`);
-  return JSON.parse(lines.at(-1) ?? "null");
-}
-function readSessionToolCall(host, root, toolId, operation, workspace) {
-  const record = readLast(callPath(host, toolId, root));
-  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync20(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
-    return null;
-  return record.session_id;
-}
-function decideAutomatedStop(taskId, projection) {
-  if (projection.lifecycle !== "active")
-    return {};
-  if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0)
-    return {};
-  if (!AUTOMATED_STOP_OBLIGATIONS.includes(projection.next_obligation))
-    return {};
-  return { decision: "continue", reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.` };
-}
-
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync19, readdirSync as readdirSync11, rmSync as rmSync11 } from "node:fs";
-import { dirname as dirname17, join as join30 } from "node:path";
-import { tmpdir as tmpdir5 } from "node:os";
 class MemoryHookEventLog {
   events = [];
   append(event) {
@@ -21319,7 +21205,7 @@ class MemoryHookEventLog {
   }
 }
 function hookEventPath(cacheName, sessionId, root = tmpdir5()) {
-  return join30(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+  return join29(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
 }
 
 class FileHookEventLog {
@@ -21341,7 +21227,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join30(dir, name)));
+      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join29(dir, name)));
     } catch {
       return [];
     }
@@ -21374,7 +21260,7 @@ class FileHookEventLog {
       return;
     const path = hookEventPath(this.cacheName, sessionId, this.root);
     try {
-      const stat = lstatSync19(path);
+      const stat = lstatSync18(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
       rmSync11(path, { force: true });
@@ -21392,6 +21278,16 @@ class VerifierObservation {
   constructor(profile, log) {
     this.profile = profile;
     this.log = log;
+  }
+  pendingReservation(operationId) {
+    const state = this.pending.get(operationId);
+    return state ? { request: state.request, dispatchPrompt: state.dispatchPrompt } : undefined;
+  }
+  expectedDispatch(operationId) {
+    const state = this.pending.get(operationId);
+    if (!state)
+      return;
+    return this.profile.dispatch({ dispatchPrompt: state.dispatchPrompt, model: state.request.model });
   }
   prepare(request) {
     this.drain();
@@ -21530,7 +21426,7 @@ class VerifierObservation {
         return;
       }
       if (state.result) {
-        state.error = "duplicate PostToolUse result observed for review reservation";
+        state.error = state.result.event.result !== event.result ? "conflicting verifier result bytes: duplicate PostToolUse result observed for review reservation" : "duplicate PostToolUse result observed for review reservation";
         return;
       }
       state.result = { sessionId, index, event, host };
@@ -21574,8 +21470,8 @@ class VerifierObservation {
 }
 
 // plugins/immune-brain/runtime/antigravity/review_host.ts
-import { tmpdir as tmpdir6 } from "node:os";
 var VERIFIER_AGENT = "immune-brain-review-verifier";
+var MAX_ASYNC_VERIFIER_FILE_BYTES = 256 * 1024;
 var ANTIGRAVITY_CACHE_DIR = "immune-brain-antigravity";
 function antigravityHookEventLog(root = tmpdir6()) {
   return new FileHookEventLog(ANTIGRAVITY_CACHE_DIR, root);
@@ -21591,8 +21487,221 @@ var ANTIGRAVITY_VERIFIER_PROFILE = {
     Model: model
   }),
   decode: (event) => event,
-  resolveResult: (observed) => ({ ok: true, result: observed.result.result })
+  resolveResult: (observed) => {
+    if (observed.host.result.type === "result" && observed.host.result.refusal) {
+      return { ok: false, reason: observed.host.result.refusal, release: true };
+    }
+    return { ok: true, result: observed.result.result };
+  }
 };
+function isOwnedNonSymlinkDir(dirPath) {
+  try {
+    const stat = lstatSync19(dirPath);
+    return !stat.isSymbolicLink() && stat.isDirectory() && ownedByUs(stat);
+  } catch {
+    return false;
+  }
+}
+function readBoundedJsonObject(filePath, maxBytes = MAX_ASYNC_VERIFIER_FILE_BYTES) {
+  let fd;
+  try {
+    fd = openSync8(filePath, constants9.O_RDONLY | constants9.O_NOFOLLOW | constants9.O_NONBLOCK);
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync5(fd);
+    if (!stat.isFile() || !ownedByUs(stat) || stat.size < 0 || stat.size > maxBytes)
+      return null;
+    const buf = Buffer.alloc(maxBytes + 1);
+    let total = 0;
+    while (total <= maxBytes) {
+      const n = readSync2(fd, buf, total, buf.length - total, total);
+      if (n === 0)
+        break;
+      total += n;
+    }
+    if (total > maxBytes)
+      return null;
+    const parsed = JSON.parse(buf.subarray(0, total).toString("utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return null;
+    return parsed;
+  } catch {
+    return null;
+  } finally {
+    closeSync8(fd);
+  }
+}
+function resolveValidatedSystemDir(artifactDirectoryPath, conversationId) {
+  if (typeof artifactDirectoryPath !== "string" || !artifactDirectoryPath || !conversationId)
+    return null;
+  const normalized = resolve16(artifactDirectoryPath);
+  if (basename4(normalized) !== conversationId)
+    return null;
+  if (!isOwnedNonSymlinkDir(normalized))
+    return null;
+  const sysDir = join30(normalized, ".system_generated");
+  if (!isOwnedNonSymlinkDir(sysDir))
+    return null;
+  return sysDir;
+}
+function readSpawnRecords(subagentsDir) {
+  if (!isOwnedNonSymlinkDir(subagentsDir))
+    return null;
+  let entries;
+  try {
+    entries = readdirSync12(subagentsDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const records = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".json"))
+      continue;
+    if (entry.isSymbolicLink() || !entry.isFile())
+      return null;
+    const obj = readBoundedJsonObject(join30(subagentsDir, entry.name));
+    if (!obj)
+      return null;
+    const descriptor = typeof obj.subagentDescriptor === "object" && obj.subagentDescriptor !== null && !Array.isArray(obj.subagentDescriptor) ? obj.subagentDescriptor : null;
+    records.push({
+      conversationId: typeof obj.conversationId === "string" ? obj.conversationId : "",
+      spawnStepIndex: typeof obj.spawnStepIndex === "number" && Number.isInteger(obj.spawnStepIndex) ? obj.spawnStepIndex : -1,
+      typeName: descriptor && typeof descriptor.typeName === "string" ? descriptor.typeName : ""
+    });
+  }
+  return records;
+}
+function readChildMessages(messagesDir) {
+  if (!isOwnedNonSymlinkDir(messagesDir))
+    return null;
+  let entries;
+  try {
+    entries = readdirSync12(messagesDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const messages = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".json"))
+      continue;
+    if (entry.isSymbolicLink() || !entry.isFile())
+      return null;
+    const obj = readBoundedJsonObject(join30(messagesDir, entry.name));
+    if (!obj)
+      return null;
+    if (entry.name === "read.json" && obj.sender === undefined && obj.recipient === undefined && obj.content === undefined) {
+      continue;
+    }
+    messages.push({
+      id: typeof obj.id === "string" && obj.id.length > 0 ? obj.id : entry.name,
+      sender: typeof obj.sender === "string" ? obj.sender : "",
+      recipient: typeof obj.recipient === "string" ? obj.recipient : "",
+      content: typeof obj.content === "string" ? obj.content : null
+    });
+  }
+  return messages;
+}
+function resolveAsyncVerifierResults(payload, log = antigravityHookEventLog()) {
+  const conversationId = typeof payload.conversationId === "string" ? payload.conversationId : "";
+  if (!conversationId)
+    return;
+  const events = log.list(conversationId);
+  const startsByAgent = new Map;
+  const resultsByAgent = new Map;
+  for (const event of events) {
+    if (event.type === "start" && event.agent === VERIFIER_AGENT) {
+      startsByAgent.set(event.agentId, event);
+    } else if (event.type === "result") {
+      const list = resultsByAgent.get(event.agentId) ?? [];
+      list.push(event);
+      resultsByAgent.set(event.agentId, list);
+    }
+  }
+  if (startsByAgent.size === 0)
+    return;
+  const dirCache = new Map;
+  const loadDir = (sysDir) => {
+    if (dirCache.has(sysDir))
+      return dirCache.get(sysDir);
+    const spawns = readSpawnRecords(join30(sysDir, "subagents"));
+    const messages = spawns ? readChildMessages(join30(sysDir, "messages")) : null;
+    const loaded = spawns && messages ? { spawns, messages } : null;
+    dirCache.set(sysDir, loaded);
+    return loaded;
+  };
+  for (const [agentId, start] of startsByAgent) {
+    const stepIdx = Number(agentId);
+    if (!Number.isInteger(stepIdx) || String(stepIdx) !== agentId)
+      continue;
+    const existingResults = resultsByAgent.get(agentId) ?? [];
+    if (existingResults.some((e) => !e.messageId || Boolean(e.refusal)) || existingResults.length >= 2) {
+      continue;
+    }
+    const rawArtifactDir = payload.artifactDirectoryPath !== undefined ? payload.artifactDirectoryPath : start.artifactDirectoryPath;
+    const sysDir = resolveValidatedSystemDir(rawArtifactDir, conversationId);
+    if (!sysDir)
+      continue;
+    const dir = loadDir(sysDir);
+    if (!dir)
+      continue;
+    const stepSpawns = dir.spawns.filter((s) => s.spawnStepIndex === stepIdx);
+    if (stepSpawns.length !== 1)
+      continue;
+    const spawn = stepSpawns[0];
+    if (spawn.typeName !== VERIFIER_AGENT || !spawn.conversationId || spawn.conversationId === conversationId) {
+      continue;
+    }
+    const childMessages = dir.messages.filter((m) => m.sender === spawn.conversationId && m.recipient === conversationId);
+    const modelProps = start.model ? { model: start.model } : {};
+    const promptProps = start.prompt ? { prompt: start.prompt } : {};
+    if (existingResults.length === 1) {
+      const recordedId = existingResults[0].messageId;
+      if (childMessages.length === 0 || childMessages.length === 1 && childMessages[0].id === recordedId) {
+        continue;
+      }
+      const other = childMessages.find((m) => m.id !== recordedId) ?? childMessages[0];
+      log.append({
+        type: "result",
+        sessionId: conversationId,
+        agentId,
+        result: other.content && other.content.trim().length > 0 ? other.content : "[refused: multiple verifier messages]",
+        messageId: other.id,
+        refusal: "multiple verifier messages observed for spawned verifier",
+        ...modelProps,
+        ...promptProps
+      });
+      continue;
+    }
+    if (childMessages.length === 0)
+      continue;
+    if (childMessages.length === 1) {
+      const msg = childMessages[0];
+      if (msg.content === null || msg.content.trim().length === 0)
+        continue;
+      log.append({
+        type: "result",
+        sessionId: conversationId,
+        agentId,
+        result: msg.content,
+        messageId: msg.id,
+        ...modelProps,
+        ...promptProps
+      });
+      continue;
+    }
+    log.append({
+      type: "result",
+      sessionId: conversationId,
+      agentId,
+      result: "[refused: multiple verifier messages]",
+      refusal: "multiple verifier messages observed for spawned verifier",
+      ...modelProps,
+      ...promptProps
+    });
+  }
+}
 
 class AntigravityReviewHost {
   host = "antigravity";
@@ -21616,39 +21725,387 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync21, lstatSync as lstatSync20, readdirSync as readdirSync12, readFileSync as readFileSync26, realpathSync as realpathSync22, rmSync as rmSync13, writeFileSync as writeFileSync15 } from "node:fs";
-import { randomUUID as randomUUID11 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
-import { join as join36 } from "node:path";
+import { existsSync as existsSync21, lstatSync as lstatSync22, readdirSync as readdirSync13, realpathSync as realpathSync23 } from "node:fs";
+import { randomUUID as randomUUID12 } from "node:crypto";
+import { homedir as homedir3, tmpdir as tmpdir9 } from "node:os";
+import { join as join38 } from "node:path";
 init_batch_final_verification();
 init_assurance_projection();
 
+// plugins/immune-brain/runtime/assurance/active_task_notice.ts
+init_storage();
+init_batch_preflight();
+var MAX_SCOPE_ENTRIES = 12;
+async function activeTaskNotice(root) {
+  let taskId;
+  try {
+    taskId = readActiveClaimTaskId(root);
+  } catch {
+    return null;
+  }
+  if (!taskId)
+    return null;
+  let lifecycle = "unknown";
+  let artifactState = "unknown";
+  let scope = [];
+  try {
+    const record = readTaskRecordRaw(root, taskId).record;
+    if (record) {
+      lifecycle = record.lifecycle;
+      artifactState = record.artifact_state;
+      scope = [...record.intent_snapshot.scope_hint];
+    }
+  } catch {}
+  if (lifecycle === "done" || lifecycle === "stopped")
+    return null;
+  const shown = scope.slice(0, MAX_SCOPE_ENTRIES).join(", ") + (scope.length > MAX_SCOPE_ENTRIES ? ", ..." : "");
+  return [
+    `Immune-Brain: Managed task ${taskId} is active in this workspace (lifecycle ${lifecycle}, artifacts ${artifactState}).`,
+    "Ordinary input does not resume it, and another session may be running its assurance right now.",
+    `Before committing or modifying files inside its scope${shown ? ` (${shown})` : ""}, read its status and tell the user that this task is active and which obligation it is waiting on.`,
+    "Only an explicit drive entry continues it."
+  ].join(" ");
+}
+
+// plugins/immune-brain/runtime/assurance/run_continuation.ts
+init_workspace_scope();
+init_batch_schedule();
+init_batch_state();
+init_batch_plan();
+init_batch_git();
+init_coordinator();
+init_batch_preflight();
+init_intent();
+init_storage();
+import { createHash as createHash25 } from "node:crypto";
+var UNCHANGED_CONTINUATION_LIMIT = 1;
+var USER_WAIT_GUIDANCE = "If the remaining step is an action only the user can perform, waiting for it is a valid stop: stop without repeating the request you already made.";
+function bindRun(binding) {
+  if (!binding.workspace || !binding.session_id || (binding.kind === "task" ? !binding.task_id || !binding.run_id : !binding.initiative_slug || binding.batch_id !== null && !binding.batch_id || !binding.plan_digest))
+    throw new Error("run continuation requires an exact session and committed run identity");
+  if (binding.kind === "parent" && binding.blocked_native_tasks !== undefined && (!Array.isArray(binding.blocked_native_tasks) || !binding.blocked_native_tasks.every((id) => typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id))))
+    throw new Error("invalid failed native task observations");
+  return { binding, progress_digest: null, unchanged_observations: 0, boundary_id: null };
+}
+function releasesRunBinding(prompt, phase) {
+  return phase === "planner" || phase === "brainstorm" || /^(?:stop|cancel|pause)(?:\s+(?:execution|the task|this run))?[.!\s]*$/i.test(prompt.trim()) || /^(?:请)?(?:停止|取消|暂停)(?:执行|任务|本次运行|这个任务)?[。！!\s]*$/.test(prompt.trim());
+}
+function digest(value) {
+  return createHash25("sha256").update(JSON.stringify(value)).digest("hex");
+}
+function scopedSourceDigest(root, scope) {
+  const snapshot = captureGitWorkspaceSnapshot(root);
+  if (!snapshot)
+    throw new Error("cannot observe source progress without a Git workspace");
+  return digest(Object.entries(snapshot.dirty_files).filter(([path]) => scope.some((entry) => pathMatchesScope(path, entry))));
+}
+function finalProgress(report) {
+  return report ? {
+    passed: report.passed,
+    head: report.head,
+    results: report.results.map((result) => ({ command: result.command, passed: result.passed, exit_code: result.exit_code, signal: result.signal }))
+  } : null;
+}
+async function observeParentRun(binding, boundaryId, review = "unobserved", recoveryAction) {
+  const root = binding.workspace;
+  if (binding.batch_id === null) {
+    const facts = await observeNativeParent(root, binding.initiative_slug, undefined, binding.blocked_native_tasks);
+    if (!facts || facts.plan_digest !== binding.plan_digest)
+      throw new Error("native Parent plan identity changed");
+    let nextAction = ["verify", "repair"].includes(facts.action) ? `Call start_unattended_batch for ${binding.initiative_slug} with final_verification ${JSON.stringify(binding.final_verification ?? facts.native?.final_verification.results.map((result) => result.command) ?? [])}; if it fails, diagnose and canonically prepare/validate the stable original-goal repair before fresh native Enrollment` : facts.next_action;
+    let runnable = ["verify", "repair"].includes(facts.action) || facts.action === "enroll" && facts.task_id !== null;
+    let running = false;
+    let taskProgress = null;
+    if (facts.action === "drive" && facts.task_id) {
+      const status = await projectTaskStatus(root, facts.task_id);
+      const task = readTaskRecordRaw(root, facts.task_id).record;
+      if (status.error || !task || !status.projection.run_id)
+        throw new Error(status.error ?? "native Parent has no exact child run");
+      const source = scopedSourceDigest(root, task.intent_snapshot.scope_hint);
+      const decision = decideRunContinuation(bindRun({
+        kind: "task",
+        workspace: root,
+        session_id: binding.session_id,
+        task_id: facts.task_id,
+        run_id: status.projection.run_id
+      }), {
+        kind: "task",
+        workspace: root,
+        session_id: binding.session_id,
+        boundary_id: boundaryId,
+        status,
+        source_digest: source,
+        review,
+        recovery_action: recoveryAction
+      });
+      runnable = decision.action === "continue";
+      running = decision.action === "wait";
+      nextAction = decision.next_action ?? decision.reason;
+      taskProgress = decision.state.progress_digest;
+    }
+    if (facts.action === "repair" && (facts.native?.repair_tasks?.length ?? 0) >= 2) {
+      runnable = false;
+      nextAction = "Parent coordinator correction budget exhausted; request a user decision";
+    }
+    return {
+      kind: "parent",
+      workspace: root,
+      session_id: binding.session_id,
+      boundary_id: boundaryId,
+      initiative_slug: binding.initiative_slug,
+      batch_id: null,
+      plan_digest: facts.plan_digest,
+      progress_digest: digest({
+        proof: facts.proof,
+        action: facts.action,
+        repair_tasks: facts.native?.repair_tasks,
+        final: finalProgress(facts.native?.final_verification),
+        taskProgress
+      }),
+      all_required_integrated: facts.proof.missing_task_ids.length === 0,
+      final_passed: facts.proof.final_passed,
+      pending_repair: facts.action === "repair",
+      runnable,
+      executors_running: running,
+      next_action: nextAction,
+      blocked_reason: facts.proof.reason ?? undefined
+    };
+  }
+  const record = readAnyBatchRunState(root, binding.batch_id);
+  if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest)
+    throw new Error("Parent continuation has no matching persisted batch identity");
+  if (!isLaneBatchRecord(record))
+    throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
+  const plan = await observeInitiative(root, binding.initiative_slug);
+  const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map((child) => child.task_id));
+  let runnable = false;
+  let running = false;
+  let nextAction = `Call start_unattended_batch for ${binding.initiative_slug} to consume the current authorized handoff`;
+  let childProgress = null;
+  const activeTask = readActiveClaimTaskId(root);
+  const nativeTask = activeTask && !record.children.some((child) => child.task_id === activeTask) && (plan.tasks.some((child) => child.task_id === activeTask) || record.repair_tasks?.some((task) => task.task_id === activeTask));
+  const activeChild = nativeTask ? { task_id: activeTask } : record.children.find((child) => child.state === "enrolled" || child.state === "settled");
+  if (activeChild && nativeTask) {
+    const status = await projectTaskStatus(root, activeChild.task_id);
+    if (status.error)
+      throw new Error(status.error);
+    if (status.projection.lifecycle === "active" && status.projection.run_id) {
+      const task = readTaskRecordRaw(root, activeChild.task_id).record;
+      if (!task)
+        throw new Error("Parent's active child has no TaskRecord");
+      const source = scopedSourceDigest(root, task.intent_snapshot.scope_hint);
+      const taskBinding = bindRun({
+        kind: "task",
+        workspace: root,
+        session_id: binding.session_id,
+        task_id: activeChild.task_id,
+        run_id: status.projection.run_id
+      });
+      const decision = decideRunContinuation(taskBinding, {
+        kind: "task",
+        workspace: root,
+        session_id: binding.session_id,
+        boundary_id: boundaryId,
+        status,
+        source_digest: source,
+        review,
+        recovery_action: recoveryAction
+      });
+      runnable = decision.action === "continue";
+      running = decision.action === "wait";
+      nextAction = decision.next_action ?? decision.reason;
+      childProgress = decision.state.progress_digest;
+    } else if (status.projection.lifecycle === "done")
+      runnable = true;
+  } else {
+    const live = record.children.filter((child) => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(child.state));
+    running = live.length > 0;
+    const schedule = plan.tasks.map((task) => ({
+      task_id: task.task_id,
+      blocked_by: task.blocked_by,
+      scope_hint: readTaskIntent(root, task.task_id).intent.scope_hint,
+      state: completion.integrated_task_ids.includes(task.task_id) ? "committed" : record.children.find((child) => child.task_id === task.task_id)?.state ?? "needs_human"
+    }));
+    runnable = record.batch_state === "running" && (startableChildren(schedule, record.max_parallel).length > 0 || live.length > 0);
+    if (running && runnable)
+      nextAction = `Supervise the observed Lane Executor handoff for ${binding.initiative_slug}; use the Host's live-session wait/observation before resuming the batch, rather than repeatedly observing an unchanged batch`;
+  }
+  if (!activeChild && !running) {
+    for (const child of plan.tasks) {
+      if (binding.blocked_native_tasks?.includes(child.task_id))
+        continue;
+      if (record.children.some((candidate) => candidate.task_id === child.task_id) || completion.integrated_task_ids.includes(child.task_id))
+        continue;
+      const intent = readTaskIntent(root, child.task_id);
+      if (intent.intent.risk !== "critical")
+        continue;
+      if (readSettledTaskEvidence(root, child.task_id)?.proof.terminal_lifecycle === "done") {
+        runnable = true;
+        nextAction = `Call start_unattended_batch for ${binding.initiative_slug} to integrate the settled critical Slice and resume the intact ordinary batch authorization`;
+        break;
+      }
+      if (child.blocked_by.every((id) => completion.integrated_task_ids.includes(id))) {
+        runnable = true;
+        nextAction = `Invoke native single-task Enrollment for critical Slice ${child.task_id}; it consumes no ordinary batch slot. Drive its Loop to settlement, then resume Parent ${binding.initiative_slug}`;
+        break;
+      }
+    }
+  }
+  const failedFinal = record.final_verification_result?.passed === false && plan.tasks.every((child) => completion.integrated_task_ids.includes(child.task_id));
+  const pendingRepair = record.repair_tasks?.some((task) => !completion.integrated_task_ids.includes(task.task_id));
+  const exhausted = failedFinal && !activeChild && !pendingRepair && (record.repair_tasks?.length ?? 0) >= 2;
+  if (failedFinal && !activeChild)
+    nextAction = pendingRepair ? `Call start_unattended_batch for ${binding.initiative_slug} to integrate the settled repair and run recorded final verification again` : "Diagnose final verification, call prepareFinalRepairCandidate with the original goal, diagnosed minimum scope, recorded failure and spent repair count; canonically author/validate its stable candidate, then request fresh native Enrollment. Preserve settled deliveries";
+  if (exhausted)
+    nextAction = "Parent coordinator correction budget exhausted; resolve the final failure with a user decision before further repair Enrollment";
+  return {
+    kind: "parent",
+    workspace: root,
+    session_id: binding.session_id,
+    boundary_id: boundaryId,
+    initiative_slug: record.initiative_slug,
+    batch_id: record.batch_id,
+    plan_digest: record.plan_digest,
+    progress_digest: digest({
+      children: record.children.map((child) => ({ task_id: child.task_id, state: child.state, commit: child.commit })),
+      commits: record.commits,
+      completion,
+      childProgress,
+      final: finalProgress(record.final_verification_result)
+    }),
+    all_required_integrated: completion.missing_task_ids.length === 0,
+    final_passed: completion.final_passed,
+    pending_repair: failedFinal,
+    runnable: !exhausted && (runnable || failedFinal && !activeChild),
+    executors_running: running,
+    next_action: nextAction,
+    blocked_reason: completion.reason ?? undefined
+  };
+}
+function decideRunContinuation(previous, observation) {
+  const result = (action, reason, next_action, state = previous) => ({ action, reason, next_action, state });
+  const binding = previous.binding;
+  if (binding.workspace !== observation.workspace || binding.session_id !== observation.session_id)
+    return result("unbound", "Host session or workspace changed", null);
+  if (binding.kind !== observation.kind)
+    return result("pause", "run observation does not match the bound entry", null);
+  if (observation.host_failure)
+    return result("pause", observation.host_failure, null);
+  let progressDigest;
+  let nextAction;
+  let wait = false;
+  if (binding.kind === "parent" && observation.kind === "parent") {
+    if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest)
+      return result("pause", "batch identity changed; reread its authorized plan", null);
+    if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
+      return result("settled", "every required delivery is integrated and final verification passed", null);
+    if (!observation.runnable && !observation.executors_running)
+      return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action);
+    progressDigest = observation.progress_digest;
+    nextAction = observation.next_action;
+    wait = !observation.runnable && observation.executors_running;
+  } else if (binding.kind === "task" && observation.kind === "task") {
+    const { status } = observation;
+    const p = status.projection;
+    if (status.error || status.task_id !== binding.task_id || p.run_id !== binding.run_id)
+      return result("pause", status.error ?? "Kernel task/run identity changed", null);
+    if (p.lifecycle === "done" && p.completion_ready && status.claim === null)
+      return result("settled", "Kernel terminal settlement confirmed", null);
+    if (p.lifecycle === "stopped" && status.claim === null)
+      return result("pause", "Kernel task stopped", null);
+    if (status.claim?.task_id !== binding.task_id || status.claim.lifecycle_status !== "active" || p.lifecycle !== "active")
+      return result("pause", "Kernel authority is missing or contradictory", null);
+    if (p.unresolved_user_decision_ids.length || p.replan_required_ids.length || p.open_user_decision_count || p.next_obligation === "resolve_user_decision" || p.next_obligation === "revise_intent" || p.authorization.state !== "none" || p.authorization.blocked)
+      return result("pause", "Kernel requires a concrete user decision or authorization", "Use the existing native authorization operation");
+    progressDigest = digest({
+      lifecycle: p.lifecycle,
+      artifact_state: p.artifact_state,
+      intent_content_hash: p.intent_content_hash,
+      diff_hash: p.diff_hash,
+      next_obligation: p.next_obligation,
+      fresh_acceptance_ids: [...p.fresh_acceptance_ids].sort(),
+      fresh_approval_kinds: [...p.fresh_approval_kinds].sort(),
+      blocking_finding_ids: [...p.blocking_finding_ids].sort(),
+      source_digest: observation.source_digest,
+      review: observation.review
+    });
+    if (p.next_obligation === "run_review") {
+      switch (observation.review) {
+        case "ready":
+          nextAction = "Invoke the exact reserved foreground reviewer once";
+          break;
+        case "running":
+          nextAction = "Await the observed foreground reviewer; do not dispatch another";
+          wait = true;
+          break;
+        case "returned":
+          nextAction = "Call submit_review immediately with the observed verdict before editing";
+          break;
+        case "rejected":
+          if (!observation.recovery_action)
+            return result("pause", "Review submission failed without an observed recovery action", null);
+          nextAction = observation.recovery_action;
+          break;
+        case "unobserved":
+          nextAction = "Call advance_assurance to recover or prepare the current Review reservation";
+          break;
+      }
+    } else if (status.warnings?.some((warning) => warning.code === "unstaged_scope_paths")) {
+      nextAction = "Finish the in-scope implementation and stage task-owned changes before advance_assurance";
+    } else {
+      switch (p.next_obligation) {
+        case "submit_assurance":
+        case "run_qa":
+          nextAction = "Complete in-scope implementation and focused checks, then call advance_assurance";
+          break;
+        case "resolve_findings":
+          nextAction = "Repair the open findings, verify, resolve them and call advance_assurance";
+          break;
+        case "complete":
+          nextAction = "Call advance_assurance to finish Kernel settlement";
+          break;
+        default:
+          return result("pause", "Kernel has no actionable obligation", null);
+      }
+    }
+  } else {
+    return result("pause", "run observation does not match the bound entry", null);
+  }
+  if (previous.boundary_id === observation.boundary_id)
+    return result("wait", "duplicate Host boundary", null);
+  const unchanged = wait ? previous.unchanged_observations : previous.progress_digest === progressDigest ? previous.unchanged_observations + 1 : 0;
+  const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
+  if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
+    return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
+  return result(wait ? "wait" : "continue", wait ? "observed foreground work is still running" : "authorized work remains", nextAction, state);
+}
+
 // plugins/immune-brain/runtime/assurance/alias_file.ts
-import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
+import { closeSync as closeSync9, constants as constants10, fstatSync as fstatSync6, openSync as openSync9, readSync as readSync3, statSync as statSync6 } from "node:fs";
 import { join as join31 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
   try {
-    fd = openSync8(path, constants9.O_RDONLY | constants9.O_NONBLOCK);
+    fd = openSync9(path, constants10.O_RDONLY | constants10.O_NONBLOCK);
   } catch (error) {
     if (isAbsent(error))
       return null;
     throw error;
   }
   try {
-    const stat = fstatSync5(fd);
+    const stat = fstatSync6(fd);
     if (!stat.isFile())
       throw new Error(`alias is not a regular file: ${path}`);
     if (stat.size > maxBytes)
       throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
     const buf = Buffer.alloc(maxBytes + 1);
-    const read = readSync2(fd, buf, 0, buf.length, 0);
+    const read = readSync3(fd, buf, 0, buf.length, 0);
     if (read > maxBytes)
       throw new Error(`alias exceeds ${maxBytes} bytes: ${path}`);
     return buf.toString("utf8", 0, read);
   } finally {
-    closeSync8(fd);
+    closeSync9(fd);
   }
 }
 function localSkillExists(dir, name) {
@@ -21667,9 +22124,9 @@ function isAbsent(error) {
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync20, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync19, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname19, join as join35, resolve as resolve16 } from "node:path";
+import { dirname as dirname19, join as join35, resolve as resolve18 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -22263,7 +22720,7 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync18 } from "node:fs";
+import { existsSync as existsSync17 } from "node:fs";
 import { join as join33 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
@@ -22284,7 +22741,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync18(join33(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync17(join33(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -22463,10 +22920,10 @@ init_batch_state();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync21, rmSync as rmSync12, writeFileSync as writeFileSync13 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants11, existsSync as existsSync18, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync20, rmSync as rmSync12, writeFileSync as writeFileSync13 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir7 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname18, join as join34 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname18, join as join34, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -22492,7 +22949,19 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
   disableAllHooks: true,
   env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
 });
-function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null) {
+function resolveAuthorityReviewSkillPath(moduleDir = dirname18(fileURLToPath4(import.meta.url))) {
+  const candidates = [
+    resolve17(moduleDir, "../../skills/authority-review/SKILL.md"),
+    resolve17(moduleDir, "../skills/authority-review/SKILL.md"),
+    resolve17(moduleDir, "skills/authority-review/SKILL.md")
+  ];
+  for (const candidate of candidates) {
+    if (existsSync18(candidate))
+      return candidate;
+  }
+  throw new Error(`authority-review skill not found from ${moduleDir}`);
+}
+function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null, skillPath) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
     return [
@@ -22516,9 +22985,17 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginD
     ];
   }
   if (profile.host === "pi") {
+    const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
     return [
       "--print",
       "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-mcp",
+      "--skill",
+      explicitSkill,
+      "--tools",
+      "read,grep,find,ls,bash",
       ...model,
       ...profile.effort ? ["--thinking", profile.effort] : [],
       `/skill:authority-review ${packetPath}`
@@ -22563,7 +23040,7 @@ function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
   return (process.env.PATH ?? "").split(delimiter5).map((dir) => join34(dir || ".", name)).find((path) => {
     try {
-      accessSync4(path, constants10.X_OK);
+      accessSync4(path, constants11.X_OK);
       return true;
     } catch {
       return false;
@@ -22577,7 +23054,7 @@ function reviewSessionRunner(env = process.env) {
   let dir = dirname18(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
     const candidate = join34(dir, "bin", "imm-session");
-    if (existsSync19(candidate))
+    if (existsSync18(candidate))
       return candidate;
     dir = dirname18(dir);
   }
@@ -22586,14 +23063,14 @@ function reviewSessionRunner(env = process.env) {
 function git10(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
 }
-function digest(bytes) {
+function digest2(bytes) {
   return `sha256:${createHash26("sha256").update(bytes).digest("hex")}`;
 }
 function reviewTreeState(root) {
   return {
     head: git10(root, ["rev-parse", "HEAD"]).trim(),
-    index: digest(git10(root, ["ls-files", "-s"])),
-    worktree: digest(git10(root, ["diff", "--binary", "HEAD"]))
+    index: digest2(git10(root, ["ls-files", "-s"])),
+    worktree: digest2(git10(root, ["diff", "--binary", "HEAD"]))
   };
 }
 function treeChanged(root, recorded) {
@@ -22649,7 +23126,7 @@ class CliReviewHost {
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${review.profile.host} executable ${REVIEW_BINARY[review.profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
     const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
-    const directory = realpathSync21(mkdtempSync6(join34(tmpdir7(), "imm-cli-verify-")));
+    const directory = realpathSync20(mkdtempSync6(join34(tmpdir7(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
     const packet = join34(directory, "verify-packet.md");
     const script = join34(directory, "verify.sh");
@@ -22675,12 +23152,12 @@ class CliReviewHost {
         return { ok: false, release: true, reason: "no verification reservation" };
       return this.wrapped.inspectVerification(reservation);
     }
-    if (!existsSync19(owned.exitFile))
+    if (!existsSync18(owned.exitFile))
       return { ok: false, release: false, reason: "verification process still running; wait for it to exit, then call submit_verification again" };
     const status = Number.parseInt(readFileSync24(owned.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
-    const bytes = existsSync19(owned.output) ? readFileSync24(owned.output, "utf8") : "";
+    const bytes = existsSync18(owned.output) ? readFileSync24(owned.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
     return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
@@ -22698,7 +23175,7 @@ class CliReviewHost {
     const transport = resolveConfig(root).lanes.review_transport?.value ?? "process";
     const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
     const tree = reviewTreeState(root);
-    const directory = realpathSync21(mkdtempSync6(join34(tmpdir7(), "imm-cli-review-")));
+    const directory = realpathSync20(mkdtempSync6(join34(tmpdir7(), "imm-cli-review-")));
     chmodSync5(directory, 493);
     const packet = join34(directory, "packet.md");
     const script = join34(directory, "review.sh");
@@ -22736,7 +23213,7 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const reservation = [...this.reservations.values()].reverse().find((item) => item.taskId === taskId);
     if (!reservation)
       return { ok: false, release: true, reason: "no CLI Review reservation for this task" };
-    if (!existsSync19(reservation.exitFile))
+    if (!existsSync18(reservation.exitFile))
       return { ok: false, release: false, reason: "review process still running; wait for it to exit, then call submit_review again" };
     let changed;
     try {
@@ -22753,7 +23230,7 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const status = Number.parseInt(readFileSync24(reservation.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
-    const bytes = existsSync19(reservation.output) ? readFileSync24(reservation.output, "utf8") : "";
+    const bytes = existsSync18(reservation.output) ? readFileSync24(reservation.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
@@ -22788,6 +23265,95 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     this.reservations.delete(reservation.id);
     rmSync12(owned.directory, { recursive: true, force: true });
   }
+}
+
+// plugins/immune-brain/runtime/assurance/review_mediation.ts
+import { createHash as createHash27 } from "node:crypto";
+function extractVerdictJson(input) {
+  if (typeof input === "string") {
+    const first = input.indexOf("{");
+    const last = input.lastIndexOf("}");
+    const cleaned = first >= 0 && last >= first ? input.slice(first, last + 1) : "";
+    if (!cleaned)
+      return null;
+    try {
+      return JSON.parse(cleaned);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof input === "object" && input !== null && !Array.isArray(input))
+    return input;
+  return null;
+}
+function verdictFingerprint(raw) {
+  return JSON.stringify({
+    contract: raw.contract ?? null,
+    role: raw.role ?? null,
+    task_id: raw.task_id ?? null,
+    snapshot_digest: raw.snapshot_digest ?? null,
+    decision: raw.decision ?? null,
+    approval: raw.approval ?? null,
+    findings: raw.findings ?? null,
+    inspected_paths: raw.inspected_paths ?? null,
+    reason: raw.reason ?? null
+  });
+}
+function digestOfReviewerBytes(bytes) {
+  return `sha256:${createHash27("sha256").update(bytes).digest("hex")}`;
+}
+var RELEASED_REVIEW_RECOVERY = "Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
+var RETAINED_REVIEW_RECOVERY = "Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
+var MISMATCH_REVIEW_RECOVERY = "Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
+function withReviewRecovery(result, recovery_action) {
+  if (result.state !== "blocked" || result.code === "verdict_invalid")
+    return result;
+  return { ...result, recovery_action };
+}
+async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, inspect) {
+  if (coordinator.active(taskId)?.state === "settlement_unknown") {
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  }
+  const observed = inspect();
+  if (!observed.ok) {
+    if (observed.release)
+      return withReviewRecovery(coordinator.abandonReview(taskId, observed.reason), RELEASED_REVIEW_RECOVERY);
+    return { state: "blocked", reason: observed.reason, recovery_action: RETAINED_REVIEW_RECOVERY };
+  }
+  const receiptBytes = observed.receipt.result;
+  const options = {
+    reviewer_verdict_sha256: digestOfReviewerBytes(receiptBytes),
+    ...observed.receipt.model?.trim() ? { reviewer_model: observed.receipt.model } : {},
+    ...observed.receipt.offered_models ? { offered_models: observed.receipt.offered_models } : {},
+    validateReceipt: () => {
+      const current = inspect();
+      if (!current.ok)
+        return {
+          reason: current.reason,
+          release: current.release,
+          recovery_action: current.release ? RELEASED_REVIEW_RECOVERY : RETAINED_REVIEW_RECOVERY
+        };
+      return current.receipt.actorId === observed.receipt.actorId && current.receipt.result === receiptBytes && current.receipt.model === observed.receipt.model && JSON.stringify(current.receipt.offered_models ?? []) === JSON.stringify(observed.receipt.offered_models ?? []) ? null : { reason: "reviewer receipt changed during submission", release: true, recovery_action: RELEASED_REVIEW_RECOVERY };
+    }
+  };
+  if (verdictInput === undefined) {
+    if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+      return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+    }
+    return coordinator.submitReview(taskId, ctx, receiptBytes, options);
+  }
+  const parentValid = coordinator.isReviewVerdictValid(taskId, verdictInput);
+  if (!parentValid)
+    return coordinator.submitReview(taskId, ctx, verdictInput);
+  if (!coordinator.isReviewVerdictValid(taskId, receiptBytes)) {
+    return withReviewRecovery(coordinator.abandonReview(taskId, "reviewer receipt is not a valid verdict"), RELEASED_REVIEW_RECOVERY);
+  }
+  const parentJson = extractVerdictJson(verdictInput);
+  const receiptJson = extractVerdictJson(receiptBytes);
+  if (!parentJson || !receiptJson || verdictFingerprint(parentJson) !== verdictFingerprint(receiptJson)) {
+    return { state: "blocked", reason: "parent verdict does not match reviewer receipt", recovery_action: MISMATCH_REVIEW_RECOVERY };
+  }
+  return coordinator.submitReview(taskId, ctx, verdictInput, options);
 }
 
 // plugins/immune-brain/runtime/host-core/runtime.ts
@@ -23059,7 +23625,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync20(join35(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync19(join35(this.cwd, ".imm", "audit", taskId)))
         execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -23145,7 +23711,7 @@ class HostRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname19(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve18(dirname19(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
@@ -23732,7 +24298,7 @@ class HostRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname19(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve18(dirname19(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
@@ -23861,6 +24427,80 @@ class HostRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/host-core/capability.ts
+var CAPABILITY_PORT_IDS = [
+  "P1",
+  "P2",
+  "P3",
+  "P4",
+  "P5",
+  "P6",
+  "P7",
+  "P8",
+  "P9"
+];
+var CAPABILITY_LEVELS = [
+  "certified",
+  "conformance-only",
+  "guard-only",
+  "unsupported"
+];
+function validateHostCapabilityDeclaration(declaration) {
+  if (!declaration || typeof declaration !== "object") {
+    throw new Error("Capability declaration must be a non-null object");
+  }
+  const candidate = declaration;
+  if (typeof candidate.hostId !== "string" || !candidate.hostId.trim()) {
+    throw new Error("Capability declaration missing valid hostId");
+  }
+  if (typeof candidate.hostName !== "string" || !candidate.hostName.trim()) {
+    throw new Error("Capability declaration missing valid hostName");
+  }
+  if (!candidate.ports || typeof candidate.ports !== "object") {
+    throw new Error("Capability declaration missing ports object");
+  }
+  const seenPorts = new Set;
+  const portsRecord = candidate.ports;
+  for (const key of Object.keys(portsRecord)) {
+    if (!CAPABILITY_PORT_IDS.includes(key)) {
+      throw new Error(`Unknown capability port ID: ${key}`);
+    }
+  }
+  const validatedPorts = {};
+  for (const portId of CAPABILITY_PORT_IDS) {
+    if (!(portId in portsRecord)) {
+      throw new Error(`Missing capability port: ${portId} in declaration for ${candidate.hostId}`);
+    }
+    seenPorts.add(portId);
+    const cell = portsRecord[portId];
+    if (!cell || typeof cell !== "object") {
+      throw new Error(`Invalid cell for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (cell.port !== portId) {
+      throw new Error(`Mismatched port ID in cell: expected ${portId}, got ${cell.port}`);
+    }
+    if (!CAPABILITY_LEVELS.includes(cell.level)) {
+      throw new Error(`Invalid capability level "${cell.level}" for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (typeof cell.evidence !== "string" || !cell.evidence.trim()) {
+      throw new Error(`Missing evidence/limitation text for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    validatedPorts[portId] = {
+      port: portId,
+      level: cell.level,
+      evidence: cell.evidence.trim()
+    };
+  }
+  if (seenPorts.size !== CAPABILITY_PORT_IDS.length) {
+    throw new Error(`Declaration for ${candidate.hostId} covers ${seenPorts.size} ports, expected ${CAPABILITY_PORT_IDS.length}`);
+  }
+  return {
+    hostId: candidate.hostId,
+    hostName: candidate.hostName,
+    ports: validatedPorts
+  };
+}
+
 // plugins/immune-brain/runtime/antigravity/capability.ts
 var MIN_ANTIGRAVITY_VERSION = "0.1.0";
 var HOST_ID = "antigravity";
@@ -23893,6 +24533,609 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   }
   return { ok: true, host: HOST_ID, version, platform };
 }
+var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
+  hostId: "antigravity",
+  hostName: "Antigravity",
+  ports: {
+    P1: {
+      port: "P1",
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: MCP tools, PreInvocation/PreToolUse/PostToolUse/Stop hooks, and plugin validation pass (#469)"
+    },
+    P2: {
+      port: "P2",
+      level: "conformance-only",
+      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); when a user permissions.allow rule covers the Managed call and skips the dialog, records the grant with the allow-rule reference kind; not live-certified (#469)"
+    },
+    P3: {
+      port: "P3",
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: async verifier observation via PreToolUse/PostToolUse hook event log (#451)"
+    },
+    P4: {
+      port: "P4",
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: shared continuation state machine with task/Parent binding, native failure pause, and seven-Stop limit (D7)"
+    },
+    P5: {
+      port: "P5",
+      level: "guard-only",
+      evidence: "Tree guard only; agy --print lacks CLI restriction flags, shell-less native roles cannot perform git checks, and untracked files are uncovered (ADR 0037, D9)"
+    },
+    P6: {
+      port: "P6",
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: Managed lifecycle (Enrollment, QA, Review, completion) and Lane Executor execution"
+    },
+    P7: {
+      port: "P7",
+      level: "certified",
+      evidence: "Live-certified on agy 1.5.8: shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks (D3)"
+    },
+    P8: {
+      port: "P8",
+      level: "certified",
+      evidence: "Live-probed on agy 1.5.8: PreInvocation injects activeTaskNotice via injectSteps.systemMessage on invocationNum 0; no model-callable Skill tool exists (D10)"
+    },
+    P9: {
+      port: "P9",
+      level: "unsupported",
+      evidence: "Antigravity provides no background wake mechanism"
+    }
+  }
+});
+
+// plugins/immune-brain/runtime/antigravity/run_continuation.ts
+import { closeSync as closeSync10, fstatSync as fstatSync7, openSync as openSync10, readSync as readSync4, realpathSync as realpathSync22 } from "node:fs";
+import { tmpdir as tmpdir8 } from "node:os";
+
+// plugins/immune-brain/runtime/host-core/run_continuation_session.ts
+init_coordinator();
+init_storage();
+init_batch_state();
+import { existsSync as existsSync20, lstatSync as lstatSync20, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync13 } from "node:fs";
+import { randomUUID as randomUUID11 } from "node:crypto";
+import { join as join36 } from "node:path";
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
+var MAX_METADATA_BYTES = 256 * 1024;
+var NATIVE_FAILURE_LIMIT = 3;
+var blank = () => ({
+  state: null,
+  sequence: 0,
+  review: "unobserved",
+  reviewer_prompt: null,
+  reviewer_call_id: null,
+  reviewer_agent_id: null,
+  recovery_action: null,
+  paused: null,
+  stop_blocks: 0,
+  native_failures: 0
+});
+var statePath2 = (host, sessionId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join36(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+function drop(host, path, root) {
+  if (!existsSync20(path))
+    return;
+  if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
+    return;
+  try {
+    const stat = lstatSync20(path);
+    if (stat.isFile() && ownedByUs(stat))
+      rmSync13(path);
+  } catch {}
+}
+function readLast(path, dir) {
+  if (dir && existsSync20(dir) && !ensurePrivateDir(dir))
+    throw new Error("continuation directory could not be verified");
+  let stat;
+  try {
+    stat = lstatSync20(path);
+  } catch (error) {
+    if (error.code === "ENOENT")
+      return null;
+    throw error;
+  }
+  if (!stat.isFile() || !ownedByUs(stat))
+    throw new Error("unsafe continuation metadata");
+  if (stat.size > MAX_METADATA_BYTES)
+    return null;
+  const text = readPrivate(path, MAX_METADATA_BYTES);
+  if (text === undefined)
+    throw new Error("continuation metadata could not be read");
+  const lines = text.trim().split(`
+`);
+  return JSON.parse(lines.at(-1) ?? "null");
+}
+function readMetadata(host, sessionId, root) {
+  const value = readLast(statePath2(host, sessionId, root), cacheDir(root, host.cache_name));
+  if (!value)
+    return blank();
+  value.native_failures ??= 0;
+  if (typeof value !== "object" || !Number.isInteger(value.sequence) || value.sequence < 0 || !Number.isInteger(value.stop_blocks) || value.stop_blocks < 0 || !Number.isInteger(value.native_failures ?? 0) || (value.native_failures ?? 0) < 0 || !["unobserved", "ready", "running", "returned", "rejected"].includes(value.review) || ![value.reviewer_prompt, value.reviewer_call_id, value.reviewer_agent_id, value.recovery_action, value.paused].every((v) => v === null || typeof v === "string"))
+    throw new Error("invalid continuation metadata");
+  if (value.state) {
+    const { binding } = value.state;
+    if (!binding || binding.session_id !== sessionId || !Number.isInteger(value.state.unchanged_observations) || value.state.unchanged_observations < 0 || !(value.state.progress_digest === null || typeof value.state.progress_digest === "string") || !(value.state.boundary_id === null || typeof value.state.boundary_id === "string"))
+      throw new Error("invalid bound run metadata");
+    bindRun(binding);
+  }
+  return value;
+}
+function readSessionMetadata(host, root, sessionId) {
+  return readMetadata(host, sessionId, root);
+}
+function save(host, sessionId, root, value) {
+  const path = statePath2(host, sessionId, root);
+  const temporary = `${path}.${randomUUID11()}`;
+  if (!appendPrivate(temporary, cacheDir(root, host.cache_name), JSON.stringify(value) + `
+`))
+    throw new Error("continuation metadata could not be written");
+  try {
+    renameSync6(temporary, path);
+  } finally {
+    drop(host, temporary, root);
+  }
+}
+function pauseRun(host, metadata, sessionId, root, reason) {
+  metadata.paused = reason;
+  save(host, sessionId, root, metadata);
+  host.revoke_entry(sessionId);
+}
+async function observeNativeFailure(host, metadata, correlation, root, reason) {
+  metadata.native_failures++;
+  if (metadata.native_failures < NATIVE_FAILURE_LIMIT) {
+    save(host, correlation.session_id, root, metadata);
+    return;
+  }
+  pauseRun(host, metadata, correlation.session_id, root, reason);
+}
+function readSessionToolCall(host, root, toolId, operation, workspace) {
+  const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
+  if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync21(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
+    return null;
+  return record.session_id;
+}
+function selectedParentSession(host, root, toolId, workspace, slug) {
+  const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
+  if (!call || call.workspace !== realpathSync21(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
+    return false;
+  const state = readMetadata(host, call.session_id, root).state;
+  return state?.binding.kind === "parent" && state.binding.workspace === call.workspace && state.binding.initiative_slug === slug;
+}
+async function applyRunContinuationEvent(host, root, session, event) {
+  const sessionId = session.session_id;
+  const { workspace } = session;
+  if (event.kind === "session_end") {
+    drop(host, statePath2(host, sessionId, root), root);
+    host.drop_entry_log(sessionId);
+    return { kind: "none" };
+  }
+  if (event.kind === "prompt") {
+    if (event.releases)
+      drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (event.kind === "tool_call") {
+    const metadata = readMetadata(host, sessionId, root);
+    if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
+      return { kind: "deny", reason: metadata.paused };
+    if (!host.entry_state(sessionId)?.run_live)
+      return { kind: "none" };
+    const correlation = {
+      session_id: sessionId,
+      workspace,
+      tool_use_id: event.tool_id,
+      operation: event.operation,
+      task_id: event.task_id
+    };
+    if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + `
+`))
+      throw new Error("tool correlation could not be recorded");
+    return { kind: "none" };
+  }
+  const metadata = readMetadata(host, sessionId, root);
+  if (metadata.paused)
+    return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
+  if (event.kind === "tool_result") {
+    const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name));
+    if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
+      return { kind: "none" };
+    drop(host, callPath(host, event.tool_id, root), root);
+    if (event.failed) {
+      if (NATIVE_OPERATIONS.has(event.operation))
+        await observeNativeFailure(host, metadata, correlated, root, `${event.operation} failed ${NATIVE_FAILURE_LIMIT} times under this entry; no further automatic retry`);
+      else if (event.operation === "submit_review") {
+        metadata.review = "rejected";
+        save(host, sessionId, root, metadata);
+      }
+      return { kind: "none" };
+    }
+    const response = event.response;
+    if (event.operation === "start_unattended_batch" && response?.state === "native_parent" && typeof response.plan_digest === "string" && typeof response.initiative_slug === "string") {
+      if (metadata.state?.binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: null,
+          initiative_slug: response.initiative_slug,
+          plan_digest: response.plan_digest,
+          final_verification: response.final_verification_commands
+        });
+    }
+    if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
+      const batch = readAnyBatchRunState(workspace, response.batch_id);
+      if (!batch)
+        throw new Error("batch receipt has no persisted identity");
+      if (metadata.state?.binding.kind !== "parent")
+        metadata.state = bindRun({
+          kind: "parent",
+          workspace,
+          session_id: sessionId,
+          batch_id: batch.batch_id,
+          initiative_slug: batch.initiative_slug,
+          plan_digest: batch.plan_digest
+        });
+    }
+    if (!metadata.state && correlated.task_id && event.operation === "status") {
+      const status = await projectTaskStatus(workspace, correlated.task_id);
+      if (!status.error && status.claim?.task_id === correlated.task_id && status.projection.lifecycle === "active" && status.projection.run_id)
+        metadata.state = bindRun({ kind: "task", workspace, session_id: sessionId, task_id: correlated.task_id, run_id: status.projection.run_id });
+    }
+    if (metadata.state?.binding.kind === "task" && correlated.task_id !== metadata.state.binding.task_id)
+      return { kind: "none" };
+    if (event.operation === "advance_assurance" && response?.state === "review_ready") {
+      const params = response.agent_params;
+      if (typeof params?.prompt === "string" && digestOfReviewerBytes(params.prompt) !== metadata.reviewer_prompt) {
+        metadata.reviewer_prompt = digestOfReviewerBytes(params.prompt);
+        metadata.reviewer_call_id = null;
+        metadata.reviewer_agent_id = null;
+        metadata.review = "ready";
+      }
+    }
+    if (["advance_assurance", "submit_review"].includes(event.operation) && response?.state === "review_incomplete") {
+      pauseRun(host, metadata, sessionId, root, `review_incomplete: ${String(response.recovery_action)}`);
+      return { kind: "none" };
+    }
+    if (event.operation === "submit_review") {
+      if (response?.reason === "review_incomplete_retry") {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      } else if (["blocked", "rejected", "failed"].includes(String(response?.state))) {
+        metadata.review = "rejected";
+        const recovery = response?.recovery_action ?? response?.next_action;
+        metadata.recovery_action = typeof recovery === "string" ? recovery : null;
+      } else {
+        metadata.review = "unobserved";
+        metadata.reviewer_prompt = null;
+        metadata.reviewer_call_id = null;
+        metadata.recovery_action = null;
+      }
+    }
+    if (NATIVE_OPERATIONS.has(event.operation) && ["blocked", "cancelled", "rejected", "failed"].includes(String(response?.state)))
+      await observeNativeFailure(host, metadata, correlated, root, `${event.operation} did not apply ${NATIVE_FAILURE_LIMIT} times under this entry; inspect the same-Host recovery`);
+    if (metadata.state)
+      save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer" && metadata.state && metadata.reviewer_prompt) {
+    if (event.phase === "dispatch" && event.call_id && event.prompt_digest !== null && event.prompt_digest === metadata.reviewer_prompt) {
+      if (metadata.reviewer_call_id) {
+        metadata.review = "rejected";
+      } else {
+        metadata.reviewer_call_id = event.call_id;
+        metadata.review = "running";
+      }
+      save(host, sessionId, root, metadata);
+    }
+    if (event.phase === "return" && event.call_id === metadata.reviewer_call_id) {
+      if (event.asynchronous)
+        metadata.reviewer_agent_id = event.agent_id;
+      else
+        metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind === "reviewer_stop") {
+    if (metadata.reviewer_agent_id && event.agent_id === metadata.reviewer_agent_id) {
+      metadata.review = "returned";
+      save(host, sessionId, root, metadata);
+    }
+    return { kind: "none" };
+  }
+  if (event.kind !== "stop" || !metadata.state)
+    return { kind: "none" };
+  if (!host.entry_state(sessionId)?.run_live) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (metadata.state.binding.workspace !== workspace) {
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "paused", reason: "workspace changed; enter drive explicitly in this workspace" };
+  }
+  const boundary = event.boundary();
+  if (!boundary)
+    return { kind: "none" };
+  metadata.sequence++;
+  const taskId = metadata.state.binding.kind === "task" ? metadata.state.binding.task_id : metadata.state.binding.initiative_slug;
+  let observation;
+  if (metadata.state.binding.kind === "parent")
+    observation = await observeParentRun(metadata.state.binding, boundary, metadata.review, metadata.recovery_action ?? undefined);
+  else {
+    const status = await projectTaskStatus(workspace, taskId);
+    const record = readTaskRecordRaw(workspace, taskId);
+    observation = {
+      kind: "task",
+      workspace,
+      session_id: sessionId,
+      boundary_id: boundary,
+      status,
+      source_digest: record.record ? scopedSourceDigest(workspace, record.record.intent_snapshot.scope_hint) : "terminal",
+      review: metadata.review,
+      recovery_action: metadata.recovery_action ?? undefined
+    };
+  }
+  const decision = decideRunContinuation(metadata.state, observation);
+  if (decision.action === "unbound" || decision.action === "settled") {
+    if (decision.action === "settled")
+      host.revoke_entry(sessionId);
+    drop(host, statePath2(host, sessionId, root), root);
+    return { kind: "none" };
+  }
+  if (decision.action === "wait") {
+    metadata.state = decision.state;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (decision.action === "pause" && decision.stalled) {
+    metadata.state = decision.state;
+    metadata.stop_blocks = 0;
+    save(host, sessionId, root, metadata);
+    return { kind: "none" };
+  }
+  if (!event.stop_hook_active)
+    metadata.stop_blocks = 0;
+  metadata.state = decision.state;
+  metadata.stop_blocks++;
+  if (decision.action === "pause" || metadata.stop_blocks >= 7) {
+    const hostName = host.host_name ?? "Claude";
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
+    pauseRun(host, metadata, sessionId, root, reason);
+    return { kind: "paused", reason: metadata.paused };
+  }
+  save(host, sessionId, root, metadata);
+  return { kind: "continue", label: taskId, next_action: decision.next_action };
+}
+
+// plugins/immune-brain/runtime/antigravity/run_continuation.ts
+var IMMUNE_BRAIN_DIRECT_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(\w+)$/;
+var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+var antigravityContinuationHost = (root) => ({
+  cache_name: ANTIGRAVITY_CACHE_DIR,
+  host_name: "Antigravity",
+  entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
+  revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
+  drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root)
+});
+function readRunToolSession(toolId, operation, workspace, root = tmpdir8()) {
+  return readSessionToolCall(antigravityContinuationHost(root), root, toolId, operation, workspace);
+}
+function selectedAntigravityParent(toolId, workspace, slug, root = tmpdir8()) {
+  return selectedParentSession(antigravityContinuationHost(root), root, toolId, workspace, slug);
+}
+function isSessionPaused(sessionId, root = tmpdir8()) {
+  if (!sessionId)
+    return null;
+  const host = antigravityContinuationHost(root);
+  try {
+    const metadata = readSessionMetadata(host, root, sessionId);
+    return metadata.paused;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `continuation facts could not be verified: ${message}`;
+  }
+}
+function stopBoundary(payload) {
+  const transcriptPath = payload.transcriptPath ?? payload.transcript_path;
+  if (typeof transcriptPath === "string" && transcriptPath) {
+    try {
+      const fd = openSync10(transcriptPath, "r");
+      try {
+        const stat = fstatSync7(fd);
+        if (stat.isFile() && stat.size > 0) {
+          const bytes = Buffer.alloc(Math.min(stat.size, 256 * 1024));
+          readSync4(fd, bytes, 0, bytes.length, Math.max(0, stat.size - bytes.length));
+          for (const line of bytes.toString("utf8").trim().split(`
+`).reverse()) {
+            let value;
+            try {
+              value = JSON.parse(line);
+            } catch {
+              continue;
+            }
+            if (typeof value?.step_index === "number") {
+              return digestOfReviewerBytes(`${transcriptPath}
+${value.step_index}`);
+            }
+            if (typeof value?.uuid === "string" && value.uuid) {
+              return digestOfReviewerBytes(`${transcriptPath}
+${value.uuid}`);
+            }
+          }
+        }
+      } finally {
+        closeSync10(fd);
+      }
+    } catch {}
+  }
+  if (typeof payload.executionNum === "number") {
+    const conversation = typeof payload.conversationId === "string" ? payload.conversationId : "";
+    return digestOfReviewerBytes(`${conversation}
+executionNum:${payload.executionNum}`);
+  }
+  return null;
+}
+function parseImmuneBrainTool(toolName, args) {
+  if (toolName === "invoke_subagent" || toolName === "Subagent") {
+    return { operation: "invoke_subagent", opArgs: args, taskId: null };
+  }
+  if (toolName === "call_mcp_tool") {
+    const server = String(args.ServerName ?? "");
+    if (!IMMUNE_BRAIN_SERVERS.has(server))
+      return null;
+    const op = String(args.ToolName ?? "");
+    if (!op)
+      return null;
+    const raw = args.Arguments;
+    const opArgs = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {};
+    const taskId = typeof opArgs.task_id === "string" ? opArgs.task_id : null;
+    return { operation: op, opArgs, taskId };
+  }
+  if (toolName.includes("immune-brain")) {
+    const match = IMMUNE_BRAIN_DIRECT_TOOL.exec(toolName);
+    if (!match)
+      return null;
+    const op = match[1];
+    const taskId = typeof args.task_id === "string" ? args.task_id : null;
+    return { operation: op, opArgs: args, taskId };
+  }
+  return null;
+}
+function parseToolResponse(raw) {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(value)) {
+    const text = value.filter((item) => item?.type === "text" && typeof item?.text === "string").map((item) => item.text).join("");
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const obj = value;
+    if (Array.isArray(obj.content)) {
+      const text = obj.content.filter((item) => item?.type === "text" && typeof item?.text === "string").map((item) => item.text).join("");
+      try {
+        const inner = JSON.parse(text);
+        if (inner && typeof inner === "object" && !Array.isArray(inner))
+          return inner;
+      } catch {
+        return null;
+      }
+    }
+    return obj;
+  }
+  return null;
+}
+async function antigravityRunContinuationPreToolUse(payload, root = tmpdir8()) {
+  if (!payload.conversationId)
+    return null;
+  let workspace;
+  try {
+    workspace = realpathSync22(payload.workspacePaths?.[0] ?? process.cwd());
+  } catch {
+    workspace = payload.workspacePaths?.[0] ?? process.cwd();
+  }
+  const tool = parseImmuneBrainTool(payload.toolCall.name, payload.toolCall.args ?? {});
+  if (!tool)
+    return null;
+  if (payload.stepIdx === undefined)
+    return null;
+  const toolId = `${payload.conversationId}:${payload.stepIdx}`;
+  try {
+    if (tool.operation === "invoke_subagent") {
+      const prompt = typeof tool.opArgs.Prompt === "string" ? tool.opArgs.Prompt : null;
+      const promptDigest = prompt ? digestOfReviewerBytes(prompt) : null;
+      await applyRunContinuationEvent(antigravityContinuationHost(root), root, { session_id: payload.conversationId, workspace }, { kind: "reviewer", phase: "dispatch", call_id: toolId, prompt_digest: promptDigest, agent_id: null, asynchronous: false });
+      return null;
+    }
+    const outcome = await applyRunContinuationEvent(antigravityContinuationHost(root), root, { session_id: payload.conversationId, workspace }, { kind: "tool_call", operation: tool.operation, tool_id: toolId, task_id: tool.taskId });
+    if (outcome.kind === "deny") {
+      return {
+        decision: "deny",
+        reason: `Run paused: ${outcome.reason}; enter drive explicitly before another native gate`
+      };
+    }
+    return null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      decision: "deny",
+      reason: `continuation facts could not be verified: ${message}`
+    };
+  }
+}
+async function antigravityRunContinuationPostToolUse(payload, root = tmpdir8()) {
+  if (!payload.conversationId || payload.stepIdx === undefined)
+    return;
+  let workspace;
+  try {
+    workspace = realpathSync22(payload.workspacePaths?.[0] ?? process.cwd());
+  } catch {
+    workspace = payload.workspacePaths?.[0] ?? process.cwd();
+  }
+  const tool = parseImmuneBrainTool(payload.toolCall.name, payload.toolCall.args ?? {});
+  if (!tool)
+    return;
+  const toolId = `${payload.conversationId}:${payload.stepIdx}`;
+  try {
+    if (tool.operation === "invoke_subagent") {
+      await applyRunContinuationEvent(antigravityContinuationHost(root), root, { session_id: payload.conversationId, workspace }, { kind: "reviewer", phase: "return", call_id: toolId, prompt_digest: null, agent_id: String(payload.stepIdx), asynchronous: false });
+      return;
+    }
+    const failed = typeof payload.error === "string" && payload.error.length > 0;
+    const response = parseToolResponse(payload.result);
+    await applyRunContinuationEvent(antigravityContinuationHost(root), root, { session_id: payload.conversationId, workspace }, { kind: "tool_result", operation: tool.operation, tool_id: toolId, response, failed });
+  } catch {}
+}
+async function antigravityRunContinuationHook(payload, root = tmpdir8()) {
+  if (!payload.conversationId)
+    return {};
+  let workspace;
+  try {
+    workspace = realpathSync22(payload.workspacePaths?.[0] ?? process.cwd());
+  } catch {
+    workspace = payload.workspacePaths?.[0] ?? process.cwd();
+  }
+  const event = {
+    kind: "stop",
+    boundary: () => stopBoundary(payload),
+    stop_hook_active: payload.stop_hook_active !== false
+  };
+  try {
+    const outcome = await applyRunContinuationEvent(antigravityContinuationHost(root), root, { session_id: payload.conversationId, workspace }, event);
+    switch (outcome.kind) {
+      case "continue":
+        return {
+          decision: "continue",
+          reason: `Explicit drive is bound to ${outcome.label}; Kernel settlement is incomplete. ${outcome.next_action}. Continue the authorized Loop. ${USER_WAIT_GUIDANCE}`
+        };
+      case "paused":
+        return {
+          reason: outcome.reason,
+          systemMessage: `Immune-Brain run paused: ${outcome.reason}`
+        };
+      default:
+        return {};
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      reason: `continuation facts could not be verified: ${message}`,
+      systemMessage: `Immune-Brain run paused: continuation facts could not be verified: ${message}`
+    };
+  }
+}
 
 // plugins/immune-brain/runtime/antigravity/kernel_ports.ts
 var ANTIGRAVITY_PROFILE = {
@@ -23902,13 +25145,17 @@ var ANTIGRAVITY_PROFILE = {
   probeHost,
   confirmationRef: (input) => hostConfirmationRef("antigravity", input),
   laneRuntime: (options) => new HostRuntime(ANTIGRAVITY_PROFILE, options),
-  selectedParent: () => false
+  selectedParent: selectedAntigravityParent
 };
 
 class AntigravityRuntime {
   runtime;
   constructor(options) {
-    this.runtime = new HostRuntime(ANTIGRAVITY_PROFILE, options);
+    const profile = options.confirmationStoreRoot ? {
+      ...ANTIGRAVITY_PROFILE,
+      selectedParent: (toolId, workspace, slug) => selectedAntigravityParent(toolId, workspace, slug, options.confirmationStoreRoot)
+    } : ANTIGRAVITY_PROFILE;
+    this.runtime = new HostRuntime(profile, options);
   }
   get host() {
     return this.runtime.host;
@@ -23978,17 +25225,210 @@ class AntigravityRuntime {
   }
 }
 
+// plugins/immune-brain/runtime/antigravity/tool_permission.ts
+import { execFileSync as execFileSync17 } from "node:child_process";
+import { lstatSync as lstatSync21, readFileSync as readFileSync26 } from "node:fs";
+import { homedir as homedir2 } from "node:os";
+import { join as join37 } from "node:path";
+var REQUIRED_TOOL_PERMISSION = "request-review";
+var UNCERTIFIED_TOOL_PERMISSIONS = new Set(["strict", "proceed-in-sandbox"]);
+var DISALLOWED_AGY_FLAGS = ["--dangerously-skip-permissions", "--print", "-p"];
+var MAX_ANCESTOR_DEPTH = 64;
+function antigravitySettingsPath(home = homedir2()) {
+  return join37(home, ".gemini", "antigravity-cli", "settings.json");
+}
+function fail(cause, remediation) {
+  return {
+    ok: false,
+    cause,
+    remediation,
+    reason: `Native confirmation gate cannot surface (${cause}). Remediation: ${remediation}`
+  };
+}
+function isAgyExecutable(executable) {
+  const cleaned = executable.trim().replace(/^["']|["']$/g, "");
+  if (!cleaned)
+    return false;
+  const base = cleaned.split(/[\\/]/).pop() ?? "";
+  return base === "agy" || base === "agy.exe";
+}
+function findDisallowedFlags(args) {
+  const found = [];
+  for (const arg of args) {
+    if (arg === "--")
+      break;
+    for (const flag of DISALLOWED_AGY_FLAGS) {
+      if (arg === flag) {
+        if (!found.includes(flag))
+          found.push(flag);
+        break;
+      }
+      if (arg.startsWith(`${flag}=`)) {
+        const value = arg.slice(flag.length + 1);
+        if (value !== "false" && value !== "0") {
+          if (!found.includes(flag))
+            found.push(flag);
+        }
+        break;
+      }
+    }
+  }
+  return found;
+}
+function readAncestorProcessArgs() {
+  const ancestors = [];
+  const seen = new Set;
+  let pid = process.ppid;
+  while (Number.isSafeInteger(pid) && pid > 1 && !seen.has(pid) && ancestors.length < MAX_ANCESTOR_DEPTH) {
+    seen.add(pid);
+    const out = execFileSync17("ps", ["-ww", "-o", "ppid=,args=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+    const line = out.split(/\r?\n/).find((entry) => entry.trim().length > 0);
+    if (!line) {
+      throw new Error(`ps returned no process row for pid ${pid}`);
+    }
+    const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(line);
+    if (!match) {
+      throw new Error(`unexpected ps output for pid ${pid}: ${line}`);
+    }
+    const nextPpid = Number(match[1]);
+    const tokens = match[2].trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      ancestors.push(tokens);
+    }
+    pid = nextPpid;
+  }
+  return ancestors;
+}
+function extractPermissionsAllow(parsed) {
+  const permissions = parsed.permissions;
+  if (typeof permissions !== "object" || permissions === null || Array.isArray(permissions)) {
+    return [];
+  }
+  const allow = permissions.allow;
+  if (!Array.isArray(allow)) {
+    return [];
+  }
+  return allow.filter((entry) => typeof entry === "string");
+}
+function matchesMcpAllowRule(allowRules, servers, tool) {
+  if (!tool || allowRules.length === 0)
+    return false;
+  const serverSet = servers instanceof Set ? servers : new Set(servers);
+  if (serverSet.size === 0)
+    return false;
+  for (const entry of allowRules) {
+    if (typeof entry !== "string")
+      continue;
+    const match = /^mcp\(([^)]+)\)$/.exec(entry.trim());
+    if (!match)
+      continue;
+    const inner = match[1];
+    if (inner === "*")
+      return true;
+    const slashIndex = inner.indexOf("/");
+    if (slashIndex === -1) {
+      if (serverSet.has(inner))
+        return true;
+      continue;
+    }
+    if (inner.indexOf("/", slashIndex + 1) !== -1)
+      continue;
+    const server = inner.slice(0, slashIndex);
+    const ruleTool = inner.slice(slashIndex + 1);
+    if (!server || !ruleTool || !serverSet.has(server))
+      continue;
+    if (ruleTool === "*" || ruleTool === tool)
+      return true;
+  }
+  return false;
+}
+function readToolPermission(settingsPath, remediation) {
+  let raw;
+  try {
+    const stat = lstatSync21(settingsPath);
+    if (!stat.isFile()) {
+      return fail(`Antigravity settings path is not a regular file (${settingsPath})`, remediation);
+    }
+    raw = readFileSync26(settingsPath, "utf8");
+  } catch (error) {
+    const code = error?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return fail(`Antigravity settings.json is missing (${settingsPath})`, remediation);
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    return fail(`Antigravity settings.json could not be read (${settingsPath}): ${detail}`, remediation);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return fail(`Antigravity settings.json is unparsable JSON (${settingsPath})`, remediation);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return fail(`Antigravity settings.json must be a JSON object (${settingsPath})`, remediation);
+  }
+  if (!Object.hasOwn(parsed, "toolPermission") || parsed.toolPermission === undefined) {
+    return fail(`toolPermission key is missing in ${settingsPath}`, remediation);
+  }
+  const permission = parsed.toolPermission;
+  if (typeof permission !== "string") {
+    const kind = permission === null ? "null" : Array.isArray(permission) ? "array" : typeof permission;
+    return fail(`toolPermission in ${settingsPath} must be a string (got ${kind})`, remediation);
+  }
+  if (permission !== REQUIRED_TOOL_PERMISSION) {
+    if (UNCERTIFIED_TOOL_PERMISSIONS.has(permission)) {
+      return fail(`toolPermission is "${permission}" in ${settingsPath}, which is refused until live confirmation-dialog evidence is verified`, remediation);
+    }
+    return fail(`toolPermission is "${permission}" in ${settingsPath}, which auto-approves or does not surface a native confirmation dialog`, remediation);
+  }
+  return { ok: true, allowRules: extractPermissionsAllow(parsed) };
+}
+function checkNativeGateSurfacing(options = {}) {
+  const home = options.home ?? homedir2();
+  const settingsPath = antigravitySettingsPath(home);
+  const remediation = `Set "toolPermission": "${REQUIRED_TOOL_PERMISSION}" in ${settingsPath} and run an interactive agy session (without --dangerously-skip-permissions, --print, or -p).`;
+  const settingsCheck = readToolPermission(settingsPath, remediation);
+  if (!settingsCheck.ok)
+    return settingsCheck;
+  const reader = options.readAncestorArgs ?? readAncestorProcessArgs;
+  let ancestors;
+  try {
+    ancestors = reader();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return fail(`unable to inspect ancestor processes: ${detail}`, remediation);
+  }
+  if (!Array.isArray(ancestors)) {
+    return fail("unable to inspect ancestor processes: invalid ancestor list", remediation);
+  }
+  for (const argv of ancestors) {
+    if (!Array.isArray(argv) || argv.length === 0 || typeof argv[0] !== "string")
+      continue;
+    if (!isAgyExecutable(argv[0]))
+      continue;
+    const disallowed = findDisallowedFlags(argv.slice(1));
+    if (disallowed.length > 0) {
+      return fail(`nearest ancestor agy process was started with ${disallowed.join(", ")}, which prevents interactive native confirmation dialogs`, remediation);
+    }
+    return { ok: true, settingsPath, agyArgv: argv, allowRules: settingsCheck.allowRules };
+  }
+  return fail("no ancestor agy process was found, so no interactive native confirmation dialog can surface", remediation);
+}
+
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 var FILE_TOOLS = new Set(["write_file", "edit_file", "Write", "Edit", "MultiEdit"]);
 var PRIVILEGED_MCP_TOOL = /^(?:mcp__.*immune-brain.*__|immune-brain__)?(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
 var LAZY_PRIVILEGED_TOOL = /^(start_unattended_batch|retire_stale_batch|request_authorization|approve_breaking_intent_revision|stop)$/;
-var IMMUNE_BRAIN_SERVERS = new Set(["immune-brain", "immune-brain_immune-brain"]);
+var IMMUNE_BRAIN_SERVERS2 = new Set(["immune-brain", "immune-brain_immune-brain"]);
 function isGatedTool(operation) {
   return operation === "start_unattended_batch" || operation === "retire_stale_batch";
 }
 function extractPrivilegedCall(toolName, args) {
   if (toolName === "call_mcp_tool") {
-    if (!IMMUNE_BRAIN_SERVERS.has(String(args.ServerName ?? "")))
+    if (!IMMUNE_BRAIN_SERVERS2.has(String(args.ServerName ?? "")))
       return null;
     const lazy = LAZY_PRIVILEGED_TOOL.exec(String(args.ToolName ?? ""));
     if (!lazy)
@@ -24128,10 +25568,10 @@ ${details.join(`
 `)}`;
 }
 function entryLogPath(sessionId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join38(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join38(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function parseAdmissionId(admissionId) {
   const match = /^(.+):(\d+):([a-z_]+)$/.exec(admissionId);
@@ -24146,12 +25586,7 @@ function parseAdmissionId(admissionId) {
   return { conversation, stepIdx, operation: opRaw };
 }
 function confirmationPath(conversation, admissionId, root) {
-  return join36(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
-}
-function dropPrivate(path) {
-  try {
-    rmSync13(path, { force: true });
-  } catch {}
+  return join38(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
 function dropConversationConfirmations(conversationId, root) {
   if (!conversationId)
@@ -24161,86 +25596,98 @@ function dropConversationConfirmations(conversationId, root) {
     return;
   const prefix = `${sessionHash(conversationId)}.`;
   try {
-    for (const file of readdirSync12(dir)) {
+    for (const file of readdirSync13(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
-        dropPrivate(join36(dir, file));
+        dropPrivate(join38(dir, file));
       }
     }
   } catch {}
 }
 function antigravityLocalNames(cwd, home) {
-  const roots = [join36(cwd, ".agents"), join36(home, ".agents"), join36(home, ".gemini/config")];
+  const roots = [join38(cwd, ".agents"), join38(home, ".agents"), join38(home, ".gemini/config")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join36(root, "commands", `${name}.md`));
+        const body = readAliasFile(join38(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join36(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join38(root, "skills"), name))
   };
 }
-function readPhaseEntryState(sessionId, root = tmpdir8()) {
+function readPhaseEntryState(sessionId, root = tmpdir9()) {
   if (!sessionId)
     return null;
   const path = entryLogPath(sessionId, root);
   try {
-    lstatSync20(path);
+    lstatSync22(path);
   } catch (error) {
     return error.code === "ENOENT" ? NO_PHASE_ENTRY : null;
   }
   if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
     return null;
+  let text;
   try {
-    const text = readFileSync26(path, "utf8");
-    return reducePhaseEntryLog(text);
+    text = readPrivate(path);
   } catch {
     return null;
   }
+  return text === undefined ? null : reducePhaseEntryLog(text);
 }
 function appendPhaseEntry(sessionId, line, root) {
   const path = entryLogPath(sessionId, root);
-  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
+  let recorded = false;
   try {
-    writeFileSync15(path, line + `
-`, { flag: "a", mode: 384 });
-    return true;
-  } catch {
+    recorded = appendPrivate(path, cacheDir(root, ANTIGRAVITY_CACHE_DIR), line);
+  } catch {}
+  if (!recorded)
     dropPrivate(path);
-    return false;
-  }
+  return recorded;
 }
-function dropPhaseEntryLog(sessionId, root = tmpdir8()) {
+function dropPhaseEntryLog(sessionId, root = tmpdir9()) {
   if (sessionId)
     dropPrivate(entryLogPath(sessionId, root));
 }
-function revokeEntryToken(sessionId, reason, root = tmpdir8()) {
+function revokeEntryToken(sessionId, reason, root = tmpdir9()) {
   if (sessionId && readPhaseEntryState(sessionId, root)?.token)
     appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root);
 }
 function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   if (!conversationId)
     return false;
-  const storeRoot = locations.root ?? tmpdir8();
+  const storeRoot = locations.root ?? tmpdir9();
   dropConversationConfirmations(conversationId, storeRoot);
-  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir2()), "antigravity");
+  const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir3()), "antigravity");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
+  if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
+    const contPath = join38(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+    dropPrivate(contPath);
+  }
   let workspace = null;
   if (entry === "run") {
     try {
-      workspace = realpathSync22(cwd);
+      workspace = realpathSync23(cwd);
     } catch {}
   }
-  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID11(), workspace } : undefined);
+  const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID12(), workspace } : undefined);
   return appendPhaseEntry(conversationId, line, storeRoot);
 }
-function consumePhaseAdmission(toolCallId, operation, root = tmpdir8()) {
+function consumePhaseAdmission(toolCallId, operation, root = tmpdir9()) {
+  if (!toolCallId || !ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR)))
+    return null;
   const path = admissionPath(toolCallId, root);
+  let text;
   try {
-    const text = readFileSync26(path, "utf8");
-    dropPrivate(path);
+    text = readPrivate(path);
+  } catch {
+    return null;
+  }
+  if (text === undefined)
+    return null;
+  dropPrivate(path);
+  try {
     const parsed = JSON.parse(text);
     if (parsed.operation !== operation)
       return null;
@@ -24255,7 +25702,8 @@ function consumePhaseAdmission(toolCallId, operation, root = tmpdir8()) {
   }
 }
 function writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, input, root, choices = {}) {
-  const requestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID11()}`;
+  const baseRequestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID12()}`;
+  const requestId = choices.allowRuleMatched ? `${ALLOW_RULE_REQUEST_PREFIX}${baseRequestId}` : baseRequestId;
   const grant = {
     request_id: requestId,
     conversation,
@@ -24272,11 +25720,16 @@ function writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, i
     ...choices.reworkChoice ? { rework_choice: choices.reworkChoice } : {},
     ...choices.verifierChoice ? { verifier_choice: choices.verifierChoice } : {}
   };
-  ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-  writeFileSync15(confirmationPath(conversation, admissionId, root), JSON.stringify(grant), { mode: 384 });
+  const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+  const path = confirmationPath(conversation, admissionId, root);
+  const written = writePrivate(path, dir, JSON.stringify(grant));
+  if (!written) {
+    dropPrivate(path);
+    return null;
+  }
   return requestId;
 }
-async function consumeNativeConfirmation(input, root = tmpdir8()) {
+async function consumeNativeConfirmation(input, root = tmpdir9()) {
   if (input.signal?.aborted) {
     throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
   }
@@ -24284,14 +25737,23 @@ async function consumeNativeConfirmation(input, root = tmpdir8()) {
   if (!parsedId || !input.admissionId) {
     throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing (step correlation unavailable)");
   }
+  if (!ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR))) {
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
+  }
   const path = confirmationPath(parsedId.conversation, input.admissionId, root);
+  let raw;
+  try {
+    raw = readPrivate(path);
+  } catch {}
+  if (raw === undefined) {
+    dropPrivate(path);
+    throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
+  }
+  dropPrivate(path);
   let grant;
   try {
-    const raw = readFileSync26(path, "utf8");
-    dropPrivate(path);
     grant = JSON.parse(raw);
   } catch {
-    dropPrivate(path);
     throw new NativeAuthorityError("interaction_not_opened", "Antigravity PreToolUse native confirmation grant is missing or already consumed");
   }
   if (grant.conversation !== parsedId.conversation || grant.step_idx !== parsedId.stepIdx || grant.operation !== input.operation || typeof grant.request_id !== "string" || !grant.request_id) {
@@ -24300,7 +25762,7 @@ async function consumeNativeConfirmation(input, root = tmpdir8()) {
   let currentWorkspace = null;
   try {
     if (input.workspace)
-      currentWorkspace = realpathSync22(input.workspace);
+      currentWorkspace = realpathSync23(input.workspace);
   } catch {}
   if (!currentWorkspace || grant.workspace !== currentWorkspace) {
     throw new NativeAuthorityError("workspace_changed", "workspace changed after PreToolUse native confirmation");
@@ -24319,23 +25781,44 @@ async function consumeNativeConfirmation(input, root = tmpdir8()) {
   };
 }
 function antigravityPreInvocationHook(payload, locations = {}) {
-  const prompt = payload.lastUserInput ?? "";
-  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
-  recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  const storeRoot = locations.root ?? tmpdir9();
+  const isRecordedFollowUp = payload.invocationNum !== undefined && payload.invocationNum > 0 && Boolean(payload.conversationId) && readPhaseEntryState(payload.conversationId, storeRoot) !== NO_PHASE_ENTRY;
+  if (!isRecordedFollowUp) {
+    const prompt = payload.lastUserInput ?? "";
+    const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+    recordPhaseEntryPrompt(payload.conversationId, prompt, cwd, locations);
+  }
   return { injectSteps: [], terminationBehavior: "" };
 }
-function antigravityPostToolUseHook(payload, locations = {}) {
+async function antigravityPreInvocationHookAsync(payload, locations = {}) {
+  const base = antigravityPreInvocationHook(payload, locations);
+  if (payload.invocationNum !== undefined && payload.invocationNum !== 0) {
+    return base;
+  }
+  const cwd = payload.workspacePaths?.[0] ?? process.cwd();
+  const notice = await activeTaskNotice(cwd);
+  if (!notice)
+    return base;
+  return {
+    injectSteps: [{ systemMessage: { systemMessage: notice } }],
+    terminationBehavior: ""
+  };
+}
+async function antigravityPostToolUseHook(payload, locations = {}) {
   if (payload.stepIdx === undefined || !payload.conversationId)
     return;
+  const root = locations.root ?? tmpdir9();
   const call = extractPrivilegedCall(payload.toolCall.name, payload.toolCall.args ?? {});
-  if (!call)
-    return;
-  const root = locations.root ?? tmpdir8();
-  const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
-  dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
-  if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
-    dropPrivate(admissionPath(admissionId, root));
+  if (call) {
+    const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
+    dropPrivate(confirmationPath(payload.conversationId, admissionId, root));
+    if (typeof payload.error === "string" && payload.error.length > 0 && isGatedTool(call.operation)) {
+      dropPrivate(admissionPath(admissionId, root));
+    }
   }
+  try {
+    await antigravityRunContinuationPostToolUse(payload, root);
+  } catch {}
 }
 function evaluatePreToolUseSync(payload, locations = {}) {
   const toolName = payload.toolCall.name;
@@ -24351,7 +25834,17 @@ function evaluatePreToolUseSync(payload, locations = {}) {
   if (!call) {
     return { done: true, result: { decision: "allow" } };
   }
-  const root = locations.root ?? tmpdir8();
+  const root = locations.root ?? tmpdir9();
+  const paused = isSessionPaused(payload.conversationId, root);
+  if (paused) {
+    return {
+      done: true,
+      result: {
+        decision: "deny",
+        reason: paused.startsWith("continuation facts could not be verified") ? paused : `Run paused: ${paused}; enter drive explicitly before another native gate`
+      }
+    };
+  }
   if (isGatedTool(call.operation)) {
     const state = readPhaseEntryState(payload.conversationId, root);
     const opName = { kind: "tool", name: call.operation };
@@ -24372,8 +25865,16 @@ function evaluatePreToolUseSync(payload, locations = {}) {
       workspace: state?.workspace,
       conversation: payload.conversationId
     });
-    ensurePrivateDir(cacheDir(root, ANTIGRAVITY_CACHE_DIR));
-    writeFileSync15(admissionPath(admissionId, root), admitLine, { mode: 384 });
+    const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
+    const path = admissionPath(admissionId, root);
+    const written = writePrivate(path, dir, admitLine);
+    if (!written) {
+      dropPrivate(path);
+      return {
+        done: true,
+        result: { decision: "deny", reason: `run_entry_required: the admission for this ${call.operation} call could not be recorded securely` }
+      };
+    }
     return { done: false, call, state, root, cwd, stepIdx: payload.stepIdx, admissionId };
   }
   const taskId = typeof call.opArgs.task_id === "string" ? call.opArgs.task_id : "";
@@ -24391,6 +25892,23 @@ function evaluatePreToolUseSync(payload, locations = {}) {
   }
   const admissionId = `${payload.conversationId}:${payload.stepIdx}:${call.operation}`;
   return { done: false, call, state: null, root, cwd, stepIdx: payload.stepIdx, admissionId };
+}
+function issueNativeConfirmationForceAsk(conversation, stepIdx, admissionId, workspace, confirmInput, root, locations, choices = {}) {
+  const surfacing = checkNativeGateSurfacing({
+    home: locations.home,
+    readAncestorArgs: locations.readAncestorArgs
+  });
+  if (!surfacing.ok) {
+    return { decision: "deny", reason: surfacing.reason };
+  }
+  const allowRuleMatched = matchesMcpAllowRule(surfacing.allowRules, IMMUNE_BRAIN_SERVERS2, confirmInput.operation);
+  if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, { ...choices, allowRuleMatched })) {
+    return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
+  }
+  return {
+    decision: "force_ask",
+    reason: formatAntigravityConfirmationReason(confirmInput, choices)
+  };
 }
 async function prepareBatchConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
@@ -24414,7 +25932,7 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
     return { decision: "allow" };
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync23(cwd);
   } catch {
     return { decision: "allow" };
   }
@@ -24444,10 +25962,9 @@ async function prepareBatchConfirmation(conversationId, sync, locations) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
-async function prepareRetireConfirmation(conversationId, sync) {
+async function prepareRetireConfirmation(conversationId, sync, locations) {
   const { call, state, cwd, root, stepIdx, admissionId } = sync;
   if (state?.token)
     return { decision: "allow" };
@@ -24457,7 +25974,7 @@ async function prepareRetireConfirmation(conversationId, sync) {
   }
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync23(cwd);
   } catch {
     return { decision: "allow" };
   }
@@ -24475,17 +25992,16 @@ async function prepareRetireConfirmation(conversationId, sync) {
   }
   if (!confirmInput)
     return { decision: "allow" };
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root);
-  return { decision: "force_ask", reason: formatAntigravityConfirmationReason(confirmInput) };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations);
 }
-async function prepareTaskAuthorityConfirmation(conversationId, sync) {
+async function prepareTaskAuthorityConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const taskId = String(call.opArgs.task_id ?? "");
-  if (!existsSync21(join36(cwd, ".imm")))
+  if (!existsSync21(join38(cwd, ".imm")))
     return { decision: "allow" };
   let workspaceRealpath;
   try {
-    workspaceRealpath = realpathSync22(cwd);
+    workspaceRealpath = realpathSync23(cwd);
   } catch {
     return { decision: "allow" };
   }
@@ -24536,14 +26052,7 @@ ${reworkExitLines(confirmInput.reworkExits).join(`
     }
     reworkChoice = parsed;
   }
-  writeConfirmationGrant(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, {
-    verifierChoice,
-    reworkChoice
-  });
-  return {
-    decision: "force_ask",
-    reason: formatAntigravityConfirmationReason(confirmInput, { verifierChoice, reworkChoice })
-  };
+  return issueNativeConfirmationForceAsk(conversationId, stepIdx, admissionId, workspaceRealpath, confirmInput, root, locations, { verifierChoice, reworkChoice });
 }
 function reportPreviewFailure(operation, error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -24552,51 +26061,39 @@ function reportPreviewFailure(operation, error) {
 `);
 }
 async function antigravityPreToolUseHookAsync(payload, locations = {}) {
+  const root = locations.root ?? tmpdir9();
   const sync = evaluatePreToolUseSync(payload, locations);
+  if (sync.done && sync.result.decision === "deny")
+    return sync.result;
+  const contDecision = await antigravityRunContinuationPreToolUse(payload, root);
+  if (contDecision && contDecision.decision === "deny") {
+    if (!sync.done && isGatedTool(sync.call.operation)) {
+      dropPrivate(admissionPath(sync.admissionId, root));
+    }
+    return contDecision;
+  }
   if (sync.done)
     return sync.result;
+  let decision;
   try {
     if (sync.call.operation === "start_unattended_batch") {
-      return await prepareBatchConfirmation(payload.conversationId, sync, locations);
+      decision = await prepareBatchConfirmation(payload.conversationId, sync, locations);
+    } else if (sync.call.operation === "retire_stale_batch") {
+      decision = await prepareRetireConfirmation(payload.conversationId, sync, locations);
+    } else {
+      decision = await prepareTaskAuthorityConfirmation(payload.conversationId, sync, locations);
     }
-    if (sync.call.operation === "retire_stale_batch") {
-      return await prepareRetireConfirmation(payload.conversationId, sync);
-    }
-    return await prepareTaskAuthorityConfirmation(payload.conversationId, sync);
   } catch (error) {
     reportPreviewFailure(sync.call.operation, error);
     return { decision: "allow" };
   }
-}
-
-// plugins/immune-brain/runtime/antigravity/run_continuation.ts
-init_batch_preflight();
-init_coordinator();
-async function antigravityRunContinuationHook(payload) {
-  const workspace = payload.workspacePaths?.[0] ?? process.cwd();
-  const taskId = readActiveClaimTaskId(workspace);
-  if (!taskId) {
-    return {};
+  if (decision.decision === "deny" && isGatedTool(sync.call.operation)) {
+    dropPrivate(admissionPath(sync.admissionId, root));
   }
-  let status;
-  try {
-    status = await projectTaskStatus(workspace, taskId);
-  } catch {
-    return {};
-  }
-  if (!status || status.error || !status.projection) {
-    return {};
-  }
-  return decideAutomatedStop(taskId, status.projection);
+  return decision;
 }
 
 // plugins/immune-brain/runtime/antigravity/mcp_server.ts
-var antigravityContinuationHost = (root) => ({
-  cache_name: ANTIGRAVITY_CACHE_DIR,
-  entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
-  revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
-  drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root)
-});
 var ANTIGRAVITY_MCP_PROFILE = {
   serverInfo: { name: "antigravity", minimumHostVersion: MIN_ANTIGRAVITY_VERSION },
   contract: CORE_CONTRACT,
@@ -24607,7 +26104,8 @@ var ANTIGRAVITY_MCP_PROFILE = {
     if (typeof conversation !== "string" || !conversation)
       return;
     const step = metaProgressStep(meta);
-    return { toolCallId: String(messageId), ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
+    const toolCallId = step === null ? String(messageId) : `${conversation}:${step}`;
+    return { toolCallId, ...step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` } };
   },
   elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
   probeHost,
@@ -24615,10 +26113,22 @@ var ANTIGRAVITY_MCP_PROFILE = {
   createRuntime: (options) => new AntigravityRuntime({ parentHost: "antigravity", ...options }).runtime,
   requestConfirmation: (input) => consumeNativeConfirmation(input),
   consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
-  readRunToolSession: (toolCallId, operation, workspace) => readSessionToolCall(antigravityContinuationHost(tmpdir9()), tmpdir9(), toolCallId, operation, workspace),
+  readRunToolSession: (toolCallId, operation, workspace) => readRunToolSession(toolCallId, operation, workspace),
   dispatchHook: runHook,
   bundlePath: fileURLToPath6(import.meta.url)
 };
+function antigravityMcpProfile(confirmationStoreRoot) {
+  if (!confirmationStoreRoot)
+    return ANTIGRAVITY_MCP_PROFILE;
+  return {
+    ...ANTIGRAVITY_MCP_PROFILE,
+    createRuntime: (options) => new AntigravityRuntime({
+      parentHost: "antigravity",
+      ...options,
+      confirmationStoreRoot
+    }).runtime
+  };
+}
 function withConfirmationStore(options) {
   const { confirmationStoreRoot, ...rest } = options;
   if (!confirmationStoreRoot)
@@ -24626,11 +26136,12 @@ function withConfirmationStore(options) {
   return {
     ...rest,
     requestConfirmation: rest.requestConfirmation ?? ((input) => consumeNativeConfirmation(input, confirmationStoreRoot)),
-    consumePhaseAdmission: rest.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation, confirmationStoreRoot))
+    consumePhaseAdmission: rest.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation, confirmationStoreRoot)),
+    readRunToolSession: rest.readRunToolSession ?? ((toolCallId, operation, workspace) => readRunToolSession(toolCallId, operation, workspace, confirmationStoreRoot))
   };
 }
-var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
-var serveStdio2 = (options = {}) => serveStdio(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
+var createAntigravityMcpRuntime = (options = {}) => createMcpRuntime(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
+var serveStdio2 = (options = {}) => serveStdio(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
 function metaProgressStep(meta) {
   const token = meta?.progressToken;
   if (typeof token !== "string")
@@ -24638,7 +26149,7 @@ function metaProgressStep(meta) {
   const match = /:(\d+)$/.exec(token);
   return match ? Number(match[1]) : null;
 }
-function appendSubagentStart(toolCall, payload) {
+function appendSubagentStart(toolCall, payload, root) {
   if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent")
     return;
   if (typeof payload.stepIdx !== "number")
@@ -24650,13 +26161,56 @@ function appendSubagentStart(toolCall, payload) {
     agent: typeof args.TypeName === "string" ? args.TypeName : "",
     agentId: String(payload.stepIdx),
     ...typeof args.Prompt === "string" ? { prompt: args.Prompt } : {},
-    ...typeof args.Model === "string" ? { model: args.Model } : {}
+    ...typeof args.Model === "string" ? { model: args.Model } : {},
+    ...typeof payload.artifactDirectoryPath === "string" && payload.artifactDirectoryPath ? { artifactDirectoryPath: payload.artifactDirectoryPath } : {}
   };
-  antigravityHookEventLog().append(event);
+  antigravityHookEventLog(root).append(event);
 }
-async function runHook() {
+async function dispatchHookPayload(payload, locations = {}) {
+  if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
+    const toolCall = payload.toolCall;
+    if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
+      if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
+        const result = typeof payload.result === "string" ? payload.result : "";
+        if (result.trim().length > 0) {
+          const args = toolCall.args ?? {};
+          const model = typeof args.Model === "string" ? args.Model : undefined;
+          const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
+          const event = {
+            type: "result",
+            sessionId: String(payload.conversationId ?? ""),
+            agentId: String(payload.stepIdx ?? ""),
+            result,
+            ...model ? { model } : {},
+            ...prompt ? { prompt } : {}
+          };
+          antigravityHookEventLog(locations.root).append(event);
+        }
+      }
+      await antigravityPostToolUseHook(payload, locations);
+      return "{}";
+    }
+    const result = await antigravityPreToolUseHookAsync(payload, locations);
+    if (result.decision === "allow")
+      appendSubagentStart(toolCall, payload, locations.root);
+    return JSON.stringify(result);
+  }
+  if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
+    const result = await antigravityRunContinuationHook(payload, locations.root);
+    return JSON.stringify(result);
+  }
+  if ("invocationNum" in payload || "lastUserInput" in payload) {
+    const result = await antigravityPreInvocationHookAsync(payload, locations);
+    return JSON.stringify(result);
+  }
+  return "{}";
+}
+async function runHook(options = {}) {
+  const input = options.input ?? stdin2;
+  const output = options.output ?? stdout2;
+  const locations = options.locations ?? {};
   const lines = [];
-  const rl = createInterface({ input: stdin2, terminal: false });
+  const rl = createInterface({ input, terminal: false });
   for await (const line of rl)
     lines.push(line);
   const raw = lines.join(`
@@ -24671,49 +26225,11 @@ async function runHook() {
   }
   if (!payload)
     return;
-  if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
-    const toolCall = payload.toolCall;
-    if ("stepIdx" in payload && (("error" in payload) || ("result" in payload))) {
-      if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
-        const args = toolCall.args ?? {};
-        const model = typeof args.Model === "string" ? args.Model : undefined;
-        const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
-        const result = typeof payload.result === "string" ? payload.result : "";
-        const event = {
-          type: "result",
-          sessionId: String(payload.conversationId ?? ""),
-          agentId: String(payload.stepIdx ?? ""),
-          result,
-          ...model ? { model } : {},
-          ...prompt ? { prompt } : {}
-        };
-        antigravityHookEventLog().append(event);
-      }
-      antigravityPostToolUseHook(payload);
-      stdout2.write(`{}
-`);
-      return;
-    }
-    const result = await antigravityPreToolUseHookAsync(payload);
-    if (result.decision === "allow")
-      appendSubagentStart(toolCall, payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  if ("terminationReason" in payload || "executionNum" in payload) {
-    const result = await antigravityRunContinuationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  if ("invocationNum" in payload || "lastUserInput" in payload) {
-    const result = antigravityPreInvocationHook(payload);
-    stdout2.write(JSON.stringify(result) + `
-`);
-    return;
-  }
-  stdout2.write(`{}
+  const reply = await dispatchHookPayload(payload, locations);
+  try {
+    resolveAsyncVerifierResults(payload, antigravityHookEventLog(locations.root));
+  } catch {}
+  output.write(`${reply}
 `);
 }
 runMcpEntry(ANTIGRAVITY_MCP_PROFILE, ["/antigravity/mcp_server.ts", "/antigravity/mcp-server.mjs"]);

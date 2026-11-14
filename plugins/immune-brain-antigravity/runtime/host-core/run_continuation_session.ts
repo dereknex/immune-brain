@@ -1,12 +1,12 @@
-// Run continuation session state and the Antigravity Stop rule (Spec
-// docs/specs/host-neutral-adapter-core.spec.md D9, D11). The state machine owns
-// session metadata files, one-use tool-call correlation, pause, the native
-// failure counter and binding migration; an adapter parses its Host payload into
-// typed events and renders the outcome.
+// Run continuation session state and shared boundary limits (Spec
+// docs/specs/host-neutral-adapter-core.spec.md D9, docs/specs/tri-host-capability-alignment.spec.md D6, D7).
+// The state machine owns session metadata files, one-use tool-call correlation,
+// pause, the native failure counter and binding migration; an adapter parses
+// its Host payload into typed events and renders the outcome.
 //
-// Interface: `RunContinuationHost` (cache directory name and the Host's ADR 0025
-// phase-entry ports), `readSessionToolCall`, `selectedParentSession`,
-// `applyRunContinuationEvent`, `decideAutomatedStop`.
+// Interface: `RunContinuationHost` (cache directory name, host display name,
+// and the Host's ADR 0025 phase-entry ports), `readSessionToolCall`,
+// `selectedParentSession`, `applyRunContinuationEvent`.
 // Invariants: every continuation decision re-reads the Kernel; a private file
 // past `MAX_METADATA_BYTES` carries no metadata; a correlation recorded for one
 // workspace never answers another; a paused or settled entry spends its token.
@@ -23,16 +23,12 @@ import { readAnyBatchRunState } from "../unattended/batch_state";
 import { bindRun, decideRunContinuation, observeParentRun, scopedSourceDigest,
 	type ReviewContinuationState, type RunContinuationState } from "../assurance/run_continuation";
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
-import type { AssuranceObligation } from "../kernel/types";
-import type { AssuranceProjection } from "../kernel/assurance_projection";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
 
-const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+const NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 const MAX_METADATA_BYTES = 256 * 1024;
 /** Spec D9: the third native-operation failure under one entry pauses; the first two leave the run live for a retry. */
 const NATIVE_FAILURE_LIMIT = 3;
-/** Obligations the Antigravity Stop hook continues without a user action (Spec D11). */
-const AUTOMATED_STOP_OBLIGATIONS: AssuranceObligation[] = ["run_qa", "run_review", "submit_assurance", "resolve_findings"];
 
 interface Correlation { session_id: string; workspace: string; tool_use_id: string; operation: string; task_id: string | null }
 interface ContinuationMetadata {
@@ -52,6 +48,8 @@ interface ContinuationMetadata {
 export interface RunContinuationHost {
 	/** Per-Host cache directory name; no Host reads another's session files. */
 	cache_name: string;
+	/** Host display name for pause messages (e.g. "Claude", "Antigravity", "Pi"). */
+	host_name?: string;
 	/** The session's phase-entry state, or null when it cannot be read. */
 	entry_state(session_id: string): { run_live?: boolean } | null;
 	/** Spend the session's entry token: a paused or settled entry needs a new literal entry. */
@@ -92,7 +90,8 @@ function drop(host: RunContinuationHost, path: string, root: string): void {
 	if (!ensurePrivateDir(cacheDir(root, host.cache_name))) return;
 	try { const stat = lstatSync(path); if (stat.isFile() && ownedByUs(stat)) rmSync(path); } catch { /* absent */ }
 }
-function readLast(path: string): unknown {
+function readLast(path: string, dir?: string): unknown {
+	if (dir && existsSync(dir) && !ensurePrivateDir(dir)) throw new Error("continuation directory could not be verified");
 	let stat;
 	try {
 		stat = lstatSync(path);
@@ -109,7 +108,7 @@ function readLast(path: string): unknown {
 	return JSON.parse(lines.at(-1) ?? "null");
 }
 function readMetadata(host: RunContinuationHost, sessionId: string, root: string): ContinuationMetadata {
-	const value = readLast(statePath(host, sessionId, root)) as ContinuationMetadata | null;
+	const value = readLast(statePath(host, sessionId, root), cacheDir(root, host.cache_name)) as ContinuationMetadata | null;
 	if (!value) return blank();
 	// Metadata written before the retry budget existed has no failure count.
 	value.native_failures ??= 0;
@@ -127,6 +126,9 @@ function readMetadata(host: RunContinuationHost, sessionId: string, root: string
 		bindRun(binding);
 	}
 	return value;
+}
+export function readSessionMetadata(host: RunContinuationHost, root: string, sessionId: string): ContinuationMetadata {
+	return readMetadata(host, sessionId, root);
 }
 function save(host: RunContinuationHost, sessionId: string, root: string, value: ContinuationMetadata): void {
 	const path = statePath(host, sessionId, root);
@@ -151,13 +153,13 @@ async function observeNativeFailure(host: RunContinuationHost, metadata: Continu
 
 /** Exact PreToolUse correlation; the transport connection ID is never a Hook session. */
 export function readSessionToolCall(host: RunContinuationHost, root: string, toolId: string, operation: string, workspace: string): string | null {
-	const record = readLast(callPath(host, toolId, root)) as Correlation | null;
+	const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name)) as Correlation | null;
 	if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync(workspace) ||
 		typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live) return null;
 	return record.session_id;
 }
 export function selectedParentSession(host: RunContinuationHost, root: string, toolId: string, workspace: string, slug: string): boolean {
-	const call = readLast(callPath(host, toolId, root)) as Correlation | null;
+	const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name)) as Correlation | null;
 	if (!call || call.workspace !== realpathSync(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) ||
 		!host.entry_state(call.session_id)?.run_live) return false;
 	const state = readMetadata(host, call.session_id, root).state;
@@ -179,9 +181,10 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 		if (event.releases) drop(host, statePath(host, sessionId, root), root);
 		return { kind: "none" };
 	}
-	if (event.kind === "tool_call" && host.entry_state(sessionId)?.run_live) {
+	if (event.kind === "tool_call") {
 		const metadata = readMetadata(host, sessionId, root);
 		if (metadata.paused && NATIVE_OPERATIONS.has(event.operation)) return { kind: "deny", reason: metadata.paused };
+		if (!host.entry_state(sessionId)?.run_live) return { kind: "none" };
 		const correlation: Correlation = { session_id: sessionId, workspace, tool_use_id: event.tool_id, operation: event.operation,
 			task_id: event.task_id };
 		if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + "\n"))
@@ -191,7 +194,7 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	const metadata = readMetadata(host, sessionId, root);
 	if (metadata.paused) return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
 	if (event.kind === "tool_result") {
-		const correlated = readLast(callPath(host, event.tool_id, root)) as Correlation | null;
+		const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name)) as Correlation | null;
 		if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation ||
 			readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId) return { kind: "none" };
 		drop(host, callPath(host, event.tool_id, root), root);
@@ -294,27 +297,17 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	// Spec D12: an unchanged digest after the nudge yields the turn instead of pausing, so waiting on
 	// background work never spends the entry. Later progress blocks again.
 	if (decision.action === "pause" && decision.stalled) { metadata.state = decision.state; metadata.stop_blocks = 0; save(host, sessionId, root, metadata); return { kind: "none" }; }
-	if (decision.state.progress_digest !== metadata.state.progress_digest || !event.stop_hook_active) metadata.stop_blocks = 0;
+	if (!event.stop_hook_active) metadata.stop_blocks = 0;
 	metadata.state = decision.state;
+	metadata.stop_blocks++;
 	if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-		pauseRun(host, metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
+		const hostName = host.host_name ?? "Claude";
+		const reason = decision.action === "pause"
+			? decision.reason
+			: `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
+		pauseRun(host, metadata, sessionId, root, reason);
 		return { kind: "paused", reason: metadata.paused! };
 	}
-	metadata.stop_blocks++;
 	save(host, sessionId, root, metadata);
 	return { kind: "continue", label: taskId, next_action: decision.next_action };
-}
-
-/**
- * Spec D11: the Antigravity Stop hook continues exactly when the projection is
- * active, no user decision is open and the next obligation is automated. It
- * adopts none of the Claude phase-entry or call-correlation mechanism.
- */
-export function decideAutomatedStop(taskId: string, projection: AssuranceProjection): { decision?: "continue"; reason?: string } {
-	if (projection.lifecycle !== "active") return {};
-	// If waiting on user, allow stop
-	if (projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" ||
-		projection.open_user_decision_count > 0 || projection.unresolved_user_decision_ids.length > 0) return {};
-	if (!AUTOMATED_STOP_OBLIGATIONS.includes(projection.next_obligation)) return {};
-	return { decision: "continue", reason: `Task ${taskId} is active with next obligation: ${projection.next_obligation}. Please proceed.` };
 }

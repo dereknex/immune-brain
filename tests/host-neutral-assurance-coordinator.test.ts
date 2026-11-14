@@ -10,7 +10,7 @@ import { projectAssurance } from "../plugins/immune-brain/runtime/kernel/assuran
 import { createMutationAuthorityRegistry } from "../plugins/immune-brain/runtime/kernel/authority_port";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readdirSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { writeNativeReviewEvidence } from "../plugins/immune-brain/runtime/assurance/review_evidence";
@@ -35,7 +35,8 @@ import {
 	type SnapshotDescriptor,
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { STATIC_REVIEW_RULES } from "../plugins/immune-brain/runtime/role_prompt_bridge";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import type { PiReviewHost } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { ClaudeReviewHost } from "../plugins/immune-brain/runtime/claude/review_host";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import type { AssuranceProjectionResult } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
@@ -43,6 +44,8 @@ import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/rev
 import { taskDeliveryIdentity } from "../plugins/immune-brain/runtime/workspace_scope";
 import { VerificationAbortedError } from "../plugins/immune-brain/runtime/assurance/verification";
 import { QaPreparationError, runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
+
+setDefaultTimeout(30_000);
 
 const TASK = "phase3-task";
 const ROOT = "/tmp/phase3-assurance";
@@ -235,6 +238,10 @@ function makeCoordinator(overrides: {
 	return { coordinator, authority: coordinator.authority, ports, host, counts: () => ({ applyCount }), lastApplied: () => lastApplied, qaRuns: () => qaRuns };
 }
 
+function makePiReviewHost(cwd = ROOT): PiReviewHost {
+	return new PiRuntime({ cwd, ports: makeCoordinator().ports }).host as PiReviewHost;
+}
+
 describe("review verification packet", () => {
 	const root = mkdtempSync(join(tmpdir(), "review-verification-"));
 	const transcripts = reviewerTranscripts();
@@ -283,7 +290,7 @@ describe("review verification packet", () => {
 		}
 	});
 	test("prepares a verifier dispatch on both native hosts with the selected model", () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		for (const [host, role] of [[pi, "general-purpose"], [new ClaudeReviewHost(), "immune-brain:immune-brain-review-verifier"]] as const) {
 			const dispatched = prepareReviewVerificationDispatch({ host, snapshot: s, verdict,
 				verdictSha256: `sha256:${"e".repeat(64)}`, reviewerModel: "reviewer", offeredModels: ["reviewer", "other"],
@@ -293,7 +300,7 @@ describe("review verification packet", () => {
 		}
 	});
 	test("binds the Pi verifier output to the exact dispatch and observed receipt", () => {
-		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const host = makePiReviewHost(root);
 		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
 			reviewerModel: "reviewer", offeredModels: ["other"], operationId: "verifier-receipt", writePacket: writeTestReviewPacket });
 		const params = dispatch.reservation.dispatch as Record<string, unknown>;
@@ -335,7 +342,7 @@ describe("review verification packet", () => {
 		expect(consumeReviewVerification({ host, dispatch, root, reviewerModel: "reviewer" })).toEqual({ state: "pending" });
 	});
 	test("records same-model fallback and rejects a substituted verifier result", () => {
-		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const host = makePiReviewHost(root);
 		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
 			reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: "same-model", writePacket: writeTestReviewPacket });
 		host.observeVerifierDispatch(dispatch.reservation.dispatch as never, "call-same");
@@ -345,7 +352,7 @@ describe("review verification packet", () => {
 				results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] } });
 	});
 	test("records malformed verifier output while keeping every finding", () => {
-		const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const host = makePiReviewHost(root);
 		const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
 			reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: "bad-result", writePacket: writeTestReviewPacket });
 		host.observeVerifierDispatch(dispatch.reservation.dispatch as never, "call-bad");
@@ -355,7 +362,7 @@ describe("review verification packet", () => {
 	});
 	test("keeps every finding when the host cannot inspect or release a verifier receipt", () => {
 		for (const stage of ["inspect", "release"] as const) {
-			const host = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+			const host = makePiReviewHost(root);
 			const dispatch = prepareReviewVerificationDispatch({ host, snapshot: s, verdict, verdictSha256: `sha256:${"e".repeat(64)}`,
 				reviewerModel: "reviewer", offeredModels: ["reviewer"], operationId: `host-${stage}`, writePacket: writeTestReviewPacket });
 			host.observeVerifierDispatch(dispatch.reservation.dispatch as never, `call-${stage}`);
@@ -372,7 +379,7 @@ describe("review verification packet", () => {
 		}
 	});
 	test("projects a submitted rework verdict only after consuming the verifier receipt", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
@@ -406,7 +413,7 @@ describe("review verification packet", () => {
 	});
 
 	test("an all-refuted verdict redispatches once and a repeated anchor parks for the user", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		let revision = "record-1";
 		let history: NonNullable<NonNullable<Awaited<ReturnType<AssuranceCoordinatorPorts["readTaskRecord"]>>["record"]>["history"]> = [];
@@ -446,7 +453,7 @@ describe("review verification packet", () => {
 	});
 
 	test.each(["receipt_mismatch", "malformed_output", "timeout"] as const)("%s keeps every submitted finding without retry", async failure => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }),
@@ -473,7 +480,7 @@ describe("review verification packet", () => {
 	});
 
 	test("a failing second reviewer receipt check cannot project any findings", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
@@ -489,7 +496,7 @@ describe("review verification packet", () => {
 	});
 
 	test("unavailable verifier dispatch keeps every finding and records failure", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
@@ -504,7 +511,7 @@ describe("review verification packet", () => {
 	});
 
 	test("a pass skips verification even when the project switch is on", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", ensureRevision: async () => s.review_revision!,
 			assurance: async (_root, _task, role) => ({ snapshot: role === "review" ? s : snapshot("qa"), descriptors: new Map(), reviewBundle: role === "review" ? reviewBundle() : null }) });
@@ -515,7 +522,7 @@ describe("review verification packet", () => {
 	});
 
 	test("turning verification off projects the submitted rework unchanged", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "off", project: async () => projection("active", "run_review"),
 			assurance: async () => ({ snapshot: s, descriptors: new Map(), reviewBundle: reviewBundle() }), ensureRevision: async () => s.review_revision! });
@@ -534,7 +541,7 @@ describe("review verification packet", () => {
 		expect(() => selectReviewVerifierModel("", ["other"])).toThrow();
 	});
 	test("coordinator dispatches a security claim with the immutable Spec threat-model line", async () => {
-		const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+		const pi = makePiReviewHost(root);
 		const host = new FakeReviewHost(pi);
 		const h = makeCoordinator({ host, mode: "on", project: async () => projection("active", "run_review"),
 			record: async () => ({ revision: "record-1", record: { findings: [], intent_snapshot: { scope_hint: ["docs/specs/test.spec.md"] } as never } }),
@@ -1411,7 +1418,7 @@ function authorityFixture(environment: object = { prepare: null, writable_paths:
 
 test("submitted Review and verifier receipts persist kept-only rework through the real Kernel", async () => {
  const f = authorityFixture();
- const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+ const pi = makePiReviewHost(f.root);
 		const host = new FakeReviewHost(pi);
  const coordinator = new AssuranceCoordinator({ host, reviewVerifierMode: () => "on", confirmationReference: () => "host-observed-review",
   projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),
@@ -1447,7 +1454,7 @@ test("submitted Review and verifier receipts persist kept-only rework through th
 
 test.each(["repeated", "new"] as const)("all-refuted Review redispatches and %s claims park through the real Kernel", async kind => {
  const f = authorityFixture();
- const pi = new AssuranceProgression(makeCoordinator().ports).piReviewHost;
+ const pi = makePiReviewHost(f.root);
 		const host = new FakeReviewHost(pi);
  const coordinator = new AssuranceCoordinator({ host, reviewVerifierMode: () => "on", confirmationReference: () => "host-observed-review",
   projectTask: (root, task) => projectAssurance(root, task), readTaskRecord: async (root, task) => readTaskRecordRaw(root, task),

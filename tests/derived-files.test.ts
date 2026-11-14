@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDerivedFiles, readDerivedFiles } from "../plugins/immune-brain/runtime/derived_files";
+import { HOST_CAPABILITY_PATH } from "../scripts/render-host-capability";
 import { buildCandidate, findIntegratedCandidate, integrateLaneCommit, laneCandidateMatches } from "../plugins/immune-brain/runtime/unattended/batch_integration";
 import { parseFinalVerificationReport, prepareFinalRepairCandidate, runFinalVerification } from "../plugins/immune-brain/runtime/unattended/batch_final_verification";
 
@@ -208,5 +209,25 @@ describe("derived files", () => {
 		const bundle = readDerivedFiles(process.cwd()).find(entry => entry.outputs.includes("plugins/immune-brain/dist/claude/mcp-server.mjs"));
 		expect(bundle?.generate).toEqual({ executable: "bun", argv: ["scripts/build-claude-plugin.ts"] });
 		expect(bundle?.check).toEqual({ executable: "bun", argv: ["scripts/build-claude-plugin.ts", "--check"] });
+	});
+	test("repository declares the host capability reference generate, check, and sources", () => {
+		const matches = readDerivedFiles(process.cwd()).filter(entry => entry.outputs.includes(HOST_CAPABILITY_PATH));
+		expect(matches).toHaveLength(1);
+		const entry = matches[0]!;
+		expect(entry.id).toBe("host-capability-reference");
+		expect(entry.outputs).toEqual([HOST_CAPABILITY_PATH]);
+		expect(entry.generate).toEqual({ executable: "bun", argv: ["scripts/render-host-capability.ts"] });
+		expect(entry.check).toEqual({ executable: "bun", argv: ["scripts/render-host-capability.ts", "--check"] });
+		for (const source of [
+			"scripts/render-host-capability.ts",
+			"plugins/immune-brain/runtime/host-core/capability.ts",
+			"plugins/immune-brain/runtime/claude/capability.ts",
+			"plugins/immune-brain/runtime/antigravity/capability.ts",
+			"plugins/immune-brain/.pi-extension/pi-capability.ts",
+		]) {
+			expect(entry.sources).toContain(source);
+		}
+		const check = spawnSync(entry.check.executable, entry.check.argv, { cwd: process.cwd(), encoding: "utf8" });
+		expect(check.status).toBe(0);
 	});
 });

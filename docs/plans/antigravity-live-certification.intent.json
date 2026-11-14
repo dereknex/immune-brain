@@ -1,0 +1,48 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-live-certification",
+  "owner": "user",
+  "goal": "Implement Slice S8 of docs/specs/tri-host-capability-alignment.spec.md: obtain real installed-Antigravity evidence for Enrollment, QA, Review, verifier observation, continuation and completion; probe and implement or explicitly reject P8/Skill integration; then update certification disclosures and close #451/#469 with evidence.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D10 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-7): live probes establish whether PreInvocation can inject active-task guidance and whether a model-callable Skill tool exists. Positive: supported injection uses the shared active-task notice and model Skill self-entry is denied without a live phase. Negative: unsupported capabilities remain unsupported with observed reasons and no fictitious Hook matcher. Bound: probe payloads/results and any implementation are recorded in the live report and packaged tests. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/antigravity-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D11 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-8): the evidence validator accepts only a current report naming Host version, plugin digest, Task ID, exact commands, native gates, verifier correlation, continuation observations and a final done projection. Positive: a complete successful real run passes and justifies closing #451/#469 with evidence links. Negative: absent agy/report, stale plugin digest, skipped phase, failed command or non-done projection fails; a skip is never a pass. Bound: BR-SCN-4 is performed manually on the real Host and fixture evidence alone cannot certify it. Agreed seam: tests/antigravity-live-certification.test.ts reading docs/reports/antigravity-live-certification.md.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-live-certification.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D11 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-8): only after the live evidence passes do the capability table and Antigravity README claim the corresponding certified cells/lifecycle, and all generated outputs and docs are current. Positive: final declarations match evidence and checks pass. Negative: an unsupported/failed probe cannot be promoted. Bound: P9 Pi remains unsupported and no other Host is claimed certified by this Antigravity run. Agreed seam: package/doc generation plus TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-antigravity-plugin.ts --check && bun scripts/sync-dist-docs.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-live-certification.md",
+    "docs/plans/antigravity-live-certification.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/reports/antigravity-live-certification.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/README.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/hooks.json",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+    "plugins/immune-brain/runtime/assurance/active_task_notice.ts",
+    "scripts/verify-antigravity-live.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/antigravity-host-package.test.ts",
+    "tests/antigravity-live-certification.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

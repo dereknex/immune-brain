@@ -12,7 +12,7 @@ The rules apply when the target repository declares layers: an architecture map,
 
 - The Kernel owns authority state and depends on no Host.
 - The Port and the host-neutral coordinator under `plugins/immune-brain/runtime/assurance/` depend on the Kernel and on no adapter.
-- The host-neutral adapter core at `plugins/immune-brain/runtime/host-core/` holds the adapter machinery both Hosts need, recorded by ADR 0038 (`docs/adr/0038-host-neutral-adapter-core.md` in the source repository). It depends on the Kernel, the Port and the coordinator, and on no adapter.
+- The host-neutral adapter core at `plugins/immune-brain/runtime/host-core/` holds the adapter machinery the three Hosts need, recorded by ADR 0038 (`docs/adr/0038-host-neutral-adapter-core.md` in the source repository). It depends on the Kernel, the Port and the coordinator, and on no adapter.
 - Adapters (`plugins/immune-brain/runtime/claude/`, `plugins/immune-brain/runtime/antigravity/`, `.pi-extension/`) depend on the Port, the coordinator and the host-neutral core, never on each other. An adapter neither imports nor extends another adapter's machinery.
 - The CLI and host entry points call adapters; nothing below them imports a host entry point.
 

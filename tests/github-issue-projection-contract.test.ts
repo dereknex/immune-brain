@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { deriveGithubTerminalProjectionInput, projectTerminalTrackerState } from "../plugins/immune-brain/runtime/assurance/coordinator.ts";
+import { HostRuntime } from "../plugins/immune-brain/runtime/host-core/runtime.ts";
+import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports.ts";
+import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime.ts";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -714,16 +717,24 @@ describe("post-settlement tracker projection", () => {
 	});
 
 	it("keeps both Hosts on that one shared projection", () => {
-		// The Claude Host settles through advance, submitReview, and authorize, and
-		// every one of those paths runs the shared step; the Pi Host runs it after
-		// its own settlement. A Host that stops calling it, or that invents its own
-		// tracker step, fails here.
-		const claude = readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8");
+		// Both ClaudeRuntime and PiRuntime compose HostRuntime, which runs
+		// projectTerminalTrackerState after settlement on advance, submitReview,
+		// submitVerification, and authorize. A Host that stops delegating through
+		// HostRuntime, or that invents its own tracker step, fails here.
+		const hostCore = readFileSync(resolve("plugins/immune-brain/runtime/host-core/runtime.ts"), "utf8");
 		const piWork = readFileSync(resolve("plugins/immune-brain/.pi-extension/imm-canary-work.ts"), "utf8");
-		expect(claude).toContain("projectTerminalTrackerState");
-		expect(piWork).toContain("projectTerminalTrackerState");
-		expect(claude).toContain("runGithubTrackerOperation(root, { op: \"mark-terminal\"");
-		const wrapper = claude.slice(claude.indexOf("private async withTerminalTracker"));
+		const claudeRuntime = new ClaudeRuntime({ cwd: "/tmp" });
+		const piRuntime = new PiRuntime({ cwd: "/tmp" });
+		expect(claudeRuntime.runtime).toBeInstanceOf(HostRuntime);
+		expect(piRuntime.runtime).toBeInstanceOf(HostRuntime);
+		expect(hostCore).toContain("projectTerminalTrackerState");
+		expect(hostCore).toContain("runGithubTrackerOperation(root, { op: \"mark-terminal\"");
+		const wrapper = hostCore.slice(hostCore.indexOf("private async withTerminalTracker"));
 		expect(wrapper.slice(0, wrapper.indexOf("\n\t}"))).not.toMatch(/applyOrdinary|advancePiTask|makeCapability|mintCapability/);
+		expect(piWork).toContain("await runtime.advance(");
+		expect(piWork).toContain("await runtime.submitReview(");
+		expect(piWork).toContain("await runtime.submitVerification(");
+		expect(piWork).toContain("await runtime.authorize(");
+		expect(piWork).not.toContain("mark-terminal");
 	});
 });

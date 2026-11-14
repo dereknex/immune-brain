@@ -1,0 +1,167 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-async-verifier-result",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-async-verifier-result",
+    "goal": "Make the Antigravity verifier receipt settle from the subagent's real asynchronous output (#451 follow-up). On live agy 1.5.7 invoke_subagent returns at once, PostToolUse carries no result, and plugins/immune-brain/runtime/antigravity/mcp_server.ts:157-171 writes an empty result event that plugins/immune-brain/runtime/host-core/verifier_observation.ts:146 always refuses, so live verification can never settle. The Antigravity adapter keeps the correlated tool ID ${conversationId}:${stepIdx} (Spec docs/specs/tri-host-capability-alignment.spec.md D7) and resolves the result from the conversation's own spawn record and the message the spawned verifier sent back, read through Antigravity hook payloads; shared verifier_observation.ts semantics and Claude/Pi behavior stay unchanged, and Spec D7 records the asynchronous result source. Live evidence (agy 1.5.7, 2026-11-13, S8 probe sessions a7b187ea and 73d04947): Pre/PostToolUse stepIdx equals the spawn record spawnStepIndex (2) and both carry artifactDirectoryPath <brain>/<conversationId>; the output arrives later as a messages/<id>.json from the child. Out of scope: certification claims, README and live report (S8 reruns after this), primary Review (#440), #469 click-through. no user-visible change: the change is internal hook-to-receipt correlation; users observe it only through the S8 live certification rerun.",
+    "acceptance": [
+      {
+        "id": "AAVR-A1",
+        "assertion": "In the existing \"verifier via real hook dispatch\" block of tests/antigravity-assurance-conformance.test.ts, the real hook entry (plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook) receives a PreToolUse and a PostToolUse for invoke_subagent with the same conversationId and stepIdx, each carrying artifactDirectoryPath pointing at a temporary <brain>/<conversationId> directory, and the PostToolUse carries error \"\" and no result field (the live agy 1.5.7 shape). Positive: runtime.submitVerification stays pending and keeps the reservation; after the fixture writes .system_generated/subagents/<child>.json with conversationId <child>, subagentDescriptor.typeName immune-brain-review-verifier and spawnStepIndex equal to stepIdx, writes .system_generated/messages/<id>.json with sender <child>, recipient <conversationId> and the verdict as content, and one further hook payload for that conversationId runs, submitVerification accepts with actorId antigravity:<stepIdx> and result bytes equal to the message content. Bound: further hook payloads after resolution append no second result event and do not turn the settled receipt into a duplicate-result refusal; a PostToolUse that carries a non-empty result string still settles as before. Fixture shapes follow the live evidence recorded in this TaskIntent's goal. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"verifier via real hook dispatch\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AAVR-A2",
+        "assertion": "With the AAVR-A1 setup, the adapter fails closed and submitVerification never settles a receipt when: the only message in the directory is self-sent (sender == recipient == conversationId, as live background-command messages are); the message recipient differs from conversationId; the spawn record's spawnStepIndex differs from the dispatch stepIdx or its typeName is not immune-brain-review-verifier; the artifactDirectoryPath basename differs from the payload conversationId, or the path or a .system_generated component is a symlink; a spawn or message file is unparsable or exceeds the adapter's declared byte bound. When the spawned verifier sent two messages to the conversation, submission is refused rather than settled from either. A PostToolUse with no result field or an empty result never appends a result event. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AAVR-A3",
+        "assertion": "The shared verifier observation and the other Hosts are unchanged and the generated artifacts are current. Positive: the \"verifier observation\" block of tests/dual-host-assurance-conformance.test.ts and the Pi verifier conformance suite pass unchanged; the Antigravity package mirror, its bundled MCP server and the Claude MCP bundle check clean; TypeScript passes. Negative: a stale Antigravity mirror of the changed adapter files or a stale bundle fails the build check. Agreed seams: the \"verifier observation\" block of tests/dual-host-assurance-conformance.test.ts, tests/pi-canary-assurance-advance.test.ts, tests/antigravity-host-package.test.ts, the plugin build checks and typecheck.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/dual-host-assurance-conformance.test.ts -t 'verifier observation' && bun test tests/pi-canary-assurance-advance.test.ts tests/antigravity-host-package.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-async-verifier-result.md",
+      "docs/plans/antigravity-async-verifier-result.intent.json",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/antigravity/review_host.ts",
+      "tests/antigravity-assurance-conformance.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-async-verifier-result.intent.json",
+    "content_hash": "sha256:e6303b9e1e2761a532b55ecadd5dbdd560dea1baadf9c407bd661b3e79f168d7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e6303b9e1e2761a532b55ecadd5dbdd560dea1baadf9c407bd661b3e79f168d7",
+  "git_base_head": "e7bfcf3d244aec63d910b5e19190058e2f910349",
+  "attestations": [
+    {
+      "id": "approval-qa-e99cfe65",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e6303b9e1e2761a532b55ecadd5dbdd560dea1baadf9c407bd661b3e79f168d7",
+      "diff_hash": "sha256:d96482156ffd1370738be55d19ad80ecfd1bf13784fc9f2241138e6facf34206",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:f339212eaaa55ce776eb0c8597c10e6bfa0381da811fb5f7f24236854256b62d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AAVR-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f339212eaaa55ce776eb0c8597c10e6bfa0381da811fb5f7f24236854256b62d"
+        },
+        {
+          "acceptance_id": "AAVR-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f339212eaaa55ce776eb0c8597c10e6bfa0381da811fb5f7f24236854256b62d"
+        },
+        {
+          "acceptance_id": "AAVR-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f339212eaaa55ce776eb0c8597c10e6bfa0381da811fb5f7f24236854256b62d"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-bb1c5342",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e6303b9e1e2761a532b55ecadd5dbdd560dea1baadf9c407bd661b3e79f168d7",
+      "diff_hash": "sha256:d96482156ffd1370738be55d19ad80ecfd1bf13784fc9f2241138e6facf34206",
+      "actor_id": "cli:claude-code:6c866bcd-0a94-4e24-8d92-fb7edb4f79f4",
+      "summary": "Provenance verified (single parent e7bfcf3d, tree 0a46e734, mirror oids identical); empty/absent PostToolUse result no longer logs, async resolution correlates spawnStepIndex+typeName with a single child->parent message under validated non-symlink owned dirs and 256KiB bounded O_NOFOLLOW reads, multi-message refusal flows through resolveResult release and VerifierObservation duplicate-result refusal, tests cover A1 positive/bound and every A2 negative at the agreed seam, bundle diff mirrors source; blast radius medium: plugins/immune-brain/runtime/antigravity/review_host.ts, mcp_server.ts runHook, and the Antigravity dist bundle.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "e7bfcf3d244aec63d910b5e19190058e2f910349",
+        "review_commit": "28d87a3288cfe54678c7732001a9464f81ffc836",
+        "review_tree": "0a46e734168567f11094a5bb95b9610811991f6a",
+        "manifest_digest": "sha256:b3192a2bcf3829cb4fa0bf00ac86e0b14bf2393458d3f36a69da84d826f1344f"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-7c4fe65f22e2-1-review-1",
+          "acceptance_id": "AAVR-A2",
+          "summary": "runHook wraps resolveAsyncVerifierResults in a bare catch that discards the error without any diagnostic; outcome is fail-closed (no result appended) but an unexpected I/O or log-append failure leaves the reservation pending with no trace of why.",
+          "anchor": "sha256:20002dc6872fccd841c425045c4596fb3b39c84a8a09aba649aac2aa544d9a20",
+          "evidence": {
+            "trigger": "hook event log append throws (e.g. cache dir unwritable) during async resolution → error swallowed, submitVerification stays 'verification result pending' with no diagnostic",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/antigravity/mcp_server.ts:runHook",
+              "plugins/immune-brain/runtime/antigravity/review_host.ts:resolveAsyncVerifierResults"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AAVR-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:fed2cb67a556c562734cb79a147088ae184cdd0af74da6b184e9ca21b5607c76"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:antigravity-async-verifier-result:2026-11-13T08:10:13.440Z",
+      "at": "2026-11-13T08:10:13.440Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-async-verifier-result.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-async-verifier-result:2026-11-13T08:11:31.528Z",
+      "at": "2026-11-13T08:11:31.528Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e99cfe65\naction_v2_sha256:2c6dd18a4e51367c8f52bd3b093635c8b5f85ae0286cd68ad4f9940d661368ce",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-13T08:11:31.528Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-async-verifier-result:2026-11-13T08:40:05.784Z",
+      "at": "2026-11-13T08:40:05.784Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-bb1c5342\naction_v2_sha256:e668cb8058dbf08b83c1b7d0d8c92bd99592e0cb05e40f80fa3a1a8f2869fa5a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:6c866bcd-0a94-4e24-8d92-fb7edb4f79f4",
+        "confirmation_ref": "antigravity:cli:claude-code:6c866bcd-0a94-4e24-8d92-fb7edb4f79f4",
+        "issued_at": "2026-11-13T08:40:05.784Z"
+      },
+      "review_started_at": "2026-11-13T08:34:04.692Z",
+      "review_submitted_at": "2026-11-13T08:40:05.182Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:antigravity-async-verifier-result:2026-11-13T08:40:07.698Z",
+      "at": "2026-11-13T08:40:07.698Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a9b3d36c6c2e3f5aa3e5cd3d946278d52f8e855ba2881932eded75af34e89b0b"
+    }
+  ]
+}

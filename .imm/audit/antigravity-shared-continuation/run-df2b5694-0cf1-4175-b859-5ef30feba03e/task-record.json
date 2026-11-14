@@ -1,0 +1,467 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-shared-continuation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-shared-continuation",
+    "goal": "Implement Slice S6 of docs/specs/tri-host-capability-alignment.spec.md: replace Antigravity simplified Stop continuation with the shared typed-event state machine for tasks and Batch Parents, including three-failure pause, no-progress yield and the seven-Stop same-Host recovery boundary.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D7 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-3): real Antigravity PreToolUse/PostToolUse/Stop payload mapping binds active tasks and persisted Parent receipts and renders shared continue/pause outcomes. Positive: BR-SCN-2 pauses on the seventh consecutive Stop and tells the user to resume explicitly in the same Host. Negative: user waits, terminal state and missing usable boundary identity do not auto-continue. Bound: the old decideAutomatedStop behavior and D11 exemption are retired. Agreed seam: tests/antigravity-assurance-conformance.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D7 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-3): Antigravity shares native-failure, review, stall and stop-block semantics with Claude while keeping conversationId and conversationId:stepIdx correlation. Positive: batch binding and automated continuation match the shared machine. Negative: replayed/foreign correlation and paused native gates refuse. Bound: three native failures, one unchanged observation and seven Stops; no simplified fallback remains and pause text is Host-neutral. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/claude-run-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D13 of docs/specs/tri-host-capability-alignment.spec.md (source: repository evidence docs/agents/derived-files.json): regenerate both MCP Host packages and the Antigravity runtime inventory after deleting the old decision, and typecheck all adapter mappings. Positive: generation checks pass. Negative: stale copied continuation code fails. Bound: no hand-edited generated output. Agreed seam: package generation plus TypeScript.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-shared-continuation.md",
+      "docs/plans/antigravity-shared-continuation.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/capability.ts",
+      "plugins/immune-brain/runtime/antigravity/kernel_ports.ts",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/antigravity/run_continuation.ts",
+      "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/claude-run-continuation.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-shared-continuation.intent.json",
+    "content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+  "git_base_head": "c6c2008ca3b4315f43f317e69c555e5d828375de",
+  "attestations": [
+    {
+      "id": "approval-qa-837e3262",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+      "diff_hash": "sha256:d36c41140e33da789e7269c17ecc195170c20df77921fcb8de431cd8a83e4350",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:5653b7e9b922478509f43f315062285cec9b1bc0fab44868e9354a4f2c6487ba",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5653b7e9b922478509f43f315062285cec9b1bc0fab44868e9354a4f2c6487ba"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5653b7e9b922478509f43f315062285cec9b1bc0fab44868e9354a4f2c6487ba"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:5653b7e9b922478509f43f315062285cec9b1bc0fab44868e9354a4f2c6487ba"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-49f79d88",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+      "diff_hash": "sha256:c1d0636bbfb6c72b5cc37919b2ae4625710586d97c7db82541780ad2184b2e24",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:1f3ebe9ca41a72c3160334403007c95a1bc78d48b50f9ab808d560839346f2c2",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1f3ebe9ca41a72c3160334403007c95a1bc78d48b50f9ab808d560839346f2c2"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1f3ebe9ca41a72c3160334403007c95a1bc78d48b50f9ab808d560839346f2c2"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1f3ebe9ca41a72c3160334403007c95a1bc78d48b50f9ab808d560839346f2c2"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-00454fdc",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+      "diff_hash": "sha256:249654916258ec5345ad1ce1464f0c0d7ab4d267cd25dbf354a0ce862c6813d3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:b605af80716a230c5901bbbe6663b38e6715b75547cd2b405745279e407fe07d",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b605af80716a230c5901bbbe6663b38e6715b75547cd2b405745279e407fe07d"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b605af80716a230c5901bbbe6663b38e6715b75547cd2b405745279e407fe07d"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b605af80716a230c5901bbbe6663b38e6715b75547cd2b405745279e407fe07d"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-e0edbc27",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+      "diff_hash": "sha256:19808fe30d35e4c9fdf8605c4412f93145c7895ef508ec4c96a761b7f8068ad7",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:be43e7b52f935e917b7243fd0f2bfc5ba6960893fd03a779c02868ec14b470a4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be43e7b52f935e917b7243fd0f2bfc5ba6960893fd03a779c02868ec14b470a4"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be43e7b52f935e917b7243fd0f2bfc5ba6960893fd03a779c02868ec14b470a4"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:be43e7b52f935e917b7243fd0f2bfc5ba6960893fd03a779c02868ec14b470a4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6a02f427",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:95c7d9b9a968aded368f07c57b6cac27e4d5943df4874efaaf3db097fc5ab936",
+      "diff_hash": "sha256:19808fe30d35e4c9fdf8605c4412f93145c7895ef508ec4c96a761b7f8068ad7",
+      "actor_id": "cli:claude-code:2db07515-665f-47ab-a38f-1d8b376afc67",
+      "summary": "Round-3 delta passes. Provenance checks out: parent c6c2008ca3, tree 32d3ce47b9. antigravityMcpProfile now sends the configured confirmationStoreRoot into AntigravityRuntime, so profile.selectedParent and the batch close-out read the same private store as withConfirmationStore. The source copies and the generated Antigravity bundle are identical. The conformance test covers this through real hook dispatch. Blast radius is medium; the load-bearing paths are the Antigravity mcp_server composition root and its dist bundle.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c6c2008ca3b4315f43f317e69c555e5d828375de",
+        "review_commit": "4e3d3d43a05c0d6c0e3090721162a1f062d3ff11",
+        "review_tree": "32d3ce47b97fa2b75dd2b340c4f911be9a089538",
+        "manifest_digest": "sha256:238777793c6c82afe2087b9ac2f2446b7574de06aaa09017a3e3be4abeb76964"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-2a1843951832-1-review-1",
+          "acceptance_id": "AC2",
+          "summary": "The new test reaches private internals through `as any` (runtime.profile.selectedParent, runtime.coordinator.advance). advanceSpy.mockRestore() also runs outside the finally block, so a failed assertion leaves the spy in place.",
+          "anchor": "sha256:61ebe653ee7ce67dfa1ceb4399c56131fcedf3bf44f87a2848d115e25bb843a9",
+          "evidence": {
+            "trigger": "An assertion before mockRestore throws, so coordinator.advance stays mocked for the rest of that runtime instance. Separately, renaming the private runtime fields breaks the test even when the public behavior is unchanged.",
+            "caller_chain": [
+              "tests/antigravity-assurance-conformance.test.ts",
+              "plugins/immune-brain/runtime/antigravity/mcp_server.ts:createAntigravityMcpRuntime"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:ab4ea5ffeeb86ceb6567d17ca8db44f359ed018efc3e94ffca295825f5598cb9"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-e5a3606b53d2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Paused-run enforcement and continuation cache handling bypass the shared state machine, failing open on tampered .continuation files in sync PreToolUse, crashing async PreToolUse/PostToolUse hooks on invalid cache files, and leaving applyRunContinuationEvent's paused tool_call denial unreachable.",
+      "anchor": "sha256:fc07fe782cb784c3bf3237cfd2f081a7878ab4c387bb56b2a9d3ff4d4d270713",
+      "evidence": {
+        "trigger": "1) pauseRun in plugins/immune-brain/runtime/host-core/run_continuation_session.ts:137-142 revokes run_live, so applyRunContinuationEvent (:180-190) skips the tool_call branch whenever metadata.paused is set and returns { kind: 'none' } instead of { kind: 'deny' }, leaving paused non-entry native gates (request_authorization, approve_breaking_intent_revision, stop) unblocked by the shared machine (verified against plugins/immune-brain/runtime/claude/run_continuation.ts:90-133 and tests/claude-run-continuation.test.ts as required by AC2) and making antigravityRunContinuationPreToolUse's deny branch (plugins/immune-brain/runtime/antigravity/run_continuation.ts:236-241) dead. 2) Antigravity compensates with adapter-local isSessionPaused (plugins/immune-brain/runtime/antigravity/run_continuation.ts:65-78), which omits ensurePrivateDir and swallows readPrivate/JSON errors by returning null: replacing ${ANTIGRAVITY_CACHE_DIR}/${sessionHash(conversationId)}.continuation with a symlink, 0644/foreign-owned file, or corrupt JSON (per docs/specs/tri-host-capability-alignment.spec.md:25,67 read for AC2/D6) causes sync antigravityPreToolUseHook to fail open ({ decision: 'allow' }) on a paused session's native gate, while antigravityPreToolUseHookAsync and antigravityPostToolUseHook call applyRunContinuationEvent without try/catch and crash mcp-server.mjs --hook with an unhandled rejection instead of failing closed.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/antigravity/mcp_server.ts:runHook",
+          "plugins/immune-brain/runtime/antigravity/lane_guard.ts:antigravityPreToolUseHookAsync",
+          "plugins/immune-brain/runtime/antigravity/lane_guard.ts:antigravityPreToolUseHook",
+          "plugins/immune-brain/runtime/antigravity/lane_guard.ts:antigravityPostToolUseHook",
+          "plugins/immune-brain/runtime/antigravity/run_continuation.ts:isSessionPaused",
+          "plugins/immune-brain/runtime/antigravity/run_continuation.ts:antigravityRunContinuationPreToolUse",
+          "plugins/immune-brain/runtime/antigravity/run_continuation.ts:antigravityRunContinuationPostToolUse",
+          "plugins/immune-brain/runtime/host-core/run_continuation_session.ts:applyRunContinuationEvent"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-e5a3606b53d2-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "ANTIGRAVITY_MCP_PROFILE.resolveHostCall carves out retire_stale_batch from conversationId:stepIdx correlation, breaking readRunToolSession lookup and stamping the JSON-RPC messageId instead of conversationId:stepIdx.",
+      "anchor": "sha256:9bfa19475316e1834eba563be22f2bcb92bfabe3d9f22a8b4c92685e7a60ee44",
+      "evidence": {
+        "trigger": "Sending tools/call for retire_stale_batch with JSON-RPC id 'rpc-77' and _meta { 'antigravity.google/conversation_id': conversation, progressToken: 'antigravity-hook:2' } after PreToolUse wrote .continuation-call under '${conversation}:2' -> plugins/immune-brain/runtime/antigravity/mcp_server.ts:43 (and mirror plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts:43) special-cases operation === 'retire_stale_batch' to return toolCallId 'rpc-77' instead of '${conversation}:2' (kept for the stale assertion at tests/antigravity-assurance-conformance.test.ts:1392) -> createMcpRuntime.callTool (plugins/immune-brain/runtime/host-core/mcp_runtime.ts:428,464) calls readRunToolSession('rpc-77', 'retire_stale_batch', workspace) (always returning null because PreToolUse recorded '${conversation}:2') and records 'rpc-77' instead of '${conversation}:2' in ToolMeta.toolCallId and retirement.confirmation_ref, violating D7/AC2 (docs/specs/tri-host-capability-alignment.spec.md:87 read for AC2).",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/antigravity/mcp_server.ts:ANTIGRAVITY_MCP_PROFILE.resolveHostCall",
+          "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts:ANTIGRAVITY_MCP_PROFILE.resolveHostCall",
+          "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:createMcpRuntime.callTool",
+          "plugins/immune-brain/runtime/antigravity/run_continuation.ts:readRunToolSession"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-dc4d5dc712fd-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Forward confirmationStoreRoot into AntigravityRuntime when createAntigravityMcpRuntime and serveStdio construct the MCP runtime (and regenerate plugins/immune-brain-antigravity and both MCP bundles), and pin MCP child-settlement batch closeout in tests/antigravity-assurance-conformance.test.ts (unchanged plugins/immune-brain/runtime/host-core/runtime.ts#closeOutBatchChild and plugins/immune-brain/runtime/unattended/batch_preflight.ts#findResumableBatchSlugForTask were read as the direct caller and batch-lookup helper of profile.selectedParent).",
+      "anchor": "sha256:664fc1aef9ad4f220c1d585487626dcfcce12bae25309820133663950431e33d",
+      "evidence": {
+        "trigger": "createAntigravityMcpRuntime or serveStdio configured with confirmationStoreRoot (distinct from os.tmpdir()) settles an enrolled batch child task to completed/done via MCP tools/call (advance_assurance, submit_review, or submit_verification) while a resumable .imm/state/batches/*.json record exists → withConfirmationStore strips confirmationStoreRoot and ANTIGRAVITY_MCP_PROFILE.createRuntime constructs AntigravityRuntime with confirmationStoreRoot undefined, so HostRuntime.closeOutBatchChild checks selectedAntigravityParent against os.tmpdir(), gets false, and silently skips gate-free result.batch closeout (left undetected by tests/antigravity-assurance-conformance.test.ts:2654-2715, which seeds no batch record and calls selectedAntigravityParent directly instead of asserting batch closeout on the MCP reply)",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/antigravity/mcp_server.ts#withConfirmationStore",
+          "plugins/immune-brain/runtime/antigravity/mcp_server.ts#createAntigravityMcpRuntime",
+          "plugins/immune-brain/runtime/antigravity/mcp_server.ts#serveStdio",
+          "plugins/immune-brain/runtime/host-core/mcp_runtime.ts#createMcpRuntime",
+          "plugins/immune-brain/runtime/antigravity/kernel_ports.ts#AntigravityRuntime",
+          "plugins/immune-brain/runtime/host-core/runtime.ts#HostRuntime.closeOutBatchChild",
+          "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts#withConfirmationStore",
+          "tests/antigravity-assurance-conformance.test.ts:2654"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:antigravity-shared-continuation:2026-11-12T09:13:00.043Z",
+      "at": "2026-11-12T09:13:00.043Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-shared-continuation:2026-11-12T09:15:27.463Z",
+      "at": "2026-11-12T09:15:27.463Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-837e3262\naction_v2_sha256:d9d303ca5914166ceeffe7156e838deb941c6af815fd08eb9e3a99813702d7d3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T09:15:27.463Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-shared-continuation:2026-11-12T09:53:01.820Z",
+      "at": "2026-11-12T09:53:01.820Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-49f79d88\naction_v2_sha256:e4cf1671343a6de7706c06f71f30656cbf82491489dc0f360f076811813bf802",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T09:53:01.820Z"
+      }
+    },
+    {
+      "id": "request_rework:antigravity-shared-continuation:2026-11-12T10:13:57.843Z",
+      "at": "2026-11-12T10:13:57.843Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:885499a1bbb3a142b371828451e3fddf50cb048f2ccf42c39f8a9962c17368a9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:fbdc5d70-7425-4119-ab40-6c20629c90bf",
+        "confirmation_ref": "antigravity:cli:antigravity:fbdc5d70-7425-4119-ab40-6c20629c90bf",
+        "issued_at": "2026-11-12T10:13:57.844Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c6c2008ca3b4315f43f317e69c555e5d828375de",
+        "review_commit": "047d34cfc78dc309d4029bd01284a08fefeb3f21",
+        "review_tree": "93d9cad60b8493b69aef2055fbb19b80f775ec50",
+        "manifest_digest": "sha256:00f4904661be53ed6f3860a6f27e2bc6e67b66a5f41871df801bab993d403da3"
+      },
+      "review_started_at": "2026-11-12T09:53:14.096Z",
+      "review_submitted_at": "2026-11-12T10:13:56.617Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "resolve_finding:antigravity-shared-continuation:2026-11-12T10:25:29.001Z",
+      "at": "2026-11-12T10:25:29.001Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e5a3606b53d2-1-review-1\naction_v2_sha256:7d15290f00a589c04d491660158c4896adb9588e13dd42403871ac1d28be5c16"
+    },
+    {
+      "id": "resolve_finding:antigravity-shared-continuation:2026-11-12T10:25:38.887Z",
+      "at": "2026-11-12T10:25:38.887Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-e5a3606b53d2-2-review-2\naction_v2_sha256:07017a43890b73d5a0e7da396313777284949a2b0760abc744bcd578ca00dc81"
+    },
+    {
+      "id": "freeze_artifacts:antigravity-shared-continuation:2026-11-12T10:25:52.536Z",
+      "at": "2026-11-12T10:25:52.536Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-shared-continuation:2026-11-12T10:28:50.070Z",
+      "at": "2026-11-12T10:28:50.070Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-00454fdc\naction_v2_sha256:90d523fa1833d882a2f1d919121daf112bc3a5bf6462974db99b103c6838df11",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T10:28:50.070Z"
+      }
+    },
+    {
+      "id": "request_rework:antigravity-shared-continuation:2026-11-12T10:51:55.828Z",
+      "at": "2026-11-12T10:51:55.828Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:efc8daf212ac459dd8a7a34453847b6a455fe78b86bea46b0f1c44972df1d6a5",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:c1b6e05d-9a83-4270-bf61-0af2ff3f4dee",
+        "confirmation_ref": "antigravity:cli:antigravity:c1b6e05d-9a83-4270-bf61-0af2ff3f4dee",
+        "issued_at": "2026-11-12T10:51:55.828Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "c6c2008ca3b4315f43f317e69c555e5d828375de",
+        "review_commit": "4d7cfdb11f9bb5c838b161c7047524f161fab61c",
+        "review_tree": "df1e0727f086f3387b00380ed1cc776bca9c2eab",
+        "manifest_digest": "sha256:7df5cfd22b1c17c1b1f1bdeaef355420898c406613b37142e56c15c8228e0e19"
+      },
+      "review_started_at": "2026-11-12T10:31:27.478Z",
+      "review_submitted_at": "2026-11-12T10:51:54.643Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "resolve_finding:antigravity-shared-continuation:2026-11-12T10:56:26.293Z",
+      "at": "2026-11-12T10:56:26.293Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-dc4d5dc712fd-1-review-1\naction_v2_sha256:8b6b2dcaf88ecb7df3fdadb6ccef5b70461906d7c2bf492c5d63a4bde63bfa4f"
+    },
+    {
+      "id": "freeze_artifacts:antigravity-shared-continuation:2026-11-12T10:56:42.932Z",
+      "at": "2026-11-12T10:56:42.932Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-shared-continuation:2026-11-12T10:58:37.974Z",
+      "at": "2026-11-12T10:58:37.974Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e0edbc27\naction_v2_sha256:803095432406dfd4c8fdaec6a0973c91aa47d9b34396082582530559e215a1c8",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T10:58:37.974Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-shared-continuation:2026-11-12T10:59:43.419Z",
+      "at": "2026-11-12T10:59:43.419Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6a02f427\naction_v2_sha256:d1ec6c720f9829070eddc5335daf73253cdf8077c4ddd827386b6f3422f64e94",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:2db07515-665f-47ab-a38f-1d8b376afc67",
+        "confirmation_ref": "antigravity:cli:claude-code:2db07515-665f-47ab-a38f-1d8b376afc67",
+        "issued_at": "2026-11-12T10:59:43.419Z"
+      },
+      "review_started_at": "2026-11-12T10:58:42.656Z",
+      "review_submitted_at": "2026-11-12T10:59:42.190Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:antigravity-shared-continuation:2026-11-12T10:59:47.172Z",
+      "at": "2026-11-12T10:59:47.172Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:aa7789eb519c079c6b3ea23f260e7cf60b1e56b946b9ca94e1b0027db60f3e68"
+    }
+  ]
+}

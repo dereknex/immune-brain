@@ -1,55 +1,32 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { randomUUID } from "node:crypto";
 import { claimProcess, copySource } from "./single-copy";
-import { createHash, randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { resolveConfig } from "../runtime/config/layered_config";
 import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
-
-export const PI_LANE_WAIT_MS = 5_000;
-/** One supervisor per Pi process: the start/stop entry and the decision relay must see the same running generation. */
-export const piLaneSupervisor = new LaneSupervisor();
-const defaultSupervisor = piLaneSupervisor;
-// The Pi batch adapter imports the host-neutral runtime modules statically,
-// exactly as the Claude adapter does; the adapter-owned helpers it drives
-// (the shared session progression accessors and the batch projection) live in
-// ./imm-canary-work.ts next to the assurance machinery they use.
 import { readSettledTaskEvidence } from "../runtime/kernel/storage";
 import {
-	createBatchAuthorityRegistry,
-	type BatchAuthorityRegistry,
-} from "../runtime/kernel/batch_authority";
-import { createEnrollmentAuthorityRegistry } from "../runtime/kernel/enrollment_authority";
-import {
-	startBatch, completedParentReport, stopSingleTaskSupervisor,
 	type BatchRunnerKernelPort,
 	type BatchRunReport,
 	type BatchTrackerPort,
 } from "../runtime/unattended/batch_runner";
-import { createBatchKernelPort } from "../runtime/unattended/batch_kernel_port";
-import { observeInitiative, observeSingleTask } from "../runtime/unattended/batch_plan";
-import { integrateSettledCriticalSlices, advanceNativeParent } from "../runtime/unattended/batch_git";
-
-import type { BatchRunnerGitPort } from "../runtime/unattended/batch_git";
+import { type BatchRunnerGitPort, advanceNativeParent } from "../runtime/unattended/batch_git";
 import type { InitiativeObservationReader } from "../runtime/unattended/types";
-import { advancePiTask, piEntryToken, piRunEntryRefusal, readTaskIntentForRecord } from "./imm-canary-work";
-import { runEntryManifest, type RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
+import { piEntryToken, piRunEntryRefusal } from "./imm-canary-work";
+import type { RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
-import { reviewProfileFromArgs } from "../runtime/unattended/batch_state";
 import type { ReviewProfile } from "../runtime/config/layered_config";
-import { createBatchTrackerPort, laneRuntimeContractRefusal, parseLaneInstruction, parseLaneSessionClose, type LaneInstructionRequest, type LaneSessionCloseRequest, parseLaneOffers, parseMaxParallel, resolveLaneParallel, type LaneOffer } from "../runtime/unattended/batch_lanes";
 import {
-	authorizeBatch,
-	prepareBatchPreflight,
-	readConfirmedBatchTopology,
-	findExistingActiveBatch,
-	findSettledBatchRecord,
-} from "../runtime/unattended/batch_preflight";
-import { retireStaleBatch, type StaleBatchFacts } from "../runtime/unattended/batch_disposition";
-import { batchTopologyDigest, isLaneBatchRecord, type BatchLaneRunReport } from "../runtime/unattended/batch_state";
-
+	parseLaneInstruction,
+	parseLaneSessionClose,
+	type LaneInstructionRequest,
+	type LaneSessionCloseRequest,
+	parseLaneOffers,
+	parseMaxParallel,
+	resolveLaneParallel,
+	type LaneOffer,
+} from "../runtime/unattended/batch_lanes";
+import { type BatchLaneRunReport, reviewProfileFromArgs } from "../runtime/unattended/batch_state";
 import {
 	presentTaskRail,
 	renderStructuredCall,
@@ -57,19 +34,18 @@ import {
 	requestAuthorityDialog,
 } from "./pi-canary-interaction";
 import { throwToolFailure } from "./pi-canary-tool-failure";
+import {
+	type ToolMeta,
+} from "../runtime/host-core/runtime";
+import {
+	type NativeConfirmationInput,
+	NativeAuthorityError,
+} from "../runtime/host-core/interaction";
+import { PI_LANE_WAIT_MS, piLaneSupervisor, PiRuntime } from "./pi-host-runtime";
 
-/**
- * Read the Authority Store's settled Run evidence for a child and project its
- * scope and intent sidecar from that Run only.
- *
- * A child reaches Kernel settlement before the batch commits it, and settlement
- * clears the live state record, so the batch resume preflight must resolve the
- * child's authorized scope from the settled run instead. Read-only: neither the
- * store read nor this reader mutates Kernel state. Currently caller-free: the
- * shared `batch_preflight.ts` performs its own settled read, and this reader
- * answers with the current Run's evidence — an earlier Run's exported pair or
- * a stale flat pair is never returned for a re-enrolled Task.
- */
+export { PI_LANE_WAIT_MS, piLaneSupervisor };
+const defaultSupervisor = piLaneSupervisor;
+
 export async function readSettledTaskRecord(
 	root: string,
 	taskId: string,
@@ -82,26 +58,12 @@ export async function readSettledTaskRecord(
 	};
 }
 
-
-/**
- * Map the native dialog selection to the gate decision. The registered tool's
- * dialog exposes confirm, decline, and cancel; Escape (undefined) is cancel so
- * the repository and authority stay untouched. Exported for the registered-tool
- * contract test: the dialog sits behind plan projection, so the mapping itself
- * is the testable unit, and the direct-execution suites cover the decision
- * outcomes (decline -> rejected, cancel/Escape -> cancelled) with zero writes.
- */
 export function mapDialogSelection(selected: string | undefined): "accept" | "decline" | "cancel" {
 	if (selected === "confirm") return "accept";
 	if (selected === "decline") return "decline";
 	return "cancel";
 }
 
-/**
- * The one refusal a non-interactive Host gets. The registered tool surface and
- * the batch entry point share it, so they cannot drift on which Host may run a
- * batch or on how to recover from asking one that may not.
- */
 function nonInteractiveRefusal(): { reason: string; recovery_action: string } {
 	return {
 		reason: "interactive TUI elicitation is unavailable in non-interactive mode",
@@ -109,10 +71,6 @@ function nonInteractiveRefusal(): { reason: string; recovery_action: string } {
 	};
 }
 
-/**
- * Batch execution the Host adapters drive: everything above is shared with the
- * Claude adapter and the decisions below are the Host's own.
- */
 export interface PiBatchExecutionOptions {
 	root: string;
 	initiativeSlug?: string;
@@ -121,18 +79,10 @@ export interface PiBatchExecutionOptions {
 	executor?: ExecutorPreferences;
 	supervisor?: LaneSupervisor;
 	interactive?: boolean;
-	/**
-	 * Gate-free continuation after a foreground child: never opens the
-	 * confirmation, and an authorization that cannot be reused is reported as a
-	 * blocked result with the one action that reopens the gate.
-	 */
 	reuseOnly?: boolean;
 	signal?: AbortSignal;
-	/** Lane mode: how many children may run at once. Absent defaults to one Lane. */
 	max_parallel?: number;
-	/** Lane mode: Lanes someone else created, offered to the batch. */
 	lane_offers?: LaneOffer[];
-	/** Lane mode: the project's full verification commands, run once every child is integrated. */
 	final_verification?: string[];
 	/** Lane mode: the Review profile fixed when a new batch starts (#426 F14). */
 	review_profile?: ReviewProfile;
@@ -142,9 +92,11 @@ export interface PiBatchExecutionOptions {
 	lane_session_close?: LaneSessionCloseRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
-	/** Lane mode: closes an integrated child's Issue; defaults to the GitHub projection. */
 	batchTracker?: BatchTrackerPort;
 	readInitiative?: InitiativeObservationReader;
+	runtime?: PiRuntime;
+	sessionId?: string;
+	toolCallId?: string;
 	confirmBatch?: (details: {
 		title: string;
 		summary: string;
@@ -161,380 +113,202 @@ export type PiBatchExecutionResult =
 	| { state: "cancelled"; reason: string; recovery_action: string }
 	| { state: "blocked"; reason: string; recovery_action: string };
 
-/** ADR 0025: the request id an entry token stands in for, in place of a dialog's. */
-const ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
-
-/**
- * The Kernel-bound reference of one confirmation. A reference backed by an
- * entry token rather than a dialog is named `pi-entry-` so the record shows
- * which kind of literal-user act it binds.
- */
-function piConfirmationRef(input: {
-	toolCallId: string;
-	requestId: string;
-	operation: string;
-	initiativeSlug: string;
-	planDigest: string;
-}): string {
-	const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
-	return `pi-${kind}-${createHash("sha256")
-		.update(`${input.toolCallId}\0${input.requestId}\0${input.operation}\0${input.initiativeSlug}\0${input.planDigest}`)
-		.digest("hex")
-		.slice(0, 16)}`;
-}
-
 export async function executePiUnattendedBatch(
 	options: PiBatchExecutionOptions,
 ): Promise<PiBatchExecutionResult> {
 	if (Object.hasOwn(options, "lane_revision")) throw new Error("unknown parameter: lane_revision");
 	if (!!options.initiativeSlug === !!options.taskId) return batchReason("batch_entry_ambiguous");
-	if (options.stop) {
-		if (!options.taskId) return { state: "rejected", reason: "lane_stop_requires_task", recovery_action: "Specify a task_id in the current Host." };
-		return stopSingleTaskSupervisor(options.supervisor ?? defaultSupervisor, options.root, options.taskId, options.signal);
-	}
-	if (options.taskId && !resolveConfig(options.root).lanes.valid) return batchReason("lane_config_invalid");
-	return executePreparedPiBatch({ ...options, initiativeSlug: options.taskId ?? options.initiativeSlug!,
-		...(options.taskId ? { plan_source: "single_task" as const, max_parallel: 1, readInitiative: observeSingleTask } : {}) });
-}
 
-async function executePreparedPiBatch(
-	options: PiBatchExecutionOptions & { initiativeSlug: string; plan_source?: "single_task" },
-): Promise<PiBatchExecutionResult> {
-	const { root, initiativeSlug, signal } = options;
+	const initiativeSlug = (options.taskId ?? options.initiativeSlug)!;
+	const isSingleTask = Boolean(options.taskId);
+
 	const reuseOnly = options.reuseOnly === true;
 	const interactive = options.interactive ?? true;
-	// The children a confirmed gate listed; the non-blocking manifest (Spec D6) repeats them.
-	let manifestChildren: ReadonlyArray<{ task_id: string; slice_id: string; risk?: string }> | null = null;
-
 	if (!reuseOnly && !interactive) return { state: "rejected", ...nonInteractiveRefusal() };
-	if (!reuseOnly && !options.confirmBatch) return batchReason("confirmation_port_unavailable");
 
-	const existing = findExistingActiveBatch(root, initiativeSlug);
-	if (existing && !existing.corrupt && !isLaneBatchRecord(existing.record)) return batchReason("batch_record_shape_retired");
-	const integrationBatch = existing && !existing.corrupt ? existing.record : existing ? null : findSettledBatchRecord(root, initiativeSlug);
-	if (integrationBatch && (isLaneBatchRecord(integrationBatch) ? integrationBatch.plan_source : undefined) !== options.plan_source)
-		return batchReason("batch_entry_kind_mismatch");
-	let replayCompleted = true;
-	let replayReader = options.readInitiative;
-	if (!options.plan_source && integrationBatch && isLaneBatchRecord(integrationBatch) && (existing || integrationBatch.batch_state === "completed")) {
-		let confirmed: Awaited<ReturnType<typeof readConfirmedBatchTopology>> | undefined;
-		try {
-			confirmed = await readConfirmedBatchTopology(root, integrationBatch, options.readInitiative);
-		} catch (error) {
-			if (existing) return batchReason("plan_changed", error instanceof Error ? error.message : String(error));
-			// Terminal history owns no new plan; do not replay its writes or completion.
-			replayCompleted = false;
+	let resolvedParallel: number | undefined;
+	try {
+		resolvedParallel = isSingleTask
+			? 1
+			: resolveLaneParallel(options.root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.startsWith("batch_record_shape_retired")) {
+			return batchReason("batch_record_shape_retired");
 		}
-		if (confirmed) {
-			const { observation } = confirmed;
-			replayReader = async () => observation;
-			if (["running", "completed"].includes(integrationBatch.batch_state))
-				await integrateSettledCriticalSlices(root, initiativeSlug, replayReader);
+		if (message.startsWith("lane_offers_retired")) {
+			return { state: "rejected", reason: message, recovery_action: "New batches create their own Lanes." };
 		}
+		throw error;
 	}
-	const completed = !options.plan_source && replayCompleted ? await completedParentReport(root, initiativeSlug, replayReader, options.batchTracker) : null;
-	if (completed) return { state: "started", batch_id: completed.batch_id, report: completed };
-	const native = options.plan_source ? null : await advanceNativeParent(root, initiativeSlug, options.final_verification, options.readInitiative, options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug),
-		async (effects) => {
-			// A continuation never opens a gate; unconfirmed commands wait for a fresh explicit entry.
-			if (reuseOnly || !options.confirmBatch) return batchReason("confirmation_port_unavailable");
-			let decision: "accept" | "decline" | "cancel";
-			try {
-				decision = await options.confirmBatch({
-					title: `Authorize Parent Final Verification: ${effects.initiative_slug}`,
-					summary: `Initiative: ${effects.initiative_slug}\nPlan digest: ${effects.plan_digest}\nNo batch run is started.\nFinal verification commands run in this workspace outside Host permission:\n${effects.final_commands.map((command) => `  - ${command}`).join("\n")}`,
-					details: `Parent Tasks (${effects.children.length}):\n${effects.children.map((child) => `  - ${child.task_id} (${child.slice_id})`).join("\n")}`,
-					planDigest: effects.plan_digest,
-					signal,
+
+	const runtime = options.runtime ?? new PiRuntime({
+		cwd: options.root,
+		interactive,
+		supervisor: options.supervisor ?? defaultSupervisor,
+		batchKernel: options.batchKernel,
+		batchGit: options.batchGit,
+		batchTracker: options.batchTracker,
+		readInitiative: options.readInitiative,
+		requestConfirmation: options.confirmBatch ? async (input: NativeConfirmationInput) => {
+			let decision: "accept" | "decline" | "cancel" = "cancel";
+			if (input.batchDetails) {
+				const b = input.batchDetails;
+				const isParent = b.parent_final_verification !== undefined;
+				const title = isParent
+					? `Authorize Parent Final Verification: ${b.initiative_slug}`
+					: `Authorize Unattended Batch: ${b.initiative_slug}`;
+				const summary = isParent
+					? [
+						`Initiative: ${b.initiative_slug}`,
+						`Plan digest: ${input.planDigest ?? ""}`,
+						"No batch run is started.",
+						"Final verification commands run in this workspace outside Host permission:",
+						...(b.final_verification ?? []).map((cmd: string) => `  - ${cmd}`),
+					].join("\n")
+					: [
+						`Initiative: ${b.initiative_slug}`,
+						`Batch branch: ${b.batch_branch}`,
+						`Plan digest: ${input.planDigest ?? ""}`,
+						...(input.intentRevision ? [`TaskIntent revision: ${input.intentRevision}`, `TaskIntent content hash: ${input.intentContentHash ?? ""}`, `Preparation digest: ${input.bindingDigest ?? ""}`] : []),
+						...(b.budget ? [`Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}`] : []),
+						...(b.lane_mode ? [`Lane mode: max_parallel=${b.lane_mode.max_parallel}`] : []),
+						...(b.final_verification ? [`Final verification: ${b.final_verification.join("; ")}`] : []),
+						...(b.lane_mode?.review_profile ? [`Review: ${[b.lane_mode.review_profile.host, b.lane_mode.review_profile.model, b.lane_mode.review_profile.effort].filter(Boolean).join(" / ")}`] : []),
+					].join("\n");
+				const details = isParent
+					? `Parent Tasks (${b.children.length}):\n${b.children.map((c: any) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`
+					: [
+						`Ordered children (${b.children.length}):\n${b.children.map((c: any) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}`,
+						...(b.excluded.length > 0 ? [`\nExcluded children:\n${b.excluded.map((c: any) => `  - ${c.task_id} (${c.slice_id}): ${c.reason}`).join("\n")}`] : []),
+						...(b.lane_mode ? [
+							`\nParallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((g: string[]) => `  - ${g.join(", ")}`).join("\n")}`,
+							...(b.lane_mode.serialized.length > 0 ? [`\nSerialized by overlapping scope:\n${b.lane_mode.serialized.map((c: any) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}`] : []),
+						] : []),
+						...(b.re_confirmation_required?.length ? [`\nRe-confirmation required: ${b.re_confirmation_required.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.`] : []),
+					].join("\n");
+
+				decision = await options.confirmBatch!({
+					title,
+					summary,
+					details,
+					planDigest: input.planDigest ?? "",
+					signal: input.signal,
 				});
-			} catch (err) {
-				if (signal?.aborted) return batchReason("confirmation_cancelled");
-				return batchReason("confirmation_failed", err instanceof Error ? err.message : String(err));
 			}
-			if (decision === "cancel" || signal?.aborted) return batchReason("confirmation_cancelled");
-			if (decision === "decline") return batchReason("confirmation_declined");
-			if (decision !== "accept") return batchReason("confirmation_no_decision");
-			return null;
-		});
-	if (native) return native;
-	// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
-	const resolvedParallel = resolveLaneParallel(root, initiativeSlug, options.max_parallel, options.lane_offers, options.lane_instruction);
-	options = { ...options, max_parallel: resolvedParallel };
-
-	// 1. Host-independent batch preflight: claim ownership, branch availability,
-	// working-tree cleanliness against the authorized scope, recovery children,
-	// plan digest, and base HEAD are one shared projection, so neither Host
-	// re-implements a batch decision.
-	let now = new Date().toISOString();
-	const preflight = await prepareBatchPreflight({
-		root,
-		initiative_slug: initiativeSlug,
-		plan_source: options.plan_source,
-		now,
-		readInitiative: options.readInitiative,
-		max_parallel: options.max_parallel,
-		signal, reuseOnly,
-	});
-	if (!preflight.ok) {
-		return { state: preflight.state, reason: preflight.reason, recovery_action: preflight.recovery_action };
-	}
-	const isResuming = preflight.projection.is_resuming;
-	if (!isResuming && !options.plan_source && !options.final_verification?.length) return {
-		state: "rejected",
-		reason: "final_verification_required",
-		recovery_action: "Pass the project's final_verification commands when starting a new batch in the current Host.",
-	};
-	const batchBranch = preflight.projection.batch_branch;
-	const existingBatch = preflight.projection.existing_batch;
-	const budget = preflight.projection.budget;
-	const planDigest = preflight.projection.plan_digest;
-	const recoveryChildren = preflight.projection.recovery_children;
-	// A new lane batch whose Lane runtime cannot read the coordinator's Kernel
-	// contracts is refused before the gate opens; a match adds nothing.
-	if (options.max_parallel !== undefined && !isResuming) {
-		const contractRefusal = laneRuntimeContractRefusal(root);
-		if (contractRefusal) return batchReason("batch_run_rejected", contractRefusal);
-	}
-
-	// 4. Literal-user gate plus the shared reuse decision, the post-gate
-	// claim/drift cascade, and the Batch Authorization binding. The Host supplies
-	// only its gate, its confirmation reference, and its binding nonce.
-	const authorization = await authorizeBatch<PiBatchExecutionResult>({
-		root,
-		initiative_slug: initiativeSlug,
-		now,
-		projection: preflight.projection,
-		readInitiative: options.readInitiative,
-		nonce: randomUUID(),
-		gate: async (facts) => {
-			if (reuseOnly)
-				return {
-					kind: "host_rejection",
-					value: {
-						state: "blocked",
-						reason: `batch authorization cannot be reused (${facts.reuse_blockers.join(", ")})`,
-						recovery_action: "call start_unattended_batch with the same Initiative to confirm a fresh authorization",
-					},
-				};
-			// review-2: fail closed with zero writes when confirmation port is missing
-			if (!options.confirmBatch) {
-				return { kind: "host_rejection", value: batchReason("confirmation_port_unavailable") };
-			}
-			const confirmDetails = {
-				title: `Authorize Unattended Batch: ${facts.initiative_slug}`,
-				summary: `Initiative: ${facts.initiative_slug}\nBatch branch: ${facts.batch_branch}\nPlan digest: ${facts.plan_digest}${facts.preparation?.intent ? `\nTaskIntent revision: ${facts.preparation.intent.revision}\nTaskIntent content hash: ${facts.preparation.intent.content_hash}\nPreparation digest: ${facts.preparation.digest}` : ""}\nBudget: max_children=${facts.budget.max_children}, qa_failure_limit=${facts.budget.qa_failure_limit}${options.max_parallel !== undefined ? `\nLane mode: max_parallel=${options.max_parallel}` : ""}${options.final_verification ? `\nFinal verification: ${options.final_verification.join("; ")}` : ""}${options.review_profile ? `\nReview: ${[options.review_profile.host, options.review_profile.model, options.review_profile.effort].filter(Boolean).join(" / ")}` : ""}`,
-				details: `Ordered children (${facts.children.length}):\n${facts.children.map((child) => `  - ${child.task_id} (${child.slice_id}) [risk: ${child.risk}] [status: ${child.status === "already_settled" ? "completed" : "pending execution"}]`).join("\n")}${facts.excluded.length > 0 ? `\n\nExcluded children:\n${facts.excluded.map((child) => `  - ${child.task_id} (${child.slice_id}): ${child.reason}`).join("\n")}` : ""}${options.max_parallel !== undefined ? `\n\nParallel groups (${facts.parallel_groups.length}):\n${facts.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}${facts.scope_conflicts.length > 0 ? `\n\nSerialized by overlapping scope:\n${facts.scope_conflicts.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : ""}` : ""}${facts.reuse_blockers.length > 0 ? `\n\nRe-confirmation required: ${facts.reuse_blockers.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.` : ""}`,
-				planDigest: facts.plan_digest,
-				signal,
-			};
-
-			// The gate settles only on the literal user's answer or the caller's
-			// cancellation signal.
-			let decision: "accept" | "decline" | "cancel";
-			try {
-				decision = await options.confirmBatch(confirmDetails);
-			} catch (err) {
-				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				return {
-					kind: "host_rejection",
-					value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
-				};
-			}
-
-			if (decision === "cancel" || signal?.aborted) {
-				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-			}
-			if (decision === "decline") {
-				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
-			}
-			if (decision !== "accept") {
-				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-			}
-			manifestChildren = facts.children;
 			return {
-				kind: "confirmed",
-				request_id: randomUUID(),
+				decision: decision === "accept" ? "accept" : decision === "decline" ? "decline" : "cancel",
+				requestId: randomUUID(),
 			};
-		},
-		confirmationRef: ({ batch_id, request_id }) =>
-			piConfirmationRef({
-				toolCallId: `call-${batch_id}`,
-				requestId: request_id ?? randomUUID(),
-				operation: "start_unattended_batch",
-				initiativeSlug,
-				planDigest: `${planDigest}\0${preflight.projection.preparation?.digest ?? ""}`,
-			}),
+		} : undefined,
 	});
-	if (authorization.outcome === "host_rejection") return authorization.value;
-	if (authorization.outcome === "rejected") return authorization.rejection;
-	const { binding, batch_id: batchId } = authorization;
 
-	// 6. Issue Batch Authorization through Kernel registry and startBatch
-	const batchRegistry: BatchAuthorityRegistry = await createBatchAuthorityRegistry();
-	const enrollmentRegistry = await createEnrollmentAuthorityRegistry();
+	const meta: ToolMeta = {
+		taskId: initiativeSlug,
+		sessionId: options.sessionId ?? "pi-batch",
+		toolCallId: options.toolCallId ?? (options.stop ? "call-stop-lane" : "call-start-unattended-batch"),
+		signal: options.signal,
+		interactive,
+	};
 
-	// review-2: verify cancellation signal right before authority issuance and startBatch
-	if (signal?.aborted) return batchReason("cancelled_before_execution");
-
-	now = new Date().toISOString();
-	const capability = batchRegistry.issue(binding, recoveryChildren as any, now);
-
-	let activeReviewDispatch: { operation_id: string; agent_params: Record<string, unknown> } | null = null;
-
-	const { advanceTask: overrideAdvanceTask, ...otherOverrides } = options.batchKernel ?? {};
-	const baseAdvanceTask = overrideAdvanceTask ?? advancePiTask;
-	const advanceTask: BatchRunnerKernelPort["advanceTask"] = async (taskRoot, taskId) => {
-		const res = (await baseAdvanceTask(taskRoot, taskId)) as Awaited<ReturnType<typeof advancePiTask>>;
-		if (res.state === "review_ready" && res.agent_params) {
-			activeReviewDispatch = {
-				operation_id: res.operation_id,
-				agent_params: res.agent_params,
-			};
+	try {
+		const result = await runtime.startUnattendedBatch(initiativeSlug, meta, {
+			plan_source: isSingleTask ? ("single_task" as const) : undefined,
+			stop: options.stop,
+			executor: options.executor,
+			reuseOnly: options.reuseOnly,
+			max_parallel: resolvedParallel,
+			lane_offers: options.lane_offers,
+			final_verification: options.final_verification,
+			review_profile: options.review_profile,
+			lane_instruction: options.lane_instruction,
+			lane_session_close: options.lane_session_close,
+		});
+		return result as PiBatchExecutionResult;
+	} catch (error) {
+		if (error instanceof NativeAuthorityError) {
+			if (error.reasonCode === "user_cancelled") {
+				return { state: "cancelled", reason: error.message, recovery_action: error.recoveryAction };
+			}
+			return { state: "rejected", reason: error.message, recovery_action: error.recoveryAction };
 		}
-		return res;
-	};
-	// The production child Kernel port is the shared runtime/unattended one;
-	// this Host supplies only its own advanceTask progression seam (D5).
-	const parent = await (options.readInitiative ?? observeInitiative)(root, initiativeSlug);
-	if (parent.initiative_id !== initiativeSlug || batchTopologyDigest(parent.tasks) !== preflight.projection.topology_digest)
-		return batchReason("plan_changed");
-	const kernelPort = createBatchKernelPort({
-		root,
-		parent,
-		enrollmentRegistry,
-		registry: batchRegistry,
-		capability,
-		binding,
-		advanceTask,
-		resume: { isResuming, existingBatch, batchBranch },
-		overrides: otherOverrides,
-	});
-
-	let report = await startBatch({
-		plan_source: options.plan_source,
-		...(options.plan_source && process.env.HERDR_ENV === "1" ? { executor_mode: "interactive" as const } : {}),
-		...(options.plan_source ? { supervision: { supervisor: options.supervisor ?? defaultSupervisor, parentHost: "pi" as const, pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS,
-			signal, stop: options.stop, request: options.executor } } : {}),
-		topology_digest: preflight.projection.topology_digest,
-		root,
-		batch_id: batchId,
-		initiative_slug: initiativeSlug,
-		registry: batchRegistry,
-		capability,
-		children: recoveryChildren,
-		plan_digest: planDigest,
-		base_head: binding.base_head,
-		confirmation_time: now,
-		budget,
-		now,
-		kernel: kernelPort,
-		git: options.batchGit,
-		...(options.final_verification ? { final_verification: options.final_verification } : {}),
-		...(options.review_profile ? { review_profile: options.review_profile } : {}),
-		...(options.max_parallel !== undefined
-			? {
-					max_parallel: options.max_parallel,
-					...(options.plan_source ? {} : { tracker: options.batchTracker ?? createBatchTrackerPort(root, initiativeSlug) }),
-					...(options.lane_instruction ? { lane_instruction: options.lane_instruction } : {}),
-					...(options.lane_session_close ? { lane_session_close: options.lane_session_close } : {}),
-				}
-			: {}),
-		...(options.lane_offers !== undefined ? { lane_offers: options.lane_offers } : {}),
-	});
-
-	if (report.batch_state === "rejected") {
-		return batchReason("batch_run_rejected", report.reason ?? "");
+		throw error;
 	}
-
-	if (!options.plan_source && report.batch_state === "completed" && report.final_verification?.passed)
-		report = await completedParentReport(root, initiativeSlug, options.readInitiative, options.batchTracker) ?? report;
-	return {
-		state: "started",
-		batch_id: batchId,
-		report,
-		...(manifestChildren ? { manifest: runEntryManifest(manifestChildren, (taskId) => readTaskIntentForRecord(root, taskId).intent) } : {}),
-		...(activeReviewDispatch ? { review_dispatch: activeReviewDispatch } : {}),
-	};
 }
 
 export type PiRetireStaleBatchResult =
 	| { state: "retired"; batch_id: string; report: BatchRunReport | BatchLaneRunReport }
-	| { state: "rejected" | "cancelled" | "blocked"; reason: string; recovery_action: string };
-
-/**
- * The gate text for one batch disposition. Every fact rendered is the record's
- * own evidence: what it delivered, what it never executed, and what retiring
- * does and does not claim. Nothing here is a readiness certificate.
- */
-function retireConfirmationDetails(facts: StaleBatchFacts): {
-	title: string;
-	summary: string;
-	details: string;
-} {
-	return {
-		title: `Retire Stale Batch: ${facts.initiative_slug}`,
-		summary: `Batch: ${facts.batch_id}\nState: ${facts.batch_state}\nBatch branch: ${facts.branch}\nPlan digest: ${facts.plan_digest}\nRecorded child commits: ${facts.recorded_commits.length}\nConfirmed at: ${facts.confirmation_time}`,
-		details: `Children (${facts.children.length}):\n${facts.children
-			.map(
-				(child) =>
-					`  - ${child.task_id} (${child.slice_id}) [state: ${child.state}]${child.commit ? ` [commit: ${child.commit}]` : " [no commit]"}${child.lane_branch ? ` [lane: ${child.lane_branch}]` : ""}${child.kernel_lifecycle ? ` [Kernel run: ${child.kernel_lifecycle}]` : ""}`,
-			)
-			.join("\n")}\n\nRetiring writes this record to the terminal superseded state. Child states, recorded commits and the batch branch are preserved as evidence; nothing is deleted and no batch trailer or approval is manufactured.\n\nA child without a commit was never executed by this batch: it carries no delivery evidence, and the retired authorization is never reused for a revised plan.\n\nAfter retiring, run each remaining child with drive under its own authorization, or start a new batch for this Initiative.`,
-	};
-}
+	| { state: "rejected"; reason: string; recovery_action: string }
+	| { state: "cancelled"; reason: string; recovery_action: string }
+	| { state: "blocked"; reason: string; recovery_action: string };
 
 export async function executePiRetireStaleBatch(options: {
 	root: string;
 	initiativeSlug: string;
 	signal?: AbortSignal;
 	toolCallId?: string;
-	/** ADR 0025: a live entry token stands in for the dialog; absent, the dialog opens. */
+	sessionId?: string;
 	entryToken?: string | null;
+	runtime?: PiRuntime;
 	confirmBatch: (details: { title: string; summary: string; details: string; signal?: AbortSignal }) => Promise<"accept" | "decline" | "cancel">;
 }): Promise<PiRetireStaleBatchResult> {
-	const { root, initiativeSlug, signal } = options;
-	const toolCallId = options.toolCallId ?? randomUUID();
-	const outcome = await retireStaleBatch({
-		root,
-		initiative_slug: initiativeSlug,
-		now: new Date().toISOString(),
-		gate: async (facts) => {
-			if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-			if (options.entryToken) return { kind: "confirmed", request_id: `${ENTRY_TOKEN_REQUEST_PREFIX}${options.entryToken}` };
-			const details = retireConfirmationDetails(facts);
-			let decision: "accept" | "decline" | "cancel";
-			try {
-				decision = await options.confirmBatch({ ...details, signal });
-			} catch (err) {
-				if (signal?.aborted) return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-				return {
-					kind: "host_rejection",
-					value: batchReason("confirmation_failed", err instanceof Error ? err.message : String(err)),
-				};
+	const runtime = options.runtime ?? new PiRuntime({
+		cwd: options.root,
+		interactive: true,
+		requestConfirmation: async (input: NativeConfirmationInput) => {
+			let decision: "accept" | "decline" | "cancel" = "cancel";
+			if (input.batchDisposition) {
+				const d = input.batchDisposition;
+				const title = `Retire Stale Batch Record: ${options.initiativeSlug}`;
+				const summary = [
+					`Initiative: ${options.initiativeSlug}`,
+					`Batch ID: ${d.batch_id}`,
+					`State: ${d.batch_state}`,
+					`Batch branch: ${d.batch_branch}`,
+					`Plan digest: ${d.plan_digest}`,
+					`Recorded commits: ${d.recorded_commits}`,
+				].join("\n");
+				const details = `Children (${d.children.length}):\n${d.children.map((c: any) => `  - ${c.task_id} (${c.slice_id}): state=${c.state}, commit=${c.commit ?? "none"}, lane=${c.lane_branch ?? "none"}, lifecycle=${c.kernel_lifecycle ?? "none"}`).join("\n")}`;
+
+				decision = await options.confirmBatch({
+					title,
+					summary,
+					details,
+					signal: input.signal,
+				});
 			}
-			if (decision === "cancel" || signal?.aborted)
-				return { kind: "host_rejection", value: batchReason("confirmation_cancelled") };
-			if (decision === "decline")
-				return { kind: "host_rejection", value: batchReason("confirmation_declined") };
-			if (decision !== "accept")
-				return { kind: "host_rejection", value: batchReason("confirmation_no_decision") };
-			return { kind: "confirmed", request_id: randomUUID() };
+			return {
+				decision: decision === "accept" ? "accept" : decision === "decline" ? "decline" : "cancel",
+				requestId: randomUUID(),
+			};
 		},
-		confirmationRef: ({ request_id, plan_digest }) =>
-			piConfirmationRef({ toolCallId, requestId: request_id, operation: "retire_stale_batch", initiativeSlug, planDigest: plan_digest }),
 	});
-	if (outcome.outcome === "host_rejection") return outcome.value;
-	if (outcome.outcome === "rejected") return outcome.rejection;
-	return { state: "retired", batch_id: outcome.batch_id, report: outcome.report };
+
+	const meta: ToolMeta = {
+		taskId: options.initiativeSlug,
+		sessionId: options.sessionId ?? "pi-retire-batch",
+		toolCallId: options.toolCallId ?? "call-retire-stale-batch",
+		signal: options.signal,
+		entryToken: options.entryToken ?? undefined,
+		interactive: true,
+	};
+
+	try {
+		const result = await runtime.retireStaleBatch(options.initiativeSlug, meta);
+		return result as PiRetireStaleBatchResult;
+	} catch (error) {
+		if (error instanceof NativeAuthorityError) {
+			if (error.reasonCode === "user_cancelled") {
+				return { state: "cancelled", reason: error.message, recovery_action: error.recoveryAction };
+			}
+			return { state: "rejected", reason: error.message, recovery_action: error.recoveryAction };
+		}
+		throw error;
+	}
 }
 
-/**
- * Injectable seams for the batch Tool. Production passes nothing and gets the
- * real Initiative reader, Kernel port and Git port; tests drive the registered
- * Tool `execute` end to end without live GitHub or Kernel access, which is how
- * the model-visible content contract is verified.
- */
 export interface PiBatchExtensionDependencies {
+	runtime?: PiRuntime;
 	readInitiative?: InitiativeObservationReader;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
@@ -602,8 +376,6 @@ export default function (
 					next_action: refusal.recovery_action,
 				});
 			}
-			// The phase entry gate (ADR 0019), before any preflight or dialog. The
-			// batch's own reuseOnly continuation never passes through this Tool.
 			const entryRefusal = piRunEntryRefusal("start_unattended_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
@@ -638,6 +410,9 @@ export default function (
 				...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
+				toolCallId: _toolCallId,
+				sessionId: (ctx as any).sessionManager?.getSessionId?.() ?? "pi-batch",
+				runtime: dependencies.runtime,
 				readInitiative: dependencies.readInitiative,
 				batchKernel: dependencies.batchKernel,
 				batchGit: dependencies.batchGit,
@@ -686,12 +461,6 @@ export default function (
 				});
 			}
 
-			// review-f72ae870f4f0-2: the Parent consumes the model-visible content, not
-			// Tool details, so the full structured result must be serialized there
-			// (the same shape imm-canary-work.ts returns). A batch that pauses for
-			// Review exposes report.next_action plus review_dispatch, and a
-			// needs_human/failed run exposes the parked child reason; without them the
-			// Parent cannot launch the reserved foreground Review or recover.
 			return {
 				content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
 				details: result,
@@ -708,9 +477,7 @@ export default function (
 			);
 		},
 	});
-	// The batch disposition: one explicit literal-user decision that closes a
-	// batch the plan moved past, preserving its evidence instead of leaving the
-	// record parked forever or deleting it by hand. Grants no handoff.
+
 	pi.registerTool({
 		name: "retire_stale_batch",
 		label: "Retire stale batch",
@@ -743,8 +510,6 @@ export default function (
 					next_action: refusal.recovery_action,
 				});
 			}
-			// The phase entry gate (ADR 0019/0025): retirement needs a live literal entry,
-			// and its token stands in for the dialog.
 			const entryRefusal = piRunEntryRefusal("retire_stale_batch", ctx);
 			if (entryRefusal)
 				throwToolFailure({
@@ -762,6 +527,8 @@ export default function (
 				initiativeSlug,
 				signal,
 				toolCallId,
+				sessionId: (ctx as any).sessionManager?.getSessionId?.() ?? "pi-retire-batch",
+				runtime: dependencies.runtime,
 				entryToken: piEntryToken(ctx),
 				confirmBatch: async (details) => {
 					presentTaskRail(ctx, {
@@ -775,7 +542,7 @@ export default function (
 						ctx,
 						{
 							attention_id: randomUUID(),
-						task_id: initiativeSlug,
+							task_id: initiativeSlug,
 							reason: "enrollment",
 							label: details.title,
 						},

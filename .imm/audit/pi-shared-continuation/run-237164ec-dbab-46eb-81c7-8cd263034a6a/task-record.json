@@ -1,0 +1,436 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "pi-shared-continuation",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "pi-shared-continuation",
+    "goal": "Implement Slice S5 of docs/specs/tri-host-capability-alignment.spec.md: map Pi input, tool, reviewer and settle events onto the shared run-continuation session, with common failure/stall/boundary limits, selected-parent correlation and private continuation metadata while keeping Pi entry tokens in process memory.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): real Pi input/tool/settle seams bind active tasks and persisted Parent receipts, continue automated obligations, yield for user waits and unchanged progress, and revoke on settlement. Positive: task and Parent continuations reach their existing next actions. Negative: a user decision, terminal projection or absent live entry stops without manufacturing authority. Bound: session loss leaves no live token and unusable metadata is dropped. Agreed seams: tests/pi-run-continuation.test.ts, tests/pi-canary-assurance-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/pi-canary-assurance-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): the third native-operation failure and seventh active settle boundary pause with Pi-named recovery, and a paused native gate denies until literal same-Host drive. Positive: first two failures and progress-reset boundaries retain the run. Negative: paused gates deny and malformed/foreign metadata fails closed. Bound: three failures, one unchanged observation and seven boundaries; Claude behavior stays unchanged. Agreed seams: tests/pi-run-continuation.test.ts, tests/claude-run-continuation.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-run-continuation.test.ts\",\n      \"tests/claude-run-continuation.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per D6 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-5): selectedParent uses exact shared tool/session/workspace/slug correlation, the Pi HostRuntime profile wires that port, and the dependency direction remains host-core ← adapter. Positive: the owning Parent session is selected. Negative: wrong workspace, slug, session or stale call correlation returns false. Bound: no host-to-host import. Agreed seams: tests/pi-batch-authority.test.ts, tests/runtime-layering-boundary.test.ts plus TypeScript.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-batch-authority.test.ts tests/runtime-layering-boundary.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/pi-shared-continuation.md",
+      "docs/plans/pi-shared-continuation.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/specs/tri-host-capability-alignment.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/.pi-extension/pi-capability.ts",
+      "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+      "plugins/immune-brain/.pi-extension/pi-run-continuation.ts",
+      "plugins/immune-brain/runtime/host-core/private_file.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/pi-batch-authority.test.ts",
+      "tests/pi-canary-assurance-continuation.test.ts",
+      "tests/pi-run-continuation.test.ts",
+      "tests/runtime-layering-boundary.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/pi-shared-continuation.intent.json",
+    "content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+  "git_base_head": "5a3d4660fa979e1d10a92e701d5afbe8325130ec",
+  "attestations": [
+    {
+      "id": "approval-qa-7287ea61",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+      "diff_hash": "sha256:b4e96a7d5d5b47ca6f25d64c2a89894c65c33186ce17798840ce99640d5c7de9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6ad68d57a0d2b0c06f0daa22e004ab78897bfbaef463578946029af3f5b49dbc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ad68d57a0d2b0c06f0daa22e004ab78897bfbaef463578946029af3f5b49dbc"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ad68d57a0d2b0c06f0daa22e004ab78897bfbaef463578946029af3f5b49dbc"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6ad68d57a0d2b0c06f0daa22e004ab78897bfbaef463578946029af3f5b49dbc"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1bbcd3c1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+      "diff_hash": "sha256:8608e59997c2b862bcf822de0c2178cd5ee3cc2aaecd91c3b6fd17abc8db3e00",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6bc0ce8004f8dec4f0d134f85f97aba1c451599519f7c85eeb8c2229524612c9",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6bc0ce8004f8dec4f0d134f85f97aba1c451599519f7c85eeb8c2229524612c9"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6bc0ce8004f8dec4f0d134f85f97aba1c451599519f7c85eeb8c2229524612c9"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6bc0ce8004f8dec4f0d134f85f97aba1c451599519f7c85eeb8c2229524612c9"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-697d31d1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+      "diff_hash": "sha256:98bf26d29e83d9c66e5e1c40c3619b87c753c2ad5aaac2590b2640cecc5070c0",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:154cce0fae805fc55426f58ba63015cdfcfd535c498eb27c3ee5714a2aee53dd",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:154cce0fae805fc55426f58ba63015cdfcfd535c498eb27c3ee5714a2aee53dd"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:154cce0fae805fc55426f58ba63015cdfcfd535c498eb27c3ee5714a2aee53dd"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:154cce0fae805fc55426f58ba63015cdfcfd535c498eb27c3ee5714a2aee53dd"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-55625892",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+      "diff_hash": "sha256:d599811612acd7a361d3d7f31dbd9271d90b1057198b7382b04ef3af7d3a86f9",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d4d59de12f4e6b61d9ced69cc339a64edc5e3ec90d356da3695f9c728b5ecdc8",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d4d59de12f4e6b61d9ced69cc339a64edc5e3ec90d356da3695f9c728b5ecdc8"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d4d59de12f4e6b61d9ced69cc339a64edc5e3ec90d356da3695f9c728b5ecdc8"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d4d59de12f4e6b61d9ced69cc339a64edc5e3ec90d356da3695f9c728b5ecdc8"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-dee94393",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5d32409ab79f3af2edfee0fda0b06a88d1bcdf769bcc346329f634dd051446c2",
+      "diff_hash": "sha256:d599811612acd7a361d3d7f31dbd9271d90b1057198b7382b04ef3af7d3a86f9",
+      "actor_id": "cli:claude-code:634dfa7e-89a3-400f-8eaa-cb61360f4872",
+      "summary": "Provenance verified (single parent 5a3d4660, tree 61f98138). The Pi continuation now sends input, tool and settle events into the shared run_continuation_session machine: task and Parent binding, the third native failure pausing, the Pi-named seventh-boundary pause, the paused-gate deny cleared only by a literal run entry, yielding on an unchanged digest, and exact tool/session/workspace/slug correlation for selectedParent. The only dependency is adapter importing host-core. Tests pin positive, negative and bound cases. Blast radius medium: pi-run-continuation.ts, the shared NATIVE_OPERATIONS set in host-core/run_continuation_session.ts plus both dist bundles, and the private immune-brain-pi cache files.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a3d4660fa979e1d10a92e701d5afbe8325130ec",
+        "review_commit": "a5eff8348a0042a78b8dda1f8c765d2d877a23a4",
+        "review_tree": "61f98138a3497b6a8ca6ac2bad725690b5259544",
+        "manifest_digest": "sha256:1e9ada0b1a9ec002a64aba25a7e2b1ae9687e0077eb7308e3fdb679e8d529f34"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-d4ecef04bd37-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "The continuation input handler writes {run_live:true, token:null} into the ADR 0025 phase-entry map whenever no live token exists. Production does not reach this today because recordPiPhaseInput runs first, but the adapter can create entry state the authority owner never minted, and pi-batch-authority.test.ts depends on that write.",
+          "anchor": "sha256:044550ea1da0b9fef076f0658e48722df0210bad30dc2c989048014d2d7ebc00",
+          "evidence": {
+            "trigger": "registerPiRunContinuation runs without recordPiPhaseInput before it (the pi-batch-authority test, or a handler-order change) and receives a '/drive' input → getPiPhaseEntries() holds run_live:true with no minted token → tool correlation and selectedParent treat the session as live",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:registerPiRunContinuation input handler",
+              "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piPhaseEntries",
+              "plugins/immune-brain/runtime/host-core/run_continuation_session.ts:selectedParentSession"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-d4ecef04bd37-2-review-2",
+          "acceptance_id": "AC2",
+          "summary": "Pause messages now show only `Run paused: <reason>`. The old Pi text 'Recovery: <next_action>' and the Parent next_action suffix are gone, so only the seventh-boundary reason names Pi and the recovery step.",
+          "anchor": "sha256:0b233a4e51f38da439970da7145cd73a4914167727a32b8752d099b7c983dbb9",
+          "evidence": {
+            "trigger": "the third request_authorization failure pauses the run → the user sees 'request_authorization failed 3 times under this entry; no further automatic retry', with no Pi-named or drive recovery instruction",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/host-core/run_continuation_session.ts:observeNativeFailure",
+              "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:agent_before_settle paused branch"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        },
+        {
+          "id": "review-d4ecef04bd37-3-review-3",
+          "acceptance_id": "AC2",
+          "summary": "The Pi seam has no test that malformed or foreign continuation metadata fails closed. Only the oversized-blank case is pinned. In Pi, the shared readMetadata throw reaches emitToolCall, which rethrows it, so a test should pin that the gate is denied.",
+          "anchor": "sha256:8033ee2d518f31b08a0e27383447c972cba6bb439f138d9300eb1155075cecb8",
+          "evidence": {
+            "trigger": "a session .continuation file contains invalid JSON or a foreign session_id → Pi's tool_call handler throws instead of returning a block, and no test pins that the native gate is refused",
+            "caller_chain": [
+              "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:tool_call handler",
+              "plugins/immune-brain/runtime/host-core/run_continuation_session.ts:readMetadata"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:d953cc7e79421814af749e873dfcc6ac630aaf004fb198ede45fa47b7a00f2f3"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-AC2-db6cf3e2-91621d",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=28B stderr=14601B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    },
+    {
+      "id": "review-bde264c0131c-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "pi-run-continuation.ts reuses the global key Symbol.for(\"immune_brain.pi_phase_entry\") that imm-canary-work.ts already uses for its ADR 0025 PhaseEntryState map. Its input handler then overwrites the minted entry token with {run_live:true, workspace}, so a literal /drive in Pi leaves the session with no token.",
+      "anchor": "sha256:f5dfc111434a9edda2b2b1053d79203085fc84f4110df791f01a50d7a86f5409",
+      "evidence": {
+        "trigger": "A Pi user types /drive. The canary input handler (registered first, imm-canary-work.ts:769-771) calls recordPiPhaseInput, which mints {run_live:true, token:<uuid>, workspace}. The continuation input handler (registered at imm-canary-work.ts:779) then runs getPiPhaseEntries().set(sessionId, {run_live:true, workspace}) on the same globalThis map, which drops the token. piEntryToken(ctx) then returns null for a live run entry, and imm-unattended-batch.ts:508 passes entryToken:null to executePiRetireStaleBatch, so token-backed native operations lose their in-process entry token. The changeset says this token is retained. The tests do not catch it because the fixture's mock `on` keeps only one handler per event and never registers the canary input handler.",
+        "caller_chain": [
+          "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:registerPiRunContinuation input handler",
+          "plugins/immune-brain/.pi-extension/pi-run-continuation.ts:getPiPhaseEntries (Symbol.for immune_brain.pi_phase_entry)",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piPhaseEntries (same Symbol key)",
+          "plugins/immune-brain/.pi-extension/imm-canary-work.ts:piEntryToken",
+          "plugins/immune-brain/.pi-extension/imm-unattended-batch.ts:executePiRetireStaleBatch entryToken"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "ADR 0025 in-process entry token"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:pi-shared-continuation:2026-11-12T13:50:10.957Z",
+      "at": "2026-11-12T13:50:10.957Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:pi-shared-continuation:2026-11-12T13:51:31.731Z",
+      "at": "2026-11-12T13:51:31.731Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7287ea61\naction_v2_sha256:802901638591e5486814deb3046082729b54ae831a87879baf7df8c63e1ae136",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T13:51:31.731Z"
+      }
+    },
+    {
+      "id": "request_rework:pi-shared-continuation:2026-11-12T14:23:41.334Z",
+      "at": "2026-11-12T14:23:41.334Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:a49e3f32797afe1c3995b84dc4024c6efe1b4d67499c8c62e09ed9eed40d5698",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:23:41.335Z"
+      }
+    },
+    {
+      "id": "resolve_finding:pi-shared-continuation:2026-11-12T14:26:45.591Z",
+      "at": "2026-11-12T14:26:45.591Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-AC2-db6cf3e2-91621d\naction_v2_sha256:0f263382968d6a809f95b2f0cbd9f069736652e2b6bb9c4e3e3a207dd83074cd"
+    },
+    {
+      "id": "freeze_artifacts:pi-shared-continuation:2026-11-12T14:26:58.154Z",
+      "at": "2026-11-12T14:26:58.154Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:pi-shared-continuation:2026-11-12T14:29:00.417Z",
+      "at": "2026-11-12T14:29:00.417Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1bbcd3c1\naction_v2_sha256:24bd71e5e3f1bfc8f19e07301676cb4091a2de70dcf2c7bf849aee41b22f44b1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:29:00.417Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-shared-continuation:2026-11-12T14:35:28.554Z",
+      "at": "2026-11-12T14:35:28.554Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-697d31d1\naction_v2_sha256:afb7d59f0740608bc216ce649188d50b1cb42fa5f30981a2135ab81d4f8c0470",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:35:28.554Z"
+      }
+    },
+    {
+      "id": "request_rework:pi-shared-continuation:2026-11-12T14:37:47.448Z",
+      "at": "2026-11-12T14:37:47.448Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:b7e41195379f5260225406afec9adcdb277a3bf3c3eaefca432de3b6bca85572",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:771a8334-aaad-4807-a709-b3b6ae6f16a2",
+        "confirmation_ref": "antigravity:cli:claude-code:771a8334-aaad-4807-a709-b3b6ae6f16a2",
+        "issued_at": "2026-11-12T14:37:47.449Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a3d4660fa979e1d10a92e701d5afbe8325130ec",
+        "review_commit": "ef5e9a4c232b49ac03aa91a9e5d1331921ca3914",
+        "review_tree": "672d874a7a46927df6f9970c778e2881024e9a98",
+        "manifest_digest": "sha256:861a709e51546dd8037dd245029aa333df1171274d133ea040ddce47d7cee983"
+      },
+      "review_started_at": "2026-11-12T14:35:33.142Z",
+      "review_submitted_at": "2026-11-12T14:37:45.682Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:pi-shared-continuation:2026-11-12T14:44:53.509Z",
+      "at": "2026-11-12T14:44:53.509Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-bde264c0131c-1-review-1\naction_v2_sha256:5a3482e833590321563f8cf3a117ad1756f06f87fbbd6658a1b238444872d738"
+    },
+    {
+      "id": "freeze_artifacts:pi-shared-continuation:2026-11-12T14:45:04.939Z",
+      "at": "2026-11-12T14:45:04.939Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/pi-shared-continuation.intent.json"
+    },
+    {
+      "id": "record_approval:pi-shared-continuation:2026-11-12T14:47:08.000Z",
+      "at": "2026-11-12T14:47:08.000Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-55625892\naction_v2_sha256:2e167a813fd748ae51621d0d5d02767c83f7a4284f5ba7471ddc060ebfce84c5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T14:47:08.000Z"
+      }
+    },
+    {
+      "id": "record_approval:pi-shared-continuation:2026-11-12T14:49:47.147Z",
+      "at": "2026-11-12T14:49:47.147Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-dee94393\naction_v2_sha256:86c3214668a3672e52f4fda5a9b664869b9df3914716e056a56b25c65a4911c9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:634dfa7e-89a3-400f-8eaa-cb61360f4872",
+        "confirmation_ref": "antigravity:cli:claude-code:634dfa7e-89a3-400f-8eaa-cb61360f4872",
+        "issued_at": "2026-11-12T14:49:47.147Z"
+      },
+      "review_started_at": "2026-11-12T14:47:13.368Z",
+      "review_submitted_at": "2026-11-12T14:49:45.941Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:pi-shared-continuation:2026-11-12T14:49:50.344Z",
+      "at": "2026-11-12T14:49:50.344Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6528880bbb6182f6fc47466874e541ad903cd1fc72d81aed500b602b0d306ee0"
+    }
+  ]
+}

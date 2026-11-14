@@ -1,0 +1,191 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "antigravity-native-gate-surfacing",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "antigravity-native-gate-surfacing",
+    "goal": "Stop the Antigravity adapter recording a literal-user confirmation no human gave. Every Managed native gate in plugins/immune-brain/runtime/antigravity/lane_guard.ts (force_ask at :793, :828, :901) writes a grant and returns force_ask without knowing whether agy shows a dialog. Live evidence (agy 1.5.8, 2026-11-13): ~/.gemini/antigravity-cli/settings.json:19 has toolPermission always-proceed; log cli-20261113_182449.log:164 'Always-proceed: auto-approving tool confirmation \"McpTool\"'; no dialog appeared, yet task br-scn-4-native-gate stopped as actor_id literal-user, confirmation_ref antigravity-confirm-8eb975aaf0524c5f. --dangerously-skip-permissions auto-approves too (cli-20261112_223122.log:66) and --print has no human terminal. Only request-review has evidence of surfacing (cli-20261113_151713.log:60,:183). Fix: before writing a grant or returning force_ask, the PreToolUse hook requires toolPermission request-review in <home>/.gemini/antigravity-cli/settings.json and a nearest ancestor agy process started without --dangerously-skip-permissions, --print or -p; anything else denies, writes no grant, and names the observed cause and the remediation. Delegated choice: strict and proceed-in-sandbox are refused until live evidence; settings home and ancestor reader are injectable for tests. Scenario: Actor: an Antigravity user with toolPermission always-proceed. Given an enrolled task, When the agent calls a Managed operation needing native confirmation, Then the user sees it refused with instructions to use request-review and interactive agy, and the task is unchanged. P2 stays conformance-only. Out of scope: P2 re-certification (later manual run), scripts/verify-antigravity-live.ts, Claude/Pi adapters, shared confirmation model.",
+    "acceptance": [
+      {
+        "id": "ANGS-A1",
+        "assertion": "Through the real Antigravity hook entry (plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook) with a temporary home and an injected ancestor-argument reader, for the stop, enrollment (start_unattended_batch with task_id), retire_stale_batch and request_authorization gates: Positive: settings.json with toolPermission \"request-review\" and an interactive agy ancestor returns force_ask and records the grant exactly as before, and the following MCP call consumes it. Negative, each case returns decision deny, writes no confirmation grant file, the following MCP call for that step refuses without changing the task record or recording actor_id literal-user, and the reason names the observed cause and the remediation: toolPermission \"always-proceed\"; \"proceed-in-sandbox\"; \"strict\"; settings.json missing; toolPermission key missing; non-string toolPermission; unparsable settings.json; ancestor agy started with --dangerously-skip-permissions; with --print; with -p; no agy ancestor; ancestor reader throws. Agreed seam: a new describe block in tests/antigravity-assurance-conformance.test.ts whose name contains \"native gate surfacing\".",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"native gate surfacing\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ANGS-A2",
+        "assertion": "Existing Antigravity native-gate and host-package behavior is preserved: every existing test in tests/antigravity-assurance-conformance.test.ts and tests/antigravity-host-package.test.ts passes, with fixtures that expect force_ask updated only to provide a request-review settings home and an interactive agy ancestor; no existing test or expect() is removed or weakened, and the per-file test counts do not fall below those at the enrollment base. The Antigravity README states the request-review and interactive-agy requirement for Managed gates. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/antigravity-host-package.test.ts.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "ANGS-A3",
+        "assertion": "Declarations and generated artifacts stay truthful and current. Positive: Antigravity capability P2 (both mirrors of capability.ts) remains conformance-only and its evidence says the adapter refuses native gates unless toolPermission is request-review in interactive agy; docs/reference/host-capability.md is re-rendered; docs/reports/antigravity-live-certification.md keeps P2 uncertified, carries the rebuilt bundle plugin_digest, and its Known Gaps records the live-measured digest, the new digest and that the difference is this refusal; the live report validation, the Antigravity mirror and bundle checks, the Claude bundle check, the host capability render check and TypeScript pass. Negative: a stale mirror, bundle, rendered reference or report digest fails its check. Agreed seams: tests/antigravity-live-certification.test.ts, the plugin build checks, scripts/render-host-capability.ts --check, typecheck.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-live-certification.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/render-host-capability.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/antigravity-native-gate-surfacing.md",
+      "docs/plans/antigravity-native-gate-surfacing.intent.json",
+      "docs/reference/host-capability.md",
+      "docs/reports/antigravity-live-certification.md",
+      "plugins/immune-brain-antigravity/README.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain-antigravity/runtime/antigravity/tool_permission.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/capability.ts",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+      "plugins/immune-brain/runtime/antigravity/tool_permission.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/antigravity-host-package.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/antigravity-native-gate-surfacing.intent.json",
+    "content_hash": "sha256:8e1e9415b3ee848cbf91307f72cb2183efb9056fb37af8cc1551578898d8d677"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:8e1e9415b3ee848cbf91307f72cb2183efb9056fb37af8cc1551578898d8d677",
+  "git_base_head": "4f78ca8a457cc5d5b74db1325e6aa7404661a166",
+  "attestations": [
+    {
+      "id": "approval-qa-8ab3bd9c",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8e1e9415b3ee848cbf91307f72cb2183efb9056fb37af8cc1551578898d8d677",
+      "diff_hash": "sha256:24b6ebadab150fcba6a2fbc0d3b91de9c2321d78bd8dc9631f09dbba6d9e4e02",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:efe86d3090fc10476f0c1c0cdc72392d0e489b51cf0b8c6d7586da9592e19f5a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "ANGS-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:efe86d3090fc10476f0c1c0cdc72392d0e489b51cf0b8c6d7586da9592e19f5a"
+        },
+        {
+          "acceptance_id": "ANGS-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:efe86d3090fc10476f0c1c0cdc72392d0e489b51cf0b8c6d7586da9592e19f5a"
+        },
+        {
+          "acceptance_id": "ANGS-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:efe86d3090fc10476f0c1c0cdc72392d0e489b51cf0b8c6d7586da9592e19f5a"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-5d2576e6",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:8e1e9415b3ee848cbf91307f72cb2183efb9056fb37af8cc1551578898d8d677",
+      "diff_hash": "sha256:24b6ebadab150fcba6a2fbc0d3b91de9c2321d78bd8dc9631f09dbba6d9e4e02",
+      "actor_id": "cli:claude-code:197a1113-07f9-4ff3-9f4f-b3e9a8225db9",
+      "summary": "Provenance verified (single parent 4f78ca8a, tree d307fedf). All four native gates go through the only force_ask site, issueNativeConfirmationForceAsk. That site checks settings.json toolPermission and the nearest agy ancestor before writing the grant, and a deny drops the .admit file, so the next MCP call refuses with no MCP elicitation fallback. The mirror copies of capability, lane_guard, mcp_server and tool_permission have identical blobs, and the bundle diff matches the source. The ANGS-A1 describe block covers 4 gates x 12 negative cases plus positive and CLI end-to-end tests. Existing tests only gained fixture homes and an ancestor reader. The docs, report digest and README are updated. Blast radius: medium; the load-bearing path is the PreToolUse native-gate path in runtime/antigravity/lane_guard.ts, with no persisted-shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "4f78ca8a457cc5d5b74db1325e6aa7404661a166",
+        "review_commit": "099d4584ec31f38c5854e0b6d2ef48edc4e555fd",
+        "review_tree": "d307fedf50d58be5b27c352954d638ab8a061327",
+        "manifest_digest": "sha256:e21af09e5825e801c8ad11d7cb931dd16af5668a03025d9fb115ac108ddd419a"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-b2bb27b84cbb-1-review-1",
+          "acceptance_id": "ANGS-A1",
+          "summary": "readAncestorProcessArgs splits ps args on whitespace, so an agy installed under a path containing spaces, or a prompt argument containing a bare -p token, is wrongly refused; this fails closed but can block a legitimate interactive session.",
+          "anchor": "sha256:284e333fc9e4781812f4dfb2e04d0fe2866316ba80d3c7dc555e4b31807452c9",
+          "evidence": {
+            "trigger": "interactive agy started as '/Applications/Anti Gravity/agy' or as agy 'fix -p flag' with toolPermission request-review → argv[0] is not recognized as agy, or -p is flagged → PreToolUse returns deny instead of force_ask",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/antigravity/lane_guard.ts:issueNativeConfirmationForceAsk",
+              "plugins/immune-brain/runtime/antigravity/tool_permission.ts:checkNativeGateSurfacing",
+              "plugins/immune-brain/runtime/antigravity/tool_permission.ts:readAncestorProcessArgs"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "ANGS-A1"
+            }
+          }
+        },
+        {
+          "id": "review-b2bb27b84cbb-2-review-2",
+          "acceptance_id": "ANGS-A3",
+          "summary": "docs/agents/derived-files.json changed outside the declared scope_hint; the change is needed so the mirror check covers the new tool_permission.ts mirror.",
+          "anchor": "sha256:f27b48a5566e11cea1a8f3895656244a8b056a4a354e1a568c8578673b97412d",
+          "evidence": {
+            "trigger": "the new tool_permission.ts mirror would be missing from the derived-files manifest → the Antigravity mirror check would not cover it; the edit sits outside the scope_hint list",
+            "caller_chain": [
+              "docs/agents/derived-files.json",
+              "plugins/immune-brain-antigravity/runtime/antigravity/tool_permission.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "ANGS-A3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:1cedfb0ab1fbb7f13a12588161999a36dc2953273332c7d2a4dab9b8b72e8ab9"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:antigravity-native-gate-surfacing:2026-11-13T13:07:53.312Z",
+      "at": "2026-11-13T13:07:53.312Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/antigravity-native-gate-surfacing.intent.json"
+    },
+    {
+      "id": "record_approval:antigravity-native-gate-surfacing:2026-11-13T13:10:35.417Z",
+      "at": "2026-11-13T13:10:35.417Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-8ab3bd9c\naction_v2_sha256:1c360dcfd52c5b20765baedb56f1101e6ac4e5f0ec899e6bc17a6becb37c5ad5",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-13T13:10:35.417Z"
+      }
+    },
+    {
+      "id": "record_approval:antigravity-native-gate-surfacing:2026-11-13T14:14:39.707Z",
+      "at": "2026-11-13T14:14:39.707Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-5d2576e6\naction_v2_sha256:63b9c119731e7de8835d76d1e263ff92e39a55ae0eed79d84408a1ffedcde26a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:197a1113-07f9-4ff3-9f4f-b3e9a8225db9",
+        "confirmation_ref": "antigravity:cli:claude-code:197a1113-07f9-4ff3-9f4f-b3e9a8225db9",
+        "issued_at": "2026-11-13T14:14:39.707Z"
+      },
+      "review_started_at": "2026-11-13T13:48:00.363Z",
+      "review_submitted_at": "2026-11-13T14:14:38.728Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:antigravity-native-gate-surfacing:2026-11-13T14:14:42.828Z",
+      "at": "2026-11-13T14:14:42.828Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:64d2765df4f1f58c8769faceaf576f6c4393a38d292d5818164e8a8c0cc9381e"
+    }
+  ]
+}

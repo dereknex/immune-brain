@@ -8,12 +8,19 @@ import { installCliReviewer } from "./cli-reviewer";
 import type { VerdictAuthority } from "../../plugins/immune-brain/runtime/assurance/verdict_authority";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-	AssuranceProgression,
+	PiReviewHost,
 	snapshotDigest,
 	type AssuranceProgressionPorts,
 	type AssuranceVerdict,
 	type SnapshotDescriptor,
 } from "../../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts";
+import { PiRuntime } from "../../plugins/immune-brain/.pi-extension/pi-host-runtime";
+import {
+	type ForegroundToolUpdate,
+	type HostContext,
+	type ReviewSubmissionOptions,
+} from "../../plugins/immune-brain/runtime/assurance/coordinator";
+import { withSettleCommit } from "../../plugins/immune-brain/runtime/assurance/workflow_autocommit";
 import type { AssuranceProjectionResult } from "../../plugins/immune-brain/runtime/kernel/assurance_projection";
 import type { ReviewBundle } from "../../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 
@@ -137,6 +144,51 @@ export function passVerdict(s: SnapshotDescriptor): AssuranceVerdict & { approva
 	};
 }
 
+/**
+ * Build a Pi assurance driver backed by the real `PiRuntime`/`HostRuntime`
+ * composition root for conformance and progression tests.
+ */
+export function createPiRuntimeDriver(
+	ports: AssuranceProgressionPorts,
+	cwd: string = process.cwd(),
+) {
+	const host = new PiReviewHost();
+	const piRuntime = new PiRuntime({
+		cwd,
+		ports: ports as any,
+		authorityOverrides: ports.authorityOverrides,
+		host,
+	});
+	const coordinator = piRuntime.coordinator;
+	return {
+		piReviewHost: host,
+		authority: (coordinator as any).authority,
+		coordinator,
+		piRuntime,
+		advance: async (taskId: string, ctx: HostContext, signal?: AbortSignal, onUpdate?: (update: ForegroundToolUpdate) => void) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.advance(taskId, signal, undefined, onUpdate);
+		},
+		submitReview: async (taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return withSettleCommit(ctx.cwd, taskId, await coordinator.submitReview(taskId, ctx, verdictInput, options));
+		},
+		submitMediated: (taskId: string, ctx: HostContext, verdictInput: unknown) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.submitReview(taskId, verdictInput);
+		},
+		releaseStoppedReview: (taskId: string) => coordinator.releaseStoppedReview(taskId),
+		submitVerification: async (taskId: string, ctx: HostContext, result?: string) => {
+			piRuntime.bindWorkspace(ctx.cwd);
+			return piRuntime.submitVerification(taskId, result);
+		},
+		active: (taskId: string) => coordinator.active(taskId),
+		onSessionShutdown: async () => {
+			await piRuntime.shutdown();
+		},
+	};
+}
+
 export function makeAssuranceHarness(overrides: Partial<{
 	phase: string;
 	risk: "routine" | "material" | "critical";
@@ -199,7 +251,23 @@ export function makeAssuranceHarness(overrides: Partial<{
 		}),
 	};
 	ports.authorityOverrides = ports;
-	const progression = new AssuranceProgression(ports);
+	const delegatingPorts: AssuranceProgressionPorts = {
+		confirmationReference: ({ actorId }) => ports.confirmationReference({ actorId }),
+		projectTask: (root, taskId) => ports.projectTask(root, taskId),
+		readTaskRecord: (root, taskId) => ports.readTaskRecord(root, taskId),
+		readTaskIntent: (root, taskId) => ports.readTaskIntent(root, taskId),
+		runQa: (s, d, o) => ports.runQa(s, d, o),
+		writeReviewEvidence: (input) => ports.writeReviewEvidence(input),
+		applyOrdinaryOperation: (ctx, input) => ports.applyOrdinaryOperation(ctx, input),
+		onReworkApplied: (ctx, taskId, count) => ports.onReworkApplied?.(ctx, taskId, count),
+		advanceBeforeProjection: () => ports.advanceBeforeProjection?.(),
+		qaBeforeProjection: () => ports.qaBeforeProjection?.(),
+		qaBeforeAuthorityCommit: () => ports.qaBeforeAuthorityCommit?.(),
+		qaOnAuthorityCommit: () => ports.qaOnAuthorityCommit?.(),
+		qaAfterAuthorityCommit: () => ports.qaAfterAuthorityCommit?.(),
+		authorityOverrides: ports.authorityOverrides,
+	};
+	const progression = createPiRuntimeDriver(delegatingPorts);
 	return { progression, authority: progression.authority, ports, counts: () => ({ applyCount, removeCount, evidenceCount }) };
 }
 

@@ -1,0 +1,44 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "antigravity-native-gate-surfacing",
+  "owner": "user",
+  "goal": "Stop the Antigravity adapter recording a literal-user confirmation no human gave. Every Managed native gate in plugins/immune-brain/runtime/antigravity/lane_guard.ts (force_ask at :793, :828, :901) writes a grant and returns force_ask without knowing whether agy shows a dialog. Live evidence (agy 1.5.8, 2026-11-13): ~/.gemini/antigravity-cli/settings.json:19 has toolPermission always-proceed; log cli-20261113_182449.log:164 'Always-proceed: auto-approving tool confirmation \"McpTool\"'; no dialog appeared, yet task br-scn-4-native-gate stopped as actor_id literal-user, confirmation_ref antigravity-confirm-8eb975aaf0524c5f. --dangerously-skip-permissions auto-approves too (cli-20261112_223122.log:66) and --print has no human terminal. Only request-review has evidence of surfacing (cli-20261113_151713.log:60,:183). Fix: before writing a grant or returning force_ask, the PreToolUse hook requires toolPermission request-review in <home>/.gemini/antigravity-cli/settings.json and a nearest ancestor agy process started without --dangerously-skip-permissions, --print or -p; anything else denies, writes no grant, and names the observed cause and the remediation. Delegated choice: strict and proceed-in-sandbox are refused until live evidence; settings home and ancestor reader are injectable for tests. Scenario: Actor: an Antigravity user with toolPermission always-proceed. Given an enrolled task, When the agent calls a Managed operation needing native confirmation, Then the user sees it refused with instructions to use request-review and interactive agy, and the task is unchanged. P2 stays conformance-only. Out of scope: P2 re-certification (later manual run), scripts/verify-antigravity-live.ts, Claude/Pi adapters, shared confirmation model.",
+  "acceptance": [
+    {
+      "id": "ANGS-A1",
+      "assertion": "Through the real Antigravity hook entry (plugins/immune-brain/runtime/antigravity/mcp_server.ts --hook) with a temporary home and an injected ancestor-argument reader, for the stop, enrollment (start_unattended_batch with task_id), retire_stale_batch and request_authorization gates: Positive: settings.json with toolPermission \"request-review\" and an interactive agy ancestor returns force_ask and records the grant exactly as before, and the following MCP call consumes it. Negative, each case returns decision deny, writes no confirmation grant file, the following MCP call for that step refuses without changing the task record or recording actor_id literal-user, and the reason names the observed cause and the remediation: toolPermission \"always-proceed\"; \"proceed-in-sandbox\"; \"strict\"; settings.json missing; toolPermission key missing; non-string toolPermission; unparsable settings.json; ancestor agy started with --dangerously-skip-permissions; with --print; with -p; no agy ancestor; ancestor reader throws. Agreed seam: a new describe block in tests/antigravity-assurance-conformance.test.ts whose name contains \"native gate surfacing\".",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"-t\",\n      \"native gate surfacing\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ANGS-A2",
+      "assertion": "Existing Antigravity native-gate and host-package behavior is preserved: every existing test in tests/antigravity-assurance-conformance.test.ts and tests/antigravity-host-package.test.ts passes, with fixtures that expect force_ask updated only to provide a request-review settings home and an interactive agy ancestor; no existing test or expect() is removed or weakened, and the per-file test counts do not fall below those at the enrollment base. The Antigravity README states the request-review and interactive-agy requirement for Managed gates. Agreed seams: tests/antigravity-assurance-conformance.test.ts, tests/antigravity-host-package.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/antigravity-assurance-conformance.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "ANGS-A3",
+      "assertion": "Declarations and generated artifacts stay truthful and current. Positive: Antigravity capability P2 (both mirrors of capability.ts) remains conformance-only and its evidence says the adapter refuses native gates unless toolPermission is request-review in interactive agy; docs/reference/host-capability.md is re-rendered; docs/reports/antigravity-live-certification.md keeps P2 uncertified, carries the rebuilt bundle plugin_digest, and its Known Gaps records the live-measured digest, the new digest and that the difference is this refusal; the live report validation, the Antigravity mirror and bundle checks, the Claude bundle check, the host capability render check and TypeScript pass. Negative: a stale mirror, bundle, rendered reference or report digest fails its check. Agreed seams: tests/antigravity-live-certification.test.ts, the plugin build checks, scripts/render-host-capability.ts --check, typecheck.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/antigravity-live-certification.test.ts && bun scripts/build-antigravity-plugin.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/render-host-capability.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 150000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/antigravity-native-gate-surfacing.md",
+    "docs/plans/antigravity-native-gate-surfacing.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/reports/antigravity-live-certification.md",
+    "plugins/immune-brain-antigravity/README.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain-antigravity/runtime/antigravity/tool_permission.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/antigravity/mcp_server.ts",
+    "plugins/immune-brain/runtime/antigravity/tool_permission.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/antigravity-host-package.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

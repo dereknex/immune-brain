@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "host-capability-contract",
+  "owner": "user",
+  "goal": "Implement Slice S1 of docs/specs/tri-host-capability-alignment.spec.md: define the P1-P9 capability declaration and four evidence levels for Pi, Claude Code and Antigravity, render one maintainer table, and record ADR 0039 plus the ADR 0038 tri-host amendment. Declarations are documentation/conformance inputs only, never runtime dispatch; Pi background wake remains unsupported and no MCP transport is added.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D1 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-1): every adapter declaration covers P1-P9 exactly once using only certified, conformance-only, guard-only or unsupported with evidence/limitation text, and the generated table renders every Host and port exactly once. Positive: the complete current declarations render BR-SCN-1. Negative: an unknown port, duplicate/missing cell or unsupported level is rejected. Bound: no fifth level or runtime-selected host is accepted. Done looks like: a maintainer opens docs/reference/host-capability.md and sees the complete matrix. Agreed seam: tests/host-capability-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-capability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D2 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-DEC-4): the renderer and tests explicitly import the three composition-root declarations while production runtime performs no capability-based registry lookup or dispatch. Positive: existing HostRuntime/McpHostProfile selection remains. Negative: cross-adapter imports or a production host registry/dispatcher fail the boundary. Bound: the existing empty host-to-host baseline stays empty. Agreed seams: tests/runtime-layering-boundary.test.ts, tests/host-capability-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/runtime-layering-boundary.test.ts\",\n      \"tests/host-capability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D13 of docs/specs/tri-host-capability-alignment.spec.md (source: repository evidence docs/agents/derived-files.json): regenerate every owned Antigravity output containing the new declarations, never hand-edit it, and typecheck the source and renderer. Positive: generation checks are clean. Negative: a stale copied declaration or generated bundle fails. Bound: no unrelated full-suite or release command is required. Agreed seam: package generation plus TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/build-antigravity-plugin.ts --check && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/host-capability-contract.md",
+    "docs/adr/0038-host-neutral-adapter-core.md",
+    "docs/adr/0039-host-capability-profiles.md",
+    "docs/plans/host-capability-contract.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/capability.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/capability.ts",
+    "plugins/immune-brain/.pi-extension/pi-capability.ts",
+    "plugins/immune-brain/runtime/antigravity/capability.ts",
+    "plugins/immune-brain/runtime/claude/capability.ts",
+    "plugins/immune-brain/runtime/host-core/capability.ts",
+    "scripts/render-host-capability.ts",
+    "tests/host-capability-contract.test.ts",
+    "tests/runtime-layering-boundary.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

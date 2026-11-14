@@ -18007,8 +18007,9 @@ var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
 function entryTokenRequestId(token) {
   return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
+var ALLOW_RULE_REQUEST_PREFIX = "allow-rule:";
 function hostConfirmationRef(host, input) {
-  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : input.requestId.startsWith(ALLOW_RULE_REQUEST_PREFIX) ? "allow-rule" : "confirm";
   return `${host}-${kind}-${createHash22("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
@@ -20364,7 +20365,8 @@ function createMcpRuntime(profile, options = {}) {
       const workspace = await resolveWorkspace(meta, meta.signal);
       if (name !== "status" && bundle.stale())
         throw new NativeAuthorityError("plugin_bundle_stale", staleBundleMessage());
-      const observedSession = profile.readRunToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
+      const readToolSession = options.readRunToolSession ?? profile.readRunToolSession;
+      const observedSession = readToolSession(meta.toolCallId ?? `call-${name}`, name, workspace);
       if (observedSession)
         hookSessionId = observedSession;
       if (name === "start_unattended_batch") {
@@ -21076,6 +21078,80 @@ function runMcpEntry(profile, entrySuffixes) {
     serveStdio(profile);
 }
 
+// plugins/immune-brain/runtime/host-core/capability.ts
+var CAPABILITY_PORT_IDS = [
+  "P1",
+  "P2",
+  "P3",
+  "P4",
+  "P5",
+  "P6",
+  "P7",
+  "P8",
+  "P9"
+];
+var CAPABILITY_LEVELS = [
+  "certified",
+  "conformance-only",
+  "guard-only",
+  "unsupported"
+];
+function validateHostCapabilityDeclaration(declaration) {
+  if (!declaration || typeof declaration !== "object") {
+    throw new Error("Capability declaration must be a non-null object");
+  }
+  const candidate = declaration;
+  if (typeof candidate.hostId !== "string" || !candidate.hostId.trim()) {
+    throw new Error("Capability declaration missing valid hostId");
+  }
+  if (typeof candidate.hostName !== "string" || !candidate.hostName.trim()) {
+    throw new Error("Capability declaration missing valid hostName");
+  }
+  if (!candidate.ports || typeof candidate.ports !== "object") {
+    throw new Error("Capability declaration missing ports object");
+  }
+  const seenPorts = new Set;
+  const portsRecord = candidate.ports;
+  for (const key of Object.keys(portsRecord)) {
+    if (!CAPABILITY_PORT_IDS.includes(key)) {
+      throw new Error(`Unknown capability port ID: ${key}`);
+    }
+  }
+  const validatedPorts = {};
+  for (const portId of CAPABILITY_PORT_IDS) {
+    if (!(portId in portsRecord)) {
+      throw new Error(`Missing capability port: ${portId} in declaration for ${candidate.hostId}`);
+    }
+    seenPorts.add(portId);
+    const cell = portsRecord[portId];
+    if (!cell || typeof cell !== "object") {
+      throw new Error(`Invalid cell for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (cell.port !== portId) {
+      throw new Error(`Mismatched port ID in cell: expected ${portId}, got ${cell.port}`);
+    }
+    if (!CAPABILITY_LEVELS.includes(cell.level)) {
+      throw new Error(`Invalid capability level "${cell.level}" for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    if (typeof cell.evidence !== "string" || !cell.evidence.trim()) {
+      throw new Error(`Missing evidence/limitation text for port ${portId} in declaration for ${candidate.hostId}`);
+    }
+    validatedPorts[portId] = {
+      port: portId,
+      level: cell.level,
+      evidence: cell.evidence.trim()
+    };
+  }
+  if (seenPorts.size !== CAPABILITY_PORT_IDS.length) {
+    throw new Error(`Declaration for ${candidate.hostId} covers ${seenPorts.size} ports, expected ${CAPABILITY_PORT_IDS.length}`);
+  }
+  return {
+    hostId: candidate.hostId,
+    hostName: candidate.hostName,
+    ports: validatedPorts
+  };
+}
+
 // plugins/immune-brain/runtime/claude/capability.ts
 var MIN_CLAUDE_CODE_VERSION = "2.1.236";
 var HOST_ID = "claude-code";
@@ -21110,15 +21186,66 @@ function probeHost(env = process.env, platform = process.platform, hostVersion) 
   }
   return { ok: true, version, platform };
 }
+var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
+  hostId: "claude-code",
+  hostName: "Claude Code",
+  ports: {
+    P1: {
+      port: "P1",
+      level: "certified",
+      evidence: "Live Hook correlation (PreToolUse/PostToolUse) with session:stepIdx and phase admission"
+    },
+    P2: {
+      port: "P2",
+      level: "certified",
+      evidence: "Native interactive confirmation dialog via confirm_dialog and HostConfirmationRef"
+    },
+    P3: {
+      port: "P3",
+      level: "certified",
+      evidence: "Verifier observation state machine through hook event log"
+    },
+    P4: {
+      port: "P4",
+      level: "certified",
+      evidence: "Run continuation state machine through hook event log and automated stop"
+    },
+    P5: {
+      port: "P5",
+      level: "certified",
+      evidence: "Fresh claude --print process with --dangerously-skip-permissions, tool allowlist, no session persistence, and immutable tree guard"
+    },
+    P6: {
+      port: "P6",
+      level: "certified",
+      evidence: "Lane Executor process spawn in isolated worktree"
+    },
+    P7: {
+      port: "P7",
+      level: "certified",
+      evidence: "Shared private file helpers with 0700/0600 permissions, O_NOFOLLOW, regular file, and ownership checks"
+    },
+    P8: {
+      port: "P8",
+      level: "certified",
+      evidence: "PreInvocation active-task notice and prompt injection"
+    },
+    P9: {
+      port: "P9",
+      level: "unsupported",
+      evidence: "Claude Code provides no background wake or external turn wakeup mechanism"
+    }
+  }
+});
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync10 } from "node:fs";
+import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync11 } from "node:fs";
 import { dirname as dirname17, join as join29 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
 import { createHash as createHash24 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, writeSync } from "node:fs";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, rmSync as rmSync10, writeSync } from "node:fs";
 import { join as join28 } from "node:path";
 function sessionHash(sessionId) {
   return createHash24("sha256").update(sessionId).digest("hex");
@@ -21172,6 +21299,13 @@ function appendPrivate(path, dir, line) {
   } finally {
     closeSync7(fd);
   }
+}
+function dropPrivate(path) {
+  try {
+    const stat = lstatSync17(path);
+    if (ownedByUs(stat) && stat.isFile())
+      rmSync10(path, { force: true });
+  } catch {}
 }
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
   let fd;
@@ -21277,7 +21411,7 @@ class FileHookEventLog {
       const stat = lstatSync18(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
-      rmSync10(path, { force: true });
+      rmSync11(path, { force: true });
     } catch {}
   }
 }
@@ -21292,6 +21426,16 @@ class VerifierObservation {
   constructor(profile, log) {
     this.profile = profile;
     this.log = log;
+  }
+  pendingReservation(operationId) {
+    const state = this.pending.get(operationId);
+    return state ? { request: state.request, dispatchPrompt: state.dispatchPrompt } : undefined;
+  }
+  expectedDispatch(operationId) {
+    const state = this.pending.get(operationId);
+    if (!state)
+      return;
+    return this.profile.dispatch({ dispatchPrompt: state.dispatchPrompt, model: state.request.model });
   }
   prepare(request) {
     this.drain();
@@ -21430,7 +21574,7 @@ class VerifierObservation {
         return;
       }
       if (state.result) {
-        state.error = "duplicate PostToolUse result observed for review reservation";
+        state.error = state.result.event.result !== event.result ? "conflicting verifier result bytes: duplicate PostToolUse result observed for review reservation" : "duplicate PostToolUse result observed for review reservation";
         return;
       }
       state.result = { sessionId, index, event, host };
@@ -21781,7 +21925,7 @@ function parseHookStdin(raw) {
 
 // plugins/immune-brain/runtime/claude/lane_guard.ts
 init_lane_workspace();
-import { lstatSync as lstatSync19, realpathSync as realpathSync21, rmSync as rmSync11 } from "node:fs";
+import { lstatSync as lstatSync19, realpathSync as realpathSync21 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
 import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
 import { join as join32 } from "node:path";
@@ -22247,13 +22391,6 @@ function readPhaseEntryState(sessionId, root = tmpdir7(), read = readPrivate) {
   }
   return text === undefined ? null : reducePhaseEntryLog(text);
 }
-function dropPrivate(path) {
-  try {
-    const stat = lstatSync19(path);
-    if (ownedByUs(stat) && stat.isFile())
-      rmSync11(path, { force: true });
-  } catch {}
-}
 function appendPhaseEntry(sessionId, line, root, locations) {
   const path = entryLogPath(sessionId, root);
   let recorded = false;
@@ -22470,7 +22607,7 @@ init_batch_state();
 import { existsSync as existsSync17, lstatSync as lstatSync20, realpathSync as realpathSync22, renameSync as renameSync6, rmSync as rmSync12 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { join as join33 } from "node:path";
-var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "stop"]);
+var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
 var blank = () => ({
@@ -22498,7 +22635,9 @@ function drop(host, path, root) {
       rmSync12(path);
   } catch {}
 }
-function readLast(path) {
+function readLast(path, dir) {
+  if (dir && existsSync17(dir) && !ensurePrivateDir(dir))
+    throw new Error("continuation directory could not be verified");
   let stat;
   try {
     stat = lstatSync20(path);
@@ -22519,7 +22658,7 @@ function readLast(path) {
   return JSON.parse(lines.at(-1) ?? "null");
 }
 function readMetadata(host, sessionId, root) {
-  const value = readLast(statePath2(host, sessionId, root));
+  const value = readLast(statePath2(host, sessionId, root), cacheDir(root, host.cache_name));
   if (!value)
     return blank();
   value.native_failures ??= 0;
@@ -22559,13 +22698,13 @@ async function observeNativeFailure(host, metadata, correlation, root, reason) {
   pauseRun(host, metadata, correlation.session_id, root, reason);
 }
 function readSessionToolCall(host, root, toolId, operation, workspace) {
-  const record = readLast(callPath(host, toolId, root));
+  const record = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
   if (!record || record.operation !== operation || record.tool_use_id !== toolId || record.workspace !== realpathSync22(workspace) || typeof record.session_id !== "string" || !record.session_id || !host.entry_state(record.session_id)?.run_live)
     return null;
   return record.session_id;
 }
 function selectedParentSession(host, root, toolId, workspace, slug) {
-  const call = readLast(callPath(host, toolId, root));
+  const call = readLast(callPath(host, toolId, root), cacheDir(root, host.cache_name));
   if (!call || call.workspace !== realpathSync22(workspace) || !["advance_assurance", "submit_review"].includes(call.operation) || !host.entry_state(call.session_id)?.run_live)
     return false;
   const state = readMetadata(host, call.session_id, root).state;
@@ -22584,10 +22723,12 @@ async function applyRunContinuationEvent(host, root, session, event) {
       drop(host, statePath2(host, sessionId, root), root);
     return { kind: "none" };
   }
-  if (event.kind === "tool_call" && host.entry_state(sessionId)?.run_live) {
+  if (event.kind === "tool_call") {
     const metadata = readMetadata(host, sessionId, root);
     if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
       return { kind: "deny", reason: metadata.paused };
+    if (!host.entry_state(sessionId)?.run_live)
+      return { kind: "none" };
     const correlation = {
       session_id: sessionId,
       workspace,
@@ -22604,7 +22745,7 @@ async function applyRunContinuationEvent(host, root, session, event) {
   if (metadata.paused)
     return event.kind === "stop" ? { kind: "paused", reason: metadata.paused } : { kind: "none" };
   if (event.kind === "tool_result") {
-    const correlated = readLast(callPath(host, event.tool_id, root));
+    const correlated = readLast(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name));
     if (!correlated || correlated.session_id !== sessionId || correlated.workspace !== workspace || correlated.operation !== event.operation || readSessionToolCall(host, root, event.tool_id, event.operation, workspace) !== sessionId)
       return { kind: "none" };
     drop(host, callPath(host, event.tool_id, root), root);
@@ -22763,14 +22904,16 @@ async function applyRunContinuationEvent(host, root, session, event) {
     save(host, sessionId, root, metadata);
     return { kind: "none" };
   }
-  if (decision.state.progress_digest !== metadata.state.progress_digest || !event.stop_hook_active)
+  if (!event.stop_hook_active)
     metadata.stop_blocks = 0;
   metadata.state = decision.state;
+  metadata.stop_blocks++;
   if (decision.action === "pause" || metadata.stop_blocks >= 7) {
-    pauseRun(host, metadata, sessionId, root, metadata.stop_blocks >= 7 ? "Claude consecutive Stop boundary reached; resume explicitly in the same Host" : decision.reason);
+    const hostName = host.host_name ?? "Claude";
+    const reason = decision.action === "pause" ? decision.reason : `${hostName} consecutive Stop boundary reached; resume explicitly in the same Host`;
+    pauseRun(host, metadata, sessionId, root, reason);
     return { kind: "paused", reason: metadata.paused };
   }
-  metadata.stop_blocks++;
   save(host, sessionId, root, metadata);
   return { kind: "continue", label: taskId, next_action: decision.next_action };
 }
@@ -22926,7 +23069,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync20, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname20, join as join37, resolve as resolve16 } from "node:path";
+import { dirname as dirname20, join as join37, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -23723,7 +23866,7 @@ import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir9 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname19, join as join36 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname19, join as join36, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -23749,7 +23892,19 @@ var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
   disableAllHooks: true,
   env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
 });
-function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null) {
+function resolveAuthorityReviewSkillPath(moduleDir = dirname19(fileURLToPath4(import.meta.url))) {
+  const candidates = [
+    resolve16(moduleDir, "../../skills/authority-review/SKILL.md"),
+    resolve16(moduleDir, "../skills/authority-review/SKILL.md"),
+    resolve16(moduleDir, "skills/authority-review/SKILL.md")
+  ];
+  for (const candidate of candidates) {
+    if (existsSync19(candidate))
+      return candidate;
+  }
+  throw new Error(`authority-review skill not found from ${moduleDir}`);
+}
+function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null, skillPath) {
   const model = profile.model ? ["--model", profile.model] : [];
   if (profile.host === "claude-code") {
     return [
@@ -23773,9 +23928,17 @@ function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginD
     ];
   }
   if (profile.host === "pi") {
+    const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
     return [
       "--print",
       "--no-session",
+      "--no-extensions",
+      "--no-skills",
+      "--no-mcp",
+      "--skill",
+      explicitSkill,
+      "--tools",
+      "read,grep,find,ls,bash",
       ...model,
       ...profile.effort ? ["--thinking", profile.effort] : [],
       `/skill:authority-review ${packetPath}`
@@ -24402,7 +24565,7 @@ class HostRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve17(dirname20(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
@@ -24989,7 +25152,7 @@ class HostRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve17(dirname20(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,

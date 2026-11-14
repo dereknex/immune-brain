@@ -34,11 +34,35 @@ The native reviewer and review-verifier definitions are read-only and have no sh
 Immutable Git access and review-packet hash verification by those native roles are not
 certified: the shared Review prompt expects immutable Git commands and packet hash
 checks that a shell-less native role cannot run. This package does not grant shell tools,
-copy source into the review packet, or change shared Review authority, and it does not
-certify the complete Managed lifecycle (Enrollment, QA, Review, completion) on Antigravity.
-Package checks verify the read-only restrictions and this disclosure, not real model behavior.
+copy source into the review packet, or change shared Review authority. The complete
+Managed lifecycle (Enrollment, QA, Review, completion) with CLI-backed Review is live-certified
+on Antigravity via [docs/reports/antigravity-live-certification.md](../../docs/reports/antigravity-live-certification.md).
+Package checks verify the read-only restrictions, live certification binding, and this disclosure.
+
+### Review CLI residual risk (`review_host: antigravity`)
+
+`review_host: antigravity` remains supported as `guard-only` (port P5). Unlike Claude Code,
+`agy --print` has no CLI restriction flags to restrict tools or enforce read-only execution.
+The runtime relies on the post-review tree guard comparing HEAD, the index, and tracked
+worktree content; untracked files are uncovered by the tree guard. Neither CLI invocation
+nor native roles provide preventive read-only isolation, and native Antigravity Review is
+not certified.
 
 ## Hooks and MCP
 
 Hook commands run from the plugin directory (`node "./dist/antigravity/mcp-server.mjs" --hook`)
 and need no `PLUGIN_ROOT`. The MCP server is resolved with `${PLUGIN_ROOT}`.
+
+### Managed native gates
+
+Managed operations requiring literal-user native confirmation (`force_ask` in `PreToolUse`)
+require `"toolPermission": "request-review"` in `~/.gemini/antigravity-cli/settings.json`
+and an interactive `agy` session (nearest `agy` ancestor process started without
+`--dangerously-skip-permissions`, `--print`, or `-p`). Otherwise the `PreToolUse` hook
+denies the operation without writing a confirmation grant; `strict` and `proceed-in-sandbox`
+remain refused until live confirmation-dialog evidence is verified.
+
+If `~/.gemini/antigravity-cli/settings.json` also has a `permissions.allow` rule covering
+the Managed call (for example `mcp(immune-brain_immune-brain/stop)`), `agy` skips the
+interactive dialog and the adapter records that standing authorization with the
+`allow-rule` reference kind (`antigravity-allow-rule-<hash>`) instead of `confirm`.

@@ -1,4 +1,4 @@
-import { buildAssuranceSnapshot, stagePlanningArtifactTransition } from "../runtime/assurance/verdict_authority";
+import { buildAssuranceSnapshot } from "../runtime/assurance/verdict_authority";
 export { buildSnapshot, ensureReviewRevision as ensureTaskReviewRevision } from "../runtime/assurance/verdict_authority";
 export type { SnapshotDescriptorInput } from "../runtime/assurance/verdict_authority";
 import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port";
@@ -19,34 +19,21 @@ import { announceSkippedCopy, claimProcess, copySource } from "./single-copy";
 // created here. A bounded task-level Task Rail mirrors existing projections at
 // host input and Tool lifecycle boundaries.
 
-import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { PLUGIN_VERSION } from "../runtime/plugin_version";
-import { findResumableBatchSlugForTask } from "../runtime/unattended/batch_preflight";
-import { executePiUnattendedBatch, piLaneSupervisor, PI_LANE_WAIT_MS } from "./imm-unattended-batch";
-import { batchReason } from "../runtime/unattended/batch_reasons";
-import { findLaneRelayTarget, relayLaneDecision, type LaneRelayTarget } from "../runtime/unattended/lane_decision";
 import { registerPiRunContinuation } from "./pi-run-continuation";
-import {
-} from "./pi-canary-verification";
 import {
 	listReviewRefs,
 	reconcileReviewRefs,
 	writeNativeReviewEvidence,
 } from "./pi-canary-review-bundle";
-import type { InvocationToken } from "./pi-canary-invocations";
 import { localSkillExists, readAliasFile } from "../runtime/assurance/alias_file";
 import { runDeterministicQa } from "../runtime/assurance/qa";
-import {
-	captureStagedIntent,
-	restoreStagedIntent as restoreStagedIntentShared,
-} from "../runtime/staged_intent";
 import {
 	renderCanaryCall,
 	renderCanaryResult,
@@ -67,7 +54,6 @@ import {
 	type TaskOverviewEntry,
 	type TaskRailState,
 	type UserAttentionEventV1,
-	type UserAttentionReason,
 } from "./pi-canary-interaction";
 import { isToolFailureState, throwToolFailure, type AssuranceFailureDetails, type ToolFailureV1 } from "./pi-canary-tool-failure";
 import { resolveUxLanguage, uxText } from "./ux-language";
@@ -75,13 +61,10 @@ import { resolveUxLanguage, uxText } from "./ux-language";
 /** Host-native UI language; see ux-language.ts. Resolved once per process. */
 const UX_LANG = resolveUxLanguage();
 import { taskDeliveryIdentity } from "../runtime/workspace_scope";
-import { executeOrdinaryKernelOperation } from "../runtime/host-core/runtime";
 import {
-	AssuranceProgression,
 	buildReviewPrompt,
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,
-	projectTerminalTrackerState,
 	parseAssuranceVerdict,
 	snapshotDigest,
 	QA_JOB_TIMEOUT_SECONDS,
@@ -91,7 +74,18 @@ import {
 	REVIEW_VERDICT_VALIDATION_TIMEOUT_MS,
 	type AssuranceProgressionPorts,
 	type HostContext,
+	PiReviewHost,
 } from "./pi-canary-assurance-progression";
+import { PiRuntime, bindPiSelectedParent, type ToolMeta } from "./pi-host-runtime";
+import type { InvocationToken } from "./pi-canary-invocations";
+import {
+	NativeAuthorityError,
+	type NativeConfirmationPort,
+	type NativeConfirmationInput,
+	type NativeConfirmationResult,
+} from "../runtime/host-core/interaction";
+import { mapDialogSelection } from "./imm-unattended-batch";
+import { findLaneRelayTarget } from "../runtime/unattended/lane_decision";
 
 // The Pi adapter imports the host-neutral runtime modules statically, exactly
 // as the Claude adapter does; the retired dynamic-import isolation layer is
@@ -100,16 +94,12 @@ import {
 // progression accessors) is defined below, next to the machinery it uses.
 import { LITERAL_USER_ACTOR_ID } from "../runtime/kernel/actor_identity";
 import {
-	reconcileKernelAuthority,
-	repairKernelAuthority,
 	readTaskRecordRaw,
 	withKernelStoreLockForTask,
 } from "../runtime/kernel/storage";
 import { inspectStorageLayout } from "../runtime/kernel/storage_paths";
 import { migrateLegacyLayout } from "../runtime/kernel/storage_layout_migration";
 import {
-	canonicalIntentHash,
-	classifyIntentRevision,
 	parseProjectTaskIntent,
 	parseTaskIntentV1,
 	readTaskIntent,
@@ -118,32 +108,14 @@ import {
 } from "../runtime/kernel/intent";
 import { readBackendClaim, readTaskTombstone } from "../runtime/kernel/backend_claim";
 import {
-	createMutationAuthorityRegistry,
-	digestOfAction,
-	type CapabilityBindingV2,
-	type MutationAuthorityRegistry,
-} from "../runtime/kernel/authority_port";
-import {
-	createCanaryApplication,
-	capabilityActionFor,
-	type CanaryApplication,
-} from "../runtime/kernel/canary_application";
-import { findingsDigestV2 } from "../runtime/kernel/reducer";
-import {
 	parseReworkChoice,
 	projectAssurance,
 	reworkExitLines,
 	type AssuranceProjectionResult,
-	type ReworkChoice,
 } from "../runtime/kernel/assurance_projection";
-import type { ReviewVerifierDisputeV1, TaskRecord } from "../runtime/kernel/types";
-import { currentReviewContractHash } from "../runtime/role_prompt_bridge";
+import type { TaskIntentV1, TaskRecord } from "../runtime/kernel/types";
 import type { RoleDelegationContext } from "../runtime/role_prompt_bridge";
 import { buildLoopAction, buildLoopRoleDispatch } from "../runtime/loop_contract";
-import {
-	runGithubTrackerOperation,
-	type GithubTrackerResult,
-} from "../runtime/github_issue_tracker";
 import { projectTaskStatus, reviewReworkFindings, type StatusProjectionResult } from "../runtime/assurance/coordinator";
 import { laneEditRefusal } from "../runtime/unattended/lane_workspace";
 import { activeTaskNotice } from "../runtime/assurance/active_task_notice";
@@ -265,7 +237,10 @@ export function createPiAssuranceProgressionPorts(
 			(dependencies.runQa ?? runDeterministicQa)(snapshot, descriptors, options),
 		writeReviewEvidence: (input) =>
 			(dependencies.writeReviewEvidence ?? writeNativeReviewEvidence)(input),
-		applyOrdinaryOperation: (ctx, input) => executeOrdinaryOperation(ctx, input),
+		applyOrdinaryOperation: async (ctx, input) => {
+			const runtime = await getSharedPiProgression();
+			return runtime.executeOrdinary(ctx, input);
+		},
 		advanceBeforeProjection: dependencies.advanceBeforeProjection,
 		qaBeforeProjection: dependencies.qaBeforeProjection,
 		qaBeforeAuthorityCommit: dependencies.qaBeforeAuthorityCommit,
@@ -286,13 +261,13 @@ const GLOBAL_PI_PROGRESSION_KEY = Symbol.for("immune_brain.pi_assurance_progress
  * same global key, so a batch Review reservation and the session's
  * submit_review always share one progression instance.
  */
-export async function getSharedPiProgression(): Promise<AssuranceProgression> {
-	let progression = (globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] as AssuranceProgression | undefined;
-	if (!progression) {
-		progression = new AssuranceProgression(createPiAssuranceProgressionPorts());
-		(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = progression;
+export async function getSharedPiProgression(): Promise<PiRuntime> {
+	let runtime = (globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] as PiRuntime | undefined;
+	if (!runtime) {
+		runtime = new PiRuntime({ cwd: process.cwd(), ports: { ...createPiAssuranceProgressionPorts() } });
+		(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = runtime;
 	}
-	return progression;
+	return runtime;
 }
 
 /**
@@ -300,15 +275,16 @@ export async function getSharedPiProgression(): Promise<AssuranceProgression> {
  * progression result into the batch runner's advance report shape.
  */
 export async function advancePiTask(root: string, taskId: string): Promise<any> {
-	const progression = await getSharedPiProgression();
-	const result = await progression.advance(taskId, { cwd: root });
-	const facts = { diagnostics: result.diagnostics, environment_failure: result.environment_failure, recovery: result.recovery };
+	const runtime = await getSharedPiProgression();
+	runtime.bindWorkspace(root);
+	const result = await runtime.advance(taskId);
+	const facts = { diagnostics: (result as any).diagnostics, environment_failure: (result as any).environment_failure, recovery: (result as any).recovery };
 	if (result.state === "completed") return { state: "completed", ...facts };
 	if (result.state === "stopped") return { state: "stopped", ...facts };
-	if (result.state === "rework") return { state: "rework", operation: result.operation, summary: result.summary, ...facts };
-	if (result.state === "review_ready") return { state: "review_ready", operation_id: result.operation_id, agent_params: result.agent_params, review_command: result.review_command, review_profile: result.review_profile, ...facts };
-	if (result.state === "review_preparation_failed") return { state: result.state, operation: result.operation, operation_id: result.operation_id, reason: result.reason, code: result.code, recovery_action: result.recovery_action, ...facts };
-	if (result.state === "blocked") return { state: "blocked", reason: result.reason, ...facts };
+	if (result.state === "rework") return { state: "rework", operation: (result as any).operation, summary: (result as any).summary, ...facts };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: (result as any).operation_id, agent_params: (result as any).agent_params, review_command: (result as any).review_command, review_profile: (result as any).review_profile, ...facts };
+	if (result.state === "review_preparation_failed") return { state: result.state, operation: (result as any).operation, operation_id: (result as any).operation_id, reason: (result as any).reason, code: (result as any).code, recovery_action: (result as any).recovery_action, ...facts };
+	if (result.state === "blocked") return { state: "blocked", reason: (result as any).reason, ...facts };
 	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
 }
 
@@ -400,6 +376,411 @@ export function piEntryToken(ctx: PhaseEntryContext): string | null {
 	return state?.run_live && state.token && state.workspace === piWorkspace(ctx?.cwd) ? state.token : null;
 }
 
+export interface ActiveAuthorizeCall {
+	ctx: ExtensionContext;
+	invocation?: InvocationToken;
+	startGen?: number;
+	derivedOperation?: AuthorizeOperation;
+}
+
+export interface PiConfirmationHooks {
+	resolveCall?: (toolCallId?: string) => ActiveAuthorizeCall | undefined;
+	isSessionValid?: (startGen?: number, invocation?: InvocationToken) => boolean;
+	onAfterSidecarStage?: () => Promise<void>;
+}
+
+export function createPiNativeConfirmation(
+	pi: ExtensionAPI,
+	getCtx: () => ExtensionContext | undefined,
+	hooks: PiConfirmationHooks = {},
+): NativeConfirmationPort {
+	return async (input: NativeConfirmationInput): Promise<NativeConfirmationResult> => {
+		const activeCall = hooks.resolveCall?.(input.toolCallId);
+		const ctx = activeCall?.ctx ?? getCtx();
+		if (!ctx || ctx.mode !== "tui") {
+			throw new NativeAuthorityError("unsupported_host", "interactive MCP elicitation is unavailable");
+		}
+		if (input.signal?.aborted || ctx.signal?.aborted) {
+			throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+		}
+		const signal = input.signal && ctx.signal
+			? AbortSignal.any([input.signal, ctx.signal])
+			: input.signal ?? ctx.signal;
+		const runDialog = async <T>(fn: () => Promise<T>): Promise<T> => {
+			try {
+				return await fn();
+			} catch (error) {
+				const aborted = Boolean(
+					input.signal?.aborted ||
+					ctx.signal?.aborted ||
+					(error instanceof Error && error.name === "AbortError"),
+				);
+				if (input.operation === "stop" && !aborted) throw error;
+				throw new NativeAuthorityError("user_cancelled", "confirmation aborted");
+			}
+		};
+		const assertConfirmStillValid = (): void => {
+			if (input.signal?.aborted || ctx.signal?.aborted) {
+				throw new NativeAuthorityError("user_cancelled", "Tool call was cancelled");
+			}
+			if (hooks.isSessionValid && !hooks.isSessionValid(activeCall?.startGen, activeCall?.invocation)) {
+				throw new NativeAuthorityError("interaction_not_opened", "session changed; confirmation discarded");
+			}
+		};
+		const requestId = randomUUID();
+		const taskId = input.taskId ?? input.initiativeSlug ?? "";
+
+		if (input.reworkExits) {
+			const reworkExits = input.reworkExits;
+			const opName = "authorize-rework";
+			const dialogSummary = [
+				`Task: ${taskId}`,
+				`Decision: ${opName}`,
+			].join("\n");
+			const dialogDetails = [
+				`Operation: ${opName}`,
+				...(reworkExitLines(reworkExits)),
+			].join("\n");
+
+			presentTaskRail(ctx, {
+				task_id: taskId,
+				state: "Approval required",
+				result: uxText(UX_LANG, `${opName} requires your confirmation`, `${opName} 需要您的确认`),
+				next: uxText(UX_LANG, `Decide ${opName}`, `请决策 ${opName}`),
+			});
+			const attention = {
+				attention_id: randomUUID(),
+				task_id: taskId,
+				reason: "review_authorization" as const,
+				label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
+			};
+			const actions = [
+				{ value: "grant_rounds", label: uxText(UX_LANG, "Grant more Review rounds", "追加 Review 轮次"), description: uxText(UX_LANG, `Grant ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} further rounds`, `追加 ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} 轮`) },
+				...(reworkExits.accept_residual_risk
+					? [{ value: "accept_residual_risk", label: uxText(UX_LANG, "Accept residual risk", "接受残余风险"), description: uxText(UX_LANG, "Accept the open Review findings with a reason", "附理由接受未决 Review 发现") }]
+					: []),
+				{ value: "replan", label: uxText(UX_LANG, "Replan", "重新规划"), description: uxText(UX_LANG, "Revise the Intent instead", "改为修订 Intent") },
+				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+			];
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
+				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
+				summary: dialogSummary,
+				details: dialogDetails,
+				signal,
+				actions,
+			}));
+			if (selected === "grant_rounds" || selected === "accept_residual_risk" || selected === "replan") {
+				const raw: Record<string, unknown> = { exit: selected };
+				if (selected === "grant_rounds") {
+					const text = await runDialog(() => ctx.ui.input(
+						uxText(UX_LANG, `Further Review rounds (${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`, `追加 Review 轮次(${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`),
+						String(reworkExits.grant_rounds.min),
+						{ signal },
+					));
+					if (text !== undefined && text.trim()) raw.rounds = Number(text.trim());
+					if (text === undefined) raw.exit = "cancelled";
+				} else if (selected === "accept_residual_risk") {
+					const text = await runDialog(() => ctx.ui.input(uxText(UX_LANG, "Reason for accepting residual risk", "接受残余风险的理由"), "", { signal }));
+					if (text === undefined) raw.exit = "cancelled";
+					else raw.reason = text;
+				}
+				const reworkChoice = raw.exit === "cancelled" ? undefined : (parseReworkChoice(reworkExits, raw) ?? undefined);
+				if (reworkChoice) {
+					assertConfirmStillValid();
+					return { decision: "accept", requestId, reworkChoice };
+				}
+				if (raw.exit !== "cancelled") {
+					notifyOnce(ctx, `authorization-exit:${taskId}`, `authorize ${opName}: the chosen exit was not valid; nothing applied`, "warning");
+				}
+			}
+			return { decision: "cancel", requestId };
+		}
+
+		if (input.verifierDispute) {
+			const dispute = input.verifierDispute;
+			const opName = "resolve-user-decision";
+			const dialogSummary = [
+				`Task: ${taskId}`,
+				`Decision: ${opName}`,
+			].join("\n");
+			const dialogDetails = [
+				`Operation: ${opName}`,
+				`Claim: ${dispute.claim}`,
+				`Trigger: ${dispute.trigger}`,
+				`Caller chain: ${dispute.caller_chain.join(" → ")}`,
+				`Counter-path: ${dispute.counter_path}`,
+			].join("\n");
+
+			presentTaskRail(ctx, {
+				task_id: taskId,
+				state: "Approval required",
+				result: uxText(UX_LANG, `${opName} requires your confirmation`, `${opName} 需要您的确认`),
+				next: uxText(UX_LANG, `Decide ${opName}`, `请决策 ${opName}`),
+			});
+			const attention = {
+				attention_id: randomUUID(),
+				task_id: taskId,
+				reason: "review_authorization" as const,
+				label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
+			};
+			const actions = [
+				{ value: "accept_verifier_dispute", label: uxText(UX_LANG, "Accept finding as rework", "接受发现并返工"), description: uxText(UX_LANG, "Project the finding to the Executor", "将该发现交给执行者") },
+				{ value: "dismiss_verifier_dispute", label: uxText(UX_LANG, "Dismiss and review again", "驳回并重新审查"), description: uxText(UX_LANG, "Request a fresh Review", "请求新的 Review") },
+				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+			];
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
+				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
+				summary: dialogSummary,
+				details: dialogDetails,
+				signal,
+				actions,
+			}));
+			if (selected === "accept_verifier_dispute" || selected === "dismiss_verifier_dispute") {
+				assertConfirmStillValid();
+				return { decision: "accept", requestId, verifierChoice: selected };
+			}
+			return { decision: "cancel", requestId };
+		}
+
+		if (input.batchDetails) {
+			const b = input.batchDetails;
+			const isParent = b.parent_final_verification !== undefined;
+			const title = isParent
+				? `Authorize Parent Final Verification: ${b.initiative_slug}`
+				: `Authorize Unattended Batch: ${b.initiative_slug}`;
+			const summary = isParent
+				? [
+					`Initiative: ${b.initiative_slug}`,
+					`Plan digest: ${input.planDigest ?? ""}`,
+					"No batch run is started.",
+					"Final verification commands run in this workspace outside Host permission:",
+					...(b.final_verification ?? []).map((cmd) => `  - ${cmd}`),
+				].join("\n")
+				: [
+					`Initiative: ${b.initiative_slug}`,
+					`Batch branch: ${b.batch_branch}`,
+					`Plan digest: ${input.planDigest ?? ""}`,
+					...(input.intentRevision ? [`TaskIntent revision: ${input.intentRevision}`, `TaskIntent content hash: ${input.intentContentHash ?? ""}`, `Preparation digest: ${input.bindingDigest ?? ""}`] : []),
+					...(b.budget ? [`Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}`] : []),
+					...(b.lane_mode ? [`Lane mode: max_parallel=${b.lane_mode.max_parallel}`] : []),
+					...(b.final_verification ? [`Final verification: ${b.final_verification.join("; ")}`] : []),
+				].join("\n");
+			const details = isParent
+				? `Parent Tasks (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`
+				: [
+					`Ordered children (${b.children.length}):\n${b.children.map((c) => `  - ${c.task_id} (${c.slice_id}) [risk: ${c.risk ?? "unknown"}]`).join("\n")}`,
+					...(b.excluded.length > 0 ? [`\nExcluded children:\n${b.excluded.map((c) => `  - ${c.task_id} (${c.slice_id}): ${c.reason}`).join("\n")}`] : []),
+					...(b.lane_mode ? [
+						`\nParallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((g) => `  - ${g.join(", ")}`).join("\n")}`,
+						...(b.lane_mode.serialized.length > 0 ? [`\nSerialized by overlapping scope:\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}`] : []),
+					] : []),
+					...(b.re_confirmation_required?.length ? [`\nRe-confirmation required: ${b.re_confirmation_required.join(", ")}.\nRecovery: confirm to issue a fresh authorization bound to the current plan and HEAD.`] : []),
+				].join("\n");
+
+			presentTaskRail(ctx, {
+				task_id: b.initiative_slug,
+				state: "Approval required",
+				result: title,
+				next: "Review batch plan evidence",
+			});
+			const selected = await requestAuthorityDialog(
+				pi,
+				ctx,
+				{
+					attention_id: randomUUID(),
+					task_id: b.initiative_slug,
+					reason: "enrollment",
+					label: title,
+				},
+				{
+					title,
+					summary,
+					details,
+					signal: ctx.signal,
+					actions: [
+						{ value: "confirm", label: "Authorize batch run", description: "Start the unattended Lane batch run" },
+						{ value: "decline", label: "Decline batch", description: "Reject this batch authorization; repository and authority stay unchanged" },
+						{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
+					],
+				},
+			);
+			return { decision: mapDialogSelection(selected), requestId };
+		}
+
+		if (input.batchDisposition) {
+			const d = input.batchDisposition;
+			const title = `Retire Stale Batch Record: ${input.initiativeSlug ?? taskId}`;
+			const summary = [
+				`Initiative: ${input.initiativeSlug ?? taskId}`,
+				`Batch ID: ${d.batch_id}`,
+				`State: ${d.batch_state}`,
+				`Batch branch: ${d.batch_branch}`,
+				`Plan digest: ${d.plan_digest}`,
+				`Recorded commits: ${d.recorded_commits}`,
+			].join("\n");
+			const details = `Children (${d.children.length}):\n${d.children.map((c) => `  - ${c.task_id} (${c.slice_id}): state=${c.state}, commit=${c.commit ?? "none"}, lane=${c.lane_branch ?? "none"}, lifecycle=${c.kernel_lifecycle ?? "none"}`).join("\n")}`;
+
+			presentTaskRail(ctx, {
+				task_id: input.initiativeSlug ?? taskId,
+				state: "Approval required",
+				result: title,
+				next: "Review batch record evidence",
+			});
+			const selected = await requestAuthorityDialog(
+				pi,
+				ctx,
+				{
+					attention_id: randomUUID(),
+					task_id: input.initiativeSlug ?? taskId,
+					reason: "enrollment",
+					label: title,
+				},
+				{
+					title,
+					summary,
+					details,
+					signal: ctx.signal,
+					actions: [
+						{ value: "confirm", label: "Retire batch record", description: "Write the terminal superseded state and its report" },
+						{ value: "decline", label: "Keep batch parked", description: "Leave the batch record and its authorization unchanged" },
+						{ value: "cancel", label: "Cancel", description: "Leave repository and authority unchanged" },
+					],
+				},
+			);
+			return { decision: mapDialogSelection(selected), requestId };
+		}
+
+		if (input.operation === "approve_breaking_intent_revision") {
+			const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+			const priorRecord = await readTaskRecordRaw(targetRoot, taskId);
+			const priorIntent = priorRecord.record
+				? { intent: priorRecord.record.intent_snapshot, intent_ref: priorRecord.record.intent_ref }
+				: await readTaskIntentForRecord(targetRoot, taskId);
+			let nextIntent: TaskIntentV1 | undefined;
+			try {
+				const sidecar = join(targetRoot, priorIntent.intent_ref.path);
+				nextIntent = parseProjectTaskIntent(targetRoot, JSON.parse(readFileSync(sidecar, "utf8")));
+			} catch {}
+			const intentDelta = nextIntent
+				? [
+						`Risk: ${priorIntent.intent.risk} -> ${nextIntent.risk}`,
+						`Goal: ${priorIntent.intent.goal} -> ${nextIntent.goal}`,
+						`Scope added: ${nextIntent.scope_hint.filter((path: string) => !priorIntent.intent.scope_hint.includes(path)).join(", ") || "none"}`,
+						`Scope removed: ${priorIntent.intent.scope_hint.filter((path: string) => !nextIntent.scope_hint.includes(path)).join(", ") || "none"}`,
+						`Acceptance added: ${nextIntent.acceptance.filter((item: { id: string }) => !priorIntent.intent.acceptance.some((prior: { id: string }) => prior.id === item.id)).map((item: { id: string }) => item.id).join(", ") || "none"}`,
+						`Acceptance removed: ${priorIntent.intent.acceptance.filter((item: { id: string }) => !nextIntent.acceptance.some((next: { id: string }) => next.id === item.id)).map((item: { id: string }) => item.id).join(", ") || "none"}`,
+						`Acceptance changed: ${nextIntent.acceptance.filter((item: { id: string; assertion: string; verification: string }) => { const prior = priorIntent.intent.acceptance.find((candidate: { id: string }) => candidate.id === item.id); return prior && (prior.assertion !== item.assertion || prior.verification !== item.verification); }).map((item: { id: string }) => item.id).join(", ") || "none"}`,
+					]
+				: [];
+			const digestMatch = input.bindingDigest?.match(/^(sha256:[a-f0-9]{64})/i);
+			const stagedDiff = digestMatch?.[1] ?? input.bindingDigest?.split(":")[0];
+			const nextIntentHash = input.intentContentHash;
+			const opName = "approve-breaking-intent-revision";
+			const dialogSummary = [
+				`Task: ${taskId}`,
+				`Decision: ${opName}`,
+				`State: Approval required`,
+			].join("\n");
+			const dialogDetails = [
+				`Operation: ${opName}`,
+				...(nextIntent ? [
+					`Next Intent: rev ${nextIntent.revision} (${nextIntentHash})`,
+					...intentDelta,
+					`Acceptance Items: ${priorIntent.intent.acceptance.length} -> ${nextIntent.acceptance.length}`,
+					`Next staged diff: ${stagedDiff}`,
+				] : []),
+			].join("\n");
+			presentTaskRail(ctx, {
+				task_id: taskId,
+				state: "Approval required",
+				result: uxText(UX_LANG, `${opName} requires your confirmation`, `${opName} 需要您的确认`),
+				next: uxText(UX_LANG, `Decide ${opName}`, `请决策 ${opName}`),
+			});
+			const attention = {
+				attention_id: randomUUID(),
+				task_id: taskId,
+				reason: "breaking_intent_revision" as const,
+				label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
+			};
+			const actions = [
+				{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${opName} after re-checking state`, `重新校验状态后应用 ${opName}`) },
+				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+			];
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
+				title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
+				summary: dialogSummary,
+				details: dialogDetails,
+				signal,
+				actions,
+			}));
+			if (selected === "authorize" || selected === "confirm") {
+				assertConfirmStillValid();
+				await hooks.onAfterSidecarStage?.();
+				return { decision: "accept", requestId };
+			}
+			return { decision: "cancel", requestId };
+		}
+
+		// Standard operations: request_authorization, stop
+		const targetRoot = input.workspace ?? findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+		let openDecision: { id: string; summary: string } | undefined;
+		if (input.operation === "request_authorization" && !input.reviewRetryNotice) {
+			const { record } = await readTaskRecordRaw(targetRoot, taskId);
+			const open = (record?.findings ?? []).filter(
+				(finding) => finding.kind === "unresolved_user_decision" && finding.status === "open",
+			);
+			if (open.length === 1) openDecision = { id: open[0].id, summary: open[0].summary };
+		}
+		const opName = input.operation === "stop"
+			? "stop"
+			: activeCall?.derivedOperation ?? (input.reviewRetryNotice ? "authorize-review-retry" : openDecision ? "resolve-user-decision" : input.operation);
+		presentTaskRail(ctx, {
+			task_id: taskId,
+			state: "Approval required",
+			result: uxText(UX_LANG, `${opName} requires your confirmation`, `${opName} 需要您的确认`),
+			next: uxText(UX_LANG, `Decide ${opName}`, `请决策 ${opName}`),
+		});
+		const attention = {
+			attention_id: randomUUID(),
+			task_id: taskId,
+			reason: "review_authorization" as const,
+			label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
+		};
+		const dialogSummary = [
+			`Task: ${taskId}`,
+			`Decision: ${opName}`,
+			...(input.risk ? [`Risk: ${input.risk}`] : []),
+		].join("\n");
+		const dialogDetails = [
+			...(input.reviewRetryNotice ? [input.reviewRetryNotice] : []),
+			`Operation: ${opName}`,
+			...(openDecision ? [
+				`Finding: ${openDecision.id}`,
+				`Resolution: resume after literal-user decision: ${openDecision.summary}`,
+			] : []),
+			...(input.intentRevision ? [`Intent revision: ${input.intentRevision} (${input.intentContentHash ?? ""})`] : []),
+			...(input.bindingDigest ? [`Binding digest: ${input.bindingDigest}`] : []),
+			...(input.gitBaseNotice ? [input.gitBaseNotice] : []),
+		].join("\n");
+		const actions = [
+			{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${opName} after re-checking state`, `重新校验状态后应用 ${opName}`) },
+			{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
+		];
+		const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
+			title: uxText(UX_LANG, `Authorize ${opName}?`, `是否批准 ${opName}？`),
+			summary: dialogSummary,
+			details: dialogDetails,
+			signal,
+			actions,
+		}));
+		if (selected === "authorize" || selected === "confirm") {
+			assertConfirmStillValid();
+			return { decision: "accept", requestId };
+		}
+		return { decision: "cancel", requestId };
+	};
+}
+
 export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
@@ -410,8 +791,24 @@ export default function (
 	// One progression per extension load, published for the batch gate to reuse.
 	// Reusing whatever instance a previous load left behind would leak another
 	// session's Review reservations into this one, so the load always replaces it.
-	const progression = new AssuranceProgression(createPiAssuranceProgressionPorts(dependencies));
-	(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = progression;
+	const ports = createPiAssuranceProgressionPorts(dependencies);
+	const runtime = new PiRuntime({
+		cwd: process.cwd(),
+		ports,
+		...(ports.authorityOverrides ? { authorityOverrides: ports.authorityOverrides } : {}),
+	});
+	(globalThis as any)[GLOBAL_PI_PROGRESSION_KEY] = runtime;
+	const activeAuthorizeCalls = new Map<string, ActiveAuthorizeCall>();
+	runtime.bindNativeConfirmation(createPiNativeConfirmation(pi, () => railContext, {
+		resolveCall: (toolCallId) => (toolCallId ? activeAuthorizeCalls.get(toolCallId) : undefined),
+		isSessionValid: (startGen, invocation) =>
+			runtime.coordinator.sessionActiveValue()
+			&& (startGen === undefined || runtime.coordinator.sessionGenerationValue() === startGen)
+			&& (!invocation || runtime.coordinator.invocationState(invocation) === "open"),
+		onAfterSidecarStage: async () => {
+			await dependencies.authorizationAfterSidecarStage?.();
+		},
+	}));
 
 	let railContext: ExtensionContext | undefined;
 	const refreshTaskRail = async (ctx: ExtensionContext) => {
@@ -469,6 +866,10 @@ export default function (
 	const continuation = registerPiRunContinuation(pi, {
 		entry: (text, root) => recognizePhaseEntry(text, piLocalNames(root), "pi"),
 		revokeEntry: revokePiPhaseEntry,
+		entryState: (sessionId) => piPhaseEntries().get(sessionId) ?? null,
+	});
+	bindPiSelectedParent((toolCallId, root, slug) => {
+		return continuation.selectedParent(toolCallId, root, slug);
 	});
 	pi.registerCommand("imm-tasks", {
 		handler: async (_args: string, ctx?: ExtensionContext) => {
@@ -488,9 +889,10 @@ export default function (
 	});
 
 	pi.on("session_start", async (_event: unknown, ctx?: ExtensionContext) => {
-		progression.onSessionStart();
+		runtime.coordinator.onSessionStart();
 		if (!ctx) return;
 		railContext = ctx;
+		runtime.bindWorkspace(ctx.cwd);
 		await reconcileRefsQuietly(ctx.cwd);
 		if (ctx.mode !== "tui") return;
 		await refreshTaskRail(ctx);
@@ -502,23 +904,29 @@ export default function (
 		return { systemPrompt: `${event.systemPrompt}\n\n${notice}` };
 	});
 	pi.on("tool_call", (event: { toolName?: string; input?: unknown; toolCallId?: string }, ctx?: ExtensionContext) => {
-		if (ctx) railContext = ctx;
+		if (ctx) {
+			railContext = ctx;
+			runtime.bindWorkspace(ctx.cwd);
+		}
 		const laneRefusal = laneEditRefusal(event, ctx?.cwd ?? process.cwd());
 		if (laneRefusal) return { block: true, reason: laneRefusal };
 		if (event.toolName === "Agent") {
 			// ADR 0017: validate a marker-targeted dispatch before binding the verifier.
-			return progression.piReviewHost.observeVerifierDispatch(event.input as Record<string, unknown> | undefined, event.toolCallId);
+			return (runtime.host as PiReviewHost).observeVerifierDispatch(event.input as Record<string, unknown> | undefined, event.toolCallId);
 		}
 	});
 	pi.on("tool_result", (event: unknown, ctx?: ExtensionContext) => {
-		if (ctx) railContext = ctx;
+		if (ctx) {
+			railContext = ctx;
+			runtime.bindWorkspace(ctx.cwd);
+		}
 		const result = event as { toolName?: string; details?: Record<string, unknown>; toolCallId?: string; content?: Array<{ type?: string; text?: string }> };
 		if (result.toolName === "Agent" && result.toolCallId) {
 			// ADR 0017: record the verifier's own result bytes for receipt-bound submission.
 			const text = Array.isArray(result.content)
 				? result.content.filter((part) => typeof part?.text === "string").map((part) => part.text as string).join("\n")
 				: "";
-			progression.piReviewHost.observeVerifierResult(result.toolCallId, text);
+			(runtime.host as PiReviewHost).observeVerifierResult(result.toolCallId, text);
 		}
 	});
 	pi.on("session_shutdown", async (_event: unknown, ctx?: ExtensionContext) => {
@@ -526,7 +934,7 @@ export default function (
 		revokePiPhaseEntry(piSessionId(ctx ?? railContext));
 		resetInteractionPresentation(ctx ?? railContext);
 		railContext = undefined;
-		await progression.onSessionShutdown();
+		await runtime.shutdown();
 	});
 
 	pi.registerTool({
@@ -587,6 +995,7 @@ export default function (
 		execute: async (toolCallId: string, params: { task_id: string; action: { op: string; verdict?: unknown; result?: string } }, signal: AbortSignal | undefined, onUpdate: ((update: ReturnType<typeof toolResult>) => void) | undefined, ctx: ExtensionContext) => {
 			const { task_id: taskId, action } = params;
 			railContext = ctx;
+			runtime.bindWorkspace(ctx.cwd);
 			presentTaskRailResult(ctx, taskId, {
 				state: "running",
 				operation: action.op,
@@ -621,41 +1030,16 @@ export default function (
 			}
 			if (action.op === "repair_authority_state") {
 				if (ctx.mode !== "tui") return failCanaryTool(taskId, action.op, "blocked", "tui_required", "imm_kernel_canary mutation is TUI-only", "invoke the TUI Tool");
-				const authority = await reconcileKernelAuthority(ctx.cwd, taskId);
-				if (authority.state === "terminal_owner" || authority.state === "unowned") {
-					// Repair is unrepresentable-by-construction removal: a leftover
-					// retired claim file is inert, and the store already holds the
-					// settled answer. Report the authority and write nothing.
-					try {
-						const repaired = await repairKernelAuthority(ctx.cwd, taskId, authority.revision);
-						const result = {
-							state: "recovered_retry",
-							operation: action.op,
-							authority: repaired,
-							result: `No stale authority claim exists for ${taskId}; the store owns authority`,
-							next_action: "retry the blocked managed request once",
-						};
-						return toolResult(JSON.stringify(result, null, 2), result);
-					} catch (error) {
-						const message = error instanceof Error ? error.message : String(error);
-						return failCanaryTool(taskId, action.op, "blocked", "authority_repair_failed", message, "inspect the kernel store authority state and retry");
-					}
-				}
-				if (
-					authority.state !== "repairable_stale_claim" ||
-					authority.owner_task_id !== taskId
-				) {
-					const blocked = {
-						state: "authority_conflict",
-						operation: action.op,
-						result: authority.diagnostic ?? `Authority state is ${authority.state}`,
-						next_action: "inspect authority state",
-					};
-					presentTaskRailResult(ctx, taskId, blocked);
-					return failCanaryTool(taskId, action.op, "authority_conflict", "authority_conflict", blocked.result, blocked.next_action);
-				}
+				const meta: ToolMeta = {
+					sessionId: piSessionId(ctx),
+					toolCallId,
+					workspace: ctx.cwd,
+					taskId,
+					interactive: ctx.mode === "tui",
+					signal,
+				};
 				try {
-					const repaired = await repairKernelAuthority(ctx.cwd, taskId, authority.revision);
+					const repaired = await runtime.authorize(taskId, "repair_authority_state", meta);
 					const result = {
 						state: "recovered_retry",
 						operation: action.op,
@@ -677,38 +1061,156 @@ export default function (
 				}
 			}
 			if (action.op === "advance_assurance" || action.op === "request_stop" || action.op === "request_authorization" || action.op === "submit_review" || action.op === "submit_verification" || action.op === "approve_breaking_intent_revision") {
-				if ((action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision") && ctx.mode !== "tui")
+				const isAuthorizeOp = action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision";
+				if (isAuthorizeOp && ctx.mode !== "tui")
 					return failCanaryTool(taskId, action.op, "blocked", "tui_required", "literal-user authorization is TUI-only", "invoke the TUI Tool");
-				// Spec drive-always-lanes D11: a single-task Lane's decision is answered at this Host's gate and applied to the Lane store.
-				const laneTarget = action.op === "request_stop" || action.op === "request_authorization" || action.op === "approve_breaking_intent_revision"
-					? findLaneRelayTarget(ctx.cwd, taskId) : null;
-				const result = laneTarget
-					? await relayPiLaneDecision(laneTarget, action as { op: "request_stop" | "request_authorization" | "approve_breaking_intent_revision"; next_intent?: unknown; record_revision?: string }, ctx, signal)
-					: action.op === "advance_assurance"
-					? await progression.advance(taskId, ctx, signal, (update: any) => {
-						onUpdate?.(update);
-						presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
-					})
-					: action.op === "submit_review"
-						? await progression.submitMediated(taskId, ctx, action.verdict)
-						: action.op === "submit_verification"
-							? await progression.submitVerification(taskId, ctx, action.result)
-						: action.op === "approve_breaking_intent_revision"
-							? await authorizeExactOperation(
-								taskId,
-								"approve-breaking-intent-revision",
-								ctx,
-								(action as { next_intent?: unknown }).next_intent,
-							)
-							: action.op === "request_stop"
-								? await authorizeExactOperation(taskId, "stop", { ...ctx, signal: signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal })
-								: await requestAuthorization(taskId, ctx);
-				const enriched = await closeOutBatchChild(
-					ctx,
+				if (isAuthorizeOp && runtime.coordinator.active(taskId)?.state === "running") {
+					return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "assurance operation is already running", "wait for the active assurance operation to finish");
+				}
+				let derivedOperation: AuthorizeOperation | undefined;
+				if (action.op === "request_authorization") {
+					if (runtime.coordinator.isInvocationOpen(taskId)) {
+						return failCanaryTool(
+							taskId,
+							action.op,
+							"blocked",
+							"authority_failed",
+							`task ${taskId} already has an open invocation; concurrent assure/authorize is rejected`,
+							"inspect authority state",
+						);
+					}
+					const authorityRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+					const projection = await projectAssuranceForTask(authorityRoot, taskId);
+					if (projection.error || !projection.claim) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", projection.error ?? "no active backend claim", "inspect authority state");
+					}
+					await dependencies.authorizationBeforeRecordRead?.();
+					const read = await readTaskRecordRaw(authorityRoot, taskId);
+					if (!read.record) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", `task ${taskId} has no TaskRecord v3`, "inspect authority state");
+					}
+					if (read.revision !== projection.projection.record_revision) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "TaskRecord changed while deriving authorization operation", "inspect authority state");
+					}
+					const derived = deriveAuthorizationOperation({ readiness: projection.projection.authorization });
+					if ("blocked" in derived) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", derived.blocked, "inspect authority state");
+					}
+					derivedOperation = derived.operation;
+				}
+				const effectiveSignal = signal && ctx.signal
+					? AbortSignal.any([signal, ctx.signal])
+					: signal ?? ctx.signal;
+				const meta: ToolMeta = {
+					sessionId: piSessionId(ctx),
+					toolCallId,
+					workspace: ctx.cwd,
 					taskId,
-					await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>),
-					(slug) => continuation.selectedParent(ctx.cwd, ctx.sessionManager.getSessionId(), slug),
-				);
+					interactive: ctx.mode === "tui",
+					signal: effectiveSignal,
+				};
+				let preStopLifecycle: string | undefined;
+				const stopAuthorityRoot = action.op === "request_stop"
+					? (findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd)
+					: ctx.cwd;
+				if (action.op === "request_stop") {
+					try {
+						preStopLifecycle = readTaskRecordRaw(stopAuthorityRoot, taskId).record?.lifecycle;
+					} catch {}
+				}
+				const startGen = runtime.coordinator.sessionGenerationValue();
+				let invocation: InvocationToken | undefined;
+				if (isAuthorizeOp) {
+					try {
+						invocation = runtime.coordinator.openInvocation(taskId);
+					} catch (error) {
+						const message = error instanceof Error ? error.message : String(error);
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", message, "inspect authority state");
+					}
+					activeAuthorizeCalls.set(toolCallId, { ctx, invocation, startGen, derivedOperation });
+				}
+				const reportedOperation = action.op === "request_stop"
+					? "stop"
+					: action.op === "approve_breaking_intent_revision"
+						? "approve-breaking-intent-revision"
+						: derivedOperation ?? action.op;
+				let result: unknown;
+				try {
+					if (action.op === "advance_assurance") {
+						result = await runtime.advance(taskId, effectiveSignal, meta, (update: any) => {
+							onUpdate?.(update);
+							presentTaskRailResult(ctx, taskId, update.details as Record<string, unknown> | undefined);
+						});
+					} else if (action.op === "submit_review") {
+						result = await runtime.submitReview(taskId, action.verdict, meta);
+					} else if (action.op === "submit_verification") {
+						result = await runtime.submitVerification(taskId, action.result, meta);
+					} else if (action.op === "approve_breaking_intent_revision") {
+						result = await runtime.authorize(taskId, "approve_breaking_intent_revision", meta, {
+							next_intent: (action as { next_intent?: unknown }).next_intent,
+							record_revision: (action as { record_revision?: string }).record_revision,
+						});
+					} else if (action.op === "request_stop") {
+						result = await runtime.authorize(taskId, "stop", meta, {
+							record_revision: (action as { record_revision?: string }).record_revision,
+						});
+						runtime.coordinator.releaseStoppedReview(taskId);
+					} else {
+						result = await runtime.authorize(taskId, "request_authorization", meta, {
+							record_revision: (action as { record_revision?: string }).record_revision,
+						});
+					}
+				} catch (error) {
+					if (error instanceof NativeAuthorityError && error.reasonCode === "user_cancelled") {
+						result = {
+							state: "cancelled",
+							operation: reportedOperation,
+							reason: error.message,
+						};
+					} else if (
+						action.op === "approve_breaking_intent_revision" &&
+						error instanceof NativeAuthorityError &&
+						error.reasonCode === "workspace_changed" &&
+						error.message.includes("workspace changed after native confirmation")
+					) {
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "staged next-state diff changed after native confirmation", "inspect authority state");
+					} else if (action.op === "request_stop" && preStopLifecycle && preStopLifecycle !== "stopped") {
+						const terminal = await projectAssuranceForTask(stopAuthorityRoot, taskId).catch(() => null);
+						if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
+							runtime.coordinator.releaseStoppedReview(taskId);
+							result = {
+								state: "applied",
+								operation: "stop",
+								lifecycle: "stopped",
+								delivery_error: error instanceof Error ? error.message : String(error),
+							};
+						} else {
+							const message = error instanceof Error ? error.message : String(error);
+							return failCanaryTool(taskId, action.op, "blocked", "authority_failed", message, "inspect authority state");
+						}
+					} else {
+						const message = error instanceof Error ? error.message : String(error);
+						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", message, "inspect authority state");
+					}
+				} finally {
+					activeAuthorizeCalls.delete(toolCallId);
+					if (invocation) runtime.coordinator.closeInvocation(invocation);
+				}
+				if (result && typeof result === "object" && "record" in result) {
+					const resObj = result as Record<string, unknown>;
+					result = {
+						...resObj,
+						state: "applied",
+						operation: reportedOperation,
+						lifecycle: (resObj.record as any)?.lifecycle,
+					};
+				} else if (result && typeof result === "object" && (result as Record<string, unknown>).state === "replan_selected") {
+					result = {
+						...(result as Record<string, unknown>),
+						operation: reportedOperation,
+					};
+				}
+				const enriched = await enrichAssuranceResult(ctx, taskId, result as unknown as Record<string, unknown>);
 				presentTaskRailResult(ctx, taskId, enriched);
 				throwIfCanaryToolFailure(taskId, action.op, enriched);
 				return toolResult(JSON.stringify(enriched, null, 2), enriched);
@@ -771,7 +1273,7 @@ export default function (
 				return failCanaryTool(taskId, action.op, "blocked", "claim_missing", `no active backend claim for ${taskId}`, "inspect authority state");
 			}
 			try {
-				const result = (await executeOrdinaryOperation(ctx, {
+				const result = (await runtime.executeOrdinary({ cwd: ctx.cwd }, {
 					taskId,
 					operation: toCanaryOperation(action, "executor") as { op: string; actor_id: string },
 				})) as unknown as { revision: string; record: { lifecycle: string; artifact_state: string } };
@@ -878,447 +1380,6 @@ export default function (
 			);
 		},
 	});
-
-	async function relayPiLaneDecision(
-		target: LaneRelayTarget,
-		action: { op: "request_stop" | "request_authorization" | "approve_breaking_intent_revision"; next_intent?: unknown; record_revision?: string },
-		ctx: ExtensionContext,
-		signal?: AbortSignal,
-	) {
-		const taskId = target.task_id;
-		// The Lane store is the authority root for the gate; every other Host fact stays the Parent's.
-		const laneCtx = Object.create(ctx, { cwd: { value: target.lane_path, enumerable: true } }) as ExtensionContext;
-		const operation = action.op === "request_stop" ? "stop" : action.op;
-		const outcome = await relayLaneDecision<AuthorizationOutcome>({
-			root: ctx.cwd, taskId, operation, expectedRecordRevision: action.record_revision,
-			project: (lanePath, id) => projectAssuranceForTask(lanePath, id),
-			apply: async () => action.op === "approve_breaking_intent_revision"
-				? authorizeExactOperation(taskId, "approve-breaking-intent-revision", laneCtx, action.next_intent)
-				: action.op === "request_stop"
-					? authorizeExactOperation(taskId, "stop", Object.create(laneCtx, { signal: { value: signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : signal ?? ctx.signal, enumerable: true } }) as ExtensionContext)
-					: requestAuthorization(taskId, laneCtx),
-			applied: result => result.state === "applied",
-			supervisor: piLaneSupervisor, parentHost: "pi",
-			pluginDir: resolve(dirname(fileURLToPath(import.meta.url)), ".."), waitMs: PI_LANE_WAIT_MS, signal,
-		});
-		return outcome.relayed ? { ...outcome.result, lane_relay: outcome.lane_relay } : { state: "blocked" as const, reason: batchReason("lane_decision_stale").reason };
-	}
-
-	type AuthorizationOutcome =
-		| { state: "applied"; operation: AuthorizeOperation; lifecycle?: string; delivery_error?: string }
-		| { state: "cancelled"; operation: AuthorizeOperation; reason: string }
-		| { state: "replan_selected"; operation: AuthorizeOperation; reason: string }
-		| { state: "blocked"; reason: string };
-
-	async function authorizeExactOperation(
-		taskId: string,
-		operation: AuthorizeOperation,
-		ctx: ExtensionContext,
-		nextIntentInput?: unknown,
-	): Promise<AuthorizationOutcome> {
-		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
-		let nextIntent: Awaited<ReturnType<typeof parseTaskIntentV1>> | undefined;
-		let nextIntentHash: string | undefined;
-		let nextIntentRef: { path: string; content_hash: string } | undefined;
-		if (operation === "approve-breaking-intent-revision") {
-			try {
-				nextIntent = parseProjectTaskIntent(ctx.cwd, nextIntentInput);
-				if (nextIntent.task_id !== taskId)
-					throw new Error("next intent task_id must match the enrolled task");
-				nextIntentHash = await canonicalIntentHash(nextIntent);
-			} catch (error) {
-				return {
-					state: "blocked",
-					reason: error instanceof Error ? error.message : String(error),
-				};
-			}
-		}
-			let invocation: InvocationToken;
-			const authorizationGeneration = progression.sessionGenerationValue();
-			try {
-				if (operation === "stop" && progression.active(taskId)?.state === "running")
-					throw new Error("assurance operation is already running");
-				invocation = progression.openInvocation(taskId);
-		} catch (error) {
-			const reason = error instanceof Error ? error.message : String(error);
-			notifyOnce(ctx, `authorization-open:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
-			return { state: "blocked", reason };
-		}
-		try {
-		const projection = await projectAssuranceForTask(ctx.cwd, taskId, nextIntent?.scope_hint);
-		if (projection.error || !projection.claim) {
-			const reason = projection.error ?? "no active backend claim";
-			notifyOnce(ctx, `authorization-claim:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
-			progression.closeInvocation(invocation);
-			return { state: "blocked", reason };
-		}
-		const priorIntent = await readTaskIntentForRecord(ctx.cwd, taskId);
-		const sidecar = nextIntent ? join(ctx.cwd, priorIntent.intent_ref.path) : undefined;
-		const priorBytes = sidecar ? readFileSync(sidecar) : undefined;
-		const stagedSnapshot = sidecar ? captureStagedIntent(ctx.cwd, priorIntent.intent_ref.path) : undefined;
-		let stagedNextDiffHash: string | undefined;
-		const restoreStagedIntent = (): void => {
-			if (!stagedSnapshot) return;
-			restoreStagedIntentShared(ctx.cwd, stagedSnapshot);
-		};
-		if (nextIntent) {
-			try {
-				if (!sidecar || !priorBytes) throw new Error("breaking revision sidecar is missing");
-				if (
-					priorIntent.intent.revision !== projection.projection.intent_revision
-					|| priorIntent.content_hash !== projection.projection.intent_content_hash
-				) throw new Error("Intent changed while preparing the breaking revision");
-				// A gate the Kernel would refuse afterwards is never opened.
-				if (classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
-					throw new Error("approve_breaking_intent_revision requires a breaking revision");
-				writeFileSync(sidecar, `${JSON.stringify(nextIntent, null, 2)}\n`);
-				execFileSync("git", ["add", "--", priorIntent.intent_ref.path], {
-					cwd: ctx.cwd,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-				const stagedRecord = await readTaskRecordRaw(ctx.cwd, taskId);
-				if (!stagedRecord.record || stagedRecord.revision !== projection.projection.record_revision)
-					throw new Error("TaskRecord changed while preparing the breaking revision");
-				// The revision is bound against the scope it asks for (ADR 0021, D6).
-				stagedNextDiffHash = taskDeliveryIdentity(
-					ctx.cwd,
-					withNextScope(stagedRecord.record, nextIntent.scope_hint),
-				).diff_hash;
-			} catch (error) {
-				let restoreError: unknown;
-				try { restoreStagedIntent(); } catch (err) { restoreError = err; }
-				const primaryReason = error instanceof Error ? error.message : String(error);
-				const reason = restoreError
-					? `${primaryReason}; additionally, ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`
-					: primaryReason;
-				progression.closeInvocation(invocation);
-				return { state: "blocked", reason };
-			}
-		}
-		let userDecisionOperation: ReturnType<typeof buildUserDecisionOperation> | undefined;
-		let verifierDispute: ReviewVerifierDisputeV1 | undefined;
-		if (operation === "resolve-user-decision") {
-			try {
-				const current = await readTaskRecordRaw(ctx.cwd, taskId);
-				if (!current.record) throw new Error(`task ${taskId} has no TaskRecord v2`);
-				if (current.revision !== projection.projection.record_revision)
-					throw new Error("task record changed while preparing user decision");
-				userDecisionOperation = buildUserDecisionOperation(current.record);
-				verifierDispute = current.record.history.find(entry => entry.review_verifier_dispute?.decision_id === userDecisionOperation!.finding_id)?.review_verifier_dispute;
-			} catch (error) {
-				const reason = error instanceof Error ? error.message : String(error);
-				notifyOnce(ctx, `authorization-decision:${taskId}:${reason}`, `cannot authorize ${taskId}: ${reason}`, "error");
-				progression.closeInvocation(invocation);
-				return { state: "blocked", reason };
-			}
-		}
-		// Only a replan boundary offers exits; both Hosts render the same ones.
-		const reviewRetry = operation === "authorize-review-retry" ? projection.projection.authorization.review_retry : undefined;
-		if (operation === "authorize-review-retry" && (!reviewRetry || reviewRetry.review_contract_hash !== currentReviewContractHash()))
-			throw new Error("Review retry readiness or contract changed");
-		const reworkExits = operation === "authorize-rework" ? projection.projection.authorization.exits : undefined;
-		let reworkChoice: ReworkChoice | undefined;
-		const dialogSummary = [
-			`Task: ${taskId}`,
-			`Decision: ${operation}`,
-			`State: ${projection.projection.lifecycle}:${projection.projection.artifact_state} | Claim: ${projection.claim.lifecycle_status}`,
-		].join("\n");
-		const intentDelta = nextIntent
-			? [
-					`Risk: ${priorIntent.intent.risk} -> ${nextIntent.risk}`,
-					`Goal: ${priorIntent.intent.goal} -> ${nextIntent.goal}`,
-					`Scope added: ${nextIntent.scope_hint.filter((path) => !priorIntent.intent.scope_hint.includes(path)).join(", ") || "none"}`,
-					`Scope removed: ${priorIntent.intent.scope_hint.filter((path) => !nextIntent.scope_hint.includes(path)).join(", ") || "none"}`,
-					`Acceptance added: ${nextIntent.acceptance.filter((item) => !priorIntent.intent.acceptance.some((prior) => prior.id === item.id)).map((item) => item.id).join(", ") || "none"}`,
-					`Acceptance removed: ${priorIntent.intent.acceptance.filter((item) => !nextIntent.acceptance.some((next) => next.id === item.id)).map((item) => item.id).join(", ") || "none"}`,
-					`Acceptance changed: ${nextIntent.acceptance.filter((item) => { const prior = priorIntent.intent.acceptance.find((candidate) => candidate.id === item.id); return prior && (prior.assertion !== item.assertion || prior.verification !== item.verification); }).map((item) => item.id).join(", ") || "none"}`,
-				]
-			: [];
-		const dialogDetails = [
-			...(reviewRetry ? [reviewRetryNotice(reviewRetry)] : []),
-			`Operation: ${operation}`,
-			...(userDecisionOperation
-				? [
-						`Finding: ${userDecisionOperation.finding_id}`,
-						`Resolution: ${userDecisionOperation.resolution}`,
-					]
-				: []),
-			...(verifierDispute ? [
-				`Claim: ${verifierDispute.finding.summary}`,
-				`Trigger: ${verifierDispute.finding.evidence.trigger}`,
-				`Caller chain: ${verifierDispute.finding.evidence.caller_chain.join(" → ")}`,
-				`Counter-path: ${verifierDispute.counter_path}`,
-			] : []),
-			...(operation === "authorize-rework"
-				? [
-						`Replan boundaries: ${projection.projection.replan_required_ids.join(", ")}`,
-						...(reworkExits ? reworkExitLines(reworkExits) : []),
-					]
-				: []),
-			...(nextIntent
-				? [
-						`Next Intent: rev ${nextIntent.revision} (${nextIntentHash})`,
-						...intentDelta,
-						`Acceptance Items: ${priorIntent.intent.acceptance.length} -> ${nextIntent.acceptance.length}`,
-						`Next staged diff: ${stagedNextDiffHash}`,
-					]
-				: []),
-			`Claim: ${projection.claim.lifecycle_status}`,
-			`Record revision: ${projection.projection.record_revision}`,
-			`State: ${projection.projection.lifecycle}:${projection.projection.artifact_state}`,
-			`Intent: rev ${projection.projection.intent_revision} (${projection.projection.intent_content_hash})`,
-			`Diff: ${projection.projection.diff_hash}`,
-		].join("\n");
-		const snapshotDigestRef = projection.projection.record_revision;
-		let confirmed = false;
-		const attentionReason: UserAttentionReason = operation === "approve-breaking-intent-revision"
-			? "breaking_intent_revision"
-			: "review_authorization";
-		presentTaskRail(ctx, {
-			task_id: taskId,
-			state: "Approval required",
-			result: uxText(UX_LANG, `${operation} requires your confirmation`, `${operation} 需要您的确认`),
-			next: uxText(UX_LANG, `Decide ${operation}`, `请决策 ${operation}`),
-		});
-		const attention = {
-			attention_id: randomUUID(),
-			task_id: taskId,
-			reason: attentionReason,
-			label: uxText(UX_LANG, `${operation} approval required`, `${operation} 待您批准`),
-		};
-		try {
-			const selected = await requestAuthorityDialog(pi, ctx, attention, {
-				title: uxText(UX_LANG, `Authorize ${operation}?`, `是否批准 ${operation}？`),
-				summary: dialogSummary,
-				details: dialogDetails,
-				signal: ctx.signal,
-				actions: reworkExits
-					? [
-							{ value: "grant_rounds", label: uxText(UX_LANG, "Grant more Review rounds", "追加 Review 轮次"), description: uxText(UX_LANG, `Grant ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} further rounds`, `追加 ${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max} 轮`) },
-							...(reworkExits.accept_residual_risk
-								? [{ value: "accept_residual_risk", label: uxText(UX_LANG, "Accept residual risk", "接受残余风险"), description: uxText(UX_LANG, "Accept the open Review findings with a reason", "附理由接受未决 Review 发现") }]
-								: []),
-							{ value: "replan", label: uxText(UX_LANG, "Replan", "重新规划"), description: uxText(UX_LANG, "Revise the Intent instead", "改为修订 Intent") },
-							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
-						]
-					: verifierDispute ? [
-						{ value: "accept_verifier_dispute", label: uxText(UX_LANG, "Accept finding as rework", "接受发现并返工"), description: uxText(UX_LANG, "Project the finding to the Executor", "将该发现交给执行者") },
-						{ value: "dismiss_verifier_dispute", label: uxText(UX_LANG, "Dismiss and review again", "驳回并重新审查"), description: uxText(UX_LANG, "Request a fresh Review", "请求新的 Review") },
-						{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
-					] : [
-							{ value: "authorize", label: uxText(UX_LANG, "Authorize", "批准"), description: uxText(UX_LANG, `Apply ${operation} after re-checking state`, `重新校验状态后应用 ${operation}`) },
-							{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Leave managed authority unchanged", "保持托管权限状态不变") },
-						],
-			});
-			if (reworkExits) {
-				if (selected === "grant_rounds" || selected === "accept_residual_risk" || selected === "replan") {
-					const raw: Record<string, unknown> = { exit: selected };
-					if (selected === "grant_rounds") {
-						const text = await ctx.ui.input(
-							uxText(UX_LANG, `Further Review rounds (${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`, `追加 Review 轮次(${reworkExits.grant_rounds.min}-${reworkExits.grant_rounds.max})`),
-							String(reworkExits.grant_rounds.min),
-							{ signal: ctx.signal },
-						);
-						if (text !== undefined && text.trim()) raw.rounds = Number(text.trim());
-						if (text === undefined) raw.exit = "cancelled";
-					} else if (selected === "accept_residual_risk") {
-						const text = await ctx.ui.input(uxText(UX_LANG, "Reason for accepting residual risk", "接受残余风险的理由"), "", { signal: ctx.signal });
-						if (text === undefined) raw.exit = "cancelled";
-						else raw.reason = text;
-					}
-					// The same parser the Claude Host uses, so the accepted shapes cannot drift.
-					reworkChoice = raw.exit === "cancelled" ? undefined : (parseReworkChoice(reworkExits, raw) ?? undefined);
-					confirmed = reworkChoice !== undefined;
-					if (raw.exit !== "cancelled" && !reworkChoice) {
-						notifyOnce(ctx, `authorization-exit:${taskId}`, `authorize ${operation}: the chosen exit was not valid; nothing applied`, "warning");
-					}
-				}
-			} else if (verifierDispute && userDecisionOperation) {
-				confirmed = selected === "accept_verifier_dispute" || selected === "dismiss_verifier_dispute";
-				if (confirmed) userDecisionOperation.resolution = selected as string;
-			} else {
-				confirmed = selected === "authorize";
-			}
-		} catch (error) {
-			if (nextIntent) {
-				restoreStagedIntent();
-			}
-			if (
-				operation !== "stop" &&
-				operation !== "approve-breaking-intent-revision" &&
-				operation !== "authorize-rework" &&
-				operation !== "authorize-review-retry"
-			)
-				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-			progression.closeInvocation(invocation);
-			if (operation === "stop" && !ctx.signal?.aborted && !(error instanceof Error && error.name === "AbortError")) {
-				return { state: "blocked", reason: "native stop confirmation failed; retry request_stop in this Host" };
-			}
-			return { state: "cancelled", operation, reason: "confirmation aborted" };
-		}
-		if (!confirmed || ctx.signal?.aborted) {
-			if (nextIntent) {
-				restoreStagedIntent();
-			}
-			if (
-				operation !== "stop" &&
-				operation !== "approve-breaking-intent-revision" &&
-				operation !== "authorize-rework" &&
-				operation !== "authorize-review-retry"
-			)
-				await recordCancelledUserDecision(ctx, taskId, operation, snapshotDigestRef).catch(() => undefined);
-			progression.closeInvocation(invocation);
-			return { state: "cancelled", operation, reason: "cancelled" };
-		}
-		// A replan is not a mutation of this operation: the Intent revision has
-		// its own gate, so nothing is written here.
-		if (reworkChoice?.exit === "replan") {
-			progression.closeInvocation(invocation);
-			return { state: "replan_selected", operation, reason: "revise the Intent, then authorize approve-breaking-intent-revision" };
-		}
-		if (!progression.sessionActiveValue() || progression.sessionGenerationValue() !== authorizationGeneration || progression.invocationState(invocation) !== "open") {
-			if (nextIntent) {
-				restoreStagedIntent();
-			}
-			notifyOnce(ctx, `authorization-session:${taskId}:${operation}`, `authorize ${operation}: session changed; confirmation discarded`, "warning");
-			progression.closeInvocation(invocation);
-			return { state: "blocked", reason: "session changed; confirmation discarded" };
-		}
-			// Linearization point: only this fresh affirmative continuation
-			// may mint/apply; timeout/cancel already won open -> cancelled.
-			try {
-				progression.commitInvocation(invocation);
-			} catch (error) {
-				if (nextIntent) {
-					restoreStagedIntent();
-				}
-				const reason = error instanceof Error ? error.message : String(error);
-				notifyOnce(ctx, `authorization-commit:${taskId}:${operation}:${reason}`, `authorize ${operation} aborted: ${reason}`, "error");
-				return { state: "blocked", reason };
-			}
-			const { registry, app } = await authorityPair();
-			const now = new Date().toISOString();
-			if (nextIntent) {
-				nextIntentRef = {
-					path: `docs/plans/${nextIntent.task_id}.intent.json`,
-					content_hash: nextIntentHash!,
-				};
-			}
-			const exactOperation = operation === "stop"
-				? { op: "stop" as const, reason: "literal user requested task stop" }
-				: operation === "approve-breaking-intent-revision"
-					? {
-							op: "approve_breaking_intent_revision" as const,
-							next_intent: nextIntent!,
-							next_intent_ref: nextIntentRef!,
-						}
-					: reviewRetry
-						? { op: "authorize_review_retry" as const, review_contract_hash: reviewRetry.review_contract_hash, intent_content_hash: projection.projection.intent_content_hash }
-					: operation === "authorize-rework"
-						? reworkChoice?.exit === "accept_residual_risk"
-							? { op: "accept_residual_risk" as const, reason: reworkChoice.reason }
-							: {
-									op: "authorize_rework" as const,
-									...(reworkChoice?.exit === "grant_rounds" ? { rounds: reworkChoice.rounds } : {}),
-								}
-						: userDecisionOperation!;
-				// The exact host-built operation is shared by capability digest and
-				// application payload; command arguments cannot inject authority fields.
-				try {
-					if (nextIntent) await dependencies.authorizationAfterSidecarStage?.();
-					// Re-read the owner record after confirmation and compare the staged
-					// candidate digest immediately before capability issuance.
-					const liveRecord = nextIntent ? await readTaskRecordRaw(ctx.cwd, taskId) : null;
-					if (nextIntent && (!liveRecord?.record || liveRecord.revision !== projection.projection.record_revision || !stagedNextDiffHash))
-						throw new Error("TaskRecord changed before the breaking revision digest");
-					const operationDiffHash = liveRecord?.record && nextIntent
-						? taskDeliveryIdentity(ctx.cwd, withNextScope(liveRecord.record, nextIntent.scope_hint)).diff_hash
-						: liveRecord?.record
-							? taskDeliveryIdentity(ctx.cwd, liveRecord.record).diff_hash
-							: projection.projection.diff_hash;
-					if (nextIntent && operationDiffHash !== stagedNextDiffHash)
-						throw new Error("staged next-state diff changed after native confirmation");
-					const capability = await mintCapability(registry, {
-						authority_kind: "user",
-						task_id: taskId,
-						run_id: projection.projection.run_id,
-						action_kind: exactOperation.op,
-						expected_record_hash: projection.projection.record_revision,
-						intent_revision: nextIntent?.revision ?? projection.projection.intent_revision,
-						intent_content_hash: nextIntentHash ?? projection.projection.intent_content_hash,
-						diff_hash: operationDiffHash,
-						actor_id: LITERAL_USER_ACTOR_ID,
-						...(exactOperation.op === "authorize_review_retry" ? { review_contract_hash: exactOperation.review_contract_hash } : {}),
-						...(exactOperation.op === "approve_breaking_intent_revision"
-							? { next_intent: exactOperation.next_intent, next_intent_ref: exactOperation.next_intent_ref }
-							: {}),
-						...(exactOperation.op === "resolve_user_decision"
-							? { finding_id: exactOperation.finding_id, resolution: exactOperation.resolution }
-							: {}),
-						...(exactOperation.op === "stop" || exactOperation.op === "accept_residual_risk" ? { reason: exactOperation.reason } : {}),
-						...(exactOperation.op === "authorize_rework" && "rounds" in exactOperation ? { rounds: exactOperation.rounds } : {}),
-						now,
-					});
-					const result = (await app.execute({
-						root: ctx.cwd,
-						task_id: taskId,
-						reviewContractHash: currentReviewContractHash(),
-						operation: { ...exactOperation, capability, actor_id: LITERAL_USER_ACTOR_ID } as never,
-						prior_intent_token: priorIntent.token,
-						diffProvider: (root: string, record: TaskRecord) =>
-							diffSnapshotOf(root, nextIntent ? withNextScope(record, nextIntent.scope_hint) : record),
-						now,
-					})) as unknown as { record: { lifecycle: string; artifact_state: string; intent_ref: { path: string }; intent_snapshot: { scope_hint: string[] } } };
-					if (exactOperation.op === "stop") progression.releaseStoppedReview(taskId);
-					if (
-						exactOperation.op === "stop" ||
-						exactOperation.op === "authorize_rework" ||
-						exactOperation.op === "accept_residual_risk" ||
-						(exactOperation.op === "resolve_user_decision" && exactOperation.resolution === "accept_verifier_dispute") ||
-						exactOperation.op === "approve_breaking_intent_revision"
-					) stagePlanningArtifactTransition(ctx.cwd, result.record);
-					return { state: "applied", operation, lifecycle: result.record.lifecycle };
-			} catch (error) {
-				if (stagedSnapshot) {
-					const current = await readTaskRecordRaw(ctx.cwd, taskId);
-					if (current.record?.intent_snapshot.revision === priorIntent.intent.revision) restoreStagedIntent();
-				}
-				throw error;
-			}
-			} catch (error) {
-				const reason = error instanceof Error ? error.message : String(error);
-				if (operation === "stop") {
-					const terminal = await projectAssuranceForTask(ctx.cwd, taskId).catch(() => null);
-					if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
-						progression.releaseStoppedReview(taskId);
-						return { state: "applied", operation, lifecycle: "stopped", delivery_error: reason };
-					}
-				}
-				notifyOnce(ctx, `authorization-apply:${taskId}:${operation}:${reason}`, `authorize failed: ${reason}`, "error");
-				return { state: "blocked", reason };
-			} finally {
-				progression.closeInvocation(invocation);
-			}
-	}
-
-	async function requestAuthorization(taskId: string, ctx: ExtensionContext): Promise<AuthorizationOutcome> {
-		if (ctx.mode !== "tui") return { state: "blocked", reason: "imm_kernel_canary mutation is TUI-only" };
-		if (progression.isInvocationOpen(taskId))
-			return { state: "blocked", reason: `task ${taskId} already has an open invocation; concurrent assure/authorize is rejected` };
-		const projection = await projectAssuranceForTask(ctx.cwd, taskId);
-		if (projection.error || !projection.claim)
-			return { state: "blocked", reason: projection.error ?? "no active backend claim" };
-		await dependencies.authorizationBeforeRecordRead?.();
-		const read = await readTaskRecordRaw(ctx.cwd, taskId);
-		if (!read.record) return { state: "blocked", reason: `task ${taskId} has no TaskRecord v3` };
-		if (read.revision !== projection.projection.record_revision)
-			return { state: "blocked", reason: "TaskRecord changed while deriving authorization operation" };
-		const derived = deriveAuthorizationOperation({
-			readiness: projection.projection.authorization,
-		});
-		if ("blocked" in derived) return { state: "blocked", reason: derived.blocked };
-		return authorizeExactOperation(taskId, derived.operation, ctx);
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1329,7 +1390,6 @@ export default function (
 // Hosts; this module re-exports it for its existing callers and tests.
 import {
 	deriveAuthorizationOperation,
-	reviewRetryNotice,
 	type DerivedAuthorizationOperation,
 } from "../runtime/authorization_operation";
 
@@ -1382,10 +1442,9 @@ export async function recordCancelledUserDecision(
 	// Deduplicate onto the existing open decision trail regardless of its id:
 	// a pending decision must never be shadowed by a second trail entry.
 	if (openDecision) return { recorded: false, finding_id: openDecision.id };
-	const { app } = await authorityPair();
-	await app.execute({
-		root: ctx.cwd,
-		task_id: taskId,
+	const runtime = await getSharedPiProgression();
+	await runtime.executeOrdinary({ cwd: ctx.cwd }, {
+		taskId,
 		operation: {
 			op: "record_finding",
 			finding: {
@@ -1396,9 +1455,6 @@ export async function recordCancelledUserDecision(
 			},
 			actor_id: LITERAL_USER_ACTOR_ID,
 		} as never,
-		prior_intent_token: (await readTaskIntentForRecord(ctx.cwd, taskId)).token,
-		diffProvider: (root: string, record: TaskRecord) => diffSnapshotOf(root, record),
-		now: new Date().toISOString(),
 	});
 	return { recorded: true, finding_id: findingId };
 }
@@ -1429,13 +1485,6 @@ export function buildUserDecisionOperation(record: {
 export function readTaskIntentForRecord(root: string, taskId: string): ReadTaskIntentResult {
 	const record = readTaskRecordRaw(root, taskId).record;
 	return readTaskIntent(root, taskId, record?.intent_ref.path, record?.intent_snapshot);
-}
-
-async function markGithubTaskTerminal(
-	root: string,
-	input: { task_id: string; phase: "done" | "stopped"; terminal_event_id: string },
-): Promise<GithubTrackerResult> {
-	return runGithubTrackerOperation(root, { op: "mark-terminal", ...input });
 }
 
 /**
@@ -1603,97 +1652,6 @@ function notifyHost(ctx: HostContext, key: string, message: string, level: "warn
 const piConfirmationReference: ConfirmationReferenceSource = ({ snapshot, now }) =>
 	`pi-confirm-${createHash("sha256").update(`${snapshot.task_id}\0${now}\0${snapshot.intent_revision}\0${snapshot.intent_content_hash}\0${snapshot.diff_hash}`).digest("hex").slice(0, 16)}`;
 
-async function mintCapability(
-	registry: MutationAuthorityRegistry,
-	input: {
-		authority_kind: "review" | "qa" | "user";
-		task_id: string;
-		run_id: string | null;
-		action_kind: string;
-		expected_record_hash: string;
-		intent_revision: number;
-		intent_content_hash: string;
-		diff_hash: string;
-		actor_id: string;
-		findings?: unknown[];
-		approval?: unknown;
-		next_intent?: unknown;
-		next_intent_ref?: unknown;
-		reason?: string;
-		rounds?: number;
-		review_contract_hash?: string;
-		finding_id?: string;
-		resolution?: string;
-		now: string;
-	},
-) {
-	const now = input.now;
-	// The action digest is computed by the Kernel from the canonical action
-	// builder (same field order and payload the consuming application will
-	// inspect), so the minted capability always matches the applied action.
-	const action = (await capabilityActionFor({
-		op: input.action_kind,
-		task_id: input.task_id,
-		at: now,
-		actor_id: input.actor_id,
-		...(input.reason !== undefined ? { reason: input.reason } : {}),
-		...(input.rounds !== undefined ? { rounds: input.rounds } : {}),
-		...(input.review_contract_hash ? { review_contract_hash: input.review_contract_hash, intent_content_hash: input.intent_content_hash } : {}),
-		...(input.findings !== undefined ? { findings: input.findings } : {}),
-		...(input.approval !== undefined ? { approval: input.approval } : {}),
-		...(input.next_intent !== undefined ? { next_intent: input.next_intent } : {}),
-		...(input.next_intent_ref !== undefined ? { next_intent_ref: input.next_intent_ref } : {}),
-		...(input.finding_id !== undefined ? { finding_id: input.finding_id } : {}),
-		...(input.resolution !== undefined ? { resolution: input.resolution } : {}),
-	})) as unknown as Record<string, unknown>;
-	const digest = await digestOfAction(action as never);
-	const binding: CapabilityBindingV2 = {
-		authority_kind: input.authority_kind,
-		task_id: input.task_id,
-		...(input.run_id ? { run_id: input.run_id } : {}),
-		action_digest: digest,
-		expected_record_hash: input.expected_record_hash,
-		intent_revision: input.intent_revision,
-		intent_content_hash: input.intent_content_hash,
-		diff_hash: input.diff_hash,
-		actor_id: input.actor_id,
-		confirmation_ref: `pi-confirm-${createHash("sha256").update(
-			`${input.task_id}\0${now}\0${input.intent_revision}\0${input.intent_content_hash}\0${input.diff_hash}`,
-		).digest("hex").slice(0, 16)}`,
-		findings_digest:
-			input.action_kind === "request_rework"
-				? await findingsDigestV2(input.findings as never[])
-				: null,
-	};
-	return registry.issue(binding);
-}
-
-let authorityPairPromise: Promise<{ registry: MutationAuthorityRegistry; app: CanaryApplication }> | null = null;
-function authorityPair(): Promise<{ registry: MutationAuthorityRegistry; app: CanaryApplication }> {
-	if (!authorityPairPromise) {
-		authorityPairPromise = (async () => {
-			const registry = await createMutationAuthorityRegistry();
-			const app = await createCanaryApplication(registry);
-			return { registry, app };
-		})();
-	}
-	return authorityPairPromise;
-}
-
-async function executeOrdinaryOperation(
-	ctx: HostContext,
-	input: { taskId: string; operation: { op: string; actor_id: string; next_intent?: unknown } },
-): Promise<unknown> {
-	const { app } = await authorityPair();
-	return executeOrdinaryKernelOperation({
-		root: ctx.cwd,
-		taskId: input.taskId,
-		operation: input.operation,
-		app,
-		readIntent: readTaskIntentForRecord,
-	});
-}
-
 type AssuranceTaskState = AssuranceProjectionResult["projection"] | { error: string };
 
 /**
@@ -1708,48 +1666,6 @@ async function reconcileRefsQuietly(root: string): Promise<void> {
 	}
 }
 
-/**
- * Gate-free closeout: a batch child that reached Kernel `done` in the foreground
- * re-enters the batch in the same call, reusing its authorization. Only `done`
- * continues; stopped, parked and Review-pending children end where they do
- * today. The continuation is transport: the Kernel result is returned
- * unchanged, and any failure is reported beside it with one retry action.
- */
-async function closeOutBatchChild(
-	ctx: ExtensionContext,
-	taskId: string,
-	enriched: Record<string, unknown>,
-	selectedParent: (slug: string) => boolean,
-): Promise<Record<string, unknown>> {
-	const taskState = enriched.task_state as { lifecycle?: unknown } | undefined;
-	if (taskState?.lifecycle !== "done") return enriched;
-	let slug: string | null;
-	try {
-		slug = findResumableBatchSlugForTask(ctx.cwd, taskId);
-	} catch {
-		return enriched;
-	}
-	if (!slug) return enriched;
-	try {
-		if (!selectedParent(slug)) return enriched;
-		// The batch commit takes exactly the scope envelope plus this task's own
-		// audit evidence and refuses unstaged changes: stage only that evidence.
-		if (existsSync(join(ctx.cwd, ".imm", "audit", taskId)))
-			execFileSync("git", ["-C", ctx.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
-		const batch = await executePiUnattendedBatch({ root: ctx.cwd, initiativeSlug: slug, reuseOnly: true, signal: ctx.signal });
-		return { ...enriched, batch };
-	} catch (error) {
-		return {
-			...enriched,
-			batch: {
-				state: "rejected",
-				reason: `batch continuation failed: ${error instanceof Error ? error.message : String(error)}`,
-				recovery_action: "call start_unattended_batch with the same Initiative to continue the batch",
-			},
-		};
-	}
-}
-
 async function enrichAssuranceResult(
 	ctx: ExtensionContext,
 	taskId: string,
@@ -1760,21 +1676,13 @@ async function enrichAssuranceResult(
 		const taskState = { error: typeof result.reason === "string" ? result.reason : "authority projection unavailable" };
 		return { ...result, task_state: taskState, next_action: nextActionForAssuranceResult(result, taskState) };
 	}
-	const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+	const targetRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+	const projection = await projectAssuranceForTask(targetRoot, taskId);
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }
 		: projection.projection;
-	let tracker: Awaited<ReturnType<typeof markGithubTaskTerminal>> | undefined;
-	await reconcileRefsQuietly(ctx.cwd);
-	// One shared projection: the Claude Host runs the same step, so the opted-in
-	// terminal tracker outcome does not depend on which Host settled the task.
-	tracker = await projectTerminalTrackerState({
-		root: ctx.cwd,
-		task_id: taskId,
-		projection,
-		tombstone: await readTaskTombstone(ctx.cwd, taskId),
-		markTerminal: (root, input) => markGithubTaskTerminal(root, input),
-	});
+	await reconcileRefsQuietly(targetRoot);
+	const tracker = result.tracker;
 	return {
 		...result,
 		task_state: taskState,
@@ -1920,7 +1828,7 @@ function throwIfCanaryToolFailure(
 // Re-exported pure lifecycle helpers and types (single source of truth in the
 // progression module; the extension keeps its historical export surface).
 export {
-	AssuranceProgression,
+	PiRuntime,
 	buildReviewPrompt,
 	classifyReviewWorkload,
 	deriveQaJobTimeoutMs,

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, te
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -13,9 +13,9 @@ import {
 } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
-import { AssuranceProgression } from "../plugins/immune-brain/.pi-extension/pi-canary-assurance-progression";
+import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import { CliReviewHost, reviewArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { CliReviewHost, resolveAuthorityReviewSkillPath, reviewArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -365,12 +365,71 @@ describe("review arguments", () => {
 		}
 	});
 
-	test("pi equals the documented fresh print session", () => {
-		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
-			"--print", "--no-session", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
-		]);
+	test("pi runs an isolated print session with explicit skill and narrowed tools (S7 AC1, BR-SCN-3)", () => {
+		const skillPath = resolveAuthorityReviewSkillPath();
+		expect(isAbsolute(skillPath)).toBe(true);
+		expect(existsSync(skillPath)).toBe(true);
+		expect(skillPath.endsWith("skills/authority-review/SKILL.md")).toBe(true);
+
 		const argv = reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12);
-		for (const flag of ["--tools", "--no-extensions", "--no-skills", "--no-mcp"]) expect(argv).not.toContain(flag);
+		expect(argv).toEqual([
+			"--print",
+			"--no-session",
+			"--no-extensions",
+			"--no-skills",
+			"--no-mcp",
+			"--skill",
+			skillPath,
+			"--tools",
+			"read,grep,find,ls,bash",
+			"--model",
+			"m",
+			"--thinking",
+			"high",
+			`/skill:authority-review ${packet}`,
+		]);
+
+		// Explicit skill remains loadable and has valid frontmatter
+		const skillContent = readFileSync(skillPath, "utf8");
+		expect(skillContent).toContain("name: authority-review");
+
+		// Negative: ambient configuration and implicit skill lookups are absent
+		for (const flag of ["--skill-dir", "--extension", "--mcp", "--no-context-files"]) {
+			expect(argv).not.toContain(flag);
+		}
+		expect(argv).toContain("--no-extensions");
+		expect(argv).toContain("--no-skills");
+		expect(argv).toContain("--no-mcp");
+
+		// Bound: Claude and Antigravity argv are unchanged
+		const claudeArgv = reviewArguments({ host: "claude-code", model: "m", effort: "high" }, packet, 12);
+		expect(claudeArgv).toContain("--no-session-persistence");
+		expect(claudeArgv).toContain("--settings");
+		const agyArgv = reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12);
+		expect(agyArgv).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
+
+		// Bound: Bash is NOT described as argument-restricted (narrowed tools only)
+		expect(argv[argv.indexOf("--tools") + 1]).toBe("read,grep,find,ls,bash");
+		expect(argv.some((arg) => arg.includes("Bash(git"))).toBe(false);
+	});
+
+	test("explicit authority-review skill path resolves in source and bundled layouts (S7 AC3)", () => {
+		const root = resolve(import.meta.dir, "..");
+		const sourceSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain/runtime/assurance"));
+		expect(existsSync(sourceSkill)).toBe(true);
+		expect(sourceSkill).toBe(resolve(root, "plugins/immune-brain/skills/authority-review/SKILL.md"));
+
+		const claudeBundleSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain/dist/claude"));
+		expect(existsSync(claudeBundleSkill)).toBe(true);
+		expect(claudeBundleSkill).toBe(resolve(root, "plugins/immune-brain/skills/authority-review/SKILL.md"));
+
+		const agyBundleSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain-antigravity/dist/antigravity"));
+		expect(existsSync(agyBundleSkill)).toBe(true);
+		expect(agyBundleSkill).toBe(resolve(root, "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md"));
+
+		const agySourceSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain-antigravity/runtime/assurance"));
+		expect(existsSync(agySourceSkill)).toBe(true);
+		expect(agySourceSkill).toBe(resolve(root, "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md"));
 	});
 
 	test("antigravity runs a print session and invokes the same skill", () => {
@@ -458,10 +517,10 @@ describe("#426 reviewer and verifier git allow-list", () => {
 		}
 	});
 
-	test("pi and antigravity reviewer and verifier argv are unchanged", () => {
+	test("pi isolated reviewer and antigravity reviewer/verifier argv remain consistent", () => {
 		const instruction = `Read ${packet} and do exactly what it says. Reply with only the JSON it asks for.`;
 		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
-			"--print", "--no-session", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
+			"--print", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--skill", resolveAuthorityReviewSkillPath(), "--tools", "read,grep,find,ls,bash", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
 		]);
 		expect(verificationArguments({ host: "pi" }, "m", packet, 12)).toEqual(["--print", "--no-session", "--model", "m", instruction]);
 		expect(reviewArguments({ host: "antigravity" }, packet, 12)).toEqual(["--print", `/authority-review ${packet}`]);
@@ -772,7 +831,12 @@ describe("default cli dispatch", () => {
 		expect(typeof ready.review_command).toBe("string");
 		const script = reviewScriptPath(ready.review_command!);
 		expect(existsSync(script)).toBe(true);
-		expect(readFileSync(script, "utf8").match(/authority-review/g)).toHaveLength(1);
+		const scriptContent = readFileSync(script, "utf8");
+		expect(scriptContent).toContain("--no-extensions");
+		expect(scriptContent).toContain("--no-skills");
+		expect(scriptContent).toContain("--no-mcp");
+		expect(scriptContent).toContain("'--tools' 'read,grep,find,ls,bash'");
+		expect(scriptContent.match(/authority-review/g)).toHaveLength(2);
 		expect(ready).not.toHaveProperty("agent_params");
 	});
 });
@@ -785,10 +849,10 @@ describe("default cli dispatch", () => {
  */
 const RETIRED_SWITCH = ["IMMUNE_BRAIN", "REVIEW", "DISPATCH"].join("_");
 
-const piAdvance = async (root: string, risk: Risk = "material") => {
+const piAdvance = async (root: string, env: Record<string, string | undefined>, risk: Risk = "material") => {
 	const fixture = fixtureFor(root, { risk });
-	const progression = new AssuranceProgression({ ...fixture.ports, authorityOverrides: fixture.ports as never });
-	return await progression.advance(TASK, ctx(root)) as never;
+	const runtime = new PiRuntime({ cwd: root, env, ports: fixture.ports, authorityOverrides: fixture.ports as never });
+	return await runtime.advance(TASK) as never;
 };
 
 const antigravityAdvance = async (root: string, env: Record<string, string | undefined>, risk: Risk = "material") => {
@@ -802,7 +866,7 @@ describe("cli only dispatch", () => {
 		const root = reviewRepo("pi", { review_model: "model-x" });
 		onPath(fakeReviewer("exit 0"));
 		const env = { ...ROOT_ENV, [RETIRED_SWITCH]: "subagent" };
-		for (const ready of [await piAdvance(root), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
+		for (const ready of [await piAdvance(root, env), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
 			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
 			expect(typeof ready.review_command).toBe("string");
 			expect(ready).not.toHaveProperty("agent_params");

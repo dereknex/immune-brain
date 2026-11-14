@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "antigravity-async-verifier-result",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:antigravity-async-verifier-result:2026-11-13T08:40:07.698Z",
+  "final_record_hash": "sha256:9a20b2e558ae2f1d164ee0384be0e6d45792b0afda2d10f23e8b8cd98d1c86c8",
+  "terminalized_at": "2026-11-13T08:40:07.698Z"
+}

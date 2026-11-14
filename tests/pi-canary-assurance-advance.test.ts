@@ -38,11 +38,33 @@ test("assurance does not depend on a terminal Agent lifecycle event", () => {
 	expect(events).not.toContain("tool_execution_end");
 });
 
-test("assurance source contains no detached UI or result-polling path", () => {
+test("assurance source contains no detached UI or result-polling path", async () => {
 	const { source } = surface();
+	const runtimeSource = require("node:fs").readFileSync("plugins/immune-brain/.pi-extension/pi-host-runtime.ts", "utf8") as string;
 	for (const forbidden of ["startQa", "startReview", "get_subagent_result", "setWidget(", "setStatus(", "setTimeout(", "setInterval(", "deliverFollowUp"]) {
 		expect(source).not.toContain(forbidden);
+		expect(runtimeSource).not.toContain(forbidden);
 	}
-	expect(source).toContain("await progression.advance");
-	expect(source).toContain("await progression.submitMediated");
+	expect(source).toContain("await runtime.advance(");
+	expect(source).toContain("await runtime.submitReview(");
+	expect(runtimeSource).toContain("this.runtime.advance(");
+	expect(runtimeSource).toContain("this.runtime.submitReview(");
+
+	const { PiRuntime } = await import("../plugins/immune-brain/.pi-extension/pi-host-runtime");
+	const runtime = new PiRuntime({
+		cwd: process.cwd(),
+		ports: {
+			projectTask: async () => ({ error: "no active claim" } as never),
+		},
+	});
+	expect(await runtime.advance("missing-task")).toMatchObject({ state: "blocked" });
+	expect(await runtime.submitReview("missing-task", undefined)).toMatchObject({ state: "blocked" });
+});
+
+test("Pi review host contains no duplicate pending-verifier state machine", () => {
+	const progressionSource = require("node:fs").readFileSync("plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts", "utf8") as string;
+	expect(progressionSource).not.toContain("this.verifiers = new Map");
+	expect(progressionSource).not.toContain("RecordedVerificationReceipt");
+	expect(progressionSource).toContain("VerifierObservation");
+	expect(progressionSource).toContain("PI_VERIFIER_PROFILE");
 });

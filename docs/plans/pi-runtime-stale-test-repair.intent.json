@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-runtime-stale-test-repair",
+  "owner": "user",
+  "goal": "Repair the tests S4 (5a3d466) left pointing at retired Pi code: tests/host-neutral-assurance-coordinator.test.ts (100 tests) and tests/cli-review-dispatch.test.ts (29 tests) fail to load with \"Export named 'AssuranceProgression' not found\", and three source-text assertions name strings S4 rewrote: tests/pi-canary-assurance-advance.test.ts:46-47 ('await progression.advance'), tests/github-issue-projection-contract.test.ts:724 ('projectTerminalTrackerState' in imm-canary-work.ts) and tests/unattended-contracts.test.ts:470 ('batchReason(\"confirmation_port_unavailable\")'). Each assertion is re-pointed at the post-S4 seam that carries the same property, preferring a behavioral check over a source string. Context: batch #481 (tri-host-capability-alignment) integrated S4 (5a3d466) and S5 (8116d1c) without running final verification; full bun test on ea6e2f6 fails 48 tests in 9 files that all pass on 566abec (pre-S4). Spec docs/specs/tri-host-capability-alignment.spec.md D5 keeps Pi public tool results, native confirmation dialogs and Task Rail unchanged while Pi composes HostRuntime. No existing assertion may be deleted, skipped or weakened to pass; a test that only reached a retired symbol is moved to the post-S4 surface (PiRuntime over HostRuntime in plugins/immune-brain/.pi-extension/pi-host-runtime.ts) and keeps its assertions. Depends on pi-authority-fail-closed-repair being integrated first. Out of scope: tests/dual-host-assurance-conformance.test.ts. no user-visible change: test repair only, unless a re-pointed test uncovers a D5-preserved behavior regression, which is then fixed in the Pi adapter.",
+  "acceptance": [
+    {
+      "id": "PRST-A1",
+      "assertion": "tests/host-neutral-assurance-coordinator.test.ts and tests/cli-review-dispatch.test.ts load without importing the retired AssuranceProgression, drive Pi through PiRuntime/HostRuntime, and run at least 100 and 29 tests respectively with 0 failures and none skipped, keeping their pre-S4 assertions. Done looks like: both files report their full pre-S4 test counts passing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PRST-A2",
+      "assertion": "tests/pi-canary-assurance-advance.test.ts, tests/github-issue-projection-contract.test.ts and tests/unattended-contracts.test.ts pass with 0 failures and no fewer tests than on 566abec (4, 18, 16). The replaced assertions still fail when their property breaks: Pi advance stays a single awaited runtime call with no detached UI or result polling; Pi and Claude share one post-settlement tracker projection; the Pi batch tool still reports confirmation_port_unavailable when no native confirmation port exists and leaves default drive behavior unchanged. Done looks like: the three files pass and each re-pointed assertion names a post-S4 symbol or behavior.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-advance.test.ts\",\n      \"tests/github-issue-projection-contract.test.ts\",\n      \"tests/unattended-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PRST-A3",
+      "assertion": "The Pi extension behavior suite stays green and the repository typechecks: tests/pi-canary-work-extension.test.ts passes, then bun run typecheck exits 0. Done looks like: the extension file passes and typecheck reports no errors.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-canary-work-extension.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/pi-runtime-stale-test-repair.intent.json",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/github-issue-projection-contract.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-advance.test.ts",
+    "tests/unattended-contracts.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

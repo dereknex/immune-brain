@@ -1,43 +1,68 @@
-import { afterAll, describe, expect, it, spyOn } from "bun:test";
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { afterAll, afterEach, describe, expect, it, spyOn } from "bun:test";
+import { createHash } from "node:crypto";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { PassThrough } from "node:stream";
+import { PassThrough, Readable, Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import {
+	ANTIGRAVITY_CACHE_DIR,
 	AntigravityReviewHost,
 	antigravityHookEventLog,
+	MAX_ASYNC_VERIFIER_FILE_BYTES,
 	VERIFIER_AGENT,
 	type AntigravityHookEvent,
 } from "../plugins/immune-brain/runtime/antigravity/review_host";
 import { MemoryHookEventLog } from "../plugins/immune-brain/runtime/host-core/hook_event_log";
 import {
+	antigravityPostToolUseHook,
 	antigravityPreInvocationHook,
+	antigravityPreInvocationHookAsync,
 	antigravityPreToolUseHook,
 	antigravityPreToolUseHookAsync,
+	consumeNativeConfirmation,
 	consumePhaseAdmission,
 	readPhaseEntryState,
+	type AntigravityStopPayload,
 	type GatedTool,
 } from "../plugins/immune-brain/runtime/antigravity/lane_guard";
+import { appendPrivate, cacheDir, ensurePrivateDir, sessionHash } from "../plugins/immune-brain/runtime/host-core/private_file";
 import { isPrivilegedOperation } from "../plugins/immune-brain/runtime/host-core/interaction";
-import { antigravityRunContinuationHook } from "../plugins/immune-brain/runtime/antigravity/run_continuation";
+import * as runContinuationModule from "../plugins/immune-brain/runtime/assurance/run_continuation";
+import {
+	antigravityContinuationHost,
+	antigravityRunContinuationHook,
+	antigravityRunContinuationPostToolUse,
+	antigravityRunContinuationPreToolUse,
+	isSessionPaused,
+	parseImmuneBrainTool,
+	readRunToolSession,
+	selectedAntigravityParent,
+	stopBoundary,
+} from "../plugins/immune-brain/runtime/antigravity/run_continuation";
+import { applyRunContinuationEvent } from "../plugins/immune-brain/runtime/host-core/run_continuation_session";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
-import { createAntigravityMcpRuntime, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
+import { createAntigravityMcpRuntime, runHook as runAntigravityHook, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
+import type { AncestorProcessReader } from "../plugins/immune-brain/runtime/antigravity/tool_permission";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { NativeAuthorityError, entryTokenRequestId, hostConfirmationRef } from "../plugins/immune-brain/runtime/host-core/interaction";
+import * as hostInteraction from "../plugins/immune-brain/runtime/host-core/interaction";
+import { ALLOW_RULE_REQUEST_PREFIX, NativeAuthorityError, entryTokenRequestId, hostConfirmationRef } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
-import { readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
-import { readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
-import { createTestMutationRegistry } from "./fixtures/mutation-authority-test-seam";
+import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
+import { readSettledRunEvidence, readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
+import { createTestMutationRegistry, seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import * as batchPreflight from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import type { AssuranceObligation } from "../plugins/immune-brain/runtime/kernel/types";
 import type { AssuranceProjection } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 
@@ -222,6 +247,95 @@ describe("Antigravity Harness Conformance", () => {
 			}
 		});
 
+		it("injects activeTaskNotice on PreInvocation turn start without activating drive state (D10)", async () => {
+			const root = mkdtempSync(join(tmpdir(), "p8-notice-store-"));
+			const workspace = mkdtempSync(join(tmpdir(), "p8-notice-ws-"));
+			try {
+				execFileSync("git", ["init", "-q"], { cwd: workspace });
+				execFileSync("git", ["config", "user.email", "test@immune-brain.local"], { cwd: workspace });
+				execFileSync("git", ["config", "user.name", "Test"], { cwd: workspace });
+				writeFileSync(join(workspace, "base.txt"), "seed\n");
+				execFileSync("git", ["add", "."], { cwd: workspace });
+				execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: workspace });
+
+				// Idle workspace without active task returns empty injectSteps.
+				const idleRes = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-idle", invocationNum: 0, lastUserInput: "hello", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(idleRes).toEqual({ injectSteps: [], terminationBehavior: "" });
+				expect(readPhaseEntryState("conv-idle", root)?.run_live).toBe(false);
+
+				// Enroll an active task in the workspace.
+				mkdirSync(join(workspace, "docs/plans"), { recursive: true });
+				writeFileSync(
+					join(workspace, "docs/plans/p8-active-task.intent.json"),
+					JSON.stringify({
+						contract: "assurance_kernel/task_intent/v1",
+						task_id: "p8-active-task",
+						goal: "test active notice",
+						acceptance: [{
+							id: "AC1",
+							assertion: "pass",
+							verification: JSON.stringify({
+								contract: "assurance_kernel/verification_descriptor/v2",
+								command: { executable: "true", argv: [], cwd: ".", timeout_ms: 5000, max_output_bytes: 1024 },
+								environment: { prepare: null, writable_paths: [] },
+							}),
+						}],
+						scope_hint: ["base.txt"],
+						risk: "routine",
+						revision: 1,
+						owner: "user",
+					}),
+				);
+				execFileSync("git", ["add", "docs/plans/p8-active-task.intent.json"], { cwd: workspace });
+				await enrollTaskForTest(workspace, "p8-active-task");
+
+				const turnStart = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-active-ordinary", invocationNum: 0, lastUserInput: "explain base.txt", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(turnStart).toMatchObject({
+					injectSteps: [{ systemMessage: { systemMessage: expect.stringContaining("p8-active-task") } }],
+					terminationBehavior: "",
+				});
+				expect(readPhaseEntryState("conv-active-ordinary", root)?.run_live).toBe(false);
+
+				// Mid-turn follow-up invocations (invocationNum > 0) do not re-inject
+				// and preserve active `.continuation` state written after tool calls.
+				const contFile = join(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash("conv-drive-midturn")}.continuation`);
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 0, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				appendPrivate(contFile, cacheDir(root, ANTIGRAVITY_CACHE_DIR), JSON.stringify({ sequence: 1 }) + "\n");
+				expect(existsSync(contFile)).toBe(true);
+
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 1, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(existsSync(contFile)).toBe(true);
+
+				// A fresh user turn (invocationNum === 0) resets `.continuation`.
+				antigravityPreInvocationHook(
+					{ conversationId: "conv-drive-midturn", invocationNum: 0, lastUserInput: "/drive p8-active-task", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(existsSync(contFile)).toBe(false);
+
+				const midTurn = await antigravityPreInvocationHookAsync(
+					{ conversationId: "conv-active-ordinary", invocationNum: 1, lastUserInput: "explain base.txt", workspacePaths: [workspace] },
+					{ root, home: root },
+				);
+				expect(midTurn).toEqual({ injectSteps: [], terminationBehavior: "" });
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(workspace, { recursive: true, force: true });
+			}
+		});
+
 		it("enforces lane boundary on file edits", () => {
 			const tempDir = mkdtempSync(join(tmpdir(), "lane-guard-"));
 			const laneDir = join(tempDir, "lane-1");
@@ -265,17 +379,99 @@ describe("Antigravity Harness Conformance", () => {
 	});
 
 	describe("Run Continuation Hook", () => {
-		function projectionStatus(next_obligation: AssuranceObligation,
-				overrides: Partial<AssuranceProjection> = {}): StatusProjectionResult {
-			return { contract: "assurance_kernel/assurance_projection/v1", task_id: "task-a", error: null,
-				claim: { task_id: "task-a", lifecycle_status: "active" },
-				projection: { run_id: "run-a", record_revision: "record-a", workspace_revision: "workspace-a", intent_revision: 1,
-					intent_content_hash: "intent-a", diff_hash: "diff-a", lifecycle: "active", artifact_state: "active", risk: "material",
-					next_obligation, fresh_acceptance_ids: [], missing_acceptance_ids: [], stale_attestation_ids: [],
-					fresh_approval_kinds: [], missing_approval_kinds: [], blocking_finding_ids: [],
-					unresolved_user_decision_ids: [], replan_required_ids: [], independence_violations: [],
-					open_user_decision_count: 0, completion_ready: false,
-					authorization: { state: "none", blocked: null }, ...overrides } };
+		function antigravityContinuationFixture(storeDir?: string) {
+			const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-agy-cont-")));
+			const store = storeDir ?? realpathSync(mkdtempSync(join(tmpdir(), "imm-agy-store-")));
+			const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+			git("init", "-q"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.test");
+			mkdirSync(join(root, "docs/plans"), { recursive: true });
+			writeFileSync(join(root, ".gitignore"), ".imm/\n");
+			writeFileSync(join(root, "value.txt"), "before\n");
+			const intent = parseTaskIntentV1({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: "slice-a",
+				goal: "Change value",
+				acceptance: [{ id: "A1", assertion: "Value changes", verification: "bun test tests/value.test.ts" }],
+				scope_hint: ["value.txt", "docs/plans/slice-a.intent.json"],
+				risk: "material",
+				revision: 1,
+				owner: "user",
+			});
+			writeFileSync(join(root, "docs/plans/slice-a.intent.json"), JSON.stringify(intent, null, 2) + "\n");
+			git("add", "."); git("commit", "-qm", "fixture");
+			seedKernelRunForTest(root, {
+				task_id: "slice-a",
+				run_id: "run-a",
+				record: {
+					contract: "assurance_kernel/task_record/v4",
+					task_id: "slice-a",
+					intent_snapshot: intent,
+					intent_ref: { path: "docs/plans/slice-a.intent.json", content_hash: canonicalIntentHash(intent) },
+					lifecycle: "active",
+					artifact_state: "active",
+					baseline: `sha256:${"a".repeat(64)}`,
+					git_base_head: git("rev-parse", "HEAD"),
+					attestations: [],
+					findings: [],
+					history: [],
+				},
+			});
+			let step = 0;
+			let execNum = 0;
+			const conversationId = "conv-agy-cont";
+			const prompt = (text = "/drive slice-a") => {
+				return antigravityPreInvocationHook(
+					{ conversationId, lastUserInput: text, workspacePaths: [root] },
+					{ root: store, home: store },
+				);
+			};
+			const preTool = (
+				name = "call_mcp_tool",
+				args: Record<string, unknown> = { ServerName: "immune-brain", ToolName: "status", Arguments: { task_id: "slice-a" } },
+				stepIdx = ++step,
+			) => {
+				return antigravityPreToolUseHookAsync(
+					{ conversationId, stepIdx, toolCall: { name, args }, workspacePaths: [root] },
+					{ root: store, home: store },
+				);
+			};
+			const postTool = (
+				name = "call_mcp_tool",
+				args: Record<string, unknown> = { ServerName: "immune-brain", ToolName: "status", Arguments: { task_id: "slice-a" } },
+				resultOrError: { result?: string; error?: string } = { result: "{}" },
+				stepIdx = step,
+			) => {
+				return antigravityPostToolUseHook(
+					{ conversationId, stepIdx, toolCall: { name, args }, workspacePaths: [root], ...resultOrError },
+					{ root: store, home: store },
+				);
+			};
+			const enter = async () => {
+				prompt("/drive slice-a");
+				await preTool();
+				await postTool();
+			};
+			const stop = (overrides: Partial<AntigravityStopPayload> = {}) => {
+				execNum++;
+				return antigravityRunContinuationHook(
+					{ conversationId, executionNum: execNum, workspacePaths: [root], ...overrides },
+					store,
+				);
+			};
+			return {
+				root,
+				store,
+				conversationId,
+				prompt,
+				preTool,
+				postTool,
+				enter,
+				stop,
+				dispose: () => {
+					rmSync(root, { recursive: true, force: true });
+					if (!storeDir) rmSync(store, { recursive: true, force: true });
+				},
+			};
 		}
 
 		it("allows stop when workspace has no active task", async () => {
@@ -286,35 +482,373 @@ describe("Antigravity Harness Conformance", () => {
 					workspacePaths: [emptyDir],
 				});
 				expect(result.decision).toBeUndefined();
+				expect(result).toEqual({});
 			} finally {
 				rmSync(emptyDir, { recursive: true, force: true });
 			}
 		});
 
-		it("continues an automated obligation and stops on a user wait, a non-active lifecycle or any other obligation (D11)", async () => {
-			const stopWorkspace = mkdtempSync(join(tmpdir(), "imm-stop-projection-"));
-			const claim = spyOn(batchPreflight, "readActiveClaimTaskId").mockReturnValue("task-a");
+		it("negative: missing usable boundary identity does not auto-continue", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				const result = await antigravityRunContinuationHook(
+					{ conversationId: h.conversationId, workspacePaths: [h.root] },
+					h.store,
+				);
+				expect(result.decision).toBeUndefined();
+				expect(result).toEqual({});
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("AC1 (D7; BR-REQ-3): real PreToolUse/PostToolUse/Stop payload mapping binds active tasks and renders shared continue/pause outcomes", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				const result = await h.stop();
+				expect(result.decision).toBe("continue");
+				expect(result.reason).toContain("Explicit drive is bound to slice-a");
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("positive (BR-SCN-2): pauses on the seventh consecutive Stop and tells user to resume explicitly in the same Host", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				for (let attempt = 1; attempt <= 6; attempt++) {
+					writeFileSync(join(h.root, "value.txt"), `progress ${attempt}\n`);
+					const res = await h.stop();
+					expect(res.decision).toBe("continue");
+				}
+				writeFileSync(join(h.root, "value.txt"), "progress 7\n");
+				const seventh = await h.stop();
+				expect(seventh.decision).toBeUndefined();
+				expect(seventh.reason).toBe("Antigravity consecutive Stop boundary reached; resume explicitly in the same Host");
+				expect(seventh.systemMessage).toContain("Antigravity consecutive Stop boundary reached; resume explicitly in the same Host");
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("AC1 (D7; BR-REQ-3): seventh Stop preserves Kernel pause reason over 7-stop boundary reason", async () => {
+			const h = antigravityContinuationFixture();
 			const projection = spyOn(coordinator, "projectTaskStatus");
 			try {
-				projection.mockResolvedValue(projectionStatus("run_qa"));
-				expect(await antigravityRunContinuationHook({ conversationId: "conv-stop-2", workspacePaths: [stopWorkspace] }))
-					.toEqual({ decision: "continue", reason: "Task task-a is active with next obligation: run_qa. Please proceed." });
+				await h.enter();
+				for (let attempt = 1; attempt <= 6; attempt++) {
+					writeFileSync(join(h.root, "value.txt"), `progress ${attempt}\n`);
+					const res = await h.stop();
+					expect(res.decision).toBe("continue");
+				}
+				// On 7th stop, mock a Kernel pause decision (e.g. resolve_user_decision)
+				const live = await coordinator.projectTaskStatus(h.root, "slice-a");
+				projection.mockResolvedValue({
+					...live,
+					projection: { ...live.projection, next_obligation: "resolve_user_decision" },
+				});
+				writeFileSync(join(h.root, "value.txt"), "progress 7\n");
+				const seventh = await h.stop();
+				expect(seventh.decision).toBeUndefined();
+				expect(seventh.reason).toContain("Kernel requires a concrete user decision or authorization");
+				expect(seventh.reason).not.toContain("consecutive Stop boundary reached");
+				expect(seventh.systemMessage).toContain("Kernel requires a concrete user decision or authorization");
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+			} finally {
+				projection.mockRestore();
+				h.dispose();
+			}
+		});
 
-				for (const stopped of [
-					projectionStatus("resolve_user_decision"),
-					projectionStatus("revise_intent"),
-					projectionStatus("run_qa", { open_user_decision_count: 1 }),
-					projectionStatus("run_qa", { unresolved_user_decision_ids: ["decision-1"] }),
-					projectionStatus("run_qa", { lifecycle: "stopped" }),
-					projectionStatus("none"),
-					projectionStatus("complete"),
-				]) {
-					projection.mockResolvedValue(stopped);
-					expect(await antigravityRunContinuationHook({ conversationId: "conv-stop-2", workspacePaths: [stopWorkspace] })).toEqual({});
+		it("negative: user waits and terminal state do not auto-continue", async () => {
+			const projection = spyOn(coordinator, "projectTaskStatus");
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				const live = await coordinator.projectTaskStatus(h.root, "slice-a");
+
+				// User wait obligation stops auto-continuation
+				projection.mockResolvedValue({
+					...live,
+					projection: { ...live.projection, next_obligation: "resolve_user_decision" },
+				});
+				const userWait = await h.stop();
+				expect(userWait.decision).toBeUndefined();
+				expect(userWait.reason).toContain("Kernel requires a concrete user decision or authorization");
+
+				// Open user decision stops auto-continuation
+				const h2 = antigravityContinuationFixture();
+				try {
+					await h2.enter();
+					projection.mockResolvedValue({
+						...live,
+						projection: { ...live.projection, open_user_decision_count: 1 },
+					});
+					const openDecision = await h2.stop();
+					expect(openDecision.decision).toBeUndefined();
+				} finally {
+					h2.dispose();
+				}
+
+				// Terminal state settles and stops auto-continuation
+				const h3 = antigravityContinuationFixture();
+				try {
+					await h3.enter();
+					projection.mockResolvedValue({
+						...live,
+						claim: null,
+						projection: { ...live.projection, lifecycle: "done", completion_ready: true },
+					});
+					const terminal = await h3.stop();
+					expect(terminal.decision).toBeUndefined();
+					expect(terminal).toEqual({});
+				} finally {
+					h3.dispose();
 				}
 			} finally {
-				claim.mockRestore(); projection.mockRestore();
-				rmSync(stopWorkspace, { recursive: true, force: true });
+				projection.mockRestore();
+				h.dispose();
+			}
+		});
+
+		it("AC2 (D7; BR-REQ-3): shares native-failure pause and paused native gate refusal with Claude", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				const fail = async () => {
+					await h.preTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "slice-a" } });
+					await h.postTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "slice-a" } }, { error: "rejected" });
+				};
+
+				// Two failures leave run live for retry
+				for (let attempt = 1; attempt <= 2; attempt++) {
+					await fail();
+					const res = await h.stop();
+					expect(res.decision).toBe("continue");
+					writeFileSync(join(h.root, "value.txt"), `retry ${attempt}\n`);
+				}
+
+				// Third failure pauses
+				await fail();
+				const pausedRes = await h.stop();
+				expect(pausedRes.decision).toBeUndefined();
+				expect(pausedRes.reason).toContain("request_authorization failed 3 times under this entry");
+				expect(pausedRes.systemMessage).toContain("failed 3 times under this entry");
+
+				// Paused native gate refuses outright
+				const denial = await h.preTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "slice-a" } });
+				expect(denial.decision).toBe("deny");
+				expect(denial.reason).toContain("Run paused");
+
+				// Entry token is revoked
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(false);
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("AC2 (D7; BR-REQ-3): keeps conversationId and conversationId:stepIdx correlation; replayed and foreign correlation refuse", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				h.prompt("/drive slice-a");
+				await h.preTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "status", Arguments: { task_id: "slice-a" } }, 10);
+
+				// Positive correlation lookup
+				expect(readRunToolSession(`${h.conversationId}:10`, "status", h.root, h.store)).toBe(h.conversationId);
+
+				// Foreign workspace refuses
+				const foreignDir = realpathSync(mkdtempSync(join(tmpdir(), "imm-foreign-")));
+				try {
+					expect(readRunToolSession(`${h.conversationId}:10`, "status", foreignDir, h.store)).toBeNull();
+				} finally {
+					rmSync(foreignDir, { recursive: true, force: true });
+				}
+
+				// Wrong operation refuses
+				expect(readRunToolSession(`${h.conversationId}:10`, "other_op", h.root, h.store)).toBeNull();
+
+				// Consumed correlation refuses replay
+				await h.postTool("call_mcp_tool", { ServerName: "immune-brain", ToolName: "status", Arguments: { task_id: "slice-a" } }, { result: "{}" }, 10);
+				expect(readRunToolSession(`${h.conversationId}:10`, "status", h.root, h.store)).toBeNull();
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("AC2 (D7; BR-REQ-3): binds parent from start_unattended_batch and automated continuation matches shared machine", async () => {
+			const h = antigravityContinuationFixture();
+			const parentSpy = spyOn(runContinuationModule, "observeParentRun");
+			try {
+				h.prompt("/drive batch-init");
+				const batchId = "batch-test-parent";
+				const planDigest = `sha256:${"b".repeat(64)}`;
+				mkdirSync(join(h.root, ".imm/state/batches"), { recursive: true });
+				writeFileSync(
+					join(h.root, ".imm/state/batches", `${batchId}.json`),
+					JSON.stringify({
+						contract: "assurance_kernel/batch_run_state/v1",
+						batch_id: batchId,
+						initiative_slug: "batch-init",
+						base_head: "0123456789abcdef",
+						branch: "imm/batch-init",
+						plan_digest: planDigest,
+						confirmation_time: "2026-01-01T00:00:00.000Z",
+						batch_state: "running",
+						children: [
+							{
+								task_id: "child-1",
+								slice_id: "S1",
+								state: "enrolled",
+								risk: "low",
+								intent_path: "docs/plans/child-1.intent.json",
+								intent_revision: 1,
+								intent_content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+								scope_hint: ["child-1.txt"],
+								blocked_by: [],
+								reason: null,
+								commit: null,
+							},
+						],
+						commits: [],
+						consecutive_qa_failures: 0,
+						budget: { max_children: 1, qa_failure_limit: 2 },
+						created_at: "2026-01-01T00:00:00.000Z",
+						updated_at: "2026-01-01T00:00:00.000Z",
+					}),
+				);
+
+				await h.preTool("call_mcp_tool", {
+					ServerName: "immune-brain",
+					ToolName: "start_unattended_batch",
+					Arguments: { initiative_slug: "batch-init" },
+				}, 1);
+				await h.postTool(
+					"call_mcp_tool",
+					{ ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: "batch-init" } },
+					{ result: JSON.stringify({ state: "started", batch_id: batchId, plan_digest: planDigest, initiative_slug: "batch-init" }) },
+					1,
+				);
+
+				parentSpy.mockResolvedValue({
+					kind: "parent",
+					workspace: h.root,
+					session_id: h.conversationId,
+					boundary_id: "boundary-1",
+					initiative_slug: "batch-init",
+					batch_id: batchId,
+					plan_digest: planDigest,
+					progress_digest: "progress-1",
+					all_required_integrated: false,
+					final_passed: false,
+					pending_repair: false,
+					runnable: true,
+					executors_running: false,
+					next_action: "Call start_unattended_batch for batch-init",
+				});
+
+				// Bound parent continues
+				const res = await h.stop();
+				expect(res.decision).toBe("continue");
+				expect(res.reason).toContain("Explicit drive is bound to batch-init");
+
+				// selectedAntigravityParent verifies correlation on child assurance call
+				await h.preTool(
+					"call_mcp_tool",
+					{ ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: "child-1" } },
+					2,
+				);
+				expect(selectedAntigravityParent(`${h.conversationId}:2`, h.root, "batch-init", h.store)).toBe(true);
+				expect(selectedAntigravityParent(`${h.conversationId}:2`, h.root, "other-init", h.store)).toBe(false);
+			} finally {
+				parentSpy.mockRestore();
+				h.dispose();
+			}
+		});
+
+		it("AC2 (D7; BR-REQ-3): stall yields the turn without pausing or spending stall budget", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				// First stop continues (first boundary, initial progress)
+				const first = await h.stop();
+				expect(first.decision).toBe("continue");
+
+				// Second stop with distinct boundary but unchanged workspace yields without revoking run_live
+				const stalled = await h.stop();
+				expect(stalled.decision).toBeUndefined();
+				expect(stalled).toEqual({});
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(true);
+
+				// Subsequent unchanged stops continue to yield without spending the entry token
+				const stalledAgain = await h.stop();
+				expect(stalledAgain.decision).toBeUndefined();
+				expect(stalledAgain).toEqual({});
+				expect(readPhaseEntryState(h.conversationId, h.store)?.run_live).toBe(true);
+
+				// Workspace progress resumes continuation
+				writeFileSync(join(h.root, "value.txt"), "progress\n");
+				const resumed = await h.stop();
+				expect(resumed.decision).toBe("continue");
+			} finally {
+				h.dispose();
+			}
+		});
+
+		it("AC2 (D7; BR-REQ-3): review flow binds reviewer and directs submit_review", async () => {
+			const h = antigravityContinuationFixture();
+			const projection = spyOn(coordinator, "projectTaskStatus");
+			try {
+				await h.enter();
+				const live = await coordinator.projectTaskStatus(h.root, "slice-a");
+				projection.mockResolvedValue({
+					...live,
+					projection: { ...live.projection, next_obligation: "run_review" },
+				});
+
+				// Advance assurance reports review_ready with reviewer prompt
+				await h.preTool(
+					"call_mcp_tool",
+					{ ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: "slice-a" } },
+					2,
+				);
+				await h.postTool(
+					"call_mcp_tool",
+					{ ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: "slice-a" } },
+					{ result: JSON.stringify({ state: "review_ready", agent_params: { prompt: "Please perform review" } }) },
+					2,
+				);
+
+				// Subagent dispatch sets review running
+				await h.preTool("invoke_subagent", { Model: "pro", Prompt: "Please perform review" }, 3);
+				// Subagent return sets review returned
+				await h.postTool("invoke_subagent", { Model: "pro", Prompt: "Please perform review" }, { result: "verdict passed" }, 3);
+
+				// Next stop directs submit_review
+				const res = await h.stop();
+				expect(res.decision).toBe("continue");
+				expect(res.reason).toContain("Call submit_review immediately with the observed verdict before editing");
+			} finally {
+				projection.mockRestore();
+				h.dispose();
+			}
+		});
+
+		it("releases binding on prompt cancellation or new run entry", async () => {
+			const h = antigravityContinuationFixture();
+			try {
+				await h.enter();
+				const contFile = join(cacheDir(h.store, ANTIGRAVITY_CACHE_DIR), `${sessionHash(h.conversationId)}.continuation`);
+				expect(existsSync(contFile)).toBe(true);
+
+				// Cancelling releases continuation
+				h.prompt("取消任务");
+				expect(existsSync(contFile)).toBe(false);
+			} finally {
+				h.dispose();
 			}
 		});
 	});
@@ -956,7 +1490,7 @@ describe("Antigravity Harness Conformance", () => {
 			expect((resultOf(retired).report as { retirement?: { confirmation_ref?: string; plan_digest?: string } }).retirement).toEqual({
 				confirmation_ref: hostConfirmationRef("antigravity", {
 					connectionId: retireConversation,
-					toolCallId: "rpc-77",
+					toolCallId: `${retireConversation}:2`,
 					requestId: entryTokenRequestId(readPhaseEntryState(retireConversation, store)!.token!),
 					operation: "retire_stale_batch",
 					initiativeSlug: TASK,
@@ -1150,6 +1684,14 @@ describe("Antigravity Harness Conformance", () => {
 		}
 
 		const conversationId = "conv-gate-1";
+		const interactiveAgy: AncestorProcessReader = () => [["/usr/local/bin/agy"]];
+		function requestReviewHome(label = "home"): string {
+			const home = temp(label);
+			const dir = join(home, ".gemini", "antigravity-cli");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
+			return home;
+		}
 		const meta = (root: string, step?: number) => ({
 			"antigravity.google/conversation_id": conversationId,
 			"antigravity.google/workspace_paths": [root],
@@ -1186,7 +1728,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: TASK } },
 				},
-			}, { root: store });
+			}, { root: store, home: requestReviewHome(), readAncestorArgs: interactiveAgy });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain(`Task: ${TASK}`);
 			expect(hookRes.reason).toContain("Binding digest:");
@@ -1222,6 +1764,7 @@ describe("Antigravity Harness Conformance", () => {
 				scope_hint: ["docs/plans", "base.txt"], risk: "routine", revision: 2 };
 
 			// PreToolUse prepares the breaking revision digest and restores both file bytes and index entry.
+			const home = requestReviewHome("breaking-home");
 			const hookRes = await antigravityPreToolUseHookAsync({
 				conversationId,
 				stepIdx: 7,
@@ -1230,7 +1773,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain_immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
 				},
-			}, { root: store });
+			}, { root: store, home, readAncestorArgs: interactiveAgy });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain("Operation: approve_breaking_intent_revision");
 			expect(hookRes.reason).toContain("Intent revision: 2");
@@ -1258,7 +1801,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "approve_breaking_intent_revision", Arguments: { task_id: TASK, next_intent: next } },
 				},
-			}, { root: store });
+			}, { root: store, home, readAncestorArgs: interactiveAgy });
 			expect(freshHook.decision).toBe("force_ask");
 			server.send({ jsonrpc: "2.0", id: "breaking-ok", method: "tools/call",
 				params: { name: "approve_breaking_intent_revision", arguments: { task_id: TASK, next_intent: next }, _meta: meta(root, 8) } });
@@ -1287,7 +1830,7 @@ describe("Antigravity Harness Conformance", () => {
 				stepIdx: 4,
 				workspacePaths: [root],
 				toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: TASK } } },
-			}, { root: store });
+			}, { root: store, home: requestReviewHome("stop-home"), readAncestorArgs: interactiveAgy });
 			expect(stopHook.decision).toBe("force_ask");
 			expect(stopHook.reason).toContain("Operation: stop");
 
@@ -1331,7 +1874,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: batchArgs },
 				},
-			}, { root: store, readInitiative });
+			}, { root: store, home: requestReviewHome("batch-home"), readAncestorArgs: interactiveAgy, readInitiative });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain(`Authorize this unattended batch run for ${SLUG}?`);
 			expect(hookRes.reason).toContain(`${CHILD} (S0)`);
@@ -1394,7 +1937,7 @@ describe("Antigravity Harness Conformance", () => {
 					name: "call_mcp_tool",
 					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: args },
 				},
-			}, { root: store });
+			}, { root: store, home: requestReviewHome("single-home"), readAncestorArgs: interactiveAgy });
 			expect(hookRes.decision).toBe("force_ask");
 			expect(hookRes.reason).toContain("Preparation digest: sha256:");
 
@@ -1411,6 +1954,224 @@ describe("Antigravity Harness Conformance", () => {
 			const text = reply.result.content[0].text as string;
 			expect(text).not.toContain("workspace_changed");
 			expect(JSON.parse(text).state).toBe("started");
+			server.input.end();
+		}, 60_000);
+
+		it("AC2 (D3; BR-REQ-2): real seams preserve live drive entry, one admitted call and one consumed native grant; replay, truncated grant and tampered files refuse", async () => {
+			const root = temp("ac2-gate");
+			const store = temp("store-ac2");
+			const TASK_AC2 = "ac2-single-task";
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(root, "base.txt"), "base\n");
+			writeIntent(root, "deliver one task", 1, TASK_AC2);
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "fixture");
+
+			const conversationId = "conv-ac2-1";
+			const stepIdx = 50;
+			const admissionId = `${conversationId}:${stepIdx}:start_unattended_batch`;
+			const cache = join(store, "immune-brain-antigravity");
+			const entryFile = join(cache, `${sessionHash(conversationId)}.entry`);
+			const admitFile = join(cache, `${sessionHash(admissionId)}.admit`);
+			const confirmFile = join(cache, `${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`);
+
+			// 1. Bound: missing step identity denies PreToolUse
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK_AC2}`, workspacePaths: [root] }, { root: store, home: store });
+			const missingStep = antigravityPreToolUseHook({
+				conversationId,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(missingStep.decision).toBe("deny");
+			expect(missingStep.reason).toContain("stepIdx");
+
+			// 2. Tampered entry log (wrong mode) refuses PreToolUse
+			expect(existsSync(entryFile)).toBe(true);
+			chmodSync(entryFile, 0o644);
+			const deniedWrongModeEntry = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(deniedWrongModeEntry.decision).toBe("deny");
+			expect(deniedWrongModeEntry.reason).toContain("run_entry_required");
+
+			// 3. Planted symlink entry log refuses PreToolUse
+			const outsideEntry = join(store, "outside-entry.txt");
+			writeFileSync(outsideEntry, readFileSync(entryFile, "utf8"), { mode: 0o600 });
+			rmSync(entryFile, { force: true });
+			symlinkSync(outsideEntry, entryFile);
+			const deniedSymlinkEntry = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(deniedSymlinkEntry.decision).toBe("deny");
+			expect(deniedSymlinkEntry.reason).toContain("run_entry_required");
+
+			// 4. Restore valid drive entry; PreToolUse Hook records admission with 0600 mode
+			rmSync(entryFile, { force: true });
+			antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK_AC2}`, workspacePaths: [root] }, { root: store, home: store });
+			expect(readPhaseEntryState(conversationId, store)?.run_live).toBe(true);
+
+			const admitted = antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			expect(admitted.decision).toBe("allow");
+			expect(existsSync(admitFile)).toBe(true);
+			expect((lstatSync(admitFile).mode & 0o777)).toBe(0o600);
+
+			// 5. Tampered admission file (wrong mode 0644) refuses MCP consumption
+			chmodSync(admitFile, 0o644);
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+
+			// 6. Truncated admission file refuses MCP consumption
+			chmodSync(admitFile, 0o600);
+			writeFileSync(admitFile, "{ \"broken_json\": ", { mode: 0o600 });
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+
+			// 7. Planted symlink admission file refuses MCP consumption
+			rmSync(admitFile, { force: true });
+			const outsideAdmit = join(store, "outside-admit.txt");
+			writeFileSync(outsideAdmit, JSON.stringify({ operation: "start_unattended_batch", conversation: conversationId }), { mode: 0o600 });
+			symlinkSync(outsideAdmit, admitFile);
+			expect(consumePhaseAdmission(admissionId, "start_unattended_batch", store)).toBeNull();
+			rmSync(admitFile, { force: true });
+
+			// 8. Re-record admission and prepare native confirmation grant via PreToolUseHookAsync
+			antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+
+			const ac2Home = requestReviewHome("ac2-home");
+			const hookRes = await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store, home: ac2Home, readAncestorArgs: interactiveAgy });
+			expect(hookRes.decision).toBe("force_ask");
+			expect(existsSync(confirmFile)).toBe(true);
+			expect((lstatSync(confirmFile).mode & 0o777)).toBe(0o600);
+
+			// 9. Tampered confirmation grant (wrong mode 0644) refuses
+			const validConfirmBytes = readFileSync(confirmFile, "utf8");
+			chmodSync(confirmFile, 0o644);
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+
+			// 10. Truncated confirmation grant refuses
+			writeFileSync(confirmFile, "{\"incomplete\":", { mode: 0o600 });
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+
+			// 11. Planted symlink confirmation grant refuses
+			rmSync(confirmFile, { force: true });
+			const outsideConfirm = join(store, "outside-confirm.txt");
+			writeFileSync(outsideConfirm, validConfirmBytes, { mode: 0o600 });
+			symlinkSync(outsideConfirm, confirmFile);
+			await expect(consumeNativeConfirmation({
+				operation: "start_unattended_batch",
+				admissionId,
+				workspace: root,
+				taskId: TASK_AC2,
+			}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+			rmSync(confirmFile, { force: true });
+
+			// 12. Foreign-owned confirmation grant refuses
+			writeFileSync(confirmFile, validConfirmBytes, { mode: 0o600 });
+			const spy = spyOn(process, "getuid").mockReturnValue((process.getuid?.() ?? 0) + 9999);
+			try {
+				await expect(consumeNativeConfirmation({
+					operation: "start_unattended_batch",
+					admissionId,
+					workspace: root,
+					taskId: TASK_AC2,
+				}, store)).rejects.toThrow("Antigravity PreToolUse native confirmation grant is missing or already consumed");
+			} finally {
+				spy.mockRestore();
+			}
+
+			// 13. Positive: valid confirmation resolves once through the real MCP server
+			antigravityPreToolUseHook({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store });
+			await antigravityPreToolUseHookAsync({
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: TASK_AC2 } },
+				},
+			}, { root: store, home: ac2Home, readAncestorArgs: interactiveAgy });
+
+			const server = wire(root, store, {
+				batchKernel: { advanceTask: async () => ({ state: "blocked", reason: "parked for inspection" }) },
+			});
+			await initialize(server);
+			server.send({ jsonrpc: "2.0", id: "ac2-positive-1", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+					"antigravity.google/conversation_id": conversationId,
+					"antigravity.google/workspace_paths": [root],
+					progressToken: `antigravity-hook:${stepIdx}`,
+				} } });
+			const reply = await server.next();
+			expect(reply.error).toBeUndefined();
+			const text = reply.result.content[0].text as string;
+			expect(JSON.parse(text).state).toBe("started");
+
+			// 14. Negative: replay of the same step refuses because grants are single-use
+			server.send({ jsonrpc: "2.0", id: "ac2-replay-2", method: "tools/call",
+				params: { name: "start_unattended_batch", arguments: { task_id: TASK_AC2 }, _meta: {
+					"antigravity.google/conversation_id": conversationId,
+					"antigravity.google/workspace_paths": [root],
+					progressToken: `antigravity-hook:${stepIdx}`,
+				} } });
+			const replayReply = await server.next();
+			expect(replayReply.error).toBeDefined();
+			expect(replayReply.error.data?.reason_code).toBe("run_entry_required");
 			server.input.end();
 		}, 60_000);
 	});
@@ -1483,6 +2244,19 @@ describe("hook dispatch writes subagent events", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	it("AAVR-A2: PostToolUse with no result field or empty result never appends a result event", () => {
+		const root = mkdtempSync(join(tmpdir(), "antigravity-hook-empty-result-"));
+		try {
+			dispatch(root, preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }));
+			dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), error: "" });
+			dispatch(root, { ...preToolUse({ name: "invoke_subagent", args: SUBAGENT_ARGS }), error: "", result: "" });
+			dispatch(root, { ...preToolUse({ name: "Subagent", args: SUBAGENT_ARGS }), error: "", result: "   " });
+			expect(antigravityHookEventLog(root).list("c").map((event) => event.type)).toEqual(["start"]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
 });
 
@@ -1494,21 +2268,30 @@ describe("verifier via real hook dispatch", () => {
 	const HOOK_ENTRY = join(process.cwd(), "plugins/immune-brain/runtime/antigravity/mcp_server.ts");
 	const SCRATCH: string[] = [];
 	const TMPDIR_BEFORE = process.env.TMPDIR;
+	const BASE_TMP = tmpdir();
 	const PATH_BEFORE = process.env.PATH;
 	const TASK = "antigravity-verifier-task";
 	const STEP_IDX = 7;
 	const CONVERSATION = "conversation-1";
 	const CLAIM = "the delivery violates its acceptance";
 
-	afterAll(() => {
+	function restoreHookEnv(): void {
 		if (TMPDIR_BEFORE === undefined) delete process.env.TMPDIR;
 		else process.env.TMPDIR = TMPDIR_BEFORE;
 		process.env.PATH = PATH_BEFORE;
+	}
+
+	afterEach(() => {
+		restoreHookEnv();
+	});
+
+	afterAll(() => {
+		restoreHookEnv();
 		for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true });
 	});
 
 	function scratchDir(label: string): string {
-		const dir = mkdtempSync(join(tmpdir(), `imm-antigravity-verifier-${label}-`));
+		const dir = mkdtempSync(join(BASE_TMP, `imm-antigravity-verifier-${label}-`));
 		SCRATCH.push(dir);
 		return dir;
 	}
@@ -1762,4 +2545,1916 @@ describe("verifier via real hook dispatch", () => {
 		expect(current.host.host.inspectVerification!(current.reservation)).toMatchObject({ ok: true,
 			receipt: { actorId: `antigravity:${STEP_IDX}` } });
 	});
+
+	function asyncBrainDir(conversation = CONVERSATION): string {
+		const brain = scratchDir("brain");
+		const artifactDir = join(brain, conversation);
+		mkdirSync(join(artifactDir, ".system_generated", "subagents"), { recursive: true });
+		mkdirSync(join(artifactDir, ".system_generated", "messages", "undelivered"), { recursive: true });
+		return artifactDir;
+	}
+
+	function writeSpawnRecord(
+		artifactDir: string,
+		childId: string,
+		overrides: { spawnStepIndex?: number; typeName?: string; conversationId?: string } = {},
+	): void {
+		writeFileSync(
+			join(artifactDir, ".system_generated", "subagents", `${childId}.json`),
+			JSON.stringify({
+				conversationId: overrides.conversationId ?? childId,
+				subagentDescriptor: { typeName: overrides.typeName ?? VERIFIER_AGENT, role: "Review Verifier" },
+				state: "SUBAGENT_STATE_ALIVE",
+				spawnStepIndex: overrides.spawnStepIndex ?? STEP_IDX,
+			}),
+		);
+	}
+
+	function writeChildMessage(
+		artifactDir: string,
+		messageId: string,
+		message: { sender: string; recipient: string; content: string },
+	): void {
+		writeFileSync(
+			join(artifactDir, ".system_generated", "messages", `${messageId}.json`),
+			JSON.stringify({ id: messageId, ...message }),
+		);
+	}
+
+	function asyncPreAndPost(
+		cache: string,
+		dispatch: { TypeName: string; Prompt: string; Model: string },
+		artifactDir: string,
+	): void {
+		expect(hook(cache, { ...dispatchEvent(dispatch), artifactDirectoryPath: artifactDir })).toBe('{"decision":"allow"}');
+		expect(hook(cache, { ...dispatchEvent(dispatch), error: "", artifactDirectoryPath: artifactDir })).toBe("{}");
+	}
+
+	async function setupSubagentVerification(): Promise<Setup & { dispatch: { TypeName: string; Prompt: string; Model: string } }> {
+		const root = repo();
+		const cache = scratchDir("cache");
+		process.env.TMPDIR = cache;
+		const host = recordingHost();
+		const applied: Applied[] = [];
+		const reviewerVerdict = reworkVerdict(snapshotOf(root, "review"));
+		const bytes = `${JSON.stringify(reviewerVerdict)}\n`;
+		fakeReviewer(bytes);
+		const fixture = fixturePorts(root, applied);
+		const runtime = new AntigravityRuntime({ cwd: root, interactive: false, host: host.host, ports: fixture.ports,
+			authorityOverrides: fixture.authority });
+		// Exercise the wrapped subagent verification path (ADR 0039 D6) through the full runtime.
+		const reviewHost = (runtime.runtime as unknown as { reviewHost: { prepareVerification: typeof host.host.prepareVerification } }).reviewHost;
+		reviewHost.prepareVerification = (req) => host.host.prepareVerification!(req);
+		const ready = await runtime.coordinator.advance(TASK, { cwd: root });
+		if (ready.state !== "review_ready" || !ready.review_command) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
+		execFileSync("sh", [ready.review_command.slice(3)]);
+		const verification = await runtime.submitReview(TASK, undefined);
+		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
+		return { root, cache, host, runtime, applied, bytes, dispatch: verification.agent_params as { TypeName: string; Prompt: string; Model: string } };
+	}
+
+	function verifierResult(caseSetup: Setup): string {
+		const snapshot = snapshotOf(caseSetup.root, "review");
+		const parsed = coordinator.parseAssuranceVerdict(reworkVerdict(snapshot), snapshot);
+		const packet = coordinator.buildReviewVerificationPacket(snapshot, parsed, digestOfReviewerBytes(caseSetup.bytes));
+		const finding = packet.findings[0]!;
+		return JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
+			results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
+	}
+
+	it("AAVR-A1: resolves asynchronous verifier result from spawn record and child message across hooks without duplicate refusal", async () => {
+		const current = await setupSubagentVerification();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-1";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		expect(antigravityHookEventLog(current.cache).list(CONVERSATION).map((e) => e.type)).toEqual(["start"]);
+
+		const pending = await current.runtime.submitVerification(TASK, undefined);
+		expect(pending).toMatchObject({ state: "blocked", reason: "verification result pending" });
+
+		// Live agy 1.5.7 layout also contains read.json and background self-sent noise.
+		writeFileSync(join(artifactDir, ".system_generated", "messages", "read.json"), JSON.stringify({ "msg-1": true }));
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+
+		// Further hook payloads run (e.g. PreInvocation / PreToolUse before submit_verification).
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+		// Bound: additional hook payloads after resolution append no second result event.
+		hook(current.cache, { conversationId: CONVERSATION, executionNum: 2, fullyIdle: true, artifactDirectoryPath: artifactDir });
+		hook(current.cache, {
+			toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "submit_verification", Arguments: { task_id: TASK } } },
+			stepIdx: STEP_IDX + 1,
+			conversationId: CONVERSATION,
+			artifactDirectoryPath: artifactDir,
+		});
+
+		const logged = antigravityHookEventLog(current.cache).list(CONVERSATION);
+		const resultEvents = logged.filter((e) => e.type === "result");
+		expect(resultEvents).toHaveLength(1);
+		expect(resultEvents[0]?.result).toBe(verdict);
+
+		const settled = await current.runtime.submitVerification(TASK, undefined);
+		expect(settled).toMatchObject({ state: "rework", summary: CLAIM });
+		expect(current.applied.at(-1)).toMatchObject({
+			role: "review",
+			decision: "rework",
+			kept: [expect.stringContaining("review-1")],
+			actor: `antigravity:${STEP_IDX}`,
+		});
+		expect(current.applied.at(-1)?.failure).toBeUndefined();
+	});
+
+	it("AAVR-A2: fails closed and stays pending when async correlation or safety checks fail", async () => {
+		const cases: Array<{ name: string; prepare: (caseDir: string, verdict: string) => string }> = [
+			{
+				name: "only self-sent message exists",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "self-1", { sender: CONVERSATION, recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message recipient differs from conversationId",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: "other-conversation", content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "spawnStepIndex differs from dispatch stepIdx",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1", { spawnStepIndex: STEP_IDX + 1 });
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "spawn typeName is not immune-brain-review-verifier",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1", { typeName: "immune-brain-reviewer" });
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "artifactDirectoryPath basename differs from conversationId",
+				prepare: (_dir, verdict) => {
+					const wrongDir = asyncBrainDir("different-conversation");
+					writeSpawnRecord(wrongDir, "child-1");
+					writeChildMessage(wrongDir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return wrongDir;
+				},
+			},
+			{
+				name: "artifactDirectoryPath itself is a symlink",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					const symlinkParent = scratchDir("sym-brain");
+					const symlinkPath = join(symlinkParent, CONVERSATION);
+					symlinkSync(dir, symlinkPath);
+					return symlinkPath;
+				},
+			},
+			{
+				name: ".system_generated component is a symlink",
+				prepare: (dir, verdict) => {
+					const target = scratchDir("sym-sys");
+					mkdirSync(join(target, "subagents"), { recursive: true });
+					mkdirSync(join(target, "messages"), { recursive: true });
+					writeFileSync(join(target, "subagents", "child-1.json"), JSON.stringify({
+						conversationId: "child-1",
+						subagentDescriptor: { typeName: VERIFIER_AGENT },
+						spawnStepIndex: STEP_IDX,
+					}));
+					writeFileSync(join(target, "messages", "msg-1.json"), JSON.stringify({
+						id: "msg-1", sender: "child-1", recipient: CONVERSATION, content: verdict,
+					}));
+					rmSync(join(dir, ".system_generated"), { recursive: true, force: true });
+					symlinkSync(target, join(dir, ".system_generated"));
+					return dir;
+				},
+			},
+			{
+				name: "spawn file is unparsable JSON",
+				prepare: (dir, verdict) => {
+					writeFileSync(join(dir, ".system_generated", "subagents", "child-1.json"), "{not valid json");
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message file is unparsable JSON",
+				prepare: (dir) => {
+					writeSpawnRecord(dir, "child-1");
+					writeFileSync(join(dir, ".system_generated", "messages", "msg-1.json"), "{not valid json");
+					return dir;
+				},
+			},
+			{
+				name: "spawn file exceeds adapter byte bound",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeFileSync(
+						join(dir, ".system_generated", "subagents", "child-1.json"),
+						" ".repeat(MAX_ASYNC_VERIFIER_FILE_BYTES + 1),
+					);
+					writeChildMessage(dir, "msg-1", { sender: "child-1", recipient: CONVERSATION, content: verdict });
+					return dir;
+				},
+			},
+			{
+				name: "message file exceeds adapter byte bound",
+				prepare: (dir, verdict) => {
+					writeSpawnRecord(dir, "child-1");
+					writeChildMessage(dir, "msg-1", {
+						sender: "child-1",
+						recipient: CONVERSATION,
+						content: verdict + " ".repeat(MAX_ASYNC_VERIFIER_FILE_BYTES + 1),
+					});
+					return dir;
+				},
+			},
+		];
+
+		for (const testCase of cases) {
+			const current = await setupSubagentVerification();
+			const baseDir = asyncBrainDir();
+			const verdict = verifierResult(current);
+			const artifactDir = testCase.prepare(baseDir, verdict);
+
+			asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+			hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+			const events = antigravityHookEventLog(current.cache).list(CONVERSATION);
+			expect(events.filter((e) => e.type === "result"), testCase.name).toHaveLength(0);
+
+			const pending = await current.runtime.submitVerification(TASK, undefined);
+			expect(pending, testCase.name).toMatchObject({ state: "blocked", reason: "verification result pending" });
+			expect(current.applied, testCase.name).toHaveLength(1);
+		}
+	}, 30_000);
+
+	it("AAVR-A2: refuses submission when the spawned verifier sent two messages to the conversation", async () => {
+		const current = await setupSubagentVerification();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-two";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+		writeChildMessage(artifactDir, "msg-2", { sender: childId, recipient: CONVERSATION, content: verdict });
+
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		const res = await current.runtime.submitVerification(TASK, undefined);
+		expect(res).toMatchObject({ state: "rework" });
+		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
+		expect(current.host.reasons).toContain("multiple verifier messages observed for spawned verifier");
+		// Reservation was released so neither message can settle on a retry.
+		const retry = await current.runtime.submitVerification(TASK, undefined);
+		expect(retry).toMatchObject({ state: "blocked", reason: "no active verification operation" });
+	});
+
+	it("AAVR-A2: refuses submission when a second verifier message arrives before submitVerification", async () => {
+		const current = await setupSubagentVerification();
+		const artifactDir = asyncBrainDir();
+		const childId = "child-verifier-seq";
+		const verdict = verifierResult(current);
+
+		asyncPreAndPost(current.cache, current.dispatch, artifactDir);
+		writeSpawnRecord(artifactDir, childId);
+		writeChildMessage(artifactDir, "msg-1", { sender: childId, recipient: CONVERSATION, content: verdict });
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 2, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		writeChildMessage(artifactDir, "msg-2", { sender: childId, recipient: CONVERSATION, content: verdict });
+		hook(current.cache, { conversationId: CONVERSATION, invocationNum: 3, lastUserInput: "", artifactDirectoryPath: artifactDir });
+
+		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
+	});
+});
+
+	describe("stopBoundary", () => {
+		it("extracts step_index from transcriptPath", () => {
+			const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-stop-boundary-")));
+			try {
+				const transcript = join(dir, "transcript.jsonl");
+				writeFileSync(transcript, JSON.stringify({ role: "user", content: "hi" }) + "\n" + JSON.stringify({ step_index: 42 }) + "\n");
+				const boundary = stopBoundary({ transcriptPath: transcript });
+				expect(boundary).toBe(digestOfReviewerBytes(`${transcript}\n42`));
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("extracts uuid from transcriptPath when step_index is absent", () => {
+			const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-stop-boundary-")));
+			try {
+				const transcript = join(dir, "transcript.jsonl");
+				writeFileSync(transcript, JSON.stringify({ uuid: "turn-uuid-xyz" }) + "\n");
+				const boundary = stopBoundary({ transcriptPath: transcript });
+				expect(boundary).toBe(digestOfReviewerBytes(`${transcript}\nturn-uuid-xyz`));
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("fails closed to null on empty, missing, or malformed transcript when executionNum is absent", () => {
+			const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-stop-boundary-")));
+			try {
+				const empty = join(dir, "empty.jsonl");
+				writeFileSync(empty, "");
+				expect(stopBoundary({ transcriptPath: empty })).toBeNull();
+
+				expect(stopBoundary({ transcriptPath: join(dir, "nonexistent.jsonl") })).toBeNull();
+
+				const malformed = join(dir, "malformed.jsonl");
+				writeFileSync(malformed, "not-valid-json\nalso-not-valid\n");
+				expect(stopBoundary({ transcriptPath: malformed })).toBeNull();
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("derives boundary from executionNum as fallback", () => {
+			expect(stopBoundary({ conversationId: "conv-1", executionNum: 10 })).toBe(
+				digestOfReviewerBytes("conv-1\nexecutionNum:10"),
+			);
+			expect(stopBoundary({})).toBeNull();
+		});
+
+		it("runHook recognizes fullyIdle Stop payload", () => {
+			const proc = execFileSync(
+				"bun",
+				["-e", 'import { runHook } from "./plugins/immune-brain/runtime/antigravity/mcp_server.ts"; runHook();'],
+				{
+					input: JSON.stringify({ conversationId: "conv-idle", fullyIdle: true, executionNum: 1 }),
+					encoding: "utf8",
+				},
+			);
+			expect(() => JSON.parse(proc.trim())).not.toThrow();
+		});
+	});
+
+	describe("PreToolUse ServerName and correlation bounds", () => {
+		it("rejects non-Immune-Brain server names and creates no correlation file", async () => {
+			expect(parseImmuneBrainTool("call_mcp_tool", { ServerName: "third-party", ToolName: "status" })).toBeNull();
+			const store = realpathSync(mkdtempSync(join(tmpdir(), "imm-server-test-")));
+			try {
+				const res = await antigravityPreToolUseHookAsync({
+					conversationId: "conv-third-party",
+					stepIdx: 1,
+					toolCall: {
+						name: "call_mcp_tool",
+						args: { ServerName: "third-party-server", ToolName: "advance_assurance", Arguments: { task_id: "t1" } },
+					},
+					workspacePaths: [store],
+				}, { root: store });
+				expect(res.decision).toBe("allow");
+				const cache = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+				expect(existsSync(join(cache, `${sessionHash("conv-third-party:1")}.continuation-call`))).toBe(false);
+			} finally {
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+
+		it("creates no correlation file when PreToolUse is denied", async () => {
+			const store = realpathSync(mkdtempSync(join(tmpdir(), "imm-deny-test-")));
+			try {
+				const res = await antigravityPreToolUseHookAsync({
+					conversationId: "conv-no-drive",
+					stepIdx: 2,
+					toolCall: {
+						name: "call_mcp_tool",
+						args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { task_id: "t1" } },
+					},
+					workspacePaths: [store],
+				}, { root: store });
+				expect(res.decision).toBe("deny");
+				const cache = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+				expect(existsSync(join(cache, `${sessionHash("conv-no-drive:2")}.continuation-call`))).toBe(false);
+			} finally {
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+	});
+
+	describe("createAntigravityMcpRuntime tools/call correlation", () => {
+		const TASK = "mcp-corr-task";
+		function temp(label: string): string {
+			return realpathSync(mkdtempSync(join(tmpdir(), `imm-mcp-corr-${label}-`)));
+		}
+		function git(dir: string, ...args: string[]): string {
+			return execFileSync("git", ["-C", dir, "-c", "user.name=T", "-c", "user.email=t@t", ...args], { encoding: "utf8" }).trim();
+		}
+		const verification = () => JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: { executable: "sh", argv: ["-c", "exit 0"], cwd: ".", timeout_ms: 60_000, max_output_bytes: 4_096 },
+			environment: { prepare: null, writable_paths: [] },
+		});
+		async function setupWorkspace(): Promise<{ root: string; store: string }> {
+			const root = temp("ws");
+			const store = temp("store");
+			mkdirSync(join(root, "docs/plans"), { recursive: true });
+			writeFileSync(join(root, ".gitignore"), ".imm/state/\n");
+			writeFileSync(join(root, "base.txt"), "base\n");
+			writeFileSync(join(root, "docs/plans", `${TASK}.intent.json`), JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: TASK,
+				owner: "user",
+				goal: "correlated tool call",
+				acceptance: [{ id: "AC1", assertion: "the tool call is correlated", verification: verification() }],
+				scope_hint: ["docs/plans"],
+				risk: "routine",
+				revision: 1,
+			}) + "\n");
+			git(root, "init", "-q", "-b", "main");
+			git(root, "add", "-A");
+			git(root, "commit", "-qm", "init");
+			await enrollTaskForTest(root, TASK);
+			return { root, store };
+		}
+
+		it("status call correlates Hook session via PreToolUse and progressToken", async () => {
+			const { root, store } = await setupWorkspace();
+			const conversationId = "conv-mcp-status";
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: {},
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
+
+				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
+
+				await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "status", Arguments: { task_id: TASK } } },
+					workspacePaths: [root],
+				}, { root: store });
+
+				const reply = await handleJsonRpc({
+					jsonrpc: "2.0",
+					id: "rpc-status-1",
+					method: "tools/call",
+					params: {
+						name: "status",
+						arguments: { task_id: TASK },
+						_meta: {
+							"antigravity.google/conversation_id": conversationId,
+							"antigravity.google/workspace_paths": [root],
+							progressToken: "antigravity-hook:1",
+						},
+					},
+				}, mcp);
+
+				expect(reply?.error).toBeUndefined();
+				const content = JSON.parse((reply?.result as any).content[0].text);
+				expect(content.task_id).toBe(TASK);
+				expect(content.projection.lifecycle).toBe("active");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+
+		it("request_authorization consumes force_ask grant and executes with step correlation", async () => {
+			const { root, store } = await setupWorkspace();
+			const conversationId = "conv-mcp-auth";
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: {},
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
+
+				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
+
+				const record = readTaskRecordRaw(root, TASK).record!;
+				createCanaryApplication(createTestMutationRegistry()).execute({
+					root,
+					task_id: TASK,
+					prior_intent_token: readTaskIntent(root, TASK, record.intent_ref.path, record.intent_snapshot).token,
+					operation: { op: "record_finding", actor_id: "literal-user", finding: { id: "user-decision-1", kind: "unresolved_user_decision", acceptance_id: null, summary: "User must authorize" } },
+				});
+
+				mkdirSync(join(store, ".gemini", "antigravity-cli"), { recursive: true });
+				writeFileSync(join(store, ".gemini", "antigravity-cli", "settings.json"), JSON.stringify({ toolPermission: "request-review" }));
+				const hookRes = await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 2,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: TASK } } },
+					workspacePaths: [root],
+				}, { root: store, home: store, readAncestorArgs: () => [["/usr/local/bin/agy"]] });
+				expect(hookRes.decision).toBe("force_ask");
+
+				const reply = await handleJsonRpc({
+					jsonrpc: "2.0",
+					id: "rpc-auth-1",
+					method: "tools/call",
+					params: {
+						name: "request_authorization",
+						arguments: { task_id: TASK },
+						_meta: {
+							"antigravity.google/conversation_id": conversationId,
+							"antigravity.google/workspace_paths": [root],
+							progressToken: "antigravity-hook:2",
+						},
+					},
+				}, mcp);
+
+				expect(reply?.error).toBeUndefined();
+				const finding = readTaskRecordRaw(root, TASK).record?.findings.find((f) => f.id === "user-decision-1");
+				expect(finding?.status).toBe("resolved");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+
+		it("batch parent advance_assurance correlates child settlement", async () => {
+			const { root, store } = await setupWorkspace();
+			const conversationId = "conv-mcp-batch-parent";
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: {},
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
+
+				// 1. Enter drive as parent
+				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive --batch ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
+
+				// 2. PreToolUse + PostToolUse for start_unattended_batch to bind the parent
+				await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: TASK } } },
+					workspacePaths: [root],
+				}, { root: store });
+				await antigravityPostToolUseHook({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "start_unattended_batch", Arguments: { initiative_slug: TASK } } },
+					workspacePaths: [root],
+					result: JSON.stringify({ state: "native_parent", initiative_slug: TASK, plan_digest: `sha256:${"a".repeat(64)}` }),
+				}, { root: store });
+
+				// 3. PreToolUse for child advance_assurance at step 2
+				await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 2,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "advance_assurance", Arguments: { task_id: TASK } } },
+					workspacePaths: [root],
+				}, { root: store });
+
+				expect(selectedAntigravityParent(`${conversationId}:2`, root, TASK, store)).toBe(true);
+
+				// Pin that profile.selectedParent uses the configured confirmationStoreRoot:
+				// direct call without store parameter passes because profile bound confirmationStoreRoot.
+				expect((mcp as any).runtime.profile.selectedParent(`${conversationId}:2`, root, TASK)).toBe(true);
+
+				// Seed a resumable batch run state record so findResumableBatchSlugForTask finds TASK
+				mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
+				writeFileSync(
+					join(root, ".imm", "state", "batches", "batch-1.json"),
+					JSON.stringify({
+						contract: "assurance_kernel/batch_run_state/v1",
+						batch_id: "batch-1",
+						batch_state: "running",
+						initiative_slug: TASK,
+						base_head: "0".repeat(40),
+						children: [{ task_id: TASK, state: "enrolled" }],
+					}),
+				);
+
+				// Mock settlement to completed/done so closeOutBatchChild executes
+				const advanceSpy = spyOn((mcp as any).runtime.coordinator, "advance").mockResolvedValue({
+					state: "completed",
+					record: { lifecycle: "done" },
+				} as any);
+
+				// 4. tools/call for advance_assurance with progressToken step 2
+				const reply = await handleJsonRpc({
+					jsonrpc: "2.0",
+					id: "rpc-advance-1",
+					method: "tools/call",
+					params: {
+						name: "advance_assurance",
+						arguments: { task_id: TASK },
+						_meta: {
+							"antigravity.google/conversation_id": conversationId,
+							"antigravity.google/workspace_paths": [root],
+							progressToken: "antigravity-hook:2",
+						},
+					},
+				}, mcp);
+
+				expect(reply?.error).toBeUndefined();
+				const content = JSON.parse((reply?.result as any).content[0].text);
+				expect(content.state).toBe("completed");
+				expect(content.batch).toBeDefined();
+				advanceSpy.mockRestore();
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+
+		it("AC2 (D7): retire_stale_batch correlates toolCallId and confirmation_ref with conversationId:stepIdx", async () => {
+			const { root, store } = await setupWorkspace();
+			const conversationId = "conv-retire-corr";
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: {},
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({ version: "1.0.0", interactive: true, protocolVersion: "2025-06-18" });
+
+				antigravityPreInvocationHook({ conversationId, lastUserInput: `/drive ${TASK}`, workspacePaths: [root] }, { root: store, home: store });
+
+				// Write an old batch record that can be retired
+				const batchDir = join(root, ".imm/state/batches");
+				mkdirSync(batchDir, { recursive: true });
+				const planDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+				writeFileSync(
+					join(batchDir, "batch-stale-1.json"),
+					JSON.stringify({
+						contract: "assurance_kernel/batch_run_state/v1",
+						batch_id: "batch-stale-1",
+						initiative_slug: TASK,
+						base_head: git(root, "rev-parse", "HEAD"),
+						branch: `imm/${TASK}`,
+						plan_digest: planDigest,
+						confirmation_time: "2026-01-01T00:00:00.000Z",
+						batch_state: "running",
+						children: [{ task_id: TASK, slice_id: TASK, state: "pending", commit: null, blocked_by: [], reason: null }],
+						commits: [],
+						consecutive_qa_failures: 0,
+						budget: { max_children: 1, qa_failure_limit: 2 },
+						created_at: "2026-01-01T00:00:00.000Z",
+						updated_at: "2026-01-01T00:00:00.000Z",
+					}),
+				);
+
+				// PreToolUse for retire_stale_batch at stepIdx 2
+				const preRes = await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 2,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "retire_stale_batch", Arguments: { initiative_slug: TASK } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(preRes.decision).toBe("allow");
+
+				// PreToolUse wrote continuation-call under `${conversationId}:2`
+				expect(readRunToolSession(`${conversationId}:2`, "retire_stale_batch", root, store)).toBe(conversationId);
+
+				// MCP tools/call for retire_stale_batch with JSON-RPC id "rpc-retire-99" and progressToken step 2
+				const reply = await handleJsonRpc({
+					jsonrpc: "2.0",
+					id: "rpc-retire-99",
+					method: "tools/call",
+					params: {
+						name: "retire_stale_batch",
+						arguments: { initiative_slug: TASK },
+						_meta: {
+							"antigravity.google/conversation_id": conversationId,
+							"antigravity.google/workspace_paths": [root],
+							progressToken: "antigravity-hook:2",
+						},
+					},
+				}, mcp);
+
+				expect(reply?.error).toBeUndefined();
+				const content = JSON.parse(reply?.result?.content?.[0]?.text ?? "{}");
+				expect(content.state).toBe("retired");
+				expect(content.report?.retirement?.confirmation_ref).toBe(hostConfirmationRef("antigravity", {
+					connectionId: conversationId,
+					toolCallId: `${conversationId}:2`,
+					requestId: entryTokenRequestId(readPhaseEntryState(conversationId, store)!.token!),
+					operation: "retire_stale_batch",
+					initiativeSlug: TASK,
+					planDigest,
+				}));
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+	});
+
+	describe("AC2 (D7): paused-run enforcement and cache tamper failure", () => {
+		it("applyRunContinuationEvent denies paused native gates even when run_live is revoked", async () => {
+			const store = realpathSync(mkdtempSync(join(tmpdir(), "imm-paused-run-")));
+			const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-paused-ws-")));
+			const conversationId = "conv-paused-gates";
+			try {
+				const host = antigravityContinuationHost(store);
+				// Simulate paused session in metadata
+				const metaPath = join(cacheDir(store, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+				ensurePrivateDir(cacheDir(store, ANTIGRAVITY_CACHE_DIR));
+				appendPrivate(metaPath, cacheDir(store, ANTIGRAVITY_CACHE_DIR), JSON.stringify({
+					sequence: 1,
+					stop_blocks: 0,
+					native_failures: 3,
+					review: "unobserved",
+					reviewer_prompt: null,
+					reviewer_call_id: null,
+					reviewer_agent_id: null,
+					recovery_action: null,
+					paused: "request_authorization failed 3 times under this entry; no further automatic retry",
+					state: null,
+				}) + "\n");
+
+				// Native gates must be denied by shared state machine
+				for (const op of ["request_authorization", "approve_breaking_intent_revision", "stop"] as const) {
+					const outcome = await applyRunContinuationEvent(host, store, { session_id: conversationId, workspace: root }, {
+						kind: "tool_call",
+						operation: op,
+						tool_id: `${conversationId}:5`,
+						task_id: "t1",
+					});
+					expect(outcome).toEqual({
+						kind: "deny",
+						reason: "request_authorization failed 3 times under this entry; no further automatic retry",
+					});
+
+					const hookOutcome = await antigravityRunContinuationPreToolUse({
+						conversationId,
+						stepIdx: 5,
+						toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: op, Arguments: { task_id: "t1" } } },
+						workspacePaths: [root],
+					}, store);
+					expect(hookOutcome).toEqual({
+						decision: "deny",
+						reason: "Run paused: request_authorization failed 3 times under this entry; no further automatic retry; enter drive explicitly before another native gate",
+					});
+				}
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+
+		it("fails closed on tampered continuation files in sync and async hooks", async () => {
+			const store = realpathSync(mkdtempSync(join(tmpdir(), "imm-tamper-store-")));
+			const root = realpathSync(mkdtempSync(join(tmpdir(), "imm-tamper-ws-")));
+			const conversationId = "conv-tamper";
+			const cache = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+			ensurePrivateDir(cache);
+			const metaPath = join(cache, `${sessionHash(conversationId)}.continuation`);
+
+			try {
+				// 1. Symlink
+				const target = join(store, "dummy.txt");
+				writeFileSync(target, "dummy\n");
+				symlinkSync(target, metaPath);
+
+				const syncSymlink = antigravityPreToolUseHook({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(syncSymlink.decision).toBe("deny");
+				expect(syncSymlink.reason).toContain("continuation facts could not be verified");
+
+				const asyncSymlink = await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(asyncSymlink.decision).toBe("deny");
+				expect(asyncSymlink.reason).toContain("continuation facts could not be verified");
+
+				// Post tool use does not throw unhandled rejection
+				await expect(antigravityPostToolUseHook({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+					result: "ok",
+				}, { root: store })).resolves.toBeUndefined();
+
+				unlinkSync(metaPath);
+
+				// 2. Corrupt JSON
+				appendPrivate(metaPath, cache, "not-valid-json{{{");
+				const syncCorrupt = antigravityPreToolUseHook({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(syncCorrupt.decision).toBe("deny");
+				expect(syncCorrupt.reason).toContain("continuation facts could not be verified");
+
+				const asyncCorrupt = await antigravityPreToolUseHookAsync({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(asyncCorrupt.decision).toBe("deny");
+				expect(asyncCorrupt.reason).toContain("continuation facts could not be verified");
+
+				unlinkSync(metaPath);
+
+				// 3. 0644 mode file
+				writeFileSync(metaPath, JSON.stringify({ paused: null }) + "\n", { mode: 0o644 });
+				chmodSync(metaPath, 0o644);
+				const syncMode = antigravityPreToolUseHook({
+					conversationId,
+					stepIdx: 1,
+					toolCall: { name: "call_mcp_tool", args: { ServerName: "immune-brain", ToolName: "request_authorization", Arguments: { task_id: "t1" } } },
+					workspacePaths: [root],
+				}, { root: store });
+				expect(syncMode.decision).toBe("deny");
+				expect(syncMode.reason).toContain("continuation facts could not be verified");
+			} finally {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+			}
+		});
+	});
+
+describe("Antigravity native gate surfacing (ANGS-A1)", () => {
+	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
+
+	function createTempDir(label: string): string {
+		const raw = mkdtempSync(join(tmpdir(), `ag-angs-${label}-`));
+		try {
+			return realpathSync(raw);
+		} catch {
+			return raw;
+		}
+	}
+
+	function runGit(dir: string, ...args: string[]): string {
+		return execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+	}
+
+	function writeSettingsHome(home: string, rawContent: string | null): void {
+		if (rawContent === null) return;
+		const settingsDir = join(home, ".gemini", "antigravity-cli");
+		mkdirSync(settingsDir, { recursive: true });
+		writeFileSync(join(settingsDir, "settings.json"), rawContent, "utf8");
+	}
+
+	async function dispatchRealHook(
+		payload: unknown,
+		locations: { root: string; home: string; readAncestorArgs: AncestorProcessReader },
+	): Promise<{ decision?: string; reason?: string }> {
+		const chunks: Buffer[] = [];
+		const input = Readable.from([`${JSON.stringify(payload)}\n`]);
+		const output = new Writable({
+			write(chunk, _encoding, callback) {
+				chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+				callback();
+			},
+		});
+		await runAntigravityHook({ input, output, locations });
+		const text = Buffer.concat(chunks).toString("utf8").trim();
+		return JSON.parse(text) as { decision?: string; reason?: string };
+	}
+
+	async function setupGateScenario(gate: GateKind, suffix: string) {
+		const root = createTempDir(`${gate}-repo-${suffix}`);
+		const store = createTempDir(`${gate}-store-${suffix}`);
+		const home = createTempDir(`${gate}-home-${suffix}`);
+		const taskId = `angs-${gate}-${suffix}`.replace(/_/g, "-");
+		const initiativeSlug = `init-${taskId}`;
+		const conversationId = `conv-${taskId}`;
+		const stepIdx = 7;
+
+		runGit(root, "init");
+		runGit(root, "config", "user.email", "test@example.com");
+		runGit(root, "config", "user.name", "Test User");
+		writeFileSync(join(root, "README.md"), "# Gate surfacing test\n", "utf8");
+
+		const validVerification = JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: {
+				executable: "bun",
+				argv: ["test"],
+				cwd: ".",
+				timeout_ms: 10000,
+				max_output_bytes: 65536,
+			},
+			environment: {
+				prepare: null,
+				writable_paths: [],
+			},
+		});
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			goal: "Verify native gate surfacing fails closed when human dialog cannot surface",
+			acceptance: [{ id: "A1", assertion: "Verify native gate", verification: validVerification }],
+			scope_hint: ["README.md"],
+			risk: "material" as const,
+			revision: 1,
+			owner: "user" as const,
+		};
+		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), JSON.stringify(intent, null, 2) + "\n", "utf8");
+		runGit(root, "add", ".");
+		runGit(root, "commit", "-m", "initial commit");
+
+		const interactiveAgy: AncestorProcessReader = () => [
+			["/bin/zsh", "-lc", "bun mcp_server.ts --hook"],
+			["/usr/local/bin/agy", "--model", "gemini"],
+		];
+
+		if (gate === "stop" || gate === "request_authorization") {
+			await enrollTaskForTest(root, taskId);
+		}
+		if (gate === "request_authorization") {
+			const intentRead = readTaskIntent(root, taskId);
+			const app = createCanaryApplication(createTestMutationRegistry());
+			await app.execute({
+				root,
+				task_id: taskId,
+				prior_intent_token: intentRead.token,
+				operation: {
+					op: "record_finding",
+					actor_id: "verifier",
+					finding: {
+						id: "user-decision-1",
+						kind: "unresolved_user_decision",
+						acceptance_id: "A1",
+						summary: "Verifier raised a user decision",
+					},
+				},
+			});
+		}
+
+		// Record phase entry in the Antigravity hook cache.
+		// For retire_stale_batch, write a v1 entry line (no ADR 0025 entry_token) so the gate uses native confirmation.
+		const batchId = `batch-stale-${suffix}`;
+		if (gate === "retire_stale_batch") {
+			const baseHead = runGit(root, "rev-parse", "HEAD");
+			mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
+			const prepared = prepareBatchLaneRunState({
+				batch_id: batchId,
+				initiative_slug: initiativeSlug,
+				children: [
+					{
+						task_id: taskId,
+						slice_id: "S1",
+						blocked_by: [],
+						status: "enrollable",
+						reason: null,
+						intent_path: `docs/plans/${taskId}.intent.json`,
+						intent_revision: 1,
+						intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+					},
+				],
+				plan_digest: `sha256:${"0".repeat(64)}`,
+				base_head: baseHead,
+				confirmation_time: "2026-11-13T00:00:00.000Z",
+				budget: { max_children: 10, qa_failure_limit: 2 },
+				max_parallel: 1,
+				now: "2026-11-13T00:00:00.000Z",
+			});
+			writeFileSync(
+				join(root, ".imm", "state", "batches", `${batchId}.json`),
+				JSON.stringify(prepared, null, 2) + "\n",
+				"utf8",
+			);
+			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+			ensurePrivateDir(dir);
+			appendPrivate(join(dir, `${sessionHash(conversationId)}.entry`), dir, JSON.stringify({ v: 1, entry: "run" }) + "\n");
+		} else {
+			await dispatchRealHook(
+				{
+					invocationNum: 0,
+					conversationId,
+					lastUserInput: `/drive ${taskId}`,
+					workspacePaths: [root],
+				},
+				{ root: store, home, readAncestorArgs: interactiveAgy },
+			);
+		}
+
+		const toolArgs: Record<string, unknown> =
+			gate === "stop"
+				? { task_id: taskId, reason: "operator requested stop" }
+				: gate === "start_unattended_batch"
+					? { task_id: taskId }
+					: gate === "retire_stale_batch"
+						? { initiative_slug: initiativeSlug }
+						: {
+								task_id: taskId,
+								choice: "accept_verifier_dispute",
+								exit: "replan",
+								reason: "user chose replan",
+							};
+
+		const batchFilePath = join(root, ".imm", "state", "batches", `${batchId}.json`);
+		const admissionId = `${conversationId}:${stepIdx}:${gate}`;
+		const confirmFilePath = join(
+			cacheDir(store, ANTIGRAVITY_CACHE_DIR),
+			`${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`,
+		);
+
+		function listConfirmAndAdmitFiles(): string[] {
+			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+			if (!existsSync(dir)) return [];
+			return readdirSync(dir).filter((name) => name.endsWith(".confirm") || name.endsWith(".admit"));
+		}
+
+		function snapshotState() {
+			if (gate === "retire_stale_batch") {
+				const raw = existsSync(batchFilePath) ? readFileSync(batchFilePath, "utf8") : "<missing>";
+				return { raw, literalUserCount: 0, lifecycle: null as string | null };
+			}
+			const loaded = readTaskRecordRaw(root, taskId);
+			const settled = readSettledRunEvidence(root, taskId);
+			const raw = JSON.stringify({ record: loaded.record, settled });
+			const literalUserCount = raw.match(/literal-user/g)?.length ?? 0;
+			return {
+				raw,
+				literalUserCount,
+				lifecycle: settled?.lifecycle ?? loaded.record?.lifecycle ?? null,
+			};
+		}
+
+		async function callMcpTool() {
+			const mcp = createAntigravityMcpRuntime({
+				cwd: root,
+				env: {},
+				interactive: true,
+				confirmationStoreRoot: store,
+			});
+			mcp.bindClientHandshake({
+				version: "1.0.0",
+				interactive: true,
+				protocolVersion: "2025-06-18",
+			});
+			return handleJsonRpc(
+				{
+					jsonrpc: "2.0",
+					id: 1,
+					method: "tools/call",
+					params: {
+						name: gate,
+						arguments: toolArgs,
+						_meta: {
+							"antigravity.google/conversation_id": conversationId,
+							"antigravity.google/workspace_paths": [root],
+							progressToken: `antigravity-hook:${stepIdx}`,
+						},
+					},
+				},
+				mcp,
+			);
+		}
+
+		function hookPayload() {
+			return {
+				event: "PreToolUse",
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: {
+						ServerName: "immune-brain",
+						ToolName: gate,
+						Arguments: toolArgs,
+					},
+				},
+			};
+		}
+
+		return {
+			root,
+			store,
+			home,
+			taskId,
+			initiativeSlug,
+			confirmFilePath,
+			interactiveAgy,
+			listConfirmAndAdmitFiles,
+			snapshotState,
+			callMcpTool,
+			hookPayload,
+			cleanup() {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+				rmSync(home, { recursive: true, force: true });
+			},
+		};
+	}
+
+	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
+
+	for (const gate of GATES) {
+		it(`allows ${gate} force_ask, writes confirmation grant, and lets MCP consume it when toolPermission=request-review in interactive agy`, async () => {
+			const scenario = await setupGateScenario(gate, "pos");
+			try {
+				writeSettingsHome(scenario.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
+				const before = scenario.snapshotState();
+				const decision = await dispatchRealHook(scenario.hookPayload(), {
+					root: scenario.store,
+					home: scenario.home,
+					readAncestorArgs: scenario.interactiveAgy,
+				});
+				expect(decision.decision).toBe("force_ask");
+				expect(existsSync(scenario.confirmFilePath)).toBe(true);
+
+				const reply = await scenario.callMcpTool();
+				expect(existsSync(scenario.confirmFilePath)).toBe(false);
+				const after = scenario.snapshotState();
+
+				if (gate === "stop") {
+					expect((reply as { error?: unknown; result?: { isError?: boolean } })?.error).toBeUndefined();
+					expect((reply as { result?: { isError?: boolean } })?.result?.isError).not.toBe(true);
+					expect(after.lifecycle).toBe("stopped");
+					expect(after.literalUserCount).toBeGreaterThan(before.literalUserCount);
+				} else if (gate === "request_authorization") {
+					expect((reply as { error?: unknown; result?: { isError?: boolean } })?.error).toBeUndefined();
+					expect((reply as { result?: { isError?: boolean } })?.result?.isError).not.toBe(true);
+					expect(after.literalUserCount).toBeGreaterThan(before.literalUserCount);
+				} else if (gate === "retire_stale_batch") {
+					expect((reply as { error?: unknown; result?: { isError?: boolean } })?.error).toBeUndefined();
+					expect((reply as { result?: { isError?: boolean } })?.result?.isError).not.toBe(true);
+				} else {
+					// Enrollment (`start_unattended_batch` with `task_id`): grant was consumed rather than refused for missing confirmation.
+					const text = JSON.stringify(reply);
+					expect(text).not.toContain("confirmation_required");
+					expect(text).not.toContain("admission_required");
+				}
+			} finally {
+				scenario.cleanup();
+			}
+		});
+	}
+
+	it("inspects the nearest ancestor agy process when checking disallowed flags", async () => {
+		const interactiveNearest = await setupGateScenario("stop", "nearest-ok");
+		const printNearest = await setupGateScenario("stop", "nearest-print");
+		try {
+			writeSettingsHome(interactiveNearest.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
+			const okDecision = await dispatchRealHook(interactiveNearest.hookPayload(), {
+				root: interactiveNearest.store,
+				home: interactiveNearest.home,
+				readAncestorArgs: () => [
+					["/bin/zsh", "-c", "hook"],
+					["/usr/local/bin/agy", "--model", "gemini"],
+					["/usr/local/bin/agy", "--print"],
+				],
+			});
+			expect(okDecision.decision).toBe("force_ask");
+			expect(existsSync(interactiveNearest.confirmFilePath)).toBe(true);
+
+			writeSettingsHome(printNearest.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
+			const denyDecision = await dispatchRealHook(printNearest.hookPayload(), {
+				root: printNearest.store,
+				home: printNearest.home,
+				readAncestorArgs: () => [
+					["/bin/zsh", "-c", "hook"],
+					["/usr/local/bin/agy", "--print"],
+					["/usr/local/bin/agy", "--model", "gemini"],
+				],
+			});
+			expect(denyDecision.decision).toBe("deny");
+			expect(denyDecision.reason).toContain("--print");
+			expect(denyDecision.reason).toContain("Remediation:");
+			expect(printNearest.listConfirmAndAdmitFiles()).toEqual([]);
+		} finally {
+			interactiveNearest.cleanup();
+			printNearest.cleanup();
+		}
+	});
+
+	interface NegativeCase {
+		id: string;
+		settingsRaw: string | null;
+		readAncestorArgs: AncestorProcessReader;
+		expectedCauseFragment: string;
+	}
+
+	const interactiveAncestor: AncestorProcessReader = () => [
+		["/bin/zsh", "-lc", "bun mcp_server.ts --hook"],
+		["/usr/local/bin/agy"],
+	];
+
+	const NEGATIVE_CASES: NegativeCase[] = [
+		{
+			id: "always-proceed",
+			settingsRaw: JSON.stringify({ toolPermission: "always-proceed" }),
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "always-proceed",
+		},
+		{
+			id: "proceed-in-sandbox",
+			settingsRaw: JSON.stringify({ toolPermission: "proceed-in-sandbox" }),
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "proceed-in-sandbox",
+		},
+		{
+			id: "strict",
+			settingsRaw: JSON.stringify({ toolPermission: "strict" }),
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "strict",
+		},
+		{
+			id: "missing-settings-file",
+			settingsRaw: null,
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "settings.json is missing",
+		},
+		{
+			id: "missing-toolPermission-key",
+			settingsRaw: JSON.stringify({ theme: "dark" }),
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "toolPermission key is missing",
+		},
+		{
+			id: "non-string-toolPermission",
+			settingsRaw: JSON.stringify({ toolPermission: 123 }),
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "must be a string",
+		},
+		{
+			id: "unparsable-settings-json",
+			settingsRaw: "{not-valid-json",
+			readAncestorArgs: interactiveAncestor,
+			expectedCauseFragment: "unparsable JSON",
+		},
+		{
+			id: "agy-dangerously-skip-permissions",
+			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
+			readAncestorArgs: () => [["/usr/local/bin/agy", "--dangerously-skip-permissions"]],
+			expectedCauseFragment: "--dangerously-skip-permissions",
+		},
+		{
+			id: "agy-print",
+			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
+			readAncestorArgs: () => [["/usr/local/bin/agy", "--print"]],
+			expectedCauseFragment: "--print",
+		},
+		{
+			id: "agy-short-p",
+			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
+			readAncestorArgs: () => [["/usr/local/bin/agy", "-p"]],
+			expectedCauseFragment: "-p",
+		},
+		{
+			id: "no-agy-ancestor",
+			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
+			readAncestorArgs: () => [["/bin/zsh"], ["/sbin/launchd"]],
+			expectedCauseFragment: "no ancestor agy process",
+		},
+		{
+			id: "ancestor-reader-throws",
+			settingsRaw: JSON.stringify({ toolPermission: "request-review" }),
+			readAncestorArgs: () => {
+				throw new Error("ps inspection failed");
+			},
+			expectedCauseFragment: "ps inspection failed",
+		},
+	];
+
+	for (const gate of GATES) {
+		for (const neg of NEGATIVE_CASES) {
+			it(`denies ${gate} with no grant written when ${neg.id}, and following MCP call refuses cleanly`, async () => {
+				const scenario = await setupGateScenario(gate, neg.id);
+				try {
+					writeSettingsHome(scenario.home, neg.settingsRaw);
+					const beforeState = scenario.snapshotState();
+
+					const decision = await dispatchRealHook(scenario.hookPayload(), {
+						root: scenario.store,
+						home: scenario.home,
+						readAncestorArgs: neg.readAncestorArgs,
+					});
+					expect(decision.decision).toBe("deny");
+					expect(decision.reason).toContain(neg.expectedCauseFragment);
+					expect(decision.reason).toContain("Remediation:");
+					expect(decision.reason).toContain("request-review");
+					expect(existsSync(scenario.confirmFilePath)).toBe(false);
+					expect(scenario.listConfirmAndAdmitFiles()).toEqual([]);
+
+					const reply = await scenario.callMcpTool();
+					const rpc = reply as { error?: unknown; result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+					const refused = Boolean(rpc?.error) || rpc?.result?.isError === true;
+					expect(refused).toBe(true);
+
+					const afterState = scenario.snapshotState();
+					expect(afterState.raw).toBe(beforeState.raw);
+					expect(afterState.literalUserCount).toBe(beforeState.literalUserCount);
+					expect(scenario.listConfirmAndAdmitFiles()).toEqual([]);
+				} finally {
+					scenario.cleanup();
+				}
+			});
+		}
+	}
+
+	it("enforces native gate surfacing end-to-end via the mcp_server.ts --hook CLI entrypoint", async () => {
+		const okScenario = await setupGateScenario("stop", "cli-ok");
+		const badScenario = await setupGateScenario("stop", "cli-bad");
+		const fakeBin = createTempDir("ps-bin");
+		try {
+			writeSettingsHome(okScenario.home, JSON.stringify({ toolPermission: "request-review" }) + "\n");
+			writeSettingsHome(badScenario.home, JSON.stringify({ toolPermission: "always-proceed" }) + "\n");
+
+			const psPath = join(fakeBin, "ps");
+			writeFileSync(psPath, "#!/bin/sh\necho '1 /usr/local/bin/agy'\n", { mode: 0o755 });
+			chmodSync(psPath, 0o755);
+
+			const runCli = (home: string, payload: unknown) => {
+				const proc = spawnSync(
+					process.execPath,
+					[join(process.cwd(), "plugins", "immune-brain", "runtime", "antigravity", "mcp_server.ts"), "--hook"],
+					{
+						input: `${JSON.stringify(payload)}\n`,
+						encoding: "utf8",
+						env: {
+							...process.env,
+							HOME: home,
+							PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+						},
+					},
+				);
+				expect(proc.status).toBe(0);
+				return JSON.parse(proc.stdout.trim()) as { decision?: string; reason?: string };
+			};
+
+			const preInv = runCli(badScenario.home, {
+				invocationNum: 0,
+				conversationId: "conv-cli-bad",
+				lastUserInput: `/drive ${badScenario.taskId}`,
+				workspacePaths: [badScenario.root],
+			});
+			expect(preInv.decision).not.toBe("deny");
+
+			const badDecision = runCli(badScenario.home, {
+				conversationId: "conv-cli-bad",
+				stepIdx: 1,
+				workspacePaths: [badScenario.root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: badScenario.taskId, reason: "stop" } },
+				},
+			});
+			expect(badDecision.decision).toBe("deny");
+			expect(badDecision.reason).toContain("always-proceed");
+
+			const okPreInv = runCli(okScenario.home, {
+				invocationNum: 0,
+				conversationId: "conv-cli-ok",
+				lastUserInput: `/drive ${okScenario.taskId}`,
+				workspacePaths: [okScenario.root],
+			});
+			expect(okPreInv.decision).not.toBe("deny");
+
+			const okDecision = runCli(okScenario.home, {
+				conversationId: "conv-cli-ok",
+				stepIdx: 1,
+				workspacePaths: [okScenario.root],
+				toolCall: {
+					name: "call_mcp_tool",
+					args: { ServerName: "immune-brain", ToolName: "stop", Arguments: { task_id: okScenario.taskId, reason: "stop" } },
+				},
+			});
+			expect(okDecision.decision).toBe("force_ask");
+		} finally {
+			okScenario.cleanup();
+			badScenario.cleanup();
+			rmSync(fakeBin, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
+	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
+	type CallShape = "call_mcp_tool" | "direct";
+
+	function createTempDir(label: string): string {
+		const raw = mkdtempSync(join(tmpdir(), `ag-aarp-${label}-`));
+		try {
+			return realpathSync(raw);
+		} catch {
+			return raw;
+		}
+	}
+
+	const execFileAsync = promisify(execFile);
+
+	async function runGit(dir: string, ...args: string[]): Promise<string> {
+		const { stdout } = await execFileAsync("git", args, { cwd: dir, encoding: "utf8" });
+		return stdout.trim();
+	}
+
+	function writeSettingsHome(home: string, settings: Record<string, unknown>): void {
+		const settingsDir = join(home, ".gemini", "antigravity-cli");
+		mkdirSync(settingsDir, { recursive: true });
+		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n", "utf8");
+	}
+
+	function createFakePsBin(psArgsLine: string): string {
+		const fakeBin = createTempDir("ps-bin");
+		const psPath = join(fakeBin, "ps");
+		writeFileSync(psPath, `#!/bin/sh\necho '${psArgsLine}'\n`, { mode: 0o755 });
+		chmodSync(psPath, 0o755);
+		return fakeBin;
+	}
+
+	function runHookCli(
+		home: string,
+		store: string,
+		fakeBin: string,
+		payload: unknown,
+	): Promise<{ decision?: string; reason?: string }> {
+		return new Promise((resolve, reject) => {
+			const child = spawn(
+				process.execPath,
+				[join(process.cwd(), "plugins", "immune-brain", "runtime", "antigravity", "mcp_server.ts"), "--hook"],
+				{
+					stdio: ["pipe", "pipe", "pipe"],
+					env: {
+						...process.env,
+						HOME: home,
+						TMPDIR: store,
+						PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+					},
+				},
+			);
+			let stdout = "";
+			let stderr = "";
+			child.stdout.setEncoding("utf8");
+			child.stderr.setEncoding("utf8");
+			child.stdout.on("data", (chunk: string) => {
+				stdout += chunk;
+			});
+			child.stderr.on("data", (chunk: string) => {
+				stderr += chunk;
+			});
+			child.on("error", reject);
+			child.on("close", (code) => {
+				expect(code, `hook stderr: ${stderr}`).toBe(0);
+				resolve(JSON.parse(stdout.trim()) as { decision?: string; reason?: string });
+			});
+			child.stdin.end(`${JSON.stringify(payload)}\n`);
+		});
+	}
+
+	async function setupProvenanceScenario(gate: GateKind, suffix: string) {
+		const root = createTempDir(`${gate}-repo-${suffix}`);
+		const store = createTempDir(`${gate}-store-${suffix}`);
+		const home = createTempDir(`${gate}-home-${suffix}`);
+		const taskId = `aarp-${gate}-${suffix}`.replace(/_/g, "-");
+		const initiativeSlug = `init-${taskId}`;
+		const conversationId = `conv-${taskId}`;
+		const stepIdx = 9;
+
+		await runGit(root, "init");
+		await runGit(root, "config", "user.email", "test@example.com");
+		await runGit(root, "config", "user.name", "Test User");
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n", "utf8");
+		writeFileSync(join(root, "README.md"), "# Allow rule provenance test\n", "utf8");
+
+		const validVerification = JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: {
+				executable: "bun",
+				argv: ["test"],
+				cwd: ".",
+				timeout_ms: 10000,
+				max_output_bytes: 65536,
+			},
+			environment: {
+				prepare: null,
+				writable_paths: [],
+			},
+		});
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			goal: "Verify allow-rule provenance recording",
+			acceptance: [{ id: "A1", assertion: "Verify allow rule", verification: validVerification }],
+			scope_hint: ["README.md"],
+			risk: "material" as const,
+			revision: 1,
+			owner: "user" as const,
+		};
+		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), JSON.stringify(intent, null, 2) + "\n", "utf8");
+		await runGit(root, "add", ".");
+		await runGit(root, "commit", "-m", "initial commit");
+
+		if (gate === "stop" || gate === "request_authorization") {
+			await enrollTaskForTest(root, taskId);
+		}
+		if (gate === "request_authorization") {
+			const intentRead = readTaskIntent(root, taskId);
+			const app = createCanaryApplication(createTestMutationRegistry());
+			await app.execute({
+				root,
+				task_id: taskId,
+				prior_intent_token: intentRead.token,
+				operation: {
+					op: "record_finding",
+					actor_id: "verifier",
+					finding: {
+						id: "user-decision-1",
+						kind: "unresolved_user_decision",
+						acceptance_id: "A1",
+						summary: "Verifier raised a user decision",
+					},
+				},
+			});
+		}
+
+		const batchId = `batch-stale-${suffix}`;
+		if (gate === "retire_stale_batch") {
+			const baseHead = await runGit(root, "rev-parse", "HEAD");
+			mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
+			const prepared = prepareBatchLaneRunState({
+				batch_id: batchId,
+				initiative_slug: initiativeSlug,
+				children: [
+					{
+						task_id: taskId,
+						slice_id: "S1",
+						blocked_by: [],
+						status: "enrollable",
+						reason: null,
+						intent_path: `docs/plans/${taskId}.intent.json`,
+						intent_revision: 1,
+						intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+					},
+				],
+				plan_digest: `sha256:${"0".repeat(64)}`,
+				base_head: baseHead,
+				confirmation_time: "2026-11-13T00:00:00.000Z",
+				budget: { max_children: 10, qa_failure_limit: 2 },
+				max_parallel: 1,
+				now: "2026-11-13T00:00:00.000Z",
+			});
+			writeFileSync(
+				join(root, ".imm", "state", "batches", `${batchId}.json`),
+				JSON.stringify(prepared, null, 2) + "\n",
+				"utf8",
+			);
+			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+			ensurePrivateDir(dir);
+			appendPrivate(join(dir, `${sessionHash(conversationId)}.entry`), dir, JSON.stringify({ v: 1, entry: "run" }) + "\n");
+		}
+
+		const toolArgs: Record<string, unknown> =
+			gate === "stop"
+				? { task_id: taskId, reason: "operator requested stop" }
+				: gate === "start_unattended_batch"
+					? { task_id: taskId }
+					: gate === "retire_stale_batch"
+						? { initiative_slug: initiativeSlug }
+						: {
+								task_id: taskId,
+								choice: "accept_verifier_dispute",
+								exit: "replan",
+								reason: "user chose replan",
+							};
+
+		const admissionId = `${conversationId}:${stepIdx}:${gate}`;
+		const confirmFilePath = join(
+			cacheDir(store, ANTIGRAVITY_CACHE_DIR),
+			`${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`,
+		);
+
+		function readGrantRequestId(): string {
+			const parsed = JSON.parse(readFileSync(confirmFilePath, "utf8")) as { request_id: string };
+			return parsed.request_id;
+		}
+
+		function preToolUsePayload(shape: CallShape) {
+			return {
+				event: "PreToolUse",
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall:
+					shape === "call_mcp_tool"
+						? {
+								name: "call_mcp_tool",
+								args: {
+									ServerName: "immune-brain_immune-brain",
+									ToolName: gate,
+									Arguments: toolArgs,
+								},
+							}
+						: {
+								name: gate,
+								args: toolArgs,
+							},
+			};
+		}
+
+		async function consumeViaMcp(): Promise<string> {
+			const recordedRefs: string[] = [];
+			let refSpy: ReturnType<typeof spyOn> | null = null;
+			if (gate === "start_unattended_batch") {
+				const originalHostConfirmationRef = hostInteraction.hostConfirmationRef;
+				refSpy = spyOn(hostInteraction, "hostConfirmationRef").mockImplementation((host, input) => {
+					const ref = originalHostConfirmationRef(host, input);
+					recordedRefs.push(ref);
+					return ref;
+				});
+			}
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: { HERDR_ENV: "1" },
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({
+					version: "1.0.0",
+					interactive: true,
+					protocolVersion: "2025-06-18",
+				});
+				const reply = (await handleJsonRpc(
+					{
+						jsonrpc: "2.0",
+						id: 1,
+						method: "tools/call",
+						params: {
+							name: gate,
+							arguments: toolArgs,
+							_meta: {
+								"antigravity.google/conversation_id": conversationId,
+								"antigravity.google/workspace_paths": [root],
+								progressToken: `antigravity-hook:${stepIdx}`,
+							},
+						},
+					},
+					mcp,
+				)) as { error?: unknown; result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+				expect(reply?.error).toBeUndefined();
+				expect(reply?.result?.isError).not.toBe(true);
+				expect(existsSync(confirmFilePath)).toBe(false);
+
+				const text = reply?.result?.content?.[0]?.text ?? "{}";
+				const body = JSON.parse(text) as {
+					report?: {
+						retirement?: { confirmation_ref?: string };
+						handoffs?: Array<{ role?: string; lane_path?: string }>;
+					};
+				};
+				if (gate === "retire_stale_batch") {
+					return body.report?.retirement?.confirmation_ref ?? "";
+				}
+				if (gate === "start_unattended_batch") {
+					const laneWorktree = body.report?.handoffs?.find((h) => h.role === "executor")?.lane_path;
+					expect(typeof laneWorktree).toBe("string");
+					expect(readTaskRecordRaw(laneWorktree!, taskId).record?.lifecycle).toBe("active");
+					return recordedRefs.at(-1) ?? "";
+				}
+				const record = readTaskRecordRaw(root, taskId).record ?? readSettledRunEvidence(root, taskId)?.record;
+				return record?.history?.at(-1)?.authority?.confirmation_ref ?? "";
+			} finally {
+				refSpy?.mockRestore();
+			}
+		}
+
+		return {
+			root,
+			store,
+			home,
+			taskId,
+			conversationId,
+			confirmFilePath,
+			readGrantRequestId,
+			preToolUsePayload,
+			consumeViaMcp,
+			cleanup() {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+				rmSync(home, { recursive: true, force: true });
+			},
+		};
+	}
+
+	async function runProvenanceCheck(
+		gate: GateKind,
+		shape: CallShape,
+		settings: Record<string, unknown>,
+		suffix: string,
+		psArgsLine = "1 /usr/local/bin/agy --model gemini",
+	) {
+		const scenario = await setupProvenanceScenario(gate, suffix);
+		const fakeBin = createFakePsBin(psArgsLine);
+		try {
+			writeSettingsHome(scenario.home, settings);
+			if (gate === "start_unattended_batch") {
+				const preInv = await runHookCli(scenario.home, scenario.store, fakeBin, {
+					invocationNum: 0,
+					conversationId: scenario.conversationId,
+					lastUserInput: `/drive ${scenario.taskId}`,
+					workspacePaths: [scenario.root],
+				});
+				expect(preInv.decision).not.toBe("deny");
+			}
+			const decision = await runHookCli(scenario.home, scenario.store, fakeBin, scenario.preToolUsePayload(shape));
+			if (decision.decision !== "force_ask") {
+				return { decision, requestId: null as string | null, confirmationRef: null as string | null, confirmExists: existsSync(scenario.confirmFilePath) };
+			}
+			expect(existsSync(scenario.confirmFilePath)).toBe(true);
+			const requestId = scenario.readGrantRequestId();
+			const confirmationRef = await scenario.consumeViaMcp();
+			return { decision, requestId, confirmationRef, confirmExists: existsSync(scenario.confirmFilePath) };
+		} finally {
+			scenario.cleanup();
+			rmSync(fakeBin, { recursive: true, force: true });
+		}
+	}
+
+	it("derives confirmation ref kind allow-rule only from allow-rule prefix, entry from entry-token, and confirm otherwise with byte-identical sha256 suffixes", () => {
+		const base = {
+			connectionId: "conn-1",
+			toolCallId: "call-1",
+			operation: "stop",
+			taskId: "task-1",
+			initiativeSlug: "init-1",
+			intentRevision: 2,
+			intentContentHash: "sha256:abc",
+			bindingDigest: "sha256:def",
+			planDigest: "sha256:ghi",
+		};
+		const expectedDigest = (requestId: string) =>
+			createHash("sha256")
+				.update(
+					`${base.connectionId}\0${base.toolCallId}\0${requestId}\0${base.operation}\0${base.taskId}\0${base.initiativeSlug}\0${base.intentRevision}\0${base.intentContentHash}\0${base.bindingDigest}\0${base.planDigest}`,
+				)
+				.digest("hex")
+				.slice(0, 16);
+
+		expect(ALLOW_RULE_REQUEST_PREFIX).toBe("allow-rule:");
+		for (const host of ["antigravity", "claude", "pi"] as const) {
+			const allowId = `${ALLOW_RULE_REQUEST_PREFIX}antigravity-hook:c:1:uuid`;
+			expect(hostConfirmationRef(host, { ...base, requestId: allowId })).toBe(
+				`${host}-allow-rule-${expectedDigest(allowId)}`,
+			);
+
+			const entryId = entryTokenRequestId("tok-1");
+			expect(hostConfirmationRef(host, { ...base, requestId: entryId })).toBe(
+				`${host}-entry-${expectedDigest(entryId)}`,
+			);
+
+			for (const confirmId of [
+				"req-123",
+				"antigravity-hook:c:1:uuid",
+				"x-allow-rule:req",
+				"allow-rule",
+				"entry-token",
+				"",
+			]) {
+				expect(hostConfirmationRef(host, { ...base, requestId: confirmId })).toBe(
+					`${host}-confirm-${expectedDigest(confirmId)}`,
+				);
+			}
+		}
+	});
+
+	async function runConcurrent<T, R>(items: ReadonlyArray<T>, concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+		const results: R[] = new Array(items.length);
+		let next = 0;
+		const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+			while (next < items.length) {
+				const idx = next++;
+				results[idx] = await fn(items[idx]!);
+			}
+		});
+		await Promise.all(workers);
+		return results;
+	}
+
+	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
+	const SHAPES: CallShape[] = ["call_mcp_tool", "direct"];
+
+	for (const gate of GATES) {
+		it(`records allow-rule provenance for ${gate} via call_mcp_tool and direct through mcp_server.ts --hook`, async () => {
+			const verifyShape = async (shape: CallShape) => {
+				const res = await runProvenanceCheck(
+					gate,
+					shape,
+					{
+						toolPermission: "request-review",
+						permissions: { allow: [`mcp(immune-brain_immune-brain/${gate})`] },
+					},
+					`pos-${gate}-${shape}`,
+				);
+				expect(res.decision.decision, `${gate}:${shape}`).toBe("force_ask");
+				expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), `${gate}:${shape}`).toBe(true);
+				expect(res.confirmationRef, `${gate}:${shape}`).toMatch(/^antigravity-allow-rule-[0-9a-f]{16}$/);
+			};
+			if (gate === "start_unattended_batch") {
+				for (const shape of SHAPES) await verifyShape(shape);
+			} else {
+				await Promise.all(SHAPES.map((shape) => verifyShape(shape)));
+			}
+		}, 60_000);
+	}
+
+	it("matches exact-form wildcards (server/*, server, mcp(*)) for both call_mcp_tool and direct tool name", async () => {
+		const cases = (
+			[
+				["server-wildcard", "mcp(immune-brain_immune-brain/*)"],
+				["server-only", "mcp(immune-brain_immune-brain)"],
+				["global-wildcard", "mcp(*)"],
+			] as const
+		).flatMap(([label, rule]) => SHAPES.map((shape) => ({ label, rule, shape })));
+		await runConcurrent(cases, 6, async ({ label, rule, shape }) => {
+			const res = await runProvenanceCheck(
+				"stop",
+				shape,
+				{
+					toolPermission: "request-review",
+					permissions: { allow: [rule] },
+				},
+				`wc-${label}-${shape}`,
+			);
+			expect(res.decision.decision, `${label}:${shape}`).toBe("force_ask");
+			expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), `${label}:${shape}`).toBe(true);
+			expect(res.confirmationRef, `${label}:${shape}`).toMatch(/^antigravity-allow-rule-[0-9a-f]{16}$/);
+		});
+	}, 60_000);
+
+	it("yields antigravity-confirm- and never allow-rule when rules do not match or settings are malformed", async () => {
+		const cases = [
+			["no-permissions-key", { toolPermission: "request-review" }],
+			["empty-allow-array", { toolPermission: "request-review", permissions: { allow: [] } }],
+			["different-tool-status", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/status)"] } }],
+			["similar-name-stop2", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop2)"] } }],
+			["similar-name-stopx", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stopx)"] } }],
+			["similar-name-stop_all", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop_all)"] } }],
+			["similar-name-sto", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/sto)"] } }],
+			["different-server", { toolPermission: "request-review", permissions: { allow: ["mcp(other-server/stop)", "mcp(other-server/*)", "mcp(immune-brain-other/stop)"] } }],
+			["non-mcp-rules", { toolPermission: "request-review", permissions: { allow: ["command(stop)", "bash(stop)", "stop"] } }],
+			["non-string-entries", { toolPermission: "request-review", permissions: { allow: [null, 123, true, { rule: "mcp(*)" }, ["mcp(*)"]] } }],
+			["allow-not-array", { toolPermission: "request-review", permissions: { allow: "mcp(*)" } }],
+			["permissions-not-object", { toolPermission: "request-review", permissions: ["mcp(*)"] }],
+		] as const;
+		await runConcurrent(cases, 12, async ([label, settings]) => {
+			const res = await runProvenanceCheck("stop", "call_mcp_tool", settings as Record<string, unknown>, `neg-${label}`);
+			expect(res.decision.decision, label).toBe("force_ask");
+			expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), label).toBe(false);
+			expect(res.requestId?.startsWith("antigravity-hook:"), label).toBe(true);
+			expect(res.confirmationRef, label).toMatch(/^antigravity-confirm-[0-9a-f]{16}$/);
+		});
+	}, 60_000);
+
+	it("does not relax existing refusals (always-proceed, --print, --dangerously-skip-permissions) even when an allow rule matches", async () => {
+		const cases = [
+			[
+				"toolPermission-always-proceed",
+				{ toolPermission: "always-proceed", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --model gemini",
+			],
+			[
+				"agy-print",
+				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --print",
+			],
+			[
+				"agy-dangerously-skip-permissions",
+				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --dangerously-skip-permissions",
+			],
+		] as const;
+		await runConcurrent(cases, 3, async ([label, settings, psArgsLine]) => {
+			const res = await runProvenanceCheck(
+				"stop",
+				"call_mcp_tool",
+				settings as Record<string, unknown>,
+				`refusal-${label}`,
+				psArgsLine,
+			);
+			expect(res.decision.decision, label).toBe("deny");
+			expect(res.confirmExists, label).toBe(false);
+			expect(res.requestId, label).toBeNull();
+			expect(res.confirmationRef, label).toBeNull();
+		});
+	}, 60_000);
 });

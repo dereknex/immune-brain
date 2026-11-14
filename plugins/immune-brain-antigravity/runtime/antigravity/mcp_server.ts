@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
-import { tmpdir } from "node:os";
+import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
 	createMcpRuntime as createHostMcpRuntime,
@@ -11,37 +11,27 @@ import {
 	type McpRuntimeOptions,
 	type ServeStdioOptions,
 } from "../host-core/mcp_runtime";
-import { readSessionToolCall, type RunContinuationHost } from "../host-core/run_continuation_session";
-import { AntigravityReviewHost, antigravityHookEventLog, ANTIGRAVITY_CACHE_DIR, type AntigravityHookEvent } from "./review_host";
+import {
+	AntigravityReviewHost,
+	antigravityHookEventLog,
+	resolveAsyncVerifierResults,
+	type AntigravityHookEvent,
+} from "./review_host";
 import {
 	antigravityPostToolUseHook,
-	antigravityPreInvocationHook,
+	antigravityPreInvocationHookAsync,
 	antigravityPreToolUseHookAsync,
 	consumeNativeConfirmation,
 	consumePhaseAdmission,
-	dropPhaseEntryLog,
-	readPhaseEntryState,
-	revokeEntryToken,
 	type AntigravityPostToolUsePayload,
 	type AntigravityPreInvocationPayload,
 	type AntigravityPreToolUsePayload,
 	type AntigravityStopPayload,
+	type PhaseEntryLocations,
 } from "./lane_guard";
-import { antigravityRunContinuationHook } from "./run_continuation";
+import { antigravityRunContinuationHook, readRunToolSession } from "./run_continuation";
 import { CORE_CONTRACT, MIN_ANTIGRAVITY_VERSION, probeHost } from "./capability";
 import { AntigravityRuntime } from "./kernel_ports";
-
-/**
- * The Antigravity continuation store, built from this adapter's own phase-entry
- * ports. Antigravity records no tool-call correlation, so no gated call resolves
- * a Hook session here.
- */
-const antigravityContinuationHost = (root: string): RunContinuationHost => ({
-	cache_name: ANTIGRAVITY_CACHE_DIR,
-	entry_state: (sessionId) => readPhaseEntryState(sessionId, root),
-	revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
-	drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root),
-});
 
 /** The Antigravity composition root: every Antigravity-specific fact the shared MCP server needs. */
 const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
@@ -57,7 +47,8 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 		const conversation = meta?.["antigravity.google/conversation_id"];
 		if (typeof conversation !== "string" || !conversation) return undefined;
 		const step = metaProgressStep(meta);
-		return { toolCallId: String(messageId), ...(step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` }) };
+		const toolCallId = step === null ? String(messageId) : `${conversation}:${step}`;
+		return { toolCallId, ...(step === null ? {} : { admissionId: `${conversation}:${step}:${operation}` }) };
 	},
 	elicitationUnavailableRefusal: "interactive MCP elicitation is unavailable",
 	probeHost,
@@ -69,7 +60,7 @@ const ANTIGRAVITY_MCP_PROFILE: McpHostProfile = {
 	requestConfirmation: (input) => consumeNativeConfirmation(input),
 	consumePhaseAdmission: (toolCallId, operation) => consumePhaseAdmission(toolCallId, operation),
 	readRunToolSession: (toolCallId, operation, workspace) =>
-		readSessionToolCall(antigravityContinuationHost(tmpdir()), tmpdir(), toolCallId, operation, workspace),
+		readRunToolSession(toolCallId, operation, workspace),
 	dispatchHook: runHook,
 	bundlePath: fileURLToPath(import.meta.url),
 };
@@ -84,6 +75,19 @@ export interface AntigravityServeStdioOptions extends ServeStdioOptions {
 	confirmationStoreRoot?: string;
 }
 
+function antigravityMcpProfile(confirmationStoreRoot?: string): McpHostProfile {
+	if (!confirmationStoreRoot) return ANTIGRAVITY_MCP_PROFILE;
+	return {
+		...ANTIGRAVITY_MCP_PROFILE,
+		createRuntime: (options) =>
+			new AntigravityRuntime({
+				parentHost: "antigravity",
+				...options,
+				confirmationStoreRoot,
+			}).runtime,
+	};
+}
+
 function withConfirmationStore<T extends McpRuntimeOptions>(options: T & { confirmationStoreRoot?: string }): T {
 	const { confirmationStoreRoot, ...rest } = options;
 	if (!confirmationStoreRoot) return rest as T;
@@ -92,18 +96,20 @@ function withConfirmationStore<T extends McpRuntimeOptions>(options: T & { confi
 		requestConfirmation: rest.requestConfirmation ?? ((input) => consumeNativeConfirmation(input, confirmationStoreRoot)),
 		consumePhaseAdmission:
 			rest.consumePhaseAdmission ?? ((toolCallId, operation) => consumePhaseAdmission(toolCallId, operation, confirmationStoreRoot)),
-	} as T;
+		readRunToolSession:
+			rest.readRunToolSession ?? ((toolCallId: string, operation: string, workspace: string) => readRunToolSession(toolCallId, operation, workspace, confirmationStoreRoot)),
+	} as unknown as T;
 }
 
 export const createAntigravityMcpRuntime = (options: AntigravityMcpRuntimeOptions = {}): McpRuntime =>
-	createHostMcpRuntime(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
+	createHostMcpRuntime(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
 
 /**
  * The shared bidirectional transport can serve `roots/list`; `ANTIGRAVITY_MCP_PROFILE`
  * keeps its Hook-backed `requestConfirmation` port instead of `elicitation/create`.
  */
 export const serveStdio = (options: AntigravityServeStdioOptions = {}): Promise<void> =>
-	serveHostStdio(ANTIGRAVITY_MCP_PROFILE, withConfirmationStore(options));
+	serveHostStdio(antigravityMcpProfile(options.confirmationStoreRoot), withConfirmationStore(options));
 
 /**
  * The step index Antigravity appends to a call's `progressToken` (E4): the final
@@ -117,7 +123,11 @@ function metaProgressStep(meta: Record<string, unknown> | undefined): number | n
 }
 
 /** Append the start event for a subagent dispatch that may complete the same `stepIdx`. */
-function appendSubagentStart(toolCall: { name: string; args?: Record<string, unknown> }, payload: Record<string, unknown>): void {
+function appendSubagentStart(
+	toolCall: { name: string; args?: Record<string, unknown> },
+	payload: Record<string, unknown>,
+	root?: string,
+): void {
 	if (toolCall.name !== "invoke_subagent" && toolCall.name !== "Subagent") return;
 	if (typeof payload.stepIdx !== "number") return;
 	const args = toolCall.args ?? {};
@@ -128,13 +138,88 @@ function appendSubagentStart(toolCall: { name: string; args?: Record<string, unk
 		agentId: String(payload.stepIdx),
 		...(typeof args.Prompt === "string" ? { prompt: args.Prompt } : {}),
 		...(typeof args.Model === "string" ? { model: args.Model } : {}),
+		...(typeof payload.artifactDirectoryPath === "string" && payload.artifactDirectoryPath
+			? { artifactDirectoryPath: payload.artifactDirectoryPath }
+			: {}),
 	};
-	antigravityHookEventLog().append(event);
+	antigravityHookEventLog(root).append(event);
 }
 
-export async function runHook(): Promise<void> {
+export interface AntigravityRunHookOptions {
+	locations?: PhaseEntryLocations;
+	input?: Readable;
+	output?: Writable;
+}
+
+async function dispatchHookPayload(
+	payload: Record<string, unknown>,
+	locations: PhaseEntryLocations = {},
+): Promise<string> {
+	// D1: the payload's own shape decides the response, most specific first. A tool
+	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
+	// PreInvocation; a Stop marker outranks the PreInvocation marker.
+	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
+		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
+
+		// PostToolUse observation: this Host's terminal event for a dispatch.
+		// Only record an inline result when it is non-empty; on agy 1.5.7 invoke_subagent
+		// returns asynchronously without a result and resolves via `.system_generated/`.
+		if ("stepIdx" in payload && ("error" in payload || "result" in payload)) {
+			if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
+				const result = typeof payload.result === "string" ? payload.result : "";
+				if (result.trim().length > 0) {
+					const args = toolCall.args ?? {};
+					const model = typeof args.Model === "string" ? args.Model : undefined;
+					const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
+					const event: AntigravityHookEvent = {
+						type: "result",
+						sessionId: String(payload.conversationId ?? ""),
+						agentId: String(payload.stepIdx ?? ""),
+						result,
+						...(model ? { model } : {}),
+						...(prompt ? { prompt } : {}),
+					};
+					antigravityHookEventLog(locations.root).append(event);
+				}
+			}
+			await antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload, locations);
+			return "{}";
+		}
+
+		// PreToolUse: an allowed subagent dispatch is the start event of the call
+		// the matching PostToolUse terminates (Spec D4).
+		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload, locations);
+		if (result.decision === "allow") appendSubagentStart(toolCall, payload, locations.root);
+		return JSON.stringify(result);
+	}
+
+	// Stop hook: has terminationReason, executionNum, or fullyIdle
+	if ("terminationReason" in payload || "executionNum" in payload || "fullyIdle" in payload) {
+		const result = await antigravityRunContinuationHook(
+			payload as unknown as AntigravityStopPayload,
+			locations.root,
+		);
+		return JSON.stringify(result);
+	}
+
+	// PreInvocation: has lastUserInput or invocationNum
+	if ("invocationNum" in payload || "lastUserInput" in payload) {
+		const result = await antigravityPreInvocationHookAsync(
+			payload as unknown as AntigravityPreInvocationPayload,
+			locations,
+		);
+		return JSON.stringify(result);
+	}
+
+	return "{}";
+}
+
+export async function runHook(options: AntigravityRunHookOptions = {}): Promise<void> {
+	const input = options.input ?? stdin;
+	const output = options.output ?? stdout;
+	const locations = options.locations ?? {};
 	const lines: string[] = [];
-	const rl = createInterface({ input: stdin, terminal: false });
+	const rl = createInterface({ input, terminal: false });
 	for await (const line of rl) lines.push(line);
 	const raw = lines.join("\n").trim();
 	if (!raw) return;
@@ -148,57 +233,13 @@ export async function runHook(): Promise<void> {
 
 	if (!payload) return;
 
-	// D1: the payload's own shape decides the response, most specific first. A tool
-	// payload carries `lastUserInput` too (#469), so it is a tool before it is a
-	// PreInvocation; a Stop marker outranks the PreInvocation marker.
-	if ("toolCall" in payload && typeof payload.toolCall === "object" && payload.toolCall !== null) {
-		const toolCall = payload.toolCall as { name: string; args?: Record<string, unknown> };
-
-		// PostToolUse observation: this Host's terminal event for a dispatch.
-		if ("stepIdx" in payload && ("error" in payload || "result" in payload)) {
-			if (toolCall.name === "invoke_subagent" || toolCall.name === "Subagent") {
-				const args = toolCall.args ?? {};
-				const model = typeof args.Model === "string" ? args.Model : undefined;
-				const prompt = typeof args.Prompt === "string" ? args.Prompt : undefined;
-				const result = typeof payload.result === "string" ? payload.result : "";
-				const event: AntigravityHookEvent = {
-					type: "result",
-					sessionId: String(payload.conversationId ?? ""),
-					agentId: String(payload.stepIdx ?? ""),
-					result,
-					...(model ? { model } : {}),
-					...(prompt ? { prompt } : {}),
-				};
-				antigravityHookEventLog().append(event);
-			}
-			antigravityPostToolUseHook(payload as unknown as AntigravityPostToolUsePayload);
-			stdout.write("{}\n");
-			return;
-		}
-
-		// PreToolUse: an allowed subagent dispatch is the start event of the call
-		// the matching PostToolUse terminates (Spec D4).
-		const result = await antigravityPreToolUseHookAsync(payload as unknown as AntigravityPreToolUsePayload);
-		if (result.decision === "allow") appendSubagentStart(toolCall, payload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
+	const reply = await dispatchHookPayload(payload, locations);
+	try {
+		resolveAsyncVerifierResults(payload, antigravityHookEventLog(locations.root));
+	} catch {
+		// Async verifier resolution fails closed without crashing the hook process.
 	}
-
-	// Stop hook: has terminationReason or executionNum
-	if ("terminationReason" in payload || "executionNum" in payload) {
-		const result = await antigravityRunContinuationHook(payload as unknown as AntigravityStopPayload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
-	}
-
-	// PreInvocation: has lastUserInput or invocationNum
-	if ("invocationNum" in payload || "lastUserInput" in payload) {
-		const result = antigravityPreInvocationHook(payload as unknown as AntigravityPreInvocationPayload);
-		stdout.write(JSON.stringify(result) + "\n");
-		return;
-	}
-
-	stdout.write("{}\n");
+	output.write(`${reply}\n`);
 }
 
 // Only this module's own entrypoint starts the Antigravity server: the bundle

@@ -147,10 +147,11 @@ describe("pi canary package boundary", () => {
 		// The Host in-place Enrollment tools are retired (drive-always-lanes D1,
 		// D2): the shared Batch child Kernel port is the only production caller.
 		expect([...entryCalls].sort()).toEqual(["runtime/unattended/batch_kernel_port.ts"]);
-		// Both Hosts' batch children reach the entry only through that port.
+		// Both Hosts' batch children reach the entry only through that port:
+		// HostRuntime constructs the shared port, and Pi batch delegates through PiRuntime.
 		const sources = new Map(productionSources());
-		for (const host of ["imm-unattended-batch.ts", "runtime/host-core/runtime.ts"])
-			expect(sources.get(host)).toMatch(/\bcreateBatchKernelPort\s*\(/);
+		expect(sources.get("runtime/host-core/runtime.ts")).toMatch(/\bcreateBatchKernelPort\s*\(/);
+		expect(sources.get("imm-unattended-batch.ts")).toMatch(/\bPiRuntime\b/);
 		expect(importsEntry(sources.get("imm-unattended-batch.ts") ?? "")).toBe(false);
 		expect(sequencers).toEqual([]);
 		// Negative controls: a source that calls both primitives outside the entry

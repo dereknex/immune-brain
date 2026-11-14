@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-verifier-observation",
+  "owner": "user",
+  "goal": "Implement Slice S3 of docs/specs/tri-host-capability-alignment.spec.md: bind Pi verification to the shared VerifierObservation state machine over in-memory typed Agent events while preserving the exact Pi dispatch envelope, packet marker and pre-dispatch parameter guard.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per D4 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): a real Pi Agent dispatch accepted by the reservation guard maps to start and its observed bytes to result, yielding one receipt through inspectVerification. Positive: exact reserved dispatch and result succeed. Negative: unknown reservation, altered prompt/parameter, duplicate dispatch or conflicting result bytes refuses or remains pending without settling. Bound: only submit_verification consumes the ok inspection. Agreed seams: tests/pi-canary-assurance-progression.test.ts, tests/pi-subagent-dispatch-observability-contract.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-progression.test.ts\",\n      \"tests/pi-subagent-dispatch-observability-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per D4 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): Pi supplies terminal=result, actorPrefix=pi and the existing Agent envelope to the same machine used by the other adapters. Positive: cross-Host profiles preserve their receipt behavior. Negative: bad packet handles, missing terminal evidence and consumed receipts keep their refusals. Bound: no second Pi pending-verifier state machine remains. Agreed seams: tests/dual-host-assurance-conformance.test.ts, tests/pi-canary-assurance-advance.test.ts.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/pi-canary-assurance-advance.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per D5 of docs/specs/tri-host-capability-alignment.spec.md (source: BR-REQ-6): the Pi adapter and its observation tests typecheck after composition, with no change to Pi public tool names or native UI. Positive: typecheck passes. Negative: stale references to the retired map-based machine fail. Bound: no MCP transport is introduced. Agreed seam: TypeScript.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/pi-verifier-observation.md",
+    "docs/plans/pi-verifier-observation.intent.json",
+    "docs/reference/host-capability.md",
+    "docs/specs/tri-host-capability-alignment.spec.md",
+    "plugins/immune-brain/.pi-extension/pi-canary-assurance-progression.ts",
+    "plugins/immune-brain/.pi-extension/pi-capability.ts",
+    "plugins/immune-brain/runtime/host-core/hook_event_log.ts",
+    "plugins/immune-brain/runtime/host-core/verifier_observation.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/pi-canary-assurance-harness.ts",
+    "tests/pi-canary-assurance-advance.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts",
+    "tests/pi-subagent-dispatch-observability-contract.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

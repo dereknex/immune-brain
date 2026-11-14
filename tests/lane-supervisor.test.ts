@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseExecutor, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { chooseExecutor, executorArguments, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
 import { laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { parseBatchExecutorPreferences, parseBatchLaneRunState, prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
@@ -24,6 +24,10 @@ describe("Lane Executor supervision", () => {
 		expect(chooseExecutor([{ executor_model: "wrong" }, { executor_host: "pi", executor_effort: "high" },
 			{ executor_host: "claude-code", executor_model: "other" }], "claude-code"))
 			.toEqual({ host: "pi", effort: "high", not_applied: ["executor_model"] });
+	});
+	it("places antigravity --print immediately before the prompt so CLI flags precede it", () => {
+		expect(executorArguments({ host: "antigravity", model: "Gemini 3.8 Flash (Low)", effort: "high", not_applied: [] }, "/plugin", "task-1"))
+			.toEqual(["--dangerously-skip-permissions", "--model", "Gemini 3.8 Flash (Low)", "--effort", "high", "--print", "/drive task-1"]);
 	});
 	it("refuses a missing Executor without reserving a generation", async () => {
 		const { dir, store } = fixture();

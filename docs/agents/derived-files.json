@@ -98,6 +98,7 @@
         "plugins/immune-brain-antigravity/runtime/antigravity/mcp_server.ts",
         "plugins/immune-brain-antigravity/runtime/antigravity/review_host.ts",
         "plugins/immune-brain-antigravity/runtime/antigravity/run_continuation.ts",
+        "plugins/immune-brain-antigravity/runtime/antigravity/tool_permission.ts",
         "plugins/immune-brain-antigravity/runtime/assurance/active_task_notice.ts",
         "plugins/immune-brain-antigravity/runtime/assurance/alias_file.ts",
         "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
@@ -140,6 +141,7 @@
         "plugins/immune-brain-antigravity/runtime/derived_files.ts",
         "plugins/immune-brain-antigravity/runtime/git_integration_preference.ts",
         "plugins/immune-brain-antigravity/runtime/github_issue_tracker.ts",
+        "plugins/immune-brain-antigravity/runtime/host-core/capability.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/hook_event_log.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/interaction.ts",
         "plugins/immune-brain-antigravity/runtime/host-core/mcp_runtime.ts",
@@ -295,6 +297,32 @@
         "executable": "bun",
         "argv": [
           "scripts/build-antigravity-plugin.ts",
+          "--check"
+        ]
+      }
+    },
+    {
+      "id": "host-capability-reference",
+      "sources": [
+        "scripts/render-host-capability.ts",
+        "plugins/immune-brain/runtime/host-core/capability.ts",
+        "plugins/immune-brain/runtime/claude/capability.ts",
+        "plugins/immune-brain/runtime/antigravity/capability.ts",
+        "plugins/immune-brain/.pi-extension/pi-capability.ts"
+      ],
+      "outputs": [
+        "docs/reference/host-capability.md"
+      ],
+      "generate": {
+        "executable": "bun",
+        "argv": [
+          "scripts/render-host-capability.ts"
+        ]
+      },
+      "check": {
+        "executable": "bun",
+        "argv": [
+          "scripts/render-host-capability.ts",
           "--check"
         ]
       }

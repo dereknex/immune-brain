@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "pi-authority-fail-closed-repair",
+  "owner": "user",
+  "goal": "Restore the Pi imm_kernel_canary authority behavior that S4 (5a3d466) and S5 (8116d1c) regressed: per-task exclusion between request_stop, request_authorization, approve_breaking_intent_revision and advance_assurance (pre-S4 AssuranceProgression.openInvocation and the 'assurance operation is already running' guard at 566abec imm-canary-work.ts:936); request_stop on an already-terminal task failing closed instead of being reported applied; request_authorization reporting the host-derived operation and the pre-S4 revision-race reason; the breaking-revision dialog carrying its 'Acceptance changed' summary and post-confirmation failures surfacing as Tool failures with exact restore; and the Pi input handler refusing a session whose getSessionId throws. Production fixes stay in the Pi adapter (imm-canary-work.ts, pi-host-runtime.ts, pi-run-continuation.ts); shared host-core changes only if the Pi adapter cannot express the guard, and then Claude and Antigravity behavior must be unchanged. Context: batch #481 (tri-host-capability-alignment) integrated S4 (5a3d466) and S5 (8116d1c) without running final verification; full bun test on ea6e2f6 fails 48 tests in 9 files that all pass on 566abec (pre-S4). Spec docs/specs/tri-host-capability-alignment.spec.md D5 keeps Pi public tool results, native confirmation dialogs and Task Rail unchanged while Pi composes HostRuntime. No existing assertion may be deleted, skipped or weakened to pass; a test that only reached a retired symbol is moved to the post-S4 surface (PiRuntime over HostRuntime in plugins/immune-brain/.pi-extension/pi-host-runtime.ts) and keeps its assertions. Out of scope: tests/dual-host-assurance-conformance.test.ts (pi-dual-host-conformance-runtime task), the stale-import and source-text tests (pi-runtime-stale-test-repair task), AAVR and S8. no user-visible change: restores pre-S4 Pi refusal and dialog behavior that the Spec says to preserve.",
+  "acceptance": [
+    {
+      "id": "PAFR-A1",
+      "assertion": "Through the Pi imm_kernel_canary Tool composition root exercised by tests/pi-canary-user-authority.test.ts, with that file's existing assertions unedited, all 33 tests pass, including: a repeated request_stop on a stopped task is a Tool failure with no dialog and unchanged audit pair; a second request_stop while the first confirmation is open fails with no dialog and the first returns cancelled; request_stop while advance_assurance is running fails with 'already running' before any dialog; advance_assurance while a stop confirmation is open fails before Review preparation (zero preparations); an in-flight request_authorization opens no second dialog; request_authorization reports the derived operation (authorize-review-retry, resolve-user-decision, verifier-dispute accept/dismiss, replan continuation, accepted residual risk) and a TaskRecord revision race fails with 'TaskRecord changed while deriving authorization operation'. Each refusal leaves authority bytes unchanged. Done looks like: the Pi user-authority file reports 33 pass, 0 fail.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-user-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PAFR-A2",
+      "assertion": "Through the Pi approve_breaking_intent_revision path exercised by tests/breaking-intent-revision-gate.test.ts, with that file's existing assertions unedited, all 19 tests pass, including: the native dialog body contains 'Acceptance changed: A1' for a changed acceptance; a staged next-state drift after confirmation, a frozen precommit failure, and a failure after the sidecar is staged each surface as a Tool failure and restore the artifact bytes, the index entry, the sidecar and the scope exactly. Done looks like: the breaking-revision gate file reports 19 pass, 0 fail.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/breaking-intent-revision-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PAFR-A3",
+      "assertion": "In tests/pi-phase-entry-gate.test.ts, with its existing assertions unedited, all 19 tests pass, including 'an entry belongs to its session': a context whose sessionManager.getSessionId throws, returns empty, or is absent is refused like another session, and no exception escapes the Pi input handler in plugins/immune-brain/.pi-extension/pi-run-continuation.ts. Done looks like: the phase-entry gate file reports 19 pass, 0 fail.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "PAFR-A4",
+      "assertion": "The S4 Pi composition guards stay green and the repository typechecks: tests/pi-canary-assurance-progression.test.ts and tests/pi-canary-assurance-authority.test.ts pass, then bun run typecheck exits 0. Done looks like: both files pass and typecheck reports no errors.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/pi-canary-assurance-progression.test.ts tests/pi-canary-assurance-authority.test.ts && bun run typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/pi-authority-fail-closed-repair.md",
+    "docs/plans/pi-authority-fail-closed-repair.intent.json",
+    "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+    "plugins/immune-brain/.pi-extension/pi-host-runtime.ts",
+    "plugins/immune-brain/.pi-extension/pi-run-continuation.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
