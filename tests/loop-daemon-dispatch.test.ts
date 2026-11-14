@@ -44,10 +44,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const PLUGIN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../plugins/immune-brain");
+import { join, resolve } from "node:path";
 
 import type { LoopConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import type { GhExecution, GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker.ts";
@@ -62,6 +59,9 @@ import {
 	LOOP_DISPATCH_RECORD_CONTRACT,
 	type LaneRuntimeFactory,
 } from "../plugins/immune-brain/runtime/loop_daemon/dispatch.ts";
+
+/** Installed/source plugin directory resolved independently of target repo root. */
+const EXPECTED_PLUGIN_DIR = resolve(import.meta.dir, "..", "plugins", "immune-brain");
 
 /** A Host adapter's Lane-root runtime stand-in; the relays under test stub `relayDecision`. */
 const stubLaneRuntime: LaneRuntimeFactory = () => ({ authorize: async () => ({}), shutdown: async () => {} });
@@ -578,7 +578,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(relayCalled).toBe(true);
 			expect(capturedInput.supervisor).toBeInstanceOf(LaneSupervisor);
 			expect(typeof capturedInput.parentHost).toBe("string");
-			expect(capturedInput.pluginDir).toBe(PLUGIN_DIR);
+			expect(capturedInput.pluginDir).toBe(EXPECTED_PLUGIN_DIR);
 			expect(capturedInput.waitMs).toBe(10_000);
 			expect(capturedInput.extra?.chosen_option).toBe("opt-1");
 			const projectRes = await capturedInput.project(root, "issue-88");
@@ -2147,7 +2147,7 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(input.expectedRecordRevision).toBe("sha256:rev-100");
 			expect(input.supervisor).toBeInstanceOf(LaneSupervisor);
 			expect(typeof input.parentHost).toBe("string");
-			expect(input.pluginDir).toBe(PLUGIN_DIR);
+			expect(input.pluginDir).toBe(EXPECTED_PLUGIN_DIR);
 			expect(input.waitMs).toBe(10_000);
 			expect(typeof input.project).toBe("function");
 			expect(typeof input.apply).toBe("function");
