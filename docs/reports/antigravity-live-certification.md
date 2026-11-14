@@ -4,8 +4,8 @@
 - **Certification PR Task ID**: `antigravity-live-certification`
 - **Generated At**: `2026-11-13T10:09:44.182Z`
 - **Host / Version**: `antigravity` `1.5.8` (model: `Gemini 3.8 Flash (Low)`)
-- **Plugin Package**: `plugins/immune-brain-antigravity` v`8.1.3`
-- **Plugin Bundle Digest**: `sha256:0d5710afc0ea3487d4188b20a4c1ddd01037ba94849ac0098d42e4b2c74537ca`
+- **Plugin Package**: `plugins/immune-brain-antigravity` v`8.2.0`
+- **Plugin Bundle Digest**: `sha256:0175c7e921e141d53d4b7e6e59ed6b7f492fc6b3f3eaf18c82422fe17c4739b9`
 - **Measured Final Projection**: `lifecycle=done`, `artifact_state=frozen`, `terminal_proof_verified=true`
 
 ## Phase Results
@@ -47,7 +47,8 @@
 
 - **Port P2 (native confirmation) is not certified.** A manual BR-SCN-4 rerun on 2026-11-13 used interactive `agy` 1.5.8 (no `--print`, no permission-skip flag) with the bundle above and a sandbox task `br-scn-4-native-gate`. The Managed `stop` completed with `authority_kind=user`, `actor_id=literal-user`, `confirmation_ref=antigravity-confirm-8eb975aaf0524c5f`, but no native dialog appeared. The agy log recorded `Always-proceed: auto-approving tool confirmation "McpTool" at step 3` under the user setting `toolPermission=always-proceed`. The adapter now refuses native gates (returning `deny` with no confirmation grant written) unless `~/.gemini/antigravity-cli/settings.json` has `toolPermission === "request-review"` and the nearest ancestor `agy` process is interactive (without `--dangerously-skip-permissions`, `--print`, or `-p`). P2 stays `conformance-only` until a live human-answered `request-review` BR-SCN-4 run is recorded.
 - **Standing allow-rule provenance (`br-scn-4b`, 2026-11-13).** A follow-up sandbox `br-scn-4b` check on `agy` 1.5.8 with `toolPermission=request-review` and `permissions.allow` containing `mcp(immune-brain_immune-brain/stop)` showed `agy` skipped the native dialog while `stop` ran and recorded `antigravity-confirm-0dacf2ca41a64422` for `literal-user`, indistinguishable from an in-the-moment click. The `PreToolUse` hook now reads `permissions.allow` from the same `settings.json` after the unchanged `toolPermission`/`--print`/`-p` checks and marks grants covered by a matching `mcp(...)` rule with the `allow-rule` prefix so `hostConfirmationRef` records `antigravity-allow-rule-<hash>` instead of `confirm`. P2 remains `conformance-only`.
-- **Bundle digest after the native-gate surfacing refusal and allow-rule provenance.** The live probes above ran on bundle `sha256:0f2a2788235fe8044495ebcf84b9fe89cd25fbe2da5bc357297b6af684ffbdd8` (intermediate digests: `sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c` for the P2 downgrade and `sha256:7cd4b798fe98bc23424b292f7669824e6cc3422387bc9d94db1261fe4ddf98dd` for the surfacing refusal). The recorded digest `sha256:0d5710afc0ea3487d4188b20a4c1ddd01037ba94849ac0098d42e4b2c74537ca` is the rebuilt bundle after adding allow-rule provenance recording (`ALLOW_RULE_REQUEST_PREFIX`, `permissions.allow` matching in `PreToolUse`, and the updated P2 capability evidence); P2 stays `conformance-only`.
+- **Bundle digest after the native-gate surfacing refusal and allow-rule provenance.** The live probes above ran on bundle `sha256:0f2a2788235fe8044495ebcf84b9fe89cd25fbe2da5bc357297b6af684ffbdd8` (intermediate digests: `sha256:b0bc484b1309d562081beda93fbd5756e52e9d59129437f4327841a4a7a31a1c` for the P2 downgrade and `sha256:7cd4b798fe98bc23424b292f7669824e6cc3422387bc9d94db1261fe4ddf98dd` for the surfacing refusal). The prior recorded digest `sha256:0d5710afc0ea3487d4188b20a4c1ddd01037ba94849ac0098d42e4b2c74537ca` rebuilt the bundle after adding allow-rule provenance recording (`ALLOW_RULE_REQUEST_PREFIX`, `permissions.allow` matching in `PreToolUse`, and the updated P2 capability evidence); P2 stays `conformance-only`.
+- **Bundle digest after merging `origin/main` (`v8.2.0`, 2026-11-14).** Merging `origin/main` into `docs/tri-host-capability-alignment` aligned the plugin package to `8.2.0` and rebuilt `plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs` to `sha256:0175c7e921e141d53d4b7e6e59ed6b7f492fc6b3f3eaf18c82422fe17c4739b9` (adding `lane_guard.ts` preview-failure diagnostics, batch `review_profile` formatting, and shared `origin/main` runtime updates). The live `agy 1.5.8` end-to-end probes above were recorded against `v8.1.3` (`sha256:0f2a2788235fe8044495ebcf84b9fe89cd25fbe2da5bc357297b6af684ffbdd8`) and were not re-executed on `v8.2.0`; post-merge verification ran `agy --version`, `agy plugin validate ./plugins/immune-brain-antigravity --strict --json`, `bun scripts/build-antigravity-plugin.ts --check`, `bun scripts/build-claude-plugin.ts --check`, `bun scripts/render-host-capability.ts --check`, `bun run typecheck`, and the focused conformance/capability/supervisor suite (`antigravity-assurance-conformance.test.ts`, `host-capability-contract.test.ts`, `lane-supervisor.test.ts`). `P2` remains `conformance-only`.
 
 ## Executed Commands
 
@@ -70,8 +71,8 @@
   "certification_task_id": "antigravity-live-certification",
   "host_id": "antigravity",
   "host_version": "1.5.8",
-  "plugin_digest": "sha256:0d5710afc0ea3487d4188b20a4c1ddd01037ba94849ac0098d42e4b2c74537ca",
-  "plugin_version": "8.1.3",
+  "plugin_digest": "sha256:0175c7e921e141d53d4b7e6e59ed6b7f492fc6b3f3eaf18c82422fe17c4739b9",
+  "plugin_version": "8.2.0",
   "agy_model": "Gemini 3.8 Flash (Low)",
   "commands": [
     {
