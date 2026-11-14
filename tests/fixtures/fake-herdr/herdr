@@ -54,15 +54,19 @@ if (group === "pane" && verb === "get") {
 if (group === "tab" && verb === "close") {
 	if (!state.tabs[args[0]]) fail("tab_not_found");
 	delete state.tabs[args[0]];
-	for (const value of Object.values(state.panes)) if (value.tab === args[0]) value.closed = true;
+	for (const value of Object.values(state.panes)) if (value.tab === args[0]) { value.closed = true; value.agent = false; }
 	state.tabs_closed = [...(state.tabs_closed ?? []), args[0]];
 	save(state);
 	ok({});
 }
 if (group === "agent" && verb === "start") {
 	const name = args[0];
-	if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name ?? "")) fail("invalid_params", `invalid agent name ${name}`);
-	const target = pane(flag(args, "--pane"));
+	if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name ?? "")) fail("invalid_agent_name", `invalid agent name ${name}`);
+	const paneId = flag(args, "--pane");
+	const target = pane(paneId);
+	if (Object.entries(state.panes).some(([id, existing]) => id !== paneId && !existing.closed && existing.workspace === target.workspace && existing.agent && existing.name === name)) {
+		fail("agent_name_taken", `agent name already in use: ${name}`);
+	}
 	// agent_not_ready: the agent is there but shows a dialog (CLI reference, `agent start`).
 	if (state.not_ready_next) { state.not_ready_next = false; target.agent = true; target.name = name; target.starts += 1; target.state = "blocked"; save(state); fail("agent_not_ready"); }
 	target.name = name;
@@ -117,5 +121,5 @@ if (group === "pane" && verb === "wait-output") {
 		await Bun.sleep(20);
 	}
 }
-if (group === "pane" && verb === "close") { pane(args[0]).closed = true; save(state); ok({}); }
+if (group === "pane" && verb === "close") { const target = pane(args[0]); target.closed = true; target.agent = false; save(state); ok({}); }
 fail("unknown_command", `fake herdr does not model: ${argv.join(" ")}`);

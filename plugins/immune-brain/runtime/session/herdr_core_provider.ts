@@ -99,10 +99,18 @@ export function decodeHerdrCoreHandle(handle: SessionHandle): CoreIds | null {
 	}
 }
 
-/** Core's names are 1-32 of a-z 0-9 - _. */
-export function herdrCoreName(label: string): string {
-	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-	return (folded || "lane").slice(0, 32);
+/**
+ * Core's names are 1-32 of a-z 0-9 - _; salt with a 12-hex slice of the
+ * session's ownership token so concurrent live terminals with identical labels
+ * never collide on `--name`.
+ */
+export function herdrCoreName(label: string, token: string): string {
+	const suffix = token.toLowerCase().replace(/[^a-z0-9_-]+/g, "").slice(0, 12);
+	const folded = label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "lane";
+	if (!suffix) return folded.slice(0, 32).replace(/[-_]+$/g, "") || "lane";
+	const prefixBudget = 32 - 1 - suffix.length;
+	const prefix = folded.slice(0, prefixBudget).replace(/[-_]+$/g, "") || "lane".slice(0, prefixBudget);
+	return `${prefix}-${suffix}`;
 }
 
 /** A status word as reported; `error` and anything unnamed are `unknown`. */
@@ -234,17 +242,18 @@ export function createHerdrCoreSessionProvider(options: HerdrCoreProviderOptions
 			const tooOld = await hostVersionRefusal(input.host);
 			if (tooOld) return tooOld;
 			const token = newToken();
+			const name = herdrCoreName(input.label, token);
 			// `hc run` takes no environment; `env` sets it for the Host alone.
 			const envPrefix = Object.entries(input.env ?? {}).map(([key, value]) => `${key}=${value}`);
 			const argv = [...(envPrefix.length > 0 ? ["env", ...envPrefix] : []), HOST_STATUS_MINIMUM[input.host].binary, ...input.hostArgs];
-			const started = await hc(HC_CLI.run(herdrCoreName(input.label), input.cwd, token, argv));
+			const started = await hc(HC_CLI.run(name, input.cwd, token, argv));
 			if (isRefusal(started)) return started;
 			if (started.code !== 0) return refuse("start_failed", `hc run failed: ${failure(started)}`);
 			const address = pick(parseJson(started.stdout), ["address"]);
 			if (typeof address !== "string" || !address) return refuse("start_failed", "hc run returned no address");
 			const handle = encodeHerdrCoreHandle({ address, token });
 			// Open the viewer before anything can need the user: a startup dialog shows there.
-			const viewer = options.viewer ? await openViewer(address, herdrCoreName(input.label), input.cwd) : undefined;
+			const viewer = options.viewer ? await openViewer(address, name, input.cwd) : undefined;
 			const shown = viewer ? { viewer } : {};
 			// Wait for the Host's first status report; before it, core cannot tell idle from a dialog.
 			const deadline = Date.now() + readyTimeoutMs;
