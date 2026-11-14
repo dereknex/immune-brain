@@ -1,5 +1,35 @@
 # Changelog
 
+## 8.3.0
+
+### Minor Changes
+
+- [#505](https://github.com/dereknex/immune-brain/pull/505) [`210c366`](https://github.com/dereknex/immune-brain/commit/210c366b8408f638f3b3a6db42c927fddbc70eff) Thanks [@dereknex](https://github.com/dereknex)! - Support optional top-level `git_integration` (`"manual" | "auto"`) in user configuration (`~/.config/immune-brain/config.json`) with `user -> project -> legacy -> default` precedence and fail-closed diagnostics.
+
+### Patch Changes
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`b113abe`](https://github.com/dereknex/immune-brain/commit/b113abe49a8cd0bbaa78c2019a56a9384080c859) Thanks [@dereknex](https://github.com/dereknex)! - Record Antigravity `permissions.allow` provenance with the `allow-rule` confirmation reference kind (`antigravity-allow-rule-<hash>`) when a standing allow rule covers a Managed call and `agy` skips the interactive dialog, without relaxing existing native-gate refusals.
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`5162ff0`](https://github.com/dereknex/immune-brain/commit/5162ff0fd2e0b7a3954c7756daed0a10cf722963) Thanks [@dereknex](https://github.com/dereknex)! - Resolve Antigravity asynchronous verifier results from `.system_generated/subagents/` and `.system_generated/messages/` across hook payloads when `invoke_subagent` `PostToolUse` carries no result (Spec D7).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`3981572`](https://github.com/dereknex/immune-brain/commit/398157211574dc309b0233199569ae2b3faefac5) Thanks [@dereknex](https://github.com/dereknex)! - Add Antigravity PreInvocation activeTaskNotice injection, confirm absence of a model-callable Skill tool (D10), and record live certification for Antigravity P1, P3, P4 and P6-P8 while retaining P2 conformance-only (Host auto-approval of force_ask observed), P5 guard-only and P9 unsupported (D11).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`001309b`](https://github.com/dereknex/immune-brain/commit/001309b79e68e0d01d2095c2c803a387dc3239db) Thanks [@dereknex](https://github.com/dereknex)! - Require `toolPermission` `"request-review"` in `~/.gemini/antigravity-cli/settings.json` and an interactive `agy` ancestor (without `--dangerously-skip-permissions`, `--print`, or `-p`) before Antigravity `PreToolUse` writes a confirmation grant or returns `force_ask`, failing closed with observed cause and remediation when native dialogs cannot surface.
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`c6c2008`](https://github.com/dereknex/immune-brain/commit/c6c2008ca3b4315f43f317e69c555e5d828375de) Thanks [@dereknex](https://github.com/dereknex)! - Move Antigravity phase-entry, admission and native-confirmation cache operations to shared private-file protections with 0700/0600 mode, ownership, regular-file, and O_NOFOLLOW security protections (D3).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`566abec`](https://github.com/dereknex/immune-brain/commit/566abec76ca496edeb124624c7a67fa159931260) Thanks [@dereknex](https://github.com/dereknex)! - Replace Antigravity simplified Stop continuation with the shared typed-event state machine for tasks and Batch Parents, including three-failure pause, no-progress yield, and seven-Stop same-Host recovery boundary (D7).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`21e312a`](https://github.com/dereknex/immune-brain/commit/21e312a4c4ca5b4fb2e4849579f6333d3f730118) Thanks [@dereknex](https://github.com/dereknex)! - Declare the P1-P9 Host capability contract and four evidence levels across Claude Code, Antigravity, and Pi, rendered in `docs/reference/host-capability.md` and recorded in ADR 0039 and amended ADR 0038. Capability declarations are documentation and conformance inputs only, never runtime dispatch.
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`5a3d466`](https://github.com/dereknex/immune-brain/commit/5a3d4660fa979e1d10a92e701d5afbe8325130ec) Thanks [@dereknex](https://github.com/dereknex)! - Compose Pi task assurance and unattended batch operations on HostRuntime, retiring duplicate AssuranceProgression and standalone batch execution flows while preserving tool schemas, TUI elicitation, Task Rail, and foreground Agent behavior (tri-host-capability-alignment Slice S4, D5).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`8116d1c`](https://github.com/dereknex/immune-brain/commit/8116d1cc322b9d168293aff6c9f7700901f0aee7) Thanks [@dereknex](https://github.com/dereknex)! - Align Pi run continuation with shared persistence and events, common failure and boundary limits, selected-parent correlation, and private continuation metadata while retaining in-process entry tokens (tri-host-capability-alignment Slice S5, D6).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`bbf46ee`](https://github.com/dereknex/immune-brain/commit/bbf46eea786c68b35aa3dad3fc90b86fd9b43526) Thanks [@dereknex](https://github.com/dereknex)! - Bind Pi verification to the shared VerifierObservation state machine over an in-memory typed event log while preserving the exact Pi Agent dispatch envelope, packet marker, and pre-dispatch parameter guard (tri-host-capability-alignment Slice S3, D4).
+
+- [#504](https://github.com/dereknex/immune-brain/pull/504) [`0331df0`](https://github.com/dereknex/immune-brain/commit/0331df000792090861ea139c4d9c844c5f043452) Thanks [@dereknex](https://github.com/dereknex)! - Isolate Pi reviewer CLI execution by disabling ambient extensions, skills, and MCP, explicitly loading only authority-review, and narrowing tools to read, grep, find, ls, and bash. Disclose the residual risk of Pi Bash arguments, Antigravity absence of restriction flags, shell-less native-role immutable-Git limits, and untracked-file tree-guard coverage in ADR 0037, the capability table, and Antigravity documentation without claiming preventive read-only isolation.
+
 ## 8.2.0
 
 ### Minor Changes
