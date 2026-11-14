@@ -1,5 +1,19 @@
 # Changelog
 
+## 8.4.0
+
+### Minor Changes
+
+- [`6cc19fd`](https://github.com/dereknex/immune-brain/commit/6cc19fd6a52a6e2d540c79cc92a48cc8f2cfe358) Thanks [@dereknex](https://github.com/dereknex)! - Expose `imm-loop` as a standalone public Skill across Pi, Claude Code, and Antigravity (`plugins/immune-brain/skills/imm-loop/SKILL.md`, `plugins/immune-brain/dist/imm-loop.md`, and Antigravity mirror) so Code Agents operate the repository-local Loop daemon via `<skillDir>/../../bin/imm-loop` and `<skillDir>/../../bin/imm-kernel` without requiring `PATH`, and retire `ADR 0031` (consolidating phase-entry recognition and local-skill shadowing attribution in `ADR 0025`).
+
+  Add `imm-loop` `start`, `stop`, and `logs` background daemon lifecycle commands, `package.json` `bin` entries, live daemon state reporting in `imm-loop status` and `imm-kernel inspect`, and `import.meta.url`-relative `pluginRoot`/`pluginDir` resolution in `loop_daemon/{agent_handlers,dispatch}.ts` for external repositories.
+
+### Patch Changes
+
+- [#513](https://github.com/dereknex/immune-brain/pull/513) [`0cdfbeb`](https://github.com/dereknex/immune-brain/commit/0cdfbebacc534b977c8d334d60016b8fcead2ee3) Thanks [@dereknex](https://github.com/dereknex)! - Recompute `plan_digest` and record `lane_rebinds` on single-task Lane identity rebinds so resuming a parked single-task batch reads the rebound identity from the record instead of refusing `plan_changed`.
+
+- [#511](https://github.com/dereknex/immune-brain/pull/511) [`46e53b9`](https://github.com/dereknex/immune-brain/commit/46e53b90d2544bcfba99a5d54a1d8e3c0340360d) Thanks [@dereknex](https://github.com/dereknex)! - Derive unique <=32-char backend session names from the folded label plus a 12-hex ownership token slice in the `herdr` and `herdr-core` `SupervisedSessionPort` providers (#502), preserve token identity across exited-Host `herdr` `--resume`, and enforce live duplicate-name guards in `fake-herdr` and `fake-herdr-core`.
+
 ## 8.3.1
 
 ### Patch Changes
