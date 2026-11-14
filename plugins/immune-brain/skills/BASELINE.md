@@ -16,8 +16,10 @@
   operation, target, and impact — including a valid batch capability — stays
   usable without another gate.
 - The repository's `Git integration` preference decides whether the runtime
-  writes commits on its own (ADR 0024). Set `git_integration` in tracked
-  `.imm/config.json`; the legacy instruction-file directive is deprecated.
+  writes commits on its own (ADR 0024). Set `git_integration` at the top level
+  of `~/.config/immune-brain/config.json` or in tracked `.imm/config.json`
+  (`user → project → legacy → default`); the legacy instruction-file directive
+  is deprecated.
   `manual`, the default, writes none outside batches: a single task's delivery lands staged and uncommitted in the checkout, and migration
   leaves its diff for the user to commit however they prefer. `auto` commits each task's settled scoped paths when it
   settles `done`. Either way the runtime runs Git hooks normally and grants no

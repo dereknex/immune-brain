@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "user-git-integration",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:user-git-integration:2026-11-14T04:58:08.361Z",
+  "final_record_hash": "sha256:6cb60cb45b830afa20ef22dd5868e05b70e76d6c0cad44d26624562f62ef1416",
+  "terminalized_at": "2026-11-14T04:58:08.361Z"
+}

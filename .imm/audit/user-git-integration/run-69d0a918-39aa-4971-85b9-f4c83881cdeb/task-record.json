@@ -1,0 +1,159 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "user-git-integration",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "user-git-integration",
+    "goal": "Support optional top-level git_integration in user configuration (~/.config/immune-brain/config.json) with precedence user -> project -> legacy -> default under docs/specs/user-git-integration.spec.md.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Source BR-DEC-1; meet BR-DEC-2, BR-DEC-3, BR-OUT-1, and BR-SCN-1..3 in docs/specs/user-git-integration.spec.md: resolveConfig and imm-kernel config --json accept optional top-level git_integration (manual|auto) in immune_brain/user_config/v1 with precedence user -> project -> legacy -> default (manual), reject projects.<key>.git_integration as unknown key, fail git_integration closed to manual on invalid user.git_integration or malformed/wrong-contract user file even when project sets auto, ignore untracked .imm/config.json, and emit legacy_source_ignored when user or project sets git_integration.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Source BR-REQ-1; meet BR-DEC-3, BR-DEC-4, and BR-SCN-1..3 in docs/specs/user-git-integration.spec.md: readGitIntegrationPreference and projectTaskStatus report user-resolved mode with config.files.user as status.git_integration.source (and status.config.git_integration.source === \"user\"), preserve .imm/config.json / AGENTS.md / CLAUDE.md / null when user omits git_integration, and fail closed to mode manual with invalid_git_integration and config_invalid warnings naming config.files.user on invalid user.git_integration, projects.<key>.git_integration, or malformed user file even when project sets auto.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/git-integration-preference.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Source BR-REQ-2 in docs/specs/user-git-integration.spec.md: docs/reference/immune-brain-config.md, docs/adr/0034-layered-configuration.md, and plugins/immune-brain/BASELINE.md document top-level user git_integration and user -> project -> default precedence; .changeset/user-git-integration.md is present; generated doc/BASELINE mirrors, Claude MCP bundle, and Antigravity plugin outputs pass sync-dist-docs.ts --check, build-claude-plugin.ts --check, build-antigravity-plugin.ts --check, and the contract tests.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun scripts/sync-dist-docs.ts --check && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check && bun test tests/pi-only-current-contracts.test.ts tests/dist-docs-sync-contract.test.ts tests/baseline-packaging-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/user-git-integration.md",
+      "docs/adr/0034-layered-configuration.md",
+      "docs/plans/user-git-integration.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/user-git-integration.spec.md",
+      "plugins/immune-brain-antigravity/BASELINE.md",
+      "plugins/immune-brain-antigravity/dist/BASELINE.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
+      "plugins/immune-brain-antigravity/runtime/git_integration_preference.ts",
+      "plugins/immune-brain-antigravity/skills/BASELINE.md",
+      "plugins/immune-brain/BASELINE.md",
+      "plugins/immune-brain/dist/BASELINE.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/git_integration_preference.ts",
+      "plugins/immune-brain/skills/BASELINE.md",
+      "tests/git-integration-preference.test.ts",
+      "tests/layered-config.test.ts",
+      "tests/pi-only-current-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/user-git-integration.intent.json",
+    "content_hash": "sha256:e4e85c6588a192888033dffdd1f4af5d78a81f72bb98061d57e1dc46ce56ad34"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e4e85c6588a192888033dffdd1f4af5d78a81f72bb98061d57e1dc46ce56ad34",
+  "git_base_head": "77e763ac337d9a6cb09a67b60f4f26b2289f72ed",
+  "attestations": [
+    {
+      "id": "approval-qa-e965e5b8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e4e85c6588a192888033dffdd1f4af5d78a81f72bb98061d57e1dc46ce56ad34",
+      "diff_hash": "sha256:519926d448a77c027345db82df273060980ec7d7c278256cb7191e9e9fcb2e64",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:280df1f2d9dee8378a9c31189042e04998f481c56ba6344f72c677a4538d2b09",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:280df1f2d9dee8378a9c31189042e04998f481c56ba6344f72c677a4538d2b09"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:280df1f2d9dee8378a9c31189042e04998f481c56ba6344f72c677a4538d2b09"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:280df1f2d9dee8378a9c31189042e04998f481c56ba6344f72c677a4538d2b09"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b92721ed",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e4e85c6588a192888033dffdd1f4af5d78a81f72bb98061d57e1dc46ce56ad34",
+      "diff_hash": "sha256:519926d448a77c027345db82df273060980ec7d7c278256cb7191e9e9fcb2e64",
+      "actor_id": "cli:claude-code:96bac9c5-08f5-4549-81ef-a1a3babcf407",
+      "summary": "Provenance checked: b2ca7db's only parent is 77e763a and its tree is 2a294be. AC1: resolveConfig resolves user->project->legacy->default, fails git_integration closed to manual when the user file is invalid or user_file fails, keeps projects.<key>.git_integration an unknown key, and emits legacy_source_ignored when user or project sets the value. AC2: readGitIntegrationPreference's error matcher fails closed on exactly the cases where resolveConfig fails user_file or git_integration (lanes.active unknown_profile and per-project decision_models/lanes errors stay excluded) and reports config.files.user as source. AC3: docs, ADR and changeset are present, and the BASELINE copies, dist docs and Antigravity runtime have the same blob OIDs as their sources. Tests assert BR-SCN-1..3 through resolveConfig, imm-kernel config --json, readGitIntegrationPreference and projectTaskStatus. Blast radius: medium; the load-bearing paths are runtime/config/layered_config.ts, runtime/git_integration_preference.ts and the two MCP bundles; no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "77e763ac337d9a6cb09a67b60f4f26b2289f72ed",
+        "review_commit": "b2ca7db29272e5bfa248e4451303b4731bf1957c",
+        "review_tree": "2a294be411de2a92db44b975d6606f03e53e4538",
+        "manifest_digest": "sha256:ef422350f0fbacae893d1f913d977ecfe59965f45bc92eb288498fd279278d3f"
+      },
+      "reviewer_verdict_sha256": "sha256:f785569509bf4ad4cb40d8cc4aeae39533656bfd2c3acf5fc7948a9daec3d5fe"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:user-git-integration:2026-11-14T04:56:22.772Z",
+      "at": "2026-11-14T04:56:22.772Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/user-git-integration.intent.json"
+    },
+    {
+      "id": "record_approval:user-git-integration:2026-11-14T04:56:37.637Z",
+      "at": "2026-11-14T04:56:37.637Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e965e5b8\naction_v2_sha256:b3601104e56adc469197791165c05e4076aa805bfa218c9afc5813475a07b292",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-14T04:56:37.637Z"
+      }
+    },
+    {
+      "id": "record_approval:user-git-integration:2026-11-14T04:58:05.365Z",
+      "at": "2026-11-14T04:58:05.365Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b92721ed\naction_v2_sha256:02629273ca83576a02c80cf6711f0e86a7baf3941787e6e0bcf4fe58c3cf83a9",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:96bac9c5-08f5-4549-81ef-a1a3babcf407",
+        "confirmation_ref": "antigravity:cli:claude-code:96bac9c5-08f5-4549-81ef-a1a3babcf407",
+        "issued_at": "2026-11-14T04:58:05.365Z"
+      },
+      "review_started_at": "2026-11-14T04:56:41.613Z",
+      "review_submitted_at": "2026-11-14T04:58:04.361Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:user-git-integration:2026-11-14T04:58:08.361Z",
+      "at": "2026-11-14T04:58:08.361Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:6c7dc41bd8bfd1553cf6307ed53a9002a061d7137b2d48d8288737e4827b4f72"
+    }
+  ]
+}

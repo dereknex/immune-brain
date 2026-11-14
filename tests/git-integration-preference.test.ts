@@ -23,6 +23,36 @@ function repo(files: Record<string, string>, untracked: Record<string, string> =
 }
 const declares = (value: string) => `# Agent Instructions\n\n## Immune-Brain Preferences\n\n- Initiative carrier default: github\n- Git integration: ${value}\n`;
 
+const withUserConfig = <T>(root: string, content: unknown, fn: (userPath: string) => T): T => {
+	const previous = process.env.XDG_CONFIG_HOME;
+	process.env.XDG_CONFIG_HOME = join(root, "user-config");
+	try {
+		const dir = join(root, "user-config", "immune-brain");
+		mkdirSync(dir, { recursive: true });
+		const userPath = join(dir, "config.json");
+		writeFileSync(userPath, typeof content === "string" ? content : JSON.stringify(content));
+		return fn(userPath);
+	} finally {
+		if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+		else process.env.XDG_CONFIG_HOME = previous;
+	}
+};
+
+const withUserConfigAsync = async <T>(root: string, content: unknown, fn: (userPath: string) => Promise<T>): Promise<T> => {
+	const previous = process.env.XDG_CONFIG_HOME;
+	process.env.XDG_CONFIG_HOME = join(root, "user-config");
+	try {
+		const dir = join(root, "user-config", "immune-brain");
+		mkdirSync(dir, { recursive: true });
+		const userPath = join(dir, "config.json");
+		writeFileSync(userPath, typeof content === "string" ? content : JSON.stringify(content));
+		return await fn(userPath);
+	} finally {
+		if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+		else process.env.XDG_CONFIG_HOME = previous;
+	}
+};
+
 describe("readGitIntegrationPreference", () => {
 	test("no directive resolves to manual with no diagnostic", () => {
 		expect(readGitIntegrationPreference(repo({ "AGENTS.md": "# Agent Instructions\n" }))).toEqual({ mode: "manual", source: null, diagnostic: null });
@@ -56,18 +86,54 @@ describe("readGitIntegrationPreference", () => {
 		expect(readGitIntegrationPreference(repo({}, { ".imm/config.json": config("auto") }))).toEqual({ mode: "manual", source: null, diagnostic: null });
 	});
 
-	test("an invalid user key does not misreport a valid project policy", () => {
+	test("an unrelated user section error does not misreport a valid project policy", () => {
 		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
-		const previous = process.env.XDG_CONFIG_HOME;
-		process.env.XDG_CONFIG_HOME = join(root, "user-config");
-		try {
-			const dir = join(root, "user-config", "immune-brain");
-			mkdirSync(dir, { recursive: true });
-			writeFileSync(join(dir, "config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1", git_integration: "manual" }));
+		withUserConfig(root, { contract: "immune_brain/user_config/v1", lanes: { active: "missing" } }, () => {
 			expect(readGitIntegrationPreference(root)).toEqual({ mode: "auto", source: ".imm/config.json", diagnostic: null });
-		} finally {
-			if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
-			else process.env.XDG_CONFIG_HOME = previous;
+		});
+	});
+
+	test("user top-level git_integration overrides project and attributes config.files.user, and omits keep project/legacy/null", () => {
+		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "manual" }) });
+		withUserConfig(root, { contract: "immune_brain/user_config/v1", git_integration: "auto" }, (userPath) => {
+			expect(readGitIntegrationPreference(root)).toEqual({ mode: "auto", source: userPath, diagnostic: null });
+		});
+		const autoProject = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
+		withUserConfig(autoProject, { contract: "immune_brain/user_config/v1", git_integration: "manual" }, (userPath) => {
+			expect(readGitIntegrationPreference(autoProject)).toEqual({ mode: "manual", source: userPath, diagnostic: null });
+		});
+		withUserConfig(autoProject, { contract: "immune_brain/user_config/v1" }, () => {
+			expect(readGitIntegrationPreference(autoProject)).toEqual({ mode: "auto", source: ".imm/config.json", diagnostic: null });
+		});
+		const legacyAgents = repo({ "AGENTS.md": declares("auto") });
+		withUserConfig(legacyAgents, { contract: "immune_brain/user_config/v1" }, () => {
+			expect(readGitIntegrationPreference(legacyAgents)).toEqual({ mode: "auto", source: "AGENTS.md", diagnostic: expect.stringContaining("deprecated") });
+		});
+		const legacyClaude = repo({ "CLAUDE.md": declares("auto") });
+		withUserConfig(legacyClaude, { contract: "immune_brain/user_config/v1" }, () => {
+			expect(readGitIntegrationPreference(legacyClaude)).toEqual({ mode: "auto", source: "CLAUDE.md", diagnostic: expect.stringContaining("deprecated") });
+		});
+		const noDecl = repo({});
+		withUserConfig(noDecl, { contract: "immune_brain/user_config/v1" }, () => {
+			expect(readGitIntegrationPreference(noDecl)).toEqual({ mode: "manual", source: null, diagnostic: null });
+		});
+	});
+
+	test("invalid user git_integration, projects.<key>.git_integration, or malformed user file fails closed to manual even when project sets auto", () => {
+		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
+		git(root, "remote", "add", "origin", "git@github.com:O/R.git");
+		for (const payload of [
+			{ contract: "immune_brain/user_config/v1", git_integration: "sometimes" },
+			{ contract: "immune_brain/user_config/v1", projects: { "github.com/O/R": { git_integration: "auto" } } },
+			"{",
+		]) {
+			withUserConfig(root, payload, (userPath) => {
+				expect(readGitIntegrationPreference(root)).toEqual({
+					mode: "manual",
+					source: userPath,
+					diagnostic: expect.stringContaining(userPath),
+				});
+			});
 		}
 	});
 
@@ -104,6 +170,39 @@ describe("status reports the resolved preference", () => {
 		expect(status.warnings?.find((warning) => warning.code === "invalid_git_integration")).toMatchObject({
 			paths: ["CLAUDE.md"], message: expect.stringContaining("using manual"),
 		});
+	});
+
+	test("status reports user-resolved git_integration and fails closed with warnings naming config.files.user", async () => {
+		const root = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "manual" }) });
+		await withUserConfigAsync(root, { contract: "immune_brain/user_config/v1", git_integration: "auto" }, async (userPath) => {
+			const status = await projectTaskStatus(root, "absent-task");
+			expect(status.git_integration).toEqual({ mode: "auto", source: userPath });
+			expect(status.config?.files.user).toBe(userPath);
+			expect(status.config?.git_integration).toEqual({ value: "auto", source: "user" });
+			expect((status.warnings ?? []).some((w) => w.code === "invalid_git_integration" || w.code === "config_invalid")).toBe(false);
+		});
+
+		const autoProject = repo({ ".imm/config.json": JSON.stringify({ contract: "immune_brain/project_config/v1", git_integration: "auto" }) });
+		git(autoProject, "remote", "add", "origin", "git@github.com:O/R.git");
+		for (const payload of [
+			{ contract: "immune_brain/user_config/v1", git_integration: "sometimes" },
+			{ contract: "immune_brain/user_config/v1", projects: { "github.com/O/R": { git_integration: "auto" } } },
+			"{",
+		]) {
+			await withUserConfigAsync(autoProject, payload, async (userPath) => {
+				const status = await projectTaskStatus(autoProject, "absent-task");
+				expect(status.git_integration).toEqual({ mode: "manual", source: userPath });
+				expect(status.config?.git_integration).toEqual({ value: "manual", source: "default" });
+				expect(status.warnings?.find((w) => w.code === "invalid_git_integration")).toMatchObject({
+					paths: [userPath],
+					message: expect.stringContaining(userPath),
+				});
+				expect(status.warnings?.find((w) => w.code === "config_invalid")).toMatchObject({
+					paths: [userPath],
+					message: expect.stringContaining(userPath),
+				});
+			});
+		}
 	});
 	// Both Hosts' status Tools: tests/dual-host-assurance-conformance.test.ts.
 });
