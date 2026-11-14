@@ -103,8 +103,13 @@ const CURRENT_SURFACE = [
 // The one permitted occurrence: the delimited old-to-new table in CONTEXT.md.
 const RENAME_MAP = /<!-- skill-rename-map:start -->[\s\S]*?<!-- skill-rename-map:end -->/;
 
-function retiredSkillNames(text: string): string[] {
-	return text.replace(RENAME_MAP, "").match(RETIRED_SKILL_NAME) ?? [];
+// ADR 0031 amendment: the Loop Daemon (ADR 0039) reuses `imm-loop` as a CLI and GitHub directive, never a Skill.
+const LOOP_DAEMON_FILES = /^plugins\/immune-brain\/(?:bin\/imm-loop$|runtime\/(?:loop_daemon\/|v4_runtime\.ts$))/;
+const LOOP_DAEMON_EXECUTABLE = /(?<=\bbin\/)imm-loop(?![A-Za-z0-9_])/g;
+
+function retiredSkillNames(text: string, path = ""): string[] {
+	const names = text.replace(RENAME_MAP, "").replace(LOOP_DAEMON_EXECUTABLE, "").match(RETIRED_SKILL_NAME) ?? [];
+	return LOOP_DAEMON_FILES.test(path) ? names.filter((name) => name !== "imm-loop") : names;
 }
 
 describe("skill dist consistency", () => {
@@ -120,6 +125,11 @@ describe("skill dist consistency", () => {
 	test("the current surface names no retired Skill (ADR 0031)", () => {
 		expect(retiredSkillNames("enter `imm-run` or dist/imm-run-batch.md")).toEqual(["imm-run", "imm-run"]);
 		expect(retiredSkillNames("bin/imm-plan, bin/imm-kernel, imm-canary-work.ts, imm-runtime, my-imm-run-helper")).toEqual([]);
+		expect(retiredSkillNames("plugins/immune-brain/bin/imm-loop")).toEqual([]);
+		expect(retiredSkillNames("enter `imm-loop` to start")).toEqual(["imm-loop"]);
+		expect(retiredSkillNames("`imm-loop tick`", "plugins/immune-brain/runtime/loop_daemon/cli.ts")).toEqual([]);
+		expect(retiredSkillNames("`imm-loop` or `imm-run`", "plugins/immune-brain/runtime/loop_daemon/cli.ts")).toEqual(["imm-run"]);
+		expect(retiredSkillNames("`imm-loop tick`", "plugins/immune-brain/skills/drive/SKILL.md")).toEqual(["imm-loop"]);
 		const files = execFileSync("git", ["ls-files", "-z", "--", ...CURRENT_SURFACE], { cwd: ROOT, encoding: "utf8" })
 			.split("\0")
 			.filter((path) => path && existsSync(join(ROOT, path)));
@@ -127,7 +137,7 @@ describe("skill dist consistency", () => {
 		expect(files).toContain("CONTEXT.md");
 		const hits = files.flatMap((path) => {
 			const text = read(join(ROOT, path));
-			return text.includes("\0") ? [] : retiredSkillNames(text).map((name) => `${path}: ${name}`);
+			return text.includes("\0") ? [] : retiredSkillNames(text, path).map((name) => `${path}: ${name}`);
 		});
 		expect(hits).toEqual([]);
 	});

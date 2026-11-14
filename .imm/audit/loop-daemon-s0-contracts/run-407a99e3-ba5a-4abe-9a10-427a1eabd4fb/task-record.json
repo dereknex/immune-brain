@@ -1,0 +1,387 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s0-contracts",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s0-contracts",
+    "goal": "Accept docs/adr/0039-loop-daemon.md (renumbered from 0038 per BR-DEC-3) and docs/proposals/loop-agent.md, and apply bounded loop-daemon contract amendments to ADR 0005, 0006, 0019, 0025, CONTEXT.md, BASELINE.md, fix-pr skill, decision_model/contract.ts, and decision-model-core.spec.md under S0 (D1) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S0-AC1",
+        "assertion": "Source BR-REQ-1, BR-REQ-2, BR-DEC-2, BR-DEC-3; meet S0 and D1 in docs/specs/loop-daemon.spec.md: docs/adr/0039-loop-daemon.md and docs/proposals/loop-agent.md exist and are accepted while docs/adr/0038-supervised-session-port.md remains intact; ADR 0005, 0006, 0019, 0025, CONTEXT.md, BASELINE.md, plugins/immune-brain/skills/fix-pr/SKILL.md, and docs/specs/decision-model-core.spec.md carry the loop-daemon amendments; and plugins/immune-brain/runtime/decision_model/contract.ts registers a18_event_prefilter, a19_owner_comment_intent, and a20_issue_duplicate_pair while rejecting unknown point IDs.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-contracts.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "BASELINE.md",
+      "CONTEXT.md",
+      "docs/adr/0005-unattended-initiative-batch-run.md",
+      "docs/adr/0006-unattended-review-dispatch-authority.md",
+      "docs/adr/0019-explicit-run-entry-owns-enrollment.md",
+      "docs/adr/0025-run-entry-decision-hosting.md",
+      "docs/adr/0039-loop-daemon.md",
+      "docs/plans/loop-daemon-s0-contracts.intent.json",
+      "docs/proposals/loop-agent.md",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/decision_model/contract.ts",
+      "plugins/immune-brain/skills/fix-pr/SKILL.md",
+      "tests/decision-model.test.ts",
+      "tests/loop-daemon-contracts.test.ts"
+    ],
+    "risk": "material",
+    "revision": 2,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s0-contracts.intent.json",
+    "content_hash": "sha256:ed48ff1ca3578e67f6172b2e51547ddc585555c5a011ba3bc9f416c6fc233e74"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:c6974859373343cf2f20036d6fa0b9773dfc30cd4707d22bb37af4e5fd310be2",
+  "git_base_head": "7d2eec347e21eb754d70f6fe5a2633af4d32cfa3",
+  "attestations": [
+    {
+      "id": "approval-qa-71fc7a0d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c6974859373343cf2f20036d6fa0b9773dfc30cd4707d22bb37af4e5fd310be2",
+      "diff_hash": "sha256:57ea3202b56c44b40a02cc3b3f61dd1629c2f1870c8af76e40febec0083b6070",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:f0ec22d012b14e0a39352aabfa68b2423a4204d8d9d2af55baf88f4e874035fc",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S0-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:f0ec22d012b14e0a39352aabfa68b2423a4204d8d9d2af55baf88f4e874035fc"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-20baad6e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:c6974859373343cf2f20036d6fa0b9773dfc30cd4707d22bb37af4e5fd310be2",
+      "diff_hash": "sha256:f84f447d96fb01e8c086202fe324d6f14193b0d4eef3acb5c2600b5c851a3692",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:bd41ae29d20eec0817a8abfcf48df1e1e0480e332e5e946c2e037041f90e4a9e",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S0-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:bd41ae29d20eec0817a8abfcf48df1e1e0480e332e5e946c2e037041f90e4a9e"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2e2b94c5",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ed48ff1ca3578e67f6172b2e51547ddc585555c5a011ba3bc9f416c6fc233e74",
+      "diff_hash": "sha256:f1f826a0a84cda1cbe3c21aa4ef33568ebd69e5ea1691281c725ef8d732efa71",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:e2148baed7ad3f3de28e98be863185c19ac7afbf7f8d025543993ac1a50e655f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S0-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:e2148baed7ad3f3de28e98be863185c19ac7afbf7f8d025543993ac1a50e655f"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-824ffe70",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 2,
+      "intent_content_hash": "sha256:ed48ff1ca3578e67f6172b2e51547ddc585555c5a011ba3bc9f416c6fc233e74",
+      "diff_hash": "sha256:f1f826a0a84cda1cbe3c21aa4ef33568ebd69e5ea1691281c725ef8d732efa71",
+      "actor_id": "cli:pi:56a45dc1-412c-4363-85f6-13a2e077147a",
+      "summary": "Low blast radius: the round-3 delta corrects normative ADR references and adds negative-control contract coverage; immutable provenance is verified and prior change-set coverage is carried forward.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7d2eec347e21eb754d70f6fe5a2633af4d32cfa3",
+        "review_commit": "62a216710798cc8094e80bcfc5f6b122aa285caa",
+        "review_tree": "2af96118d17b3dffcb3ea0b79224a345154ba868",
+        "manifest_digest": "sha256:52d753574f21f609db57ebc204ef4e744258a045175293344c426ccb2e6dbdfd"
+      },
+      "reviewer_verdict_sha256": "sha256:4899c9012110bbf91190e352130f6caacaab7197e1fe4445d4a9b5e304874d67"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-91431f23e244-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S0-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Align policy_auto with the accepted routine-only Enrollment contract and pin rejection of material auto-enrollment in the contract tests.",
+      "anchor": "sha256:87cbc825deacb8ac4bfb33c3e15452de2d6612e56d04c27d0511d4fde48d1e3a",
+      "evidence": {
+        "trigger": "A material TaskIntent with loop.auto_enroll_max_risk set to \"material\" and no owner approval → Spec D3/D5 admits policy_auto, while accepted ADR 0039 Decisions 8–9 and amended ADR 0019 require tracker_approval, allowing execution without the required owner approval.",
+        "caller_chain": [
+          "docs/specs/loop-daemon.spec.md",
+          "docs/adr/0039-loop-daemon.md",
+          "docs/adr/0019-explicit-run-entry-owns-enrollment.md"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "Enrollment confirmation boundary"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-91431f23e244-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S0-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Remove the policy-enabled merge_pr path so the Spec preserves ADR 0039's human-only merge boundary, with a contract test for that boundary.",
+      "anchor": "sha256:4e9cf4b7e570b597990f27a5e027aedecb861429ab26ed479c83d5a379b35c30",
+      "evidence": {
+        "trigger": "A green daemon PR with merging enabled by policy and a non-degraded daemon identity → Spec D8 invokes merge_pr without the owner, while accepted ADR 0039 Decision 11 requires a person to merge and prohibits auto-merge.",
+        "caller_chain": [
+          "docs/specs/loop-daemon.spec.md",
+          "docs/adr/0039-loop-daemon.md"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "Human-only merge boundary"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-91431f23e244-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S0-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Require tracker approval comments to be unedited and not daemon-authored, and add negative contract coverage for edited approvals.",
+      "anchor": "sha256:f8b6da5c57053fbf113d5a0502a0b06ac099ef4002a62f155435fd63e41df93e",
+      "evidence": {
+        "trigger": "An allowlisted comment created after plan publication is later edited to contain the current plan_digest → the Spec's created_at/digest/login/association checks accept it, but ADR 0039 Decision 9 requires the comment never to have been edited, so Enrollment accepts approval evidence the accepted contract rejects.",
+        "caller_chain": [
+          "docs/specs/loop-daemon.spec.md",
+          "docs/adr/0039-loop-daemon.md"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "Tracker approval verification boundary"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-363820c2e36f-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S0-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "Correct the four nonexistent upstream ADR paths in the new Spec and TaskIntent to the actual amended 0005/0006/0019/0025 filenames, and add a contract assertion that these normative references resolve.",
+      "anchor": "sha256:33b47f468041abe9868325f17ee4268c39b04f2252f36ddc87c640b003979cf3",
+      "evidence": {
+        "trigger": "At review commit d975b69c5f614054e631085848503023ed043c89, resolving the upstream ADR paths named in docs/specs/loop-daemon.spec.md Sources/D1 and docs/plans/loop-daemon-s0-contracts.intent.json scope_hint with git cat-file -e → docs/adr/0005-enrollment-membrane-and-promotion.md, docs/adr/0006-execution-authority-and-lane-supervision.md, docs/adr/0019-github-issue-tracker-publication-and-reconcile.md, and docs/adr/0025-decision-model-architecture.md all report missing; readers and tools therefore cannot follow the accepted contract map, while the amendments actually land in the unattended-initiative-batch-run, unattended-review-dispatch-authority, explicit-run-entry-owns-enrollment, and run-entry-decision-hosting files.",
+        "caller_chain": [
+          "docs/specs/loop-daemon.spec.md",
+          "docs/adr/0005-enrollment-membrane-and-promotion.md"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S0-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s0-contracts:2026-11-11T10:59:36.282Z",
+      "at": "2026-11-11T10:59:36.282Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s0-contracts.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s0-contracts:2026-11-11T10:59:55.222Z",
+      "at": "2026-11-11T10:59:55.222Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-71fc7a0d\naction_v2_sha256:c6f41f899e060ae29d94a04124af7e85404ed6e4e68474f18591503e402edbe0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T10:59:55.222Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s0-contracts:2026-11-11T11:05:23.373Z",
+      "at": "2026-11-11T11:05:23.373Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:08366b85d91de3a399a83eb76460494f48a4c5943a33e78aa312b9bfbd79348f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:1d28a8df-ae1c-4fa3-b3ba-8c887107be2f",
+        "confirmation_ref": "antigravity:cli:pi:1d28a8df-ae1c-4fa3-b3ba-8c887107be2f",
+        "issued_at": "2026-11-11T11:05:23.373Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7d2eec347e21eb754d70f6fe5a2633af4d32cfa3",
+        "review_commit": "660017dd384d1755a6db46412e6f8c956fe0e427",
+        "review_tree": "e3bf38f2a0ec2f11eb4236c792368ffba74d09b7",
+        "manifest_digest": "sha256:1502c08fff7f075b86389b8fe81ef45f93d167860c5ff656fcbf03c6e3979029"
+      },
+      "review_started_at": "2026-11-11T10:59:59.054Z",
+      "review_submitted_at": "2026-11-11T11:05:22.331Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s0-contracts:2026-11-11T11:11:13.472Z",
+      "at": "2026-11-11T11:11:13.472Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91431f23e244-1-review-1\naction_v2_sha256:eab29dd578c071cc3c683d9b6ec9c43f1e5adcf7c09e826b291e1da0a5ad2c8c"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s0-contracts:2026-11-11T11:11:20.116Z",
+      "at": "2026-11-11T11:11:20.116Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91431f23e244-2-review-2\naction_v2_sha256:13b3f934bdfe6d039c64996efcc36256ae806ba2dfa6ff2cdd5851d654aace70"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s0-contracts:2026-11-11T11:11:25.242Z",
+      "at": "2026-11-11T11:11:25.242Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-91431f23e244-3-review-3\naction_v2_sha256:3a952d2cbf9a1c5b1bdef8566e608332e18e70b7e4211bbcefca158061337068"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s0-contracts:2026-11-11T11:11:37.499Z",
+      "at": "2026-11-11T11:11:37.499Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s0-contracts.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s0-contracts:2026-11-11T11:11:51.695Z",
+      "at": "2026-11-11T11:11:51.695Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-20baad6e\naction_v2_sha256:ee097d60ad918342f8cb4296d8cdb8dae4050cb245153c3e0fd456d05d4a5ab0",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T11:11:51.695Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s0-contracts:2026-11-11T11:19:35.846Z",
+      "at": "2026-11-11T11:19:35.846Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:114db6f723f2bf7d1258fd1a9cd55a3b86ac52c1bad53cabb5f4898a9768e74b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:81e30028-1643-4f38-aa91-8b351ba7e14c",
+        "confirmation_ref": "antigravity:cli:pi:81e30028-1643-4f38-aa91-8b351ba7e14c",
+        "issued_at": "2026-11-11T11:19:35.846Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "7d2eec347e21eb754d70f6fe5a2633af4d32cfa3",
+        "review_commit": "d975b69c5f614054e631085848503023ed043c89",
+        "review_tree": "0b96fd5e126788bc1e3cecf163ebd4dee94b7436",
+        "manifest_digest": "sha256:a418907617281c2c81bdf432c73a8f8cd6d0df9d24b54ac32a2c8f18441784d6"
+      },
+      "review_started_at": "2026-11-11T11:11:55.883Z",
+      "review_submitted_at": "2026-11-11T11:19:34.771Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "revise_intent:loop-daemon-s0-contracts:2026-11-11T11:21:07.311Z",
+      "at": "2026-11-11T11:21:07.311Z",
+      "type": "revise_intent",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "intent_revision_2\naction_v2_sha256:9298bf6ca24df77c04ab00be234379859a65799df2e479bd7a16d69b735c803b"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s0-contracts:2026-11-11T11:21:33.513Z",
+      "at": "2026-11-11T11:21:33.513Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-363820c2e36f-1-review-1\naction_v2_sha256:9c8a258a31721d6ef16a3a47dd4e400d777095823ad97d061bce41d2aa8b3504"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s0-contracts:2026-11-11T11:21:43.008Z",
+      "at": "2026-11-11T11:21:43.008Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s0-contracts.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s0-contracts:2026-11-11T11:21:58.942Z",
+      "at": "2026-11-11T11:21:58.942Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2e2b94c5\naction_v2_sha256:efb3cc1f18345fb46c26dd34fa05a9d50a4bb255b22b19457e897bb3600e1032",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-11T11:21:58.943Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s0-contracts:2026-11-11T11:24:41.718Z",
+      "at": "2026-11-11T11:24:41.718Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-824ffe70\naction_v2_sha256:cd850b6de9e48f5514ba9714ace625f7cfea9aafb50b64ba13dd8ab55e3edde7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:pi:56a45dc1-412c-4363-85f6-13a2e077147a",
+        "confirmation_ref": "antigravity:cli:pi:56a45dc1-412c-4363-85f6-13a2e077147a",
+        "issued_at": "2026-11-11T11:24:41.718Z"
+      },
+      "review_started_at": "2026-11-11T11:22:03.771Z",
+      "review_submitted_at": "2026-11-11T11:24:40.688Z",
+      "reviewer_model": "group/kimi-k3.1"
+    },
+    {
+      "id": "complete:loop-daemon-s0-contracts:2026-11-11T11:24:44.734Z",
+      "at": "2026-11-11T11:24:44.734Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4e3edc903e8bfc0b43b86f653331b91c1bc4c5388bc17f9fbef280036a02a64d"
+    }
+  ]
+}

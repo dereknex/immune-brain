@@ -1,4 +1,5 @@
 import {
+	ENROLLMENT_CONFIRMATION_SOURCES,
 	TASK_ARTIFACT_STATES,
 	TASK_LIFECYCLES,
 	TASK_RECORD_CONTRACT_V3,
@@ -639,7 +640,7 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 	rejectUnknown(
 		value,
 		["contract", "task_id", "intent_snapshot", "intent_ref", "lifecycle", "artifact_state", "baseline", "attestations", "findings", "history",
-			...(version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance"] : [])],
+			...(version === 4 ? ["git_base_head", "review_round_budget_extension", "residual_risk_acceptance", "confirmation_source"] : [])],
 		"record",
 		violations,
 	);
@@ -716,6 +717,15 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 	const residualRiskAcceptance = value.residual_risk_acceptance === undefined
 		? undefined
 		: parseResidualRiskAcceptance(value.residual_risk_acceptance, "record.residual_risk_acceptance", violations);
+	// Absent is the interactive `user_session` gate, so a record written before the
+	// unattended sources existed keeps parsing unchanged.
+	let confirmationSource: TaskRecordV4["confirmation_source"];
+	if (value.confirmation_source !== undefined) {
+		if (version !== 4) violations.push("record.confirmation_source is only valid on a v4 record");
+		else if (!(ENROLLMENT_CONFIRMATION_SOURCES as readonly unknown[]).includes(value.confirmation_source))
+			violations.push(`record.confirmation_source must be one of ${ENROLLMENT_CONFIRMATION_SOURCES.join(", ")}`);
+		else confirmationSource = value.confirmation_source as TaskRecordV4["confirmation_source"];
+	}
 	if (findings.some((finding) => finding.status === "accepted_risk") && residualRiskAcceptance === undefined)
 		violations.push("record.residual_risk_acceptance is required while a finding is accepted_risk");
 	if (residualRiskAcceptance) {
@@ -788,6 +798,7 @@ export function parseTaskRecordAtVersion(raw: unknown, version: 3 | 4): TaskReco
 		...(version === 4 ? { git_base_head: gitBaseHead } : {}),
 		...(version === 4 && budgetExtension !== undefined ? { review_round_budget_extension: budgetExtension } : {}),
 		...(version === 4 && residualRiskAcceptance !== undefined ? { residual_risk_acceptance: residualRiskAcceptance } : {}),
+		...(version === 4 && confirmationSource !== undefined ? { confirmation_source: confirmationSource } : {}),
 		attestations,
 		findings,
 		history,

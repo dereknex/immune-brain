@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-daemon-s7-repair",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-daemon-s7-repair:2026-11-12T09:37:51.464Z",
+  "final_record_hash": "sha256:3e98f20f80a4b19832bc336a6086a9ed1000876091d5048394c6a28f6f1223d1",
+  "terminalized_at": "2026-11-12T09:37:51.464Z"
+}

@@ -1,0 +1,28 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s5-drive-pr",
+  "owner": "user",
+  "goal": "Deliver Kernel Enrollment confirmation sources (tracker_approval and policy_auto with .imm/risk-floor.json enforcement), register loop_daemon as the 4th composition root driving startBatch and LaneSupervisor, record Executor exits via exit_recorder.ts, and open PRs on imm/<slug> under S5 (D5, D6, BR-SCN-2, BR-SCN-3) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S5-AC1",
+      "assertion": "Source BR-REQ-4, BR-OUT-3, BR-SCN-2, BR-SCN-3; meet S5, D5, and D6 in docs/specs/loop-daemon.spec.md: enrollment.ts and enrollment_authority.ts support confirmation_source values user_session, tracker_approval (verifying owner login, association, timestamp, and matching plan_digest), and policy_auto (enforcing loop.auto_enroll_max_risk, .imm/risk-floor.json path elevation, no-touch exclusion, non-degraded posture, and rejecting critical tasks); loop_daemon is registered as the 4th composition root invoking startBatch and LaneSupervisor; exit_recorder.ts writes executor_exit_record/v1; and pr_opener.ts opens PRs on imm/<slug>.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s5-drive-pr.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/kernel/actor_identity.ts",
+    "plugins/immune-brain/runtime/kernel/batch_authority.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment.ts",
+    "plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+    "plugins/immune-brain/runtime/loop_daemon/pr_opener.ts",
+    "tests/loop-daemon-drive-pr.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

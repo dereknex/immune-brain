@@ -68,6 +68,8 @@ Choosing `scripts/` over a shipped plugin directory is a delegated choice. The o
 
 > **Superseded by `docs/specs/layered-config.spec.md` D8 (Initiative `layered-config`, #360).** The component moves to `plugins/immune-brain/runtime/decision_model/` and ships with the plugin; `scripts/decision-eval/` imports it from there. No authority-path runtime file (`runtime/kernel/`, `runtime/assurance/`, `runtime/unattended/`, `runtime/claude/`, `.pi-extension/`) imports it, which replaces the import scan of AC4. The text above stays as the record of the original slice.
 
+> **Amended by `docs/specs/loop-daemon.spec.md` D1 / ADR 0039 (`loop-daemon-s0-contracts`).** The component remains prohibited from authority-path runtime files, but is imported by the Loop daemon judging module (`runtime/loop_daemon/`) for online event triage and classification.
+
 ### D2 — Provider kinds (source: BR-DEC-5; Clef API source)
 
 Kinds known to the parser: `clef`, `fake`, `jev`. `clef` and `fake` have adapters. A profile of kind `jev` parses but resolves to `unavailable` with reason `unsupported_provider_kind` until the Jev adapter slice, because the Jev API is unverified. Any other kind is `config_invalid`. There is no generic-LLM kind (BR-OUT-2).
@@ -174,6 +176,11 @@ flowchart TD
 - **threshold set**: `{ version: "a14/v0", values: null }`
 
 The values stay `null` because #286-§6 sets threshold values from baseline data at implementation time of the live form, never in advance. The registry is the only place a point's option set and threshold-set version live, and the bindings parser reads point ids from it.
+
+> **Extended by `docs/specs/loop-daemon.spec.md` D1 / ADR 0039 (`loop-daemon-s0-contracts`).** Three application points are registered in `plugins/immune-brain/runtime/decision_model/contract.ts` and `thresholds.ts` for the Loop daemon:
+> - **`a18_event_prefilter`**: question type `choice`, input category `session_event`, options `["actionable", "ignore"]`, criteria `{ actionable: "The event requires daemon action or triage", ignore: "The event is noisy, informational, or requires no action" }`, instructions "Given a GitHub event or notification, which option best describes whether the daemon must act on it?", threshold set `{ version: "a18/v0", values: null }`.
+> - **`a19_owner_comment_intent`**: question type `choice`, input category `issue_text`, options `["approve_plan", "request_plan_revision", "answer_lane_decision", "command", "discussion"]`, criteria `{ approve_plan: "The owner intends to approve the proposed plan", request_plan_revision: "The owner requests changes or revision to the proposed plan", answer_lane_decision: "The owner answers an in-Lane decision or clarification question", command: "The owner issues a direct daemon command", discussion: "General discussion not requiring execution" }`, instructions "Given a comment from a verified repository owner, which option best describes the author's intent?", threshold set `{ version: "a19/v0", values: null }`.
+> - **`a20_issue_duplicate_pair`**: question type `choice`, input category `issue_text`, options `["duplicate", "related", "unrelated"]`, criteria `{ duplicate: "The candidate issue describes the same underlying problem as the existing issue", related: "The candidate issue is related but addresses a different problem", unrelated: "The candidate issue is unrelated to the existing issue" }`, instructions "Given two GitHub issues, which option best describes their relationship?", threshold set `{ version: "a20/v0", values: null }`.
 
 ### D7 — A14 corpus extraction (source: #286-§5 A14 label source "PR history"; #284 corpus template)
 

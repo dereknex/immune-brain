@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-daemon-s4-schedule-plan",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-daemon-s4-schedule-plan:2026-11-12T06:02:09.861Z",
+  "final_record_hash": "sha256:6b7b4ceca3fb3550739d14cb14441f120d6306c923f07f82a085d5547628f646",
+  "terminalized_at": "2026-11-12T06:02:09.861Z"
+}

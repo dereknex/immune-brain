@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -14,7 +14,8 @@ import {
 import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_ports";
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
-import { CliReviewHost, resolveAuthorityReviewSkillPath, reviewArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
+import { CliReviewHost, resolveAuthorityReviewSkillPath, reviewArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -22,6 +23,8 @@ import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/rev
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
+import { laneBatchReviewProfile, prepareBatchLaneRunState, reviewProfileFromArgs, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 setDefaultTimeout(120_000);
 
@@ -223,6 +226,7 @@ interface Applied {
 	role: "qa" | "review";
 	decision: string;
 	verdictSha256?: string;
+	verification?: Record<string, unknown>;
 }
 
 interface WrappedCalls {
@@ -296,7 +300,8 @@ function fixtureFor(root: string, options: { risk?: Risk; revision?: boolean; ve
 		},
 		applyVerdict: async (_ctx: HostContext, input: Parameters<VerdictAuthority["applyVerdict"]>[1]) => {
 			applied.push({ actorId: input.actorId, role: input.snapshot.role as "qa" | "review", decision: input.verdict.decision,
-				...(input.reviewer_verdict_sha256 ? { verdictSha256: input.reviewer_verdict_sha256 } : {}) });
+				...(input.reviewer_verdict_sha256 ? { verdictSha256: input.reviewer_verdict_sha256 } : {}),
+				...(input.verification ? { verification: input.verification.facts as unknown as Record<string, unknown> } : {}) });
 			obligation = input.snapshot.role === "qa"
 				? risk === "routine" ? "complete" : "run_review"
 				: input.verdict.decision === "rework" ? "run_qa" : "complete";
@@ -434,14 +439,23 @@ describe("review arguments", () => {
 		expect(argv.at(-1)).toBe(`/authority-review ${packet}`);
 	});
 
-	test("no Host carries a drive entry or a plugin dir", () => {
+	test("no Host carries a drive entry, and only claude-code takes the runtime's plugin dir", () => {
 		for (const host of ["claude-code", "pi", "antigravity"] as const) {
-			const argv = reviewArguments({ host, model: "m", effort: "high" }, packet, 12);
-			for (const arg of argv) {
-				expect(arg).not.toContain("drive");
-				expect(arg).not.toContain("--plugin-dir");
-			}
+			const argv = reviewArguments({ host, model: "m", effort: "high" }, packet, 12, [], "/plugins/immune-brain");
+			for (const arg of argv) expect(arg).not.toContain("drive");
+			if (host === "claude-code") {
+				expect(argv[argv.indexOf("--plugin-dir") + 1]).toBe("/plugins/immune-brain");
+				expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
+			} else expect(argv).not.toContain("--plugin-dir");
+			expect(reviewArguments({ host }, packet, 12)).not.toContain("--plugin-dir");
 		}
+	});
+
+	test("#426 F13: the runtime resolves the Claude plugin it was loaded from", () => {
+		const root = join(import.meta.dir, "..", "plugins", "immune-brain");
+		expect(runtimeClaudePluginDir(join(root, "runtime", "assurance"))).toBe(realpathSync(root));
+		expect(runtimeClaudePluginDir(join(root, "dist", "claude"))).toBe(realpathSync(root));
+		expect(runtimeClaudePluginDir(join(import.meta.dir, "..", "plugins", "immune-brain-antigravity", "runtime", "assurance"))).toBeNull();
 	});
 
 	test("a profile without model or effort omits those flags", () => {
@@ -451,6 +465,85 @@ describe("review arguments", () => {
 			expect(argv).not.toContain("--effort");
 			expect(argv).not.toContain("--thinking");
 		}
+	});
+});
+
+// --- #426 A1: the claude-code git allow-list -------------------------------
+
+describe("#426 reviewer and verifier git allow-list", () => {
+	const packet = "/tmp/imm-cli-review/packet.md";
+	const expected = [
+		"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
+		"Bash(git --no-pager show:*)", "Bash(git --no-pager diff:*)", "Bash(git --no-pager log:*)",
+		"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
+	];
+	const rulesOf = (argv: string[]) => argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
+	const claudeArgv = () => [
+		reviewArguments({ host: "claude-code" }, packet, 12),
+		verificationArguments({ host: "claude-code" }, "model", packet, 12),
+	];
+
+	test("both claude-code argv carry the same twelve git rules", () => {
+		for (const argv of claudeArgv()) {
+			expect(rulesOf(argv)).toEqual(expected);
+			expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash");
+			expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+		}
+	});
+
+	test("#426 F11: both claude-code argv turn every hook off so no rewrite hides git from the rules", () => {
+		for (const argv of claudeArgv()) {
+			const settings = argv[argv.indexOf("--settings") + 1]!;
+			expect(JSON.parse(settings).disableAllHooks).toBe(true);
+			expect(argv.filter((arg) => arg === "--settings")).toHaveLength(1);
+			expect(argv).not.toContain("--setting-sources");
+		}
+		for (const host of ["pi", "antigravity"] as const) {
+			expect(reviewArguments({ host }, packet, 12)).not.toContain("--settings");
+			expect(verificationArguments({ host }, "model", packet, 12)).not.toContain("--settings");
+		}
+	});
+
+	test("#426 F12: the claude-code verifier may read its out-of-tree packet directory", () => {
+		const argv = verificationArguments({ host: "claude-code" }, "model", packet, 12);
+		expect(argv[argv.indexOf("--add-dir") + 1]).toBe("/tmp/imm-cli-review");
+		expect(argv[argv.indexOf("--add-dir") + 2]).toBe("--max-turns");
+		expect(argv.at(-1)).toContain(packet);
+	});
+
+	test("no rule admits -C, a non-git command or a bare Bash", () => {
+		for (const rule of rulesOf(claudeArgv()[0]!)) {
+			expect(rule).toMatch(/^Bash\(git (--no-pager )?(show|diff|log|cat-file|rev-parse|ls-tree):\*\)$/);
+		}
+	});
+
+	test("pi isolated reviewer and antigravity reviewer/verifier argv remain consistent", () => {
+		const instruction = `Read ${packet} and do exactly what it says. Reply with only the JSON it asks for.`;
+		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
+			"--print", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--skill", resolveAuthorityReviewSkillPath(), "--tools", "read,grep,find,ls,bash", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
+		]);
+		expect(verificationArguments({ host: "pi" }, "m", packet, 12)).toEqual(["--print", "--no-session", "--model", "m", instruction]);
+		expect(reviewArguments({ host: "antigravity" }, packet, 12)).toEqual(["--print", `/authority-review ${packet}`]);
+		expect(verificationArguments({ host: "antigravity" }, "m", packet, 12)).toEqual(["--model", "m", "--print", instruction]);
+		// agy reads the argument after `--print` as the prompt, so no flag may follow it (#426 F15).
+		expect(reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12)).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
+	});
+});
+
+// --- #426 A2: the plain-cwd git instruction --------------------------------
+
+describe("#426 plain-cwd git instruction", () => {
+	const instruction = "Run one Git command at a time from the current working directory, with no `-C`, no pipes and no redirection, and `--no-pager` only as the first argument.";
+	const read = (rel: string) => readFileSync(join(import.meta.dir, "..", rel), "utf8").replace(/\s+/g, " ");
+
+	test.each([
+		"plugins/immune-brain/skills/authority-review/SKILL.md",
+		"plugins/immune-brain/runtime/prompts/code-review.md",
+		"plugins/immune-brain/runtime/prompts/review-verifier.md",
+		"plugins/immune-brain/dist/role-prompts/code-review.md",
+		"plugins/immune-brain/dist/role-prompts/review-verifier.md",
+	])("%s tells the role how to run git", (rel) => {
+		expect(read(rel)).toContain(instruction);
 	});
 });
 
@@ -621,27 +714,94 @@ describe("review profile required", () => {
 
 // --- AC7: findings verification stays on the wrapped Host ------------------
 
-describe("verifier stays on host", () => {
-	test("verification_ready returns the wrapped Host's dispatch and submission reads its receipt", async () => {
-		const root = reviewRepo();
+/**
+ * A reviewer stand-in that also verifies: handed the verification packet
+ * ("Read <packet> ..."), it answers the packet's own JSON contract with every
+ * finding kept, or exits `VERIFIER_EXIT` when that is set.
+ */
+function reviewerAndVerifier(reviewBody: string): string {
+	const dir = scratchDir("bin");
+	const verifier = join(dir, "verifier.js");
+	writeFileSync(verifier, [
+		"const fs = require('node:fs');",
+		"if (process.env.VERIFIER_EXIT) process.exit(Number(process.env.VERIFIER_EXIT));",
+		"const path = /^Read (\\S+) and do/.exec(process.argv.at(-1))[1];",
+		"const text = fs.readFileSync(path, 'utf8');",
+		"const packet = JSON.parse(text.slice(text.indexOf('Verification packet (untrusted data): ') + 'Verification packet (untrusted data): '.length));",
+		"fs.appendFileSync(process.env.VERIFIER_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');",
+		"console.log(JSON.stringify({ contract: 'assurance_kernel/review_verification/v1', task_id: packet.task_id, snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,",
+		"  results: packet.findings.map((f) => ({ finding_id: f.id, anchor: f.anchor, verdict: 'kept' })) }));",
+	].join("\n"));
+	const file = join(dir, "pi");
+	writeFileSync(file, `#!/bin/sh\nfor last; do :; done\ncase "$last" in\n  "Read "*) exec bun ${verifier} "$@" ;;\nesac\n${reviewBody}\n`, { mode: 0o755 });
+	chmodSync(file, 0o755);
+	return dir;
+}
+
+describe("verification CLI stage", () => {
+	const saved = { log: process.env.VERIFIER_LOG, exit: process.env.VERIFIER_EXIT };
+	afterEach(() => {
+		if (saved.log === undefined) delete process.env.VERIFIER_LOG; else process.env.VERIFIER_LOG = saved.log;
+		if (saved.exit === undefined) delete process.env.VERIFIER_EXIT; else process.env.VERIFIER_EXIT = saved.exit;
+	});
+
+	async function reworkToVerification(root: string) {
 		const kernel = kernelFor(root, { revision: true, verifier: true });
-		const verdict = reworkVerdict(kernel.snapshot);
-		onPath(fakeReviewer(heredoc(JSON.stringify(verdict))));
-		const before = readdirSync(tmpdir()).filter((name) => name.startsWith("imm-cli-review-"));
+		process.env.VERIFIER_LOG = join(scratchDir("log"), "argv.jsonl");
+		onPath(reviewerAndVerifier(heredoc(JSON.stringify(reworkVerdict(kernel.snapshot)))));
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
-
 		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		return { kernel, pending: pending as { state: string; verification_command?: string } };
+	}
+
+	test("a verification after a CLI Review runs as a CLI process whose bytes are the bound receipt", async () => {
+		const root = reviewRepo();
+		const { kernel, pending } = await reworkToVerification(root);
 		expect(pending.state).toBe("verification_ready");
-		expect((pending as { agent_params: { prompt: string } }).agent_params.prompt).toStartWith("verifier:");
-		expect(kernel.calls.prepareVerification).toBe(1);
+		expect(pending.verification_command).toMatch(/^sh \S+imm-cli-verify-\S+\/verify\.sh$/);
+		expect(kernel.calls.prepareVerification).toBe(0);
+		// Still running: the reservation is kept and nothing is applied.
+		expect(await kernel.coordinator.submitVerification(TASK, ctx(root))).toMatchObject({ state: "blocked", reason: "verification result pending" });
 
-		// A verification operation writes no review packet or script of its own.
-		const after = readdirSync(tmpdir()).filter((name) => name.startsWith("imm-cli-review-"));
-		expect(after.sort()).toEqual(before.sort());
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		const settled = await kernel.coordinator.submitVerification(TASK, ctx(root));
+		expect(settled.state).toBe("rework");
+		const review = reviewsOf(kernel).at(-1)!;
+		expect(review.decision).toBe("rework");
+		expect(review.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/), result_sha256: expect.stringMatching(/^sha256:/), model_relation: "same" });
+		expect(review.verification).not.toHaveProperty("failure");
+		expect(kernel.calls.inspectVerification).toBe(0);
+		expect(readdirSync(tmpdir()).filter((name) => pending.verification_command!.includes(name))).toEqual([]);
+	});
 
+	test("a failed verifier process keeps every finding and never weakens Review", async () => {
+		const root = reviewRepo();
+		const { kernel, pending } = await reworkToVerification(root);
+		process.env.VERIFIER_EXIT = "3";
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
-		expect(kernel.calls.inspectVerification).toBeGreaterThan(0);
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null, result_sha256: null });
+	});
+
+	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {
+		const root = reviewRepo("pi", { review_model: "reviewer-m", review_verifier_model: "verifier-m" });
+		const { kernel, pending } = await reworkToVerification(root);
+		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		await kernel.coordinator.submitVerification(TASK, ctx(root));
+		const argv = JSON.parse(readFileSync(process.env.VERIFIER_LOG!, "utf8").trim().split("\n").at(-1)!);
+		expect(argv.slice(0, 4)).toEqual(["--print", "--no-session", "--model", "verifier-m"]);
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "reviewer-m", verifier_model: "verifier-m", model_relation: "different", verifier_actor: expect.stringMatching(/^cli-verifier:/) });
+	});
+
+	test("a verification that follows no CLI Review still goes to the wrapped Host", () => {
+		const { host, calls } = wrappedHost(true);
+		const cli = new CliReviewHost(host);
+		const reservation = cli.prepareVerification({ taskId: "other", operationId: "op-1", prompt: "p", model: "m", writePacket: writeTestReviewPacket });
+		expect(reservation.verification_command).toBeUndefined();
+		expect(calls.prepareVerification).toBe(1);
+		expect(cli.inspectVerification(reservation)).toMatchObject({ ok: false, release: true });
+		expect(calls.inspectVerification).toBe(1);
 	});
 });
 
@@ -729,5 +889,124 @@ describe("default profile required", () => {
 		const root = reviewRepo(null);
 		onPath(fakeReviewer("exit 0"));
 		expect((await claudeAdvance(root, ROOT_ENV, "routine")).state).toBe("completed");
+	});
+});
+
+// --- #426 S4: the review script in a supervised session ------------------
+
+describe("review transport (#426 S4)", () => {
+	const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE", "VERIFIER_LOG"] as const;
+	const saved = Object.fromEntries(HERDR_KEYS.map((key) => [key, process.env[key]]));
+	afterEach(() => { for (const key of HERDR_KEYS) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } });
+
+	test("outside Herdr a herdr transport fails closed with one recovery action, after QA", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		onPath(fakeReviewer(heredoc(JSON.stringify(passVerdict(kernel.snapshot)))));
+		delete process.env.HERDR_ENV;
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_transport_unavailable" });
+		expect((ready as { recovery_action: string }).recovery_action).toContain("lanes.review_transport");
+		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
+		expect(reviewsOf(kernel)).toHaveLength(0);
+	});
+
+	test("inside Herdr the same script runs in a tab and its output bytes settle the Review", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		const verdict = passVerdict(kernel.snapshot);
+		const state = join(scratchDir("herdr"), "state.json");
+		writeFileSync(state, JSON.stringify({ protocol: 22, panes: {} }));
+		Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state });
+		onPath([fakeReviewer(heredoc(JSON.stringify(verdict))), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		const command = reviewReadyCommand(ready as { state: string; review_command?: string });
+		expect(command).toMatch(/bin\/imm-session' 'run' '--provider' 'herdr' '--cwd' '\S+' '--label' 'review cli-review-task' '--' 'sh' '\S+review\.sh'$/);
+
+		const ran = spawnSync("sh", ["-c", command], { encoding: "utf8" });
+		expect(JSON.parse(ran.stdout)).toMatchObject({ ok: true, exit_code: 0 });
+		const herdr = JSON.parse(readFileSync(state, "utf8"));
+		expect(herdr.calls.map((call: string[]) => call.slice(0, 2).join(" "))).toEqual(["api schema", "tab create", "pane run", "pane wait-output"]);
+		expect(herdr.calls.some((call: string[]) => call[0] === "pane" && call[1] === "run")).toBe(true);
+
+		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect(settled).toMatchObject({ state: "completed" });
+		expect(reviewsOf(kernel)).toHaveLength(1);
+	});
+
+	test("S3: the findings verifier runs in a Herdr session too, and its bound bytes settle the verification", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root, { revision: true, verifier: true });
+		const state = join(scratchDir("herdr"), "state.json");
+		writeFileSync(state, JSON.stringify({ protocol: 22, panes: {} }));
+		Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state, VERIFIER_LOG: join(scratchDir("log"), "argv.jsonl") });
+		onPath([reviewerAndVerifier(heredoc(JSON.stringify(reworkVerdict(kernel.snapshot)))), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		spawnSync("sh", ["-c", reviewReadyCommand(ready as { state: string; review_command?: string })], { encoding: "utf8" });
+		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK)) as { state: string; verification_command?: string };
+		expect(pending.state).toBe("verification_ready");
+		expect(pending.verification_command).toMatch(/bin\/imm-session' 'run' '--provider' 'herdr' '--cwd' '\S+' '--label' 'verify cli-review-task' '--' 'sh' '\S+verify\.sh'$/);
+		const ran = spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		expect(JSON.parse(ran.stdout)).toMatchObject({ ok: true, exit_code: 0 });
+		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/) });
+		const tabs = JSON.parse(readFileSync(state, "utf8")).calls.filter((call: string[]) => call[0] === "tab" && call[1] === "create").map((call: string[]) => call[7]);
+		expect(tabs.map((label: string) => label.replace(/ \[imm:[0-9a-f]+\]$/, ""))).toEqual(["review cli-review-task", "verify cli-review-task"]);
+	});
+});
+
+// --- #426 F14: a Lane Review runs on its batch's recorded profile ----------
+
+const F14_TIME = "2026-11-12T00:00:00.000Z";
+
+/** A coordinator repo whose config names antigravity, one Lane, and a lane batch bound to it. */
+function laneBatch(options: { state?: string; review_profile?: { host: "pi" | "claude-code" | "antigravity"; model?: string }; batchId?: string; lane?: string } = {}) {
+	const root = options.lane ? dirname(dirname(dirname(dirname(dirname(options.lane))))) : realpathSync(reviewRepo("antigravity", { review_model: "config-model" }));
+	const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+	const lane = options.lane ?? createLaneWorktree(root, "f14", TASK, head);
+	const child = { task_id: TASK, slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
+		intent_path: `docs/plans/${TASK}.intent.json`, intent_revision: 1, intent_content_hash: `sha256:${"0".repeat(64)}` };
+	const record = prepareBatchLaneRunState({ batch_id: options.batchId ?? "f14-batch", initiative_slug: "f14", children: [child],
+		plan_digest: `sha256:${"1".repeat(64)}`, base_head: head, confirmation_time: F14_TIME, now: F14_TIME,
+		budget: { max_children: 1, qa_failure_limit: 2 }, max_parallel: 1,
+		...(options.review_profile ? { review_profile: options.review_profile } : {}) });
+	record.batch_state = "running" as never;
+	record.children = [{ ...record.children[0]!, state: (options.state ?? "enrolled") as never,
+		reason: options.state === "needs_human" ? "parked" : null,
+		lane: { path: lane, branch: `imm-lane/f14/${TASK}`, base_head: head, lane_commit: null } }];
+	writeBatchLaneRunState(root, record);
+	return { root, lane };
+}
+
+describe("#426 F14 batch review profile", () => {
+	test("a Lane Review runs on the profile its batch recorded, not the layered config", async () => {
+		const { lane } = laneBatch({ review_profile: { host: "pi", model: "model-x" } });
+		onPath(fakeReviewer("exit 0"));
+		const ready = await claudeAdvance(lane, ROOT_ENV);
+		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
+	});
+
+	test("without a recorded profile, or once the child left the Lane, the layered config applies", () => {
+		expect(laneBatchReviewProfile(laneBatch().lane)).toBeUndefined();
+		expect(laneBatchReviewProfile(laneBatch({ state: "needs_human", review_profile: { host: "pi" } }).lane)).toBeUndefined();
+	});
+
+	test("a checkout that is not a runtime-owned Lane reads no batch profile", () => {
+		const { root } = laneBatch({ review_profile: { host: "pi" } });
+		expect(laneBatchReviewProfile(root)).toBeUndefined();
+	});
+
+	test("two in-flight batches with different profiles on one Lane fail closed", () => {
+		const { lane } = laneBatch({ review_profile: { host: "pi" } });
+		laneBatch({ lane, batchId: "f14-other", review_profile: { host: "claude-code", model: "m" } });
+		expect(() => laneBatchReviewProfile(lane)).toThrow("review_profile_ambiguous");
+	});
+
+	test("start arguments map to one profile and refuse a model without a host", () => {
+		expect(reviewProfileFromArgs({})).toBeUndefined();
+		expect(reviewProfileFromArgs({ review_host: "claude-code", review_model: "sonnet", review_effort: "low" }))
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
+		expect(() => reviewProfileFromArgs({ review_model: "sonnet" })).toThrow("require review_host");
+		expect(() => reviewProfileFromArgs({ review_host: "codex" })).toThrow("invalid review_profile");
 	});
 });

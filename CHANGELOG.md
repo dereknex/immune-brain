@@ -1,5 +1,73 @@
 # Changelog
 
+## 8.2.0
+
+### Minor Changes
+
+- [#470](https://github.com/dereknex/immune-brain/pull/470) [`22420e6`](https://github.com/dereknex/immune-brain/commit/22420e69287ad767311c88c10893ed42e32d5be8) Thanks [@dereknex](https://github.com/dereknex)! - After the first live run: Herdr sessions are owned by a token in the tab label
+  (another pane in the Parent's workspace is refused), instructions also reach a
+  `done` session (the batch runner accepts `session_state: "done"`), `--resume`
+  restarts an exited Host in the same Herdr tab, and `create --env` passes extra
+  Host environment.
+  `imm-session await` takes several handles and returns the first transition with
+  its handle, so a Pi Parent, which a background command cannot wake, waits for
+  all its Lanes in the foreground in bounded rounds.
+  A Pi session now loads one Immune-Brain only: a second copy (an installed Pi
+  package next to `-e <plugin root>`) registers nothing and shows a notice,
+  instead of the Executor Host exiting on duplicate tools.
+  On herdr-core, an Executor Host that reports no status at startup (Claude Code
+  shows workspace trust that way) keeps its terminal and returns
+  `entry_submitted: false` with an `attention` text, so the user can answer and
+  the Parent resumes, instead of failing the session.
+  The Executor close rule (#426 S1): the batch runner records the close of an
+  integrated child's session in the batch record's `session_closes` at the tick
+  that integrates it (`lane_session_close` on `start_unattended_batch` returns
+  that record), and `imm-session close --batch` closes only a session that record
+  lists. Lanes and branches are not removed. Inside Herdr, a herdr-core session opens an
+  unfocused Herdr tab running `hc attach` so the user can watch it, and
+  `imm-session attach` opens another. A Lane the runtime creates is
+  reserved in the batch record first, so a tick stopped between creating and
+  binding it is resumed rather than parked.
+  Two opt-in Lane settings put work in watched Herdr sessions (#426 S4, S2):
+  `lanes.review_transport: herdr` runs the authority Review's script through
+  `imm-session run`, and `lanes.advisory_transport: herdr` runs advisory children
+  in a session whose marked result `imm-session read --extract advisory` returns.
+  Findings verification after a CLI Review is now a CLI process (ADR 0039):
+  `verification_ready` carries `verification_command`, its output bytes are the
+  bound receipt, `lanes.review_verifier_model` lets the verifier run on a
+  different model, and with `lanes.review_transport: herdr` it runs in a Herdr tab
+  (#426 S3).
+
+### Patch Changes
+
+- [#480](https://github.com/dereknex/immune-brain/pull/480) [`d446954`](https://github.com/dereknex/immune-brain/commit/d44695451062ca1a8d3c44ed90db8933393d6e88) Thanks [@dereknex](https://github.com/dereknex)! - `restoreStagedIntent` now refreshes the whole Git index with `update-index -q --refresh` instead of `--refresh -- <sidecar>`. The path form exited 1 whenever any other tracked file had an unstaged change, so a failed or cancelled Intent revision, and the Antigravity `approve_breaking_intent_revision` preview, failed in a dirty worktree. The Parent final-verification decision (changed commands, `verify`/`repair`, whether a fresh native gate is needed) is now one function, `nativeParentFinalDecision`, shared by the real Parent entry and the Hook preview. A Hook preview that throws reports its cause on stderr before failing closed. A runtime refuses a second concurrent confirmation preview.
+
+  The Preparation digest no longer includes `generated_at` (8.1.3), so a digest issued by 8.1.2 no longer matches: an enrollment or batch confirmation that was open across the upgrade reports `enrollment preparation digest mismatch` and must be confirmed again.
+
+  Batch Lane delivery indexing (`read-tree` after a Lane commit) now refreshes the index stat data. git before about 2.5x (2.43 on Ubuntu 24.04) `read-tree` writes entries with none, and the task snapshots diff with `diff.autoRefreshIndex=false`, so every tracked file of the Lane read as unstaged and the Parent branch integration parked the child as `batch_integration_conflict: task scope contains unstaged or untracked changes`.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`8b85e13`](https://github.com/dereknex/immune-brain/commit/8b85e1348ecfdd1497be9beb3c4b3cf6a6bda704) Thanks [@dereknex](https://github.com/dereknex)! - Make the supervised-session admission matrix consistent: the executor role stays admitted on `herdr` for all three Hosts with the sign-in dialog recorded as its one G3 gap (the adapter keeps the entry unsent and returns `attention`), and the measured facts now include the v4 Antigravity and Pi dialog runs.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`5a67a6c`](https://github.com/dereknex/immune-brain/commit/5a67a6cf029a61d79c1bba20158d1eeee8a26c3e) Thanks [@dereknex](https://github.com/dereknex)! - Antigravity print sessions now put every flag before `--print`. `agy` takes the argument right after `--print` as the prompt, so the Lane Executor (`--dangerously-skip-permissions` first) and any reviewer or verifier with a model exited 2 within seconds and the Lane parked as `lane_executor_no_progress`.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`e08dd29`](https://github.com/dereknex/immune-brain/commit/e08dd29c2697d5f123da51f238c75cb013bc09c5) Thanks [@dereknex](https://github.com/dereknex)! - A lane batch now fixes its Executor preferences when it starts. The batch records the Executor Host, model and effort the request selected as `executor_preferences`, and every Executor generation runs on them, including the one started after a Lane decision, which before this change ignored the request and used whatever `lanes.active` named. When the preferences name an Executor Host, the active profile is no longer consulted, so its model and effort are no longer reported as `not_applied`.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`f6d41c0`](https://github.com/dereknex/immune-brain/commit/f6d41c014b2b436c1d7e31412d5d315e06395284) Thanks [@dereknex](https://github.com/dereknex)! - A lane batch now fixes its Review profile when it starts. `start_unattended_batch` takes `review_host`, `review_model` and `review_effort`, the batch records them as `review_profile`, and the native confirmation shows them. A CLI Review in that batch's Lane runs on the recorded profile instead of whatever `lanes.active` names when Review is prepared. Before this change, a drive request that named a Lane profile changed the Executor but not the reviewer.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`6370f3e`](https://github.com/dereknex/immune-brain/commit/6370f3ede80f9a1c0be8593eb9ffc0efb77a72a5) Thanks [@dereknex](https://github.com/dereknex)! - A headless Lane Executor's breaking intent revision now reaches the Parent (#426 F19). Under `--print` the Host cancels the native gate at once and the Kernel recorded nothing, so the Parent saw no decision and restarted the Executor. The supervisor now marks each headless generation with `IMM_LANE_EXECUTOR=headless`; in that session `approve_breaking_intent_revision` validates the revision, leaves a request bound to the current Lane record and returns `lane_decision_requested` without opening a gate. The Parent's `lane_decision_required` carries `requested.next_intent`, the literal user answers at the Parent's own gate, and the applied decision clears the request. A request older than the current record is ignored.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`4b822fa`](https://github.com/dereknex/immune-brain/commit/4b822fa5583943f26c25a4f6cd83713c20a33cb1) Thanks [@dereknex](https://github.com/dereknex)! - The draw-up contract now spells out the Local Initiative carrier shape that `drive` parses (`## <slice-id>: <result>` sections with one Task under `Tasks:` and an optional `Blocked by:` line), with an example the test suite parses. A Planner that wrote a Slice table left the batch unprojectable and the Parent rewrote the carrier by hand.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`4b822fa`](https://github.com/dereknex/immune-brain/commit/4b822fa5583943f26c25a4f6cd83713c20a33cb1) Thanks [@dereknex](https://github.com/dereknex)! - The report a completed Initiative batch returns now carries `session_closes`. When final verification passed, the runtime rebuilt the Parent report from durable facts and left the recorded closes out, so the Parent never learned it could close the Lane Executor tabs and left them open for the user.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`2118d02`](https://github.com/dereknex/immune-brain/commit/2118d025be052dd7673609378760bfa4850be364) Thanks [@dereknex](https://github.com/dereknex)! - A claude-code reviewer and verifier may now run the read-only git commands a model actually emits: `--allowedTools` carries twelve rules, the six existing `git <sub>` forms plus the same six as `git --no-pager <sub>`, from one shared list. The `authority-review` skill and both role prompts tell the role to run one git command at a time from the current working directory, with no `-C`, pipes or redirection. Outside Herdr a Pi Executor is no longer spawned as `pi --print`, which can never settle: the runtime reports `lane_executor_requires_tui`, keeps the single-task child enrolled with its `executor` handoff, and asks the user to run `/skill:drive <task_id>` in interactive pi in the Lane before calling `start_unattended_batch` again.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`11aeb53`](https://github.com/dereknex/immune-brain/commit/11aeb5316b18d24c03765de25bee0ba87378087c) Thanks [@dereknex](https://github.com/dereknex)! - A claude-code reviewer and verifier now run with `--settings '{"disableAllHooks":true}'`. A user PreToolUse hook that rewrites shell commands (for example into `rtk git …`) made every `Bash(git …:*)` allow rule miss, so `dontAsk` denied all git reads and the Review ended with no inspected paths. The receipt still comes from the output file; user settings, plugins and the `authority-review` skill still load.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`177e692`](https://github.com/dereknex/immune-brain/commit/177e692feda1f02ded54cbc24e567d82fe527ac5) Thanks [@dereknex](https://github.com/dereknex)! - A claude-code reviewer now runs with `--plugin-dir` set to the Claude plugin root the Kernel runtime was loaded from. Without it the reviewer loaded the user-installed immune-brain, whose `authority-review` skill pinned an older review contract hash, so every Review was released as `review_contract_mismatch` whenever the Parent ran a different plugin build (for example through `claude --plugin-dir`). The Antigravity copy carries no Claude manifest and keeps the previous argv.
+
+- [#449](https://github.com/dereknex/immune-brain/pull/449) [`88af795`](https://github.com/dereknex/immune-brain/commit/88af795efec08364d9850f7d73aa4c5396a35319) Thanks [@dereknex](https://github.com/dereknex)! - A claude-code verifier now runs with `--add-dir` on its verification packet directory. The packet is written to a temporary directory outside the reviewed tree, and `dontAsk` denied the Read of it, so the verifier answered in prose instead of the verdict JSON. The verify directory is also resolved with `realpath`, as the review directory already was.
+
 ## 8.1.3
 
 ### Patch Changes

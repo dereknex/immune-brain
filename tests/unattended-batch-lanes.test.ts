@@ -475,6 +475,9 @@ describe("runtime-owned Parent Lane lifecycle", () => {
 				tasks: [{ task_id: "task-a", slice_id: "S1", blocked_by: [] }, { task_id: "task-b", slice_id: "S2", blocked_by: ["task-a"] }] });
 			const reopened = await completedParentReport(fx.repo, SLUG, reader, tracker) as unknown as BatchLaneRunReport;
 			expect(reopened).toMatchObject({ batch_state: "completed", lane_refusals: [retainedA, retainedB] });
+			// #426 F18: the rebuilt Parent report keeps the recorded closes, or the Parent never closes the tabs.
+			expect(done.session_closes?.map(c => c.task_id)).toEqual(["task-a", "task-b"]);
+			expect(reopened.session_closes).toEqual(done.session_closes);
 			expect(reopened.next_action).toStartWith("Parent delivery and final verification passed. Cleanup was not performed");
 			expect(resources()).toEqual(kept);
 			git(fx.repo, "update-ref", `refs/heads/${BATCH_BRANCH}`, fx.base);
@@ -2120,7 +2123,7 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 		}
 	});
 
-	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane", async () => {
+	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane, and accepts a done session", async () => {
 		const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
 		const fx = fixture();
 		try {
@@ -2140,6 +2143,49 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "", session_state: "idle" })).toThrow();
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "asleep" })).toThrow();
 			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle", keys: "y" })).toThrow(/unknown/);
+			// A finished turn not yet seen is ready for input; Herdr and herdr-core report it as `done`.
+			expect((await ask("task-a", "done")).accepted).toBe(true);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("Executor close rule for Lane sessions (#426 S1)", () => {
+	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", async () => {
+		const { decideLaneSessionClose, parseLaneSessionClose } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel, { git: laneGitWithAudit() });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const close = async (task_id: string) =>
+				lanes(await startBatch({ ...args, lane_session_close: parseLaneSessionClose({ task_id }) }));
+			const running = await close("task-a");
+			expect(running.lane_session_close).toMatchObject({ task_id: "task-a", accepted: false, recorded_at: null });
+			expect(running.lane_session_close!.reason).toContain("not integrated; its session stays for the user");
+			expect((await close("task-z")).lane_session_close!.reason).toContain("task-z has no Lane");
+			expect(running.session_closes).toBeUndefined();
+
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const integrated = lanes(await startBatch(args));
+			expect(integrated.children[0]!.state).toBe("integrated");
+			// F6: the integrating tick records the close itself; a finished batch needs no further entry.
+			expect(integrated.session_closes).toEqual([{ at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), task_id: "task-a" }]);
+			// Without the audit pair on the batch head the rule refuses, whatever the child state says.
+			expect(decideLaneSessionClose({ ...integrated, session_closes: undefined } as never, { task_id: "task-a" }, () => false))
+				.toBe("task-a's audit pair is not reachable from the batch head");
+			// Asking again returns the same record; nothing is recorded twice.
+			const again = await close("task-a");
+			expect(again.lane_session_close).toEqual({ task_id: "task-a", accepted: true, reason: null, recorded_at: integrated.session_closes![0]!.at });
+			expect(again.session_closes).toEqual(integrated.session_closes);
+			// Closing a session removes no Lane.
+			expect(existsSync(laneA)).toBe(true);
+			expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
+			expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
 		} finally {
 			fx.cleanup();
 		}

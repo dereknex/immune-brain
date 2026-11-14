@@ -1,0 +1,562 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-daemon-s7-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-daemon-s7-repair",
+    "goal": "Deliver headless fix-pr repair dispatch for daemon-opened PRs (CI failure local reproduction and fix, conflict rebase, review comment disposition vs escalation, 2-attempt cap per (head_sha, failure_signature), mark_pr_ready, and close_out) under S7 (D8) of docs/specs/loop-daemon.spec.md.",
+    "acceptance": [
+      {
+        "id": "S7-AC1",
+        "assertion": "Source BR-REQ-5; meet S7 and D8 in docs/specs/loop-daemon.spec.md: repair_agent.ts handles daemon-managed PRs on imm/* and imm-loop/* by reproducing and repairing failing CI checks locally, rebasing base-branch conflicts, addressing in-scope review comments or escalating scope changes, enforcing a strict 2-attempt cap per (head_sha, failure_signature) before escalating, and executing mark_pr_ready and close_out.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/plans/loop-daemon-s7-repair.intent.json",
+      "docs/specs/loop-daemon.spec.md",
+      "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+      "tests/loop-daemon-repair.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-daemon-s7-repair.intent.json",
+    "content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+  "git_base_head": "5a65806f57531e0e4e56d525110ec8ef7d2b8c3b",
+  "attestations": [
+    {
+      "id": "approval-qa-2c2003d8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+      "diff_hash": "sha256:f87013c506e2c23b9b1c2f008ead463ab035159b9ef9f600f3d9fabdb86cbeb2",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:3cd8c05eef3bead80269142b775b29545cb726cc7e50dd489f9d6afc8fcc8d6a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:3cd8c05eef3bead80269142b775b29545cb726cc7e50dd489f9d6afc8fcc8d6a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-d02790d0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+      "diff_hash": "sha256:72cc1487794e0670ab272d97916638b8ffbec25437cc1a0002b6fd158ee1b44f",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:fb18ea078ccdb5e5fe195cb858637ab49ae68b41c42aaa0595d2197467eeba51",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:fb18ea078ccdb5e5fe195cb858637ab49ae68b41c42aaa0595d2197467eeba51"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f9298568",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+      "diff_hash": "sha256:65486f855a2a13bf82ab3b71e40aa949a540836c0bea8245516c0161ce81502a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:96eeff14c741f8def9a3d97356be22e3d7c1941b64bea9ec9b5aa0d85678f202",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:96eeff14c741f8def9a3d97356be22e3d7c1941b64bea9ec9b5aa0d85678f202"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a7001fe8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+      "diff_hash": "sha256:c4ba4e517991d687e0b7ae57e31f0fa6dad37f15af12bb038d26ef0483d96f34",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:1856bdd21659168f868e3dd18c8a7a711fcf3fbaae3490d8b0c67a629e1b4442",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:1856bdd21659168f868e3dd18c8a7a711fcf3fbaae3490d8b0c67a629e1b4442"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-37073845",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:32f0ee4f10acbae4c81a4f7df32d6076539aaa3f23da37b9e333e51863fbf143",
+      "diff_hash": "sha256:c4ba4e517991d687e0b7ae57e31f0fa6dad37f15af12bb038d26ef0483d96f34",
+      "actor_id": "cli:antigravity:3405fc40-7a10-45e3-b1d1-4664b9634f6d",
+      "summary": "S7-AC1 satisfied with canonical POSIX path normalization before no-touch and scope checks; blast radius tier medium centered on plugins/immune-brain/runtime/loop_daemon/repair_agent.ts and rebuildable .imm/state/loop/repair-retries.json state.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a65806f57531e0e4e56d525110ec8ef7d2b8c3b",
+        "review_commit": "fc54bec136e5b95543d5a7015e29967fde61cbfb",
+        "review_tree": "4e9c5424cd3c888289003ae2ba23bad2052370fd",
+        "manifest_digest": "sha256:16cbb3042a50c27766305fbdffcdfaa82d7cf82e0ed8fd0446e9f1de23e90ee4"
+      },
+      "reviewer_verdict_sha256": "sha256:acee1ddaf027dc68e593a7cd9e2b5eb4696171ceb3d37bb8e2823e4375e484cd"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-60f76b3fcff5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "repairPrCi omits attempt recording on cannot_reproduce and out-of-scope applyFix paths, allowing unbounded re-dispatch past the 2-attempt (head_sha, failure_signature) cap; record attempts on every dispatched run and pin both paths in tests/loop-daemon-repair.test.ts.",
+      "anchor": "sha256:604cf11f3e1741b9f9e8b16865d4da65fa23db7525c1575e01251865eafccdef",
+      "evidence": {
+        "trigger": "E8_PR_CHECK_FAILED on a daemon PR where local runVerification exits 0 (flaky/remote-only failure) or applyFix modifies a path outside scope_hint across 3+ ticks (same invariant class: per-(head_sha, failure_signature) retry budget accounting across all dispatched repair outcomes, cited via plugins/immune-brain/runtime/loop_daemon/events.ts and plugins/immune-brain/runtime/loop_daemon/guards.ts in the same state machine) → getRepairAttempts(stateDir, head_sha, failure_signature) remains 0 because neither branch calls recordRepairAttempt, so Guard G5 and repairPrCi never hit the 2-attempt cap and re-run verification/applyFix indefinitely.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+          "dispatchRepair",
+          "repairPrCi",
+          "recordRepairAttempt"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-60f76b3fcff5-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "repairPrCi, repairPrConflict, and addressPrReview skip scope enforcement when scope_hint is empty ([]) and never reject no_touch/authority paths on modified, conflicting, or commented files; enforce empty scope_hint as zero-file scope, reject noTouchPaths, and add negative tests.",
+      "anchor": "sha256:27269d4a8a494ed7b0ca901e458e7219f22f93b4fa37eb316f60ea61bbb80c29",
+      "evidence": {
+        "trigger": "repairPrCi or addressPrReview invoked with scope_hint: [] or undefined and applyFix/applyReviewFix returning modified_paths: [\".github/workflows/ci.yml\"] or [\"docs/agents/no-touch.json\"] → scope_hint.length > 0 evaluates false and noTouchPaths (cited from plugins/immune-brain/runtime/no_touch.ts and G3 in plugins/immune-brain/runtime/loop_daemon/guards.ts as part of the same guard boundary) is never checked, so gitCommitAndPush commits and pushes forbidden authority/out-of-scope paths with action: \"repaired\".",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+          "repairPrCi",
+          "repairPrConflict",
+          "addressPrReview"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "G3_no_touch_and_scope_hint"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-60f76b3fcff5-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "markPrReady marks PRs ready without verifying review gates (CHANGES_REQUESTED), non-empty passing checks (e.g. startup_failure or empty checks), or open-draft state; enforce passing checks, no active CHANGES_REQUESTED review, and open draft state with tests.",
+      "anchor": "sha256:e83cc48b169fd4763fb94960dc75ce03ba84497a4ba746c0bc49a2414bdec995",
+      "evidence": {
+        "trigger": "markPrReady called with a daemon PR carrying an unresolved review { state: \"CHANGES_REQUESTED\" } in pr.reviews, checks: [], conclusion: \"startup_failure\", or draft: false (cited alongside plugins/immune-brain/runtime/loop_daemon/events.ts E11 ready emission in the same state machine, which does not filter pr.reviews or draft) → markPrReady ignores pr.reviews, empty/startup_failure checks, and draft/state, calling deps.markReady and returning action: \"marked_ready\" despite failing D8.2 check and review gates.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+          "dispatchRepair",
+          "markPrReady"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-60f76b3fcff5-4-review-4",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "closeOut deletes worktrees and leases without checking that the PR is merged, suppresses rmSync errors via empty catch, ignores deleteLease's boolean result, and leaves state.json active_leases stale; require merged PR state, surface real cleanup outcomes, clear state.active_leases, and pin with tests.",
+      "anchor": "sha256:a98b3a74371bafd5923d299ec045572daafd8ddf2d8ccf00fa64c40aedad3e78",
+      "evidence": {
+        "trigger": "closeOut called with an unmerged PR (state: \"open\", merged: false, as in tests/loop-daemon-repair.test.ts Suite 8) or with a missing lease / failing rmSync → closeOut deletes the active worktree and lease on an unmerged PR, swallows rmSync failures via catch {}, unconditionally reports released_lease: true even when plugins/immune-brain/runtime/loop_daemon/state.ts deleteLease returns false, and leaves state.json active_leases (read by plugins/immune-brain/runtime/loop_daemon/cli.ts and guards.ts in the same lease state machine) uncleaned.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+          "dispatchRepair",
+          "closeOut"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-93d85508eda6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "validatePathsInScope never reads declared protected prefixes from docs/agents/no-touch.json via readNoTouch(worktree_path) (checked against unchanged plugins/immune-brain/runtime/no_touch.ts and plugins/immune-brain/runtime/loop_daemon/guards.ts imported by repair_agent.ts) and passes unnormalized paths to noTouchPaths, letting repairs touch declared no-touch paths or non-canonical authority paths like ./.github/workflows/ci.yml; enforce canonical repo-relative path validation plus readNoTouch fail-closed checks and pin both cases in tests/loop-daemon-repair.test.ts.",
+      "anchor": "sha256:bd6bf0cab936e0a8ac0b0c9c541b46e27975875c92b90c1e448b13f913751a49",
+      "evidence": {
+        "trigger": "context.worktree_path contains docs/agents/no-touch.json declaring paths: [\"src/protected\"] (or applyFix returns modified_paths: [\"./.github/workflows/ci.yml\"]) with scope_hint: undefined → validatePathsInScope returns { valid: true } and repairPrCi/addressPrReview commits and pushes edits to forbidden no-touch/authority paths instead of escalating",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:validatePathsInScope",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:repairPrCi",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:repairPrConflict",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:addressPrReview"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "G3_no_touch_authority_paths"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-93d85508eda6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "validatePathsInScope checks scope_hint with exact string inclusion (!scopeHint.includes(p)) instead of TaskIntent directory-prefix and glob-pattern matching (checked against unchanged plugins/immune-brain/runtime/kernel/intent.ts and plugins/immune-brain/runtime/workspace_scope.ts for TaskIntentV1.scope_hint semantics), causing in-scope repairs under directory or glob scope_hint entries to escalate; match canonical directory prefixes and globs in validatePathsInScope and add pinning tests in tests/loop-daemon-repair.test.ts.",
+      "anchor": "sha256:63492746d828cfd61da3ab3e3e3ecb07b6d9a8dc770b689f2cd38da522352f9b",
+      "evidence": {
+        "trigger": "RepairContext.scope_hint contains a valid TaskIntent directory or glob entry such as [\"src/module\"] or [\"src/*.ts\"] and a CI fix, conflict, or review comment touches \"src/module/file.ts\" or \"src/index.ts\" → validatePathsInScope rejects the path as outside scope_hint and repairPrCi/repairPrConflict/addressPrReview returns action: \"escalate\" instead of repairing",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:validatePathsInScope",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:repairPrCi",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:repairPrConflict",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:addressPrReview"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-93d85508eda6-3-review-3",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "markPrReady blocks whenever any historical entry in pr.reviews has state === \"CHANGES_REQUESTED\" rather than evaluating each reviewer's latest decisive review state (checked against RawPRReview in unchanged plugins/immune-brain/runtime/loop_daemon/types.ts imported by repair_agent.ts), stranding draft PRs after a reviewer subsequently approves or dismisses their earlier review; resolve latest non-COMMENTED review state per reviewer and pin the superseded-review case in tests/loop-daemon-repair.test.ts.",
+      "anchor": "sha256:4064e825030c6116c07b41432b9f945e6d448a1cb05967c7729492573f346278",
+      "evidence": {
+        "trigger": "Open draft daemon PR has passing checks and pr.reviews: [{ id: 1, user: { login: \"alice\" }, state: \"CHANGES_REQUESTED\", submitted_at: \"2026-11-12T10:00:00Z\" }, { id: 2, user: { login: \"alice\" }, state: \"APPROVED\", submitted_at: \"2026-11-12T10:10:00Z\" }] → markPrReady returns action: \"ignored\" (\"PR has unresolved CHANGES_REQUESTED review gate\") and never marks the PR ready",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:markPrReady",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:dispatchRepair"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-4c22871bbf4e-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 3,
+      "summary": "Invariant class (normalization precedes validation): normalizeRepoPath in repair_agent.ts leaves internal '.' and empty '//' segments, leading '/./', empty/'.' paths, and case-variant '.GIT' uncanonicalized before noTouchPaths and pathMatchesScope, allowing protected/authority paths to bypass Guard G3; canonicalize all path segments and pin these variants in tests/loop-daemon-repair.test.ts.",
+      "anchor": "sha256:6a5d4a3d9311ab1501a75740a351c50160ab2d76333159a9979cb50002038501",
+      "evidence": {
+        "trigger": "Invariant class 'normalization precedes validation' (Round 3's normalizeRepoPath only strips leading './' before leading '/' and leaves internal '/./', '//', '/./...', empty/'.', and '.GIT' segments intact while noTouchPaths requires canonical segment prefixes): validatePathsInScope(['src/./protected/secret.ts'], ['src'], worktreeWithNoTouchSrcProtected), validatePathsInScope(['docs//agents/no-touch.json'], ['docs']), validatePathsInScope(['/./.github/workflows/ci.yml'], undefined), or validatePathsInScope(['.GIT/config'], undefined) → returns { valid: true } instead of rejecting, allowing repairPrCi and addressPrReview to commit and push changes to protected no-touch, workflow, or .git paths.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+          "normalizeRepoPath",
+          "validatePathsInScope"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "no-touch and scope_hint path boundary (Guard G3)"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-daemon-s7-repair:2026-11-12T08:57:55.680Z",
+      "at": "2026-11-12T08:57:55.680Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s7-repair.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s7-repair:2026-11-12T08:58:06.953Z",
+      "at": "2026-11-12T08:58:06.953Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2c2003d8\naction_v2_sha256:aa52cdd10d3cdb00fe41684a6540db0cd163f8fcaecd609680ddffa23edeefe1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T08:58:06.954Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s7-repair:2026-11-12T09:08:57.318Z",
+      "at": "2026-11-12T09:08:57.318Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:85f4218bd8deee97a3f472e22d227388904a049c0aa5f01ce5c14ffb53c3dfd4",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:41b4b313-659b-41a0-aaed-db70038061fc",
+        "confirmation_ref": "antigravity:cli:antigravity:41b4b313-659b-41a0-aaed-db70038061fc",
+        "issued_at": "2026-11-12T09:08:57.319Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a65806f57531e0e4e56d525110ec8ef7d2b8c3b",
+        "review_commit": "07b74982a24e715fc77abd5c1e76762a6cf6a930",
+        "review_tree": "b61250e790388be99a19ca92573c89555d17eda3",
+        "manifest_digest": "sha256:17e43020bef951fbd86beca83514707c2ce6c993793593f442338e3367c1f6e8"
+      },
+      "review_started_at": "2026-11-12T09:08:27.686Z",
+      "review_submitted_at": "2026-11-12T09:08:56.659Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:11:39.136Z",
+      "at": "2026-11-12T09:11:39.136Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60f76b3fcff5-1-review-1\naction_v2_sha256:1a3cf9f41b160a2315becf0a0700e8a2912380033910ce604faf2aa478515346"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:12:10.278Z",
+      "at": "2026-11-12T09:12:10.278Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60f76b3fcff5-2-review-2\naction_v2_sha256:c2fd4dd554a7edd479d8e33da559c1b897da7ee584b2128d5b0ead16d073f5dd"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:12:19.701Z",
+      "at": "2026-11-12T09:12:19.701Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60f76b3fcff5-3-review-3\naction_v2_sha256:71350cfd555416185f0b0beda0810b3533757ae622350fba6e94ef53536e77ec"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:12:28.341Z",
+      "at": "2026-11-12T09:12:28.341Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-60f76b3fcff5-4-review-4\naction_v2_sha256:853fd39815c777a3488ad61e496a4e742214db85cc692ad4f8251f44ecce56ed"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s7-repair:2026-11-12T09:12:44.755Z",
+      "at": "2026-11-12T09:12:44.755Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s7-repair.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s7-repair:2026-11-12T09:12:56.938Z",
+      "at": "2026-11-12T09:12:56.938Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d02790d0\naction_v2_sha256:f99e33bb845ea2d8f2e23ede836202a8e87cd65ef7b8eba0b7d38c09fad24a17",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T09:12:56.938Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s7-repair:2026-11-12T09:20:31.390Z",
+      "at": "2026-11-12T09:20:31.390Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:bd4a6cbe3c828f984a03d82d2f89e155e1b24576c2d8f4bee0b739a269b1f37e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:c7f91746-0a44-4820-895b-68f49dff883e",
+        "confirmation_ref": "antigravity:cli:antigravity:c7f91746-0a44-4820-895b-68f49dff883e",
+        "issued_at": "2026-11-12T09:20:31.390Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a65806f57531e0e4e56d525110ec8ef7d2b8c3b",
+        "review_commit": "cf42139bd18291f5c5dfa0688943dc46d3965e36",
+        "review_tree": "83fbff1126f5c3b3758dd25b74caf90b20f5c5cf",
+        "manifest_digest": "sha256:6007d12957ab54d0e81b093748931cd071553eb806ccfe1548dc729b3a2d92bc"
+      },
+      "review_started_at": "2026-11-12T09:13:00.998Z",
+      "review_submitted_at": "2026-11-12T09:20:30.603Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:24:16.440Z",
+      "at": "2026-11-12T09:24:16.440Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-93d85508eda6-1-review-1\naction_v2_sha256:2fa0c7b668c349abb8b750a356dfdaa9a71c0fcf0afdfc48f7edbc2047555ffd"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:24:24.239Z",
+      "at": "2026-11-12T09:24:24.239Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-93d85508eda6-2-review-2\naction_v2_sha256:a2f51a5ff781292377d2f1d0a2409c22683b15e2fa0a28f1861f41e46e4100d4"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:24:28.668Z",
+      "at": "2026-11-12T09:24:28.668Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-93d85508eda6-3-review-3\naction_v2_sha256:2f5ce14c5c5ce1731bb5f3cb67afd9c51113c1bf03b600866707e93f56365c1c"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s7-repair:2026-11-12T09:24:39.283Z",
+      "at": "2026-11-12T09:24:39.283Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s7-repair.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s7-repair:2026-11-12T09:24:48.420Z",
+      "at": "2026-11-12T09:24:48.420Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f9298568\naction_v2_sha256:0fa8f8222361f32f16e25556e9e4b8a797776d80380039e4e209b2e5f9bf46f7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T09:24:48.420Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-daemon-s7-repair:2026-11-12T09:32:10.315Z",
+      "at": "2026-11-12T09:32:10.315Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_3\naction_v2_sha256:75ea292aa6cb830ff6501c7acab88c0b9f7f0fb737e3813f638523ba3633aad2",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:034c2131-944f-46e3-8d00-5b9bb97bbb48",
+        "confirmation_ref": "antigravity:cli:antigravity:034c2131-944f-46e3-8d00-5b9bb97bbb48",
+        "issued_at": "2026-11-12T09:32:10.315Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "5a65806f57531e0e4e56d525110ec8ef7d2b8c3b",
+        "review_commit": "a61250ea838753fe90b1fc399690d0f596469b25",
+        "review_tree": "0d8f8c8e9318ef309ad50b212bce8cb7352f9613",
+        "manifest_digest": "sha256:f19287de04a8da6165a1f2cd7777fbd60fb296c53c7c91153f392d0d6a68fdcc"
+      },
+      "review_started_at": "2026-11-12T09:24:51.184Z",
+      "review_submitted_at": "2026-11-12T09:32:09.768Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "resolve_finding:loop-daemon-s7-repair:2026-11-12T09:33:21.888Z",
+      "at": "2026-11-12T09:33:21.888Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-4c22871bbf4e-1-review-1\naction_v2_sha256:7d2de029740ec47c4c6146b305962115c3b4edc8d2fbb190d45186675bddc9e4"
+    },
+    {
+      "id": "freeze_artifacts:loop-daemon-s7-repair:2026-11-12T09:33:33.737Z",
+      "at": "2026-11-12T09:33:33.737Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-daemon-s7-repair.intent.json"
+    },
+    {
+      "id": "record_approval:loop-daemon-s7-repair:2026-11-12T09:33:41.931Z",
+      "at": "2026-11-12T09:33:41.931Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a7001fe8\naction_v2_sha256:17d031d55c4befc32083b7be33354c609551702efc024eb97fa5b2e46c6d3ed3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "antigravity:deterministic-qa",
+        "issued_at": "2026-11-12T09:33:41.931Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-daemon-s7-repair:2026-11-12T09:37:49.922Z",
+      "at": "2026-11-12T09:37:49.922Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-37073845\naction_v2_sha256:d94377caede55c7e9cf45f9f2b756cd76568690c78b9bed881538573376f480b",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:antigravity:3405fc40-7a10-45e3-b1d1-4664b9634f6d",
+        "confirmation_ref": "antigravity:cli:antigravity:3405fc40-7a10-45e3-b1d1-4664b9634f6d",
+        "issued_at": "2026-11-12T09:37:49.922Z"
+      },
+      "review_started_at": "2026-11-12T09:33:44.004Z",
+      "review_submitted_at": "2026-11-12T09:37:49.378Z",
+      "reviewer_model": "host-default"
+    },
+    {
+      "id": "complete:loop-daemon-s7-repair:2026-11-12T09:37:51.464Z",
+      "at": "2026-11-12T09:37:51.464Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a189ed7dcdb5cd098c46b8c657498113a93caaea3333b065a97abf95477fb24c"
+    }
+  ]
+}

@@ -11,7 +11,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 const file = process.env.FAKE_HC_STATE;
 if (!file) { process.stderr.write("FAKE_HC_STATE is not set\n"); process.exit(3); }
 const load = () => existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-const save = (state) => { writeFileSync(`${file}.tmp`, JSON.stringify(state)); renameSync(`${file}.tmp`, file); };
+const save = (state) => { writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(state)); renameSync(`${file}.${process.pid}.tmp`, file); };
 const EXIT = { not_found: 3, needs_target: 7, blocked: 9, status_mismatch: 10, finished: 11 };
 const ok = (value) => { process.stdout.write(`${JSON.stringify(value)}\n`); process.exit(0); };
 const fail = (kind, message = kind) => { process.stderr.write(`${JSON.stringify({ error: { kind, message, hint: "" } })}\n`); process.exit(EXIT[kind] ?? 1); };

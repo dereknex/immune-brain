@@ -208,7 +208,7 @@ describe("acc-claude-batch-gate", () => {
 	it("registers the privileged Lane tool, destructive annotation and supported schema", () => {
 		expect(PRIVILEGED_OPERATIONS).toContain("start_unattended_batch"); const tool = listMcpTools().find(t => t.name === "start_unattended_batch")!;
 		expect(tool).toBeDefined(); expect(tool.annotations).toEqual({ destructiveHint: true }); expect(tool.description).toContain("Lane"); expect(tool.description).not.toMatch(/serial/i);
-		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction"]);
+		expect(tool.inputSchema.required).toEqual([]); expect(Object.keys(tool.inputSchema.properties ?? {})).toEqual(["initiative_slug", "task_id", "stop", "executor_host", "executor_model", "executor_effort", "review_host", "review_model", "review_effort", "max_parallel", "lane_offers", "final_verification", "lane_instruction", "lane_session_close"]);
 	});
 	it.each([false, true])("starts a standalone task after one native confirmation (Herdr=%s)", async herdr => {
 		const f = fixture("single-claude"), taskId = `${f.slug}-c1`;
@@ -296,6 +296,17 @@ describe("acc-claude-batch-gate", () => {
 		expect(JSON.stringify(input.batchDetails)).not.toMatch(/delegat/i);
 		expect(elicitationParams(input).requestedSchema).toEqual({ type: "object", properties: {} });
 		expect(message).not.toMatch(/delegat/i);
+		noBatchWrites(f.root);
+	});
+	it("#426 F14: shows the requested Review profile at confirmation and refuses a review model without a host", async () => {
+		const f = fixture("review-profile"); const confirmations: any[] = [];
+		const runtime = client(f, { requestConfirmation: async input => { confirmations.push(input); return { decision: "decline", requestId: "review" }; } });
+		await expect(runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, review_model: "sonnet" })).rejects.toThrow("require review_host");
+		expect(confirmations).toHaveLength(0);
+		const result = await runtime.callTool("start_unattended_batch", { initiative_slug: f.slug, review_host: "claude-code", review_model: "sonnet", review_effort: "low" }, { toolCallId: "review" });
+		expect(result.state).toBe("rejected"); expect(confirmations).toHaveLength(1);
+		expect(confirmations[0].batchDetails.lane_mode.review_profile).toEqual({ host: "claude-code", model: "sonnet", effort: "low" });
+		expect(elicitationParams(confirmations[0]).message).toContain("Review: claude-code / sonnet / low");
 		noBatchWrites(f.root);
 	});
 	it("one accepted confirmation issues a Lane authorization", async () => {

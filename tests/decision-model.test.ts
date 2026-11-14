@@ -459,7 +459,7 @@ describe("envelope and isolation (AC4)", () => {
 			confidence: 0.7,
 			provider_kind: "fake",
 			model: "fake",
-			threshold_set_version: "a14/v0",
+			threshold_set_version: "a14/v1",
 			truncation: "unknown",
 		});
 	});
@@ -526,5 +526,50 @@ describe("configuration files (AC7)", () => {
 		expect(context).toContain("**Decision model**:");
 		expect(context).toContain("plugins/immune-brain/runtime/decision_model/");
 		expect(context).not.toContain("scripts/decision-model/");
+	});
+});
+
+describe("application point registration (loop-daemon-s0-contracts)", () => {
+	test("contract registers a18, a19, and a20 and rejects unknown point IDs", async () => {
+		const {
+			APPLICATION_POINTS,
+			isApplicationPointId,
+			assertApplicationPointId,
+			POINT_REGISTRY,
+			A18_EVENT_PREFILTER,
+			A19_OWNER_COMMENT_INTENT,
+			A20_ISSUE_DUPLICATE_PAIR,
+		} = await import("../plugins/immune-brain/runtime/decision_model/contract.ts");
+
+		expect(APPLICATION_POINTS).toContain("a18_event_prefilter");
+		expect(APPLICATION_POINTS).toContain("a19_owner_comment_intent");
+		expect(APPLICATION_POINTS).toContain("a20_issue_duplicate_pair");
+
+		expect(isApplicationPointId("a18_event_prefilter")).toBe(true);
+		expect(isApplicationPointId("a19_owner_comment_intent")).toBe(true);
+		expect(isApplicationPointId("a20_issue_duplicate_pair")).toBe(true);
+		expect(isApplicationPointId("unknown_point_xyz")).toBe(false);
+
+		expect(() => assertApplicationPointId("a18_event_prefilter")).not.toThrow();
+		expect(() => assertApplicationPointId("unknown_point_xyz")).toThrow('unknown application point "unknown_point_xyz"');
+
+		expect(POINT_REGISTRY.a18_event_prefilter).toBe(A18_EVENT_PREFILTER);
+		expect(POINT_REGISTRY.a19_owner_comment_intent).toBe(A19_OWNER_COMMENT_INTENT);
+		expect(POINT_REGISTRY.a20_issue_duplicate_pair).toBe(A20_ISSUE_DUPLICATE_PAIR);
+
+		expect(A18_EVENT_PREFILTER.input_category).toBe("session_event");
+		expect(A18_EVENT_PREFILTER.options).toEqual(["actionable", "ignore"]);
+
+		expect(A19_OWNER_COMMENT_INTENT.input_category).toBe("issue_text");
+		expect(A19_OWNER_COMMENT_INTENT.options).toEqual([
+			"approve_plan",
+			"request_plan_revision",
+			"answer_lane_decision",
+			"command",
+			"discussion",
+		]);
+
+		expect(A20_ISSUE_DUPLICATE_PAIR.input_category).toBe("issue_text");
+		expect(A20_ISSUE_DUPLICATE_PAIR.options).toEqual(["duplicate", "related", "unrelated"]);
 	});
 });

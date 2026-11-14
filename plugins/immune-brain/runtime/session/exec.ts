@@ -9,17 +9,28 @@ export interface ExecResult {
 	stderr: string;
 	/** The executable was not found. */
 	missing?: boolean;
+	/** The caller aborted the command and its process was terminated. */
+	aborted?: boolean;
 }
 
-export type CommandExec = (command: string, args: string[]) => Promise<ExecResult>;
+export type CommandExec = (command: string, args: string[], signal?: AbortSignal) => Promise<ExecResult>;
 
-export function runCommand(env: Record<string, string | undefined>, command: string, args: string[]): Promise<ExecResult> {
+/** Runs a command; an aborted signal terminates it, so no waiting process outlives its caller. */
+export function runCommand(env: Record<string, string | undefined>, command: string, args: string[], signal?: AbortSignal): Promise<ExecResult> {
 	return new Promise(resolve => {
 		let stdout = "";
 		let stderr = "";
 		let settled = false;
-		const finish = (result: ExecResult) => { if (!settled) { settled = true; resolve(result); } };
+		if (signal?.aborted) { resolve({ code: null, stdout, stderr, aborted: true }); return; }
 		const child = spawn(command, args, { env: env as NodeJS.ProcessEnv, stdio: ["ignore", "pipe", "pipe"] });
+		const abort = () => { child.kill("SIGTERM"); finish({ code: null, stdout, stderr, aborted: true }); };
+		const finish = (result: ExecResult) => {
+			if (settled) return;
+			settled = true;
+			signal?.removeEventListener("abort", abort);
+			resolve(result);
+		};
+		signal?.addEventListener("abort", abort, { once: true });
 		child.stdout.on("data", chunk => { stdout += chunk; });
 		child.stderr.on("data", chunk => { stderr += chunk; });
 		child.once("error", (error: NodeJS.ErrnoException) => finish({ code: null, stdout, stderr: stderr || error.message, missing: error.code === "ENOENT" }));

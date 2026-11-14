@@ -30,7 +30,8 @@ import {
 } from "./interaction";
 import { HostRuntime, type HostRuntimeOptions, type HostRuntimeProfile, type ToolMeta } from "./runtime";
 import { batchReason } from "../unattended/batch_reasons";
-import { parseLaneInstruction, parseLaneOffers, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";import { parseFinalVerification } from "../unattended/batch_final_verification";
+import { parseLaneInstruction, parseLaneOffers, parseLaneSessionClose, parseMaxParallel, resolveLaneParallel } from "../unattended/batch_lanes";import { parseFinalVerification } from "../unattended/batch_final_verification";
+import { reviewProfileFromArgs } from "../unattended/batch_state";
 import type { ExecutorHost } from "../unattended/lane_supervisor";
 import type { InitiativeObservationReader } from "../unattended/types";
 import type { BatchRunnerKernelPort } from "../unattended/batch_runner";
@@ -167,6 +168,9 @@ export function listMcpTools() {
 									executor_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
 									executor_model: { type: "string", minLength: 1 },
 									executor_effort: { type: "string", minLength: 1 },
+									review_host: { type: "string", enum: ["pi", "claude-code", "antigravity"] },
+									review_model: { type: "string", minLength: 1 },
+									review_effort: { type: "string", minLength: 1 },
 									max_parallel: { type: "integer", minimum: 1 },
 									lane_offers: {
 										type: "array",
@@ -187,6 +191,12 @@ export function listMcpTools() {
 											session_state: { type: "string", enum: ["idle", "working", "blocked", "done"] },
 										},
 										required: ["task_id", "text", "session_state"],
+										additionalProperties: false,
+									},
+									lane_session_close: {
+										type: "object",
+										properties: { task_id: { type: "string" } },
+										required: ["task_id"],
 										additionalProperties: false,
 									},
 								}
@@ -441,8 +451,10 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				const laneOffers = parseLaneOffers(args.lane_offers);
 				// A lane_offers-only call resumes the recorded lane batch; refused before any gate otherwise.
 				const laneInstruction = parseLaneInstruction(args.lane_instruction);
+				const laneSessionClose = parseLaneSessionClose(args.lane_session_close);
 				const maxParallel = task ? 1 : resolveLaneParallel(workspace, initiativeSlug, parseMaxParallel(args.max_parallel), laneOffers, laneInstruction);
 				const finalVerification = Array.isArray(args.final_verification) && args.final_verification.length === 0 ? undefined : parseFinalVerification(args.final_verification);
+				const reviewProfile = reviewProfileFromArgs(args);
 				return runtime.startUnattendedBatch(initiativeSlug, toolMeta, {
 					...(task ? { plan_source: "single_task" as const } : {}),
 					...(args.stop === true ? { stop: true } : {}),
@@ -454,7 +466,9 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 					...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 					...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 					...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+					...(reviewProfile !== undefined ? { review_profile: reviewProfile } : {}),
 					...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+					...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				});
 			}
 			if (name === "retire_stale_batch") {
@@ -793,6 +807,7 @@ export function elicitationParams(input: NativeConfirmationInput) {
 			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
 			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
 			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
+			b?.lane_mode?.review_profile ? `Review: ${[b.lane_mode.review_profile.host, b.lane_mode.review_profile.model, b.lane_mode.review_profile.effort].filter(Boolean).join(" / ")}` : null,
 			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
 			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
 			b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,

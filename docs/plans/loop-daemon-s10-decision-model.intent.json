@@ -1,0 +1,37 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-daemon-s10-decision-model",
+  "owner": "user",
+  "goal": "Apply ADR 0039 Decisions 5-7 to the daemon's decision-model points: per-point hand-set thresholds acting only on the correctable direction, a read-only judging agent for low-confidence, truncated, disabled or unavailable answers, the production classifier with full envelope provenance, periodic reconciliation of model-skipped events with correction labels, and the a20, PR review triage and free-text Lane reply bindings, under S10 (D12) of docs/specs/loop-daemon.spec.md.",
+  "acceptance": [
+    {
+      "id": "S10-AC1",
+      "assertion": "Source GAP-7 to GAP-10; meet S10 and D12 items 1-4 in docs/specs/loop-daemon.spec.md (SCN-7): a18, a15_task_granularity, a20, a19 and a14_pr_comment_triage carry the D12 hand-set thresholds at threshold_set version /v1 and act only on the listed directions; an answer below threshold, with truncation other than none, from a point absent in decision_models.enabled_points, or unavailable goes to the judging agent, whose handler is validated against the closed catalogue; the live tick uses createDecisionModelClassifier and records probabilities, profile, model, model_version, threshold_set_version and truncation; imm-loop reconcile and run re-check model-skipped decisions, dispatch overrides through the normal guards and scheduler, and append labels.jsonl rows (mode 0600) loadable by scripts/decision-eval/harness.ts loadCorpus().",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decision-model.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S10-AC2",
+      "assertion": "Source GAP-11 and GAP-12; meet D12 items 1, 2 and 5 in docs/specs/loop-daemon.spec.md: an a19 approve_plan or command answer at any confidence yields one deduplicated format reminder and never enroll_and_drive; an invalid or unavailable judging agent runs no side-effecting handler and falls back to the point baseline or escalate; a20 candidates come from deterministic lexical similarity over open Issues; E10 uses a14_pr_comment_triage and address_pr_review reuses its recorded answer; an unparsed Lane decision reply resolves through a19 then the judging agent and still binds to the parked (run_id, record_revision); CI log text is never sent to the decision model.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-decision-model.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/decision-model.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/plans/loop-daemon-s10-decision-model.intent.json",
+    "docs/specs/loop-daemon.spec.md",
+    "plugins/immune-brain/runtime/decision_model/thresholds.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/decision_record.ts",
+    "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+    "plugins/immune-brain/runtime/loop_daemon/duplicate_candidates.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judging_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/labels.ts",
+    "plugins/immune-brain/runtime/loop_daemon/reconcile.ts",
+    "tests/decision-model.test.ts",
+    "tests/loop-daemon-decision-model.test.ts",
+    "tests/loop-daemon-judge.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

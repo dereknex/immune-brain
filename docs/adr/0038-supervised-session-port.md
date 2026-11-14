@@ -61,10 +61,21 @@ command surface the Parent runs, not only an interface.
    herdr-core has its own adapter (`runtime/session/herdr_core_provider.ts`)
    on the `hc` CLI, selectable only by name; the Loop contract does not use it
    until a live run with each Executor Host passes.
-6. **Behavior is unchanged in this step.** The Parent still closes no tab and
-   stops no session, still answers no dialog, and still treats Kernel
-   projections as the only progress signal. `imm-session` offers no `close` verb;
-   adopting the Executor close rule is a later change to the Loop contract.
+6. **Behavior is unchanged in this step, except the close rule (S1).** The
+   Parent stops no session, answers no dialog, and treats Kernel projections as
+   the only progress signal. It closes only a session it created whose child is
+   integrated: the batch runner decides that rule (integrated child, audit pair
+   reachable from the batch head) and records the close in `session_closes` at
+   the tick that integrates the child, since a finished batch admits no further
+   entry (`lane_session_close` on `start_unattended_batch` returns the same
+   record); `imm-session close --batch` reads the batch record and closes only
+   a session it lists. The Lane and its
+   branch stay; closing a session is not releasing a Lane. #426's original rule
+   also required a Lane release handoff, which Parent-branch batches never issue
+   (ADR 0027 retains Lanes for the user), so the rule rests on integration and
+   the audit pair instead. `session_closes` is an optional record field that
+   changes no existing field's meaning, as `interventions` before it, so it needs
+   no contract bump under ADR 0029.
 7. **Not a generic Host registry and not the framework #220 rejected.**
    ADR 0004 Decision 5 forbids a Host registry or automatic dispatcher. Provider
    selection here chooses where one already-decided Executor session runs; it
@@ -106,3 +117,38 @@ rather than its socket protocol.
   that only the Herdr adapter spawns `herdr`.
 - The `herdr`-spelling assertions in the Loop contract tests become `imm-session`
   assertions; the guarantees they protect are unchanged.
+
+## Addendum: #426 S2, S3 and S4 (2026-11-11)
+
+**S4, the authority Review's transport.** `lanes.review_transport` is `process`
+(default) or `herdr`. With `herdr`, `CliReviewHost` returns a `review_command`
+that runs the same review script through `imm-session run --provider herdr`, in a
+Herdr tab the user can watch; the port gained the optional `runCommand`
+capability for it (a command, not an agent, with its exit status). The verdict
+still comes only from the script's output and exit files (ADR 0037), so receipt,
+release and the tree guard are unchanged. Outside Herdr the setting fails Review
+preparation with `review_transport_unavailable`; it never falls back to a hidden
+process. `runtime/assurance` still imports nothing from `runtime/session`: the
+transport lives in the command string alone.
+
+**S2, advisory children.** `lanes.advisory_transport` is `subagent` (default) or
+`herdr`. With `herdr`, `advisory-reviewer` and `arch-explorer` run in a Herdr
+session and their result returns through the session output, as chosen on
+2026-11-11: the child ends with a marked block, `imm-session read --extract
+advisory` extracts it deterministically (`runtime/session/marked_result.ts`), and
+no complete block is `result_untrusted`. The markers are spelled in parts in the
+dispatch text, so the echoed prompt is never a result. The protocol lives in
+`docs/reference/subagent-dispatch-protocol.md`.
+
+**S3, the #284 verifier in an authority session: delivered after a verification
+CLI stage.** #284 did not have to finish first: its two review timestamps, which
+#426 named as S3's prerequisite, are delivered (`review_started_at` and
+`review_submitted_at` per round, `dispatched_at` and `submitted_at` for
+verification), and its open labelled baseline decides whether the verifier is
+turned on (`review_verifier`), not where it runs. The real blocker was that
+findings verification was a Host subagent, not a process. [ADR
+0039](0039-verification-cli-stage.md) makes it a CLI process after a CLI Review;
+with `lanes.review_transport: herdr` that process then runs through
+`imm-session run` in a `verify <task_id>` tab, its completion signal being the
+script's exit status. A pilot needs `review_verifier: on` in the repository that
+runs it; nothing in this repository enables it.

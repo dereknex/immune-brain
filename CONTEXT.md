@@ -27,8 +27,8 @@ The owner of a candidate Spec and TaskIntent. Planner output remains non-authori
 _Avoid_: executor, task owner
 
 **Loop**:
-The user-facing continuation entry for an enrolled task. It projects the current owner to the next bounded internal role or Kernel operation without becoming a second authority source.
-_Avoid_: workflow engine, checkpoint store
+The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in two forms: in a session, after an explicit `drive` entry, it continues one enrolled Task or Initiative; as the Loop daemon, a standing process, it observes the tracker, pull requests and CI, plans open Issues, and dispatches bounded agents that start or resume those entries across sessions.
+_Avoid_: workflow engine, checkpoint store, scheduler authority
 
 **Internal Role**:
 A bounded, non-public responsibility dispatched by Loop, such as Executor, QA, Review, repair, architecture exploration, or Compounder. Internal roles cannot widen their own scope or grant themselves authority.
@@ -139,7 +139,7 @@ The hash over the ordered child identities the literal user approved. Every issu
 _Avoid_: checksum of the Issue body, plan version number
 
 **Batch Branch**:
-The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. It is never pushed and never opened as a pull request.
+The single dedicated branch `imm/<initiative-slug>` that a batch run creates from the confirmed `base_head` and advances one scope-bounded commit per completed child. Under interactive execution it is never pushed and never opened as a pull request; under the Loop daemon with standing publication enabled ([ADR 0039](docs/adr/0039-loop-daemon.md)), the daemon opens a pull request for review.
 _Avoid_: feature branch, worktree, trunk
 
 **Lane**:
@@ -269,6 +269,7 @@ The packaged skills were renamed to bare verbs on 2026-10-28 (#318, ADR 0031). D
 - Response continuation: `runtime/assurance/run_continuation.ts` projects read-only task/Parent facts; `.pi-extension/pi-run-continuation.ts` and `runtime/claude/run_continuation.ts` bind the session and drive Pi settle/Claude Stop boundaries. Kernel and the existing batch driver retain execution ownership.
 - Session supervision: `plugins/immune-brain/runtime/session/` holds the Supervised Session Port, its `fake` provider and the Herdr and herdr-core adapters, routed as `plugins/immune-brain/bin/imm-session`; only the CLI router imports it, and the Kernel and batch runtime never do ([ADR 0038](docs/adr/0038-supervised-session-port.md), [contract](docs/reference/supervised-session-port.md)).
 - Loop dispatch: `plugins/immune-brain/runtime/loop_contract.ts`, `role_prompt_bridge.ts`, and `runtime/prompts/` define internal role routing and bounded delegation contracts.
+- Loop daemon: `plugins/immune-brain/runtime/loop_daemon/` forms the 4th authorized composition root ([ADR 0039](docs/adr/0039-loop-daemon.md)), observing GitHub state, evaluating events, managing disposable `.imm/state/loop/` orchestration state, and dispatching headless bounded agent sessions.
 - Batch execution: `plugins/immune-brain/runtime/unattended/` and `plugins/immune-brain/runtime/kernel/batch_authority.ts` alone own every batch state transition, plan projection, Git branch and per-child commit, and Batch Authorization; the Claude, Antigravity, and Pi host adapters are callers through HostRuntime.
 - CLI surface: `plugins/immune-brain/runtime/v4_runtime.ts` routes the stable wrappers in `plugins/immune-brain/bin/`; `imm-kernel` owns current Kernel commands, while `imm-plan` retains routing-policy and historical Plan validation surfaces.
 - Initiative projection: `plugins/immune-brain/runtime/github_issue_tracker.ts` and `plugins/immune-brain/bin/imm-tracker` own the optional one-way GitHub Issues adapter, complete batch publication, Parent/Child relationship verification, and execution recommendations without reading or writing Kernel authority.

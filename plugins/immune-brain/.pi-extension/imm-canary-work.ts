@@ -2,6 +2,7 @@ import { buildAssuranceSnapshot } from "../runtime/assurance/verdict_authority";
 export { buildSnapshot, ensureReviewRevision as ensureTaskReviewRevision } from "../runtime/assurance/verdict_authority";
 export type { SnapshotDescriptorInput } from "../runtime/assurance/verdict_authority";
 import type { ConfirmationReferenceSource } from "../runtime/assurance/host_port";
+import { announceSkippedCopy, claimProcess, copySource } from "./single-copy";
 // P3 Pi lifecycle extension: the only production route for Kernel canary
 // assurance after enrollment.
 //
@@ -784,6 +785,9 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: CanaryWorkExtensionDependencies = {},
 ) {
+	// A second copy of the plugin in this process registers nothing (C-1).
+	const claim = claimProcess(copySource(import.meta.url));
+	if (!claim.active) { announceSkippedCopy(pi as never, claim); return; }
 	// One progression per extension load, published for the batch gate to reuse.
 	// Reusing whatever instance a previous load left behind would leak another
 	// session's Review reservations into this one, so the load always replaces it.
@@ -943,7 +947,7 @@ export default function (
 			"Only the exact enrolled canary task is routable; verify the active backend claim first via status.",
 			"After implementation and focused verification, freeze the artifacts, call advance_assurance, and consume its direct terminal result; do not poll or create a detached job.",
 			"When advance_assurance returns review_ready, invoke the foreground Agent from agent_params once, then call submit_review: omit the verdict to apply the observed reviewer result, or relay its structured verdict exactly.",
-			"When submit_review returns verification_ready, invoke its exact foreground Agent once, then call submit_verification; omit the result to apply the Host-observed receipt.",
+			"When submit_review returns verification_ready with a verification_command, run that command once from your own shell, then call submit_verification without a result; otherwise invoke its exact foreground Agent once, then call submit_verification; omit the result to apply the Host-observed receipt.",
 			"For a complete breaking revision, call approve_breaking_intent_revision with the complete next_intent directly; do not ask for chat pre-confirmation because the host opens the single native confirmation before applying it.",
 			"For a proven stale authority claim, call repair_authority_state directly; the Kernel revalidates and removes only the redundant claim without user interaction.",
 			"After awaiting_user, call request_authorization directly so the host opens the single native confirmation; do not ask for chat pre-confirmation or ask the user to copy or report a command.",
@@ -1075,12 +1079,13 @@ export default function (
 							"inspect authority state",
 						);
 					}
-					const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+					const authorityRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+					const projection = await projectAssuranceForTask(authorityRoot, taskId);
 					if (projection.error || !projection.claim) {
 						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", projection.error ?? "no active backend claim", "inspect authority state");
 					}
 					await dependencies.authorizationBeforeRecordRead?.();
-					const read = await readTaskRecordRaw(ctx.cwd, taskId);
+					const read = await readTaskRecordRaw(authorityRoot, taskId);
 					if (!read.record) {
 						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", `task ${taskId} has no TaskRecord v3`, "inspect authority state");
 					}
@@ -1105,9 +1110,12 @@ export default function (
 					signal: effectiveSignal,
 				};
 				let preStopLifecycle: string | undefined;
+				const stopAuthorityRoot = action.op === "request_stop"
+					? (findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd)
+					: ctx.cwd;
 				if (action.op === "request_stop") {
 					try {
-						preStopLifecycle = readTaskRecordRaw(ctx.cwd, taskId).record?.lifecycle;
+						preStopLifecycle = readTaskRecordRaw(stopAuthorityRoot, taskId).record?.lifecycle;
 					} catch {}
 				}
 				const startGen = runtime.coordinator.sessionGenerationValue();
@@ -1167,7 +1175,7 @@ export default function (
 					) {
 						return failCanaryTool(taskId, action.op, "blocked", "authority_failed", "staged next-state diff changed after native confirmation", "inspect authority state");
 					} else if (action.op === "request_stop" && preStopLifecycle && preStopLifecycle !== "stopped") {
-						const terminal = await projectAssuranceForTask(ctx.cwd, taskId).catch(() => null);
+						const terminal = await projectAssuranceForTask(stopAuthorityRoot, taskId).catch(() => null);
 						if (terminal && !terminal.error && terminal.projection.lifecycle === "stopped") {
 							runtime.coordinator.releaseStoppedReview(taskId);
 							result = {
@@ -1668,11 +1676,12 @@ async function enrichAssuranceResult(
 		const taskState = { error: typeof result.reason === "string" ? result.reason : "authority projection unavailable" };
 		return { ...result, task_state: taskState, next_action: nextActionForAssuranceResult(result, taskState) };
 	}
-	const projection = await projectAssuranceForTask(ctx.cwd, taskId);
+	const targetRoot = findLaneRelayTarget(ctx.cwd, taskId)?.lane_path ?? ctx.cwd;
+	const projection = await projectAssuranceForTask(targetRoot, taskId);
 	const taskState: AssuranceTaskState = projection.error
 		? { error: projection.error }
 		: projection.projection;
-	await reconcileRefsQuietly(ctx.cwd);
+	await reconcileRefsQuietly(targetRoot);
 	const tracker = result.tracker;
 	return {
 		...result,
@@ -1696,7 +1705,7 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
 		case "review_ready": return typeof (result as { review_command?: unknown }).review_command === "string" ? "run review_command in your shell, then submit_review" : "invoke the foreground reviewer and submit its verdict";
-		case "verification_ready": return "invoke the reserved foreground verifier and submit_verification";
+		case "verification_ready": return "run the verification_command (or invoke the reserved foreground verifier) and submit_verification";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;
 		case "completed":

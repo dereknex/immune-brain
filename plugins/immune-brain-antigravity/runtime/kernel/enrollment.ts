@@ -12,6 +12,8 @@ import { inspectSpecBinding } from "./spec_binding";
 import {
 	type EnrollmentAuthorityRegistry,
 	type EnrollmentCapabilityBinding,
+	type EnrollmentConfirmationInput,
+	verifyEnrollmentConfirmation,
 } from "./enrollment_authority";
 import type {
 	BatchAuthorityRegistry,
@@ -60,6 +62,12 @@ export interface EnrollCanaryInput {
 	 * the gate listed none, so any in-scope dirt refuses the Enrollment.
 	 */
 	disclosed_scope_paths?: readonly string[];
+	/**
+	 * How this Enrollment was confirmed. Absent is the interactive
+	 * `user_session` gate; the unattended sources are decided by the membrane
+	 * in `enrollment_authority.ts` before the capability is consumed.
+	 */
+	confirmation?: EnrollmentConfirmationInput;
 	now: string;
 }
 
@@ -118,6 +126,8 @@ export interface EnrollmentEntryRequest {
 	batch?: EnrollBatchContext;
 	/** The in-scope paths the confirmed gate listed; see `EnrollCanaryInput`. */
 	disclosed_scope_paths?: readonly string[];
+	/** See `EnrollCanaryInput`; absent means the interactive `user_session` gate. */
+	confirmation?: EnrollmentConfirmationInput;
 	now: string;
 	/**
 	 * Optional caller checkpoint run after a ready rehearsal and before the
@@ -245,6 +255,18 @@ function runEnrollmentPreconditionChecks<T>(
 		if (intent) {
 			const binding = inspectSpecBinding(intent.intent);
 			if (!binding.ok) fail(binding.message, new Error(binding.message));
+			// The unattended confirmation sources are decided on the live intent, so
+			// the risk and scope that gate `policy_auto` are the ones being recorded.
+			if (input.confirmation) {
+				const verdict = verifyEnrollmentConfirmation(root, input.confirmation, {
+					risk: intent.intent.risk,
+					scope_hint: intent.intent.scope_hint,
+				});
+				if (!verdict.ok) {
+					const message = `confirmation: ${verdict.reason}`;
+					fail(message, new Error(message));
+				}
+			}
 		}
 		try {
 			gitBaseHead = readGitHead(root);
@@ -309,6 +331,11 @@ function buildTaskRecordV4(
 		attestations: [],
 		findings: [],
 		history: [],
+		// Written only for an unattended source, so an interactive Enrollment still
+		// produces the exact record shape every earlier record has.
+		...(input.confirmation && input.confirmation.source !== "user_session"
+			? { confirmation_source: input.confirmation.source }
+			: {}),
 	};
 }
 
@@ -413,7 +440,7 @@ export async function enrollTask(
 	registry: EnrollmentAuthorityRegistry,
 	request: EnrollmentEntryRequest,
 ): Promise<EnrollCanaryResult | EnrollmentEntryOutcome> {
-	const { binding, batch, now, checkpoint, disclosed_scope_paths } = request;
+	const { binding, batch, now, checkpoint, disclosed_scope_paths, confirmation } = request;
 	// (1) Issue the capability for the supplied binding.
 	const capability = registry.issue(binding);
 	const input: EnrollCanaryInput = {
@@ -425,6 +452,7 @@ export async function enrollTask(
 		capability_binding: binding,
 		...(batch ? { batch } : {}),
 		...(disclosed_scope_paths ? { disclosed_scope_paths } : {}),
+		...(confirmation ? { confirmation } : {}),
 		now,
 	};
 	// Replay of a lost Enrollment: the exact request already committed here, so

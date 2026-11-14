@@ -57,12 +57,12 @@ import { createTestMutationRegistry, seedKernelRunForTest } from "./fixtures/mut
 import { parseSemver, probeHost } from "../plugins/immune-brain/runtime/antigravity/capability";
 import { enrollTaskForTest } from "./helpers/kernel-enroll";
 import type { AssuranceHostPort, HostReviewReservation, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
-import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
 import * as batchPreflight from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import * as coordinator from "../plugins/immune-brain/runtime/assurance/coordinator";
 import type { StatusProjectionResult } from "../plugins/immune-brain/runtime/assurance/coordinator";
+import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import type { AssuranceObligation } from "../plugins/immune-brain/runtime/kernel/types";
 import type { AssuranceProjection } from "../plugins/immune-brain/runtime/kernel/assurance_projection";
 
@@ -2450,8 +2450,8 @@ describe("verifier via real hook dispatch", () => {
 		bytes: string;
 	}
 
-	/** A repository with the verifier mode on, its own cache root, and a real dispatch. */
-	async function setup(): Promise<Setup & { dispatch: { TypeName: string; Prompt: string; Model: string } }> {
+	/** A repository with the verifier mode on, its own cache root, a finished CLI Review and its verification step. */
+	async function setup(): Promise<Setup & { verification: Record<string, unknown> }> {
 		const root = repo();
 		const cache = scratchDir("cache");
 		process.env.TMPDIR = cache;
@@ -2468,65 +2468,73 @@ describe("verifier via real hook dispatch", () => {
 		execFileSync("sh", [ready.review_command.slice(3)]);
 		const verification = await runtime.submitReview(TASK, undefined);
 		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
-		return { root, cache, host, runtime, applied, bytes, dispatch: verification.agent_params as { TypeName: string; Prompt: string; Model: string } };
+		return { root, cache, host, runtime, applied, bytes, verification: verification as unknown as Record<string, unknown> };
 	}
 
-	function verifierResult(caseSetup: Setup): string {
-		const snapshot = snapshotOf(caseSetup.root, "review");
-		const parsed = coordinator.parseAssuranceVerdict(reworkVerdict(snapshot), snapshot);
-		const packet = coordinator.buildReviewVerificationPacket(snapshot, parsed, digestOfReviewerBytes(caseSetup.bytes));
-		const finding = packet.findings[0]!;
-		return JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
-			snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
-			results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
-	}
-
-	it("accepts the receipt the real hook entry wrote for the handed-out dispatch", async () => {
+	// ADR 0039 D1: a verification that follows a CLI Review is one more CLI process,
+	// so the Antigravity Parent runs a command instead of dispatching `invoke_subagent`.
+	it("hands an Antigravity Parent a verification command after a CLI Review", async () => {
 		const current = await setup();
+		expect(current.verification.verification_command).toEqual(expect.stringMatching(/^sh .*verify\.sh$/));
+		expect(current.verification.agent_params).not.toHaveProperty("TypeName");
+	});
+
+	/**
+	 * ADR 0039 D6: a verification that follows no CLI Review keeps the Host subagent.
+	 * The Host reserves it directly here, and the real `--hook` entry writes its events.
+	 */
+	function reserveSubagent(): { host: ReturnType<typeof recordingHost>; reservation: HostReviewReservation;
+		dispatch: { TypeName: string; Prompt: string; Model: string }; cache: string } {
+		const cache = scratchDir("cache");
+		process.env.TMPDIR = cache;
+		const host = recordingHost();
+		const reservation = host.host.prepareVerification!({ taskId: TASK, operationId: "op-hook-verify",
+			prompt: "Verification packet", model: "pro", writePacket: writeTestReviewPacket });
+		return { host, reservation, dispatch: reservation.dispatch as { TypeName: string; Prompt: string; Model: string }, cache };
+	}
+
+	const VERIFIER_OUTPUT = '{"contract":"assurance_kernel/review_verification/v1"}';
+
+	it("accepts the receipt the real hook entry wrote for the handed-out dispatch", () => {
+		const current = reserveSubagent();
 		expect(current.dispatch.TypeName).toBe(VERIFIER_AGENT);
 		expect(current.dispatch.Prompt).toContain("immune-brain-verifier:operation_id=");
 
 		expect(hook(current.cache, dispatchEvent(current.dispatch))).toBe('{"decision":"allow"}');
-		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
+		hook(current.cache, dispatchEvent(current.dispatch, VERIFIER_OUTPUT));
 
-		const settled = await current.runtime.submitVerification(TASK, undefined);
-		expect(settled).toMatchObject({ state: "rework", summary: CLAIM });
-		expect(current.applied.at(-1)).toMatchObject({ role: "review", decision: "rework",
-			kept: [expect.stringContaining("review-1")], actor: `antigravity:${STEP_IDX}` });
-		expect(current.applied.at(-1)?.failure).toBeUndefined();
+		expect(current.host.host.inspectVerification!(current.reservation)).toEqual({ ok: true,
+			receipt: { actorId: `antigravity:${STEP_IDX}`, result: VERIFIER_OUTPUT, model: "pro" } });
 	});
 
-	it("refuses a receipt whose start event never arrived", async () => {
-		const current = await setup();
-		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
+	it("refuses a receipt whose start event never arrived", () => {
+		const current = reserveSubagent();
+		hook(current.cache, dispatchEvent(current.dispatch, VERIFIER_OUTPUT));
 
-		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.host.host.inspectVerification!(current.reservation)).toMatchObject({ ok: false, release: true });
 		expect(current.host.reasons).toContain("reserved foreground Agent was not observed");
-		expect(current.applied.at(-1)).toMatchObject({ actor: null, failure: "dispatch_failed" });
 	});
 
-	it("refuses a start event that names another agent", async () => {
-		const current = await setup();
+	it("refuses a start event that names another agent", () => {
+		const current = reserveSubagent();
 		const foreign = { ...current.dispatch, TypeName: "immune-brain-reviewer" };
 		expect(hook(current.cache, dispatchEvent(foreign))).toBe('{"decision":"allow"}');
-		hook(current.cache, dispatchEvent(foreign, verifierResult(current)));
+		hook(current.cache, dispatchEvent(foreign, VERIFIER_OUTPUT));
 
-		await current.runtime.submitVerification(TASK, undefined);
+		expect(current.host.host.inspectVerification!(current.reservation)).toMatchObject({ ok: false, release: true });
 		expect(current.host.reasons).toContain("reserved foreground Agent was not observed");
 	});
 
-	it("keeps the reservation after the start event and accepts the result that follows", async () => {
-		const current = await setup();
+	it("keeps the reservation after the start event and accepts the result that follows", () => {
+		const current = reserveSubagent();
 		hook(current.cache, dispatchEvent(current.dispatch));
 
-		const pendingSubmit = await current.runtime.submitVerification(TASK, undefined);
-		expect(pendingSubmit).toMatchObject({ state: "blocked", reason: "verification result pending" });
+		expect(current.host.host.inspectVerification!(current.reservation)).toMatchObject({ ok: false, release: false });
 		expect(current.host.reasons).toContain("foreground Agent terminal event order is incomplete");
 
-		hook(current.cache, dispatchEvent(current.dispatch, verifierResult(current)));
-		const accepted = await current.runtime.submitVerification(TASK, undefined);
-		expect(accepted).toMatchObject({ state: "rework" });
-		expect(current.applied.at(-1)).toMatchObject({ actor: `antigravity:${STEP_IDX}` });
+		hook(current.cache, dispatchEvent(current.dispatch, VERIFIER_OUTPUT));
+		expect(current.host.host.inspectVerification!(current.reservation)).toMatchObject({ ok: true,
+			receipt: { actorId: `antigravity:${STEP_IDX}` } });
 	});
 
 	function asyncBrainDir(conversation = CONVERSATION): string {
@@ -2573,8 +2581,41 @@ describe("verifier via real hook dispatch", () => {
 		expect(hook(cache, { ...dispatchEvent(dispatch), error: "", artifactDirectoryPath: artifactDir })).toBe("{}");
 	}
 
+	async function setupSubagentVerification(): Promise<Setup & { dispatch: { TypeName: string; Prompt: string; Model: string } }> {
+		const root = repo();
+		const cache = scratchDir("cache");
+		process.env.TMPDIR = cache;
+		const host = recordingHost();
+		const applied: Applied[] = [];
+		const reviewerVerdict = reworkVerdict(snapshotOf(root, "review"));
+		const bytes = `${JSON.stringify(reviewerVerdict)}\n`;
+		fakeReviewer(bytes);
+		const fixture = fixturePorts(root, applied);
+		const runtime = new AntigravityRuntime({ cwd: root, interactive: false, host: host.host, ports: fixture.ports,
+			authorityOverrides: fixture.authority });
+		// Exercise the wrapped subagent verification path (ADR 0039 D6) through the full runtime.
+		const reviewHost = (runtime.runtime as unknown as { reviewHost: { prepareVerification: typeof host.host.prepareVerification } }).reviewHost;
+		reviewHost.prepareVerification = (req) => host.host.prepareVerification!(req);
+		const ready = await runtime.coordinator.advance(TASK, { cwd: root });
+		if (ready.state !== "review_ready" || !ready.review_command) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
+		execFileSync("sh", [ready.review_command.slice(3)]);
+		const verification = await runtime.submitReview(TASK, undefined);
+		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
+		return { root, cache, host, runtime, applied, bytes, dispatch: verification.agent_params as { TypeName: string; Prompt: string; Model: string } };
+	}
+
+	function verifierResult(caseSetup: Setup): string {
+		const snapshot = snapshotOf(caseSetup.root, "review");
+		const parsed = coordinator.parseAssuranceVerdict(reworkVerdict(snapshot), snapshot);
+		const packet = coordinator.buildReviewVerificationPacket(snapshot, parsed, digestOfReviewerBytes(caseSetup.bytes));
+		const finding = packet.findings[0]!;
+		return JSON.stringify({ contract: "assurance_kernel/review_verification/v1", task_id: TASK,
+			snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
+			results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
+	}
+
 	it("AAVR-A1: resolves asynchronous verifier result from spawn record and child message across hooks without duplicate refusal", async () => {
-		const current = await setup();
+		const current = await setupSubagentVerification();
 		const artifactDir = asyncBrainDir();
 		const childId = "child-verifier-1";
 		const verdict = verifierResult(current);
@@ -2733,7 +2774,7 @@ describe("verifier via real hook dispatch", () => {
 		];
 
 		for (const testCase of cases) {
-			const current = await setup();
+			const current = await setupSubagentVerification();
 			const baseDir = asyncBrainDir();
 			const verdict = verifierResult(current);
 			const artifactDir = testCase.prepare(baseDir, verdict);
@@ -2751,7 +2792,7 @@ describe("verifier via real hook dispatch", () => {
 	}, 30_000);
 
 	it("AAVR-A2: refuses submission when the spawned verifier sent two messages to the conversation", async () => {
-		const current = await setup();
+		const current = await setupSubagentVerification();
 		const artifactDir = asyncBrainDir();
 		const childId = "child-verifier-two";
 		const verdict = verifierResult(current);
@@ -2773,7 +2814,7 @@ describe("verifier via real hook dispatch", () => {
 	});
 
 	it("AAVR-A2: refuses submission when a second verifier message arrives before submitVerification", async () => {
-		const current = await setup();
+		const current = await setupSubagentVerification();
 		const artifactDir = asyncBrainDir();
 		const childId = "child-verifier-seq";
 		const verdict = verifierResult(current);

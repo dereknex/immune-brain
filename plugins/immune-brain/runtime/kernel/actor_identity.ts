@@ -31,3 +31,25 @@ export function isLiteralUserActor(actorId: string): boolean {
 export function canonicalActorId(actorId: string): string {
 	return actorId === "user" ? LITERAL_USER_ACTOR_ID : actorId;
 }
+
+/**
+ * The Loop daemon's actor identity. ADR 0039 Decision 2 makes the daemon the
+ * fourth composition root beside Pi, Claude Code and Antigravity, and the first
+ * that starts Managed work with no interactive Host session at all. The three
+ * adapters act inside the literal user's own session and therefore need no
+ * actor of their own; the daemon, which has none, needs exactly one.
+ */
+export const LOOP_DAEMON_ACTOR_ID = "loop-daemon";
+
+/** True for the one unattended composition root. */
+export function isUnattendedCompositionRoot(actorId: string): boolean {
+	return actorId === LOOP_DAEMON_ACTOR_ID;
+}
+
+/**
+ * True for every actor that may originate Managed work: the literal user, and
+ * the unattended composition root that starts it in the user's absence.
+ */
+export function isCompositionRootActor(actorId: string): boolean {
+	return isLiteralUserActor(actorId) || isUnattendedCompositionRoot(actorId);
+}

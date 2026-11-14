@@ -1,9 +1,10 @@
 // Batch run state persistence for unattended Initiative batch runs.
 // State lives at .imm/state/batches/<batch_id>.json, written only under the
 // kernel store lock, and is Git-ignored with the rest of .imm/state/.
-import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, renameSync, lstatSync, constants, rmSync, readdirSync, realpathSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { readSecureProjectFile, readSecureProjectBytes, withKernelStoreLock } from "../kernel/storage";
 import { parseFinalVerification, parseFinalVerificationReport } from "./batch_final_verification";
 import { bindsAuthoritySubject } from "../kernel/batch_authority";
@@ -12,7 +13,66 @@ import type { TaskIntentV1 } from "../kernel/types";
 import type { BatchPlanChild } from "./types";
 import { runningRuntimeSource } from "../kernel/runtime_contracts";
 import { batchReason } from "./batch_reasons";
-import type { LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ExecutorPreferences, LaneExit, LaneGeneration, LaneGenerationStore } from "./lane_supervisor";
+import type { ReviewProfile } from "../config/layered_config";
+
+const REVIEW_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
+
+/**
+ * The Review profile a lane batch fixes at confirmation (#426 F14): the Parent
+ * resolves it from the request-selected Lane profile, so Review runs on it
+ * instead of whatever `lanes.active` names when Review is prepared. Throws on
+ * a malformed value; returns undefined when none is given.
+ */
+export function parseBatchReviewProfile(value: unknown): ReviewProfile | undefined {
+	if (value === undefined) return undefined;
+	const profile = value as Record<string, unknown>;
+	if (typeof value !== "object" || value === null || Array.isArray(value) || !REVIEW_HOSTS.has(String(profile.host))
+		|| Object.keys(profile).some(key => key !== "host" && key !== "model" && key !== "effort")
+		|| (profile.model !== undefined && (typeof profile.model !== "string" || !profile.model.trim()))
+		|| (profile.effort !== undefined && (typeof profile.effort !== "string" || !profile.effort.trim())))
+		throw new Error("invalid review_profile: expected { host: pi | claude-code | antigravity, model?, effort? }");
+	return { host: profile.host as ReviewProfile["host"], ...(profile.model ? { model: profile.model as string } : {}), ...(profile.effort ? { effort: profile.effort as string } : {}) };
+}
+
+/**
+ * The Review profile carried by `start_unattended_batch`'s flat
+ * `review_host` / `review_model` / `review_effort` arguments; undefined when
+ * none is given. A model or effort without a host is refused (#426 F14).
+ */
+export function reviewProfileFromArgs(args: Record<string, unknown>): ReviewProfile | undefined {
+	if (args.review_host === undefined) {
+		if (args.review_model !== undefined || args.review_effort !== undefined)
+			throw new Error("invalid review_profile: review_model and review_effort require review_host");
+		return undefined;
+	}
+	return parseBatchReviewProfile({ host: args.review_host,
+		...(args.review_model !== undefined ? { model: args.review_model } : {}),
+		...(args.review_effort !== undefined ? { effort: args.review_effort } : {}) });
+}
+
+const EXECUTOR_HOSTS: ReadonlySet<string> = new Set(["pi", "claude-code", "antigravity"]);
+
+/**
+ * The Executor preferences a lane batch fixes when it starts (#426 F16): the
+ * Parent resolves them from the request-selected Lane profile, so every Executor
+ * generation, including one started after a Lane decision, runs on them instead
+ * of whatever `lanes.active` names. Throws on a malformed value; returns
+ * undefined when none is given.
+ */
+export function parseBatchExecutorPreferences(value: unknown): ExecutorPreferences | undefined {
+	if (value === undefined) return undefined;
+	const prefs = value as Record<string, unknown>;
+	const text = (v: unknown): boolean => v === undefined || (typeof v === "string" && v.trim() !== "");
+	if (typeof value !== "object" || value === null || Array.isArray(value)
+		|| Object.keys(prefs).some(key => key !== "executor_host" && key !== "executor_model" && key !== "executor_effort")
+		|| (prefs.executor_host !== undefined && !EXECUTOR_HOSTS.has(String(prefs.executor_host)))
+		|| !text(prefs.executor_model) || !text(prefs.executor_effort))
+		throw new Error("invalid executor_preferences: expected { executor_host?: pi | claude-code | antigravity, executor_model?, executor_effort? }");
+	return { ...(prefs.executor_host ? { executor_host: prefs.executor_host as ExecutorPreferences["executor_host"] } : {}),
+		...(prefs.executor_model ? { executor_model: prefs.executor_model as string } : {}),
+		...(prefs.executor_effort ? { executor_effort: prefs.executor_effort as string } : {}) };
+}
 
 export function classifyBatchRunStateContract(contract: unknown): "v1" | "v2" | "newer" | "unreadable" | "foreign" {
 	if (contract === "assurance_kernel/batch_run_state/v1") return "v1";
@@ -155,6 +215,12 @@ export interface BatchLaneChildRun {
 	/** Commit on the batch branch once this child is integrated. */
 	commit: string | null;
 	lane: BatchLaneBinding | null;
+	/**
+	 * A runtime-created Lane recorded before its worktree and branch are created
+	 * (issue #426 F7), so an interruption before admission resumes it instead of
+	 * leaving an unbound resource. Cleared when the Lane is bound.
+	 */
+	lane_reservation?: { path: string; branch: string; base_head: string };
 	qa_failures: number;
 	/** Kernel settlement time orders the durable merge queue, including across ticks. */
 	settled_at?: string;
@@ -211,6 +277,16 @@ export interface LaneIntervention {
 }
 
 /**
+ * The coordinator closed the Lane session of an integrated child (ADR 0038,
+ * Executor close rule). Recorded before the Parent closes it; carries no
+ * session identity, only which child and when.
+ */
+export interface LaneSessionClose {
+	at: string;
+	task_id: string;
+}
+
+/**
  * Lane-mode batch state. A serial batch never writes this contract; a v1
  * record is never upgraded. Every v1-gated reader skips it by contract.
  */
@@ -252,9 +328,15 @@ export interface BatchLaneRunStateRecord {
 	 * own behavior afterwards.
 	 */
 	interventions?: LaneIntervention[];
+	/** Every Lane session the coordinator closed, recorded before the close. Absent until one happens. */
+	session_closes?: LaneSessionClose[];
 	/** Commands run on the batch branch once every child is integrated; fixed when the batch starts. */
 	final_verification?: string[];
 	final_verification_result?: import("./batch_final_verification").FinalVerificationReport;
+	/** Review profile resolved from the request-selected Lane profile; fixed when the batch starts (#426 F14). */
+	review_profile?: ReviewProfile;
+	/** Executor preferences resolved from the request-selected Lane profile; fixed when the batch starts (#426 F16). */
+	executor_preferences?: ExecutorPreferences;
 	repair_tasks?: Array<{ task_id: string; run_id: string }>;
 	/** Legacy v2 fields, preserved for reading and retirement only (D20). */
 	revision_delegation?: { confirmation_time: string };
@@ -682,6 +764,8 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		throw new Error(`batch run state ${batchId} has an invalid single_task plan`);
 	if (record.topology_digest !== undefined && (typeof record.topology_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(record.topology_digest)))
 		throw new Error(`batch run state ${batchId} has an invalid topology_digest`);
+	try { parseBatchReviewProfile(record.review_profile); } catch { throw new Error(`batch run state ${batchId} has an invalid review_profile`); }
+	try { parseBatchExecutorPreferences(record.executor_preferences); } catch { throw new Error(`batch run state ${batchId} has an invalid executor_preferences`); }
 	if (record.progress_mode !== undefined && (record.progress_mode !== "parent_branch" || record.branch !== `refs/heads/imm/${record.initiative_slug}`))
 		throw new Error(`batch run state ${batchId} has an invalid progress_mode`);
 	if (record.batch_id !== batchId)
@@ -766,6 +850,12 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 			))
 	)
 		throw new Error(`batch run state ${batchId} has an invalid interventions list`);
+	if (
+		record.session_closes !== undefined &&
+		(!Array.isArray(record.session_closes) ||
+			record.session_closes.some((c: unknown) => !isObject(c) || typeof c.task_id !== "string" || !isCanonicalTimestamp(c.at)))
+	)
+		throw new Error(`batch run state ${batchId} has an invalid session_closes list`);
 	// ADR 0018 fields carry authority effects, so a malformed one fails closed.
 	if (record.revision_delegation !== undefined &&
 		(!isObject(record.revision_delegation) || Object.keys(record.revision_delegation).join() !== "confirmation_time" ||
@@ -848,6 +938,11 @@ function validateLaneRecordShape(value: unknown, batchId: string): asserts value
 		if (gate !== undefined && (!isObject(gate) || !isCommit(gate.commit) || !isHash(gate.parent_bundle) ||
 			(gate.state !== "required" && gate.state !== "acknowledged")))
 			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid runtime_reload`);
+		const reservation = child.lane_reservation as unknown;
+		if (reservation !== undefined && (!isObject(reservation) || Object.keys(reservation).sort().join() !== "base_head,branch,path" ||
+			typeof reservation.path !== "string" || !reservation.path || typeof reservation.branch !== "string" || !reservation.branch ||
+			!isCommit(reservation.base_head) || !["pending", "needs_human", "skipped_blocked"].includes(child.state as string) || child.lane !== null))
+			throw new Error(`batch run state ${batchId} child ${child.task_id} has an invalid lane_reservation`);
 		const lane = child.lane as BatchLaneBinding | null | undefined;
 		if (lane !== null) {
 			if (
@@ -930,6 +1025,8 @@ export function prepareBatchLaneRunState(input: {
 	progress_mode?: "parent_branch";
 	now: string;
 	final_verification?: string[];
+	review_profile?: ReviewProfile;
+	executor_preferences?: ExecutorPreferences;
 }): BatchLaneRunStateRecord {
 	validateBatchId(input.batch_id);
 	return {
@@ -959,6 +1056,8 @@ export function prepareBatchLaneRunState(input: {
 		})),
 		commits: [],
 		...(input.final_verification?.length ? { final_verification: [...input.final_verification] } : {}),
+		...(input.review_profile ? { review_profile: { ...input.review_profile } } : {}),
+		...(input.executor_preferences && Object.keys(input.executor_preferences).length ? { executor_preferences: { ...input.executor_preferences } } : {}),
 		intent_identities: batchIntentIdentities(input.children),
 		created_at: input.now,
 		updated_at: input.now,
@@ -989,6 +1088,50 @@ export function readAnyBatchRunState(root: string, batchId: string): AnyBatchRun
 	const path = statePath(batchId);
 	if (!existsSync(join(root, path))) return null;
 	return parseAnyBatchRunState(readSecureProjectFile(root, path), batchId, join(root, path));
+}
+
+/** Child states in which a Lane can still reach Review. */
+const REVIEWABLE_CHILD_STATES: ReadonlySet<string> = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
+
+function realOrNull(path: string): string | null {
+	try { return realpathSync(path); } catch { return null; }
+}
+
+/**
+ * The `review_profile` recorded by the batch whose in-flight child runs in the
+ * Lane at `root` (#426 F14). Undefined when `root` is not a runtime-owned Lane
+ * or that batch recorded no profile, so the caller falls back to the layered
+ * config. The coordinator checkout owns the Git common directory and keeps
+ * every Lane batch's state.
+ */
+export function laneBatchReviewProfile(root: string): ReviewProfile | undefined {
+	const lane = realOrNull(root);
+	if (!lane) return undefined;
+	let common: string | null;
+	try {
+		common = realOrNull(execFileSync("git", ["-C", lane, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+			{ encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+	} catch {
+		return undefined;
+	}
+	if (!common || basename(common) !== ".git") return undefined;
+	const below = relative(join(common, "imm", "worktrees"), lane);
+	if (!below || below.startsWith("..") || isAbsolute(below) || below.split(sep).length !== 2) return undefined;
+	const coordinator = dirname(common);
+	const directory = join(coordinator, ".imm", "state", "batches");
+	if (!existsSync(directory)) return undefined;
+	const found = new Map<string, ReviewProfile>();
+	for (const file of readdirSync(directory).sort()) {
+		if (!file.endsWith(".json") || file.endsWith(".report.json")) continue;
+		const batchId = file.slice(0, -".json".length);
+		if (!BATCH_ID_PATTERN.test(batchId)) continue;
+		const record = readAnyBatchRunState(coordinator, batchId);
+		if (!record || !isLaneBatchRecord(record) || !record.review_profile) continue;
+		if (record.children.some(child => child.lane !== null && REVIEWABLE_CHILD_STATES.has(child.state) && realOrNull(child.lane.path) === lane))
+			found.set(JSON.stringify(record.review_profile), record.review_profile);
+	}
+	if (found.size > 1) throw new Error(`review_profile_ambiguous: more than one in-flight batch binds the Lane ${lane}`);
+	return found.values().next().value;
 }
 
 export function readBatchLaneRunState(root: string, batchId: string): BatchLaneRunStateRecord | null {
@@ -1157,6 +1300,10 @@ export interface BatchLaneRunReport {
 	interventions?: LaneIntervention[];
 	delegated_revisions?: BatchLaneRunStateRecord["delegated_revisions"];
 	reseals?: BatchLaneRunStateRecord["reseals"];
+	/** Lane sessions the coordinator closed (see BatchLaneRunStateRecord.session_closes). */
+	session_closes?: LaneSessionClose[];
+	/** This tick's decision on the Parent's `lane_session_close`: close the session only when accepted. */
+	lane_session_close?: { task_id: string; accepted: boolean; reason: string | null; recorded_at: string | null };
 	/** This tick's decision on the Parent's `lane_instruction`: send the text only when accepted. */
 	lane_instruction?: { task_id: string; kind: LaneIntervention["kind"]; accepted: boolean; reason: string | null };
 	/** Restored Lane leaks with their backup location (see BatchLaneRunStateRecord.restores). */

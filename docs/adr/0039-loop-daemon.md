@@ -1,19 +1,18 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Loop Daemon: Unattended Planning and Advancement of Issues
 
-**Status:** proposed. Drafted from the repository owner's decisions D1–D12 of
+**Status:** accepted. Adopted from the repository owner's decisions D1–D12 of
 2026-11-10, recorded with their evidence in
-[`docs/proposals/loop-agent.md`](../proposals/loop-agent.md). Until this ADR is
-accepted, [ADR 0005](0005-unattended-initiative-batch-run.md),
+[`docs/proposals/loop-agent.md`](../proposals/loop-agent.md). Renumbered from 0038
+per BR-DEC-3 because [ADR 0038](0038-supervised-session-port.md) already occupies
+0038 on HEAD. This ADR amends [ADR 0005](0005-unattended-initiative-batch-run.md),
 [ADR 0006](0006-unattended-review-dispatch-authority.md),
 [ADR 0019](0019-explicit-run-entry-owns-enrollment.md),
 [ADR 0025](0025-run-entry-decision-hosting.md), `BASELINE.md` and `CONTEXT.md`
-stand as written, and no runtime behaviour changes. On acceptance, this ADR
-amends the parts of them named under each decision, and they gain a status note
-pointing here.
+as named under each decision.
 
 ## Context
 

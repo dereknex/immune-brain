@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
+import { claimProcess, copySource } from "./single-copy";
 import { LaneSupervisor, type ExecutorPreferences } from "../runtime/unattended/lane_supervisor";
 import { readSettledTaskEvidence } from "../runtime/kernel/storage";
 import {
@@ -14,15 +15,18 @@ import { piEntryToken, piRunEntryRefusal } from "./imm-canary-work";
 import type { RunEntryManifest } from "../runtime/unattended/run_entry_manifest";
 import { batchReason } from "../runtime/unattended/batch_reasons";
 import { parseFinalVerification } from "../runtime/unattended/batch_final_verification";
+import type { ReviewProfile } from "../runtime/config/layered_config";
 import {
 	parseLaneInstruction,
+	parseLaneSessionClose,
 	type LaneInstructionRequest,
+	type LaneSessionCloseRequest,
 	parseLaneOffers,
 	parseMaxParallel,
 	resolveLaneParallel,
 	type LaneOffer,
 } from "../runtime/unattended/batch_lanes";
-import { type BatchLaneRunReport } from "../runtime/unattended/batch_state";
+import { type BatchLaneRunReport, reviewProfileFromArgs } from "../runtime/unattended/batch_state";
 import {
 	presentTaskRail,
 	renderStructuredCall,
@@ -80,7 +84,12 @@ export interface PiBatchExecutionOptions {
 	max_parallel?: number;
 	lane_offers?: LaneOffer[];
 	final_verification?: string[];
+	/** Lane mode: the Review profile fixed when a new batch starts (#426 F14). */
+	review_profile?: ReviewProfile;
+	/** Lane mode: one instruction for an idle Lane session, recorded before it is sent. */
 	lane_instruction?: LaneInstructionRequest;
+	/** Lane mode: the Executor close rule for an integrated child's session, recorded before the close. */
+	lane_session_close?: LaneSessionCloseRequest;
 	batchKernel?: Partial<BatchRunnerKernelPort>;
 	batchGit?: BatchRunnerGitPort;
 	batchTracker?: BatchTrackerPort;
@@ -165,6 +174,7 @@ export async function executePiUnattendedBatch(
 						...(b.budget ? [`Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}`] : []),
 						...(b.lane_mode ? [`Lane mode: max_parallel=${b.lane_mode.max_parallel}`] : []),
 						...(b.final_verification ? [`Final verification: ${b.final_verification.join("; ")}`] : []),
+						...(b.lane_mode?.review_profile ? [`Review: ${[b.lane_mode.review_profile.host, b.lane_mode.review_profile.model, b.lane_mode.review_profile.effort].filter(Boolean).join(" / ")}`] : []),
 					].join("\n");
 				const details = isParent
 					? `Parent Tasks (${b.children.length}):\n${b.children.map((c: any) => `  - ${c.task_id} (${c.slice_id})`).join("\n")}`
@@ -210,7 +220,9 @@ export async function executePiUnattendedBatch(
 			max_parallel: resolvedParallel,
 			lane_offers: options.lane_offers,
 			final_verification: options.final_verification,
+			review_profile: options.review_profile,
 			lane_instruction: options.lane_instruction,
+			lane_session_close: options.lane_session_close,
 		});
 		return result as PiBatchExecutionResult;
 	} catch (error) {
@@ -306,7 +318,10 @@ export default function (
 	pi: ExtensionAPI,
 	dependencies: PiBatchExtensionDependencies = {},
 ) {
-	const supervisor = defaultSupervisor;
+	// A second copy of the plugin in this process registers nothing (C-1); the
+	// notice comes from this copy's other factory.
+	if (!claimProcess(copySource(import.meta.url)).active) return;
+	const supervisor = piLaneSupervisor;
 	pi.registerTool({
 		name: "start_unattended_batch",
 		label: "Start unattended batch",
@@ -323,6 +338,10 @@ export default function (
 			executor_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
 			executor_model: Type.Optional(Type.String({ minLength: 1 })),
 			executor_effort: Type.Optional(Type.String({ minLength: 1 })),
+			review_host: Type.Optional(Type.Union([Type.Literal("pi"), Type.Literal("claude-code"), Type.Literal("antigravity")])),
+			review_model: Type.Optional(Type.String({ minLength: 1 })),
+			review_effort: Type.Optional(Type.String({ minLength: 1 })),
+			// Integer minimum 1 as Claude Code declares it; multipleOf keeps the schema constructors to Number.
 			max_parallel: Type.Optional(Type.Number({ minimum: 1, multipleOf: 1 })),
 			lane_offers: Type.Optional(Type.Array(
 				Type.Object({ task_id: Type.String(), path: Type.String() }, { additionalProperties: false }),
@@ -334,10 +353,11 @@ export default function (
 				text: Type.String(),
 				session_state: Type.Union([Type.Literal("idle"), Type.Literal("working"), Type.Literal("blocked"), Type.Literal("done")]),
 			}, { additionalProperties: false })),
+			lane_session_close: Type.Optional(Type.Object({ task_id: Type.String() }, { additionalProperties: false })),
 		}, { additionalProperties: false }),
 		execute: async (
 			_toolCallId: string,
-			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown },
+			params: { initiative_slug?: string; task_id?: string; stop?: boolean; executor_host?: "pi" | "claude-code" | "antigravity"; executor_model?: string; executor_effort?: string; review_host?: "pi" | "claude-code" | "antigravity"; review_model?: string; review_effort?: string; max_parallel?: number; lane_offers?: Array<{ task_id: string; path: string }>; final_verification?: string[]; lane_instruction?: unknown; lane_session_close?: unknown },
 			signal: AbortSignal | undefined,
 			_onUpdate: unknown,
 			ctx: ExtensionContext,
@@ -371,7 +391,9 @@ export default function (
 			const maxParallel = parseMaxParallel(params.max_parallel);
 			const laneOffers = parseLaneOffers(params.lane_offers);
 			const finalVerification = params.final_verification?.length === 0 ? undefined : parseFinalVerification(params.final_verification);
+			const reviewProfile = reviewProfileFromArgs(params);
 			const laneInstruction = parseLaneInstruction(params.lane_instruction);
+			const laneSessionClose = parseLaneSessionClose(params.lane_session_close);
 
 			const result = await executePiUnattendedBatch({
 				root: ctx.cwd,
@@ -383,7 +405,9 @@ export default function (
 				...(maxParallel !== undefined ? { max_parallel: maxParallel } : {}),
 				...(laneOffers !== undefined ? { lane_offers: laneOffers } : {}),
 				...(finalVerification !== undefined ? { final_verification: finalVerification } : {}),
+				...(reviewProfile !== undefined ? { review_profile: reviewProfile } : {}),
 				...(laneInstruction !== undefined ? { lane_instruction: laneInstruction } : {}),
+				...(laneSessionClose !== undefined ? { lane_session_close: laneSessionClose } : {}),
 				interactive: ctx.mode === "tui",
 				signal,
 				toolCallId: _toolCallId,

@@ -1,8 +1,10 @@
-import { afterAll, describe, expect, it } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chooseExecutor, executorArguments, LaneSupervisor, superviseLane, type LaneGeneration, type LaneGenerationStore } from "../plugins/immune-brain/runtime/unattended/lane_supervisor";
+import { laneExecutorChoice } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { parseBatchExecutorPreferences, parseBatchLaneRunState, prepareBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 
 const dirs: string[] = [];
 const oldPath = process.env.PATH;
@@ -46,19 +48,19 @@ describe("Lane Executor supervision", () => {
 	});
 	it("parks after two real exits without Kernel progress", async () => {
 		const { dir, store } = fixture();
-		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 0\n");
+		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 0\n");
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
+			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 5000, graceMs: 100,
 			project: async () => ({ record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }) });
 		expect(result).toMatchObject({ state: "exited", generation: 2, reason: "lane_executor_no_progress" });
 		expect(store.read()).toMatchObject({ no_progress: 2, handled_generation: 2 });
 	});
 	it("takes settlement from Kernel even when the Executor exits nonzero", async () => {
 		const { dir, store } = fixture();
-		writeFileSync(join(dir, "pi"), "#!/bin/sh\nexit 7\n");
+		writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 7\n");
 		let reads = 0;
 		const result = await superviseLane(new LaneSupervisor(), { key: dir, repository: dir, lanePath: dir, taskId: "task",
-			choice: { host: "pi", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
+			choice: { host: "claude-code", not_applied: [] }, pluginDir: "/plugin", store, baseline: "r1", waitMs: 1000, graceMs: 100,
 			project: async () => (++reads === 1
 				? { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 }
 				: { record_revision: "r2", lifecycle: "done", next_obligation: "none", open_user_decision_count: 0 }) });
@@ -143,4 +145,86 @@ describe("Lane Executor supervision", () => {
 			}
 		});
 	}
+});
+
+describe("Pi Executor outside Herdr (#426 D4)", () => {
+	/** An active Lane with no open user decision: the point where a new generation would start. */
+	const active = { record_revision: "r1", lifecycle: "active", next_obligation: "submit_assurance", open_user_decision_count: 0 };
+	const input = (dir: string, store: LaneGenerationStore, project: () => Promise<typeof active>, host: "pi" | "claude-code") => ({
+		key: dir, repository: dir, lanePath: dir, taskId: "task", choice: { host, not_applied: [] },
+		pluginDir: "/plugin", store, baseline: "r1", waitMs: 80, graceMs: 100, project });
+
+	it("refuses a Pi choice without reserving a generation or calling run", async () => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const run = spyOn(supervisor, "run");
+		const result = await superviseLane(supervisor, input(dir, store, async () => active, "pi"));
+		expect(result).toEqual({ state: "unavailable", generation: null, exit: null, reason: "lane_executor_requires_tui" });
+		expect(run).not.toHaveBeenCalled();
+		expect(store.read()).toBeNull();
+	});
+
+	it("starts a claude-code generation for the same active Lane", async () => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const args = input(dir, store, async () => active, "claude-code");
+		try {
+			expect(await superviseLane(supervisor, args)).toMatchObject({ state: "running", generation: 1 });
+		} finally { await supervisor.run({ ...args, stop: true }); }
+	});
+
+	it.each([
+		["is no longer active", { ...active, lifecycle: "done", next_obligation: "none" }],
+		["awaits the user", { ...active, next_obligation: "awaiting_user" }],
+		["has an open user decision", { ...active, open_user_decision_count: 1 }],
+	])("observes a Pi Lane that %s instead of refusing", async (_label, projection) => {
+		const { dir, store } = fixture();
+		const supervisor = new LaneSupervisor();
+		const run = spyOn(supervisor, "run");
+		const result = await superviseLane(supervisor, input(dir, store, async () => projection, "pi"));
+		expect(result).toEqual({ state: "exited", generation: null, exit: null });
+		expect(run).not.toHaveBeenCalled();
+	});
+});
+
+// --- #426 F16: every Lane generation runs on the batch's recorded Executor preferences ---
+
+describe("#426 F16 batch Executor preferences", () => {
+	const oldXdg = process.env.XDG_CONFIG_HOME;
+	afterAll(() => { if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = oldXdg; });
+	/** A checkout whose user config makes an antigravity profile active, with model and effort set. */
+	function activeAntigravity() {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "lane-f16-"))); dirs.push(dir);
+		mkdirSync(join(dir, "xdg", "immune-brain"), { recursive: true });
+		writeFileSync(join(dir, "xdg", "immune-brain", "config.json"), JSON.stringify({ contract: "immune_brain/user_config/v1",
+			lanes: { active: "gemini", profiles: { gemini: { executor_host: "antigravity", executor_model: "gemini-x", executor_effort: "high" } } } }));
+		process.env.XDG_CONFIG_HOME = join(dir, "xdg");
+		mkdirSync(join(dir, "repo"));
+		return join(dir, "repo");
+	}
+
+	it("a request-selected Executor Host ignores the active profile and reports nothing from it as not_applied", () => {
+		expect(laneExecutorChoice(activeAntigravity(), { executor_host: "claude-code", executor_model: "sonnet", executor_effort: "high" }, "pi"))
+			.toEqual({ host: "claude-code", model: "sonnet", effort: "high", not_applied: [] });
+	});
+
+	it("without a selected Executor Host the active profile still applies", () => {
+		const root = activeAntigravity();
+		expect(laneExecutorChoice(root, undefined, "pi")).toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: [] });
+		expect(laneExecutorChoice(root, { executor_model: "stray" }, "pi"))
+			.toEqual({ host: "antigravity", model: "gemini-x", effort: "high", not_applied: ["executor_model"] });
+	});
+
+	it("a lane batch records the preferences and refuses a malformed value", () => {
+		const child = { task_id: "t", slice_id: "S1", status: "enrollable" as const, reason: null, blocked_by: [],
+			intent_path: "docs/plans/t.intent.json", intent_revision: 1, intent_content_hash: `sha256:${"0".repeat(64)}` };
+		const time = "2026-11-13T00:00:00.000Z";
+		const record = prepareBatchLaneRunState({ batch_id: "f16", initiative_slug: "t", children: [child], plan_digest: `sha256:${"1".repeat(64)}`,
+			base_head: "0".repeat(40), confirmation_time: time, now: time, budget: { max_children: 1, qa_failure_limit: 2 }, max_parallel: 1,
+			executor_preferences: { executor_host: "claude-code", executor_model: "sonnet" } });
+		expect(parseBatchLaneRunState(JSON.stringify(record), "f16").executor_preferences).toEqual({ executor_host: "claude-code", executor_model: "sonnet" });
+		expect(() => parseBatchLaneRunState(JSON.stringify({ ...record, executor_preferences: { executor_host: "codex" } }), "f16"))
+			.toThrow("invalid executor_preferences");
+		expect(parseBatchExecutorPreferences(undefined)).toBeUndefined();
+	});
 });

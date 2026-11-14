@@ -36,7 +36,7 @@ import {
 	type IntegrationCheckChild,
 } from "./batch_integration";
 import { isBatchRef, isParentBranch } from "./batch_ref";
-import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree } from "./batch_worktrees";
+import { assertLaneWorktreeAvailable, copyLanePlanningInput, createLaneWorktree, ensureReservedLaneWorktree, plannedLane } from "./batch_worktrees";
 import { classifyBatchLineage, expectedBatchHead, findExistingActiveBatch, porcelainEntries, readActiveClaimTaskId, unsettledChildScopes } from "./batch_preflight";
 import { restoreProvableLaneLeaks } from "./batch_leak_restore";
 import { withBatchEvidence } from "./batch_git";
@@ -168,7 +168,7 @@ export function parseLaneInstruction(value: unknown): LaneInstructionRequest | u
 
 /**
  * Whether the coordinator may send this text to the Lane session now. Text goes
- * only to an idle session of a child that is still running in its Lane. A
+ * only to an idle or done session of a child that is still running in its Lane. A
  * blocked session shows a dialog only the user may answer (trust, sign-in,
  * permission, a question, a native confirmation), so it never receives input;
  * a working session is not interrupted. Null means allowed.
@@ -183,8 +183,82 @@ export function decideLaneInstruction(record: BatchLaneRunStateRecord, request: 
 		return `${request.task_id} waits for a design-level correction; send it with kind correction`;
 	if (request.session_state === "blocked")
 		return `${request.task_id}'s session is blocked on a dialog only the user may answer; send nothing and tell the user`;
-	if (request.session_state !== "idle") return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle session`;
+	// `done` is idle with an unseen finished turn: ready for input (Supervised Session Port, ADR 0038).
+	if (request.session_state !== "idle" && request.session_state !== "done")
+		return `${request.task_id}'s session is ${request.session_state}; text goes only to an idle or done session`;
 	return null;
+}
+
+export interface LaneSessionCloseRequest {
+	task_id: string;
+}
+
+/** Untrusted tool input for the Executor close rule (ADR 0038, S1). */
+export function parseLaneSessionClose(value: unknown): LaneSessionCloseRequest | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value !== "object" || Array.isArray(value)) throw new Error("invalid lane_session_close: expected an object");
+	const { task_id: taskId, ...rest } = value as Record<string, unknown>;
+	if (Object.keys(rest).length > 0) throw new Error("invalid lane_session_close: unknown field");
+	if (typeof taskId !== "string" || !TASK_ID_PATTERN.test(taskId)) throw new Error("invalid lane_session_close: task_id is not a valid task id");
+	return { task_id: taskId };
+}
+
+/**
+ * The Executor close rule: the coordinator may close a Lane session only once
+ * its child is integrated and the child's audit pair is reachable from the
+ * batch head, and only once. The Lane itself is untouched: closing a session
+ * removes no worktree and no branch. Null means allowed.
+ */
+export function decideLaneSessionClose(
+	record: BatchLaneRunStateRecord,
+	request: LaneSessionCloseRequest,
+	auditReachable: (taskId: string) => boolean,
+): string | null {
+	const child = record.children.find((c) => c.task_id === request.task_id);
+	if (!child || !child.lane) return `${request.task_id} has no Lane in this batch`;
+	if (child.state !== "integrated") return `${request.task_id} is ${child.state}, not integrated; its session stays for the user`;
+	if (!auditReachable(request.task_id)) return `${request.task_id}'s audit pair is not reachable from the batch head`;
+	return null;
+}
+
+/**
+ * Decides the Parent's `lane_session_close`, and on acceptance records the
+ * close before answering, so the Parent closes the session only after the
+ * record exists.
+ */
+function applyLaneSessionClose(
+	input: StartBatchInput,
+	record: BatchLaneRunStateRecord,
+	lanes: BatchLaneGitPort,
+	persist: () => void,
+): BatchLaneRunReport["lane_session_close"] {
+	const request = input.lane_session_close;
+	if (!request) return undefined;
+	// Already recorded, by an earlier request or by the integrating tick: the same record again.
+	const recorded = record.session_closes?.find((c) => c.task_id === request.task_id);
+	if (recorded) return { task_id: request.task_id, accepted: true, reason: null, recorded_at: recorded.at };
+	const head = expectedBatchHead(record);
+	const refusal = decideLaneSessionClose(record, request, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId }));
+	if (refusal) return { task_id: request.task_id, accepted: false, reason: `batch_lane_session_close_refused: ${refusal}`, recorded_at: null };
+	record.session_closes = [...(record.session_closes ?? []), { at: input.now, task_id: request.task_id }];
+	persist();
+	return { task_id: request.task_id, accepted: true, reason: null, recorded_at: input.now };
+}
+
+/**
+ * Records the close of every Lane session the close rule now allows, at the tick
+ * that makes it allowed (issue #426 F6). A finished batch admits no further
+ * entry, so the Parent could not otherwise ask after the last integration; it
+ * reads `session_closes` from the report instead. Recording allows a close; it
+ * closes nothing, and the Lane and its branch stay.
+ */
+function recordClosableSessions(input: StartBatchInput, record: BatchLaneRunStateRecord, lanes: BatchLaneGitPort, persist: () => void): void {
+	const head = expectedBatchHead(record);
+	const due = record.children.filter((c) => c.state === "integrated" && c.lane && !record.session_closes?.some((r) => r.task_id === c.task_id) &&
+		decideLaneSessionClose(record, { task_id: c.task_id }, (taskId) => lanes.auditReachable({ root: input.root, head, task_id: taskId })) === null);
+	if (!due.length) return;
+	record.session_closes = [...(record.session_closes ?? []), ...due.map((c) => ({ at: input.now, task_id: c.task_id }))];
+	persist();
 }
 
 /** How many design-level coordinator corrections one child may receive. */
@@ -609,7 +683,7 @@ function laneReport(
 	record: BatchLaneRunStateRecord,
 	reason: string | null,
 	nextAction: string,
-	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"] } = {},
+	extra: { handoffs?: BatchLaneHandoff[]; refusals?: BatchLaneRunReport["lane_refusals"]; tracker?: TrackerObservations; final?: FinalVerificationReport; instruction?: BatchLaneRunReport["lane_instruction"]; sessionClose?: BatchLaneRunReport["lane_session_close"] } = {},
 ): BatchLaneRunReport {
 	return {
 		contract: "assurance_kernel/batch_run_report/v1",
@@ -628,6 +702,8 @@ function laneReport(
 		...(record.final_report ? { final_report: record.final_report } : {}),
 		...(record.interventions?.length ? { interventions: record.interventions } : {}),
 		...(extra.instruction ? { lane_instruction: extra.instruction } : {}),
+		...(record.session_closes?.length ? { session_closes: record.session_closes } : {}),
+		...(extra.sessionClose ? { lane_session_close: extra.sessionClose } : {}),
 		...(record.delegated_revisions?.length ? { delegated_revisions: record.delegated_revisions } : {}),
 		...(record.reseals?.length ? { reseals: record.reseals } : {}),
 		next_action: (nextAction || (record.final_report?.return_to_coordinator.status === "blocked"
@@ -829,10 +905,13 @@ export async function runLaneBatch(
 			const tracker = record.batch_state === "completed"
 				? await closeIntegratedIssues(input, record, () => { record = writeBatchLaneRunState(input.root, record); })
 				: [];
+			// Integrated children's sessions are closed after the batch ends too.
+			const sessionClose = applyLaneSessionClose(input, record, lanes, () => { record = writeBatchLaneRunState(input.root, record); });
 			return finalizeLane(input.root, record, `terminal state already reached: ${record.batch_state}`, "", {
 				handoffs: record.batch_state === "completed" ? releaseHandoffs(input, record, lanes) : [],
 				refusals: retainedLaneNotices(input.root, record, lanes),
 				tracker,
+				sessionClose,
 			});
 		}
 		if (record.batch_state === "needs_human") {
@@ -921,6 +1000,8 @@ export async function runLaneBatch(
 			max_parallel: limit,
 			now: input.now,
 			...(input.final_verification?.length ? { final_verification: input.final_verification } : {}),
+			...(input.review_profile ? { review_profile: input.review_profile } : {}),
+			...(input.supervision?.request ? { executor_preferences: input.supervision.request } : {}),
 		});
 	}
 
@@ -1029,6 +1110,7 @@ export async function runLaneBatch(
 			instruction = { task_id: request.task_id, kind: request.kind, accepted: true, reason: null };
 		}
 	}
+	const sessionClose = applyLaneSessionClose(input, record, lanes, persist);
 	const refusals: NonNullable<BatchLaneRunReport["lane_refusals"]> = [];
 
 	// A parked child ends only itself and its dependents; the batch keeps moving
@@ -1295,6 +1377,7 @@ export async function runLaneBatch(
 
 	// Close each integrated child's Issue now that its commit is on the batch branch.
 	const tracker = await closeIntegratedIssues(input, record, persist);
+	recordClosableSessions(input, record, lanes, persist);
 
 	// New records create their Lanes but never remove them; legacy records still admit offered paths.
 	refusals.push(...retainedLaneNotices(input.root, record, lanes));
@@ -1310,7 +1393,20 @@ export async function runLaneBatch(
 				if (!runtime.admit) break;
 				skewAcknowledged = runtime.acknowledged;
 			}
-			try { offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, expectedBatchHead(record)) }); }
+			try {
+				// F7: the record holds the reservation before any resource exists, so a
+				// tick interrupted before admission is resumed here, not refused as a collision.
+				const reserved = record.children.find((c) => c.task_id === taskId)?.lane_reservation;
+				if (reserved) offers.push({ task_id: taskId, path: ensureReservedLaneWorktree(input.root, reserved) });
+				else {
+					const planned = plannedLane(input.root, record.initiative_slug, taskId);
+					assertLaneWorktreeAvailable(input.root, record.initiative_slug, taskId);
+					const reservation = { path: planned.path, branch: planned.branch, base_head: expectedBatchHead(record) };
+					record.children = record.children.map((c) => (c.task_id === taskId ? { ...c, lane_reservation: reservation } : c));
+					persist();
+					offers.push({ task_id: taskId, path: createLaneWorktree(input.root, record.initiative_slug, taskId, reservation.base_head) });
+				}
+			}
 			catch (error) { parkChild(taskId, error instanceof Error ? error.message : String(error)); }
 		}
 	}
@@ -1342,8 +1438,11 @@ export async function runLaneBatch(
 		// The child budget stops new admissions only; in-flight Lanes finish.
 		if (consumedSlots(record) >= record.budget.max_children) break;
 		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
-		record.children = record.children.map((c) => (c.task_id === child.task_id ? { ...c, state: "lane_admitted", lane,
-			...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) } : c));
+		record.children = record.children.map((c) => {
+			if (c.task_id !== child.task_id) return c;
+			const { lane_reservation: _reserved, ...rest } = c;
+			return { ...rest, state: "lane_admitted", lane, ...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) };
+		});
 		persist();
 		const failed = await enrollInLane(child.task_id);
 		if (failed) return failed;
@@ -1383,7 +1482,7 @@ export async function runLaneBatch(
 					record.children = record.children.map(c => c.task_id === child.task_id ? { ...c, state: "needs_human", reason: delivery.reason } : c);
 					record.batch_state = "needs_human";
 					persist();
-					return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, ...(final ? { final } : {}) });
+					return finalizeLane(input.root, record, delivery.reason!, "", { refusals: [...refusals, ...retainedLaneNotices(input.root, record, lanes)], tracker, instruction, sessionClose, ...(final ? { final } : {}) });
 				}
 				persist(); // The delivery is recorded before any cleanup step.
 				const outcome = cleanupSingleTaskLane({ root: input.root, lanePath: child.lane!.path, laneBranch: child.lane!.branch,
@@ -1407,7 +1506,7 @@ export async function runLaneBatch(
 				? "Every child is integrated but the batch did not pass its final verification; inspect the failing commands against the delivered content. Integrated commits were not rolled back."
 				: "",
 			{ handoffs: releaseHandoffs(input, record, lanes), refusals: record.plan_source === "single_task" ? [...refusals, ...retainedLaneNotices(input.root, record, lanes)] : refusals,
-				tracker, instruction, ...(final ? { final } : {}) },
+				tracker, instruction, sessionClose, ...(final ? { final } : {}) },
 		);
 	}
 	const handoffs: BatchLaneHandoff[] = [];
@@ -1457,7 +1556,7 @@ export async function runLaneBatch(
 		persist();
 		return finalizeLane(input.root, record, reloadRequired,
 			"Reload the Host so it loads the Parent tip's plugin build (Claude Code: /mcp reconnect; Pi: /reload), then resume the batch with a fresh literal-user confirmation. A resume without reload admits the child with runtime_skew_acknowledged recorded.",
-			{ handoffs, refusals, tracker, instruction });
+			{ handoffs, refusals, tracker, instruction, sessionClose });
 	}
 	if (!inFlight.length && (!startable.length || overBudget)) {
 		const parked = record.children.some((c) => c.state === "needs_human" || c.state === "skipped_blocked");
@@ -1472,7 +1571,7 @@ export async function runLaneBatch(
 			record,
 			parkedMessage ?? (parked ? "a parked child needs a human decision" : overBudget ? `max_children budget exhausted (${record.budget.max_children})` : "no child can start"),
 			"",
-			{ refusals, tracker, instruction },
+			{ refusals, tracker, instruction, sessionClose },
 		);
 	}
 	if (!overBudget && !isParentBranch(record.branch)) {
@@ -1494,7 +1593,7 @@ export async function runLaneBatch(
 				? `child ${reviewOpen[0]} holds an open Review reservation`
 				: `children ${reviewOpen.join(", ")} hold open Review reservations`,
 			"Submit each reserved foreground Review verdict in its own Lane, then call start_unattended_batch again to continue.",
-			{ handoffs, refusals, tracker, instruction },
+			{ handoffs, refusals, tracker, instruction, sessionClose },
 		);
 	}
 	return laneReport(
@@ -1505,6 +1604,6 @@ export async function runLaneBatch(
 			: handoffs.some((h) => h.role === "lane-steward" && h.action === "provision")
 				? "Provide a Lane for each provision handoff, then call start_unattended_batch again with lane_offers."
 				: "Run each executor handoff in its Lane. When a Lane finishes, call start_unattended_batch again with the same Initiative.",
-		{ handoffs, refusals, tracker, instruction },
+		{ handoffs, refusals, tracker, instruction, sessionClose },
 	);
 }

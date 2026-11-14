@@ -1872,7 +1872,12 @@ describe("dual-host assurance conformance", () => {
 			const cf = createConformanceFixture(`${sharedPendingSlug}-c`);
 			const pf = createConformanceFixture(`${sharedPendingSlug}-p`);
 
-			/** Every durable byte under .imm/state; SQLite's SHM read marks are not authority. */
+			/**
+			 * Every durable byte under .imm/state. SQLite's SHM read marks are not
+			 * authority, and a read-only open of a WAL database creates an empty `-wal`
+			 * on some SQLite builds (bun 1.4.4) while others leave it absent or keep the
+			 * prior one (bun 1.4.2). An empty `-wal` holds no data, so only a non-empty one counts.
+			 */
 			const snapshotState = (root: string): string => {
 				const base = join(root, ".imm", "state");
 				const out: string[] = [];
@@ -1881,7 +1886,11 @@ describe("dual-host assurance conformance", () => {
 					for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
 						const full = join(dir, entry.name);
 						if (entry.isDirectory()) walk(full);
-						else if (entry.name !== "kernel.sqlite-shm") out.push(`${full.slice(base.length)}:${readFileSync(full).toString("base64")}`);
+						else if (entry.name !== "kernel.sqlite-shm") {
+							const bytes = readFileSync(full);
+							if (entry.name === "kernel.sqlite-wal" && bytes.length === 0) continue;
+							out.push(`${full.slice(base.length)}:${bytes.toString("base64")}`);
+						}
 					}
 				};
 				walk(base);

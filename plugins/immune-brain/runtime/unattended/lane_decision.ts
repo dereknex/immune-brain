@@ -6,12 +6,12 @@
 
 import type { AssuranceProjectionResult } from "../kernel/assurance_projection";
 import { readTaskRecordRaw } from "../kernel/storage";
-import { resolveConfig } from "../config/layered_config";
 import { findExistingActiveBatch } from "./batch_preflight";
 import { batchReason } from "./batch_reasons";
 import { isLaneBatchRecord, laneGenerationStore, parkLaneForExecutor, rebindSingleTaskIdentity } from "./batch_state";
-import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
-import { stopSingleTaskSupervisor } from "./batch_runner";
+import { LaneSupervisor, superviseLane, type ExecutorHost } from "./lane_supervisor";
+import { laneExecutorChoice, stopSingleTaskSupervisor } from "./batch_runner";
+import { clearLaneDecisionRequest, readLaneDecisionRequest } from "./lane_decision_request";
 
 type Projection = AssuranceProjectionResult["projection"];
 
@@ -23,18 +23,39 @@ export interface LaneDecisionFacts {
 	authorization: Projection["authorization"];
 	open_user_decision_count: number;
 	replan_required_ids: string[];
+	/** #426 F19: the breaking revision a headless Executor asked for; the Parent passes `next_intent` to its gate. */
+	requested?: { operation: "approve_breaking_intent_revision"; next_intent: unknown };
 }
 
 export type LaneDecisionOperation = "request_authorization" | "approve_breaking_intent_revision" | "stop";
 
-/** The decision facts of an active Lane record, or null when it waits on no literal-user decision. */
-export function laneDecisionFacts(taskId: string, projection: Projection): LaneDecisionFacts | null {
+/**
+ * The decision facts of an active Lane record, or null when it waits on no literal-user decision. With
+ * `lanePath`, a headless Executor's request that still binds the current record also counts (#426 F19).
+ */
+export function laneDecisionFacts(taskId: string, projection: Projection, lanePath?: string): LaneDecisionFacts | null {
 	if (projection.lifecycle !== "active") return null;
+	const request = lanePath ? readLaneDecisionRequest(lanePath, taskId, projection.record_revision) : null;
 	const waiting = projection.next_obligation === "resolve_user_decision" || projection.next_obligation === "revise_intent" || projection.open_user_decision_count > 0 ||
-		projection.replan_required_ids.length > 0 || projection.authorization.state !== "none";
+		projection.replan_required_ids.length > 0 || projection.authorization.state !== "none" || request !== null;
 	if (!waiting) return null;
 	return { task_id: taskId, run_id: projection.run_id, record_revision: projection.record_revision, authorization: projection.authorization,
-		open_user_decision_count: projection.open_user_decision_count, replan_required_ids: [...projection.replan_required_ids] };
+		open_user_decision_count: projection.open_user_decision_count, replan_required_ids: [...projection.replan_required_ids],
+		...(request ? { requested: { operation: request.operation, next_intent: request.next_intent } } : {}) };
+}
+
+/**
+ * Returns whether the decision facts represent a user_only gate (D7).
+ * All literal-user decisions in laneDecisionFacts are user_only gates.
+ */
+export function isUserOnlyDecision(facts: LaneDecisionFacts | null): boolean {
+	if (!facts) return false;
+	return (
+		facts.authorization.state !== "none" ||
+		facts.open_user_decision_count > 0 ||
+		facts.replan_required_ids.length > 0 ||
+		facts.requested !== undefined
+	);
 }
 
 export interface LaneRelayTarget {
@@ -86,7 +107,7 @@ export type LaneRelayOutcome<R> =
 async function readFacts(input: Pick<LaneRelayInput<unknown>, "project">, target: LaneRelayTarget) {
 	const read = await input.project(target.lane_path, target.task_id);
 	if (read.error !== null) throw new Error(`batch_lane_unreadable: ${read.error}`);
-	return laneDecisionFacts(target.task_id, read.projection);
+	return laneDecisionFacts(target.task_id, read.projection, target.lane_path);
 }
 
 /** Relay one literal-user decision to the single-task Lane of `taskId`; `relayed: false` when no such Lane exists. */
@@ -112,6 +133,8 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	}
 	if (input.applied && !input.applied(result))
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: false, rebound: false, lane_supervision: null } };
+	// The request was answered: the committed decision (or stop) moved the Lane record past it.
+	clearLaneDecisionRequest(target.lane_path);
 	const batch = findExistingActiveBatch(input.root, input.taskId);
 	const interactive = batch && !batch.corrupt && isLaneBatchRecord(batch.record) && batch.record.executor_mode === "interactive";
 	if (input.operation === "stop") {
@@ -141,11 +164,8 @@ export async function relayLaneDecision<R>(input: LaneRelayInput<R>): Promise<La
 	}
 	if (interactive)
 		return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const config = resolveConfig(input.root);
-	if (!config.lanes.valid) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
-	const active = config.lanes.active.value;
-	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-	const choice = chooseExecutor([profile, config.lanes.project_defaults.value], input.parentHost);
+	const choice = laneExecutorChoice(input.root, batch && !batch.corrupt && isLaneBatchRecord(batch.record) ? batch.record.executor_preferences : undefined, input.parentHost);
+	if (!choice) return { relayed: true, result, lane_relay: { batch_id: target.batch_id, operation: input.operation, applied: true, rebound, lane_supervision: null } };
 	const observation = await superviseLane(input.supervisor, {
 		key: `${input.root}\0${target.batch_id}`, repository: input.root, lanePath: target.lane_path, taskId: input.taskId,
 		choice, pluginDir: input.pluginDir, store: laneGenerationStore(input.root, target.batch_id), baseline: "",

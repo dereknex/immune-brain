@@ -243,6 +243,7 @@ export function formatAntigravityConfirmationReason(
 			b?.excluded && b.excluded.length > 0 ? `Excluded children (${b.excluded.length}):\n${b.excluded.map((e) => `  - ${e.task_id} (${e.slice_id}): ${e.reason}`).join("\n")}` : null,
 			b?.budget ? `Budget: max_children=${b.budget.max_children}, qa_failure_limit=${b.budget.qa_failure_limit}` : null,
 			b?.lane_mode ? `Lane mode: max_parallel=${b.lane_mode.max_parallel}` : null,
+			b?.lane_mode?.review_profile ? `Review: ${[b.lane_mode.review_profile.host, b.lane_mode.review_profile.model, b.lane_mode.review_profile.effort].filter(Boolean).join(" / ")}` : null,
 			b?.lane_mode ? `Parallel groups (${b.lane_mode.parallel_groups.length}):\n${b.lane_mode.parallel_groups.map((group) => `  - ${group.join(", ")}`).join("\n")}` : null,
 			b?.lane_mode && b.lane_mode.serialized.length > 0 ? `Serialized by overlapping scope (${b.lane_mode.serialized.length}):\n${b.lane_mode.serialized.map((c) => `  - ${c.task_id} after ${c.overlaps_with.join(", ")}`).join("\n")}` : null,
 			b?.final_verification ? `Final verification: ${b.final_verification.join("; ")}` : null,
@@ -934,6 +935,12 @@ async function prepareTaskAuthorityConfirmation(
 	);
 }
 
+/** Diagnostics for a confirmation preview that threw; stderr is not part of the Hook's JSON reply. */
+function reportPreviewFailure(operation: string, error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	process.stderr.write(`immune-brain: PreToolUse preview for ${operation} failed: ${message.split("\n")[0]}\n`);
+}
+
 export async function antigravityPreToolUseHookAsync(
 	payload: AntigravityPreToolUsePayload,
 	locations: PhaseEntryLocations = {},
@@ -958,7 +965,10 @@ export async function antigravityPreToolUseHookAsync(
 		} else {
 			decision = await prepareTaskAuthorityConfirmation(payload.conversationId, sync, locations);
 		}
-	} catch {
+	} catch (error) {
+		// Fail closed: no grant was written, so the MCP call refuses with
+		// `interaction_not_opened`. Name the real cause so that refusal is diagnosable.
+		reportPreviewFailure(sync.call.operation, error);
 		return { decision: "allow" };
 	}
 	if (decision.decision === "deny" && isGatedTool(sync.call.operation)) {
