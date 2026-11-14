@@ -12,10 +12,13 @@ import { randomUUID } from "node:crypto";
 import {
 	LOOP_DAEMON_LEASE_CONTRACT,
 	LOOP_DAEMON_STATE_CONTRACT,
+	type LoopDaemonLock,
 	type LoopDaemonState,
+	type LoopDaemonWatermarks,
 	type LoopLease,
 	type NormalizedLoopEvent,
 } from "./types.ts";
+import { readDaemonLock } from "./lock.ts";
 
 export function ensureLoopStateDir(stateDir: string): {
 	stateDir: string;
@@ -232,4 +235,53 @@ export function deleteLease(stateDir: string, targetId: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+export interface LoopDaemonSnapshot {
+	daemon_running: boolean;
+	pid: number | null;
+	lock: LoopDaemonLock | null;
+	stale_lock: boolean;
+	paused: boolean;
+	pause_reason: string | null;
+	active_leases_count: number;
+	active_leases: LoopLease[];
+	watermarks: LoopDaemonWatermarks | null;
+	stats: LoopDaemonState["stats"] | null;
+	updated_at: string | null;
+	log_path: string;
+	log_exists: boolean;
+	state_error: string | null;
+}
+
+/**
+ * Pure read-only inspection of loop daemon state on disk.
+ * Never creates directories, mutates files, acquires locks, or calls git/gh.
+ */
+export function inspectLoopDaemonState(stateDir: string): LoopDaemonSnapshot {
+	const lockInspection = readDaemonLock(stateDir);
+	const statePath = join(stateDir, "state.json");
+	const stateFileExists = existsSync(statePath);
+	const state = stateFileExists ? loadLoopState(stateDir) : null;
+	const stateError =
+		stateFileExists && !state ? ".imm/state/loop/state.json is corrupt or unreadable" : null;
+	const leases = listLeases(stateDir);
+	const logPath = join(stateDir, "daemon.log");
+
+	return {
+		daemon_running: lockInspection.isLive,
+		pid: lockInspection.isLive ? (lockInspection.lock?.pid ?? null) : null,
+		lock: lockInspection.lock,
+		stale_lock: lockInspection.exists && !lockInspection.isLive,
+		paused: state?.paused ?? false,
+		pause_reason: state?.pause_reason ?? null,
+		active_leases_count: leases.length,
+		active_leases: leases,
+		watermarks: state?.watermarks ?? null,
+		stats: state?.stats ?? null,
+		updated_at: state?.updated_at ?? null,
+		log_path: logPath,
+		log_exists: existsSync(logPath),
+		state_error: stateError,
+	};
 }

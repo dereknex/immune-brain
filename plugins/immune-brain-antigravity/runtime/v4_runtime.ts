@@ -348,7 +348,13 @@ async function main(argv: string[]): Promise<number> {
 							description:
 								"The Loop Daemon (ADR 0039): observe GitHub, judge events and dispatch admitted handlers under `loop.mode`. Its decisions and dispatches are records, never Kernel authority.",
 							json_output: true,
-							examples: ["imm-loop tick --dry-run --json", "imm-loop run", "imm-loop status --json"],
+							examples: [
+								"imm-loop start --json",
+								"imm-loop status --json",
+								"imm-loop logs --lines 50",
+								"imm-loop stop --json",
+								"imm-loop tick --dry-run --json",
+							],
 						},
 					],
 				},
