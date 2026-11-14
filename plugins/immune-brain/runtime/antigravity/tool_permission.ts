@@ -17,7 +17,7 @@ export interface NativeGateSurfacingOptions {
 }
 
 export type NativeGateSurfacingResult =
-	| { ok: true; settingsPath: string; agyArgv: ReadonlyArray<string> }
+	| { ok: true; settingsPath: string; agyArgv: ReadonlyArray<string>; allowRules: ReadonlyArray<string> }
 	| { ok: false; cause: string; remediation: string; reason: string };
 
 const REQUIRED_TOOL_PERMISSION = "request-review";
@@ -100,7 +100,55 @@ export function readAncestorProcessArgs(): ReadonlyArray<ReadonlyArray<string>> 
 	return ancestors;
 }
 
-function readToolPermission(settingsPath: string, remediation: string): { ok: true } | NativeGateSurfacingResult {
+function extractPermissionsAllow(parsed: Record<string, unknown>): string[] {
+	const permissions = parsed.permissions;
+	if (typeof permissions !== "object" || permissions === null || Array.isArray(permissions)) {
+		return [];
+	}
+	const allow = (permissions as Record<string, unknown>).allow;
+	if (!Array.isArray(allow)) {
+		return [];
+	}
+	return allow.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Checks whether any `permissions.allow` entry covers the named MCP server/tool.
+ * Supports the exact forms `mcp(<server>/<tool>)`, `mcp(<server>/*)`,
+ * `mcp(<server>)`, and `mcp(*)`.
+ */
+export function matchesMcpAllowRule(
+	allowRules: ReadonlyArray<unknown>,
+	servers: ReadonlySet<string> | ReadonlyArray<string>,
+	tool: string,
+): boolean {
+	if (!tool || allowRules.length === 0) return false;
+	const serverSet = servers instanceof Set ? servers : new Set(servers);
+	if (serverSet.size === 0) return false;
+	for (const entry of allowRules) {
+		if (typeof entry !== "string") continue;
+		const match = /^mcp\(([^)]+)\)$/.exec(entry.trim());
+		if (!match) continue;
+		const inner = match[1];
+		if (inner === "*") return true;
+		const slashIndex = inner.indexOf("/");
+		if (slashIndex === -1) {
+			if (serverSet.has(inner)) return true;
+			continue;
+		}
+		if (inner.indexOf("/", slashIndex + 1) !== -1) continue;
+		const server = inner.slice(0, slashIndex);
+		const ruleTool = inner.slice(slashIndex + 1);
+		if (!server || !ruleTool || !serverSet.has(server)) continue;
+		if (ruleTool === "*" || ruleTool === tool) return true;
+	}
+	return false;
+}
+
+function readToolPermission(
+	settingsPath: string,
+	remediation: string,
+): { ok: true; allowRules: ReadonlyArray<string> } | NativeGateSurfacingResult {
 	let raw: string;
 	try {
 		const stat = lstatSync(settingsPath);
@@ -151,7 +199,7 @@ function readToolPermission(settingsPath: string, remediation: string): { ok: tr
 		);
 	}
 
-	return { ok: true };
+	return { ok: true, allowRules: extractPermissionsAllow(parsed as Record<string, unknown>) };
 }
 
 /**
@@ -193,7 +241,7 @@ export function checkNativeGateSurfacing(
 				remediation,
 			);
 		}
-		return { ok: true, settingsPath, agyArgv: argv };
+		return { ok: true, settingsPath, agyArgv: argv, allowRules: settingsCheck.allowRules };
 	}
 
 	return fail(

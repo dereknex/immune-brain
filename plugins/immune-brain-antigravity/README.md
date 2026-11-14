@@ -61,3 +61,8 @@ and an interactive `agy` session (nearest `agy` ancestor process started without
 `--dangerously-skip-permissions`, `--print`, or `-p`). Otherwise the `PreToolUse` hook
 denies the operation without writing a confirmation grant; `strict` and `proceed-in-sandbox`
 remain refused until live confirmation-dialog evidence is verified.
+
+If `~/.gemini/antigravity-cli/settings.json` also has a `permissions.allow` rule covering
+the Managed call (for example `mcp(immune-brain_immune-brain/stop)`), `agy` skips the
+interactive dialog and the adapter records that standing authorization with the
+`allow-rule` reference kind (`antigravity-allow-rule-<hash>`) instead of `confirm`.

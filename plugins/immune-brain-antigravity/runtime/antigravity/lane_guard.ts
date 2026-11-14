@@ -29,6 +29,7 @@ import {
 	type PhaseOperation,
 } from "../assurance/phase_entry";
 import {
+	ALLOW_RULE_REQUEST_PREFIX,
 	isPrivilegedOperation,
 	NativeAuthorityError,
 	type NativeConfirmationInput,
@@ -46,7 +47,7 @@ import {
 } from "../host-core/private_file";
 import { AntigravityRuntime } from "./kernel_ports";
 import { ANTIGRAVITY_CACHE_DIR } from "./review_host";
-import { checkNativeGateSurfacing, type AncestorProcessReader } from "./tool_permission";
+import { checkNativeGateSurfacing, matchesMcpAllowRule, type AncestorProcessReader } from "./tool_permission";
 import {
 	antigravityRunContinuationPostToolUse,
 	antigravityRunContinuationPreToolUse,
@@ -439,9 +440,11 @@ function writeConfirmationGrant(
 	choices: {
 		verifierChoice?: "accept_verifier_dispute" | "dismiss_verifier_dispute";
 		reworkChoice?: ReworkChoice;
+		allowRuleMatched?: boolean;
 	} = {},
 ): string | null {
-	const requestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID()}`;
+	const baseRequestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID()}`;
+	const requestId = choices.allowRuleMatched ? `${ALLOW_RULE_REQUEST_PREFIX}${baseRequestId}` : baseRequestId;
 	const grant: NativeConfirmationGrant = {
 		request_id: requestId,
 		conversation,
@@ -753,7 +756,8 @@ function issueNativeConfirmationForceAsk(
 	if (!surfacing.ok) {
 		return { decision: "deny", reason: surfacing.reason };
 	}
-	if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, choices)) {
+	const allowRuleMatched = matchesMcpAllowRule(surfacing.allowRules, IMMUNE_BRAIN_SERVERS, confirmInput.operation);
+	if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, { ...choices, allowRuleMatched })) {
 		return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
 	}
 	return {

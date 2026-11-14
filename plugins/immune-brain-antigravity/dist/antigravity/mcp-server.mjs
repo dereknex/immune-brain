@@ -17683,8 +17683,9 @@ var ENTRY_TOKEN_REQUEST_PREFIX = "entry-token:";
 function entryTokenRequestId(token) {
   return `${ENTRY_TOKEN_REQUEST_PREFIX}${token}`;
 }
+var ALLOW_RULE_REQUEST_PREFIX = "allow-rule:";
 function hostConfirmationRef(host, input) {
-  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : "confirm";
+  const kind = input.requestId.startsWith(ENTRY_TOKEN_REQUEST_PREFIX) ? "entry" : input.requestId.startsWith(ALLOW_RULE_REQUEST_PREFIX) ? "allow-rule" : "confirm";
   return `${host}-${kind}-${createHash("sha256").update(`${input.connectionId}\x00${input.toolCallId}\x00${input.requestId}\x00${input.operation}\x00${input.taskId ?? ""}\x00${input.initiativeSlug ?? ""}\x00${input.intentRevision ?? ""}\x00${input.intentContentHash ?? ""}\x00${input.bindingDigest ?? ""}\x00${input.planDigest ?? ""}`).digest("hex").slice(0, 16)}`;
 }
 function enrollmentNonce() {
@@ -23843,7 +23844,7 @@ var ANTIGRAVITY_CAPABILITY = validateHostCapabilityDeclaration({
     P2: {
       port: "P2",
       level: "conformance-only",
-      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); not live-certified (#469)"
+      evidence: "Conformance-tested force_ask PreToolUse gate with native confirmation grant files; refuses native gates unless ~/.gemini/antigravity-cli/settings.json toolPermission is request-review in interactive agy (no --dangerously-skip-permissions, --print, or -p); when a user permissions.allow rule covers the Managed call and skips the dialog, records the grant with the allow-rule reference kind; not live-certified (#469)"
     },
     P3: {
       port: "P3",
@@ -24600,6 +24601,49 @@ function readAncestorProcessArgs() {
   }
   return ancestors;
 }
+function extractPermissionsAllow(parsed) {
+  const permissions = parsed.permissions;
+  if (typeof permissions !== "object" || permissions === null || Array.isArray(permissions)) {
+    return [];
+  }
+  const allow = permissions.allow;
+  if (!Array.isArray(allow)) {
+    return [];
+  }
+  return allow.filter((entry) => typeof entry === "string");
+}
+function matchesMcpAllowRule(allowRules, servers, tool) {
+  if (!tool || allowRules.length === 0)
+    return false;
+  const serverSet = servers instanceof Set ? servers : new Set(servers);
+  if (serverSet.size === 0)
+    return false;
+  for (const entry of allowRules) {
+    if (typeof entry !== "string")
+      continue;
+    const match = /^mcp\(([^)]+)\)$/.exec(entry.trim());
+    if (!match)
+      continue;
+    const inner = match[1];
+    if (inner === "*")
+      return true;
+    const slashIndex = inner.indexOf("/");
+    if (slashIndex === -1) {
+      if (serverSet.has(inner))
+        return true;
+      continue;
+    }
+    if (inner.indexOf("/", slashIndex + 1) !== -1)
+      continue;
+    const server = inner.slice(0, slashIndex);
+    const ruleTool = inner.slice(slashIndex + 1);
+    if (!server || !ruleTool || !serverSet.has(server))
+      continue;
+    if (ruleTool === "*" || ruleTool === tool)
+      return true;
+  }
+  return false;
+}
 function readToolPermission(settingsPath, remediation) {
   let raw;
   try {
@@ -24639,7 +24683,7 @@ function readToolPermission(settingsPath, remediation) {
     }
     return fail(`toolPermission is "${permission}" in ${settingsPath}, which auto-approves or does not surface a native confirmation dialog`, remediation);
   }
-  return { ok: true };
+  return { ok: true, allowRules: extractPermissionsAllow(parsed) };
 }
 function checkNativeGateSurfacing(options = {}) {
   const home = options.home ?? homedir2();
@@ -24668,7 +24712,7 @@ function checkNativeGateSurfacing(options = {}) {
     if (disallowed.length > 0) {
       return fail(`nearest ancestor agy process was started with ${disallowed.join(", ")}, which prevents interactive native confirmation dialogs`, remediation);
     }
-    return { ok: true, settingsPath, agyArgv: argv };
+    return { ok: true, settingsPath, agyArgv: argv, allowRules: settingsCheck.allowRules };
   }
   return fail("no ancestor agy process was found, so no interactive native confirmation dialog can surface", remediation);
 }
@@ -24956,7 +25000,8 @@ function consumePhaseAdmission(toolCallId, operation, root = tmpdir9()) {
   }
 }
 function writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, input, root, choices = {}) {
-  const requestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID12()}`;
+  const baseRequestId = `antigravity-hook:${conversation}:${stepIdx}:${randomUUID12()}`;
+  const requestId = choices.allowRuleMatched ? `${ALLOW_RULE_REQUEST_PREFIX}${baseRequestId}` : baseRequestId;
   const grant = {
     request_id: requestId,
     conversation,
@@ -25154,7 +25199,8 @@ function issueNativeConfirmationForceAsk(conversation, stepIdx, admissionId, wor
   if (!surfacing.ok) {
     return { decision: "deny", reason: surfacing.reason };
   }
-  if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, choices)) {
+  const allowRuleMatched = matchesMcpAllowRule(surfacing.allowRules, IMMUNE_BRAIN_SERVERS2, confirmInput.operation);
+  if (!writeConfirmationGrant(conversation, stepIdx, admissionId, workspace, confirmInput, root, { ...choices, allowRuleMatched })) {
     return { decision: "deny", reason: "Native confirmation grant could not be recorded securely" };
   }
   return {

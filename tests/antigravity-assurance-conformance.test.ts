@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PassThrough, Readable, Writable } from "node:stream";
@@ -46,7 +48,8 @@ import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_por
 import { createAntigravityMcpRuntime, runHook as runAntigravityHook, serveStdio as serveAntigravityStdio } from "../plugins/immune-brain/runtime/antigravity/mcp_server";
 import type { AncestorProcessReader } from "../plugins/immune-brain/runtime/antigravity/tool_permission";
 import { createMcpRuntime, handleJsonRpc } from "../plugins/immune-brain/runtime/claude/mcp_server";
-import { NativeAuthorityError, entryTokenRequestId, hostConfirmationRef } from "../plugins/immune-brain/runtime/host-core/interaction";
+import * as hostInteraction from "../plugins/immune-brain/runtime/host-core/interaction";
+import { ALLOW_RULE_REQUEST_PREFIX, NativeAuthorityError, entryTokenRequestId, hostConfirmationRef } from "../plugins/immune-brain/runtime/host-core/interaction";
 import { createCanaryApplication } from "../plugins/immune-brain/runtime/kernel/canary_application";
 import { canonicalIntentHash, parseTaskIntentV1, readTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { readSettledRunEvidence, readTaskRecordRaw } from "../plugins/immune-brain/runtime/kernel/storage";
@@ -3892,4 +3895,516 @@ describe("Antigravity native gate surfacing (ANGS-A1)", () => {
 			rmSync(fakeBin, { recursive: true, force: true });
 		}
 	});
+});
+
+describe("Antigravity allow rule provenance (AARP-A1, AARP-A2)", () => {
+	type GateKind = "stop" | "start_unattended_batch" | "retire_stale_batch" | "request_authorization";
+	type CallShape = "call_mcp_tool" | "direct";
+
+	function createTempDir(label: string): string {
+		const raw = mkdtempSync(join(tmpdir(), `ag-aarp-${label}-`));
+		try {
+			return realpathSync(raw);
+		} catch {
+			return raw;
+		}
+	}
+
+	const execFileAsync = promisify(execFile);
+
+	async function runGit(dir: string, ...args: string[]): Promise<string> {
+		const { stdout } = await execFileAsync("git", args, { cwd: dir, encoding: "utf8" });
+		return stdout.trim();
+	}
+
+	function writeSettingsHome(home: string, settings: Record<string, unknown>): void {
+		const settingsDir = join(home, ".gemini", "antigravity-cli");
+		mkdirSync(settingsDir, { recursive: true });
+		writeFileSync(join(settingsDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n", "utf8");
+	}
+
+	function createFakePsBin(psArgsLine: string): string {
+		const fakeBin = createTempDir("ps-bin");
+		const psPath = join(fakeBin, "ps");
+		writeFileSync(psPath, `#!/bin/sh\necho '${psArgsLine}'\n`, { mode: 0o755 });
+		chmodSync(psPath, 0o755);
+		return fakeBin;
+	}
+
+	function runHookCli(
+		home: string,
+		store: string,
+		fakeBin: string,
+		payload: unknown,
+	): Promise<{ decision?: string; reason?: string }> {
+		return new Promise((resolve, reject) => {
+			const child = spawn(
+				process.execPath,
+				[join(process.cwd(), "plugins", "immune-brain", "runtime", "antigravity", "mcp_server.ts"), "--hook"],
+				{
+					stdio: ["pipe", "pipe", "pipe"],
+					env: {
+						...process.env,
+						HOME: home,
+						TMPDIR: store,
+						PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+					},
+				},
+			);
+			let stdout = "";
+			let stderr = "";
+			child.stdout.setEncoding("utf8");
+			child.stderr.setEncoding("utf8");
+			child.stdout.on("data", (chunk: string) => {
+				stdout += chunk;
+			});
+			child.stderr.on("data", (chunk: string) => {
+				stderr += chunk;
+			});
+			child.on("error", reject);
+			child.on("close", (code) => {
+				expect(code, `hook stderr: ${stderr}`).toBe(0);
+				resolve(JSON.parse(stdout.trim()) as { decision?: string; reason?: string });
+			});
+			child.stdin.end(`${JSON.stringify(payload)}\n`);
+		});
+	}
+
+	async function setupProvenanceScenario(gate: GateKind, suffix: string) {
+		const root = createTempDir(`${gate}-repo-${suffix}`);
+		const store = createTempDir(`${gate}-store-${suffix}`);
+		const home = createTempDir(`${gate}-home-${suffix}`);
+		const taskId = `aarp-${gate}-${suffix}`.replace(/_/g, "-");
+		const initiativeSlug = `init-${taskId}`;
+		const conversationId = `conv-${taskId}`;
+		const stepIdx = 9;
+
+		await runGit(root, "init");
+		await runGit(root, "config", "user.email", "test@example.com");
+		await runGit(root, "config", "user.name", "Test User");
+		writeFileSync(join(root, ".gitignore"), ".imm/state/\n", "utf8");
+		writeFileSync(join(root, "README.md"), "# Allow rule provenance test\n", "utf8");
+
+		const validVerification = JSON.stringify({
+			contract: "assurance_kernel/verification_descriptor/v2",
+			command: {
+				executable: "bun",
+				argv: ["test"],
+				cwd: ".",
+				timeout_ms: 10000,
+				max_output_bytes: 65536,
+			},
+			environment: {
+				prepare: null,
+				writable_paths: [],
+			},
+		});
+		const intent = {
+			contract: "assurance_kernel/task_intent/v1",
+			task_id: taskId,
+			goal: "Verify allow-rule provenance recording",
+			acceptance: [{ id: "A1", assertion: "Verify allow rule", verification: validVerification }],
+			scope_hint: ["README.md"],
+			risk: "material" as const,
+			revision: 1,
+			owner: "user" as const,
+		};
+		mkdirSync(join(root, "docs", "plans"), { recursive: true });
+		writeFileSync(join(root, "docs", "plans", `${taskId}.intent.json`), JSON.stringify(intent, null, 2) + "\n", "utf8");
+		await runGit(root, "add", ".");
+		await runGit(root, "commit", "-m", "initial commit");
+
+		if (gate === "stop" || gate === "request_authorization") {
+			await enrollTaskForTest(root, taskId);
+		}
+		if (gate === "request_authorization") {
+			const intentRead = readTaskIntent(root, taskId);
+			const app = createCanaryApplication(createTestMutationRegistry());
+			await app.execute({
+				root,
+				task_id: taskId,
+				prior_intent_token: intentRead.token,
+				operation: {
+					op: "record_finding",
+					actor_id: "verifier",
+					finding: {
+						id: "user-decision-1",
+						kind: "unresolved_user_decision",
+						acceptance_id: "A1",
+						summary: "Verifier raised a user decision",
+					},
+				},
+			});
+		}
+
+		const batchId = `batch-stale-${suffix}`;
+		if (gate === "retire_stale_batch") {
+			const baseHead = await runGit(root, "rev-parse", "HEAD");
+			mkdirSync(join(root, ".imm", "state", "batches"), { recursive: true });
+			const prepared = prepareBatchLaneRunState({
+				batch_id: batchId,
+				initiative_slug: initiativeSlug,
+				children: [
+					{
+						task_id: taskId,
+						slice_id: "S1",
+						blocked_by: [],
+						status: "enrollable",
+						reason: null,
+						intent_path: `docs/plans/${taskId}.intent.json`,
+						intent_revision: 1,
+						intent_content_hash: canonicalIntentHash(parseTaskIntentV1(intent)),
+					},
+				],
+				plan_digest: `sha256:${"0".repeat(64)}`,
+				base_head: baseHead,
+				confirmation_time: "2026-11-13T00:00:00.000Z",
+				budget: { max_children: 10, qa_failure_limit: 2 },
+				max_parallel: 1,
+				now: "2026-11-13T00:00:00.000Z",
+			});
+			writeFileSync(
+				join(root, ".imm", "state", "batches", `${batchId}.json`),
+				JSON.stringify(prepared, null, 2) + "\n",
+				"utf8",
+			);
+			const dir = cacheDir(store, ANTIGRAVITY_CACHE_DIR);
+			ensurePrivateDir(dir);
+			appendPrivate(join(dir, `${sessionHash(conversationId)}.entry`), dir, JSON.stringify({ v: 1, entry: "run" }) + "\n");
+		}
+
+		const toolArgs: Record<string, unknown> =
+			gate === "stop"
+				? { task_id: taskId, reason: "operator requested stop" }
+				: gate === "start_unattended_batch"
+					? { task_id: taskId }
+					: gate === "retire_stale_batch"
+						? { initiative_slug: initiativeSlug }
+						: {
+								task_id: taskId,
+								choice: "accept_verifier_dispute",
+								exit: "replan",
+								reason: "user chose replan",
+							};
+
+		const admissionId = `${conversationId}:${stepIdx}:${gate}`;
+		const confirmFilePath = join(
+			cacheDir(store, ANTIGRAVITY_CACHE_DIR),
+			`${sessionHash(conversationId)}.${sessionHash(admissionId)}.confirm`,
+		);
+
+		function readGrantRequestId(): string {
+			const parsed = JSON.parse(readFileSync(confirmFilePath, "utf8")) as { request_id: string };
+			return parsed.request_id;
+		}
+
+		function preToolUsePayload(shape: CallShape) {
+			return {
+				event: "PreToolUse",
+				conversationId,
+				stepIdx,
+				workspacePaths: [root],
+				toolCall:
+					shape === "call_mcp_tool"
+						? {
+								name: "call_mcp_tool",
+								args: {
+									ServerName: "immune-brain_immune-brain",
+									ToolName: gate,
+									Arguments: toolArgs,
+								},
+							}
+						: {
+								name: gate,
+								args: toolArgs,
+							},
+			};
+		}
+
+		async function consumeViaMcp(): Promise<string> {
+			const recordedRefs: string[] = [];
+			let refSpy: ReturnType<typeof spyOn> | null = null;
+			if (gate === "start_unattended_batch") {
+				const originalHostConfirmationRef = hostInteraction.hostConfirmationRef;
+				refSpy = spyOn(hostInteraction, "hostConfirmationRef").mockImplementation((host, input) => {
+					const ref = originalHostConfirmationRef(host, input);
+					recordedRefs.push(ref);
+					return ref;
+				});
+			}
+			try {
+				const mcp = createAntigravityMcpRuntime({
+					cwd: root,
+					env: { HERDR_ENV: "1" },
+					interactive: true,
+					confirmationStoreRoot: store,
+				});
+				mcp.bindClientHandshake({
+					version: "1.0.0",
+					interactive: true,
+					protocolVersion: "2025-06-18",
+				});
+				const reply = (await handleJsonRpc(
+					{
+						jsonrpc: "2.0",
+						id: 1,
+						method: "tools/call",
+						params: {
+							name: gate,
+							arguments: toolArgs,
+							_meta: {
+								"antigravity.google/conversation_id": conversationId,
+								"antigravity.google/workspace_paths": [root],
+								progressToken: `antigravity-hook:${stepIdx}`,
+							},
+						},
+					},
+					mcp,
+				)) as { error?: unknown; result?: { isError?: boolean; content?: Array<{ text?: string }> } };
+				expect(reply?.error).toBeUndefined();
+				expect(reply?.result?.isError).not.toBe(true);
+				expect(existsSync(confirmFilePath)).toBe(false);
+
+				const text = reply?.result?.content?.[0]?.text ?? "{}";
+				const body = JSON.parse(text) as {
+					report?: {
+						retirement?: { confirmation_ref?: string };
+						handoffs?: Array<{ role?: string; lane_path?: string }>;
+					};
+				};
+				if (gate === "retire_stale_batch") {
+					return body.report?.retirement?.confirmation_ref ?? "";
+				}
+				if (gate === "start_unattended_batch") {
+					const laneWorktree = body.report?.handoffs?.find((h) => h.role === "executor")?.lane_path;
+					expect(typeof laneWorktree).toBe("string");
+					expect(readTaskRecordRaw(laneWorktree!, taskId).record?.lifecycle).toBe("active");
+					return recordedRefs.at(-1) ?? "";
+				}
+				const record = readTaskRecordRaw(root, taskId).record ?? readSettledRunEvidence(root, taskId)?.record;
+				return record?.history?.at(-1)?.authority?.confirmation_ref ?? "";
+			} finally {
+				refSpy?.mockRestore();
+			}
+		}
+
+		return {
+			root,
+			store,
+			home,
+			taskId,
+			conversationId,
+			confirmFilePath,
+			readGrantRequestId,
+			preToolUsePayload,
+			consumeViaMcp,
+			cleanup() {
+				rmSync(root, { recursive: true, force: true });
+				rmSync(store, { recursive: true, force: true });
+				rmSync(home, { recursive: true, force: true });
+			},
+		};
+	}
+
+	async function runProvenanceCheck(
+		gate: GateKind,
+		shape: CallShape,
+		settings: Record<string, unknown>,
+		suffix: string,
+		psArgsLine = "1 /usr/local/bin/agy --model gemini",
+	) {
+		const scenario = await setupProvenanceScenario(gate, suffix);
+		const fakeBin = createFakePsBin(psArgsLine);
+		try {
+			writeSettingsHome(scenario.home, settings);
+			if (gate === "start_unattended_batch") {
+				const preInv = await runHookCli(scenario.home, scenario.store, fakeBin, {
+					invocationNum: 0,
+					conversationId: scenario.conversationId,
+					lastUserInput: `/drive ${scenario.taskId}`,
+					workspacePaths: [scenario.root],
+				});
+				expect(preInv.decision).not.toBe("deny");
+			}
+			const decision = await runHookCli(scenario.home, scenario.store, fakeBin, scenario.preToolUsePayload(shape));
+			if (decision.decision !== "force_ask") {
+				return { decision, requestId: null as string | null, confirmationRef: null as string | null, confirmExists: existsSync(scenario.confirmFilePath) };
+			}
+			expect(existsSync(scenario.confirmFilePath)).toBe(true);
+			const requestId = scenario.readGrantRequestId();
+			const confirmationRef = await scenario.consumeViaMcp();
+			return { decision, requestId, confirmationRef, confirmExists: existsSync(scenario.confirmFilePath) };
+		} finally {
+			scenario.cleanup();
+			rmSync(fakeBin, { recursive: true, force: true });
+		}
+	}
+
+	it("derives confirmation ref kind allow-rule only from allow-rule prefix, entry from entry-token, and confirm otherwise with byte-identical sha256 suffixes", () => {
+		const base = {
+			connectionId: "conn-1",
+			toolCallId: "call-1",
+			operation: "stop",
+			taskId: "task-1",
+			initiativeSlug: "init-1",
+			intentRevision: 2,
+			intentContentHash: "sha256:abc",
+			bindingDigest: "sha256:def",
+			planDigest: "sha256:ghi",
+		};
+		const expectedDigest = (requestId: string) =>
+			createHash("sha256")
+				.update(
+					`${base.connectionId}\0${base.toolCallId}\0${requestId}\0${base.operation}\0${base.taskId}\0${base.initiativeSlug}\0${base.intentRevision}\0${base.intentContentHash}\0${base.bindingDigest}\0${base.planDigest}`,
+				)
+				.digest("hex")
+				.slice(0, 16);
+
+		expect(ALLOW_RULE_REQUEST_PREFIX).toBe("allow-rule:");
+		for (const host of ["antigravity", "claude", "pi"] as const) {
+			const allowId = `${ALLOW_RULE_REQUEST_PREFIX}antigravity-hook:c:1:uuid`;
+			expect(hostConfirmationRef(host, { ...base, requestId: allowId })).toBe(
+				`${host}-allow-rule-${expectedDigest(allowId)}`,
+			);
+
+			const entryId = entryTokenRequestId("tok-1");
+			expect(hostConfirmationRef(host, { ...base, requestId: entryId })).toBe(
+				`${host}-entry-${expectedDigest(entryId)}`,
+			);
+
+			for (const confirmId of [
+				"req-123",
+				"antigravity-hook:c:1:uuid",
+				"x-allow-rule:req",
+				"allow-rule",
+				"entry-token",
+				"",
+			]) {
+				expect(hostConfirmationRef(host, { ...base, requestId: confirmId })).toBe(
+					`${host}-confirm-${expectedDigest(confirmId)}`,
+				);
+			}
+		}
+	});
+
+	async function runConcurrent<T, R>(items: ReadonlyArray<T>, concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+		const results: R[] = new Array(items.length);
+		let next = 0;
+		const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+			while (next < items.length) {
+				const idx = next++;
+				results[idx] = await fn(items[idx]!);
+			}
+		});
+		await Promise.all(workers);
+		return results;
+	}
+
+	const GATES: GateKind[] = ["stop", "start_unattended_batch", "retire_stale_batch", "request_authorization"];
+	const SHAPES: CallShape[] = ["call_mcp_tool", "direct"];
+
+	for (const gate of GATES) {
+		it(`records allow-rule provenance for ${gate} via call_mcp_tool and direct through mcp_server.ts --hook`, async () => {
+			const verifyShape = async (shape: CallShape) => {
+				const res = await runProvenanceCheck(
+					gate,
+					shape,
+					{
+						toolPermission: "request-review",
+						permissions: { allow: [`mcp(immune-brain_immune-brain/${gate})`] },
+					},
+					`pos-${gate}-${shape}`,
+				);
+				expect(res.decision.decision, `${gate}:${shape}`).toBe("force_ask");
+				expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), `${gate}:${shape}`).toBe(true);
+				expect(res.confirmationRef, `${gate}:${shape}`).toMatch(/^antigravity-allow-rule-[0-9a-f]{16}$/);
+			};
+			if (gate === "start_unattended_batch") {
+				for (const shape of SHAPES) await verifyShape(shape);
+			} else {
+				await Promise.all(SHAPES.map((shape) => verifyShape(shape)));
+			}
+		}, 60_000);
+	}
+
+	it("matches exact-form wildcards (server/*, server, mcp(*)) for both call_mcp_tool and direct tool name", async () => {
+		const cases = (
+			[
+				["server-wildcard", "mcp(immune-brain_immune-brain/*)"],
+				["server-only", "mcp(immune-brain_immune-brain)"],
+				["global-wildcard", "mcp(*)"],
+			] as const
+		).flatMap(([label, rule]) => SHAPES.map((shape) => ({ label, rule, shape })));
+		await runConcurrent(cases, 6, async ({ label, rule, shape }) => {
+			const res = await runProvenanceCheck(
+				"stop",
+				shape,
+				{
+					toolPermission: "request-review",
+					permissions: { allow: [rule] },
+				},
+				`wc-${label}-${shape}`,
+			);
+			expect(res.decision.decision, `${label}:${shape}`).toBe("force_ask");
+			expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), `${label}:${shape}`).toBe(true);
+			expect(res.confirmationRef, `${label}:${shape}`).toMatch(/^antigravity-allow-rule-[0-9a-f]{16}$/);
+		});
+	}, 60_000);
+
+	it("yields antigravity-confirm- and never allow-rule when rules do not match or settings are malformed", async () => {
+		const cases = [
+			["no-permissions-key", { toolPermission: "request-review" }],
+			["empty-allow-array", { toolPermission: "request-review", permissions: { allow: [] } }],
+			["different-tool-status", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/status)"] } }],
+			["similar-name-stop2", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop2)"] } }],
+			["similar-name-stopx", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stopx)"] } }],
+			["similar-name-stop_all", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop_all)"] } }],
+			["similar-name-sto", { toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/sto)"] } }],
+			["different-server", { toolPermission: "request-review", permissions: { allow: ["mcp(other-server/stop)", "mcp(other-server/*)", "mcp(immune-brain-other/stop)"] } }],
+			["non-mcp-rules", { toolPermission: "request-review", permissions: { allow: ["command(stop)", "bash(stop)", "stop"] } }],
+			["non-string-entries", { toolPermission: "request-review", permissions: { allow: [null, 123, true, { rule: "mcp(*)" }, ["mcp(*)"]] } }],
+			["allow-not-array", { toolPermission: "request-review", permissions: { allow: "mcp(*)" } }],
+			["permissions-not-object", { toolPermission: "request-review", permissions: ["mcp(*)"] }],
+		] as const;
+		await runConcurrent(cases, 12, async ([label, settings]) => {
+			const res = await runProvenanceCheck("stop", "call_mcp_tool", settings as Record<string, unknown>, `neg-${label}`);
+			expect(res.decision.decision, label).toBe("force_ask");
+			expect(res.requestId?.startsWith(ALLOW_RULE_REQUEST_PREFIX), label).toBe(false);
+			expect(res.requestId?.startsWith("antigravity-hook:"), label).toBe(true);
+			expect(res.confirmationRef, label).toMatch(/^antigravity-confirm-[0-9a-f]{16}$/);
+		});
+	}, 60_000);
+
+	it("does not relax existing refusals (always-proceed, --print, --dangerously-skip-permissions) even when an allow rule matches", async () => {
+		const cases = [
+			[
+				"toolPermission-always-proceed",
+				{ toolPermission: "always-proceed", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --model gemini",
+			],
+			[
+				"agy-print",
+				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --print",
+			],
+			[
+				"agy-dangerously-skip-permissions",
+				{ toolPermission: "request-review", permissions: { allow: ["mcp(immune-brain_immune-brain/stop)", "mcp(*)"] } },
+				"1 /usr/local/bin/agy --dangerously-skip-permissions",
+			],
+		] as const;
+		await runConcurrent(cases, 3, async ([label, settings, psArgsLine]) => {
+			const res = await runProvenanceCheck(
+				"stop",
+				"call_mcp_tool",
+				settings as Record<string, unknown>,
+				`refusal-${label}`,
+				psArgsLine,
+			);
+			expect(res.decision.decision, label).toBe("deny");
+			expect(res.confirmExists, label).toBe(false);
+			expect(res.requestId, label).toBeNull();
+			expect(res.confirmationRef, label).toBeNull();
+		});
+	}, 60_000);
 });
