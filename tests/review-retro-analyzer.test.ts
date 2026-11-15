@@ -568,5 +568,33 @@ describe("review-retro analyzer", () => {
 			rmSync(multiHome, { recursive: true, force: true });
 		}
 	});
+	test("classifies pure Host-injected pseudo-user frames as synthetic and keeps human resume accounting human-only", async () => {
+		const frames = [
+			"<task-notification>task done</task-notification>",
+			"Tool loaded.",
+			"Base directory for this skill: /tmp/skills/revisit",
+			"Your claude.ai usage limit has reset.",
+			"[plan review]",
+			"<command-name>/revisit</command-name>",
+		];
+		const { root, cleanup } = sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/project" }),
+			...frames.flatMap((text, i) => [turnEnd(i * 4, "stop"), userInput(i * 4 + 1, text), kernelCall(i * 4 + 2, `n${i}`, { op: "status" })]),
+			turnEnd(30, "stop"), userInput(31, "<task-notification>settled</task-notification>"), userInput(32, "继续"), kernelCall(33, "h", { op: "status" }),
+			turnEnd(40, "stop"), userInput(41, "<command-name>/revisit</command-name>\n<command-args>inspect this</command-args>"), kernelCall(42, "s", { op: "status" }),
+		]);
+		try {
+			const args = ["--since", stamp(0), "--until", stamp(43), "--root", root];
+			const doc = JSON.parse(await run([...args, "--json"]));
+			const inputs = doc.events.filter((e: any) => e.type === "user_input");
+			// Host frames stay in events[] with synthetic: true; the /skill-style frame carrying human args and "继续" stay human.
+			expect(inputs.map((e: any) => e.synthetic)).toEqual([true, true, true, true, true, true, true, false, false]);
+			for (const e of inputs) expect(typeof e.instruction).toBe("string");
+			expect(doc.candidates.map((g: any) => [g.kind, g.key, g.occurrences])).toEqual([["user_resume", "/project / t", 2]]);
+			const report = await run(args);
+			expect(report).toContain("user inputs: 2");
+			expect(candidateSection(report)).toHaveLength(1);
+		} finally { cleanup(); }
+	});
 
 });

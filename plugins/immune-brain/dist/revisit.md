@@ -75,6 +75,16 @@ aloud in the report so the 口径 stays visible.
   On Antigravity CLI, `invoke_subagent` is not counted as a `review` dispatch
   and `GENERIC` tool-output steps carry no call id, so tool results are never
   joined to their calls (`call_line: null`).
+- `user_input` carries `synthetic: true` for pure Host-injected pseudo-user
+  frames: a whole `<task-notification>` / `<system-reminder>` /
+  `<local-command-*>` / `<command-name>` envelope with no text left outside it,
+  `Tool loaded.`, a `Base directory for this skill:` preamble, a usage-limit
+  reset notice, or a `[plan review]` continuation. A `<skill>` block or any text
+  outside the envelope — a `/skill <instruction>` call included — makes the turn
+  human (`synthetic: false`). Synthetic entries stay in `--json` `events[]`
+  unchanged; only the `user_resume` candidates and the `user inputs` total count
+  `synthetic: false`, so a Host notification between a stop and a human reply
+  neither creates nor hides a resume.
 - Timestamps are parsed to epoch milliseconds (ISO strings with any offset, or
   numeric milliseconds) and compared with the window. A line with a missing or
   unparsable timestamp is skipped and counted in the header
@@ -163,7 +173,7 @@ bun "<path-to-skill>/scripts/review_retro.ts" (<days> | --since <iso> [--until <
   one line per group and at most five groups per kind.
 - Every `events[]` entry carries `host`, `session`, `line`, `entry_id`, `timestamp`,
   `role`, `cwd`, `task_id`, `run_id` and `type`: `user_input` (`skill`,
-  `instruction`, `chars`); `tool_call` (`tool_call_id`, `name`, `op`,
+  `instruction`, `chars`, `synthetic`); `tool_call` (`tool_call_id`, `name`, `op`,
   `author`); `tool_result` (`tool_call_id`, `call_line`, `is_error`, and
   `state`, `lifecycle`, `batch_id`, `batch_state`, `stop_applied` when
   present); `turn_end` (`stop_reason`); `review`; `registration`; `finding`.

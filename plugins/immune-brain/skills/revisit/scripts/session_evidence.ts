@@ -10,11 +10,24 @@ const CLAUDE_KERNEL_TOOL = /^mcp__.*immune[-_]brain.*__([a-z0-9_]+)$/;
 const MAX_REPR_BYTES = 512 * 1024;
 const MAX_REPR_DEPTH = 64;
 
+// Host-injected pseudo-user frames (F3): a whole envelope with no human text, or fixed Host preamble text.
+const HOST_ENVELOPE = /<(task-notification|system-reminder|local-command-[a-z-]+|command-name)\b[^>]*>[\s\S]*?<\/\1>/gi;
+const HOST_PREAMBLE = /^(?:Tool loaded\.|Base directory for this skill:|Your claude\.ai usage limit has reset\.|\[plan review)/i;
+
 const EDIT_TOOLS_BY_HOST: Record<Host, ReadonlySet<string>> = {
 	pi: new Set(["edit", "write", "multiedit", "apply_patch"]),
 	claude: new Set(["Edit", "Write", "MultiEdit"]),
 	antigravity: new Set(["edit_file", "write_file", "replace_file_content", "write_to_file"]),
 };
+
+/** A `/skill` block or any text outside a Host envelope means a human wrote the turn. */
+function isSyntheticInput(text: string): boolean {
+	if (/<skill\b/i.test(text)) return false;
+	const trimmed = text.trim();
+	if (HOST_PREAMBLE.test(trimmed)) return true;
+	const remainder = trimmed.replace(HOST_ENVELOPE, "").trim();
+	return remainder !== trimmed && !remainder;
+}
 
 export const KERNEL_OPS = new Set([
 	"status",
@@ -205,7 +218,7 @@ function observedVerdict(content: unknown): Record<string, any> | null {
 }
 
 type Pointer = { host: Host; session: string; line: number; entry_id: string; timestamp: string; role: string; cwd: string; task_id: string; run_id: string };
-export type SessionEvent = Pointer & ({ type: "user_input"; skill: string | null; instruction: string; chars: number }
+export type SessionEvent = Pointer & ({ type: "user_input"; skill: string | null; instruction: string; chars: number; synthetic: boolean }
 	| { type: "tool_call"; tool_call_id: string; name: string; op: string | null; author: string }
 	| { type: "tool_result"; tool_call_id: string; call_line: number | null; is_error: boolean; state?: unknown; lifecycle?: unknown; batch_id?: unknown; batch_state?: unknown; stop_applied?: boolean }
 	| { type: "turn_end"; stop_reason: string }
@@ -244,6 +257,7 @@ function emitUserInput(out: SessionRead, base: Pointer, text: string): void {
 		skill: match?.[1] ?? null,
 		instruction: text.replace(/<skill\b[^>]*>[\s\S]*?<\/skill>/g, "").trim().slice(0, 240),
 		chars: text.length,
+		synthetic: isSyntheticInput(text),
 	});
 }
 

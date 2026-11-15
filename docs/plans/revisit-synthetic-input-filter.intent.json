@@ -1,0 +1,27 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "revisit-synthetic-input-filter",
+  "owner": "user",
+  "goal": "Classify pure Host-injected pseudo-user transcript frames (<task-notification>, Tool loaded., Base directory for this skill:..., usage-limit reset notices, [plan review]) with synthetic: true in session_evidence.ts while preserving genuine /skill human instructions and human prompts as synthetic: false, keeping all events in --json (immune_brain/revisit_evidence/v2) events[], and excluding synthetic: true from user_resume candidates and human user inputs totals in review_retro.ts and dist/revisit.md per docs/specs/revisit-synthetic-input-filter.spec.md (BR-REQ-4, BR-DEC-5, BR-SCN-3, F3).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per docs/specs/revisit-synthetic-input-filter.spec.md AC1 and BR-SCN-3, SessionEvent user_input in plugins/immune-brain/skills/revisit/scripts/session_evidence.ts carries synthetic: boolean, marking pure Host-injected entries (<task-notification>, Tool loaded., Base directory for this skill:..., usage-limit reset notices, [plan review]) synthetic: true while retaining them in --json (immune_brain/revisit_evidence/v2) events[] (BR-DEC-5), and preserving genuine human follow-ups and /skill invocations carrying human instructions as synthetic: false (BR-REQ-4).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per docs/specs/revisit-synthetic-input-filter.spec.md AC2 and BR-SCN-3, review_retro.ts excludes synthetic: true user_input events from user_resume candidates after turn_end(stop) and from human user inputs summary totals (F3), while plugins/immune-brain/dist/revisit.md documents synthetic classification and human-only resume accounting.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/revisit-synthetic-input-filter.spec.md",
+    "plugins/immune-brain/dist/revisit.md",
+    "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+    "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+    "tests/review-retro-analyzer.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
