@@ -170,11 +170,18 @@ function refuse(reason_code: typeof RUN_ENTRY_REQUIRED | typeof PHASE_ENTRY_REQU
  * Whether the session's entry state admits one operation. `state` is null when
  * the store could not be read, which refuses `start_unattended_batch`,
  * `retire_stale_batch` and the `drive` Skill. The Planner and Brainstorm Skills are never refused.
+ * `workspace` is the operation's resolved cwd: omitting it keeps the 2-argument
+ * call, and a resolved cwd that drifted from the bound workspace refuses (D4).
  */
-export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null): PhaseAdmission {
+export function admitPhaseOperation(operation: PhaseOperation, state: PhaseEntryState | null,
+	workspace?: string | null): PhaseAdmission {
 	if (operation.kind === "tool") {
-		if (state?.run_live) return { ok: true };
-		return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
+		if (!state?.run_live) return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
+		if (state.workspace !== null && workspace !== undefined && workspace !== state.workspace)
+			return { ok: false, reason_code: RUN_ENTRY_REQUIRED,
+				detail: `${operation.name} was called from ${workspace ?? "an unresolvable cwd"} while drive is bound to ${state.workspace}`,
+				recovery_action: `cd ${state.workspace} to return to the bound workspace, or ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}` };
+		return { ok: true };
 	}
 	if (operation.skill !== "drive") return { ok: true };
 	if (state?.run_live) return { ok: true };

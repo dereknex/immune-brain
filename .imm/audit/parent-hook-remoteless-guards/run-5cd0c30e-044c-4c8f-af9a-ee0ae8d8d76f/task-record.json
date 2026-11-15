@@ -1,0 +1,213 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "parent-hook-remoteless-guards",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "parent-hook-remoteless-guards",
+    "goal": "Issue #503 (Spec docs/specs/parent-hook-remoteless-guards.spec.md, D1-D6; BR-REQ-1..3, BR-DEC-1..3, BR-SCN-1..2). Eliminate both Claude Parent Hook warnings on remote-less single-task Lane runs: (1) observeParentRun and recordParentRepair dispatch observeSingleTask when record.plan_source === 'single_task', observeParentCompletion settles completed single-task batches with unconfigured final_verification including after cleanupSingleTaskLane deletes refs/heads/imm/<task_id>, and Parent continuation advances plan_digest across contiguous lane_rebinds chains; (2) admitPhaseOperation and PreToolUse fail-closed deny start_unattended_batch and retire_stale_batch when realpathSync(payload.cwd) !== state.workspace with cd <state.workspace> recovery guidance while run_continuation_session skips tool correlations from drifted cwds so PostToolUse never emits 'batch receipt has no persisted identity'. Out: GitHub-sourced Initiative offline Stop fallback (BR-OUT-1), silent cwd rewriting (BR-OUT-2), and Pi tool schemas or unrelated #426 items (BR-OUT-3).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Spec AC1 (D1, D2; BR-REQ-1, BR-DEC-1, BR-SCN-1). Done looks like: a remote-less single_task Lane batch runs Claude Stop continuation and settles silently without gh or final_verification. Seam: tests/claude-run-continuation.test.ts over a zero-remote Git repo. Positive: with no git remote and no final_verification, Stop returns { decision: 'block' } once while enrolled, null on unchanged waits, and null revoking entry_token when completed under both lane_retained and lane_removed (refs/heads/imm/<task> deleted after staged checkout delivery); recordParentRepair on a single_task batch also avoids gh. Negative: a remote-less non-single_task Initiative without docs/initiatives/<slug>.md emits systemMessage 'continuation facts could not be verified'; a single_task batch with failing configured final_verification, blocked return_to_coordinator, or missing Parent ref without lane_removed refuses settlement. Bound: repeated unchanged Stops return null without spending entry_token, and settlement revokes it once.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"remote-less single_task Parent\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Spec AC2 (D3; BR-REQ-1, BR-SCN-1). Done looks like: Parent continuation tracks approved single_task lane_rebinds plan_digest updates without false identity failure. Seam: tests/claude-run-continuation.test.ts. Positive: after rebindSingleTaskIdentity advances plan_digest from D1 to D2 in lane_rebinds, Stop does not throw 'Parent continuation has no matching persisted batch identity' or pause 'batch identity changed', blocks on the rebound progress, and updates persisted session binding.plan_digest to D2; PostToolUse of start_unattended_batch on the same rebound batch also advances binding.plan_digest. Negative: a record whose plan_digest changed without a contiguous lane_rebinds chain from binding.plan_digest fails closed on Stop with systemMessage containing 'Parent continuation has no matching persisted batch identity'. Bound: a two-step contiguous rebind chain D1 -> D2 -> D3 before Stop advances binding.plan_digest to D3 in one Stop boundary.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"lane_rebinds plan_digest\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Spec AC3 (D4; BR-REQ-2, BR-DEC-2, BR-SCN-2). Done looks like: PreToolUse denies start_unattended_batch and retire_stale_batch when shell cwd drifts from state.workspace and names cd <state.workspace> recovery. Seam: tests/phase-entry.test.ts and tests/claude-phase-entry-gate.test.ts. Positive: admitPhaseOperation and phaseEntryGateHookOutput admit both tools when cwd resolves (including via symlink) to state.workspace or workspace is omitted. Negative: when payload.cwd points to .git/imm/worktrees/<slug>/<task>, another directory, or a non-existent path, PreToolUse returns permissionDecision 'deny' with run_entry_required naming the drifted cwd, state.workspace, and 'cd <state.workspace>', writing no .admit file (consumePhaseAdmission is false, gateCalls is 0), while MCP requireRunEntry still refuses grant.workspace !== mcp.cwd when Hook ran at elsewhere. Bound: after a drifted-cwd denial, entry_token stays unspent and the next PreToolUse at state.workspace returns null.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC4",
+        "assertion": "Spec AC4 (D5; BR-REQ-2, BR-OUT-2, BR-SCN-2). Done looks like: drifted-cwd tool calls record no continuation correlation and PostToolUse never emits 'batch receipt has no persisted identity'. Seam: tests/claude-run-continuation.test.ts. Positive and Negative: when drive was entered at coordinator root and PreToolUse + PostToolUse for start_unattended_batch (returning state 'started' persisted only at root) or status run with cwd at root/.git/imm/worktrees/<slug>/<task>, readRunToolSession is null and PostToolUse returns null without 'batch receipt has no persisted identity'; Stop at a changed cwd still emits systemMessage containing 'workspace changed'. Bound: returning cwd to root before Stop allows PreToolUse + PostToolUse of start_unattended_batch at root to correlate and bind Parent continuation normally.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"drifted cwd\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC5",
+        "assertion": "Spec AC5 (D4, D6; BR-REQ-3, Layering Rules). Done looks like: adapter-to-coordinator dependency direction holds and regenerated Claude and Antigravity plugin artifacts match source. Seam: tests/runtime-layering-boundary.test.ts, scripts/build-claude-plugin.ts --check, and scripts/build-antigravity-plugin.ts --check. Positive: all three checks exit 0 with Adapter -> Coordinator -> Unattended direction preserved and zero source-to-bundle skew. Negative: any unregenerated runtime edit causes the --check scripts to exit non-zero.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/runtime-layering-boundary.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/parent-hook-remoteless-guards.md",
+      "docs/plans/parent-hook-remoteless-guards.intent.json",
+      "docs/specs/parent-hook-remoteless-guards.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+      "plugins/immune-brain-antigravity/runtime/unattended/batch_git.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+      "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+      "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+      "plugins/immune-brain/runtime/claude/lane_guard.ts",
+      "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+      "plugins/immune-brain/runtime/unattended/batch_git.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/claude-run-continuation.test.ts",
+      "tests/phase-entry.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/parent-hook-remoteless-guards.intent.json",
+    "content_hash": "sha256:65802d0730d5312b5496badb7139606202a53b467620be18553f4fdcb737852e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:65802d0730d5312b5496badb7139606202a53b467620be18553f4fdcb737852e",
+  "git_base_head": "8c92c7e29a4bf5c66c3b304b4431d8afa5f5e8c8",
+  "attestations": [
+    {
+      "id": "approval-qa-5bb0e1d9",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:65802d0730d5312b5496badb7139606202a53b467620be18553f4fdcb737852e",
+      "diff_hash": "sha256:2e530b9d28b5751bed69327dc904c1f1d47aa894de14a815d6a58f86d649f7af",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319"
+        },
+        {
+          "acceptance_id": "AC4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319"
+        },
+        {
+          "acceptance_id": "AC5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:3f31bd3254ab7b8736a29de63b63c83d20d05fc33254cefbc7744199aabfd319"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3b9c3620",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:65802d0730d5312b5496badb7139606202a53b467620be18553f4fdcb737852e",
+      "diff_hash": "sha256:2e530b9d28b5751bed69327dc904c1f1d47aa894de14a815d6a58f86d649f7af",
+      "actor_id": "cli:claude-code:18c77f98-1d94-4479-bc14-c2ab49d333b5",
+      "summary": "Remote-less single_task Parent settlement, contiguous lane_rebinds digest tracking, the realpath cwd-drift PreToolUse guard and drifted-cwd correlation skip all meet AC1-AC5; both bundles show the matching compiled hunks plus module reorder/renumbering. Blast radius medium: run_continuation.ts, batch_git.ts, phase_entry.ts, run_continuation_session.ts and the derived bundles; no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8c92c7e29a4bf5c66c3b304b4431d8afa5f5e8c8",
+        "review_commit": "62ac1d11f0d4988fad6fd5fc477d284b6fbb2826",
+        "review_tree": "c1cb6ec78bd3248f96ec0b914f347a6d969be3ad",
+        "manifest_digest": "sha256:e7db378de6d484f87e0b773fafc060e925c4bfd41a2ab6ba6d46f7c1e87cf97d"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-85e3d1c8be1e-1-review-1",
+          "acceptance_id": "AC3",
+          "summary": "A PreToolUse payload.cwd that does not exist is denied with the wording 'an unresolvable cwd' rather than the literal drifted path; the Spec D4 prescribes this wording, but the operator loses the original path in the deny detail.",
+          "anchor": "sha256:053061b6c90159e9f97cdf2634d5b2bc4b49f7e7d5d3427e0f3af9191afd89de",
+          "evidence": {
+            "trigger": "payload.cwd names a missing directory, so realpathSync throws, workspace becomes null, and the detail reads 'called from an unresolvable cwd' without the payload path",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/claude/lane_guard.ts",
+              "plugins/immune-brain/runtime/assurance/phase_entry.ts:admitPhaseOperation"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC3"
+            }
+          }
+        },
+        {
+          "id": "review-85e3d1c8be1e-2-review-2",
+          "acceptance_id": "AC1",
+          "summary": "The AC1 negative case 'failing configured final_verification' is exercised with a configured final_verification that has no result yet, not with a recorded failing result; settlement is still refused, through the final?.passed === true branch.",
+          "anchor": "sha256:351d3afbb60fbc84805ddd7df4dabd83256cd3a03d845c36c72d7268800f23b0",
+          "evidence": {
+            "trigger": "single_task record with final_verification configured and final_report.final_verification.passed=false is not separately fixtured, so the passed=false path is covered only by the existing generic branch",
+            "caller_chain": [
+              "tests/claude-run-continuation.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_git.ts:observeParentCompletion"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:188885064ba615ca17ebb232681a7c0e8726ff21a3e61364570ffdbb58cf7e99"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:parent-hook-remoteless-guards:2026-11-15T08:57:58.087Z",
+      "at": "2026-11-15T08:57:58.087Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/parent-hook-remoteless-guards.intent.json"
+    },
+    {
+      "id": "record_approval:parent-hook-remoteless-guards:2026-11-15T08:58:27.862Z",
+      "at": "2026-11-15T08:58:27.862Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5bb0e1d9\naction_v2_sha256:4afbd6ba7579a55c2c8e8ff04e916d002ae674cad6141a3ed624a7400738b13c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T08:58:27.862Z"
+      }
+    },
+    {
+      "id": "record_approval:parent-hook-remoteless-guards:2026-11-15T09:01:40.858Z",
+      "at": "2026-11-15T09:01:40.858Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3b9c3620\naction_v2_sha256:f1f3cc9bb406bf8ac3c57b63c2ae3a0e8fc865034aae179bb50c1e732535bc59",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:18c77f98-1d94-4479-bc14-c2ab49d333b5",
+        "confirmation_ref": "pi:cli:claude-code:18c77f98-1d94-4479-bc14-c2ab49d333b5",
+        "issued_at": "2026-11-15T09:01:40.858Z"
+      },
+      "review_started_at": "2026-11-15T08:58:33.415Z",
+      "review_submitted_at": "2026-11-15T09:01:39.342Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:parent-hook-remoteless-guards:2026-11-15T09:01:45.575Z",
+      "at": "2026-11-15T09:01:45.575Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:62b8be5eed6f4d241b37e4c4e28ded344211539fa535db7a3cc6f488ca7f67c8"
+    }
+  ]
+}

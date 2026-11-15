@@ -8675,17 +8675,1606 @@ var init_git_integration_preference = __esm(() => {
   init_layered_config();
 });
 
+// plugins/immune-brain/runtime/local_initiative.ts
+import { lstatSync as lstatSync12, readFileSync as readFileSync12 } from "node:fs";
+import { resolve as resolve9 } from "node:path";
+function localInitiativePath(initiativeSlug) {
+  return `docs/initiatives/${initiativeSlug}.md`;
+}
+function hasLocalInitiative(root, initiativeSlug) {
+  const stat = lstatSync12(resolve9(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
+  if (!stat)
+    return false;
+  if (!stat.isFile())
+    throw new Error(`${localInitiativePath(initiativeSlug)} must be a regular file`);
+  return true;
+}
+function unquote(value) {
+  return value.trim().replace(/^`(.*)`$/, "$1");
+}
+function observeLocalInitiative(root, initiativeSlug) {
+  if (!ID_PATTERN.test(initiativeSlug))
+    throw new Error("initiative_slug is invalid");
+  const path = localInitiativePath(initiativeSlug);
+  if (!hasLocalInitiative(root, initiativeSlug))
+    throw new Error(`Local Initiative ${path} does not exist`);
+  const slices = [];
+  let inTasks = false;
+  let fence = false;
+  for (const raw of readFileSync12(resolve9(root, path), "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("```")) {
+      fence = !fence;
+      continue;
+    }
+    if (fence)
+      continue;
+    const heading = SLICE_HEADING.exec(line);
+    if (heading) {
+      slices.push({ slice_id: heading[1], tasks: [], blocked_by: [] });
+      inTasks = false;
+      continue;
+    }
+    const slice = slices.at(-1);
+    if (!slice)
+      continue;
+    if (TASKS.test(line)) {
+      inTasks = true;
+      continue;
+    }
+    const blocked = BLOCKED_BY.exec(line);
+    if (blocked) {
+      slice.blocked_by.push(...blocked[1].split(",").map(unquote).filter(Boolean));
+      inTasks = false;
+      continue;
+    }
+    const bullet = BULLET.exec(line);
+    if (inTasks && bullet)
+      slice.tasks.push(unquote(bullet[1]));
+    else if (line)
+      inTasks = false;
+  }
+  if (!slices.length)
+    throw new Error(`Local Initiative ${path} declares no Slice`);
+  return {
+    contract: "immune_brain/local_initiative_observation/v1",
+    initiative_id: initiativeSlug,
+    path,
+    tasks: slices.map((slice) => {
+      if (slice.tasks.length !== 1)
+        throw new Error(`Local Initiative Slice ${slice.slice_id} must name exactly one Task to run as a batch child`);
+      return { task_id: slice.tasks[0], slice_id: slice.slice_id, blocked_by: slice.blocked_by };
+    })
+  };
+}
+var ID_PATTERN, SLICE_HEADING, BLOCKED_BY, TASKS, BULLET;
+var init_local_initiative = __esm(() => {
+  ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+  SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
+  BLOCKED_BY = /^blocked by\s*:(.*)$/i;
+  TASKS = /^tasks\s*:\s*$/i;
+  BULLET = /^[-*]\s+(.*)$/;
+});
+
+// plugins/immune-brain/runtime/github_issue_tracker.ts
+import { spawn as spawn2, spawnSync as spawnSync9 } from "node:child_process";
+import { existsSync as existsSync8, readFileSync as readFileSync13, readdirSync as readdirSync5 } from "node:fs";
+import { basename as basename2, relative as relative4, resolve as resolve10, sep as sep5 } from "node:path";
+function countLiteral(value, needle) {
+  if (!needle)
+    return 0;
+  let count = 0;
+  let index = 0;
+  while ((index = value.indexOf(needle, index)) !== -1) {
+    count += 1;
+    index += needle.length;
+  }
+  return count;
+}
+function marker(name, value) {
+  return `<!-- immune-brain:${name}=${value} -->`;
+}
+function terminalMarker(eventId) {
+  return `<!-- immune-brain:terminal-event=${eventId} -->`;
+}
+function terminalSuffix(eventId) {
+  return `
+
+${terminalMarker(eventId)}
+Terminal event: \`${eventId}\`
+`;
+}
+function terminalEvent(value) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,500}$/.test(value))
+    throw new Error("terminal_event_id must be a bounded opaque Kernel event id");
+  if (/(?:gh[pousr]_|github_pat_)/i.test(value))
+    throw new Error("terminal_event_id must not contain a token-like value");
+  if (value === "multiple" || value === "malformed")
+    throw new Error(`terminal_event_id must not be the reserved parser sentinel: ${value}`);
+  return value;
+}
+function redactSecrets(value) {
+  return value.replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/\b(?:token|secret|password)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
+}
+function publicText(value, name, max = 2000) {
+  if (typeof value !== "string")
+    throw new Error(`${name} must be a string`);
+  const text = value.trim();
+  if (!text || text.length > max || text.includes("\x00"))
+    throw new Error(`${name} must contain 1-${max} safe characters`);
+  return redactSecrets(text).replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
+}
+function identifier(value, name) {
+  if (typeof value !== "string" || !ID_PATTERN2.test(value))
+    throw new Error(`${name} must match ${ID_PATTERN2}`);
+  if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
+    throw new Error(`${name} must not contain a token-like value`);
+  return value;
+}
+function titleText(value) {
+  return redactSecrets(value).replace(/\s+/g, " ");
+}
+function displayName(value, name, max) {
+  if (typeof value !== "string" || !value.trim())
+    throw new Error(`${name} is required: publish a bounded display name instead of the full goal text`);
+  if (/[[\]]/.test(value))
+    throw new Error(`${name} must not contain square brackets`);
+  return projectionText(value, name, max);
+}
+function issueTitle(value) {
+  const title = titleText(value);
+  if (title.length > MAX_TITLE_LENGTH)
+    throw new Error(`GitHub Issue title must not exceed ${MAX_TITLE_LENGTH} characters: shorten the Planner display names`);
+  return title;
+}
+function initiativeDisplayNames(projection) {
+  const missing = ["short_name", "title"].filter((field) => projection?.[field] === undefined);
+  if (missing.length)
+    throw new Error(`Initiative projection requires display names; missing ${missing.map((field) => `projection.${field}`).join(", ")}`);
+  return { shortName: displayName(projection?.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME) };
+}
+function initiativeIssueTitle(initiativeId, projection) {
+  const { shortName } = initiativeDisplayNames(projection);
+  const title = displayName(projection?.title, "projection.title", MAX_DISPLAY_TITLE);
+  return issueTitle(`[${shortName}] ${title}`);
+}
+function taskDisplayNames(operation) {
+  const projection = operation.projection;
+  if (projection?.short_name === undefined || projection.title === undefined || projection.slice_ordinal === undefined)
+    throw new Error(`Task ${operation.task_id} requires projection.short_name, projection.title, and projection.slice_ordinal display names`);
+  return {
+    shortName: displayName(projection.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME),
+    title: displayName(projection.title, "projection.title", MAX_DISPLAY_TITLE),
+    ordinal: projection.slice_ordinal
+  };
+}
+function taskIssueTitle(operation) {
+  const { shortName, title } = taskDisplayNames(operation);
+  return issueTitle(`[${shortName}] ${operation.slice_id} ${title}`);
+}
+function desiredTaskLabels(operation) {
+  return (operation.projection?.blocked_by ?? []).length ? [READY_FOR_AGENT_LABEL, BLOCKED_LABEL] : [READY_FOR_AGENT_LABEL];
+}
+function labelMutationArgs(observed, desired) {
+  const args = [];
+  for (const label of desired)
+    if (!observed.includes(label))
+      args.push("--add-label", label);
+  for (const label of MANAGED_ISSUE_LABELS)
+    if (observed.includes(label) && !desired.includes(label))
+      args.push("--remove-label", label);
+  return args;
+}
+async function repositoryLabels(root, gh, repository) {
+  const execution = await gh.run(["label", "list", "--repo", repository.name_with_owner, "--json", "name", "--limit", "1000"], { cwd: root });
+  if (execution.exit_code !== 0 || execution.output_exceeded)
+    return ghFailure("upsert-task", execution, "cannot query repository labels");
+  try {
+    const parsed = JSON.parse(execution.stdout);
+    if (!Array.isArray(parsed))
+      throw new Error("gh returned malformed label list");
+    return parsed.map((item) => item?.name).filter((name) => typeof name === "string");
+  } catch (error) {
+    return result("upsert-task", "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function labelAvailabilityFailure(root, gh, repository, required) {
+  if (!required.length)
+    return null;
+  const labels = await repositoryLabels(root, gh, repository);
+  if (!Array.isArray(labels))
+    return labels;
+  const missing = required.filter((label) => !labels.includes(label));
+  return missing.length ? result("upsert-task", "permanent_failure", `repository labels missing: ${missing.join(", ")}; create them before publishing so Task Issues carry publication state`) : null;
+}
+function redactGithubDiagnostic(value) {
+  return redactSecrets(value).replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC);
+}
+function result(operation, status, message, issue) {
+  return {
+    contract: CONTRACT2,
+    operation,
+    status,
+    association_found: issue !== undefined,
+    ...issue ? { issue_number: issue.number, issue_url: issue.url, node_id: String(issue.id) } : {},
+    message: redactGithubDiagnostic(message)
+  };
+}
+function ghFailure(operation, execution, message) {
+  const retryable = execution.timed_out || /timeout|timed out|network|connection|temporar|rate limit|502|503|504/i.test(execution.stderr);
+  return result(operation, retryable ? "retryable_failure" : "permanent_failure", `${message}: ${execution.output_exceeded ? "gh output limit exceeded" : execution.stderr || `gh exited ${execution.exit_code}`}`);
+}
+function createGhTransport(binary = "gh") {
+  return {
+    run(args, options = {}) {
+      return new Promise((complete) => {
+        let stdout = Buffer.alloc(0);
+        let stderr = Buffer.alloc(0);
+        if (options.signal?.aborted) {
+          complete({
+            exit_code: 1,
+            stdout: "",
+            stderr: "operation cancelled by the caller",
+            timed_out: true,
+            output_exceeded: false
+          });
+          return;
+        }
+        const remaining = GH_TIMEOUT_MS;
+        let timedOut = false;
+        let outputExceeded = false;
+        let timer;
+        let settled = false;
+        const finish = (exitCode, spawnError = "") => {
+          if (settled)
+            return;
+          settled = true;
+          if (timer)
+            clearTimeout(timer);
+          complete({
+            exit_code: exitCode,
+            stdout: stdout.toString("utf8"),
+            stderr: `${stderr.toString("utf8")}${spawnError}`,
+            timed_out: timedOut,
+            output_exceeded: outputExceeded
+          });
+        };
+        let child;
+        try {
+          child = spawn2(binary, args, {
+            cwd: options.cwd,
+            stdio: ["pipe", "pipe", "pipe"],
+            env: process.env
+          });
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+          return;
+        }
+        const append = (current, chunk) => {
+          const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
+          if (chunk.length > available) {
+            outputExceeded = true;
+            child.kill("SIGKILL");
+          }
+          return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
+        };
+        const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
+        if (!childOut || !childErr || !childIn) {
+          finish(1, "gh was spawned without the stdio pipes this reader requires");
+          return;
+        }
+        childOut.on("data", (chunk) => {
+          stdout = append(stdout, chunk);
+        });
+        childErr.on("data", (chunk) => {
+          stderr = append(stderr, chunk);
+        });
+        child.once("error", (error) => {
+          finish(1, error.message);
+        });
+        childIn.once("error", (error) => {
+          finish(1, error.message);
+        });
+        timer = setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, remaining);
+        child.once("close", (code) => {
+          finish(code ?? 1);
+        });
+        try {
+          childIn.end(options.stdin ?? "");
+        } catch (error) {
+          finish(1, error instanceof Error ? error.message : String(error));
+        }
+      });
+    }
+  };
+}
+function parseRepository(raw) {
+  const value = JSON.parse(raw);
+  if (!Number.isSafeInteger(value.id) || typeof value.full_name !== "string" || !value.full_name.includes("/"))
+    throw new Error("gh returned malformed repository identity");
+  return { id: value.id, name_with_owner: value.full_name };
+}
+function parseIssues(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Issue list");
+  return pages.filter((item) => Boolean(item) && typeof item === "object" && !("pull_request" in item)).map((item) => {
+    if (!Number.isSafeInteger(item.id) || !Number.isSafeInteger(item.number) || typeof item.html_url !== "string" || typeof item.title !== "string" || typeof item.body !== "string" && item.body !== null || item.state !== "open" && item.state !== "closed")
+      throw new Error("gh returned a malformed Issue");
+    return {
+      id: item.id,
+      number: item.number,
+      url: item.html_url,
+      title: item.title,
+      body: typeof item.body === "string" ? item.body : "",
+      state: item.state,
+      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
+      labels: Array.isArray(item.labels) ? item.labels.map((label) => typeof label === "string" ? label : label?.name).filter((name) => typeof name === "string") : []
+    };
+  });
+}
+function parseSubIssueNumbers(raw) {
+  const parsed = JSON.parse(raw);
+  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
+  if (!Array.isArray(pages))
+    throw new Error("gh returned malformed Sub-issue list");
+  return pages.map((item, index) => {
+    const number = item?.number;
+    if (typeof number !== "number" || !Number.isSafeInteger(number))
+      throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
+    return number;
+  });
+}
+async function snapshot(root, gh, operation) {
+  const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
+  if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
+    return ghFailure(operation, repositoryExecution, "cannot resolve GitHub repository");
+  let repository;
+  try {
+    repository = parseRepository(repositoryExecution.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+  const issues = [];
+  for (let page = 1;page <= MAX_SNAPSHOT_PAGES; page += 1) {
+    const issuesExecution = await gh.run(["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`], { cwd: root });
+    if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
+      return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
+    let raw;
+    try {
+      raw = JSON.parse(issuesExecution.stdout);
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (!Array.isArray(raw))
+      return result(operation, "permanent_failure", "gh returned malformed Issue list");
+    const pageCount = raw.length;
+    try {
+      issues.push(...parseIssues(issuesExecution.stdout));
+    } catch (error) {
+      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    }
+    if (pageCount < 100)
+      break;
+    if (page === MAX_SNAPSHOT_PAGES)
+      return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
+  }
+  return { repository, issues };
+}
+function findIssue(issues, primary, required) {
+  const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
+  if (candidates.length === 0)
+    return { kind: "missing" };
+  if (candidates.length !== 1)
+    return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
+  const issue = candidates[0];
+  for (const expected of [PROTOCOL_MARKER, ...required]) {
+    if (countLiteral(issue.body, expected) !== 1)
+      return { kind: "ambiguous", message: `Issue #${issue.number} has missing or duplicate identity markers` };
+  }
+  return { kind: "found", issue };
+}
+function initiativeLookup(issues, repositoryId, initiativeId) {
+  const initiative = marker("initiative-id", initiativeId);
+  return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
+}
+function publishedIntentHashMarkers(body) {
+  return [...body.matchAll(/<!-- immune-brain:intent-hash=([A-Za-z0-9][A-Za-z0-9._:-]{0,127}) -->/g)].map((match) => match[1]);
+}
+function publishedIntentIdentity(body) {
+  const hashes = publishedIntentHashMarkers(body);
+  if (hashes.length === 0)
+    return { kind: "absent" };
+  if (hashes.length === 1)
+    return { kind: "bound", hash: hashes[0] };
+  return { kind: "ambiguous", hashes };
+}
+function publishedIntentMismatch(body, taskId, expected) {
+  const identity = publishedIntentIdentity(body);
+  if (identity.kind === "ambiguous")
+    return `published Task ${taskId} carries ${identity.hashes.length} conflicting intent-hash markers; its published Intent identity is ambiguous`;
+  if (identity.kind === "absent" || expected === undefined)
+    return null;
+  if (identity.hash !== expected)
+    return `published Task ${taskId} was published from a different TaskIntent revision; the published identity no longer matches the Intent being published`;
+  return null;
+}
+function sameTrackedBody(current, expected) {
+  return stripPublishedIntentHash(current) === stripPublishedIntentHash(expected);
+}
+function stripPublishedIntentHash(body) {
+  return body.replace(/<!-- immune-brain:intent-hash=[A-Za-z0-9][A-Za-z0-9._:-]{0,127} -->\n?/g, "");
+}
+function ownershipMarkerValue(body, name) {
+  const pattern = name === "scenarios" ? "[A-Za-z0-9%_!*'()~.-]+" : "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
+  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=(${pattern}) -->`, "g"))];
+  return values.length === 1 ? values[0][1] : null;
+}
+function taskLookup(issues, repositoryId, taskId) {
+  const task = marker("task-id", taskId);
+  const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
+  if (base.kind !== "found")
+    return base;
+  for (const name of ["task-id", "initiative-id", "slice-id"]) {
+    if (!ownershipMarkerValue(base.issue.body, name))
+      return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
+  }
+  return base;
+}
+function ownedTaskLookup(issues, repositoryId, taskId, initiativeId, sliceId) {
+  const base = taskLookup(issues, repositoryId, taskId);
+  if (base.kind !== "found")
+    return base;
+  return base.issue.body.includes(marker("initiative-id", initiativeId)) && base.issue.body.includes(marker("slice-id", sliceId)) ? base : { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
+}
+function sliceCount(parentBody, sliceId) {
+  return countLiteral(parentBody, marker("slice-id", sliceId));
+}
+async function readSubIssueNumbers(root, gh, operation, repository, parentNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native Sub-issue relations");
+  try {
+    return parseSubIssueNumbers(listed.stdout);
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function confirmAttachment(root, gh, operation, repository, parentNumber, childNumber) {
+  const read = await readSubIssueNumbers(root, gh, operation, repository, parentNumber);
+  if (!Array.isArray(read))
+    return read;
+  const matches = read.filter((candidate) => candidate === childNumber).length;
+  if (matches > 1)
+    return result(operation, "ambiguous_remote_state", `Issue #${parentNumber} lists the Task Issue more than once`);
+  return { attached: matches === 1 };
+}
+async function attachSubIssue(root, gh, operation, repository, parentNumber, child) {
+  const mutation = await gh.run([
+    "api",
+    "-F",
+    `sub_issue_id=${child.id}`,
+    `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`
+  ], { cwd: root });
+  if (mutation.exit_code !== 0 || mutation.output_exceeded)
+    return ghFailure(operation, mutation, "native Sub-issue attachment failed");
+  const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, child.number);
+  if (!("attached" in confirmed))
+    return confirmed;
+  return confirmed.attached ? { attached: true } : result(operation, "retryable_failure", "native Sub-issue relation did not converge", child);
+}
+async function readBlockedByIds(root, gh, operation, repository, childNumber) {
+  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded)
+    return ghFailure(operation, listed, "cannot read native blocked_by relations");
+  try {
+    const pages = JSON.parse(listed.stdout);
+    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)))
+      throw new Error("gh returned malformed blocked_by pages");
+    const ids = pages.flat().map((item, index) => {
+      const id = item?.issue_id ?? item?.id;
+      if (!Number.isSafeInteger(id))
+        throw new Error(`gh returned malformed blocked_by entry at ${index}`);
+      return id;
+    });
+    if (new Set(ids).size !== ids.length)
+      return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
+    return ids;
+  } catch (error) {
+    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+}
+async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
+  const id = identifier(initiativeId, "initiative_id");
+  const source = await snapshot(resolve10(root), gh, "create-initiative");
+  if ("contract" in source)
+    throw new Error(source.message);
+  const parent = initiativeLookup(source.issues, source.repository.id, id);
+  if (parent.kind === "missing")
+    throw new Error(`Initiative ${id} is not published`);
+  if (parent.kind === "ambiguous")
+    throw new Error(parent.message);
+  const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
+  if (!Array.isArray(subIssueNumbers))
+    throw new Error(subIssueNumbers.message);
+  if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
+    throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
+  const tasks = subIssueNumbers.map((issueNumber) => {
+    const matches = source.issues.filter((issue) => issue.number === issueNumber);
+    if (matches.length !== 1)
+      throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
+    const issue = matches[0];
+    const taskId = ownershipMarkerValue(issue.body, "task-id");
+    const sliceId = ownershipMarkerValue(issue.body, "slice-id");
+    if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
+      throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
+    const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
+    if (owned.kind !== "found" || owned.issue.number !== issueNumber)
+      throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
+    return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
+  });
+  if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Task identities`);
+  if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
+    throw new Error(`Initiative ${id} has duplicate Slice identities`);
+  const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
+  const observed = [];
+  for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
+    const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
+    if (!Array.isArray(blockerIds))
+      throw new Error(blockerIds.message);
+    const blockedBy = blockerIds.map((blockerId) => {
+      const blocker = taskByIssueId.get(blockerId);
+      if (!blocker)
+        throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
+      return blocker;
+    }).sort();
+    observed.push({
+      task_id: task.task_id,
+      slice_id: task.slice_id,
+      issue_number: task.issue_number,
+      blocked_by: blockedBy
+    });
+  }
+  return {
+    contract: "immune_brain/github_initiative_observation/v1",
+    initiative_id: id,
+    issue_number: parent.issue.number,
+    tasks: observed
+  };
+}
+async function confirmBlockedBy(root, gh, operation, repository, childNumber, blockers) {
+  const ids = await readBlockedByIds(root, gh, operation, repository, childNumber);
+  if (!Array.isArray(ids))
+    return ids;
+  const expected = blockers.map((blocker) => blocker.id);
+  if (ids.some((id) => !expected.includes(id)))
+    return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has unrequested native blocked_by relations`);
+  return { complete: ids.length === expected.length && expected.every((id) => ids.includes(id)) };
+}
+async function attachBlockedBy(root, gh, operation, repository, childNumber, blockers) {
+  const existing = await readBlockedByIds(root, gh, operation, repository, childNumber);
+  if (!Array.isArray(existing))
+    return existing;
+  for (const blocker of blockers) {
+    if (existing.includes(blocker.id))
+      continue;
+    const mutation = await gh.run([
+      "api",
+      "-F",
+      `issue_id=${blocker.id}`,
+      `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`
+    ], { cwd: root });
+    if (mutation.exit_code !== 0 || mutation.output_exceeded)
+      return ghFailure(operation, mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
+    existing.push(blocker.id);
+  }
+  const confirmed = await confirmBlockedBy(root, gh, operation, repository, childNumber, blockers);
+  if ("complete" in confirmed)
+    return confirmed.complete ? { complete: true } : result(operation, "retryable_failure", "native blocked_by relations did not converge");
+  return confirmed;
+}
+function carrierConflict(root, operation, initiativeId) {
+  if (!existsSync8(resolve10(root, "docs", "initiatives", `${initiativeId}.md`)))
+    return null;
+  return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
+}
+function listText(values, fallback) {
+  return values?.length ? values.map((value) => `- ${value}`).join(`
+`) : fallback;
+}
+function childScenarioSection(scenarios) {
+  if (!scenarios?.length)
+    return "";
+  const items = scenarios.map((scenario) => {
+    const mapped = scenario.acceptance?.length ? scenario.acceptance.map((id) => `\`${id}\``).join(", ") : "none";
+    const visible = `Actor: ${scenario.actor}. Given: ${scenario.given}. When: ${scenario.when}. Then: ${scenario.then}.`;
+    if (scenario.mode === "manual")
+      return `- [ ] \`${scenario.id}\` (manual, ${mapped}): ${visible} Reason: ${scenario.manual_reason}.`;
+    return `- \`${scenario.id}\` (automated, ${mapped}): ${visible}`;
+  });
+  return `
+## User scenarios
+
+${items.join(`
+`)}
+`;
+}
+function parentScenarioSection(scenarios) {
+  if (!scenarios?.length)
+    return "";
+  const items = scenarios.map((scenario) => {
+    const prefix = scenario.actor && scenario.given ? `Actor: ${scenario.actor}. Given: ${scenario.given}. ` : "";
+    const reason = scenario.manual_reason ? ` Reason: ${scenario.manual_reason}.` : "";
+    return `- \`${scenario.id}\` (Slice \`${scenario.slice_id}\`, ${scenario.mode}): ${prefix}When: ${scenario.when}. Then: ${scenario.then}.${reason}`;
+  });
+  return `
+## User scenarios
+
+${items.join(`
+`)}
+`;
+}
+function bodyLimitFailure(operation, body, reserve = 0) {
+  return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT ? null : result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
+}
+function createInitiativeBody(repository, operation, historicalSlices = []) {
+  const projection = operation.projection ?? {};
+  const provenance = projection.source_issue ? `## Provenance
+
+- Derived from #${projection.source_issue}: the originating feature Issue for this Initiative.
+
+` : "";
+  return `${[
+    PROTOCOL_MARKER,
+    KIND_INITIATIVE_MARKER,
+    marker("repo-id", repository.id),
+    marker("initiative-id", operation.initiative_id)
+  ].join(`
+`)}
+
+${provenance}## How to use this Issue
+
+- Edit planning prose and Slice ordering directly after creation.
+- Keep each Slice marker attached to exactly one stable Slice entry.
+- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.
+
+## Problem
+
+${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}
+
+## Result
+
+${publicText(projection.result ?? operation.goal, "projection.result")}
+
+## Initiative design
+
+${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}
+
+## Decisions
+
+${listText(projection.decisions, "- No additional Initiative decisions recorded.")}
+
+## Testing strategy
+
+${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}
+${parentScenarioSection(operation.scenarios)}
+## Out of scope
+
+${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}
+
+## Slices
+
+${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join(`
+`)}
+
+${ISSUE_FOOTER}
+`;
+}
+async function createInitiative(root, gh, operation, source) {
+  const lookup = (issues) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
+  const found = lookup(source.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  const body = createInitiativeBody(source.repository, operation);
+  const oversized = bodyLimitFailure(operation.op, body);
+  if (oversized)
+    return oversized;
+  const title = initiativeIssueTitle(operation.initiative_id, operation.projection);
+  if (found.kind === "missing") {
+    const mutation = await gh.run([
+      "issue",
+      "create",
+      "--repo",
+      source.repository.name_with_owner,
+      "--title",
+      title,
+      "--body-file",
+      "-"
+    ], { cwd: root, stdin: body });
+    const refreshed = await snapshot(root, gh, operation.op);
+    if ("contract" in refreshed)
+      return refreshed;
+    const confirmed = lookup(refreshed.issues);
+    if (confirmed.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", confirmed.message);
+    if (confirmed.kind === "missing") {
+      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Initiative Issue creation failed") : result(operation.op, "retryable_failure", "Initiative creation could not be confirmed");
+    }
+    return confirmed.issue.body === body && confirmed.issue.title === title ? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial title and body", confirmed.issue);
+  }
+  if (found.issue.body === body && found.issue.title === title) {
+    const labelArgs = labelMutationArgs(found.issue.labels, []);
+    if (labelArgs.length) {
+      const edited = await gh.run([
+        "issue",
+        "edit",
+        String(found.issue.number),
+        "--repo",
+        source.repository.name_with_owner,
+        ...labelArgs
+      ], { cwd: root });
+      if (edited.exit_code !== 0 || edited.output_exceeded)
+        return ghFailure(operation.op, edited, "Initiative Parent label convergence failed");
+      const refreshed = await snapshot(root, gh, operation.op);
+      if ("contract" in refreshed)
+        return refreshed;
+      const confirmed = lookup(refreshed.issues);
+      if (confirmed.kind !== "found")
+        return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after label convergence", found.issue);
+      return confirmed.issue.title === title && confirmed.issue.body === body && !labelMutationArgs(confirmed.issue.labels, []).length ? result(operation.op, "updated", "Initiative Issue managed labels converged", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to an unlabeled Parent", confirmed.issue);
+    }
+    return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
+  }
+  return result(operation.op, "permanent_failure", "Initiative Issue already exists and the tracker never rewrites it; edit the GitHub source directly for later planning changes", found.issue);
+}
+function childBody(repository, operation, parent) {
+  const projection = operation.projection ?? {};
+  const acceptance = operation.acceptance.map((item) => `- \`${item.id}\`: ${item.summary}`).join(`
+`);
+  return `${[
+    PROTOCOL_MARKER,
+    KIND_TASK_MARKER,
+    marker("repo-id", repository.id),
+    marker("initiative-id", operation.initiative_id),
+    marker("slice-id", operation.slice_id),
+    marker("task-id", operation.task_id),
+    ...operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : [],
+    ...operation.scenarios?.length ? [marker("scenarios", encodeURIComponent(JSON.stringify(operation.scenarios)))] : []
+  ].join(`
+`)}
+
+## Parent
+
+| Initiative | \`${operation.initiative_id}\` |
+| Parent Issue | [#${parent.number}](${parent.url}) |
+| Slice | \`${operation.slice_id}\` |
+| Risk | \`${operation.risk}\` |
+
+## Current behavior
+
+${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}
+
+## Desired behavior
+
+${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}
+
+## Key interfaces
+
+${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}
+
+## Acceptance criteria
+
+${acceptance}
+${childScenarioSection(operation.scenarios)}
+## Verification
+
+${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}
+
+## Blocked by
+
+${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join(`
+`) : "None"}
+
+## Out of scope
+
+${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}
+
+## Agent handoff
+
+${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}
+
+${ISSUE_FOOTER}
+`;
+}
+async function upsertTask(root, gh, operation, source) {
+  const labelFailure = await labelAvailabilityFailure(root, gh, source.repository, desiredTaskLabels(operation));
+  if (labelFailure)
+    return labelFailure;
+  const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
+  if (parent.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", parent.message);
+  if (parent.kind === "missing")
+    return result(operation.op, "permanent_failure", "the Initiative Parent Issue must exist before publishing a Task");
+  if (sliceCount(parent.issue.body, operation.slice_id) !== 1)
+    return result(operation.op, "ambiguous_remote_state", `Parent Issue #${parent.issue.number} has missing or duplicate Slice marker ${operation.slice_id}; restore exactly one stable Slice entry in the GitHub source`, parent.issue);
+  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
+  const found = lookup(source.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  const blockerIds = operation.projection?.blocked_by ?? [];
+  const blockers = [];
+  for (const blockerId of blockerIds) {
+    if (blockerId === operation.task_id)
+      return result(operation.op, "ambiguous_remote_state", "a Task cannot block itself", parent.issue);
+    const blocker = taskLookup(source.issues, source.repository.id, blockerId);
+    if (blocker.kind === "missing")
+      return result(operation.op, "permanent_failure", `blocking Task ${blockerId} has not been published`, parent.issue);
+    if (blocker.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", blocker.message, parent.issue);
+    const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, blocker.issue);
+    if (!("owned" in ownership))
+      return ownership;
+    blockers.push(blocker.issue);
+  }
+  const body = childBody(source.repository, operation, parent.issue);
+  const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
+  if (oversized)
+    return oversized;
+  const title = taskIssueTitle(operation);
+  let child;
+  let createdChild = false;
+  let labelsConverged = false;
+  if (found.kind === "missing") {
+    const mutation = await gh.run([
+      "issue",
+      "create",
+      "--repo",
+      source.repository.name_with_owner,
+      "--title",
+      title,
+      "--body-file",
+      "-",
+      ...desiredTaskLabels(operation).flatMap((label) => ["--label", label])
+    ], { cwd: root, stdin: body });
+    const refreshed = await snapshot(root, gh, operation.op);
+    if ("contract" in refreshed)
+      return refreshed;
+    const created = lookup(refreshed.issues);
+    if (created.kind === "ambiguous")
+      return result(operation.op, "ambiguous_remote_state", created.message);
+    if (created.kind === "missing") {
+      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Task Issue creation failed") : result(operation.op, "retryable_failure", "Task creation could not be confirmed");
+    }
+    if (created.issue.body !== body || created.issue.title !== title)
+      return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested title and body", created.issue);
+    child = created.issue;
+    createdChild = true;
+  } else {
+    const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+    if (owned.kind !== "found")
+      return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
+    child = owned.issue;
+    if (!sameTrackedBody(found.issue.body, body) || found.issue.title !== title)
+      return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
+    const intentMismatch = publishedIntentMismatch(found.issue.body, operation.task_id, operation.intent_hash);
+    if (intentMismatch)
+      return result(operation.op, "ambiguous_remote_state", intentMismatch, found.issue);
+    const observedLabelArgs = labelMutationArgs(child.labels, desiredTaskLabels(operation));
+    if (observedLabelArgs.length) {
+      const edited = await gh.run([
+        "issue",
+        "edit",
+        String(child.number),
+        "--repo",
+        source.repository.name_with_owner,
+        ...observedLabelArgs
+      ], { cwd: root });
+      if (edited.exit_code !== 0 || edited.output_exceeded)
+        return ghFailure(operation.op, edited, `Task Issue #${child.number} label convergence failed`);
+      labelsConverged = true;
+    }
+  }
+  const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
+  if (!("attached" in attachment))
+    return attachment;
+  if (!attachment.attached) {
+    const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child);
+    if (!("attached" in attach))
+      return attach;
+  }
+  const dependencies = await confirmBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+  if (!("complete" in dependencies))
+    return dependencies;
+  if (!dependencies.complete) {
+    const attached = await attachBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
+    if (!("complete" in attached))
+      return attached;
+  }
+  const finalSource = await snapshot(root, gh, operation.op);
+  if ("contract" in finalSource)
+    return finalSource;
+  const finalChild = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
+  if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || !sameTrackedBody(finalChild.issue.body, body))
+    return result(operation.op, "ambiguous_remote_state", "Task Issue changed identity, title, or body during dependency publication", child);
+  const finalIdentityMismatch = publishedIntentMismatch(finalChild.issue.body, operation.task_id, operation.intent_hash);
+  if (finalIdentityMismatch)
+    return result(operation.op, "ambiguous_remote_state", finalIdentityMismatch, child);
+  const finalChildOwnership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, finalChild.issue);
+  if (!("owned" in finalChildOwnership))
+    return finalChildOwnership;
+  child = finalChild.issue;
+  for (let index = 0;index < blockerIds.length; index += 1) {
+    const current = taskLookup(finalSource.issues, finalSource.repository.id, blockerIds[index]);
+    if (current.kind !== "found" || current.issue.id !== blockers[index].id)
+      return result(operation.op, "ambiguous_remote_state", `blocking Task ${blockerIds[index]} changed ownership during dependency publication`, child);
+    const ownership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, current.issue);
+    if (!("owned" in ownership))
+      return ownership;
+  }
+  const finalDependencies = await confirmBlockedBy(root, gh, operation.op, finalSource.repository, child.number, blockers);
+  if (!("complete" in finalDependencies))
+    return finalDependencies;
+  if (!finalDependencies.complete)
+    return result(operation.op, "ambiguous_remote_state", "native blocked_by relations changed during dependency publication", child);
+  if (attachment.attached && dependencies.complete)
+    return createdChild ? result(operation.op, "created", "Task Issue created and attached with native blocking relations", child) : result(operation.op, labelsConverged ? "updated" : "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
+  return createdChild ? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child) : result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
+}
+async function confirmTerminalOwnership(root, gh, operation, source, child) {
+  const initiativeId = ownershipMarkerValue(child.body, "initiative-id");
+  const sliceId = ownershipMarkerValue(child.body, "slice-id");
+  if (!initiativeId || !sliceId)
+    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has invalid ownership markers`, child);
+  const parent = initiativeLookup(source.issues, source.repository.id, initiativeId);
+  if (parent.kind !== "found")
+    return result(operation, "ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : `Issue #${child.number} has no exact Initiative Parent`, child);
+  if (sliceCount(parent.issue.body, sliceId) !== 1)
+    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has no exact Slice in Parent #${parent.issue.number}`, child);
+  const attachment = await confirmAttachment(root, gh, operation, source.repository, parent.issue.number, child.number);
+  if (!("attached" in attachment))
+    return attachment;
+  return attachment.attached ? { owned: true } : result(operation, "ambiguous_remote_state", `Issue #${child.number} is not attached to its marker-bound Parent #${parent.issue.number}`, child);
+}
+async function closeTerminalIssue(root, gh, operation, source, issue, lookup) {
+  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+  if (issue.state === "closed" && issue.state_reason === "not_planned" && operation.phase === "done") {
+    const reopened = await gh.run([
+      "issue",
+      "reopen",
+      String(issue.number),
+      "--repo",
+      source.repository.name_with_owner
+    ], { cwd: root });
+    if (reopened.exit_code !== 0 || reopened.output_exceeded)
+      return ghFailure(operation.op, reopened, "terminal Issue reopen failed");
+  }
+  const close = await gh.run([
+    "issue",
+    "close",
+    String(issue.number),
+    "--repo",
+    source.repository.name_with_owner,
+    "--reason",
+    operation.phase === "done" ? "completed" : "not planned"
+  ], { cwd: root });
+  const refreshed = await snapshot(root, gh, operation.op);
+  if ("contract" in refreshed)
+    return refreshed;
+  const found = lookup(refreshed.issues);
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  if (found.kind === "missing")
+    return result(operation.op, "retryable_failure", "terminal Issue closure could not be confirmed");
+  if (countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+    return result(operation.op, "ambiguous_remote_state", "terminal Issue body changed during closure", found.issue);
+  if (found.issue.state === "closed" && found.issue.state_reason === desiredReason)
+    return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
+  return close.exit_code !== 0 ? ghFailure(operation.op, close, "terminal Issue closure failed") : result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
+}
+async function markChildTerminal(root, gh, operation, source) {
+  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
+  const found = lookup(source.issues);
+  if (found.kind === "missing")
+    return result(operation.op, "already_current", "Task has no opted-in tracker association");
+  if (found.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", found.message);
+  const issue = found.issue;
+  const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
+  if (!("owned" in ownership))
+    return ownership;
+  const existingEvent = issueTerminalEventId(issue.body);
+  const redelivery = operation.phase === "done" && issue.state === "closed" && issue.state_reason === "not_planned";
+  if (existingEvent === "multiple" || existingEvent === "malformed" || existingEvent !== null && existingEvent !== operation.terminal_event_id && !redelivery)
+    return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
+  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
+  if (existingEvent === operation.terminal_event_id) {
+    if (issue.state === "closed" && !redelivery)
+      return issue.state_reason === desiredReason ? result(operation.op, "already_current", "terminal Task Issue is current", issue) : result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
+    return closeTerminalIssue(root, gh, operation, source, issue, lookup);
+  }
+  if (issue.state === "closed" && existingEvent === null)
+    return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
+  const body = existingEvent === null ? issue.body : issue.body.slice(0, -terminalSuffix(existingEvent).length);
+  const updated = `${body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
+  const oversized = bodyLimitFailure(operation.op, updated);
+  if (oversized)
+    return oversized;
+  const edited = await gh.run([
+    "issue",
+    "edit",
+    String(issue.number),
+    "--repo",
+    source.repository.name_with_owner,
+    "--body-file",
+    "-"
+  ], { cwd: root, stdin: updated });
+  if (edited.exit_code !== 0 || edited.output_exceeded)
+    return ghFailure(operation.op, edited, "terminal marker publication failed");
+  const refreshed = await snapshot(root, gh, operation.op);
+  if ("contract" in refreshed)
+    return refreshed;
+  const reread = lookup(refreshed.issues);
+  if (reread.kind === "ambiguous")
+    return result(operation.op, "ambiguous_remote_state", reread.message);
+  if (reread.kind === "missing" || countLiteral(reread.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
+    return result(operation.op, "retryable_failure", "terminal marker publication could not be confirmed");
+  const refreshedOwnership = await confirmTerminalOwnership(root, gh, operation.op, refreshed, reread.issue);
+  if (!("owned" in refreshedOwnership))
+    return refreshedOwnership;
+  return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
+}
+async function closeParentWhenComplete(root, gh, operation, source, childResult) {
+  const child = taskLookup(source.issues, source.repository.id, operation.task_id);
+  if (child.kind !== "found")
+    return childResult;
+  const initiativeId = ownershipMarkerValue(child.issue.body, "initiative-id");
+  if (!initiativeId)
+    return childResult;
+  const parentLookup = initiativeLookup(source.issues, source.repository.id, initiativeId);
+  if (parentLookup.kind !== "found")
+    return childResult;
+  const parentNumber = parentLookup.issue.number;
+  const retry = (message, status = "retryable_failure") => result(operation.op, status, `Parent #${parentNumber}: ${message}; the Task closure is unchanged, retry the same mark-terminal`, child.issue);
+  const endpoint = `repos/${source.repository.name_with_owner}/issues/${parentNumber}`;
+  const readParent = async () => {
+    const read = await gh.run(["api", endpoint], { cwd: root });
+    if (read.exit_code !== 0 || read.output_exceeded) {
+      const failed = ghFailure(operation.op, read, "cannot read the Initiative Parent");
+      return retry(failed.message, failed.status);
+    }
+    try {
+      const [issue] = parseIssues(`[${read.stdout}]`);
+      return issue ?? retry("gh returned a malformed Issue", "permanent_failure");
+    } catch (error) {
+      return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+    }
+  };
+  const parent = await readParent();
+  if ("contract" in parent)
+    return parent;
+  if (parent.state === "closed")
+    return childResult;
+  const listed = await gh.run(["api", "--paginate", "--slurp", `${endpoint}/sub_issues?per_page=100`], { cwd: root });
+  if (listed.exit_code !== 0 || listed.output_exceeded) {
+    const failed = ghFailure(operation.op, listed, "cannot read the Initiative Sub-issues");
+    return retry(failed.message, failed.status);
+  }
+  let children;
+  try {
+    children = parseIssues(listed.stdout);
+  } catch (error) {
+    return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
+  }
+  const sliceChildren = children.filter((candidate) => candidate.body.includes(marker("initiative-id", initiativeId)) && /<!-- immune-brain:slice-id=[^>]+ -->/.test(candidate.body));
+  if (sliceChildren.length === 0 || !sliceChildren.every((candidate) => candidate.state === "closed" && candidate.state_reason === "completed"))
+    return childResult;
+  const sliceIds = [...parent.body.matchAll(/<!-- immune-brain:slice-id=([^>]+) -->/g)].map((match) => match[1]);
+  if (sliceIds.length !== sliceChildren.length || new Set(sliceIds).size !== sliceIds.length || sliceChildren.some((candidate) => !sliceIds.includes(ownershipMarkerValue(candidate.body, "slice-id") ?? "")))
+    return retry("required Slice topology does not match the Parent", "ambiguous_remote_state");
+  const taskIds = sliceChildren.map((candidate) => ownershipMarkerValue(candidate.body, "task-id"));
+  if (taskIds.some((id) => !id))
+    return retry("required Slice has no Task identity", "ambiguous_remote_state");
+  try {
+    await Promise.resolve().then(() => init_batch_git());
+    const completion = await observeParentCompletion(root, initiativeId, taskIds);
+    if (!completion.complete)
+      return result(operation.op, childResult.status, `${childResult.message}; Parent #${parentNumber} remains open: ${completion.reason}`, child.issue);
+  } catch (error) {
+    return retry(`local completion proof could not be verified: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const close = await gh.run(["issue", "close", String(parentNumber), "--repo", source.repository.name_with_owner, "--reason", "completed"], { cwd: root });
+  const confirmed = await readParent();
+  if ("contract" in confirmed)
+    return confirmed;
+  if (confirmed.state === "closed" && confirmed.state_reason === "completed")
+    return result(operation.op, "updated", `${childResult.message}; Initiative Parent #${parentNumber} closed as completed`, child.issue);
+  if (close.exit_code !== 0 || close.output_exceeded) {
+    const failed = ghFailure(operation.op, close, "Initiative Parent closure failed");
+    return retry(failed.message, failed.status);
+  }
+  return retry("closure did not converge");
+}
+async function markTerminal(root, gh, operation, source) {
+  const terminal = await markChildTerminal(root, gh, operation, source);
+  if (operation.phase !== "done" || terminal.status !== "updated" && terminal.status !== "already_current" || !terminal.association_found)
+    return terminal;
+  return closeParentWhenComplete(root, gh, operation, source, terminal);
+}
+function normalizedList(value, name, max = 2000) {
+  if (value === undefined)
+    return;
+  if (!Array.isArray(value))
+    throw new Error(`${name} must be an array`);
+  return value.map((item, index) => publicText(item, `${name}[${index}]`, max));
+}
+function projectionText(value, name, max = 2000) {
+  const text = publicText(value, name, max);
+  if (/(?:docs\/plans\/|\.intent\.json\b|internal[\s_-]+roles?|role[\s_-]+prompts?|review[\s_-]+reservations?|model[\s_-]+reservations?|prompt[\s_-]+digests?|kernel[\s_-]+runtimes?(?:[\s_-]+states?)?|runtime[\s_-]+states?|review[\s_-]+gates?|tool[\s_-]+polic(?:y|ies)|mutable[\s_-]+scopes?|scope[\s_-]+authorit(?:y|ies)|widen[\s_-]+scopes?|QA[\s_-]+settlements?|record_approval|submit_review|advance_assurance|request_authorization)/i.test(text))
+    throw new Error(`${name} contains restricted authority context`);
+  return text;
+}
+function normalizedProjectionList(value, name, max = 2000) {
+  if (value === undefined)
+    return;
+  if (!Array.isArray(value))
+    throw new Error(`${name} must be an array`);
+  return value.map((item, index) => projectionText(item, `${name}[${index}]`, max));
+}
+function projectionRisk(value) {
+  if (value === "routine" || value === "material" || value === "critical")
+    return value;
+  throw new Error("risk must be routine, material, or critical");
+}
+function normalizeProjection(value) {
+  if (value === undefined)
+    return;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("projection must be an object");
+  const blockedBy = normalizedProjectionList(value.blocked_by, "projection.blocked_by", 128)?.map((id) => identifier(id, "projection.blocked_by task_id"));
+  if (blockedBy && new Set(blockedBy).size !== blockedBy.length)
+    throw new Error("projection.blocked_by must not contain duplicate Task IDs");
+  if (value.slice_ordinal !== undefined && (typeof value.slice_ordinal !== "number" || !Number.isSafeInteger(value.slice_ordinal) || value.slice_ordinal < 1 || value.slice_ordinal > 999))
+    throw new Error("projection.slice_ordinal must be an integer between 1 and 999");
+  return {
+    short_name: value.short_name,
+    title: value.title,
+    slice_ordinal: value.slice_ordinal,
+    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+    current_behavior: value.current_behavior === undefined ? undefined : projectionText(value.current_behavior, "projection.current_behavior"),
+    desired_behavior: value.desired_behavior === undefined ? undefined : projectionText(value.desired_behavior, "projection.desired_behavior"),
+    key_interfaces: normalizedProjectionList(value.key_interfaces, "projection.key_interfaces", 500),
+    verification: value.verification === undefined ? undefined : projectionText(value.verification, "projection.verification"),
+    blocked_by: blockedBy,
+    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500),
+    agent_handoff: value.agent_handoff === undefined ? undefined : projectionText(value.agent_handoff, "projection.agent_handoff")
+  };
+}
+function normalizeInitiativeProjection(value) {
+  if (value === undefined)
+    return;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("projection must be an object");
+  if (value.source_issue !== undefined && (typeof value.source_issue !== "string" || !/^[1-9][0-9]{0,9}$/.test(value.source_issue)))
+    throw new Error("projection.source_issue must be a GitHub Issue number");
+  return {
+    short_name: value.short_name,
+    title: value.title,
+    source_issue: value.source_issue,
+    problem: value.problem === undefined ? undefined : projectionText(value.problem, "projection.problem"),
+    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
+    design: value.design === undefined ? undefined : projectionText(value.design, "projection.design"),
+    decisions: normalizedProjectionList(value.decisions, "projection.decisions", 500),
+    testing_strategy: value.testing_strategy === undefined ? undefined : projectionText(value.testing_strategy, "projection.testing_strategy"),
+    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500)
+  };
+}
+function validateOperation(operation) {
+  if (operation.op === "create-initiative") {
+    const seen = new Set;
+    const normalized = {
+      ...operation,
+      initiative_id: identifier(operation.initiative_id, "initiative_id"),
+      goal: projectionText(operation.goal, "goal"),
+      projection: normalizeInitiativeProjection(operation.projection),
+      slices: operation.slices.map((slice, index) => {
+        const id = identifier(slice.id, `slices[${index}].id`);
+        if (seen.has(id))
+          throw new Error(`duplicate Slice id: ${id}`);
+        seen.add(id);
+        return {
+          id,
+          goal: projectionText(slice.goal, `slices[${index}].goal`, 1000),
+          result: slice.result === undefined ? undefined : projectionText(slice.result, `slices[${index}].result`, 1000),
+          blocked_by: normalizedList(slice.blocked_by, `slices[${index}].blocked_by`, 128)?.map((taskId, blockerIndex) => identifier(projectionText(taskId, `slices[${index}].blocked_by[${blockerIndex}]`, 128), `slices[${index}].blocked_by task_id`))
+        };
+      })
+    };
+    initiativeIssueTitle(normalized.initiative_id, normalized.projection);
+    return normalized;
+  }
+  if (operation.op === "upsert-task") {
+    const normalized = {
+      ...operation,
+      initiative_id: identifier(operation.initiative_id, "initiative_id"),
+      task_id: identifier(operation.task_id, "task_id"),
+      slice_id: identifier(operation.slice_id, "slice_id"),
+      risk: projectionRisk(operation.risk),
+      goal: projectionText(operation.goal, "goal"),
+      projection: normalizeProjection(operation.projection),
+      acceptance: operation.acceptance.map((item, index) => ({
+        id: identifier(item.id, `acceptance[${index}].id`),
+        summary: projectionText(item.summary, `acceptance[${index}].summary`, 500)
+      })),
+      scenarios: operation.scenarios
+    };
+    taskIssueTitle(normalized);
+    return normalized;
+  }
+  return {
+    ...operation,
+    task_id: identifier(operation.task_id, "task_id"),
+    terminal_event_id: terminalEvent(operation.terminal_event_id)
+  };
+}
+async function runGithubTrackerOperation(root, input, gh = createGhTransport()) {
+  let operation;
+  try {
+    operation = validateOperation(input);
+  } catch (error) {
+    return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
+  }
+  const absoluteRoot = resolve10(root);
+  if (operation.op !== "mark-terminal") {
+    const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
+    if (conflict)
+      return conflict;
+  }
+  const source = await snapshot(absoluteRoot, gh, operation.op);
+  if ("contract" in source)
+    return source;
+  switch (operation.op) {
+    case "create-initiative":
+      return createInitiative(absoluteRoot, gh, operation, source);
+    case "upsert-task":
+      return upsertTask(absoluteRoot, gh, operation, source);
+    case "mark-terminal":
+      return markTerminal(absoluteRoot, gh, operation, source);
+  }
+}
+function issueTerminalEventId(body) {
+  const suffixMatch = [...body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
+  if (suffixMatch.length === 0)
+    return null;
+  if (suffixMatch.length > 1)
+    return "multiple";
+  const eventId = suffixMatch[0][1];
+  if (eventId.length > MAX_TERMINAL_EVENT_ID || !body.endsWith(terminalSuffix(eventId)))
+    return "malformed";
+  return eventId;
+}
+var CONTRACT2 = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN2, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
+var init_github_issue_tracker = __esm(() => {
+  init_local_initiative();
+  init_intent();
+  ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+  MAX_GH_OUTPUT = 8 * 1024 * 1024;
+  MANAGED_ISSUE_LABELS = [READY_FOR_AGENT_LABEL, BLOCKED_LABEL];
+  MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
+});
+
+// plugins/immune-brain/runtime/unattended/batch_schedule.ts
+function blockedByParked(children) {
+  const blocker = new Map;
+  for (const child of children)
+    if (PARKED_STATES.has(child.state))
+      blocker.set(child.task_id, child.task_id);
+  const blocked = new Map;
+  for (let changed = true;changed; ) {
+    changed = false;
+    for (const child of children) {
+      if (child.state !== "pending" || blocker.has(child.task_id))
+        continue;
+      const parked = child.blocked_by.find((id) => blocker.has(id));
+      if (parked === undefined)
+        continue;
+      blocker.set(child.task_id, blocker.get(parked));
+      blocked.set(child.task_id, blocker.get(parked));
+      changed = true;
+    }
+  }
+  return blocked;
+}
+function positiveLimit(maxParallel) {
+  if (maxParallel === Number.POSITIVE_INFINITY)
+    return maxParallel;
+  if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
+    throw new Error("max_parallel must be a positive safe integer");
+  return maxParallel;
+}
+function startableChildren(children, maxParallel) {
+  const limit = positiveLimit(maxParallel);
+  const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
+  const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
+  const startable = [];
+  for (const child of children) {
+    if (occupied.length >= limit)
+      break;
+    if (child.state !== "pending")
+      continue;
+    if (!child.blocked_by.every((id) => done.has(id)))
+      continue;
+    startable.push(child.task_id);
+    occupied.push(child);
+  }
+  return startable;
+}
+function projectParallelGroups(children) {
+  const remaining = [...children];
+  const placed = new Set;
+  const groups = [];
+  while (remaining.length) {
+    const wave = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
+    if (!wave.length)
+      throw new Error("Initiative Task dependencies must form an acyclic graph");
+    groups.push(wave.map((child) => child.task_id));
+    for (const child of wave) {
+      placed.add(child.task_id);
+      remaining.splice(remaining.indexOf(child), 1);
+    }
+  }
+  return { parallel_groups: groups, scope_conflicts: [] };
+}
+var IN_FLIGHT_STATES, DONE_STATES, PARKED_STATES;
+var init_batch_schedule = __esm(() => {
+  IN_FLIGHT_STATES = new Set([
+    "lane_admitted",
+    "enrolled",
+    "settled",
+    "lane_committed"
+  ]);
+  DONE_STATES = new Set(["committed", "integrated", "released"]);
+  PARKED_STATES = new Set(["needs_human", "skipped_blocked"]);
+});
+
+// plugins/immune-brain/runtime/unattended/batch_plan.ts
+var exports_batch_plan = {};
+__export(exports_batch_plan, {
+  observeInitiative: () => observeInitiative,
+  observeSingleTask: () => observeSingleTask,
+  projectBatchPlan: () => projectBatchPlan
+});
+import { createHash as createHash12 } from "node:crypto";
+function specBindingReason(inspection) {
+  if (inspection.missing.length > 0)
+    return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
+  return inspection.code === "binding_ambiguous" ? "spec_binding_ambiguous" : "spec_binding_missing";
+}
+function compareIds(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+function positiveSafeInteger(value, name) {
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${name} must be a positive safe integer`);
+  return value;
+}
+function timestamp(value, name) {
+  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN2.test(value))
+    throw new Error(`${name} must be an ISO timestamp`);
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds))
+    throw new Error(`${name} must be an ISO timestamp`);
+  return { milliseconds, iso: new Date(milliseconds).toISOString() };
+}
+function normalizeObservation(value, initiativeSlug) {
+  const local = value?.contract === "immune_brain/local_initiative_observation/v1";
+  if (!value || !local && value.contract !== "immune_brain/github_initiative_observation/v1")
+    throw new Error("tracker returned an invalid Initiative observation contract");
+  if (value.initiative_id !== initiativeSlug)
+    throw new Error("tracker returned an observation for another Initiative");
+  if (!local && (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0))
+    throw new Error("tracker returned an invalid Initiative Issue number");
+  if (!Array.isArray(value.tasks))
+    throw new Error("tracker returned an invalid Initiative Task list");
+  const taskIds = new Set;
+  const sliceIds = new Set;
+  const tasks = value.tasks.map((task, index) => {
+    if (!task || typeof task !== "object")
+      throw new Error(`tracker Task ${index} is invalid`);
+    if (!ID_PATTERN3.test(task.task_id))
+      throw new Error(`tracker Task ${index} has an invalid task_id`);
+    if (!ID_PATTERN3.test(task.slice_id))
+      throw new Error(`tracker Task ${index} has an invalid slice_id`);
+    const issueNumber = task.issue_number;
+    if (!local && (!Number.isSafeInteger(issueNumber) || issueNumber <= 0))
+      throw new Error(`tracker Task ${task.task_id} has an invalid Issue number`);
+    if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN3.test(id)))
+      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
+    if (taskIds.has(task.task_id))
+      throw new Error(`tracker returned duplicate Task ${task.task_id}`);
+    if (sliceIds.has(task.slice_id))
+      throw new Error(`tracker returned duplicate Slice ${task.slice_id}`);
+    taskIds.add(task.task_id);
+    sliceIds.add(task.slice_id);
+    const blockedBy = [...task.blocked_by].sort();
+    if (new Set(blockedBy).size !== blockedBy.length || blockedBy.includes(task.task_id))
+      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
+    return { ...task, blocked_by: blockedBy };
+  });
+  for (const task of tasks) {
+    const unknown = task.blocked_by.find((id) => !taskIds.has(id));
+    if (unknown)
+      throw new Error(`tracker Task ${task.task_id} depends on unknown Task ${unknown}`);
+  }
+  return { ...value, tasks: tasks.sort((left, right) => compareIds(left.task_id, right.task_id)) };
+}
+function dependencyOrder(observation) {
+  const remaining = new Map(observation.tasks.map((task) => [task.task_id, task]));
+  const done = new Set;
+  const order = [];
+  while (remaining.size) {
+    const ready = [...remaining.values()].filter((task) => task.blocked_by.every((id) => done.has(id))).sort((left, right) => compareIds(left.task_id, right.task_id));
+    if (!ready.length)
+      throw new Error("Initiative Task dependencies must form an acyclic graph");
+    for (const task of ready) {
+      remaining.delete(task.task_id);
+      done.add(task.task_id);
+      order.push(task);
+    }
+  }
+  return order;
+}
+function dependencyClosures(order) {
+  const closures = new Map;
+  for (const task of order) {
+    const closure = new Set;
+    for (const dependency of task.blocked_by) {
+      closure.add(dependency);
+      for (const transitive of closures.get(dependency) ?? [])
+        closure.add(transitive);
+    }
+    closures.set(task.task_id, [...closure].sort());
+  }
+  return closures;
+}
+function budget(input, enrollableCount) {
+  const maxChildren = input.budget?.max_children === undefined ? positiveSafeInteger(enrollableCount, "budget.max_children") : positiveSafeInteger(input.budget.max_children, "budget.max_children");
+  if (maxChildren > enrollableCount)
+    throw new Error("budget.max_children exceeds the enrollable Child count");
+  const qaFailureLimit = input.budget?.qa_failure_limit === undefined ? DEFAULT_QA_FAILURE_LIMIT : positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
+  return { max_children: maxChildren, qa_failure_limit: qaFailureLimit };
+}
+async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeInitiative, preparing = false) {
+  if (!ID_PATTERN3.test(initiativeSlug))
+    throw new Error("initiative_slug is invalid");
+  if (!input || typeof input !== "object")
+    throw new Error("batch plan input is required");
+  const confirmationTime = timestamp(input.confirmation_time, "confirmation_time");
+  const trackerObservation = normalizeObservation(await readInitiative(root, initiativeSlug), initiativeSlug);
+  const order = dependencyOrder(trackerObservation);
+  const closures = dependencyClosures(order);
+  const children = [];
+  const scopeHints = new Map;
+  for (const task of order) {
+    const blockedBy = closures.get(task.task_id);
+    const child = { task_id: task.task_id, slice_id: task.slice_id, blocked_by: blockedBy };
+    const tombstone = readTaskTombstone(root, task.task_id);
+    const record = readTaskRecordRaw(root, task.task_id).record;
+    if (tombstone && record)
+      throw new Error(`Task ${task.task_id} has conflicting settled and active state`);
+    if (tombstone) {
+      children.push({ ...child, status: "already_settled", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
+      continue;
+    }
+    if (record) {
+      children.push({ ...child, status: "already_owned", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
+      continue;
+    }
+    const intentPath = `docs/plans/${task.task_id}.intent.json`;
+    try {
+      const read = preparing ? observeEnrollmentTaskIntent(root, task.task_id) : observeTaskIntent(root, task.task_id, intentPath);
+      const binding = inspectSpecBinding(read.intent);
+      if (!binding.ok) {
+        children.push({
+          ...child,
+          status: "needs_human",
+          reason: specBindingReason(binding),
+          intent_path: read.intent_ref.path,
+          intent_revision: read.intent_ref.revision,
+          intent_content_hash: read.content_hash
+        });
+        continue;
+      }
+      scopeHints.set(task.task_id, [...read.intent.scope_hint]);
+      children.push({
+        ...child,
+        status: "enrollable",
+        reason: null,
+        intent_path: read.intent_ref.path,
+        intent_revision: read.intent_ref.revision,
+        intent_content_hash: read.content_hash,
+        intent_authority_hash: intentAuthorityHash(read.intent)
+      });
+    } catch (error) {
+      if (!(error instanceof TaskIntentObservationError))
+        throw error;
+      children.push({ ...child, status: "needs_human", reason: "invalid_intent", intent_path: null, intent_revision: null, intent_content_hash: null });
+    }
+  }
+  const directDependencies = new Map(order.map((task) => [task.task_id, task.blocked_by]));
+  const childById = new Map(children.map((child) => [child.task_id, child]));
+  for (const child of children) {
+    if (child.status !== "enrollable")
+      continue;
+    if (directDependencies.get(child.task_id).some((id) => {
+      const status = childById.get(id).status;
+      return status === "already_owned" || status === "needs_human" || status === "blocked";
+    })) {
+      child.status = "blocked";
+      child.reason = "dependency_unavailable";
+    }
+  }
+  const enrollable = children.filter((child) => child.status === "enrollable").map((child) => ({
+    task_id: child.task_id,
+    intent_path: child.intent_path,
+    intent_revision: child.intent_revision,
+    intent_content_hash: child.intent_content_hash,
+    intent_authority_hash: child.intent_authority_hash,
+    blocked_by: child.blocked_by.filter((id) => childById.get(id)?.status === "enrollable")
+  }));
+  if (!enrollable.length)
+    throw new Error("batch plan has no enrollable children; nothing to confirm");
+  const planDigest = `sha256:${createHash12("sha256").update(stableStringify(enrollable)).digest("hex")}`;
+  return {
+    contract: "assurance_kernel/batch_plan/v1",
+    initiative_slug: initiativeSlug,
+    confirmation_time: confirmationTime.iso,
+    tracker_observation: trackerObservation,
+    children,
+    enrollable,
+    plan_digest: planDigest,
+    budget: budget(input, enrollable.length),
+    ...projectParallelGroups(enrollable.map((child) => ({
+      task_id: child.task_id,
+      slice_id: childById.get(child.task_id).slice_id,
+      blocked_by: child.blocked_by,
+      scope_hint: scopeHints.get(child.task_id)
+    })))
+  };
+}
+var ID_PATTERN3, DEFAULT_QA_FAILURE_LIMIT = 2, ISO_TIMESTAMP_PATTERN2, observeInitiative = async (root, initiativeSlug) => hasLocalInitiative(root, initiativeSlug) ? observeLocalInitiative(root, initiativeSlug) : observeGithubInitiative(root, initiativeSlug), observeSingleTask = async (_root, taskId) => ({
+  contract: "immune_brain/local_initiative_observation/v1",
+  initiative_id: taskId,
+  path: `docs/plans/${taskId}.intent.json`,
+  tasks: [{ task_id: taskId, slice_id: taskId, blocked_by: [] }]
+});
+var init_batch_plan = __esm(() => {
+  init_github_issue_tracker();
+  init_local_initiative();
+  init_backend_claim();
+  init_intent();
+  init_storage();
+  init_spec_binding();
+  init_batch_schedule();
+  ID_PATTERN3 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+  ISO_TIMESTAMP_PATTERN2 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+});
+
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
-import { createHash as createHash12 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync5, readFileSync as readFileSync12, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync5 } from "node:fs";
+import { createHash as createHash13 } from "node:crypto";
+import { chmodSync as chmodSync2, lstatSync as lstatSync13, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync6, readFileSync as readFileSync14, readlinkSync as readlinkSync3, realpathSync as realpathSync11, rmSync as rmSync5 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { dirname as dirname9, isAbsolute as isAbsolute6, join as join13, parse, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
+import { dirname as dirname9, isAbsolute as isAbsolute6, join as join13, parse, relative as relative5, resolve as resolve11, sep as sep6 } from "node:path";
 function removeTaskOwnedTree(root) {
   const makeDirectoriesWritable = (path) => {
     let stat;
     try {
-      stat = lstatSync12(path);
+      stat = lstatSync13(path);
     } catch (error) {
       if (error.code === "ENOENT")
         return;
@@ -8694,7 +10283,7 @@ function removeTaskOwnedTree(root) {
     if (!stat.isDirectory() || stat.isSymbolicLink())
       return;
     chmodSync2(path, stat.mode & 4095 | 448);
-    for (const name of readdirSync5(path))
+    for (const name of readdirSync6(path))
       makeDirectoriesWritable(join13(path, name));
   };
   makeDirectoriesWritable(root);
@@ -8728,14 +10317,14 @@ function assertTree(tree) {
     throw new DeliveryWorkspaceError("delivery tree has invalid identity");
 }
 function assertInside(root, candidate, label) {
-  const rel = relative4(root, candidate);
-  if (rel.startsWith(`..${sep5}`) || rel === ".." || isAbsolute6(rel))
+  const rel = relative5(root, candidate);
+  if (rel.startsWith(`..${sep6}`) || rel === ".." || isAbsolute6(rel))
     throw new DeliveryWorkspaceError(`delivery ${label} escapes materialization: ${rel}`);
 }
 function resolvedSymlinkTarget(path) {
   const target = readlinkSync3(path);
   let current = isAbsolute6(target) ? parse(target).root : parse(path).root;
-  let pending = (isAbsolute6(target) ? target.split(sep5) : [...relative4(current, dirname9(path)).split(sep5), ...target.split(sep5)]).filter(Boolean);
+  let pending = (isAbsolute6(target) ? target.split(sep6) : [...relative5(current, dirname9(path)).split(sep6), ...target.split(sep6)]).filter(Boolean);
   let links = 0;
   while (pending.length) {
     const part = pending.shift();
@@ -8747,7 +10336,7 @@ function resolvedSymlinkTarget(path) {
     }
     const next = join13(current, part);
     try {
-      if (!lstatSync12(next).isSymbolicLink()) {
+      if (!lstatSync13(next).isSymbolicLink()) {
         current = next;
         continue;
       }
@@ -8756,7 +10345,7 @@ function resolvedSymlinkTarget(path) {
       const nested = readlinkSync3(next);
       if (isAbsolute6(nested))
         current = parse(nested).root;
-      pending = [...nested.split(sep5).filter(Boolean), ...pending];
+      pending = [...nested.split(sep6).filter(Boolean), ...pending];
     } catch (error) {
       if (error.code !== "ENOENT")
         throw error;
@@ -8767,11 +10356,11 @@ function resolvedSymlinkTarget(path) {
 }
 function assertNoEscapingSymlinks(root, dir = root) {
   const realRoot = realpathSync11(root);
-  for (const name of readdirSync5(dir)) {
+  for (const name of readdirSync6(dir)) {
     const path = join13(dir, name);
-    const stat = lstatSync12(path);
+    const stat = lstatSync13(path);
     if (stat.isSymbolicLink()) {
-      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative4(root, path)}`);
+      assertInside(realRoot, resolvedSymlinkTarget(path), `symlink ${relative5(root, path)}`);
     } else if (stat.isDirectory()) {
       assertNoEscapingSymlinks(root, path);
     }
@@ -8809,17 +10398,17 @@ function writeDeliveryTree(sourceRoot, snapshot) {
 }
 function workspaceFiles(root, dir = root, result = Object.create(null)) {
   if (dir === root)
-    result["."] = `${lstatSync12(root).mode & 4095}:directory`;
-  for (const name of readdirSync5(dir).sort()) {
-    const path = join13(dir, name), rel = relative4(root, path);
-    const stat = lstatSync12(path);
+    result["."] = `${lstatSync13(root).mode & 4095}:directory`;
+  for (const name of readdirSync6(dir).sort()) {
+    const path = join13(dir, name), rel = relative5(root, path);
+    const stat = lstatSync13(path);
     if (stat.isSymbolicLink())
       result[rel] = `link:${stat.mode & 4095}:${readlinkSync3(path)}`;
     else if (stat.isDirectory()) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash12("sha256").update(readFileSync12(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash13("sha256").update(readFileSync14(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -8838,8 +10427,8 @@ function assertDeliveryClean(root, tree, seal, writablePaths = []) {
     return;
   }
   if (seal === "[]") {
-    for (const name of readdirSync5(root)) {
-      const stat = lstatSync12(join13(root, name));
+    for (const name of readdirSync6(root)) {
+      const stat = lstatSync13(join13(root, name));
       if (!stat.isDirectory() || name !== ".git")
         throw new DeliveryWorkspaceError("delivery workspace was contaminated");
     }
@@ -8883,7 +10472,7 @@ function materializeDeliveryWorkspace(sourceRoot, tree, parent = tmpdir2()) {
     if (!GIT_OBJECT_ID4.test(commit))
       throw new DeliveryWorkspaceError("delivery commit write failed");
     git4(dest, ["init", "-q"]);
-    git4(dest, ["fetch", "--depth=1", `file://${resolve9(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
+    git4(dest, ["fetch", "--depth=1", `file://${resolve11(sourceRoot)}`, `${commit}:refs/heads/delivery`]);
     git4(dest, ["checkout", "-q", "delivery"]);
     const got = git4(dest, ["rev-parse", "HEAD^{tree}"]);
     if (got !== tree)
@@ -8941,15 +10530,15 @@ function acceptanceRepeatSeries(findings, latestRound) {
 }
 
 // plugins/immune-brain/runtime/assurance/verification.ts
-import { createHash as createHash13, randomBytes } from "node:crypto";
-import { execFileSync as execFileSync8, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync6, realpathSync as realpathSync12, statSync as statSync3 } from "node:fs";
-import { delimiter as delimiter3, isAbsolute as isAbsolute7, join as join14, relative as relative5, resolve as resolve10, sep as sep6 } from "node:path";
+import { createHash as createHash14, randomBytes } from "node:crypto";
+import { execFileSync as execFileSync8, spawn as spawn3 } from "node:child_process";
+import { accessSync, constants as constants4, readFileSync as readFileSync15, readdirSync as readdirSync7, realpathSync as realpathSync12, statSync as statSync3 } from "node:fs";
+import { delimiter as delimiter3, isAbsolute as isAbsolute7, join as join14, relative as relative6, resolve as resolve12, sep as sep7 } from "node:path";
 function insideVerificationRoot(root, candidate) {
   const realRoot = realpathSync12(root);
   const real = realpathSync12(candidate);
-  const rel = relative5(realRoot, real);
-  if (rel === ".." || rel.startsWith(`..${sep6}`) || isAbsolute7(rel))
+  const rel = relative6(realRoot, real);
+  if (rel === ".." || rel.startsWith(`..${sep7}`) || isAbsolute7(rel))
     throw new VerificationDescriptorError("verification path escapes the materialization");
   return real;
 }
@@ -8981,14 +10570,14 @@ function identity(path) {
     const stat = statSync3(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash13("sha256").update(readFileSync13(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash14("sha256").update(readFileSync15(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
 }
 function resolveVerificationCommand(root, command, path = verificationPath()) {
-  insideVerificationRoot(root, resolve10(root, command.cwd));
-  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve10(root, command.executable)) : toolPath(command.executable, path));
+  insideVerificationRoot(root, resolve12(root, command.cwd));
+  const entry = identity(command.executable.startsWith("./") ? insideVerificationRoot(root, resolve12(root, command.executable)) : toolPath(command.executable, path));
   return { entry };
 }
 function assertCommandIdentity(frozen) {
@@ -9000,7 +10589,7 @@ async function runFixedVerification(root, command, frozen, options) {
     throw new VerificationAbortedError;
   if (process.platform === "win32")
     throw new VerificationDescriptorError("fixed verification process-group isolation requires a POSIX host");
-  const cwd = insideVerificationRoot(root, resolve10(root, command.cwd));
+  const cwd = insideVerificationRoot(root, resolve12(root, command.cwd));
   assertCommandIdentity(frozen);
   const processScanner = process.platform === "linux" ? null : identity(options._processScanner ?? toolPath("ps", verificationPath()));
   const procRoot = options._procRoot ?? "/proc";
@@ -9009,7 +10598,7 @@ async function runFixedVerification(root, command, frozen, options) {
     let stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), captured = 0;
     let aborted = false, timed_out = false, output_limited = false, settled = false;
     const processToken = randomBytes(24).toString("hex");
-    const child = spawn2(frozen.entry.invocation_path, command.argv, {
+    const child = spawn3(frozen.entry.invocation_path, command.argv, {
       cwd,
       shell: false,
       detached: true,
@@ -9040,7 +10629,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync13(join14(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync15(join14(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -9048,7 +10637,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync13(join14(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync15(join14(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -9065,7 +10654,7 @@ async function runFixedVerification(root, command, frozen, options) {
         const pids = new Set([child.pid]);
         if (process.platform === "linux") {
           const marker = `IMM_VERIFICATION_PROCESS_TOKEN=${processToken}`;
-          for (const entry of readdirSync6(procRoot)) {
+          for (const entry of readdirSync7(procRoot)) {
             if (!/^\d+$/.test(entry))
               continue;
             const session = procSession(entry);
@@ -9203,7 +10792,7 @@ async function runFixedVerification(root, command, frozen, options) {
 }
 function findingsDigest(findings) {
   const normalized = findings.map((f) => JSON.stringify({ acceptance_id: f.acceptance_id, id: f.id, kind: f.kind, summary: f.summary }));
-  return `sha256:${createHash13("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
+  return `sha256:${createHash14("sha256").update(`[${normalized.join(",")}]`).digest("hex")}`;
 }
 function baselineGit(root, args) {
   const env = {};
@@ -9329,8 +10918,8 @@ function createInvocationRegistry() {
 }
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
-import { createHash as createHash14 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync14 } from "node:fs";
+import { createHash as createHash15 } from "node:crypto";
+import { existsSync as existsSync9, readFileSync as readFileSync16 } from "node:fs";
 import { join as join15, dirname as dirname10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
@@ -9346,14 +10935,14 @@ function rolePromptSearchDirs(moduleDir) {
   ];
 }
 function currentReviewContractHash() {
-  return `sha256:${createHash14("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
+  return `sha256:${createHash15("sha256").update(JSON.stringify([loadRolePrompt("code-review"), STATIC_REVIEW_RULES])).digest("hex")}`;
 }
 function loadRolePrompt(role) {
   const spec = roleSpec(role);
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join15(dir, spec.file);
-    if (existsSync8(path))
-      return readFileSync14(path, "utf8");
+    if (existsSync9(path))
+      return readFileSync16(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -9388,7 +10977,7 @@ function buildRoleDelegationPacket(input) {
   ].join(`
 
 `);
-  const promptDigest = `sha256:${createHash14("sha256").update(prompt).digest("hex")}`;
+  const promptDigest = `sha256:${createHash15("sha256").update(prompt).digest("hex")}`;
   return {
     contract: "immune_brain/role_delegation/v1",
     role: input.role,
@@ -10359,10 +11948,10 @@ var init_canary_application = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/authority_port.ts
-import { createHash as createHash15 } from "node:crypto";
+import { createHash as createHash16 } from "node:crypto";
 function digestOfAction(action) {
   const { expected_record_hash: _r, expected_workspace_hash: _w, diff_hash: _d, ...rest } = action;
-  return createHash15("sha256").update(JSON.stringify(rest)).digest("hex");
+  return createHash16("sha256").update(JSON.stringify(rest)).digest("hex");
 }
 function createMutationAuthorityRegistry() {
   const inner = createCapabilityRegistry(MUTATION_AUTHORITY_CAPABILITY_BRAND, {
@@ -10452,11 +12041,11 @@ var init_authority_port = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/review_packet.ts
-import { createHash as createHash16 } from "node:crypto";
+import { createHash as createHash17 } from "node:crypto";
 import { isAbsolute as isAbsolute8 } from "node:path";
-import { readFileSync as readFileSync15 } from "node:fs";
+import { readFileSync as readFileSync17 } from "node:fs";
 function packetDigest(content) {
-  return createHash16("sha256").update(content, "utf8").digest("hex");
+  return createHash17("sha256").update(content, "utf8").digest("hex");
 }
 function reviewPacketHandle(input) {
   if (!isAbsolute8(input.packet.path) || /[\r\n]/.test(input.packet.path) || !/^[a-f0-9]{64}$/.test(input.packet.sha256))
@@ -10485,7 +12074,7 @@ function reviewPacketError(prompt) {
     return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";
   let bytes;
   try {
-    bytes = readFileSync15(handle.packet.path);
+    bytes = readFileSync17(handle.packet.path);
   } catch {
     return "Review packet is missing or unreadable; call advance_assurance for a fresh reservation.";
   }
@@ -10511,20 +12100,20 @@ var init_review_packet = () => {};
 
 // plugins/immune-brain/runtime/assurance/review_evidence.ts
 import { execFileSync as execFileSync9 } from "node:child_process";
-import { createHash as createHash17 } from "node:crypto";
+import { createHash as createHash18 } from "node:crypto";
 import {
   mkdtempSync as mkdtempSync4,
   rmSync as rmSync6,
   writeFileSync as writeFileSync7,
   statSync as statSync4,
-  readFileSync as readFileSync16,
+  readFileSync as readFileSync18,
   realpathSync as realpathSync13,
   chmodSync as chmodSync3
 } from "node:fs";
 import { tmpdir as tmpdir3 } from "node:os";
 import { join as join16 } from "node:path";
 function bundleDigest(bundle) {
-  return `sha256:${createHash17("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
+  return `sha256:${createHash18("sha256").update(JSON.stringify(bundle)).digest("hex")}`;
 }
 function readIndexBlob(root, path, entry) {
   if (!entry.oid)
@@ -10687,7 +12276,7 @@ function reviewDeltaFields(root, delta, currentTree) {
   }
 }
 function manifestDigest(manifest) {
-  return `sha256:${createHash17("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
+  return `sha256:${createHash18("sha256").update(JSON.stringify(manifest)).digest("hex")}`;
 }
 function gitEvidenceBytes(root, args, extraEnv = {}) {
   return execFileSync9("git", args, {
@@ -10736,7 +12325,7 @@ function reviewRefTaskSegment(taskId) {
   return `_${Buffer.from(taskId, "utf8").toString("base64url")}`;
 }
 function workspaceRefSegment(root) {
-  return createHash17("sha256").update(realpathSync13(root)).digest("hex").slice(0, 16);
+  return createHash18("sha256").update(realpathSync13(root)).digest("hex").slice(0, 16);
 }
 function reviewRef(root, taskId, reviewCommit) {
   const taskSegment = reviewRefTaskSegment(taskId);
@@ -10819,7 +12408,7 @@ function publishInput(root, input) {
   if (!REVISION_DIFF_HASH.test(input.expectedDiffHash))
     throw new Error("review task revision hash has invalid identity");
   const snapshot = captureGitTaskRevisionSnapshot(root, input.scopeHint, input.baseHead, input.taskId);
-  const recomputed = `sha256:${createHash17("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  const recomputed = `sha256:${createHash18("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
   if (recomputed !== input.expectedDiffHash)
     throw new Error("review task revision does not match assurance snapshot");
   if (Object.keys(snapshot.changed_paths).length === 0)
@@ -10891,7 +12480,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync16(targetPath, { encoding: "utf8" });
+  const read = readFileSync18(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -10919,8 +12508,8 @@ var init_review_evidence = __esm(() => {
 // plugins/immune-brain/runtime/assurance/verdict_authority.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
 import { execFileSync as execFileSync10 } from "node:child_process";
-import { existsSync as existsSync9 } from "node:fs";
-import { join as join17, resolve as resolve11 } from "node:path";
+import { existsSync as existsSync10 } from "node:fs";
+import { join as join17, resolve as resolve13 } from "node:path";
 function buildSnapshot(input) {
   return {
     contract: "assurance_kernel/assurance_snapshot/v2",
@@ -10943,7 +12532,7 @@ function buildSnapshot(input) {
     review_bundle_digest: input.review_bundle_digest ?? null,
     ...input.review_revision ? { review_revision: input.review_revision } : {},
     ...input.review_delta ? { review_delta: input.review_delta } : {},
-    root: resolve11(input.root)
+    root: resolve13(input.root)
   };
 }
 function reviewDeltaInput(record) {
@@ -11085,7 +12674,7 @@ function stagePlanningArtifactTransition(root, record) {
     intentArchive,
     ...specActive ? [specActive, specActive.replace("docs/specs/", "docs/specs/archive/")] : []
   ];
-  const paths = candidates.filter((path) => existsSync9(join17(root, path)) || execFileSync10("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
+  const paths = candidates.filter((path) => existsSync10(join17(root, path)) || execFileSync10("git", ["ls-files", "--cached", "--", path], { cwd: root, encoding: "utf8" }).trim().length > 0);
   if (paths.length === 0)
     return;
   execFileSync10("git", ["add", "--", ...paths], {
@@ -11287,14 +12876,14 @@ var init_verdict_authority = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/plugin_source_skew.ts
-import { createHash as createHash18 } from "node:crypto";
-import { execFileSync as execFileSync11, spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync10, readFileSync as readFileSync17, realpathSync as realpathSync14, statSync as statSync5 } from "node:fs";
-import { dirname as dirname11, join as join18, sep as sep7 } from "node:path";
+import { createHash as createHash19 } from "node:crypto";
+import { execFileSync as execFileSync11, spawnSync as spawnSync10 } from "node:child_process";
+import { existsSync as existsSync11, readFileSync as readFileSync19, realpathSync as realpathSync14, statSync as statSync5 } from "node:fs";
+import { dirname as dirname11, join as join18, sep as sep8 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
   for (let level = 0;level < MAX_LEVELS; level++) {
-    if (existsSync10(join18(current, PLUGIN_MANIFEST)))
+    if (existsSync11(join18(current, PLUGIN_MANIFEST)))
       return current;
     const parent = dirname11(current);
     if (parent === current)
@@ -11309,16 +12898,16 @@ function runtimeClaudePluginDir(start = runningRuntimeSource()) {
 }
 function sameBuild(a, b) {
   const left = join18(a, BUILD_PROXY), right = join18(b, BUILD_PROXY);
-  if (!existsSync10(left) || !existsSync10(right))
+  if (!existsSync11(left) || !existsSync11(right))
     return false;
   if (statSync5(left).size !== statSync5(right).size)
     return false;
-  return readFileSync17(left).equals(readFileSync17(right));
+  return readFileSync19(left).equals(readFileSync19(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
     const workspace = join18(root, WORKSPACE_PLUGIN_DIR);
-    if (!existsSync10(join18(workspace, PLUGIN_MANIFEST)))
+    if (!existsSync11(join18(workspace, PLUGIN_MANIFEST)))
       return null;
     const loaded = pluginRootAbove(loadedFrom);
     if (!loaded)
@@ -11329,7 +12918,7 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
     let lane = false;
     try {
       const common = realpathSync14(execFileSync11("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
-      lane = realpathSync14(root).startsWith(`${join18(common, "imm", "worktrees")}${sep7}`);
+      lane = realpathSync14(root).startsWith(`${join18(common, "imm", "worktrees")}${sep8}`);
     } catch {}
     return {
       code: "loaded_plugin_differs_from_workspace",
@@ -11341,22 +12930,22 @@ function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   }
 }
 function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSource()) {
-  if (!integrated.length || !existsSync10(join18(root, WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST)))
+  if (!integrated.length || !existsSync11(join18(root, WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST)))
     return null;
-  const parent = spawnSync9("git", ["-C", root, "show", `${head}:${BUNDLE_GIT_PATH}`], { maxBuffer: 256 * 1024 * 1024 });
+  const parent = spawnSync10("git", ["-C", root, "show", `${head}:${BUNDLE_GIT_PATH}`], { maxBuffer: 256 * 1024 * 1024 });
   if (parent.status !== 0)
     return null;
   const loadedRoot = pluginRootAbove(loadedFrom);
   let loaded = null;
   try {
     if (loadedRoot)
-      loaded = readFileSync17(join18(loadedRoot, BUILD_PROXY));
+      loaded = readFileSync19(join18(loadedRoot, BUILD_PROXY));
   } catch {
     loaded = null;
   }
   if (loaded?.equals(parent.stdout))
     return null;
-  const commit = [...integrated].reverse().find((candidate) => spawnSync9("git", ["-C", root, "diff", "--quiet", `${candidate}^`, candidate, "--", BUNDLE_GIT_PATH]).status === 1);
+  const commit = [...integrated].reverse().find((candidate) => spawnSync10("git", ["-C", root, "diff", "--quiet", `${candidate}^`, candidate, "--", BUNDLE_GIT_PATH]).status === 1);
   if (!commit)
     return null;
   return { commit, parent_bundle: bundleHash(parent.stdout), loaded_bundle: loaded ? bundleHash(loaded) : null };
@@ -11365,7 +12954,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync5(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash18("sha256").update(readFileSync17(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash19("sha256").update(readFileSync19(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -11396,7 +12985,7 @@ function watchBundleIdentity(path) {
     }
   };
 }
-var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash18("sha256").update(bytes).digest("hex")}`;
+var WORKSPACE_PLUGIN_DIR, PLUGIN_MANIFEST, BUILD_PROXY, MAX_LEVELS = 8, BUNDLE_GIT_PATH = "plugins/immune-brain/dist/claude/mcp-server.mjs", bundleHash = (bytes) => `sha256:${createHash19("sha256").update(bytes).digest("hex")}`;
 var init_plugin_source_skew = __esm(() => {
   init_runtime_contracts();
   WORKSPACE_PLUGIN_DIR = join18("plugins", "immune-brain");
@@ -11420,11 +13009,11 @@ var init_host_port = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/lane_workspace.ts
-import { spawnSync as spawnSync10 } from "node:child_process";
+import { spawnSync as spawnSync11 } from "node:child_process";
 import { realpathSync as realpathSync15 } from "node:fs";
-import { basename as basename2, dirname as dirname12, isAbsolute as isAbsolute9, join as join19, relative as relative6, resolve as resolve12, sep as sep8 } from "node:path";
+import { basename as basename3, dirname as dirname12, isAbsolute as isAbsolute9, join as join19, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
 function laneTaskOfWorkspace(root) {
-  const branch = spawnSync10("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
+  const branch = spawnSync11("git", ["-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"]
   });
@@ -11445,7 +13034,7 @@ function realpathOfNearest(path) {
       const parent = dirname12(current);
       if (parent === current)
         return path;
-      suffix.push(basename2(current));
+      suffix.push(basename3(current));
       current = parent;
     }
   }
@@ -11455,13 +13044,13 @@ function laneWriteRefusal(cwd, target) {
     return null;
   if (laneTaskOfWorkspace(cwd) === null)
     return null;
-  const top = spawnSync10("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const top = spawnSync11("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   if (top.status !== 0)
     return null;
   const laneRoot = realpathOfNearest((top.stdout ?? "").trim());
-  const resolved = realpathOfNearest(isAbsolute9(target) ? target : resolve12(cwd, target));
-  const inside = relative6(laneRoot, resolved);
-  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep8}`) && !isAbsolute9(inside))
+  const resolved = realpathOfNearest(isAbsolute9(target) ? target : resolve14(cwd, target));
+  const inside = relative7(laneRoot, resolved);
+  if (inside === "" || inside !== ".." && !inside.startsWith(`..${sep9}`) && !isAbsolute9(inside))
     return null;
   return `Lane write refused: ${resolved} is outside this Lane. In a batch Lane every edit and write stays under ${laneRoot}; use the same repository-relative path inside the Lane.`;
 }
@@ -11471,7 +13060,7 @@ var init_lane_workspace = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/coordinator.ts
-import { createHash as createHash19, randomUUID as randomUUID6 } from "node:crypto";
+import { createHash as createHash20, randomUUID as randomUUID6 } from "node:crypto";
 import { execFileSync as execFileSync12 } from "node:child_process";
 function deriveGithubTerminalProjectionInput(taskId, projection, tombstone) {
   if (projection.error || projection.claim !== null || projection.projection.lifecycle !== "done" && projection.projection.lifecycle !== "stopped" || tombstone?.task_id !== taskId || tombstone.lifecycle_status !== "terminal" || tombstone.terminal_lifecycle !== projection.projection.lifecycle)
@@ -11697,7 +13286,7 @@ function reviewTurnBudget(workload, changedPaths = 0, previousBudget = null) {
   return Math.min(HEAVY_REVIEW_MAX_TURNS, Math.max(HEAVY_REVIEW_MIN_TURNS, HEAVY_REVIEW_BASE_TURNS + changedPaths));
 }
 function snapshotDigest(snapshot) {
-  return `sha256:${createHash19("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
+  return `sha256:${createHash20("sha256").update(JSON.stringify(snapshot)).digest("hex")}`;
 }
 function reviewDeltaLines(delta) {
   if (!delta)
@@ -11879,7 +13468,7 @@ function consumeReviewVerification(input) {
     verifier_model: dispatch.model,
     model_relation: dispatch.model_relation,
     verifier_actor: bound ? receipt.actorId : null,
-    result_sha256: bound ? `sha256:${createHash19("sha256").update(receipt.result).digest("hex")}` : null,
+    result_sha256: bound ? `sha256:${createHash20("sha256").update(receipt.result).digest("hex")}` : null,
     valid: parsed.valid,
     results: parsed.results,
     ...!parsed.valid ? { failure: input.failure ?? (releaseFailed || !receipt ? "dispatch_failed" : !bound ? "receipt_mismatch" : "malformed_output") } : {}
@@ -13332,7 +14921,7 @@ var PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 var init_qa_findings = () => {};
 
 // plugins/immune-brain/runtime/assurance/qa.ts
-import { createHash as createHash20 } from "node:crypto";
+import { createHash as createHash21 } from "node:crypto";
 function recordForSnapshot(snapshot) {
   const record = readTaskRecordRaw(snapshot.root, snapshot.task_id).record;
   if (!record || record.contract !== "assurance_kernel/task_record/v4" || !record.git_base_head)
@@ -13344,7 +14933,7 @@ function deliveryTreeForSnapshot(snapshot) {
     return snapshot.review_revision.review_tree;
   const record = recordForSnapshot(snapshot);
   const captured = captureGitTaskRevisionSnapshot(snapshot.root, record.intent_snapshot.scope_hint, record.git_base_head, snapshot.task_id);
-  const digest = `sha256:${createHash20("sha256").update(JSON.stringify(captured)).digest("hex")}`;
+  const digest = `sha256:${createHash21("sha256").update(JSON.stringify(captured)).digest("hex")}`;
   if (digest !== snapshot.diff_hash)
     throw new Error("QA delivery identity does not match the frozen snapshot");
   return writeDeliveryTree(snapshot.root, captured);
@@ -13396,7 +14985,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostic = (reason, stage) => [{
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/command`,
-      descriptor_digest: `sha256:${createHash20("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash21("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome: reason,
       elapsed_ms: 0,
@@ -13443,7 +15032,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
     const diagnostics = (stage, outcome, affected = group, commandStage = "check", elapsed = 0, result) => affected.map((item) => ({
       acceptance_id: item.id,
       descriptor_ref: `acceptance/${item.index}/verification/${commandStage === "prepare" ? "environment/prepare" : "command"}`,
-      descriptor_digest: `sha256:${createHash20("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
+      descriptor_digest: `sha256:${createHash21("sha256").update(JSON.stringify(item.descriptor)).digest("hex")}`,
       stage,
       outcome,
       elapsed_ms: elapsed,
@@ -13516,8 +15105,8 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
         allCommands.push({ frozen, diagnostics: diagnostics("integrity", "command_identity_changed", affected, stage, Math.round(performance.now() - started), result) });
       evidence.push({
         stage,
-        environment: createHash20("sha256").update(environmentKey).digest("hex"),
-        command: createHash20("sha256").update(JSON.stringify(command)).digest("hex"),
+        environment: createHash21("sha256").update(environmentKey).digest("hex"),
+        command: createHash21("sha256").update(JSON.stringify(command)).digest("hex"),
         entry: frozen?.entry?.content_hash ?? null,
         exit_code: result.exit_code,
         timed_out: result.timed_out,
@@ -13602,7 +15191,7 @@ async function runDeterministicQa(snapshot, descriptors, options = {}) {
   if (findings.length)
     return { ...base, decision: "rework", findings };
   const disclosure = disclosed.length ? `; ${disclosed.map((item) => item.summary).join("; ")}` : "";
-  const executionDigest = createHash20("sha256").update(JSON.stringify({
+  const executionDigest = createHash21("sha256").update(JSON.stringify({
     tree,
     platform: process.platform,
     arch: process.arch,
@@ -13630,13 +15219,13 @@ var init_qa = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/assurance/workflow_autocommit.ts
-import { execFileSync as execFileSync13, spawnSync as spawnSync11 } from "node:child_process";
-import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync13, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync7, realpathSync as realpathSync16, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
+import { execFileSync as execFileSync13, spawnSync as spawnSync12 } from "node:child_process";
+import { accessSync as accessSync2, chmodSync as chmodSync4, constants as constants5, lstatSync as lstatSync14, mkdirSync as mkdirSync8, mkdtempSync as mkdtempSync5, readdirSync as readdirSync8, realpathSync as realpathSync16, rmSync as rmSync7, writeFileSync as writeFileSync8 } from "node:fs";
 import { tmpdir as tmpdir4 } from "node:os";
-import { isAbsolute as isAbsolute10, join as join20, resolve as resolve13 } from "node:path";
+import { isAbsolute as isAbsolute10, join as join20, resolve as resolve15 } from "node:path";
 function identityEnv(root) {
   const configured = (key) => {
-    const result = spawnSync11("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
+    const result = spawnSync12("git", ["config", "--get", key], { cwd: root, encoding: "utf8" });
     if (result.status !== 0 && result.status !== 1)
       throw new Error(`Cannot read Git identity: ${key}`);
     return result.stdout?.trim() ?? "";
@@ -13680,7 +15269,7 @@ function assertListedPath(root, path) {
     current = join20(current, part);
     let stat;
     try {
-      stat = lstatSync13(current);
+      stat = lstatSync14(current);
     } catch {
       return;
     }
@@ -13693,14 +15282,14 @@ function commitWithPathGuard(root, dirty, before, subject) {
   if (!version || Number(version[1]) < 2 || Number(version[1]) === 2 && Number(version[2]) < 29)
     throw new Error("automatic commit requires Git 2.29 or newer for its ref transaction guard");
   const targetRef = git5(root, ["rev-parse", "--symbolic-full-name", "HEAD"]).trim();
-  const originalHooks = resolve13(root, git5(root, ["rev-parse", "--git-path", "hooks"]).trim());
+  const originalHooks = resolve15(root, git5(root, ["rev-parse", "--git-path", "hooks"]).trim());
   const temporary = mkdtempSync5(join20(tmpdir4(), "imm-commit-hooks-"));
   const hooks = join20(temporary, "hooks");
   try {
     mkdirSync8(hooks);
     let entries = [];
     try {
-      entries = readdirSync7(originalHooks);
+      entries = readdirSync8(originalHooks);
     } catch (error) {
       if (!["ENOENT", "ENOTDIR"].includes(error.code ?? ""))
         throw error;
@@ -13784,7 +15373,7 @@ exec ${quote(process.execPath)} ${quote(guard)} "$@"
   }
 }
 function commitWorkflowPaths(projectRoot, input) {
-  const root = realpathSync16(resolve13(projectRoot));
+  const root = realpathSync16(resolve15(projectRoot));
   const listed = [...new Set(input.paths)].sort();
   if (listed.length === 0)
     return { committed: false };
@@ -13794,7 +15383,7 @@ function commitWorkflowPaths(projectRoot, input) {
     throw new Error("automatic commit requires a one-line subject");
   input.signal?.throwIfAborted();
   const toplevel = git5(root, ["rev-parse", "--show-toplevel"]).trim();
-  if (realpathSync16(resolve13(toplevel)) !== root)
+  if (realpathSync16(resolve15(toplevel)) !== root)
     throw new Error("automatic commit requires the repository root as the project root");
   git5(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   if (splitNull2(git5(root, ["ls-files", "--unmerged", "-z"])).length > 0)
@@ -13843,7 +15432,7 @@ function settleCommitSubject(taskId) {
 function commitSettledDelivery(projectRoot, taskId, signal) {
   let root;
   try {
-    root = realpathSync16(resolve13(projectRoot));
+    root = realpathSync16(resolve15(projectRoot));
     if (readGitIntegrationPreference(root).mode !== "auto")
       return null;
   } catch {
@@ -13887,9 +15476,9 @@ var init_workflow_autocommit = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
-import { spawnSync as spawnSync12 } from "node:child_process";
+import { spawnSync as spawnSync13 } from "node:child_process";
 function git6(root, args, extra = {}) {
-  const result = spawnSync12("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
+  const result = spawnSync13("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
     input: extra.input,
@@ -14246,1603 +15835,114 @@ var init_batch_integration = __esm(() => {
   };
 });
 
-// plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
-import { resolve as resolve14 } from "node:path";
-function localInitiativePath(initiativeSlug) {
-  return `docs/initiatives/${initiativeSlug}.md`;
+// plugins/immune-brain/runtime/unattended/checkout_delivery.ts
+import { spawnSync as spawnSync14 } from "node:child_process";
+import { lstatSync as lstatSync15 } from "node:fs";
+import { join as join21 } from "node:path";
+function deliveredPaths(root, base, head) {
+  const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
+  if (raw.status !== 0)
+    return null;
+  const fields = raw.stdout.split("\x00").filter(Boolean);
+  const paths = [];
+  for (let i = 0;i + 1 < fields.length; i += 2) {
+    const meta = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(fields[i]);
+    if (!meta)
+      return null;
+    paths.push({ path: fields[i + 1], newMode: meta[2], newBlob: meta[4], deleted: meta[5] === "D" });
+  }
+  return paths;
 }
-function hasLocalInitiative(root, initiativeSlug) {
-  const stat = lstatSync14(resolve14(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
-  if (!stat)
+function pathSatisfied(root, entry) {
+  const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
+  if (staged.status !== 0)
     return false;
-  if (!stat.isFile())
-    throw new Error(`${localInitiativePath(initiativeSlug)} must be a regular file`);
-  return true;
-}
-function unquote(value) {
-  return value.trim().replace(/^`(.*)`$/, "$1");
-}
-function observeLocalInitiative(root, initiativeSlug) {
-  if (!ID_PATTERN.test(initiativeSlug))
-    throw new Error("initiative_slug is invalid");
-  const path = localInitiativePath(initiativeSlug);
-  if (!hasLocalInitiative(root, initiativeSlug))
-    throw new Error(`Local Initiative ${path} does not exist`);
-  const slices = [];
-  let inTasks = false;
-  let fence = false;
-  for (const raw of readFileSync18(resolve14(root, path), "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line.startsWith("```")) {
-      fence = !fence;
-      continue;
-    }
-    if (fence)
-      continue;
-    const heading = SLICE_HEADING.exec(line);
-    if (heading) {
-      slices.push({ slice_id: heading[1], tasks: [], blocked_by: [] });
-      inTasks = false;
-      continue;
-    }
-    const slice = slices.at(-1);
-    if (!slice)
-      continue;
-    if (TASKS.test(line)) {
-      inTasks = true;
-      continue;
-    }
-    const blocked = BLOCKED_BY.exec(line);
-    if (blocked) {
-      slice.blocked_by.push(...blocked[1].split(",").map(unquote).filter(Boolean));
-      inTasks = false;
-      continue;
-    }
-    const bullet = BULLET.exec(line);
-    if (inTasks && bullet)
-      slice.tasks.push(unquote(bullet[1]));
-    else if (line)
-      inTasks = false;
-  }
-  if (!slices.length)
-    throw new Error(`Local Initiative ${path} declares no Slice`);
-  return {
-    contract: "immune_brain/local_initiative_observation/v1",
-    initiative_id: initiativeSlug,
-    path,
-    tasks: slices.map((slice) => {
-      if (slice.tasks.length !== 1)
-        throw new Error(`Local Initiative Slice ${slice.slice_id} must name exactly one Task to run as a batch child`);
-      return { task_id: slice.tasks[0], slice_id: slice.slice_id, blocked_by: slice.blocked_by };
-    })
-  };
-}
-var ID_PATTERN, SLICE_HEADING, BLOCKED_BY, TASKS, BULLET;
-var init_local_initiative = __esm(() => {
-  ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-  SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
-  BLOCKED_BY = /^blocked by\s*:(.*)$/i;
-  TASKS = /^tasks\s*:\s*$/i;
-  BULLET = /^[-*]\s+(.*)$/;
-});
-
-// plugins/immune-brain/runtime/github_issue_tracker.ts
-import { spawn as spawn3, spawnSync as spawnSync13 } from "node:child_process";
-import { existsSync as existsSync11, readFileSync as readFileSync19, readdirSync as readdirSync8 } from "node:fs";
-import { basename as basename3, relative as relative7, resolve as resolve15, sep as sep9 } from "node:path";
-function countLiteral(value, needle) {
-  if (!needle)
-    return 0;
-  let count = 0;
-  let index = 0;
-  while ((index = value.indexOf(needle, index)) !== -1) {
-    count += 1;
-    index += needle.length;
-  }
-  return count;
-}
-function marker(name, value) {
-  return `<!-- immune-brain:${name}=${value} -->`;
-}
-function terminalMarker(eventId) {
-  return `<!-- immune-brain:terminal-event=${eventId} -->`;
-}
-function terminalSuffix(eventId) {
-  return `
-
-${terminalMarker(eventId)}
-Terminal event: \`${eventId}\`
-`;
-}
-function terminalEvent(value) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,500}$/.test(value))
-    throw new Error("terminal_event_id must be a bounded opaque Kernel event id");
-  if (/(?:gh[pousr]_|github_pat_)/i.test(value))
-    throw new Error("terminal_event_id must not contain a token-like value");
-  if (value === "multiple" || value === "malformed")
-    throw new Error(`terminal_event_id must not be the reserved parser sentinel: ${value}`);
-  return value;
-}
-function redactSecrets(value) {
-  return value.replace(/\bgh[pousr]_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bgithub_pat_[A-Za-z0-9_]+\b/g, "[REDACTED_GITHUB_TOKEN]").replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]").replace(/\b(?:token|secret|password)\s*[=:]\s*\S+/gi, "credential=[REDACTED]");
-}
-function publicText(value, name, max = 2000) {
-  if (typeof value !== "string")
-    throw new Error(`${name} must be a string`);
-  const text = value.trim();
-  if (!text || text.length > max || text.includes("\x00"))
-    throw new Error(`${name} must contain 1-${max} safe characters`);
-  return redactSecrets(text).replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
-}
-function identifier(value, name) {
-  if (typeof value !== "string" || !ID_PATTERN2.test(value))
-    throw new Error(`${name} must match ${ID_PATTERN2}`);
-  if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
-    throw new Error(`${name} must not contain a token-like value`);
-  return value;
-}
-function titleText(value) {
-  return redactSecrets(value).replace(/\s+/g, " ");
-}
-function displayName(value, name, max) {
-  if (typeof value !== "string" || !value.trim())
-    throw new Error(`${name} is required: publish a bounded display name instead of the full goal text`);
-  if (/[[\]]/.test(value))
-    throw new Error(`${name} must not contain square brackets`);
-  return projectionText(value, name, max);
-}
-function issueTitle(value) {
-  const title = titleText(value);
-  if (title.length > MAX_TITLE_LENGTH)
-    throw new Error(`GitHub Issue title must not exceed ${MAX_TITLE_LENGTH} characters: shorten the Planner display names`);
-  return title;
-}
-function initiativeDisplayNames(projection) {
-  const missing = ["short_name", "title"].filter((field) => projection?.[field] === undefined);
-  if (missing.length)
-    throw new Error(`Initiative projection requires display names; missing ${missing.map((field) => `projection.${field}`).join(", ")}`);
-  return { shortName: displayName(projection?.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME) };
-}
-function initiativeIssueTitle(initiativeId, projection) {
-  const { shortName } = initiativeDisplayNames(projection);
-  const title = displayName(projection?.title, "projection.title", MAX_DISPLAY_TITLE);
-  return issueTitle(`[${shortName}] ${title}`);
-}
-function taskDisplayNames(operation) {
-  const projection = operation.projection;
-  if (projection?.short_name === undefined || projection.title === undefined || projection.slice_ordinal === undefined)
-    throw new Error(`Task ${operation.task_id} requires projection.short_name, projection.title, and projection.slice_ordinal display names`);
-  return {
-    shortName: displayName(projection.short_name, "projection.short_name", MAX_DISPLAY_SHORT_NAME),
-    title: displayName(projection.title, "projection.title", MAX_DISPLAY_TITLE),
-    ordinal: projection.slice_ordinal
-  };
-}
-function taskIssueTitle(operation) {
-  const { shortName, title } = taskDisplayNames(operation);
-  return issueTitle(`[${shortName}] ${operation.slice_id} ${title}`);
-}
-function desiredTaskLabels(operation) {
-  return (operation.projection?.blocked_by ?? []).length ? [READY_FOR_AGENT_LABEL, BLOCKED_LABEL] : [READY_FOR_AGENT_LABEL];
-}
-function labelMutationArgs(observed, desired) {
-  const args = [];
-  for (const label of desired)
-    if (!observed.includes(label))
-      args.push("--add-label", label);
-  for (const label of MANAGED_ISSUE_LABELS)
-    if (observed.includes(label) && !desired.includes(label))
-      args.push("--remove-label", label);
-  return args;
-}
-async function repositoryLabels(root, gh, repository) {
-  const execution = await gh.run(["label", "list", "--repo", repository.name_with_owner, "--json", "name", "--limit", "1000"], { cwd: root });
-  if (execution.exit_code !== 0 || execution.output_exceeded)
-    return ghFailure("upsert-task", execution, "cannot query repository labels");
-  try {
-    const parsed = JSON.parse(execution.stdout);
-    if (!Array.isArray(parsed))
-      throw new Error("gh returned malformed label list");
-    return parsed.map((item) => item?.name).filter((name) => typeof name === "string");
-  } catch (error) {
-    return result("upsert-task", "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-}
-async function labelAvailabilityFailure(root, gh, repository, required) {
-  if (!required.length)
-    return null;
-  const labels = await repositoryLabels(root, gh, repository);
-  if (!Array.isArray(labels))
-    return labels;
-  const missing = required.filter((label) => !labels.includes(label));
-  return missing.length ? result("upsert-task", "permanent_failure", `repository labels missing: ${missing.join(", ")}; create them before publishing so Task Issues carry publication state`) : null;
-}
-function redactGithubDiagnostic(value) {
-  return redactSecrets(value).replace(/\s+/g, " ").trim().slice(0, MAX_DIAGNOSTIC);
-}
-function result(operation, status, message, issue) {
-  return {
-    contract: CONTRACT2,
-    operation,
-    status,
-    association_found: issue !== undefined,
-    ...issue ? { issue_number: issue.number, issue_url: issue.url, node_id: String(issue.id) } : {},
-    message: redactGithubDiagnostic(message)
-  };
-}
-function ghFailure(operation, execution, message) {
-  const retryable = execution.timed_out || /timeout|timed out|network|connection|temporar|rate limit|502|503|504/i.test(execution.stderr);
-  return result(operation, retryable ? "retryable_failure" : "permanent_failure", `${message}: ${execution.output_exceeded ? "gh output limit exceeded" : execution.stderr || `gh exited ${execution.exit_code}`}`);
-}
-function createGhTransport(binary = "gh") {
-  return {
-    run(args, options = {}) {
-      return new Promise((complete) => {
-        let stdout = Buffer.alloc(0);
-        let stderr = Buffer.alloc(0);
-        if (options.signal?.aborted) {
-          complete({
-            exit_code: 1,
-            stdout: "",
-            stderr: "operation cancelled by the caller",
-            timed_out: true,
-            output_exceeded: false
-          });
-          return;
-        }
-        const remaining = GH_TIMEOUT_MS;
-        let timedOut = false;
-        let outputExceeded = false;
-        let timer;
-        let settled = false;
-        const finish = (exitCode, spawnError = "") => {
-          if (settled)
-            return;
-          settled = true;
-          if (timer)
-            clearTimeout(timer);
-          complete({
-            exit_code: exitCode,
-            stdout: stdout.toString("utf8"),
-            stderr: `${stderr.toString("utf8")}${spawnError}`,
-            timed_out: timedOut,
-            output_exceeded: outputExceeded
-          });
-        };
-        let child;
-        try {
-          child = spawn3(binary, args, {
-            cwd: options.cwd,
-            stdio: ["pipe", "pipe", "pipe"],
-            env: process.env
-          });
-        } catch (error) {
-          finish(1, error instanceof Error ? error.message : String(error));
-          return;
-        }
-        const append = (current, chunk) => {
-          const available = Math.max(0, MAX_GH_OUTPUT - stdout.length - stderr.length);
-          if (chunk.length > available) {
-            outputExceeded = true;
-            child.kill("SIGKILL");
-          }
-          return available > 0 ? Buffer.concat([current, chunk.subarray(0, available)]) : current;
-        };
-        const { stdout: childOut, stderr: childErr, stdin: childIn } = child;
-        if (!childOut || !childErr || !childIn) {
-          finish(1, "gh was spawned without the stdio pipes this reader requires");
-          return;
-        }
-        childOut.on("data", (chunk) => {
-          stdout = append(stdout, chunk);
-        });
-        childErr.on("data", (chunk) => {
-          stderr = append(stderr, chunk);
-        });
-        child.once("error", (error) => {
-          finish(1, error.message);
-        });
-        childIn.once("error", (error) => {
-          finish(1, error.message);
-        });
-        timer = setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGKILL");
-        }, remaining);
-        child.once("close", (code) => {
-          finish(code ?? 1);
-        });
-        try {
-          childIn.end(options.stdin ?? "");
-        } catch (error) {
-          finish(1, error instanceof Error ? error.message : String(error));
-        }
-      });
-    }
-  };
-}
-function parseRepository(raw) {
-  const value = JSON.parse(raw);
-  if (!Number.isSafeInteger(value.id) || typeof value.full_name !== "string" || !value.full_name.includes("/"))
-    throw new Error("gh returned malformed repository identity");
-  return { id: value.id, name_with_owner: value.full_name };
-}
-function parseIssues(raw) {
-  const parsed = JSON.parse(raw);
-  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
-  if (!Array.isArray(pages))
-    throw new Error("gh returned malformed Issue list");
-  return pages.filter((item) => Boolean(item) && typeof item === "object" && !("pull_request" in item)).map((item) => {
-    if (!Number.isSafeInteger(item.id) || !Number.isSafeInteger(item.number) || typeof item.html_url !== "string" || typeof item.title !== "string" || typeof item.body !== "string" && item.body !== null || item.state !== "open" && item.state !== "closed")
-      throw new Error("gh returned a malformed Issue");
-    return {
-      id: item.id,
-      number: item.number,
-      url: item.html_url,
-      title: item.title,
-      body: typeof item.body === "string" ? item.body : "",
-      state: item.state,
-      state_reason: typeof item.state_reason === "string" ? item.state_reason.toLowerCase() : null,
-      labels: Array.isArray(item.labels) ? item.labels.map((label) => typeof label === "string" ? label : label?.name).filter((name) => typeof name === "string") : []
-    };
-  });
-}
-function parseSubIssueNumbers(raw) {
-  const parsed = JSON.parse(raw);
-  const pages = Array.isArray(parsed) && parsed.every(Array.isArray) ? parsed.flat() : parsed;
-  if (!Array.isArray(pages))
-    throw new Error("gh returned malformed Sub-issue list");
-  return pages.map((item, index) => {
-    const number = item?.number;
-    if (typeof number !== "number" || !Number.isSafeInteger(number))
-      throw new Error(`gh returned a malformed Sub-issue entry at ${index}`);
-    return number;
-  });
-}
-async function snapshot(root, gh, operation) {
-  const repositoryExecution = await gh.run(["api", "repos/{owner}/{repo}"], { cwd: root });
-  if (repositoryExecution.exit_code !== 0 || repositoryExecution.output_exceeded)
-    return ghFailure(operation, repositoryExecution, "cannot resolve GitHub repository");
-  let repository;
-  try {
-    repository = parseRepository(repositoryExecution.stdout);
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-  const issues = [];
-  for (let page = 1;page <= MAX_SNAPSHOT_PAGES; page += 1) {
-    const issuesExecution = await gh.run(["api", `repos/${repository.name_with_owner}/issues?state=all&per_page=100&page=${page}`], { cwd: root });
-    if (issuesExecution.exit_code !== 0 || issuesExecution.output_exceeded)
-      return ghFailure(operation, issuesExecution, "cannot query GitHub Issues");
-    let raw;
+  if (entry.deleted) {
+    if (staged.stdout.length)
+      return false;
     try {
-      raw = JSON.parse(issuesExecution.stdout);
-    } catch (error) {
-      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+      lstatSync15(join21(root, entry.path));
+      return false;
+    } catch {
+      return true;
     }
-    if (!Array.isArray(raw))
-      return result(operation, "permanent_failure", "gh returned malformed Issue list");
-    const pageCount = raw.length;
-    try {
-      issues.push(...parseIssues(issuesExecution.stdout));
-    } catch (error) {
-      return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
-    }
-    if (pageCount < 100)
-      break;
-    if (page === MAX_SNAPSHOT_PAGES)
-      return result(operation, "permanent_failure", "too many GitHub Issues to snapshot");
   }
-  return { repository, issues };
-}
-function findIssue(issues, primary, required) {
-  const candidates = issues.filter((issue) => primary.every((needle) => issue.body.includes(needle)));
-  if (candidates.length === 0)
-    return { kind: "missing" };
-  if (candidates.length !== 1)
-    return { kind: "ambiguous", message: `multiple Issues contain identity marker ${primary[0]}` };
-  const issue = candidates[0];
-  for (const expected of [PROTOCOL_MARKER, ...required]) {
-    if (countLiteral(issue.body, expected) !== 1)
-      return { kind: "ambiguous", message: `Issue #${issue.number} has missing or duplicate identity markers` };
-  }
-  return { kind: "found", issue };
-}
-function initiativeLookup(issues, repositoryId, initiativeId) {
-  const initiative = marker("initiative-id", initiativeId);
-  return findIssue(issues, [initiative, KIND_INITIATIVE_MARKER], [marker("repo-id", repositoryId), initiative]);
-}
-function publishedIntentHashMarkers(body) {
-  return [...body.matchAll(/<!-- immune-brain:intent-hash=([A-Za-z0-9][A-Za-z0-9._:-]{0,127}) -->/g)].map((match) => match[1]);
-}
-function publishedIntentIdentity(body) {
-  const hashes = publishedIntentHashMarkers(body);
-  if (hashes.length === 0)
-    return { kind: "absent" };
-  if (hashes.length === 1)
-    return { kind: "bound", hash: hashes[0] };
-  return { kind: "ambiguous", hashes };
-}
-function publishedIntentMismatch(body, taskId, expected) {
-  const identity = publishedIntentIdentity(body);
-  if (identity.kind === "ambiguous")
-    return `published Task ${taskId} carries ${identity.hashes.length} conflicting intent-hash markers; its published Intent identity is ambiguous`;
-  if (identity.kind === "absent" || expected === undefined)
-    return null;
-  if (identity.hash !== expected)
-    return `published Task ${taskId} was published from a different TaskIntent revision; the published identity no longer matches the Intent being published`;
-  return null;
-}
-function sameTrackedBody(current, expected) {
-  return stripPublishedIntentHash(current) === stripPublishedIntentHash(expected);
-}
-function stripPublishedIntentHash(body) {
-  return body.replace(/<!-- immune-brain:intent-hash=[A-Za-z0-9][A-Za-z0-9._:-]{0,127} -->\n?/g, "");
-}
-function ownershipMarkerValue(body, name) {
-  const pattern = name === "scenarios" ? "[A-Za-z0-9%_!*'()~.-]+" : "[A-Za-z0-9][A-Za-z0-9._-]{0,127}";
-  const values = [...body.matchAll(new RegExp(`<!-- immune-brain:${name}=(${pattern}) -->`, "g"))];
-  return values.length === 1 ? values[0][1] : null;
-}
-function taskLookup(issues, repositoryId, taskId) {
-  const task = marker("task-id", taskId);
-  const base = findIssue(issues, [task, KIND_TASK_MARKER], [marker("repo-id", repositoryId), task]);
-  if (base.kind !== "found")
-    return base;
-  for (const name of ["task-id", "initiative-id", "slice-id"]) {
-    if (!ownershipMarkerValue(base.issue.body, name))
-      return { kind: "ambiguous", message: `Issue #${base.issue.number} has missing or duplicate ${name} ownership markers` };
-  }
-  return base;
-}
-function ownedTaskLookup(issues, repositoryId, taskId, initiativeId, sliceId) {
-  const base = taskLookup(issues, repositoryId, taskId);
-  if (base.kind !== "found")
-    return base;
-  return base.issue.body.includes(marker("initiative-id", initiativeId)) && base.issue.body.includes(marker("slice-id", sliceId)) ? base : { kind: "ambiguous", message: `Issue #${base.issue.number} belongs to another Initiative or Slice; Task ownership is immutable` };
-}
-function sliceCount(parentBody, sliceId) {
-  return countLiteral(parentBody, marker("slice-id", sliceId));
-}
-async function readSubIssueNumbers(root, gh, operation, repository, parentNumber) {
-  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues?per_page=100`], { cwd: root });
-  if (listed.exit_code !== 0 || listed.output_exceeded)
-    return ghFailure(operation, listed, "cannot read native Sub-issue relations");
+  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
+  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
+    return false;
+  let stat;
   try {
-    return parseSubIssueNumbers(listed.stdout);
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+    stat = lstatSync15(join21(root, entry.path));
+  } catch {
+    return false;
   }
+  const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
+  if (worktreeMode !== entry.newMode)
+    return false;
+  const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
+  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
 }
-async function confirmAttachment(root, gh, operation, repository, parentNumber, childNumber) {
-  const read = await readSubIssueNumbers(root, gh, operation, repository, parentNumber);
-  if (!Array.isArray(read))
-    return read;
-  const matches = read.filter((candidate) => candidate === childNumber).length;
-  if (matches > 1)
-    return result(operation, "ambiguous_remote_state", `Issue #${parentNumber} lists the Task Issue more than once`);
-  return { attached: matches === 1 };
+function deliveryAlreadyApplied(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  if (mode === "auto")
+    return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
+  const paths = deliveredPaths(root, base, head);
+  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
 }
-async function attachSubIssue(root, gh, operation, repository, parentNumber, child) {
-  const mutation = await gh.run([
-    "api",
-    "-F",
-    `sub_issue_id=${child.id}`,
-    `repos/${repository.name_with_owner}/issues/${parentNumber}/sub_issues`
-  ], { cwd: root });
-  if (mutation.exit_code !== 0 || mutation.output_exceeded)
-    return ghFailure(operation, mutation, "native Sub-issue attachment failed");
-  const confirmed = await confirmAttachment(root, gh, operation, repository, parentNumber, child.number);
-  if (!("attached" in confirmed))
-    return confirmed;
-  return confirmed.attached ? { attached: true } : result(operation, "retryable_failure", "native Sub-issue relation did not converge", child);
-}
-async function readBlockedByIds(root, gh, operation, repository, childNumber) {
-  const listed = await gh.run(["api", "--paginate", "--slurp", `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by?per_page=100`], { cwd: root });
-  if (listed.exit_code !== 0 || listed.output_exceeded)
-    return ghFailure(operation, listed, "cannot read native blocked_by relations");
-  try {
-    const pages = JSON.parse(listed.stdout);
-    if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page)))
-      throw new Error("gh returned malformed blocked_by pages");
-    const ids = pages.flat().map((item, index) => {
-      const id = item?.issue_id ?? item?.id;
-      if (!Number.isSafeInteger(id))
-        throw new Error(`gh returned malformed blocked_by entry at ${index}`);
-      return id;
-    });
-    if (new Set(ids).size !== ids.length)
-      return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has duplicate native blocked_by relations`);
-    return ids;
-  } catch (error) {
-    return result(operation, "permanent_failure", error instanceof Error ? error.message : String(error));
+function deliverSingleTask(root, base, head) {
+  const { mode } = readGitIntegrationPreference(root);
+  const blocked = (reason) => ({ mode, status: "blocked", reason });
+  const git = (...args) => gitIn(root, ...args);
+  if (deliveryAlreadyApplied(root, base, head))
+    return { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null };
+  const changed = deliveredPaths(root, base, head);
+  const dirty = porcelainEntries(root);
+  if (!changed || !dirty)
+    return blocked("coordinator_status_unreadable");
+  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
+  const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
+  if (overlaps.length)
+    return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
+  if (mode === "auto") {
+    if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
+      return blocked("coordinator_branch_unavailable");
+    if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
+      return blocked("coordinator_head_diverged");
+    const merge = git("merge", "--ff-only", "--no-edit", head);
+    if (merge.status !== 0)
+      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
+    return { mode, status: "fast_forwarded", reason: null };
   }
+  if (!pending.length)
+    return { mode, status: "staged", reason: null };
+  const patch = spawnSync14("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
+  if (patch.status !== 0)
+    return blocked("checkout_delivery_conflict: cannot read delivery delta");
+  if (!patch.stdout.length)
+    return { mode, status: "staged", reason: null };
+  const apply = (check) => spawnSync14("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
+  const checked = apply(true);
+  if (checked.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
+  const applied = apply(false);
+  if (applied.status !== 0)
+    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
+  return { mode, status: "staged", reason: null };
 }
-async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
-  const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve15(root), gh, "create-initiative");
-  if ("contract" in source)
-    throw new Error(source.message);
-  const parent = initiativeLookup(source.issues, source.repository.id, id);
-  if (parent.kind === "missing")
-    throw new Error(`Initiative ${id} is not published`);
-  if (parent.kind === "ambiguous")
-    throw new Error(parent.message);
-  const subIssueNumbers = await readSubIssueNumbers(root, gh, "create-initiative", source.repository, parent.issue.number);
-  if (!Array.isArray(subIssueNumbers))
-    throw new Error(subIssueNumbers.message);
-  if (new Set(subIssueNumbers).size !== subIssueNumbers.length)
-    throw new Error(`Initiative ${id} has duplicate native Sub-issue relations`);
-  const tasks = subIssueNumbers.map((issueNumber) => {
-    const matches = source.issues.filter((issue) => issue.number === issueNumber);
-    if (matches.length !== 1)
-      throw new Error(`Initiative ${id} references an unreadable Sub-issue #${issueNumber}`);
-    const issue = matches[0];
-    const taskId = ownershipMarkerValue(issue.body, "task-id");
-    const sliceId = ownershipMarkerValue(issue.body, "slice-id");
-    if (!taskId || !sliceId || ownershipMarkerValue(issue.body, "initiative-id") !== id)
-      throw new Error(`Sub-issue #${issueNumber} has invalid Initiative ownership markers`);
-    const owned = ownedTaskLookup(source.issues, source.repository.id, taskId, id, sliceId);
-    if (owned.kind !== "found" || owned.issue.number !== issueNumber)
-      throw new Error(owned.kind === "ambiguous" ? owned.message : `Sub-issue #${issueNumber} has invalid Task ownership`);
-    return { task_id: taskId, slice_id: sliceId, issue_number: issueNumber, issue_id: issue.id };
-  });
-  if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
-    throw new Error(`Initiative ${id} has duplicate Task identities`);
-  if (new Set(tasks.map((task) => task.slice_id)).size !== tasks.length)
-    throw new Error(`Initiative ${id} has duplicate Slice identities`);
-  const taskByIssueId = new Map(tasks.map((task) => [task.issue_id, task.task_id]));
-  const observed = [];
-  for (const task of tasks.sort((left, right) => left.task_id < right.task_id ? -1 : left.task_id > right.task_id ? 1 : 0)) {
-    const blockerIds = await readBlockedByIds(root, gh, "create-initiative", source.repository, task.issue_number);
-    if (!Array.isArray(blockerIds))
-      throw new Error(blockerIds.message);
-    const blockedBy = blockerIds.map((blockerId) => {
-      const blocker = taskByIssueId.get(blockerId);
-      if (!blocker)
-        throw new Error(`Task ${task.task_id} depends on an Issue outside Initiative ${id}`);
-      return blocker;
-    }).sort();
-    observed.push({
-      task_id: task.task_id,
-      slice_id: task.slice_id,
-      issue_number: task.issue_number,
-      blocked_by: blockedBy
-    });
-  }
-  return {
-    contract: "immune_brain/github_initiative_observation/v1",
-    initiative_id: id,
-    issue_number: parent.issue.number,
-    tasks: observed
-  };
-}
-async function confirmBlockedBy(root, gh, operation, repository, childNumber, blockers) {
-  const ids = await readBlockedByIds(root, gh, operation, repository, childNumber);
-  if (!Array.isArray(ids))
-    return ids;
-  const expected = blockers.map((blocker) => blocker.id);
-  if (ids.some((id) => !expected.includes(id)))
-    return result(operation, "ambiguous_remote_state", `Issue #${childNumber} has unrequested native blocked_by relations`);
-  return { complete: ids.length === expected.length && expected.every((id) => ids.includes(id)) };
-}
-async function attachBlockedBy(root, gh, operation, repository, childNumber, blockers) {
-  const existing = await readBlockedByIds(root, gh, operation, repository, childNumber);
-  if (!Array.isArray(existing))
-    return existing;
-  for (const blocker of blockers) {
-    if (existing.includes(blocker.id))
-      continue;
-    const mutation = await gh.run([
-      "api",
-      "-F",
-      `issue_id=${blocker.id}`,
-      `repos/${repository.name_with_owner}/issues/${childNumber}/dependencies/blocked_by`
-    ], { cwd: root });
-    if (mutation.exit_code !== 0 || mutation.output_exceeded)
-      return ghFailure(operation, mutation, `native blocked_by attachment failed for Issue #${blocker.number}`);
-    existing.push(blocker.id);
-  }
-  const confirmed = await confirmBlockedBy(root, gh, operation, repository, childNumber, blockers);
-  if ("complete" in confirmed)
-    return confirmed.complete ? { complete: true } : result(operation, "retryable_failure", "native blocked_by relations did not converge");
-  return confirmed;
-}
-function carrierConflict(root, operation, initiativeId) {
-  if (!existsSync11(resolve15(root, "docs", "initiatives", `${initiativeId}.md`)))
-    return null;
-  return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
-}
-function listText(values, fallback) {
-  return values?.length ? values.map((value) => `- ${value}`).join(`
-`) : fallback;
-}
-function childScenarioSection(scenarios) {
-  if (!scenarios?.length)
-    return "";
-  const items = scenarios.map((scenario) => {
-    const mapped = scenario.acceptance?.length ? scenario.acceptance.map((id) => `\`${id}\``).join(", ") : "none";
-    const visible = `Actor: ${scenario.actor}. Given: ${scenario.given}. When: ${scenario.when}. Then: ${scenario.then}.`;
-    if (scenario.mode === "manual")
-      return `- [ ] \`${scenario.id}\` (manual, ${mapped}): ${visible} Reason: ${scenario.manual_reason}.`;
-    return `- \`${scenario.id}\` (automated, ${mapped}): ${visible}`;
-  });
-  return `
-## User scenarios
-
-${items.join(`
-`)}
-`;
-}
-function parentScenarioSection(scenarios) {
-  if (!scenarios?.length)
-    return "";
-  const items = scenarios.map((scenario) => {
-    const prefix = scenario.actor && scenario.given ? `Actor: ${scenario.actor}. Given: ${scenario.given}. ` : "";
-    const reason = scenario.manual_reason ? ` Reason: ${scenario.manual_reason}.` : "";
-    return `- \`${scenario.id}\` (Slice \`${scenario.slice_id}\`, ${scenario.mode}): ${prefix}When: ${scenario.when}. Then: ${scenario.then}.${reason}`;
-  });
-  return `
-## User scenarios
-
-${items.join(`
-`)}
-`;
-}
-function bodyLimitFailure(operation, body, reserve = 0) {
-  return Buffer.byteLength(body, "utf8") + reserve <= GITHUB_ISSUE_BODY_LIMIT ? null : result(operation, "permanent_failure", "rendered GitHub Issue body exceeds 65,536 UTF-8 bytes");
-}
-function createInitiativeBody(repository, operation, historicalSlices = []) {
-  const projection = operation.projection ?? {};
-  const provenance = projection.source_issue ? `## Provenance
-
-- Derived from #${projection.source_issue}: the originating feature Issue for this Initiative.
-
-` : "";
-  return `${[
-    PROTOCOL_MARKER,
-    KIND_INITIATIVE_MARKER,
-    marker("repo-id", repository.id),
-    marker("initiative-id", operation.initiative_id)
-  ].join(`
-`)}
-
-${provenance}## How to use this Issue
-
-- Edit planning prose and Slice ordering directly after creation.
-- Keep each Slice marker attached to exactly one stable Slice entry.
-- The tracker never rewrites this Parent after creation; the tracker closes it as completed once every Slice Child is completed, and never closes it otherwise.
-
-## Problem
-
-${publicText(projection.problem ?? "The Initiative addresses the bounded delivery described below.", "projection.problem")}
-
-## Result
-
-${publicText(projection.result ?? operation.goal, "projection.result")}
-
-## Initiative design
-
-${publicText(projection.design ?? "Each Child preserves the shared Initiative decisions and boundaries recorded here.", "projection.design")}
-
-## Decisions
-
-${listText(projection.decisions, "- No additional Initiative decisions recorded.")}
-
-## Testing strategy
-
-${publicText(projection.testing_strategy ?? "Each Child closes from its focused acceptance verification.", "projection.testing_strategy")}
-${parentScenarioSection(operation.scenarios)}
-## Out of scope
-
-${listText(projection.out_of_scope, "- Unrelated work outside this Initiative.")}
-
-## Slices
-
-${operation.slices.length + historicalSlices.length === 0 ? "No Slices recorded yet." : [...historicalSlices, ...operation.slices.map((slice) => `- [ ] ${marker("slice-id", slice.id)} **${slice.id}**: ${slice.result ?? slice.goal}${slice.blocked_by?.length ? ` (blocked by: ${slice.blocked_by.join(", ")})` : ""}`)].join(`
-`)}
-
-${ISSUE_FOOTER}
-`;
-}
-async function createInitiative(root, gh, operation, source) {
-  const lookup = (issues) => initiativeLookup(issues, source.repository.id, operation.initiative_id);
-  const found = lookup(source.issues);
-  if (found.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", found.message);
-  const body = createInitiativeBody(source.repository, operation);
-  const oversized = bodyLimitFailure(operation.op, body);
-  if (oversized)
-    return oversized;
-  const title = initiativeIssueTitle(operation.initiative_id, operation.projection);
-  if (found.kind === "missing") {
-    const mutation = await gh.run([
-      "issue",
-      "create",
-      "--repo",
-      source.repository.name_with_owner,
-      "--title",
-      title,
-      "--body-file",
-      "-"
-    ], { cwd: root, stdin: body });
-    const refreshed = await snapshot(root, gh, operation.op);
-    if ("contract" in refreshed)
-      return refreshed;
-    const confirmed = lookup(refreshed.issues);
-    if (confirmed.kind === "ambiguous")
-      return result(operation.op, "ambiguous_remote_state", confirmed.message);
-    if (confirmed.kind === "missing") {
-      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Initiative Issue creation failed") : result(operation.op, "retryable_failure", "Initiative creation could not be confirmed");
-    }
-    return confirmed.issue.body === body && confirmed.issue.title === title ? result(operation.op, "created", "Initiative Issue created as the single GitHub source", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to the requested initial title and body", confirmed.issue);
-  }
-  if (found.issue.body === body && found.issue.title === title) {
-    const labelArgs = labelMutationArgs(found.issue.labels, []);
-    if (labelArgs.length) {
-      const edited = await gh.run([
-        "issue",
-        "edit",
-        String(found.issue.number),
-        "--repo",
-        source.repository.name_with_owner,
-        ...labelArgs
-      ], { cwd: root });
-      if (edited.exit_code !== 0 || edited.output_exceeded)
-        return ghFailure(operation.op, edited, "Initiative Parent label convergence failed");
-      const refreshed = await snapshot(root, gh, operation.op);
-      if ("contract" in refreshed)
-        return refreshed;
-      const confirmed = lookup(refreshed.issues);
-      if (confirmed.kind !== "found")
-        return result(operation.op, "ambiguous_remote_state", "Initiative Parent became ambiguous after label convergence", found.issue);
-      return confirmed.issue.title === title && confirmed.issue.body === body && !labelMutationArgs(confirmed.issue.labels, []).length ? result(operation.op, "updated", "Initiative Issue managed labels converged", confirmed.issue) : result(operation.op, "retryable_failure", "Initiative Issue did not converge to an unlabeled Parent", confirmed.issue);
-    }
-    return result(operation.op, "already_current", "Initiative Issue already carries the requested initial source", found.issue);
-  }
-  return result(operation.op, "permanent_failure", "Initiative Issue already exists and the tracker never rewrites it; edit the GitHub source directly for later planning changes", found.issue);
-}
-function childBody(repository, operation, parent) {
-  const projection = operation.projection ?? {};
-  const acceptance = operation.acceptance.map((item) => `- \`${item.id}\`: ${item.summary}`).join(`
-`);
-  return `${[
-    PROTOCOL_MARKER,
-    KIND_TASK_MARKER,
-    marker("repo-id", repository.id),
-    marker("initiative-id", operation.initiative_id),
-    marker("slice-id", operation.slice_id),
-    marker("task-id", operation.task_id),
-    ...operation.intent_hash ? [marker("intent-hash", operation.intent_hash)] : [],
-    ...operation.scenarios?.length ? [marker("scenarios", encodeURIComponent(JSON.stringify(operation.scenarios)))] : []
-  ].join(`
-`)}
-
-## Parent
-
-| Initiative | \`${operation.initiative_id}\` |
-| Parent Issue | [#${parent.number}](${parent.url}) |
-| Slice | \`${operation.slice_id}\` |
-| Risk | \`${operation.risk}\` |
-
-## Current behavior
-
-${publicText(projection.current_behavior ?? "The current behavior is defined by the repository's existing contract.", "projection.current_behavior")}
-
-## Desired behavior
-
-${publicText(projection.desired_behavior ?? projection.result ?? operation.goal, "projection.desired_behavior")}
-
-## Key interfaces
-
-${listText(projection.key_interfaces, "- Canonical TaskIntent acceptance and Kernel lifecycle remain authoritative.")}
-
-## Acceptance criteria
-
-${acceptance}
-${childScenarioSection(operation.scenarios)}
-## Verification
-
-${publicText(projection.verification ?? "Run the focused acceptance verification declared by the TaskIntent.", "projection.verification")}
-
-## Blocked by
-
-${projection.blocked_by?.length ? projection.blocked_by.map((id) => `- \`${identifier(id, "blocked_by task_id")}\``).join(`
-`) : "None"}
-
-## Out of scope
-
-${listText(projection.out_of_scope, "- Scope not declared by the validated TaskIntent.")}
-
-## Agent handoff
-
-${publicText(projection.agent_handoff ?? "Implement only the bounded TaskIntent result and run the focused checks. Do not widen scope or treat GitHub as authorization.", "projection.agent_handoff")}
-
-${ISSUE_FOOTER}
-`;
-}
-async function upsertTask(root, gh, operation, source) {
-  const labelFailure = await labelAvailabilityFailure(root, gh, source.repository, desiredTaskLabels(operation));
-  if (labelFailure)
-    return labelFailure;
-  const parent = initiativeLookup(source.issues, source.repository.id, operation.initiative_id);
-  if (parent.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", parent.message);
-  if (parent.kind === "missing")
-    return result(operation.op, "permanent_failure", "the Initiative Parent Issue must exist before publishing a Task");
-  if (sliceCount(parent.issue.body, operation.slice_id) !== 1)
-    return result(operation.op, "ambiguous_remote_state", `Parent Issue #${parent.issue.number} has missing or duplicate Slice marker ${operation.slice_id}; restore exactly one stable Slice entry in the GitHub source`, parent.issue);
-  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
-  const found = lookup(source.issues);
-  if (found.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", found.message);
-  const blockerIds = operation.projection?.blocked_by ?? [];
-  const blockers = [];
-  for (const blockerId of blockerIds) {
-    if (blockerId === operation.task_id)
-      return result(operation.op, "ambiguous_remote_state", "a Task cannot block itself", parent.issue);
-    const blocker = taskLookup(source.issues, source.repository.id, blockerId);
-    if (blocker.kind === "missing")
-      return result(operation.op, "permanent_failure", `blocking Task ${blockerId} has not been published`, parent.issue);
-    if (blocker.kind === "ambiguous")
-      return result(operation.op, "ambiguous_remote_state", blocker.message, parent.issue);
-    const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, blocker.issue);
-    if (!("owned" in ownership))
-      return ownership;
-    blockers.push(blocker.issue);
-  }
-  const body = childBody(source.repository, operation, parent.issue);
-  const oversized = bodyLimitFailure(operation.op, body, MAX_TERMINAL_SUFFIX_BYTES);
-  if (oversized)
-    return oversized;
-  const title = taskIssueTitle(operation);
-  let child;
-  let createdChild = false;
-  let labelsConverged = false;
-  if (found.kind === "missing") {
-    const mutation = await gh.run([
-      "issue",
-      "create",
-      "--repo",
-      source.repository.name_with_owner,
-      "--title",
-      title,
-      "--body-file",
-      "-",
-      ...desiredTaskLabels(operation).flatMap((label) => ["--label", label])
-    ], { cwd: root, stdin: body });
-    const refreshed = await snapshot(root, gh, operation.op);
-    if ("contract" in refreshed)
-      return refreshed;
-    const created = lookup(refreshed.issues);
-    if (created.kind === "ambiguous")
-      return result(operation.op, "ambiguous_remote_state", created.message);
-    if (created.kind === "missing") {
-      return mutation.exit_code !== 0 && !mutation.timed_out && !mutation.output_exceeded ? ghFailure(operation.op, mutation, "Task Issue creation failed") : result(operation.op, "retryable_failure", "Task creation could not be confirmed");
-    }
-    if (created.issue.body !== body || created.issue.title !== title)
-      return result(operation.op, "retryable_failure", "Task Issue did not converge to the requested title and body", created.issue);
-    child = created.issue;
-    createdChild = true;
-  } else {
-    const owned = ownedTaskLookup(source.issues, source.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
-    if (owned.kind !== "found")
-      return result(operation.op, "ambiguous_remote_state", owned.kind === "ambiguous" ? owned.message : "Task Issue ownership changed during publication", found.issue);
-    child = owned.issue;
-    if (!sameTrackedBody(found.issue.body, body) || found.issue.title !== title)
-      return result(operation.op, "permanent_failure", "Task Issue already exists with a different title or Agent Brief; edit the GitHub source or retry the original projection before changing native relations", found.issue);
-    const intentMismatch = publishedIntentMismatch(found.issue.body, operation.task_id, operation.intent_hash);
-    if (intentMismatch)
-      return result(operation.op, "ambiguous_remote_state", intentMismatch, found.issue);
-    const observedLabelArgs = labelMutationArgs(child.labels, desiredTaskLabels(operation));
-    if (observedLabelArgs.length) {
-      const edited = await gh.run([
-        "issue",
-        "edit",
-        String(child.number),
-        "--repo",
-        source.repository.name_with_owner,
-        ...observedLabelArgs
-      ], { cwd: root });
-      if (edited.exit_code !== 0 || edited.output_exceeded)
-        return ghFailure(operation.op, edited, `Task Issue #${child.number} label convergence failed`);
-      labelsConverged = true;
-    }
-  }
-  const attachment = await confirmAttachment(root, gh, operation.op, source.repository, parent.issue.number, child.number);
-  if (!("attached" in attachment))
-    return attachment;
-  if (!attachment.attached) {
-    const attach = await attachSubIssue(root, gh, operation.op, source.repository, parent.issue.number, child);
-    if (!("attached" in attach))
-      return attach;
-  }
-  const dependencies = await confirmBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
-  if (!("complete" in dependencies))
-    return dependencies;
-  if (!dependencies.complete) {
-    const attached = await attachBlockedBy(root, gh, operation.op, source.repository, child.number, blockers);
-    if (!("complete" in attached))
-      return attached;
-  }
-  const finalSource = await snapshot(root, gh, operation.op);
-  if ("contract" in finalSource)
-    return finalSource;
-  const finalChild = ownedTaskLookup(finalSource.issues, finalSource.repository.id, operation.task_id, operation.initiative_id, operation.slice_id);
-  if (finalChild.kind !== "found" || finalChild.issue.id !== child.id || finalChild.issue.title !== title || !sameTrackedBody(finalChild.issue.body, body))
-    return result(operation.op, "ambiguous_remote_state", "Task Issue changed identity, title, or body during dependency publication", child);
-  const finalIdentityMismatch = publishedIntentMismatch(finalChild.issue.body, operation.task_id, operation.intent_hash);
-  if (finalIdentityMismatch)
-    return result(operation.op, "ambiguous_remote_state", finalIdentityMismatch, child);
-  const finalChildOwnership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, finalChild.issue);
-  if (!("owned" in finalChildOwnership))
-    return finalChildOwnership;
-  child = finalChild.issue;
-  for (let index = 0;index < blockerIds.length; index += 1) {
-    const current = taskLookup(finalSource.issues, finalSource.repository.id, blockerIds[index]);
-    if (current.kind !== "found" || current.issue.id !== blockers[index].id)
-      return result(operation.op, "ambiguous_remote_state", `blocking Task ${blockerIds[index]} changed ownership during dependency publication`, child);
-    const ownership = await confirmTerminalOwnership(root, gh, operation.op, finalSource, current.issue);
-    if (!("owned" in ownership))
-      return ownership;
-  }
-  const finalDependencies = await confirmBlockedBy(root, gh, operation.op, finalSource.repository, child.number, blockers);
-  if (!("complete" in finalDependencies))
-    return finalDependencies;
-  if (!finalDependencies.complete)
-    return result(operation.op, "ambiguous_remote_state", "native blocked_by relations changed during dependency publication", child);
-  if (attachment.attached && dependencies.complete)
-    return createdChild ? result(operation.op, "created", "Task Issue created and attached with native blocking relations", child) : result(operation.op, labelsConverged ? "updated" : "already_current", "Task Issue, native Sub-issue relation, and blocking relations are current", child);
-  return createdChild ? result(operation.op, "created", "Task Issue created and attached as a native Sub-issue", child) : result(operation.op, "updated", "existing Task Issue attached as a native Sub-issue", child);
-}
-async function confirmTerminalOwnership(root, gh, operation, source, child) {
-  const initiativeId = ownershipMarkerValue(child.body, "initiative-id");
-  const sliceId = ownershipMarkerValue(child.body, "slice-id");
-  if (!initiativeId || !sliceId)
-    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has invalid ownership markers`, child);
-  const parent = initiativeLookup(source.issues, source.repository.id, initiativeId);
-  if (parent.kind !== "found")
-    return result(operation, "ambiguous_remote_state", parent.kind === "ambiguous" ? parent.message : `Issue #${child.number} has no exact Initiative Parent`, child);
-  if (sliceCount(parent.issue.body, sliceId) !== 1)
-    return result(operation, "ambiguous_remote_state", `Issue #${child.number} has no exact Slice in Parent #${parent.issue.number}`, child);
-  const attachment = await confirmAttachment(root, gh, operation, source.repository, parent.issue.number, child.number);
-  if (!("attached" in attachment))
-    return attachment;
-  return attachment.attached ? { owned: true } : result(operation, "ambiguous_remote_state", `Issue #${child.number} is not attached to its marker-bound Parent #${parent.issue.number}`, child);
-}
-async function closeTerminalIssue(root, gh, operation, source, issue, lookup) {
-  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-  if (issue.state === "closed" && issue.state_reason === "not_planned" && operation.phase === "done") {
-    const reopened = await gh.run([
-      "issue",
-      "reopen",
-      String(issue.number),
-      "--repo",
-      source.repository.name_with_owner
-    ], { cwd: root });
-    if (reopened.exit_code !== 0 || reopened.output_exceeded)
-      return ghFailure(operation.op, reopened, "terminal Issue reopen failed");
-  }
-  const close = await gh.run([
-    "issue",
-    "close",
-    String(issue.number),
-    "--repo",
-    source.repository.name_with_owner,
-    "--reason",
-    operation.phase === "done" ? "completed" : "not planned"
-  ], { cwd: root });
-  const refreshed = await snapshot(root, gh, operation.op);
-  if ("contract" in refreshed)
-    return refreshed;
-  const found = lookup(refreshed.issues);
-  if (found.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", found.message);
-  if (found.kind === "missing")
-    return result(operation.op, "retryable_failure", "terminal Issue closure could not be confirmed");
-  if (countLiteral(found.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
-    return result(operation.op, "ambiguous_remote_state", "terminal Issue body changed during closure", found.issue);
-  if (found.issue.state === "closed" && found.issue.state_reason === desiredReason)
-    return result(operation.op, "updated", "terminal Task Issue closure confirmed", found.issue);
-  return close.exit_code !== 0 ? ghFailure(operation.op, close, "terminal Issue closure failed") : result(operation.op, "retryable_failure", "terminal Issue closure did not converge", found.issue);
-}
-async function markChildTerminal(root, gh, operation, source) {
-  const lookup = (issues) => taskLookup(issues, source.repository.id, operation.task_id);
-  const found = lookup(source.issues);
-  if (found.kind === "missing")
-    return result(operation.op, "already_current", "Task has no opted-in tracker association");
-  if (found.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", found.message);
-  const issue = found.issue;
-  const ownership = await confirmTerminalOwnership(root, gh, operation.op, source, issue);
-  if (!("owned" in ownership))
-    return ownership;
-  const existingEvent = issueTerminalEventId(issue.body);
-  const redelivery = operation.phase === "done" && issue.state === "closed" && issue.state_reason === "not_planned";
-  if (existingEvent === "multiple" || existingEvent === "malformed" || existingEvent !== null && existingEvent !== operation.terminal_event_id && !redelivery)
-    return result(operation.op, "ambiguous_remote_state", "terminal Issue conflicts with authoritative settlement", issue);
-  const desiredReason = operation.phase === "done" ? "completed" : "not_planned";
-  if (existingEvent === operation.terminal_event_id) {
-    if (issue.state === "closed" && !redelivery)
-      return issue.state_reason === desiredReason ? result(operation.op, "already_current", "terminal Task Issue is current", issue) : result(operation.op, "ambiguous_remote_state", "closed Issue reason conflicts with authoritative settlement", issue);
-    return closeTerminalIssue(root, gh, operation, source, issue, lookup);
-  }
-  if (issue.state === "closed" && existingEvent === null)
-    return result(operation.op, "ambiguous_remote_state", "a manually closed nonterminal Task Issue is preserved and never reopened automatically", issue);
-  const body = existingEvent === null ? issue.body : issue.body.slice(0, -terminalSuffix(existingEvent).length);
-  const updated = `${body.trimEnd()}${terminalSuffix(operation.terminal_event_id)}`;
-  const oversized = bodyLimitFailure(operation.op, updated);
-  if (oversized)
-    return oversized;
-  const edited = await gh.run([
-    "issue",
-    "edit",
-    String(issue.number),
-    "--repo",
-    source.repository.name_with_owner,
-    "--body-file",
-    "-"
-  ], { cwd: root, stdin: updated });
-  if (edited.exit_code !== 0 || edited.output_exceeded)
-    return ghFailure(operation.op, edited, "terminal marker publication failed");
-  const refreshed = await snapshot(root, gh, operation.op);
-  if ("contract" in refreshed)
-    return refreshed;
-  const reread = lookup(refreshed.issues);
-  if (reread.kind === "ambiguous")
-    return result(operation.op, "ambiguous_remote_state", reread.message);
-  if (reread.kind === "missing" || countLiteral(reread.issue.body, terminalMarker(operation.terminal_event_id)) !== 1)
-    return result(operation.op, "retryable_failure", "terminal marker publication could not be confirmed");
-  const refreshedOwnership = await confirmTerminalOwnership(root, gh, operation.op, refreshed, reread.issue);
-  if (!("owned" in refreshedOwnership))
-    return refreshedOwnership;
-  return closeTerminalIssue(root, gh, operation, refreshed, reread.issue, lookup);
-}
-async function closeParentWhenComplete(root, gh, operation, source, childResult) {
-  const child = taskLookup(source.issues, source.repository.id, operation.task_id);
-  if (child.kind !== "found")
-    return childResult;
-  const initiativeId = ownershipMarkerValue(child.issue.body, "initiative-id");
-  if (!initiativeId)
-    return childResult;
-  const parentLookup = initiativeLookup(source.issues, source.repository.id, initiativeId);
-  if (parentLookup.kind !== "found")
-    return childResult;
-  const parentNumber = parentLookup.issue.number;
-  const retry = (message, status = "retryable_failure") => result(operation.op, status, `Parent #${parentNumber}: ${message}; the Task closure is unchanged, retry the same mark-terminal`, child.issue);
-  const endpoint = `repos/${source.repository.name_with_owner}/issues/${parentNumber}`;
-  const readParent = async () => {
-    const read = await gh.run(["api", endpoint], { cwd: root });
-    if (read.exit_code !== 0 || read.output_exceeded) {
-      const failed = ghFailure(operation.op, read, "cannot read the Initiative Parent");
-      return retry(failed.message, failed.status);
-    }
-    try {
-      const [issue] = parseIssues(`[${read.stdout}]`);
-      return issue ?? retry("gh returned a malformed Issue", "permanent_failure");
-    } catch (error) {
-      return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
-    }
-  };
-  const parent = await readParent();
-  if ("contract" in parent)
-    return parent;
-  if (parent.state === "closed")
-    return childResult;
-  const listed = await gh.run(["api", "--paginate", "--slurp", `${endpoint}/sub_issues?per_page=100`], { cwd: root });
-  if (listed.exit_code !== 0 || listed.output_exceeded) {
-    const failed = ghFailure(operation.op, listed, "cannot read the Initiative Sub-issues");
-    return retry(failed.message, failed.status);
-  }
-  let children;
-  try {
-    children = parseIssues(listed.stdout);
-  } catch (error) {
-    return retry(error instanceof Error ? error.message : String(error), "permanent_failure");
-  }
-  const sliceChildren = children.filter((candidate) => candidate.body.includes(marker("initiative-id", initiativeId)) && /<!-- immune-brain:slice-id=[^>]+ -->/.test(candidate.body));
-  if (sliceChildren.length === 0 || !sliceChildren.every((candidate) => candidate.state === "closed" && candidate.state_reason === "completed"))
-    return childResult;
-  const sliceIds = [...parent.body.matchAll(/<!-- immune-brain:slice-id=([^>]+) -->/g)].map((match) => match[1]);
-  if (sliceIds.length !== sliceChildren.length || new Set(sliceIds).size !== sliceIds.length || sliceChildren.some((candidate) => !sliceIds.includes(ownershipMarkerValue(candidate.body, "slice-id") ?? "")))
-    return retry("required Slice topology does not match the Parent", "ambiguous_remote_state");
-  const taskIds = sliceChildren.map((candidate) => ownershipMarkerValue(candidate.body, "task-id"));
-  if (taskIds.some((id) => !id))
-    return retry("required Slice has no Task identity", "ambiguous_remote_state");
-  try {
-    await Promise.resolve().then(() => init_batch_git());
-    const completion = await observeParentCompletion(root, initiativeId, taskIds);
-    if (!completion.complete)
-      return result(operation.op, childResult.status, `${childResult.message}; Parent #${parentNumber} remains open: ${completion.reason}`, child.issue);
-  } catch (error) {
-    return retry(`local completion proof could not be verified: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const close = await gh.run(["issue", "close", String(parentNumber), "--repo", source.repository.name_with_owner, "--reason", "completed"], { cwd: root });
-  const confirmed = await readParent();
-  if ("contract" in confirmed)
-    return confirmed;
-  if (confirmed.state === "closed" && confirmed.state_reason === "completed")
-    return result(operation.op, "updated", `${childResult.message}; Initiative Parent #${parentNumber} closed as completed`, child.issue);
-  if (close.exit_code !== 0 || close.output_exceeded) {
-    const failed = ghFailure(operation.op, close, "Initiative Parent closure failed");
-    return retry(failed.message, failed.status);
-  }
-  return retry("closure did not converge");
-}
-async function markTerminal(root, gh, operation, source) {
-  const terminal = await markChildTerminal(root, gh, operation, source);
-  if (operation.phase !== "done" || terminal.status !== "updated" && terminal.status !== "already_current" || !terminal.association_found)
-    return terminal;
-  return closeParentWhenComplete(root, gh, operation, source, terminal);
-}
-function normalizedList(value, name, max = 2000) {
-  if (value === undefined)
-    return;
-  if (!Array.isArray(value))
-    throw new Error(`${name} must be an array`);
-  return value.map((item, index) => publicText(item, `${name}[${index}]`, max));
-}
-function projectionText(value, name, max = 2000) {
-  const text = publicText(value, name, max);
-  if (/(?:docs\/plans\/|\.intent\.json\b|internal[\s_-]+roles?|role[\s_-]+prompts?|review[\s_-]+reservations?|model[\s_-]+reservations?|prompt[\s_-]+digests?|kernel[\s_-]+runtimes?(?:[\s_-]+states?)?|runtime[\s_-]+states?|review[\s_-]+gates?|tool[\s_-]+polic(?:y|ies)|mutable[\s_-]+scopes?|scope[\s_-]+authorit(?:y|ies)|widen[\s_-]+scopes?|QA[\s_-]+settlements?|record_approval|submit_review|advance_assurance|request_authorization)/i.test(text))
-    throw new Error(`${name} contains restricted authority context`);
-  return text;
-}
-function normalizedProjectionList(value, name, max = 2000) {
-  if (value === undefined)
-    return;
-  if (!Array.isArray(value))
-    throw new Error(`${name} must be an array`);
-  return value.map((item, index) => projectionText(item, `${name}[${index}]`, max));
-}
-function projectionRisk(value) {
-  if (value === "routine" || value === "material" || value === "critical")
-    return value;
-  throw new Error("risk must be routine, material, or critical");
-}
-function normalizeProjection(value) {
-  if (value === undefined)
-    return;
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("projection must be an object");
-  const blockedBy = normalizedProjectionList(value.blocked_by, "projection.blocked_by", 128)?.map((id) => identifier(id, "projection.blocked_by task_id"));
-  if (blockedBy && new Set(blockedBy).size !== blockedBy.length)
-    throw new Error("projection.blocked_by must not contain duplicate Task IDs");
-  if (value.slice_ordinal !== undefined && (typeof value.slice_ordinal !== "number" || !Number.isSafeInteger(value.slice_ordinal) || value.slice_ordinal < 1 || value.slice_ordinal > 999))
-    throw new Error("projection.slice_ordinal must be an integer between 1 and 999");
-  return {
-    short_name: value.short_name,
-    title: value.title,
-    slice_ordinal: value.slice_ordinal,
-    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
-    current_behavior: value.current_behavior === undefined ? undefined : projectionText(value.current_behavior, "projection.current_behavior"),
-    desired_behavior: value.desired_behavior === undefined ? undefined : projectionText(value.desired_behavior, "projection.desired_behavior"),
-    key_interfaces: normalizedProjectionList(value.key_interfaces, "projection.key_interfaces", 500),
-    verification: value.verification === undefined ? undefined : projectionText(value.verification, "projection.verification"),
-    blocked_by: blockedBy,
-    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500),
-    agent_handoff: value.agent_handoff === undefined ? undefined : projectionText(value.agent_handoff, "projection.agent_handoff")
-  };
-}
-function normalizeInitiativeProjection(value) {
-  if (value === undefined)
-    return;
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("projection must be an object");
-  if (value.source_issue !== undefined && (typeof value.source_issue !== "string" || !/^[1-9][0-9]{0,9}$/.test(value.source_issue)))
-    throw new Error("projection.source_issue must be a GitHub Issue number");
-  return {
-    short_name: value.short_name,
-    title: value.title,
-    source_issue: value.source_issue,
-    problem: value.problem === undefined ? undefined : projectionText(value.problem, "projection.problem"),
-    result: value.result === undefined ? undefined : projectionText(value.result, "projection.result"),
-    design: value.design === undefined ? undefined : projectionText(value.design, "projection.design"),
-    decisions: normalizedProjectionList(value.decisions, "projection.decisions", 500),
-    testing_strategy: value.testing_strategy === undefined ? undefined : projectionText(value.testing_strategy, "projection.testing_strategy"),
-    out_of_scope: normalizedProjectionList(value.out_of_scope, "projection.out_of_scope", 500)
-  };
-}
-function validateOperation(operation) {
-  if (operation.op === "create-initiative") {
-    const seen = new Set;
-    const normalized = {
-      ...operation,
-      initiative_id: identifier(operation.initiative_id, "initiative_id"),
-      goal: projectionText(operation.goal, "goal"),
-      projection: normalizeInitiativeProjection(operation.projection),
-      slices: operation.slices.map((slice, index) => {
-        const id = identifier(slice.id, `slices[${index}].id`);
-        if (seen.has(id))
-          throw new Error(`duplicate Slice id: ${id}`);
-        seen.add(id);
-        return {
-          id,
-          goal: projectionText(slice.goal, `slices[${index}].goal`, 1000),
-          result: slice.result === undefined ? undefined : projectionText(slice.result, `slices[${index}].result`, 1000),
-          blocked_by: normalizedList(slice.blocked_by, `slices[${index}].blocked_by`, 128)?.map((taskId, blockerIndex) => identifier(projectionText(taskId, `slices[${index}].blocked_by[${blockerIndex}]`, 128), `slices[${index}].blocked_by task_id`))
-        };
-      })
-    };
-    initiativeIssueTitle(normalized.initiative_id, normalized.projection);
-    return normalized;
-  }
-  if (operation.op === "upsert-task") {
-    const normalized = {
-      ...operation,
-      initiative_id: identifier(operation.initiative_id, "initiative_id"),
-      task_id: identifier(operation.task_id, "task_id"),
-      slice_id: identifier(operation.slice_id, "slice_id"),
-      risk: projectionRisk(operation.risk),
-      goal: projectionText(operation.goal, "goal"),
-      projection: normalizeProjection(operation.projection),
-      acceptance: operation.acceptance.map((item, index) => ({
-        id: identifier(item.id, `acceptance[${index}].id`),
-        summary: projectionText(item.summary, `acceptance[${index}].summary`, 500)
-      })),
-      scenarios: operation.scenarios
-    };
-    taskIssueTitle(normalized);
-    return normalized;
-  }
-  return {
-    ...operation,
-    task_id: identifier(operation.task_id, "task_id"),
-    terminal_event_id: terminalEvent(operation.terminal_event_id)
-  };
-}
-async function runGithubTrackerOperation(root, input, gh = createGhTransport()) {
-  let operation;
-  try {
-    operation = validateOperation(input);
-  } catch (error) {
-    return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
-  }
-  const absoluteRoot = resolve15(root);
-  if (operation.op !== "mark-terminal") {
-    const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
-    if (conflict)
-      return conflict;
-  }
-  const source = await snapshot(absoluteRoot, gh, operation.op);
-  if ("contract" in source)
-    return source;
-  switch (operation.op) {
-    case "create-initiative":
-      return createInitiative(absoluteRoot, gh, operation, source);
-    case "upsert-task":
-      return upsertTask(absoluteRoot, gh, operation, source);
-    case "mark-terminal":
-      return markTerminal(absoluteRoot, gh, operation, source);
-  }
-}
-function issueTerminalEventId(body) {
-  const suffixMatch = [...body.matchAll(/<!-- immune-brain:terminal-event=([A-Za-z0-9._:-]+) -->/g)];
-  if (suffixMatch.length === 0)
-    return null;
-  if (suffixMatch.length > 1)
-    return "multiple";
-  const eventId = suffixMatch[0][1];
-  if (eventId.length > MAX_TERMINAL_EVENT_ID || !body.endsWith(terminalSuffix(eventId)))
-    return "malformed";
-  return eventId;
-}
-var CONTRACT2 = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN2, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
-var init_github_issue_tracker = __esm(() => {
-  init_local_initiative();
-  init_intent();
-  ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-  MAX_GH_OUTPUT = 8 * 1024 * 1024;
-  MANAGED_ISSUE_LABELS = [READY_FOR_AGENT_LABEL, BLOCKED_LABEL];
-  MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
-});
-
-// plugins/immune-brain/runtime/unattended/batch_schedule.ts
-function blockedByParked(children) {
-  const blocker = new Map;
-  for (const child of children)
-    if (PARKED_STATES.has(child.state))
-      blocker.set(child.task_id, child.task_id);
-  const blocked = new Map;
-  for (let changed = true;changed; ) {
-    changed = false;
-    for (const child of children) {
-      if (child.state !== "pending" || blocker.has(child.task_id))
-        continue;
-      const parked = child.blocked_by.find((id) => blocker.has(id));
-      if (parked === undefined)
-        continue;
-      blocker.set(child.task_id, blocker.get(parked));
-      blocked.set(child.task_id, blocker.get(parked));
-      changed = true;
-    }
-  }
-  return blocked;
-}
-function positiveLimit(maxParallel) {
-  if (maxParallel === Number.POSITIVE_INFINITY)
-    return maxParallel;
-  if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
-    throw new Error("max_parallel must be a positive safe integer");
-  return maxParallel;
-}
-function startableChildren(children, maxParallel) {
-  const limit = positiveLimit(maxParallel);
-  const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
-  const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
-  const startable = [];
-  for (const child of children) {
-    if (occupied.length >= limit)
-      break;
-    if (child.state !== "pending")
-      continue;
-    if (!child.blocked_by.every((id) => done.has(id)))
-      continue;
-    startable.push(child.task_id);
-    occupied.push(child);
-  }
-  return startable;
-}
-function projectParallelGroups(children) {
-  const remaining = [...children];
-  const placed = new Set;
-  const groups = [];
-  while (remaining.length) {
-    const wave = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
-    if (!wave.length)
-      throw new Error("Initiative Task dependencies must form an acyclic graph");
-    groups.push(wave.map((child) => child.task_id));
-    for (const child of wave) {
-      placed.add(child.task_id);
-      remaining.splice(remaining.indexOf(child), 1);
-    }
-  }
-  return { parallel_groups: groups, scope_conflicts: [] };
-}
-var IN_FLIGHT_STATES, DONE_STATES, PARKED_STATES;
-var init_batch_schedule = __esm(() => {
-  IN_FLIGHT_STATES = new Set([
-    "lane_admitted",
-    "enrolled",
-    "settled",
-    "lane_committed"
-  ]);
-  DONE_STATES = new Set(["committed", "integrated", "released"]);
-  PARKED_STATES = new Set(["needs_human", "skipped_blocked"]);
-});
-
-// plugins/immune-brain/runtime/unattended/batch_plan.ts
-var exports_batch_plan = {};
-__export(exports_batch_plan, {
-  observeInitiative: () => observeInitiative,
-  observeSingleTask: () => observeSingleTask,
-  projectBatchPlan: () => projectBatchPlan
-});
-import { createHash as createHash21 } from "node:crypto";
-function specBindingReason(inspection) {
-  if (inspection.missing.length > 0)
-    return `spec_binding_incomplete: ${inspection.missing.join(", ")}`;
-  return inspection.code === "binding_ambiguous" ? "spec_binding_ambiguous" : "spec_binding_missing";
-}
-function compareIds(left, right) {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-function positiveSafeInteger(value, name) {
-  if (!Number.isSafeInteger(value) || value <= 0)
-    throw new Error(`${name} must be a positive safe integer`);
-  return value;
-}
-function timestamp(value, name) {
-  if (typeof value !== "string" || !ISO_TIMESTAMP_PATTERN2.test(value))
-    throw new Error(`${name} must be an ISO timestamp`);
-  const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds))
-    throw new Error(`${name} must be an ISO timestamp`);
-  return { milliseconds, iso: new Date(milliseconds).toISOString() };
-}
-function normalizeObservation(value, initiativeSlug) {
-  const local = value?.contract === "immune_brain/local_initiative_observation/v1";
-  if (!value || !local && value.contract !== "immune_brain/github_initiative_observation/v1")
-    throw new Error("tracker returned an invalid Initiative observation contract");
-  if (value.initiative_id !== initiativeSlug)
-    throw new Error("tracker returned an observation for another Initiative");
-  if (!local && (!Number.isSafeInteger(value.issue_number) || value.issue_number <= 0))
-    throw new Error("tracker returned an invalid Initiative Issue number");
-  if (!Array.isArray(value.tasks))
-    throw new Error("tracker returned an invalid Initiative Task list");
-  const taskIds = new Set;
-  const sliceIds = new Set;
-  const tasks = value.tasks.map((task, index) => {
-    if (!task || typeof task !== "object")
-      throw new Error(`tracker Task ${index} is invalid`);
-    if (!ID_PATTERN3.test(task.task_id))
-      throw new Error(`tracker Task ${index} has an invalid task_id`);
-    if (!ID_PATTERN3.test(task.slice_id))
-      throw new Error(`tracker Task ${index} has an invalid slice_id`);
-    const issueNumber = task.issue_number;
-    if (!local && (!Number.isSafeInteger(issueNumber) || issueNumber <= 0))
-      throw new Error(`tracker Task ${task.task_id} has an invalid Issue number`);
-    if (!Array.isArray(task.blocked_by) || task.blocked_by.some((id) => typeof id !== "string" || !ID_PATTERN3.test(id)))
-      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
-    if (taskIds.has(task.task_id))
-      throw new Error(`tracker returned duplicate Task ${task.task_id}`);
-    if (sliceIds.has(task.slice_id))
-      throw new Error(`tracker returned duplicate Slice ${task.slice_id}`);
-    taskIds.add(task.task_id);
-    sliceIds.add(task.slice_id);
-    const blockedBy = [...task.blocked_by].sort();
-    if (new Set(blockedBy).size !== blockedBy.length || blockedBy.includes(task.task_id))
-      throw new Error(`tracker Task ${task.task_id} has invalid blocked_by dependencies`);
-    return { ...task, blocked_by: blockedBy };
-  });
-  for (const task of tasks) {
-    const unknown = task.blocked_by.find((id) => !taskIds.has(id));
-    if (unknown)
-      throw new Error(`tracker Task ${task.task_id} depends on unknown Task ${unknown}`);
-  }
-  return { ...value, tasks: tasks.sort((left, right) => compareIds(left.task_id, right.task_id)) };
-}
-function dependencyOrder(observation) {
-  const remaining = new Map(observation.tasks.map((task) => [task.task_id, task]));
-  const done = new Set;
-  const order = [];
-  while (remaining.size) {
-    const ready = [...remaining.values()].filter((task) => task.blocked_by.every((id) => done.has(id))).sort((left, right) => compareIds(left.task_id, right.task_id));
-    if (!ready.length)
-      throw new Error("Initiative Task dependencies must form an acyclic graph");
-    for (const task of ready) {
-      remaining.delete(task.task_id);
-      done.add(task.task_id);
-      order.push(task);
-    }
-  }
-  return order;
-}
-function dependencyClosures(order) {
-  const closures = new Map;
-  for (const task of order) {
-    const closure = new Set;
-    for (const dependency of task.blocked_by) {
-      closure.add(dependency);
-      for (const transitive of closures.get(dependency) ?? [])
-        closure.add(transitive);
-    }
-    closures.set(task.task_id, [...closure].sort());
-  }
-  return closures;
-}
-function budget(input, enrollableCount) {
-  const maxChildren = input.budget?.max_children === undefined ? positiveSafeInteger(enrollableCount, "budget.max_children") : positiveSafeInteger(input.budget.max_children, "budget.max_children");
-  if (maxChildren > enrollableCount)
-    throw new Error("budget.max_children exceeds the enrollable Child count");
-  const qaFailureLimit = input.budget?.qa_failure_limit === undefined ? DEFAULT_QA_FAILURE_LIMIT : positiveSafeInteger(input.budget.qa_failure_limit, "budget.qa_failure_limit");
-  return { max_children: maxChildren, qa_failure_limit: qaFailureLimit };
-}
-async function projectBatchPlan(root, initiativeSlug, input, readInitiative = observeInitiative, preparing = false) {
-  if (!ID_PATTERN3.test(initiativeSlug))
-    throw new Error("initiative_slug is invalid");
-  if (!input || typeof input !== "object")
-    throw new Error("batch plan input is required");
-  const confirmationTime = timestamp(input.confirmation_time, "confirmation_time");
-  const trackerObservation = normalizeObservation(await readInitiative(root, initiativeSlug), initiativeSlug);
-  const order = dependencyOrder(trackerObservation);
-  const closures = dependencyClosures(order);
-  const children = [];
-  const scopeHints = new Map;
-  for (const task of order) {
-    const blockedBy = closures.get(task.task_id);
-    const child = { task_id: task.task_id, slice_id: task.slice_id, blocked_by: blockedBy };
-    const tombstone = readTaskTombstone(root, task.task_id);
-    const record = readTaskRecordRaw(root, task.task_id).record;
-    if (tombstone && record)
-      throw new Error(`Task ${task.task_id} has conflicting settled and active state`);
-    if (tombstone) {
-      children.push({ ...child, status: "already_settled", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
-      continue;
-    }
-    if (record) {
-      children.push({ ...child, status: "already_owned", reason: null, intent_path: null, intent_revision: null, intent_content_hash: null });
-      continue;
-    }
-    const intentPath = `docs/plans/${task.task_id}.intent.json`;
-    try {
-      const read = preparing ? observeEnrollmentTaskIntent(root, task.task_id) : observeTaskIntent(root, task.task_id, intentPath);
-      const binding = inspectSpecBinding(read.intent);
-      if (!binding.ok) {
-        children.push({
-          ...child,
-          status: "needs_human",
-          reason: specBindingReason(binding),
-          intent_path: read.intent_ref.path,
-          intent_revision: read.intent_ref.revision,
-          intent_content_hash: read.content_hash
-        });
-        continue;
-      }
-      scopeHints.set(task.task_id, [...read.intent.scope_hint]);
-      children.push({
-        ...child,
-        status: "enrollable",
-        reason: null,
-        intent_path: read.intent_ref.path,
-        intent_revision: read.intent_ref.revision,
-        intent_content_hash: read.content_hash,
-        intent_authority_hash: intentAuthorityHash(read.intent)
-      });
-    } catch (error) {
-      if (!(error instanceof TaskIntentObservationError))
-        throw error;
-      children.push({ ...child, status: "needs_human", reason: "invalid_intent", intent_path: null, intent_revision: null, intent_content_hash: null });
-    }
-  }
-  const directDependencies = new Map(order.map((task) => [task.task_id, task.blocked_by]));
-  const childById = new Map(children.map((child) => [child.task_id, child]));
-  for (const child of children) {
-    if (child.status !== "enrollable")
-      continue;
-    if (directDependencies.get(child.task_id).some((id) => {
-      const status = childById.get(id).status;
-      return status === "already_owned" || status === "needs_human" || status === "blocked";
-    })) {
-      child.status = "blocked";
-      child.reason = "dependency_unavailable";
-    }
-  }
-  const enrollable = children.filter((child) => child.status === "enrollable").map((child) => ({
-    task_id: child.task_id,
-    intent_path: child.intent_path,
-    intent_revision: child.intent_revision,
-    intent_content_hash: child.intent_content_hash,
-    intent_authority_hash: child.intent_authority_hash,
-    blocked_by: child.blocked_by.filter((id) => childById.get(id)?.status === "enrollable")
-  }));
-  if (!enrollable.length)
-    throw new Error("batch plan has no enrollable children; nothing to confirm");
-  const planDigest = `sha256:${createHash21("sha256").update(stableStringify(enrollable)).digest("hex")}`;
-  return {
-    contract: "assurance_kernel/batch_plan/v1",
-    initiative_slug: initiativeSlug,
-    confirmation_time: confirmationTime.iso,
-    tracker_observation: trackerObservation,
-    children,
-    enrollable,
-    plan_digest: planDigest,
-    budget: budget(input, enrollable.length),
-    ...projectParallelGroups(enrollable.map((child) => ({
-      task_id: child.task_id,
-      slice_id: childById.get(child.task_id).slice_id,
-      blocked_by: child.blocked_by,
-      scope_hint: scopeHints.get(child.task_id)
-    })))
-  };
-}
-var ID_PATTERN3, DEFAULT_QA_FAILURE_LIMIT = 2, ISO_TIMESTAMP_PATTERN2, observeInitiative = async (root, initiativeSlug) => hasLocalInitiative(root, initiativeSlug) ? observeLocalInitiative(root, initiativeSlug) : observeGithubInitiative(root, initiativeSlug), observeSingleTask = async (_root, taskId) => ({
-  contract: "immune_brain/local_initiative_observation/v1",
-  initiative_id: taskId,
-  path: `docs/plans/${taskId}.intent.json`,
-  tasks: [{ task_id: taskId, slice_id: taskId, blocked_by: [] }]
-});
-var init_batch_plan = __esm(() => {
-  init_github_issue_tracker();
-  init_local_initiative();
-  init_backend_claim();
-  init_intent();
-  init_storage();
-  init_spec_binding();
-  init_batch_schedule();
-  ID_PATTERN3 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-  ISO_TIMESTAMP_PATTERN2 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+var gitIn = (root, ...args) => spawnSync14("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+var init_checkout_delivery = __esm(() => {
+  init_git_integration_preference();
+  init_batch_preflight();
 });
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync14 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 import { createHash as createHash22, randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants6,
   closeSync as closeSync6,
   existsSync as existsSync12,
-  lstatSync as lstatSync15,
+  lstatSync as lstatSync16,
   mkdirSync as mkdirSync9,
   openSync as openSync6,
   realpathSync as realpathSync17,
@@ -15851,11 +15951,11 @@ import {
   rmSync as rmSync8,
   writeFileSync as writeFileSync9
 } from "node:fs";
-import { dirname as dirname13, join as join21 } from "node:path";
+import { dirname as dirname13, join as join22 } from "node:path";
 function runBatchGitPreflight(input) {
   const { root, base_head: baseHead } = input;
   const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
-  const git = (args) => spawnSync14("git", ["-C", root, ...args], {
+  const git = (args) => spawnSync15("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -15954,7 +16054,7 @@ function scopeRefusal(cause, entries) {
   return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync14("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync15("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15991,13 +16091,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync14("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync15("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync15("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16007,7 +16107,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync14("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync15("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16016,13 +16116,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync14("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync15("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync15("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16032,21 +16132,21 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync15("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join21(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join22(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join21(current, segment);
+    current = join22(current, segment);
     if (existsSync12(current)) {
-      const stats = lstatSync15(current);
+      const stats = lstatSync16(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
         throw new Error(`${segment} exists but is not a real directory`);
       }
@@ -16057,15 +16157,15 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join21(root, relativePath);
+  const target = join22(root, relativePath);
   const targetDir = dirname13(target);
   ensureSecureDirectory3(root, dirname13(relativePath));
-  const stats = lstatSync15(targetDir);
+  const stats = lstatSync16(targetDir);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
     throw new Error(`${dirname13(relativePath)} is not a real directory`);
   }
   if (existsSync12(target)) {
-    const targetStats = lstatSync15(target);
+    const targetStats = lstatSync16(target);
     if (targetStats.isSymbolicLink()) {
       throw new Error(`${relativePath} is a symlink`);
     }
@@ -16104,7 +16204,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join21(root, path);
+  const fullPath = join22(root, path);
   if (!existsSync12(fullPath))
     return null;
   try {
@@ -16126,10 +16226,10 @@ function proofEquals(a, b) {
   return serializeTaskTombstone(a) === serializeTaskTombstone(b);
 }
 function readLaneDeliveryIntoIndex(root, commit) {
-  const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+  const indexed = spawnSync15("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
   if (indexed.status !== 0)
     throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
-  const refreshed = spawnSync14("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
+  const refreshed = spawnSync15("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
   if (refreshed.status !== 0)
     throw new Error(`failed to refresh Lane index: ${refreshed.stderr.trim()}`);
 }
@@ -16183,11 +16283,11 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (usesBranchDelivery(root, taskId)) {
-    const currentBranch = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    const currentBranch = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
     if (expectedBranch !== undefined && currentBranch.stdout.trim() !== expectedBranch)
       throw new Error("batch_head_lineage_broken: Lane branch changed before commit");
-    const head = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-    if (spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+    const head = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    if (spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
       throw new Error("batch_head_lineage_broken: Lane base is not an ancestor of HEAD");
     const flagged = getUnsupportedIndexFlags(root);
     if (flagged.length)
@@ -16204,7 +16304,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     if (taskCommitRevisionIdentity(root, scopeHint, expectedHead, commit).diff_hash !== deliveryHash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
-    const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
+    const moved = spawnSync15("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
     if (moved.status !== 0)
       throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     readLaneDeliveryIntoIndex(root, commit);
@@ -16232,7 +16332,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     return { commit };
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16241,7 +16341,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16260,7 +16360,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync14("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync15("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16275,7 +16375,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync14("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync15("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw scopeRefusal("staged_paths", stagedOutside.map((path) => ({ path })));
   }
   assertReviewedDelivery(root, authoritative, scopeHint, taskId);
@@ -16284,7 +16384,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
 
 ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}
 `;
-  const commitResult = spawnSync14("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync15("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -16293,7 +16393,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16301,7 +16401,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16339,13 +16439,13 @@ async function lookupBatchCommit(input) {
     if (!evidence || evidence.commit !== lane.lane_commit || evidence.parent_head !== lane.base_head)
       throw new Error("batch_head_lineage_broken: Lane delivery lacks matching production evidence");
     const common = (path) => {
-      const result = spawnSync14("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
+      const result = spawnSync15("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
       if (result.status !== 0)
         throw new Error("batch_head_lineage_broken: unreadable Lane repository");
       return realpathSync17(result.stdout.trim());
     };
-    const sourceParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
-    const candidateParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const sourceParent = spawnSync15("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
+    const candidateParent = spawnSync15("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = candidateParent.stdout.trim().split(/\s+/).filter(Boolean);
     if (common(lane.path) !== common(root) || sourceParent.status !== 0 || sourceParent.stdout.trim() !== lane.base_head || candidateParent.status !== 0 || parents.length !== 1 || !laneCandidateMatches({
       root,
@@ -16361,7 +16461,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && recordedCommit) {
-    const direct = spawnSync14("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync15("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -16374,7 +16474,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync14("git", [
+    const result = spawnSync15("git", [
       "-C",
       root,
       "log",
@@ -16412,7 +16512,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined && !isProgressRef(expectedBranch)) {
-    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync15("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16429,7 +16529,7 @@ async function lookupBatchCommit(input) {
   requireMatchingSettledAudit(auditPair, adopted);
   const auditPaths = adopted.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, adopted.runId), proof: auditRunTerminalProofPath(taskId, adopted.runId) };
   for (const path of [auditPaths.record, auditPaths.proof]) {
-    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync15("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     if (committed.status !== 0 || committed.stdout !== readSecureProjectFile(root, path))
       throw new Error(`batch_head_lineage_broken: committed terminal evidence differs for ${taskId}`);
   }
@@ -16438,13 +16538,13 @@ async function lookupBatchCommit(input) {
   if (lifecycle !== "done") {
     throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
   }
-  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
+  const parentsResult = spawnSync15("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
   const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
   let pendingLaneHead = null;
   let indexLaneDelivery = false;
   if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
-    const reachable = tip !== null && (tip === commit || spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
+    const reachable = tip !== null && (tip === commit || spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
     if (!reachable) {
       if (tip !== null && parents.length === 1 && parents[0] === tip)
         moveBatchRef(root, expectedBranch, tip, commit);
@@ -16452,12 +16552,12 @@ async function lookupBatchCommit(input) {
         throw new Error(`batch_head_lineage_broken: ${expectedBranch} at ${tip ?? "nothing"} diverged from adopted commit ${commit}`);
     }
   } else {
-    const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+    const currentHeadResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const currentHead = currentHeadResult.stdout.trim();
     if (currentHeadResult.status !== 0)
       throw new Error("batch_head_lineage_broken: unreadable Lane HEAD");
     indexLaneDelivery = usesBranchDelivery(root, taskId) && evidence?.previous_head !== undefined;
-    if (currentHead !== commit && spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
+    if (currentHead !== commit && spawnSync15("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
       if (indexLaneDelivery && evidence?.previous_head === currentHead)
         pendingLaneHead = currentHead;
       else
@@ -16468,7 +16568,7 @@ async function lookupBatchCommit(input) {
   if (parentsResult.status !== 0 || parents.length !== 1 || retained && parents[0] !== retained.parent_head || expectedHead !== undefined && parents[0] !== expectedHead)
     throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead ?? "single-parent delivery"}`);
   const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint) ? authoritative.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-  const deltaResult = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const deltaResult = spawnSync15("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (deltaResult.status !== 0)
     throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
   const outside = deltaResult.stdout.split("\x00").filter((p) => p.length > 0 && !isPathAllowedForChild(p, taskId, usesBranchDelivery(root, taskId) || input.lane ? ["**"] : scopeHint));
@@ -16480,7 +16580,7 @@ async function lookupBatchCommit(input) {
     if (qa && taskCommitRevisionIdentity(root, scopeHint, parents[0], commit).diff_hash !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     if (pendingLaneHead !== null) {
-      const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
+      const moved = spawnSync15("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
       if (moved.status !== 0)
         throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     }
@@ -16495,13 +16595,13 @@ async function retainIntegratedLaneEvidence(input) {
       root: lane.path,
       taskId: input.taskId,
       batchId: input.batchId,
-      branch: spawnSync14("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
+      branch: spawnSync15("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
       expectedHead: lane.base_head
     });
-    const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const parent = spawnSync15("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = parent.stdout.trim().split(/\s+/).filter(Boolean);
     const tip = readBatchRef(input.root, input.branch);
-    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
+    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync15("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
       root: input.root,
       lane_base: lane.base_head,
       lane_commit: lane.lane_commit,
@@ -16521,7 +16621,7 @@ async function retainIntegratedLaneEvidence(input) {
   const landed = await lookupBatchCommit(input);
   if (!landed)
     throw new Error("batch_head_lineage_broken: missing integrated Lane delivery");
-  const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
+  const parent = spawnSync15("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
   if (parent.status !== 0)
     throw new Error("batch_head_lineage_broken: unreadable integrated parent");
   writeBatchCommitEvidence(input.root, {
@@ -16552,7 +16652,7 @@ function deliveryScopes(root, taskIds) {
   return [...scopes].sort();
 }
 function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
-  const directory = join21(root, ".imm", "state", "batches");
+  const directory = join22(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync12(directory))
     for (const file of readdirSync9(directory).sort()) {
@@ -16565,7 +16665,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
       if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
         continue;
       if (kind === "newer")
-        throw new BatchRuntimeTooOldError(join21(directory, file), candidate.contract);
+        throw new BatchRuntimeTooOldError(join22(directory, file), candidate.contract);
       const record = readAnyBatchRunState(root, file.slice(0, -5));
       if (!record)
         throw new Error("Parent batch record disappeared during observation");
@@ -16579,16 +16679,27 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   ])];
   return { records, native, allTaskIds };
 }
+function cleanedSingleTaskDeliveryHead(root, parent) {
+  if (!isLaneBatchRecord(parent) || parent.plan_source !== "single_task" || parent.batch_state !== "completed")
+    return null;
+  const child = parent.children[0];
+  if (!child || child.lane_removed === undefined || parent.final_report?.return_to_coordinator.status === "blocked")
+    return null;
+  const head = expectedBatchHead(parent);
+  if (spawnSync15("git", ["-C", root, "rev-parse", "--verify", "--quiet", `${head}^{commit}`]).status !== 0)
+    return null;
+  return deliveryAlreadyApplied(root, child.lane?.base_head ?? parent.base_head, head) ? head : null;
+}
 async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
   if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
     throw new Error("Parent completion requires a non-empty, unique required Task list");
-  const headResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const headResult = spawnSync15("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
   if (headResult.status !== 0)
     throw new Error("Parent completion requires a Git HEAD");
   const head = headResult.stdout.trim();
   const { records, native, allTaskIds } = parentDeliveryTasks(root, initiativeSlug, requiredTaskIds);
   const parent = records.filter((record) => isParentBranch(record.branch)).sort((a, b) => a.updated_at.localeCompare(b.updated_at)).at(-1);
-  const deliveryHead = parent ? readBatchRef(root, parent.branch) : head;
+  const deliveryHead = parent ? readBatchRef(root, parent.branch) ?? cleanedSingleTaskDeliveryHead(root, parent) : head;
   if (!deliveryHead)
     throw new Error("Parent evidence requires an existing Parent ref");
   return withBatchEvidence(root, parent?.branch, deliveryHead, (evidenceRoot) => {
@@ -16600,6 +16711,8 @@ async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
       const final = record.final_verification_result;
       if (parent && (record.branch !== parent.branch || expectedBatchHead(record) !== deliveryHead))
         return false;
+      if (isLaneBatchRecord(record) && record.plan_source === "single_task" && !record.final_verification?.length && !final)
+        return record.batch_state === "completed" && record.final_report?.head === deliveryHead && record.final_report.return_to_coordinator.status !== "blocked";
       return record.batch_state === "completed" && final?.passed === true && holds(final);
     });
     return {
@@ -16714,7 +16827,7 @@ async function advanceNativeParent(root, initiativeSlug, commands, readInitiativ
 function settledDeliveryInTree(root, commit, taskId, settled) {
   const paths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
   return [paths.record, paths.proof].every((path) => {
-    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync15("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     try {
       return committed.status === 0 && committed.stdout === readSecureProjectFile(root, path);
     } catch {
@@ -16759,7 +16872,7 @@ async function integrateSettledCriticalSlices(root, initiativeSlug, readInitiati
       if (!live)
         throw new Error("cannot verify recovered critical integration HEAD");
       if (live === existing.commit && expectedBatchHead(batch) !== existing.commit) {
-        const predecessor = spawnSync14("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
+        const predecessor = spawnSync15("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
         if (predecessor.status !== 0 || predecessor.stdout.trim() !== expectedBatchHead(batch))
           throw new Error("recovered critical integration does not extend the exact Parent HEAD");
         batch = { ...batch, adopted_heads: [...batch.adopted_heads ?? [], { from: expectedBatchHead(batch), to: existing.commit }] };
@@ -16824,9 +16937,11 @@ var init_batch_git = __esm(() => {
   init_backend_claim();
   init_workspace_scope();
   init_batch_state();
+  init_batch_plan();
   init_batch_integration();
   init_batch_final_verification();
   init_batch_final_report();
+  init_checkout_delivery();
   init_batch_worktrees();
   init_intent();
   init_batch_preflight();
@@ -16854,11 +16969,11 @@ var init_intent_readiness = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
-import { spawnSync as spawnSync15 } from "node:child_process";
+import { spawnSync as spawnSync16 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname14, join as join22 } from "node:path";
+import { dirname as dirname14, join as join23 } from "node:path";
 function git7(root, args) {
-  const result = spawnSync15("git", ["-C", root, ...args], {
+  const result = spawnSync16("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -16882,7 +16997,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (blobAt(root, lane.base_head, path) === blob)
       continue;
-    if (existsSync13(join22(lane.path, path)) && blobOfFile(lane.path, join22(lane.path, path)) === blob)
+    if (existsSync13(join23(lane.path, path)) && blobOfFile(lane.path, join23(lane.path, path)) === blob)
       return child.task_id;
     const commits = git7(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
@@ -16904,7 +17019,7 @@ function planLaneLeakRestore(root, record, entries) {
     const kind = code === "??" ? "untracked" : code === " M" ? "modified" : null;
     if (!kind)
       return { kind: "unprovable", path, detail: `status ${code.trim() || code} is not a Lane write` };
-    const blob = blobOfFile(root, join22(root, path));
+    const blob = blobOfFile(root, join23(root, path));
     if (!blob)
       return { kind: "unprovable", path, detail: "its bytes cannot be read" };
     const origin = laneOrigin(root, record, path, blob);
@@ -16920,28 +17035,28 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
     return plan;
   const planned = plan.paths;
   const stamp = now.replace(/[^0-9TZ]/g, "");
-  const backup = join22(".imm", "state", "batches", "restores", record.batch_id, stamp);
-  const backupRoot = join22(root, backup);
-  mkdirSync10(join22(backupRoot, "files"), { recursive: true });
+  const backup = join23(".imm", "state", "batches", "restores", record.batch_id, stamp);
+  const backupRoot = join23(root, backup);
+  mkdirSync10(join23(backupRoot, "files"), { recursive: true });
   const tracked = planned.filter((p) => p.kind === "modified").map((p) => p.path);
   if (tracked.length > 0) {
     const diff = git7(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
-    writeFileSync10(join22(backupRoot, "restore.patch"), diff.stdout);
+    writeFileSync10(join23(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
-    mkdirSync10(dirname14(join22(backupRoot, "files", path)), { recursive: true });
+    mkdirSync10(dirname14(join23(backupRoot, "files", path)), { recursive: true });
     if (kind === "modified")
-      copyFileSync2(join22(root, path), join22(backupRoot, "files", path));
+      copyFileSync2(join23(root, path), join23(backupRoot, "files", path));
   }
   const restore = { at: now, backup, paths: planned };
-  writeFileSync10(join22(backupRoot, "restore.json"), `${JSON.stringify({
+  writeFileSync10(join23(backupRoot, "restore.json"), `${JSON.stringify({
     ...restore,
     undo: "copy each file under files/ back to the same repository path"
   }, null, 2)}
 `);
   for (const { path, kind } of planned) {
     if (kind === "untracked") {
-      renameSync5(join22(root, path), join22(backupRoot, "files", path));
+      renameSync5(join23(root, path), join23(backupRoot, "files", path));
       continue;
     }
     const restored = git7(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
@@ -16957,8 +17072,8 @@ var init_batch_leak_restore = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync14, readdirSync as readdirSync10, readFileSync as readFileSync20 } from "node:fs";
 import { randomUUID as randomUUID9 } from "node:crypto";
-import { dirname as dirname15, join as join23 } from "node:path";
-import { spawnSync as spawnSync16 } from "node:child_process";
+import { dirname as dirname15, join as join24 } from "node:path";
+import { spawnSync as spawnSync17 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
   return {
@@ -16976,14 +17091,14 @@ function readActiveClaimTaskId(root) {
   return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 function findResumableBatchSlugForTask(root, taskId) {
-  const batchesDir = join23(root, ".imm", "state", "batches");
+  const batchesDir = join24(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   for (const file of readdirSync10(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync20(join24(batchesDir, file), "utf8"));
       if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract)))
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -16998,7 +17113,7 @@ function findResumableBatchSlugForTask(root, taskId) {
 }
 function findExistingActiveBatch(root, initiativeSlug) {
   let found = null;
-  const batchesDir = join23(root, ".imm", "state", "batches");
+  const batchesDir = join24(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   for (const file of readdirSync10(batchesDir)) {
@@ -17006,7 +17121,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join24(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -17017,7 +17132,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
     if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
       continue;
     if (kind === "newer")
-      return { corrupt: true, path: join23(batchesDir, file), newer_contract: candidate.contract };
+      return { corrupt: true, path: join24(batchesDir, file), newer_contract: candidate.contract };
     if (kind === "unreadable")
       return { corrupt: true, path: file };
     if (candidate.initiative_slug !== initiativeSlug)
@@ -17040,7 +17155,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   return found;
 }
 function findSettledBatchRecord(root, initiativeSlug) {
-  const batchesDir = join23(root, ".imm", "state", "batches");
+  const batchesDir = join24(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   let newest = null;
@@ -17049,7 +17164,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync20(join24(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -17060,9 +17175,9 @@ function findSettledBatchRecord(root, initiativeSlug) {
     if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
       continue;
     if (kind === "newer")
-      throw new BatchRuntimeTooOldError(join23(batchesDir, file), candidate.contract);
+      throw new BatchRuntimeTooOldError(join24(batchesDir, file), candidate.contract);
     if (kind === "unreadable")
-      throw new Error(`batch run state is unreadable or invalid: ${join23(batchesDir, file)}`);
+      throw new Error(`batch run state is unreadable or invalid: ${join24(batchesDir, file)}`);
     if (candidate.initiative_slug !== initiativeSlug)
       continue;
     if (!isTerminalBatchState(candidate.batch_state))
@@ -17092,7 +17207,7 @@ function parentBranchProvenance(root, slug, head, batchId) {
 }
 function classifyBatchLineage(input) {
   const { root, branch, expectedHead, childCommits } = input;
-  const run = (args) => spawnSync16("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const run = (args) => spawnSync17("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const broken = (reason) => ({
     kind: "broken",
     message: `batch_head_lineage_broken: ${reason}`
@@ -17161,7 +17276,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   if (currentTaskId !== taskId || !claim)
     return false;
   if (!isBatchRef(batchBranch)) {
-    const branch = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+    const branch = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
     if (branch !== batchBranch)
       return false;
   }
@@ -17217,7 +17332,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync16("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const statusProc = spawnSync17("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -17411,13 +17526,13 @@ async function projectPreflight(options, preparing) {
   if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)
     return reject("batch_entry_kind_mismatch");
   if (options.plan_source === "single_task") {
-    const batchesDir = join23(root, ".imm", "state", "batches");
+    const batchesDir = join24(root, ".imm", "state", "batches");
     if (existsSync14(batchesDir))
       for (const file of readdirSync10(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
-          const candidate = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+          const candidate = JSON.parse(readFileSync20(join24(batchesDir, file), "utf8"));
           if (classifyBatchRunStateContract(candidate?.contract) === "foreign")
             continue;
           const record = readAnyBatchRunState(root, file.slice(0, -5));
@@ -17456,7 +17571,7 @@ async function projectPreflight(options, preparing) {
       return reject("batch_resource_collision", error instanceof Error ? error.message : String(error));
     }
   } else {
-    const branchExists = spawnSync16("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+    const branchExists = spawnSync17("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
     if (branchExists.status === 0 && !existingBatch)
       return reject("branch_already_exists", batchBranch);
   }
@@ -17540,7 +17655,7 @@ async function projectPreflight(options, preparing) {
       const scopeFailure = scopeEstimateFailure(root, read.intent);
       if (scopeFailure)
         throw new Error(scopeFailure);
-      if (spawnSync16("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
+      if (spawnSync17("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
         throw new Error("TaskIntent must be tracked");
       preparation = preparePiCanary(root, { task_id: initiativeSlug, now });
       if (!preparation.intent || preparation.intent.content_hash !== read.content_hash || !preparation.git_base_head || preparation.task_record_v3?.present || preparation.task_tombstone.present || preparation.backend_claim.present || preparation.workspace.current_working)
@@ -17634,7 +17749,7 @@ async function authorizeBatch(options) {
     is_resuming: isResuming
   } = projection;
   const existingBatch = projection.existing_batch;
-  const branchBefore = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchBefore = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch && expectedBatchHead(existingBatch) !== baseHead && classifyBatchLineage({
@@ -17730,7 +17845,7 @@ async function authorizeBatch(options) {
     if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
       return { outcome: "rejected", rejection: batchRejection("plan_changed") };
   }
-  const branchAfter = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchAfter = spawnSync17("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
   const binding = {
@@ -17787,9 +17902,9 @@ var init_batch_preflight = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_final_report.ts
-import { spawnSync as spawnSync17 } from "node:child_process";
+import { spawnSync as spawnSync18 } from "node:child_process";
 function git8(root, ...argv) {
-  return spawnSync17("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
+  return spawnSync18("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
 }
 function returnBatchToCoordinator(root, head, final) {
   const { mode } = readGitIntegrationPreference(root);
@@ -18003,11 +18118,18 @@ function reducePhaseEntryLog(text) {
 function refuse(reason_code, detail) {
   return { ok: false, reason_code, detail, recovery_action: PHASE_ENTRY_RECOVERY[reason_code] };
 }
-function admitPhaseOperation(operation, state) {
+function admitPhaseOperation(operation, state, workspace) {
   if (operation.kind === "tool") {
-    if (state?.run_live)
-      return { ok: true };
-    return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
+    if (!state?.run_live)
+      return refuse(RUN_ENTRY_REQUIRED, `${operation.name} needs a literal-user drive entry in this session`);
+    if (state.workspace !== null && workspace !== undefined && workspace !== state.workspace)
+      return {
+        ok: false,
+        reason_code: RUN_ENTRY_REQUIRED,
+        detail: `${operation.name} was called from ${workspace ?? "an unresolvable cwd"} while drive is bound to ${state.workspace}`,
+        recovery_action: `cd ${state.workspace} to return to the bound workspace, or ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`
+      };
+    return { ok: true };
   }
   if (operation.skill !== "drive")
     return { ok: true };
@@ -18091,109 +18213,12 @@ init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
 init_batch_final_report();
+init_checkout_delivery();
 import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync18 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join27 } from "node:path";
 import { readFileSync as readFileSync22 } from "node:fs";
-
-// plugins/immune-brain/runtime/unattended/checkout_delivery.ts
-init_git_integration_preference();
-init_batch_preflight();
-import { spawnSync as spawnSync18 } from "node:child_process";
-import { lstatSync as lstatSync16 } from "node:fs";
-import { join as join24 } from "node:path";
-var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
-function deliveredPaths(root, base, head) {
-  const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
-  if (raw.status !== 0)
-    return null;
-  const fields = raw.stdout.split("\x00").filter(Boolean);
-  const paths = [];
-  for (let i = 0;i + 1 < fields.length; i += 2) {
-    const meta = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) (\S+)$/.exec(fields[i]);
-    if (!meta)
-      return null;
-    paths.push({ path: fields[i + 1], newMode: meta[2], newBlob: meta[4], deleted: meta[5] === "D" });
-  }
-  return paths;
-}
-function pathSatisfied(root, entry) {
-  const staged = gitIn(root, "--literal-pathspecs", "ls-files", "--stage", "-z", "--", entry.path);
-  if (staged.status !== 0)
-    return false;
-  if (entry.deleted) {
-    if (staged.stdout.length)
-      return false;
-    try {
-      lstatSync16(join24(root, entry.path));
-      return false;
-    } catch {
-      return true;
-    }
-  }
-  const indexed = /^(\d+) ([0-9a-f]+) \d\t/.exec(staged.stdout);
-  if (!indexed || indexed[1] !== entry.newMode || indexed[2] !== entry.newBlob)
-    return false;
-  let stat;
-  try {
-    stat = lstatSync16(join24(root, entry.path));
-  } catch {
-    return false;
-  }
-  const worktreeMode = stat.isSymbolicLink() ? "120000" : stat.isFile() ? stat.mode & 73 ? "100755" : "100644" : "";
-  if (worktreeMode !== entry.newMode)
-    return false;
-  const hashed = gitIn(root, "hash-object", "--no-filters", "--", entry.path);
-  return hashed.status === 0 && hashed.stdout.trim() === entry.newBlob;
-}
-function deliveryAlreadyApplied(root, base, head) {
-  const { mode } = readGitIntegrationPreference(root);
-  if (mode === "auto")
-    return gitIn(root, "merge-base", "--is-ancestor", head, "HEAD").status === 0;
-  const paths = deliveredPaths(root, base, head);
-  return !!paths?.length && paths.every((entry) => pathSatisfied(root, entry));
-}
-function deliverSingleTask(root, base, head) {
-  const { mode } = readGitIntegrationPreference(root);
-  const blocked = (reason) => ({ mode, status: "blocked", reason });
-  const git = (...args) => gitIn(root, ...args);
-  if (deliveryAlreadyApplied(root, base, head))
-    return { mode, status: mode === "auto" ? "fast_forwarded" : "staged", reason: null };
-  const changed = deliveredPaths(root, base, head);
-  const dirty = porcelainEntries(root);
-  if (!changed || !dirty)
-    return blocked("coordinator_status_unreadable");
-  const pending = (mode === "auto" ? changed : changed.filter((entry) => !pathSatisfied(root, entry))).map((entry) => entry.path);
-  const overlaps = dirty.map((entry) => entry.path).filter((path) => pending.some((file) => path === file || path.startsWith(`${file}/`) || file.startsWith(`${path}/`)));
-  if (overlaps.length)
-    return blocked(`checkout_delivery_overlap: ${[...new Set(overlaps)].sort().join(", ")}`);
-  if (mode === "auto") {
-    if (git("symbolic-ref", "--quiet", "HEAD").status !== 0)
-      return blocked("coordinator_branch_unavailable");
-    if (git("merge-base", "--is-ancestor", "HEAD", head).status !== 0)
-      return blocked("coordinator_head_diverged");
-    const merge = git("merge", "--ff-only", "--no-edit", head);
-    if (merge.status !== 0)
-      return blocked(`checkout_delivery_conflict: ${merge.stderr.trim()}`);
-    return { mode, status: "fast_forwarded", reason: null };
-  }
-  if (!pending.length)
-    return { mode, status: "staged", reason: null };
-  const patch = spawnSync18("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
-  if (patch.status !== 0)
-    return blocked("checkout_delivery_conflict: cannot read delivery delta");
-  if (!patch.stdout.length)
-    return { mode, status: "staged", reason: null };
-  const apply = (check) => spawnSync18("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
-  const checked = apply(true);
-  if (checked.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
-  const applied = apply(false);
-  if (applied.status !== 0)
-    return blocked(`checkout_delivery_conflict: ${applied.stderr.trim()}`);
-  return { mode, status: "staged", reason: null };
-}
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
 import { spawnSync as spawnSync19 } from "node:child_process";
@@ -21873,6 +21898,16 @@ function releasesRunBinding(prompt, phase) {
 function digest(value) {
   return createHash25("sha256").update(JSON.stringify(value)).digest("hex");
 }
+function hasContiguousLaneRebind(record, fromDigest) {
+  if (!isLaneBatchRecord(record) || record.plan_source !== "single_task")
+    return false;
+  const rebinds = record.lane_rebinds;
+  if (!Array.isArray(rebinds) || rebinds.length === 0)
+    return false;
+  if (rebinds.at(-1).to_digest !== record.plan_digest)
+    return false;
+  return rebinds.some((entry, start) => entry.from_digest === fromDigest && rebinds.slice(start + 1).every((next, offset) => next.from_digest === rebinds[start + offset].to_digest));
+}
 function scopedSourceDigest(root, scope) {
   const snapshot = captureGitWorkspaceSnapshot(root);
   if (!snapshot)
@@ -21952,11 +21987,12 @@ async function observeParentRun(binding, boundaryId, review = "unobserved", reco
     };
   }
   const record = readAnyBatchRunState(root, binding.batch_id);
-  if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest)
+  const rebound = record !== null && record.initiative_slug === binding.initiative_slug && hasContiguousLaneRebind(record, binding.plan_digest);
+  if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest && !rebound)
     throw new Error("Parent continuation has no matching persisted batch identity");
   if (!isLaneBatchRecord(record))
     throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
-  const plan = await observeInitiative(root, binding.initiative_slug);
+  const plan = await (record.plan_source === "single_task" ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
   const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map((child) => child.task_id));
   let runnable = false;
   let running = false;
@@ -22046,7 +22082,9 @@ async function observeParentRun(binding, boundaryId, review = "unobserved", reco
     initiative_slug: record.initiative_slug,
     batch_id: record.batch_id,
     plan_digest: record.plan_digest,
+    rebound_from_plan_digest: rebound ? binding.plan_digest : undefined,
     progress_digest: digest({
+      plan_digest: record.plan_digest,
       children: record.children.map((child) => ({ task_id: child.task_id, state: child.state, commit: child.commit })),
       commits: record.commits,
       completion,
@@ -22074,13 +22112,16 @@ function decideRunContinuation(previous, observation) {
   let progressDigest;
   let nextAction;
   let wait = false;
+  let base = previous;
   if (binding.kind === "parent" && observation.kind === "parent") {
-    if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest)
+    if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest)
       return result("pause", "batch identity changed; reread its authorized plan", null);
+    if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
+      base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
     if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
-      return result("settled", "every required delivery is integrated and final verification passed", null);
+      return result("settled", "every required delivery is integrated and final verification passed", null, base);
     if (!observation.runnable && !observation.executors_running)
-      return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action);
+      return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action, base);
     progressDigest = observation.progress_digest;
     nextAction = observation.next_action;
     wait = !observation.runnable && observation.executors_running;
@@ -22154,7 +22195,7 @@ function decideRunContinuation(previous, observation) {
   if (previous.boundary_id === observation.boundary_id)
     return result("wait", "duplicate Host boundary", null);
   const unchanged = wait ? previous.unchanged_observations : previous.progress_digest === progressDigest ? previous.unchanged_observations + 1 : 0;
-  const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
+  const state = { ...base, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
   if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
     return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
   return result(wait ? "wait" : "continue", wait ? "observed foreground work is still running" : "authorized work remains", nextAction, state);
@@ -24799,7 +24840,10 @@ async function applyRunContinuationEvent(host, root, session, event) {
     const metadata = readMetadata(host, sessionId, root);
     if (metadata.paused && NATIVE_OPERATIONS.has(event.operation))
       return { kind: "deny", reason: metadata.paused };
-    if (!host.entry_state(sessionId)?.run_live)
+    const entry = host.entry_state(sessionId);
+    if (!entry?.run_live)
+      return { kind: "none" };
+    if (entry.workspace && entry.workspace !== workspace)
       return { kind: "none" };
     const correlation = {
       session_id: sessionId,
@@ -24847,7 +24891,8 @@ async function applyRunContinuationEvent(host, root, session, event) {
       const batch = readAnyBatchRunState(workspace, response.batch_id);
       if (!batch)
         throw new Error("batch receipt has no persisted identity");
-      if (metadata.state?.binding.kind !== "parent")
+      const binding = metadata.state?.binding;
+      if (!binding || binding.kind !== "parent")
         metadata.state = bindRun({
           kind: "parent",
           workspace,
@@ -24856,6 +24901,8 @@ async function applyRunContinuationEvent(host, root, session, event) {
           initiative_slug: batch.initiative_slug,
           plan_digest: batch.plan_digest
         });
+      else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug && hasContiguousLaneRebind(batch, binding.plan_digest))
+        metadata.state = { ...metadata.state, binding: { ...binding, plan_digest: batch.plan_digest } };
     }
     if (!metadata.state && correlated.task_id && event.operation === "status") {
       const status = await projectTaskStatus(workspace, correlated.task_id);
@@ -25792,7 +25839,16 @@ function evaluatePreToolUseSync(payload, locations = {}) {
   if (isGatedTool(call.operation)) {
     const state = readPhaseEntryState(payload.conversationId, root);
     const opName = { kind: "tool", name: call.operation };
-    const admission = admitPhaseOperation(opName, state);
+    const declared = payload.workspacePaths?.[0];
+    let workspace;
+    if (declared !== undefined) {
+      try {
+        workspace = realpathSync23(declared);
+      } catch {
+        workspace = null;
+      }
+    }
+    const admission = admitPhaseOperation(opName, state, workspace);
     if (!admission.ok) {
       return { done: true, result: { decision: "deny", reason: phaseRefusalMessage(admission) } };
     }

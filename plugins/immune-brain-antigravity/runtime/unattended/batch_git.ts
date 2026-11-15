@@ -23,9 +23,11 @@ import { readSettledTaskEvidence, readAuditTaskPair, readSecureProjectFile } fro
 import { serializeTaskTombstone, readTaskTombstone, type TaskTombstone } from "../kernel/backend_claim";
 import { captureGitTaskRevisionSnapshot, pathMatchesScope, scopedContentIdentity, taskCommitRevisionIdentity, usesBranchDelivery } from "../workspace_scope";
 import { BatchRuntimeTooOldError, classifyBatchRunStateContract, readNativeParentFinalReport, writeNativeParentFinalReport, readAnyBatchRunState, isLaneBatchRecord, writeBatchRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord } from "./batch_state";
+import { observeInitiative, observeSingleTask } from "./batch_plan";
 import { laneCandidateMatches } from "./batch_integration";
 import { runFinalVerification } from "./batch_final_verification";
 import { buildBatchFinalReport, returnBatchToCoordinator } from "./batch_final_report";
+import { deliveryAlreadyApplied } from "./checkout_delivery";
 import { withParentWorktree } from "./batch_worktrees";
 import type { InitiativeObservationReader } from "./types";
 import { readTaskIntent, observeEnrollmentTaskIntent } from "../kernel/intent";
@@ -999,6 +1001,19 @@ function parentDeliveryTasks(root: string, initiativeSlug: string, requiredTaskI
 	return { records, native, allTaskIds };
 }
 
+/**
+ * A completed single_task Parent whose Lane cleanup deleted its ref still proves
+ * the delivered head: the cleanup removed the ref, not the delivery (D2).
+ */
+function cleanedSingleTaskDeliveryHead(root: string, parent: AnyBatchRunStateRecord): string | null {
+	if (!isLaneBatchRecord(parent) || parent.plan_source !== "single_task" || parent.batch_state !== "completed") return null;
+	const child = parent.children[0];
+	if (!child || child.lane_removed === undefined || parent.final_report?.return_to_coordinator.status === "blocked") return null;
+	const head = expectedBatchHead(parent);
+	if (spawnSync("git", ["-C", root, "rev-parse", "--verify", "--quiet", `${head}^{commit}`]).status !== 0) return null;
+	return deliveryAlreadyApplied(root, child.lane?.base_head ?? parent.base_head, head) ? head : null;
+}
+
 /** Remote closure and batch `completed` are observations; neither proves delivery. */
 export async function observeParentCompletion(root: string, initiativeSlug: string,
 	requiredTaskIds: readonly string[]): Promise<ParentCompletionObservation> {
@@ -1009,7 +1024,7 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 	const head = headResult.stdout.trim();
 	const { records, native, allTaskIds } = parentDeliveryTasks(root, initiativeSlug, requiredTaskIds);
 	const parent = records.filter(record => isParentBranch(record.branch)).sort((a, b) => a.updated_at.localeCompare(b.updated_at)).at(-1);
-	const deliveryHead = parent ? readBatchRef(root, parent.branch!) : head;
+	const deliveryHead = parent ? readBatchRef(root, parent.branch!) ?? cleanedSingleTaskDeliveryHead(root, parent) : head;
 	if (!deliveryHead) throw new Error("Parent evidence requires an existing Parent ref");
 	return withBatchEvidence(root, parent?.branch, deliveryHead, evidenceRoot => {
 		const delivered = allTaskIds.filter(taskId => isDelivered(evidenceRoot, taskId));
@@ -1022,6 +1037,10 @@ export async function observeParentCompletion(root: string, initiativeSlug: stri
 			JSON.stringify([...native.task_ids].sort()) === JSON.stringify([...requiredTaskIds].sort())) || records.some(record => {
 			const final = record.final_verification_result;
 			if (parent && (record.branch !== parent.branch || expectedBatchHead(record) !== deliveryHead)) return false;
+			// A single_task Lane configured no final verification: its delivery is its completion (D2).
+			if (isLaneBatchRecord(record) && record.plan_source === "single_task" && !record.final_verification?.length && !final)
+				return record.batch_state === "completed" && record.final_report?.head === deliveryHead &&
+					record.final_report.return_to_coordinator.status !== "blocked";
 			return record.batch_state === "completed" && final?.passed === true && holds(final);
 		});
 		return { complete: missing.length === 0 && finalPassed, integrated_task_ids: delivered,
@@ -1145,7 +1164,8 @@ export async function recordParentRepair(root: string, batchId: string | null, t
 	const container = batch ?? native;
 	if (!container || (batch ? batch.final_verification_result?.passed : native?.final_verification.passed) !== false) return;
 	if (batch) {
-		const parent = await (await import("./batch_plan")).observeInitiative(root, batch.initiative_slug);
+		// A remote-less single_task Lane has no Initiative carrier to observe (D1).
+		const parent = await (isLaneBatchRecord(batch) && batch.plan_source === "single_task" ? observeSingleTask : observeInitiative)(root, batch.initiative_slug);
 		if (parent.tasks.some(child => child.task_id === taskId)) return;
 	} else if (native!.task_ids.includes(taskId)) return;
 	const status = await (await import("../assurance/coordinator")).projectTaskStatus(root, taskId);

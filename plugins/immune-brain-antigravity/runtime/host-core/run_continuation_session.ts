@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { projectTaskStatus } from "../assurance/coordinator";
 import { readTaskRecordRaw } from "../kernel/storage";
 import { readAnyBatchRunState } from "../unattended/batch_state";
-import { bindRun, decideRunContinuation, observeParentRun, scopedSourceDigest,
+import { bindRun, decideRunContinuation, hasContiguousLaneRebind, observeParentRun, scopedSourceDigest,
 	type ReviewContinuationState, type RunContinuationState } from "../assurance/run_continuation";
 import { digestOfReviewerBytes } from "../assurance/review_mediation";
 import { appendPrivate, cacheDir, ensurePrivateDir, ownedByUs, readPrivate, sessionHash } from "./private_file";
@@ -51,7 +51,7 @@ export interface RunContinuationHost {
 	/** Host display name for pause messages (e.g. "Claude", "Antigravity", "Pi"). */
 	host_name?: string;
 	/** The session's phase-entry state, or null when it cannot be read. */
-	entry_state(session_id: string): { run_live?: boolean } | null;
+	entry_state(session_id: string): { run_live?: boolean; workspace?: string | null } | null;
 	/** Spend the session's entry token: a paused or settled entry needs a new literal entry. */
 	revoke_entry(session_id: string): void;
 	drop_entry_log(session_id: string): void;
@@ -184,7 +184,10 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 	if (event.kind === "tool_call") {
 		const metadata = readMetadata(host, sessionId, root);
 		if (metadata.paused && NATIVE_OPERATIONS.has(event.operation)) return { kind: "deny", reason: metadata.paused };
-		if (!host.entry_state(sessionId)?.run_live) return { kind: "none" };
+		const entry = host.entry_state(sessionId);
+		if (!entry?.run_live) return { kind: "none" };
+		// A drifted shell cwd records no correlation, so its result cannot be read as this run's (D5).
+		if (entry.workspace && entry.workspace !== workspace) return { kind: "none" };
 		const correlation: Correlation = { session_id: sessionId, workspace, tool_use_id: event.tool_id, operation: event.operation,
 			task_id: event.task_id };
 		if (!appendPrivate(callPath(host, event.tool_id, root), cacheDir(root, host.cache_name), JSON.stringify(correlation) + "\n"))
@@ -213,8 +216,13 @@ export async function applyRunContinuationEvent(host: RunContinuationHost, root:
 		if (event.operation === "start_unattended_batch" && response?.state === "started" && typeof response.batch_id === "string") {
 			const batch = readAnyBatchRunState(workspace, response.batch_id);
 			if (!batch) throw new Error("batch receipt has no persisted identity");
-			if (metadata.state?.binding.kind !== "parent") metadata.state = bindRun({ kind: "parent", workspace,
+			const binding = metadata.state?.binding;
+			if (!binding || binding.kind !== "parent") metadata.state = bindRun({ kind: "parent", workspace,
 				session_id: sessionId, batch_id: batch.batch_id, initiative_slug: batch.initiative_slug, plan_digest: batch.plan_digest });
+			// An approved contiguous lane_rebinds chain advances the persisted binding (D3).
+			else if (binding.batch_id === batch.batch_id && binding.initiative_slug === batch.initiative_slug &&
+				hasContiguousLaneRebind(batch, binding.plan_digest))
+				metadata.state = { ...metadata.state!, binding: { ...binding, plan_digest: batch.plan_digest } };
 		}
 		if (!metadata.state && correlated.task_id && event.operation === "status") {
 			const status = await projectTaskStatus(workspace, correlated.task_id);
