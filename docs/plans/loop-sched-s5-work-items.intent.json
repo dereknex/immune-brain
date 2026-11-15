@@ -1,0 +1,36 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s5-work-items",
+  "owner": "user",
+  "goal": "Keep one rebuildable work item per Loop target with the D5 state machine, route ready-for-agent Issues without a plan to planning, and judge level events only when their fact fingerprint changed, per D5 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: the state lives in .imm/state/loop/.",
+  "acceptance": [
+    {
+      "id": "S5-AC1",
+      "assertion": "Source BR-DEC-1, BR-GAP-A1; meet D5 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-work-items.test.ts over tick with fake ports. Done looks like: a ready-for-agent Issue with no published plan moves to planning and never selects enroll_and_drive; with a published plan the label counts as approval. Negative: a handler result that would make an illegal transition is refused and recorded. Bound: an empty state directory is rebuilt from GitHub and Kernel fixtures before scheduling.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-work-items.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S5-AC2",
+      "assertion": "Source BR-GAP-4; meet D5 fingerprint bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-work-items.test.ts and tests/loop-daemon-judge.test.ts. Done looks like: a level event (E5, E6, E8, E9, E11) whose fact changed is judged once. Negative: the same unchanged level fact across two ticks writes no second decision. Bound: edge events still deduplicate by event_id.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-work-items.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s5-work-items.md",
+    "docs/plans/loop-sched-s5-work-items.intent.json",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "plugins/immune-brain/runtime/loop_daemon/rebuild.ts",
+    "plugins/immune-brain/runtime/loop_daemon/state.ts",
+    "plugins/immune-brain/runtime/loop_daemon/types.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "tests/loop-daemon-judge.test.ts",
+    "tests/loop-daemon-observe.test.ts",
+    "tests/loop-sched-work-items.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

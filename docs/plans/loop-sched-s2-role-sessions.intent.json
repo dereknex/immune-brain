@@ -1,0 +1,35 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s2-role-sessions",
+  "owner": "user",
+  "goal": "Run every Loop daemon session (judging, clarify, plan, repair) with its own resolved role profile, runtime-enforced role permission and a built-in per-role limit table, per D2 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: only session argv and decision records change.",
+  "acceptance": [
+    {
+      "id": "S2-AC1",
+      "assertion": "Source BR-DEC-4, BR-DEFER-3; meet D2 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-role-sessions.test.ts over sessionArguments and the session provider factory. Done looks like: judging, clarify, plan and repair sessions start with the profile bound to their own role, and every role reads 40 turns / 900 s from one per-role table. Negative: argv for judging, clarify and plan never contains acceptEdits and carries the Host read-tool allow-list; a read-only role on a Host with no verified read-only mode is refused with role_readonly_unsupported and no process starts; cli.ts and agent_handlers.ts no longer read lanes.executor_* for these sessions.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-role-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S2-AC2",
+      "assertion": "Source BR-DEC-4; meet D2 plan bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-role-sessions.test.ts and tests/loop-daemon-agent-handlers.test.ts with a fake session. Done looks like: the plan session runs read-only and the daemon writes the plan artifacts from its structured output. Negative: plan output that is not valid JSON writes no file and the handler records failed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-role-sessions.test.ts\",\n      \"tests/loop-daemon-agent-handlers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s2-role-sessions.md",
+    "docs/plans/loop-sched-s2-role-sessions.intent.json",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+    "plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judging_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+    "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+    "tests/loop-daemon-agent-handlers.test.ts",
+    "tests/loop-sched-role-sessions.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

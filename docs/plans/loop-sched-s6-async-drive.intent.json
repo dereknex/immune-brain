@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s6-async-drive",
+  "owner": "user",
+  "goal": "Run drive and agent sessions as background jobs that hold their lease until terminal, add job_finished and lane_settled events, resume enrolled tasks instead of re-enrolling, record the settled commit and verification digest, and open the PR on settlement, per D6 of docs/specs/loop-agent-scheduling.spec.md.",
+  "acceptance": [
+    {
+      "id": "S6-AC1",
+      "assertion": "Source BR-SCN-6, BR-GAP-5, BR-GAP-B1, BR-GAP-B2, BR-GAP-B3, BR-GAP-B5; meet D6 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts and tests/loop-daemon-drive-pr.test.ts with a fake Lane that settles after more than one tick. Done looks like: an approved task's drive outlives the tick, a later tick observes lane_settled from the Kernel projection, the exit record carries final_commit_sha and the verification digest, and open_pr opens the pull request with no second approval. Negative: a settlement without a commit digest opens no PR and records failed.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S6-AC2",
+      "assertion": "Source BR-GAP-B4; meet D6 re-entry bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts. Done looks like: re-entry for an enrolled nonterminal task resumes through drive_dispatcher. Negative: no enrollment is attempted for a task whose TaskRecord exists. Bound: a job whose pid is dead with no outcome is marked lost, retried once, then escalated.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S6-AC3",
+      "assertion": "Source BR-GAP-1, BR-GAP-D; meet D6 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts and tests/loop-daemon-dispatch.test.ts. Done looks like: tick returns while a job runs and an owner command arriving meanwhile is handled on the next tick. Negative: with max_concurrent jobs running, the next agent candidate is held. Bound: the lease is released only when the job record is terminal.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s6-async-drive.md",
+    "docs/plans/loop-sched-s6-async-drive.intent.json",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+    "plugins/immune-brain/runtime/loop_daemon/events.ts",
+    "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+    "plugins/immune-brain/runtime/loop_daemon/jobs.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+    "plugins/immune-brain/runtime/loop_daemon/pr_opener.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "tests/loop-daemon-dispatch.test.ts",
+    "tests/loop-daemon-drive-pr.test.ts",
+    "tests/loop-sched-async-drive.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
