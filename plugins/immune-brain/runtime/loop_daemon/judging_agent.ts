@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	ROLE_SESSION_LIMITS,
 	runAgentSession,
 	sessionEnvironment,
 	type AgentSessionProvider,
@@ -23,7 +24,6 @@ import { isLoopHandler, type LoopHandler } from "./handlers.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
 
 export const JUDGING_OUTPUT_PATH = ".imm-loop/judgement.json";
-
 export interface JudgingContext {
 	point: string;
 	escalation_reason: string;
@@ -120,7 +120,8 @@ function buildJudgingPrompt(input: JudgingContext): string {
 	return [
 		"You are the read-only Judging Agent for immune-brain Loop Daemon.",
 		"Do NOT modify repository files or run mutations. Inspect read-only evidence only.",
-		`Select a single handler from the closed 15-handler catalogue and write JSON { "handler": string, "reason": string, "corrected_option"?: string } to ${JUDGING_OUTPUT_PATH}.`,
+		`Select a single handler from the closed 15-handler catalogue and print JSON { "handler": string, "reason": string, "corrected_option"?: string } to stdout.`,
+		"Modify nothing: you have no write tools.",
 		"",
 		JSON.stringify(payload, null, 2),
 	].join("\n");
@@ -158,22 +159,17 @@ export interface SessionJudgingAgentOptions {
 	root: string;
 	provider: AgentSessionProvider;
 	credential?: string | null;
-	turn_budget?: number;
-	timeout_ms?: number;
-	output_path?: string;
 	/** Test seam: explicit scratch/worktree path instead of spawning a git worktree. */
 	worktree_path?: string;
 }
 
 /**
  * Builds a production `JudgingAgentFn` backed by the bounded S9 `runAgentSession`
- * runner (`kind: "judging"`). Runs in a read-only detached workspace and validates
- * the output against `LOOP_HANDLERS`.
+ * runner (`kind: "judging"`). Runs read-only in a detached workspace, prints its
+ * decision, and validates it against `LOOP_HANDLERS`.
  */
 export function createSessionJudgingAgent(options: SessionJudgingAgentOptions): JudgingAgentFn {
-	const outputPath = options.output_path ?? JUDGING_OUTPUT_PATH;
-	const turnBudget = options.turn_budget ?? 4;
-	const timeoutMs = options.timeout_ms ?? 60_000;
+	const limits = ROLE_SESSION_LIMITS.judging;
 
 	return async (input: JudgingContext): Promise<JudgingDecision | null> => {
 		const workspace = options.worktree_path
@@ -187,9 +183,8 @@ export function createSessionJudgingAgent(options: SessionJudgingAgentOptions): 
 					kind: "judging",
 					worktree_path: workspace.path,
 					prompt: buildJudgingPrompt(input),
-					output_path: outputPath,
-					turn_budget: turnBudget,
-					timeout_ms: timeoutMs,
+					turn_budget: limits.turn_budget,
+					timeout_ms: limits.timeout_ms,
 					env: sessionEnvironment(options.credential ?? null),
 				},
 				options.provider,

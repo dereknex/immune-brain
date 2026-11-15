@@ -1,28 +1,64 @@
 /**
  * Loop Daemon: Headless Agent Session Runner (S9)
  *
- * Implements D11 item 1 of docs/specs/loop-daemon.spec.md. One bounded headless
- * Host session per agent dispatch, started from the configured Executor Host
- * profile with a turn budget and a timeout, inside a worktree the daemon
- * created, and with an environment that carries the daemon's GitHub credential
- * and nothing else (ADR 0039 Decision 13).
+ * Implements D11 item 1 of docs/specs/loop-daemon.spec.md and D2 of
+ * docs/specs/loop-agent-scheduling.spec.md. One bounded headless Host session per
+ * agent dispatch, started from the profile bound to its own loop role with the
+ * role's turn budget and timeout, inside a worktree the daemon created, and with
+ * an environment that carries the daemon's GitHub credential and nothing else
+ * (ADR 0039 Decision 13).
  *
  * Completion is read from checkable evidence only (ADR 0039 Decision 2): the
- * expected output file and its schema, the Git head of the daemon branch, and
- * the caller's own Kernel validation. Session prose is never parsed for an
- * outcome, so a session that talks like a success but leaves no evidence is
- * recorded `failed`.
+ * expected output and its schema, the Git head of the daemon branch, and the
+ * caller's own Kernel validation. A read-only role cannot write, so it prints its
+ * result and the daemon writes whatever artifact it is owed. Session prose is
+ * never parsed for an outcome, so a session that talks like a success but leaves
+ * no evidence is recorded `failed`.
  */
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, chmodSync, constants, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { agentRole, type AgentRole, type AgentsSection } from "../config/agent_roles.ts";
 import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
 export type AgentSessionKind = "analysis" | "planning" | "repair" | "judging";
+
+/** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2). */
+export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair";
+
+/** Roles whose argv never grants write permission (Spec D2). */
+export const READ_ONLY_SESSION_ROLES: readonly AgentSessionRole[] = ["judging", "clarify", "plan"];
+
+/**
+ * The built-in per-role session limits (Spec D2). Making them configurable is
+ * `BR-DEFER-3`, so every role starts at the daemon's existing 40 turns / 900 s.
+ */
+export const ROLE_SESSION_LIMITS: Record<AgentSessionRole, { turn_budget: number; timeout_ms: number }> = {
+	judging: { turn_budget: 40, timeout_ms: 900_000 },
+	clarify: { turn_budget: 40, timeout_ms: 900_000 },
+	plan: { turn_budget: 40, timeout_ms: 900_000 },
+	repair: { turn_budget: 40, timeout_ms: 900_000 },
+};
+
+/** A session kind runs as the role that owns it; analysis is the plan role's read-only probe. */
+const ROLE_OF_KIND: Record<AgentSessionKind, AgentSessionRole> = {
+	analysis: "plan",
+	planning: "plan",
+	judging: "judging",
+	repair: "repair",
+};
+
+export function sessionRole(kind: AgentSessionKind): AgentSessionRole {
+	return ROLE_OF_KIND[kind];
+}
+
+export function isReadOnlyRole(role: AgentSessionRole): boolean {
+	return READ_ONLY_SESSION_ROLES.includes(role);
+}
 
 export interface AgentSessionRequest {
 	kind: AgentSessionKind;
@@ -30,8 +66,11 @@ export interface AgentSessionRequest {
 	worktree_path: string;
 	/** What the session must do. Its output text is never read back as a verdict. */
 	prompt: string;
-	/** Repository-relative path inside the worktree the session must write its result to. */
-	output_path: string;
+	/**
+	 * Repository-relative path inside the worktree a writable session must write its
+	 * result to. A read-only role cannot write, so it prints its result instead.
+	 */
+	output_path?: string;
 	turn_budget: number;
 	timeout_ms: number;
 	/** The only environment the session receives. */
@@ -43,6 +82,8 @@ export interface AgentSessionProcess {
 	exit_code: number | null;
 	exit_signal: string | null;
 	timed_out: boolean;
+	/** The session's printed reply; a read-only session has no other way to deliver its result. */
+	stdout?: string;
 }
 
 /** One injected session backend. Production starts a Host CLI; tests pass a fake. */
@@ -64,7 +105,7 @@ export interface AgentSessionRecord {
 	contract: typeof AGENT_SESSION_CONTRACT;
 	kind: AgentSessionKind;
 	worktree_path: string;
-	output_path: string;
+	output_path: string | null;
 	status: "completed" | "failed";
 	reason: string;
 	exit_code: number | null;
@@ -132,19 +173,26 @@ export async function runAgentSession(
 	const readHead = deps.readHead ?? readBranchHead;
 	const readOutput = deps.readOutput ?? readFileOrNull;
 	const headBefore = evidence.expect_head_change ? readHead(request.worktree_path, evidence.branch ?? null) : null;
-	const outputPath = join(request.worktree_path, request.output_path);
+	const readOnly = isReadOnlyRole(sessionRole(request.kind));
+	const outputPath = request.output_path === undefined ? null : join(request.worktree_path, request.output_path);
+	// A read-only role may not write, so its result is what it printed; nothing else is read.
+	const sessionResult = (process: AgentSessionProcess): string | null => {
+		if (!readOnly) return outputPath === null ? null : readOutput(outputPath);
+		const printed = process.stdout ?? "";
+		return printed.trim().length === 0 ? null : printed;
+	};
 
 	const conclude = (
 		process: AgentSessionProcess,
 		status: AgentSessionRecord["status"],
 		reason: string,
 	): AgentSessionRecord => {
-		const output = readOutput(outputPath);
+		const output = sessionResult(process);
 		return {
 			contract: AGENT_SESSION_CONTRACT,
 			kind: request.kind,
 			worktree_path: request.worktree_path,
-			output_path: request.output_path,
+			output_path: request.output_path ?? null,
 			status,
 			reason,
 			exit_code: process.exit_code,
@@ -175,10 +223,15 @@ export async function runAgentSession(
 			`session_exit_nonzero: exit ${process.exit_code ?? "null"}${process.exit_signal ? ` signal ${process.exit_signal}` : ""}`,
 		);
 
-	const output = readOutput(outputPath);
-	if (output === null) return conclude(process, "failed", `expected_output_missing: ${request.output_path}`);
+	const output = sessionResult(process);
+	if (output === null)
+		return conclude(
+			process,
+			"failed",
+			readOnly ? `session_output_missing: ${request.kind} printed no result` : `expected_output_missing: ${request.output_path}`,
+		);
 	if (evidence.validate && !evidence.validate(output))
-		return conclude(process, "failed", `expected_output_invalid: ${request.output_path}`);
+		return conclude(process, "failed", `expected_output_invalid: ${outputPath ?? request.kind}`);
 
 	if (evidence.branch) {
 		const head = readHead(request.worktree_path, evidence.branch);
@@ -200,27 +253,56 @@ export interface CliAgentSessionProfile {
 	effort?: string | null;
 }
 
+/**
+ * The Host profile bound to one role, or the documented Host fallback when the
+ * role is unset (Spec D1). A session never borrows another role's Host.
+ */
+export function loopRoleProfile(agents: AgentsSection, role: AgentRole): CliAgentSessionProfile {
+	const resolved = agentRole(agents, role);
+	return {
+		host: (resolved?.host ?? "claude-code") as ExecutorHost,
+		model: resolved?.model ?? null,
+		effort: resolved?.effort ?? null,
+	};
+}
+
 const SESSION_BINARY: Record<ExecutorHost, string> = {
 	"claude-code": "claude",
 	pi: "pi",
 	antigravity: "agy",
 };
 
+/**
+ * The flags a read-only session runs with, verified against each Host CLI's own
+ * `--help`: `claude --permission-mode plan --allowedTools Read,Glob,Grep`,
+ * `pi --tools read --no-mcp` and `agy --mode plan` (Spec D2).
+ */
+const READ_ONLY_HOST_ARGV: Partial<Record<ExecutorHost, string[]>> = {
+	"claude-code": ["--permission-mode", "plan", "--allowedTools", "Read,Glob,Grep"],
+	pi: ["--tools", "read", "--no-mcp"],
+	antigravity: ["--mode", "plan"],
+};
+
 /** The Host CLI argv for one session, mirroring the Assurance CLI dispatcher's shape. */
 export function sessionArguments(
+	role: AgentSessionRole,
 	profile: CliAgentSessionProfile,
 	prompt: string,
 	turnBudget: number,
 ): string[] {
 	const model = profile.model ? ["--model", profile.model] : [];
+	const readOnly = isReadOnlyRole(role);
+	const readOnlyFlags = READ_ONLY_HOST_ARGV[profile.host];
+	// Fail closed: a Host with no verified read-only mode is refused, never run writable.
+	if (readOnly && readOnlyFlags === undefined)
+		throw new Error(`role_readonly_unsupported: ${role} has no verified read-only mode on ${profile.host}`);
 	if (profile.host === "claude-code") {
 		return [
 			"--print",
 			"--no-session-persistence",
 			"--max-turns",
 			String(turnBudget),
-			"--permission-mode",
-			"acceptEdits",
+			...(readOnly ? readOnlyFlags! : ["--permission-mode", "acceptEdits"]),
 			...model,
 			...(profile.effort ? ["--effort", profile.effort] : []),
 			prompt,
@@ -230,17 +312,25 @@ export function sessionArguments(
 		return [
 			"--print",
 			"--no-session",
+			...(readOnly ? readOnlyFlags! : []),
 			...model,
 			...(profile.effort ? ["--thinking", profile.effort] : []),
 			prompt,
 		];
 	}
-	return ["--print", ...model, ...(profile.effort ? ["--effort", profile.effort] : []), prompt];
+	return [
+		"--print",
+		...(readOnly ? readOnlyFlags! : []),
+		...model,
+		...(profile.effort ? ["--effort", profile.effort] : []),
+		prompt,
+	];
 }
 
 /** Resolve the Host executable from PATH; absent means the Host is unavailable. */
 export function sessionBinary(host: ExecutorHost): string | null {
 	const name = SESSION_BINARY[host];
+	if (!name) return null;
 	return (
 		(process.env.PATH ?? "")
 			.split(delimiter)
@@ -257,7 +347,8 @@ export function sessionBinary(host: ExecutorHost): string | null {
 }
 
 export interface CliAgentSessionOptions {
-	profile: CliAgentSessionProfile;
+	/** One profile per role: the session runs on the Host bound to its own role. */
+	profileFor: (role: AgentSessionRole) => CliAgentSessionProfile;
 	/** Test seam; production resolves the Host CLI from PATH. */
 	binary?: string | null;
 	/** Where the transcript of each session is kept; absent keeps none. */
@@ -276,10 +367,15 @@ export function createCliAgentSessionProvider(options: CliAgentSessionOptions): 
 	const spawn = options.spawn ?? spawnSync;
 	return {
 		async run(request: AgentSessionRequest): Promise<AgentSessionProcess> {
-			const binary = options.binary ?? sessionBinary(options.profile.host);
-			if (!binary) throw new Error(`agent_session_host_unavailable: ${options.profile.host} executable is not on PATH`);
-			const prompt = `${request.prompt}\n\nWrite your structured result to \`${request.output_path}\` in this worktree. That file, not your reply, is what is read.`;
-			const res = spawn(binary, sessionArguments(options.profile, prompt, request.turn_budget), {
+			const profile = options.profileFor(sessionRole(request.kind));
+			const prompt = isReadOnlyRole(sessionRole(request.kind))
+				? `${request.prompt}\n\nPrint your structured JSON result to stdout and nothing else.`
+				: `${request.prompt}\n\nWrite your structured result to \`${request.output_path}\` in this worktree. That file, not your reply, is what is read.`;
+			// Built before the spawn, so an unsupported read-only Host starts no process.
+			const argv = sessionArguments(sessionRole(request.kind), profile, prompt, request.turn_budget);
+			const binary = options.binary ?? sessionBinary(profile.host);
+			if (!binary) throw new Error(`agent_session_host_unavailable: ${profile.host} executable is not on PATH`);
+			const res = spawn(binary, argv, {
 				cwd: request.worktree_path,
 				env: request.env,
 				encoding: "utf8",
@@ -300,6 +396,7 @@ export function createCliAgentSessionProvider(options: CliAgentSessionOptions): 
 				exit_code: res.status ?? null,
 				exit_signal: res.signal ?? null,
 				timed_out: timedOut,
+				stdout: res.stdout ?? "",
 			};
 		},
 	};

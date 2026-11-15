@@ -56,8 +56,11 @@ import {
 } from "./analysis_agent.ts";
 import {
 	createCliAgentSessionProvider,
+	loopRoleProfile,
+	ROLE_SESSION_LIMITS,
 	runAgentSession,
 	sessionEnvironment,
+	sessionRole,
 	type AgentSessionEvidence,
 	type AgentSessionKind,
 	type AgentSessionProvider,
@@ -218,8 +221,6 @@ export interface AgentHandlerDeps {
 	sessionProvider: AgentSessionProvider;
 	/** The daemon's own GitHub credential, the only one a session receives. */
 	session_credential: string | null;
-	turn_budget?: number;
-	timeout_ms?: number;
 	/** Create a daemon-owned worktree (`branch: null` is detached) and return its path. */
 	createWorktree(input: { root: string; branch: string | null; name: string }): string;
 	/** The PR's own worktree, created on first use. */
@@ -244,11 +245,6 @@ export interface AgentHandlerDeps {
 	now?: () => string;
 }
 
-const DEFAULT_TURN_BUDGET = 40;
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
-
-const ANALYSIS_OUTPUT = ".imm-loop/analysis.json";
-const PLAN_OUTPUT = ".imm-loop/plan.json";
 const REPAIR_OUTPUT = ".imm-loop/repair.json";
 
 /* ------------------------------------------------------------------ */
@@ -471,27 +467,27 @@ function requireSession(
 
 export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort {
 	const now = deps.now ?? (() => new Date().toISOString());
-	const turnBudget = deps.turn_budget ?? DEFAULT_TURN_BUDGET;
-	const timeoutMs = deps.timeout_ms ?? DEFAULT_TIMEOUT_MS;
 
 	async function runSession(
 		context: AgentHandlerContext,
 		input: {
 			kind: AgentSessionKind;
 			worktree_path: string;
-			output_path: string;
+			output_path?: string;
 			prompt: string;
 			evidence?: AgentSessionEvidence;
 		},
 	): Promise<AgentSessionRecord> {
+		// The role owns the budget: one per-role table, never a caller's default (Spec D2).
+		const limits = ROLE_SESSION_LIMITS[sessionRole(input.kind)];
 		return runAgentSession(
 			{
 				kind: input.kind,
 				worktree_path: input.worktree_path,
 				prompt: input.prompt,
-				output_path: input.output_path,
-				turn_budget: turnBudget,
-				timeout_ms: timeoutMs,
+				...(input.output_path === undefined ? {} : { output_path: input.output_path }),
+				turn_budget: limits.turn_budget,
+				timeout_ms: limits.timeout_ms,
 				env: sessionEnvironment(deps.session_credential),
 			},
 			deps.sessionProvider,
@@ -523,21 +519,20 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const session = await runSession(context, {
 			kind: "analysis",
 			worktree_path: worktree,
-			output_path: ANALYSIS_OUTPUT,
 			prompt: [
 				`Read-only codebase analysis for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
 				"",
-				'Write JSON {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "questions": ["facts the plan must settle"]}.',
-				"Do not modify any file in this worktree.",
+				'Print JSON {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "questions": ["facts the plan must settle"]}.',
+				"Do not modify any file: this session has no write tools.",
 			].join("\n"),
 			evidence: { validate: (bytes) => parseAnalysisFindings(bytes) !== null },
 		});
 		const refused = requireSession(session);
 		if (refused) return refused;
 		const findings = parseAnalysisFindings(session.output ?? "");
-		if (!findings) return { outcome: "failed", detail: `analysis session produced no valid findings: ${session.output_path}` };
+		if (!findings) return { outcome: "failed", detail: `analysis session produced no valid findings: ${session.reason}` };
 
 		const result = analyzeCodebase({
 			...probeInput,
@@ -559,26 +554,21 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const session = await runSession(context, {
 			kind: "planning",
 			worktree_path: worktree,
-			output_path: PLAN_OUTPUT,
 			prompt: [
 				`Draft the plan for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
 				"",
-				'Write JSON {"intents": [{"path": "docs/plans/<task-id>.intent.json", "intent": {<TaskIntent body>}}], "spec": null}.',
-				"The daemon authors every intent through `imm-kernel intent author`; you supply the candidate bodies only.",
-				`Commit the Spec you draft, if any, on the current branch (${branch}).`,
+				'Print JSON {"intents": [{"path": "docs/plans/<task-id>.intent.json", "intent": {<TaskIntent body>}}], "spec": {"path": "docs/specs/<name>.spec.md", "content": "<Spec markdown>"} | null}.',
+				"Do not modify any file: this session has no write tools. The daemon writes every artifact.",
+				"The daemon authors each intent through `imm-kernel intent author`; you supply the candidate bodies only.",
 			].join("\n"),
-			evidence: {
-				validate: (bytes) => parsePlanCandidate(bytes) !== null,
-				branch,
-				expect_head_change: true,
-			},
+			evidence: { validate: (bytes) => parsePlanCandidate(bytes) !== null },
 		});
 		const refused = requireSession(session);
 		if (refused) return refused;
 		const candidate = parsePlanCandidate(session.output ?? "");
-		if (!candidate) return { outcome: "failed", detail: `planning session produced no valid candidate: ${session.output_path}` };
+		if (!candidate) return { outcome: "failed", detail: `planning session produced no valid candidate: ${session.reason}` };
 
 		let draft: PlanDraft;
 		try {
@@ -1091,8 +1081,6 @@ export function loopWorktreeDirectory(root: string): string {
 export interface DefaultAgentHandlerDepsOptions {
 	gh?: GhTransport;
 	stateDir?: string;
-	/** Decision-model seam is not used here; the Executor Host profile is. */
-	executorProfile?: { host: ExecutorHost; model?: string | null; effort?: string | null };
 	/** The daemon's GitHub token; read from the environment when absent. */
 	githubToken?: string | null;
 }
@@ -1112,13 +1100,9 @@ export function createDefaultAgentHandlerDeps(
 	const credential =
 		options.githubToken ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? null;
 	const config = resolveConfig(root);
-	const activeName = config.lanes.active.value;
-	const active = activeName ? config.lanes.profiles.value[activeName] : undefined;
-	const profile = options.executorProfile ?? {
-		host: (active?.executor_host ?? config.lanes.executor_host.value ?? "claude-code") as ExecutorHost,
-		model: active?.executor_model ?? config.lanes.executor_model.value ?? null,
-		effort: active?.executor_effort ?? config.lanes.executor_effort.value ?? null,
-	};
+	// Each session runs on the profile bound to its own loop role; the Lane it may
+	// drive runs on the executor role. Neither reads a `lanes` leaf any more (D2).
+	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config.agents, "executor");
 	const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 	const createWorktree: AgentHandlerDeps["createWorktree"] = ({ root: repository, branch, name }) => {
@@ -1161,7 +1145,7 @@ export function createDefaultAgentHandlerDeps(
 
 	return {
 		sessionProvider: createCliAgentSessionProvider({
-			profile,
+			profileFor: (role) => loopRoleProfile(config.agents, role),
 			log_dir: join(stateDir, "sessions"),
 		}),
 		session_credential: credential,
@@ -1231,7 +1215,7 @@ export function createDefaultAgentHandlerDeps(
 			if (!result.record) throw new Error("enrollment returned no record");
 			return { record_revision: readTaskRecordRaw(input.root, input.task_id).revision };
 		},
-		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile, pluginRoot }),
+		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile: executor, pluginRoot }),
 		runVerification: async ({ root: repository, worktree_path, task_id }) => {
 			if (!task_id) return { exit_code: 1, stdout: "", stderr: "verification_needs_task: no TaskIntent is bound to this PR" };
 			let intent: ReturnType<typeof observeEnrollmentTaskIntent>;

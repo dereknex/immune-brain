@@ -25,7 +25,6 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/judgement.ts";
 import {
 	createSessionJudgingAgent,
-	JUDGING_OUTPUT_PATH,
 	type JudgingAgentFn,
 } from "../plugins/immune-brain/runtime/loop_daemon/judging_agent.ts";
 import {
@@ -306,11 +305,12 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 			provider: {
 				async run(req) {
 					sessionCalls.push(req.kind);
-					writeFileSync(
-						join(req.worktree_path, JUDGING_OUTPUT_PATH),
-						JSON.stringify({ handler: "draft_plan", reason: "judging session resolved ambiguity" }),
-					);
-					return { exit_code: 0, exit_signal: null, timed_out: false };
+					return {
+						exit_code: 0,
+						exit_signal: null,
+						timed_out: false,
+						stdout: JSON.stringify({ handler: "draft_plan", reason: "judging session resolved ambiguity" }),
+					};
 				},
 			},
 		});
@@ -811,11 +811,12 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			provider: {
 				async run(req) {
 					// Out-of-catalogue handler `force_merge` must be rejected cleanly!
-					writeFileSync(
-						join(req.worktree_path, JUDGING_OUTPUT_PATH),
-						JSON.stringify({ handler: "force_merge", reason: "invalid" }),
-					);
-					return { exit_code: 0, exit_signal: null, timed_out: false };
+					return {
+						exit_code: 0,
+						exit_signal: null,
+						timed_out: false,
+						stdout: JSON.stringify({ handler: "force_merge", reason: "invalid" }),
+					};
 				},
 			},
 		});

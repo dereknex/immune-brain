@@ -1,0 +1,195 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s2-role-sessions",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s2-role-sessions",
+    "goal": "Run every Loop daemon session (judging, clarify, plan, repair) with its own resolved role profile, runtime-enforced role permission and a built-in per-role limit table, per D2 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: only session argv and decision records change.",
+    "acceptance": [
+      {
+        "id": "S2-AC1",
+        "assertion": "Source BR-DEC-4, BR-DEFER-3; meet D2 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-role-sessions.test.ts over sessionArguments and the session provider factory. Done looks like: judging, clarify, plan and repair sessions start with the profile bound to their own role, and every role reads 40 turns / 900 s from one per-role table. Negative: argv for judging, clarify and plan never contains acceptEdits and carries the Host read-tool allow-list; a read-only role on a Host with no verified read-only mode is refused with role_readonly_unsupported and no process starts; cli.ts and agent_handlers.ts no longer read lanes.executor_* for these sessions.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-role-sessions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S2-AC2",
+        "assertion": "Source BR-DEC-4; meet D2 plan bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-role-sessions.test.ts and tests/loop-daemon-agent-handlers.test.ts with a fake session. Done looks like: the plan session runs read-only and the daemon writes the plan artifacts from its structured output. Negative: plan output that is not valid JSON writes no file and the handler records failed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-role-sessions.test.ts\",\n      \"tests/loop-daemon-agent-handlers.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s2-role-sessions.md",
+      "docs/plans/loop-sched-s2-role-sessions.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts",
+      "plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judging_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+      "tests/loop-daemon-agent-handlers.test.ts",
+      "tests/loop-sched-role-sessions.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s2-role-sessions.intent.json",
+    "content_hash": "sha256:aa9d6107c6357ca6c0d4b3568611aef0327870cce20938ddd45a1784bf225caf"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:aa9d6107c6357ca6c0d4b3568611aef0327870cce20938ddd45a1784bf225caf",
+  "git_base_head": "eee9bc406f12f1854c49656a2ce390c7d863bfed",
+  "attestations": [
+    {
+      "id": "approval-qa-90a9c0b1",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:aa9d6107c6357ca6c0d4b3568611aef0327870cce20938ddd45a1784bf225caf",
+      "diff_hash": "sha256:ab7eb651197e7b7fcbf4d2c6c093ce7b0ab458b0067d6b819d9de8ada2acd819",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:c0fbb0fc61146f9850ccc44b3cdb80a08c7e008ea12c8ab71c7a783d796fc35c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S2-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c0fbb0fc61146f9850ccc44b3cdb80a08c7e008ea12c8ab71c7a783d796fc35c"
+        },
+        {
+          "acceptance_id": "S2-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:c0fbb0fc61146f9850ccc44b3cdb80a08c7e008ea12c8ab71c7a783d796fc35c"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-40392e2d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:aa9d6107c6357ca6c0d4b3568611aef0327870cce20938ddd45a1784bf225caf",
+      "diff_hash": "sha256:ab7eb651197e7b7fcbf4d2c6c093ce7b0ab458b0067d6b819d9de8ada2acd819",
+      "actor_id": "cli:claude-code:e644625e-7d08-4aa9-a4e5-21f644d46473",
+      "summary": "S2-AC1 and S2-AC2 are met. Each loop session gets its Host profile from loopRoleProfile(agents, role). Read-only roles get the verified read-tool flags and never get acceptEdits. A read-only role on a Host with no verified read-only mode throws role_readonly_unsupported before any spawn. ROLE_SESSION_LIMITS sets 40 turns / 900 s for every role. The plan session prints its result, and the daemon writes the artifacts through draftAndPublishPlan. Plan output that is not valid JSON fails with no author call and no publication. cli.ts and agent_handlers.ts no longer read lanes.executor_*. The antigravity mirror files have the same blob OIDs as the immune-brain ones, so their diffs are identical. Blast radius: medium; the load-bearing paths are the session permission argv in agent_runner.ts and the per-role profile resolution in agent_handlers.ts and cli.ts, and AgentSessionRecord.output_path is now nullable.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "eee9bc406f12f1854c49656a2ce390c7d863bfed",
+        "review_commit": "792cc7eaf5402e062b8021759b3f5ac3ff7d726b",
+        "review_tree": "7d0ac18eebe9fd0f147f4884098f1b73ad0ffcc5",
+        "manifest_digest": "sha256:9143c1a7f7be292ff18ad37648d7a4d8875195d69db7cbdd09c13e3286a6d6c1"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-3f9f32216d5f-1-review-1",
+          "acceptance_id": "S2-AC1",
+          "summary": "The analysis session kind is mapped to the plan role, not clarify, while spec D8 calls clarify the replacement for analysis. Until S7 lands, a clarify-only profile binding never reaches any session.",
+          "anchor": "sha256:e1cd199921610fd843eaaa2a1b06d3268474af402e13f579438d25c1e4901555",
+          "evidence": {
+            "trigger": "agents preset binds clarify→pi and plan→claude-code; analyze_codebase runs → the analysis session spawns on claude-code under the plan profile, not the clarify profile",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:analyzeCodebase",
+              "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts:ROLE_OF_KIND",
+              "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts:createCliAgentSessionProvider"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-3f9f32216d5f-2-review-2",
+          "acceptance_id": "S2-AC2",
+          "summary": "Read-only results are parsed with a strict JSON.parse on the raw --print stdout. A Host reply wrapped in a markdown fence or followed by trailing prose fails the session as expected_output_invalid.",
+          "anchor": "sha256:a2660e09700965c32a12b9773ed30093a305326d6740301e248ad376af19353f",
+          "evidence": {
+            "trigger": "claude --print returns the result wrapped in a ```json fence → parsePlanCandidate/parseAnalysisFindings return null → the planning or analysis session is recorded failed even though the content is valid",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts:runAgentSession.sessionResult",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:parsePlanCandidate",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:draftPlan"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-3f9f32216d5f-3-review-3",
+          "acceptance_id": "S2-AC1",
+          "summary": "The test 'starts each session on the profile bound to its own role' resolves real claude and pi binaries from PATH through sessionBinary, so it depends on which Host CLIs are installed on the test machine.",
+          "anchor": "sha256:30d88f0b08c7b7700a24be463b4d454d20e107eba1de6ea1bdd2adb27522ccce",
+          "evidence": {
+            "trigger": "CI runner without claude or pi on PATH → the provider throws agent_session_host_unavailable → the spawned[0].binary assertions fail although the role routing is correct",
+            "caller_chain": [
+              "tests/loop-sched-role-sessions.test.ts",
+              "plugins/immune-brain/runtime/loop_daemon/agent_runner.ts:sessionBinary"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S2-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:3244b226e86706e4e2e9ce26deebc60eaeffc39da131bd9754c6acde124b3a0d"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s2-role-sessions:2026-11-15T09:17:32.158Z",
+      "at": "2026-11-15T09:17:32.158Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s2-role-sessions.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s2-role-sessions:2026-11-15T09:17:42.564Z",
+      "at": "2026-11-15T09:17:42.564Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-90a9c0b1\naction_v2_sha256:d15fb676b0e49fb4e139ae77de65500e84abfafede5a34a4c0a58edf76913a6d",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T09:17:42.564Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s2-role-sessions:2026-11-15T09:20:48.005Z",
+      "at": "2026-11-15T09:20:48.005Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-40392e2d\naction_v2_sha256:18b8cbc9917286187de16121c3ca183c0d2af4860ceb84b6c47b41d81a28945f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:e644625e-7d08-4aa9-a4e5-21f644d46473",
+        "confirmation_ref": "pi:cli:claude-code:e644625e-7d08-4aa9-a4e5-21f644d46473",
+        "issued_at": "2026-11-15T09:20:48.005Z"
+      },
+      "review_started_at": "2026-11-15T09:17:45.808Z",
+      "review_submitted_at": "2026-11-15T09:20:47.169Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s2-role-sessions:2026-11-15T09:20:50.376Z",
+      "at": "2026-11-15T09:20:50.376Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fb022318ff6963f98381445e6e7529189b43b9a3ebbb1a99e6be4baff2f647e5"
+    }
+  ]
+}

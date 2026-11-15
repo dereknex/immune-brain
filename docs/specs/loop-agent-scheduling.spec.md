@@ -179,11 +179,14 @@ interface AgentsConfig {
 Source: `BR-DEC-4`, `BR-DEFER-3`.
 
 - `agent_runner.ts` builds argv from `{role, profile, limits}`. Read-only roles
-  (`judging`, `clarify`, `plan`) never receive `acceptEdits`
-  (`agent_runner.ts:216-226`); they receive the Host's read-tool allow-list.
-  The exact Host flags are **unverified** and confirmed by the Executor against
-  each CLI's help; a Host with no verifiable read-only mode refuses a read-only
-  role with `role_readonly_unsupported` rather than running it writable.
+  (`judging`, `clarify`, `plan`) never receive `acceptEdits`; they receive the
+  Host's read-tool allow-list instead. Verified against each CLI's own help:
+  `claude --permission-mode plan --allowedTools Read,Glob,Grep`,
+  `pi --tools read --no-mcp`, `agy --mode plan`. A Host with no verified
+  read-only mode refuses a read-only role with `role_readonly_unsupported`
+  before any process starts rather than running it writable. A read-only session
+  returns its structured result on stdout, because it may not write the file a
+  writable session leaves behind.
 - `plan` is read-only: it returns the plan as structured output and the daemon
   writes the plan artifacts, so "writes only plan artifacts" is enforced by
   code.

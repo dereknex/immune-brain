@@ -35,10 +35,12 @@ import {
 	type AgentHandlerDeps,
 	type AgentTaskIntent,
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts";
-import type {
-	AgentSessionKind,
-	AgentSessionProvider,
-	AgentSessionRequest,
+import {
+	isReadOnlyRole,
+	sessionRole,
+	type AgentSessionKind,
+	type AgentSessionProvider,
+	type AgentSessionRequest,
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { type LoopDecisionRecord } from "../plugins/immune-brain/runtime/loop_daemon/decision_record.ts";
@@ -157,7 +159,7 @@ function mockGh(userLogin = "daemon-bot"): GhTransport {
 /* Fake session provider, Kernel, and GitHub fixtures                  */
 /* ------------------------------------------------------------------ */
 
-type SessionBehavior = "ok" | "missing_output" | "invalid_output" | "exit_nonzero" | "no_commit";
+type SessionBehavior = "ok" | "missing_output" | "invalid_output" | "exit_nonzero";
 
 interface FakeSessions {
 	provider: AgentSessionProvider;
@@ -197,15 +199,15 @@ function createFakeSessions(behavior: Partial<Record<AgentSessionKind, SessionBe
 			if (mode === "exit_nonzero") return { exit_code: 1, exit_signal: null, timed_out: false };
 			if (mode === "missing_output") return { exit_code: 0, exit_signal: null, timed_out: false };
 
+			const payload = mode === "invalid_output" ? "not the expected schema" : payloadFor(request.kind);
+			// A read-only session prints its result; a writable one writes the file it was given.
+			if (isReadOnlyRole(sessionRole(request.kind))) {
+				return { exit_code: 0, exit_signal: null, timed_out: false, stdout: payload };
+			}
+			if (request.output_path === undefined) throw new Error(`writable session without an output path: ${request.kind}`);
 			const target = join(request.worktree_path, request.output_path);
 			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, mode === "invalid_output" ? "not the expected schema" : payloadFor(request.kind));
-
-			if (request.kind === "planning" && mode !== "no_commit") {
-				writeFileSync(join(request.worktree_path, "plan.md"), "# fixture plan\n");
-				git(request.worktree_path, ["add", "-A"]);
-				git(request.worktree_path, ["commit", "-q", "-m", "fixture: planning session commit"]);
-			}
+			writeFileSync(target, payload);
 			return { exit_code: 0, exit_signal: null, timed_out: false };
 		},
 	};
@@ -504,12 +506,20 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(firstPayload.dispatches[0]).toMatchObject({ handler: "triage_issue", outcome: "executed" });
 		expect(firstPayload.dispatches[0].detail).toContain("analysis");
 
-		// The planning session ran read-only analysis first, then drafted the plan.
+		// The planning session ran the read-only analysis probe first, then drafted the plan.
 		expect(harness.sessions.requests.map((request) => request.kind)).toEqual(["analysis", "planning"]);
 		for (const request of harness.sessions.requests) {
 			// Sessions receive the daemon's GitHub credential and nothing else.
 			expect(Object.keys(request.env).sort()).toEqual(["GH_TOKEN", "GITHUB_TOKEN", "PATH"]);
 			expect(request.env.GH_TOKEN).toBe("ghs_daemon_credential");
+			// Every loop role reads its budget from the one per-role table (S2-AC1).
+			expect(request.turn_budget).toBe(40);
+			expect(request.timeout_ms).toBe(900_000);
+		}
+		// Both are read-only plans: they print their result instead of writing a file.
+		for (const request of harness.sessions.requests) {
+			expect(isReadOnlyRole(sessionRole(request.kind))).toBe(true);
+			expect(request.output_path).toBeUndefined();
 		}
 
 		// The candidate TaskIntent went through `imm-kernel intent author`.
@@ -787,10 +797,10 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			behavior: Partial<Record<AgentSessionKind, SessionBehavior>>;
 			expected: string;
 		}> = [
-			{ handler: "analyze_codebase", behavior: { analysis: "missing_output" }, expected: "expected_output_missing" },
+			{ handler: "analyze_codebase", behavior: { analysis: "missing_output" }, expected: "session_output_missing" },
 			{ handler: "analyze_codebase", behavior: { analysis: "invalid_output" }, expected: "expected_output_invalid" },
 			{ handler: "analyze_codebase", behavior: { analysis: "exit_nonzero" }, expected: "session_exit_nonzero" },
-			{ handler: "draft_plan", behavior: { planning: "no_commit" }, expected: "expected_git_head_unchanged" },
+			{ handler: "draft_plan", behavior: { planning: "invalid_output" }, expected: "expected_output_invalid" },
 		];
 
 		for (const testCase of cases) {
@@ -843,6 +853,11 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			expect(result.dispatches).toHaveLength(1);
 			expect(result.dispatches[0]!.outcome).toBe("failed");
 			expect(result.dispatches[0]!.detail).toContain(testCase.expected);
+			// A plan the daemon cannot parse writes no plan artifact at all (S2-AC2).
+			if (testCase.handler === "draft_plan") {
+				expect(readPlanPublication(workspace.stateDir, 30)).toBeNull();
+				expect(harness.kernel.calls.filter((call) => call.argv[1] === "author")).toHaveLength(0);
+			}
 			workspace.cleanup();
 		}
 	});

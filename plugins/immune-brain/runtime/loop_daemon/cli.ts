@@ -25,11 +25,10 @@ import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts"
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
-import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
-import { createCliAgentSessionProvider } from "./agent_runner.ts";
+import { createCliAgentSessionProvider, loopRoleProfile } from "./agent_runner.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
@@ -1434,19 +1433,16 @@ export async function runLoopDaemonExecutable(
 		: undefined;
 	let judgingAgent: JudgingAgentFn | undefined;
 	if (needsAgent) {
-		const cfg = resolveConfig(root);
-		const host = (cfg.lanes?.executor_host?.value as ExecutorHost | null) ?? null;
-		if (host === "claude-code" || host === "pi" || host === "antigravity") {
-			const model = (cfg.lanes?.executor_model?.value as string | null) ?? null;
-			const effort = (cfg.lanes?.executor_effort?.value as string | null) ?? null;
-			judgingAgent = createSessionJudgingAgent({
-				root,
-				provider: createCliAgentSessionProvider({
-					profile: { host, model, effort },
-					log_dir: join(effectiveStateDir, "session-logs"),
-				}),
-			});
-		}
+		// The judging session runs on the profile bound to the judging role; no
+		// executor Host leaf decides it (Spec D2).
+		const agents = resolveConfig(root).agents;
+		judgingAgent = createSessionJudgingAgent({
+			root,
+			provider: createCliAgentSessionProvider({
+				profileFor: (role) => loopRoleProfile(agents, role),
+				log_dir: join(effectiveStateDir, "session-logs"),
+			}),
+		});
 	}
 	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),
