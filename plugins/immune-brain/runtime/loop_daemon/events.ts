@@ -30,7 +30,11 @@ function normalizeLabelNames(labels?: Array<{ name: string } | string>): string[
 	return labels.map((l) => (typeof l === "string" ? l : l.name)).filter(Boolean);
 }
 
-function parsePlanDigestFromComment(body: string): string | null {
+/**
+ * The plan digest an owner comment approves: the pre-protocol `/approve <digest>`
+ * command and its marker form both stay readable (D3).
+ */
+export function parsePlanDigestFromComment(body: string): string | null {
 	// 1. Check explicit marker: <!-- immune-brain:plan-digest=([^\s>]+) -->
 	const markerMatch = body.match(/<!--\s*immune-brain:plan-digest=([^\s>]+)\s*-->/i);
 	if (markerMatch) return markerMatch[1];

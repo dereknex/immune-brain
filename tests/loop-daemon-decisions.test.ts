@@ -835,3 +835,42 @@ describe("S6 Positive Control: End-to-End verified owner reply relay (BR-SCN-4, 
 		expect(unchangedLease?.status).toBe("parked_for_decision");
 	});
 });
+
+describe("S3 pre-protocol markers stay readable through the Interaction protocol (D3)", () => {
+	it("parses a pre-protocol Lane decision question and applies a pre-protocol reply", () => {
+		const question = renderLaneDecisionQuestion({
+			task_id: TASK_ID,
+			run_id: RUN_ID,
+			record_revision: REVISION,
+			question: "The Lane hit a gate it cannot decide alone. Which way should it go?",
+			options: [
+				{ id: "proceed", label: "Proceed" },
+				{ id: "stop-work", label: "Stop" },
+			],
+			issue_number: 465,
+		});
+
+		// The pre-protocol question carries no interaction_id marker and still parses.
+		expect(question).not.toContain("immune-brain:interaction=");
+		expect(parseLaneDecisionQuestion(question)).toMatchObject({
+			run_id: RUN_ID,
+			record_revision: REVISION,
+			task_id: TASK_ID,
+		});
+
+		// A pre-protocol reply states the binding in markers and the choice as a number.
+		const preProtocolReply = `<!-- immune-brain:run-id=${RUN_ID} --> <!-- immune-brain:record-revision=${REVISION} --> 1`;
+		expect(parseDecisionReplyText(preProtocolReply)).toMatchObject({
+			run_id: RUN_ID,
+			record_revision: REVISION,
+		});
+
+		const verification = verifyLaneDecisionReply(
+			validReply({ selected_option: undefined, reply_body: preProtocolReply }),
+			makeFacts({ options: [{ id: "proceed", label: "Proceed" }] }),
+			OWNER_FACTS,
+		);
+		expect(verification.status).toBe("verified");
+		if (verification.status === "verified") expect(verification.selected_option).toBe("proceed");
+	});
+});

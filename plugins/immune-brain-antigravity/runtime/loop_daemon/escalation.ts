@@ -9,6 +9,11 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+	INTERACTION_REQUEST_CONTRACT,
+	interactionAuthority,
+	type InteractionRequest,
+} from "./interaction/protocol.ts";
 import type { RawComment } from "./types.ts";
 
 export const ESCALATION_KEY_MARKER = "<!-- immune-brain:escalation-key=";
@@ -63,4 +68,32 @@ export function planEscalation(
 		return { action: "skip", key: input.key, body, comment_id: match.id };
 	}
 	return { action: "update", key: input.key, body, comment_id: match.id };
+}
+
+/**
+ * Adapter: one escalation as an `InteractionRequest` (D3 of
+ * docs/specs/loop-agent-scheduling.spec.md). The stable `escalationKey` becomes
+ * the `interaction_id`, so the `github` channel's one-comment rule replaces the
+ * key marker's dedupe for new posts, while `planEscalation()` still reads the
+ * markers of comments posted before the channel existed.
+ */
+export function escalationInteractionRequest(input: {
+	key: string;
+	message: string;
+	issue_number?: number;
+	pr_number?: number;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: `escalation:${input.key}`,
+		kind: "escalation",
+		subject: {
+			...(input.issue_number === undefined ? {} : { issue: input.issue_number }),
+			...(input.pr_number === undefined ? {} : { pr: input.pr_number }),
+		},
+		binding: {},
+		prompt: input.message.trim(),
+		answer: "none",
+		authority: interactionAuthority("escalation"),
+	};
 }

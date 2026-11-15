@@ -8,7 +8,14 @@ status: accepted
 2026-11-10, recorded with their evidence in
 [`docs/proposals/loop-agent.md`](../proposals/loop-agent.md). Renumbered from 0038
 per BR-DEC-3 because [ADR 0038](0038-supervised-session-port.md) already occupies
-0038 on HEAD. This ADR amends [ADR 0005](0005-unattended-initiative-batch-run.md),
+0038 on HEAD.
+
+**Status update:** Decision 12 is amended by
+[ADR 0040](0040-loop-interaction-protocol.md): a person is still called on the
+tracker, but GitHub applies only the two literal-user decisions code can verify
+and posts every other literal-user operation as a notice.
+
+This ADR amends [ADR 0005](0005-unattended-initiative-batch-run.md),
 [ADR 0006](0006-unattended-review-dispatch-authority.md),
 [ADR 0019](0019-explicit-run-entry-owns-enrollment.md),
 [ADR 0025](0025-run-entry-decision-hosting.md), `BASELINE.md` and `CONTEXT.md`

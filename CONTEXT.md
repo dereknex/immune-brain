@@ -30,6 +30,14 @@ _Avoid_: executor, task owner
 The continuation mechanism that projects current facts to the next bounded internal role, Kernel operation or public entry, without becoming a second authority source. It runs in two forms: in a session, after an explicit `drive` entry, it continues one enrolled Task or Initiative; as the Loop daemon, a standing process, it observes the tracker, pull requests and CI, plans open Issues, and dispatches bounded agents that start or resume those entries across sessions.
 _Avoid_: workflow engine, checkpoint store, scheduler authority
 
+**Interaction Request**:
+One question the Loop daemon asks a person: an `interaction_id`, a kind, the subject and binding it is asked against, the prompt and options, and whether the answer is advisory or literal-user. It is sent only through an Interaction Channel and is never authority.
+_Avoid_: notification, ticket comment, approval record
+
+**Interaction Channel**:
+The transport that carries an Interaction Request and the answer to it. `github` posts one marker comment per request, applies only the literal-user answers ADR 0039 already grants, and posts every other literal-user operation as a notice; `local` asks the owner's own Host session ([ADR 0040](docs/adr/0040-loop-interaction-protocol.md)).
+_Avoid_: inbox, queue, second authority store
+
 **Internal Role**:
 A bounded, non-public responsibility dispatched by Loop, such as Executor, QA, Review, repair, architecture exploration, or Compounder. Internal roles cannot widen their own scope or grant themselves authority.
 _Avoid_: public Skill, autonomous agent
