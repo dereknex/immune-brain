@@ -118,7 +118,9 @@ effect. A Parent whose final commands are already recorded needs no gate. Record
 confirmation, and changed commands need a fresh explicit Parent entry.
 
 After diagnostics pass, the Lane Executor advances Kernel QA and runs any
-returned `review_command` once in the Lane's own tree, then submits the result
+returned `review_command` — or, under a session transport, its `review_session`
+create, await and stop sequence — once in the Lane's own tree, then submits the
+result
 through `submit_review`. Review runs before integration: a PASS gates the
 integration, and a REVISE returns the child to the Lane Executor. A missing
 review profile fails that child closed with `review_profile_required` and one

@@ -1,0 +1,399 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "explicit-port-review-session",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "explicit-port-review-session",
+    "goal": "Implement explicit independent interactive Code Agent Review and Findings Verification sessions via SupervisedSessionPort (imm-session create/await/stop), dedicated out-of-tree JSON output files with sha256 receipt and Verification double-read plus D6 tree guard, Lane ReviewProfile propagation (transport, model, effort), and non-polling recovery wording per docs/specs/explicit-port-review-session.spec.md (BR-REQ-1, BR-REQ-2, BR-DEC-2, BR-DEC-3, BR-OUT-1, BR-SCN-1).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC1 and BR-SCN-1, Lane ReviewProfile (transport, host, model, effort, verifier model) propagates across layered_config.ts, host-core/runtime.ts, coordinator.ts, and cli_review.ts; when herdr transport is active, prepareReview and prepareVerification emit explicit imm-session create and imm-session await interactive Code Agent launch instructions with zero imports from runtime/session/ inside runtime/assurance/, Kernel, or Host adapters (BR-OUT-1), and pending recovery messages in cli_review.ts, review_mediation.ts, and coordinator.ts omit repeat submit_review/submit_verification polling instructions (BR-REQ-1, F1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC2 and BR-SCN-1, prepareReview and prepareVerification allocate dedicated out-of-tree temp JSON output_path targets (with Claude Write(<output_path>) allowlist and D6 Git tree guard across hosts), inspectReview and inspectVerification reject terminal scrollback and validate strict JSON from output_path with file-byte sha256 receipt (preserving Verification double-read consistency), and consumed PASS/REVISE/verification_ready/awaiting_user receipts instruct imm-session stop cleanup while abnormal exits, contract mismatches, dirty trees, or invalid JSON retain the session tab without cleanup (BR-REQ-2, BR-DEC-2, BR-DEC-3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC3, runtime/prompts/code-review.md, runtime/prompts/review-verifier.md, role_prompt_bridge.ts, skills/authority-review/SKILL.md, agents/immune-brain-review-verifier.md, dist/role-prompts/* mirrors, and dist/drive.md agree on writing strict JSON verdicts/verifications to the dedicated out-of-tree output_path and executing the explicit imm-session create -> await -> submit -> stop lifecycle without drift.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/explicit-port-review-session.spec.md",
+      "plugins/immune-brain/agents/immune-brain-review-verifier.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/dist/role-prompts/code-review.md",
+      "plugins/immune-brain/dist/role-prompts/review-verifier.md",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/prompts/code-review.md",
+      "plugins/immune-brain/runtime/prompts/review-verifier.md",
+      "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "tests/cli-review-dispatch.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/explicit-port-review-session.intent.json",
+    "content_hash": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91",
+  "git_base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+  "attestations": [
+    {
+      "id": "approval-qa-ee8083cb",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91",
+      "diff_hash": "sha256:82fdf8783380b0c20a25bd93dc260a0dbb26c7c04db9a9f8a836ae5af4157d25",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:00c31f0dca016399110f51e62ea9c9bb2518d0df92f9d0150a82c6d8f734477a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:00c31f0dca016399110f51e62ea9c9bb2518d0df92f9d0150a82c6d8f734477a"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:00c31f0dca016399110f51e62ea9c9bb2518d0df92f9d0150a82c6d8f734477a"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:00c31f0dca016399110f51e62ea9c9bb2518d0df92f9d0150a82c6d8f734477a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-19c33e26",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91",
+      "diff_hash": "sha256:f8928fcb0d7b0a0b171173026061f1054d1e158a223cc4b839644e88a7210f12",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:56834fba828605a2512cc764bab54ec77060bd098d1ae197f4a4900b2d5caf21",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:56834fba828605a2512cc764bab54ec77060bd098d1ae197f4a4900b2d5caf21"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:56834fba828605a2512cc764bab54ec77060bd098d1ae197f4a4900b2d5caf21"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:56834fba828605a2512cc764bab54ec77060bd098d1ae197f4a4900b2d5caf21"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-1fa31d32",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91",
+      "diff_hash": "sha256:fae987d7e14a9074cd04ce2611433575cdaf8f27ca2b5607326b344796247d2d",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:592f70648e8b4a55da5f39cf4620fc5fe9be1ae91f75f07cb271928c5e7da436",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:592f70648e8b4a55da5f39cf4620fc5fe9be1ae91f75f07cb271928c5e7da436"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:592f70648e8b4a55da5f39cf4620fc5fe9be1ae91f75f07cb271928c5e7da436"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:592f70648e8b4a55da5f39cf4620fc5fe9be1ae91f75f07cb271928c5e7da436"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ffdf82cc",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:5cceca07671a41f4b91ba1f9edd55c7db72a035ae5c8fa017ccf86c4ada3cd91",
+      "diff_hash": "sha256:fae987d7e14a9074cd04ce2611433575cdaf8f27ca2b5607326b344796247d2d",
+      "actor_id": "cli:claude-code:595eab80-2f6b-4b13-b4bf-506749cb2c34",
+      "summary": "Round-3 delta: sessionHostArguments omits --model when the model is the module-scoped HOST_DEFAULT_MODEL sentinel, which matches verificationArguments; source and both bundles agree and tests pin pi and claude-code argv; blast radius low (cli_review.ts sessionHostArguments plus mirrored bundles); other paths carried forward from 4ff8ac35.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+        "review_commit": "929ecbfc643b620bbdb4380837adcd7677233083",
+        "review_tree": "ac9270ee83a5c43d4dcbe3a118ec59d78fb118f6",
+        "manifest_digest": "sha256:8ff5eebaf721cdcd4ddc077620582eb2965792de89c51edc5c111f3918d9b785"
+      },
+      "reviewer_verdict_sha256": "sha256:2811bcfb38a82d58e383780dc24a7ef6b828a471046901d038ac7339d4556c5b"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-a8303cfd4af2-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "strictJsonObject now gates the legacy process transport too (still the default per LANE_DEFAULTS until S2), rejecting process receipts the existing tolerant parser accepted; strict JSON was authorized only for the session's out-of-tree output_path.",
+      "anchor": "sha256:92b7f3c6fb1a80d0eb3e75cdbbe8a317788a80d9d1def7e8b25c2ad670db14aa",
+      "evidence": {
+        "trigger": "lanes.review_transport unset (process default). Reviewer CLI output captured by writeProcessScript with `>\"$tmp\" 2>&1` contains a valid verdict but also a stderr warning line or the verdict inside ```json fences → inspectReview returns {release:true, reason:'review_output_invalid'} and submitMediatedReview abandons the round. On base, readChildVerdict/extractVerdictJson took the first '{' to the last '}' and settled the same bytes. inspectVerification has the same regression ('verification_output_invalid' → dispatch_failed and every finding kept). The fix would gate the check on exitFile === null, plus a process-transport test with prefixed or fenced output that still settles.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:writeProcessScript",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:strictJsonObject",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:readChildVerdict"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-a8303cfd4af2-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "In a herdr session a review-contract mismatch never reaches the Kernel: the skill tells the reviewer to reply REVIEW_CONTRACT_MISMATCH in the terminal, output_path is never written, and inspectReview retains the reservation as 'still running' indefinitely.",
+      "anchor": "sha256:656477c71b3d145fa2536e904af1ddb8b9bac9eac11a5a4f477e447b5dc1ef84",
+      "evidence": {
+        "trigger": "review_transport herdr with a reviewer install whose skill hash differs from the packet's review_contract_hash. The skill says to reply with exactly `REVIEW_CONTRACT_MISMATCH <hash>` and stop, and writeToOutput asks only for 'the one JSON object you owe', so the line is printed to the terminal. After imm-session await returns, every submit_review sees the missing output_path with exitFile null and returns {release:false, reason:'review session still running ... await it with imm-session await'}. The mismatch is never reported as review_contract_mismatch, the reservation is never released, and the recovery sends the Parent back to an await that has already finished. AC2 requires contract mismatches to be detected and failed while the tab stays open. No session-mode mismatch test exists; only invalid JSON is covered. The fix would tell the session to write the mismatch line to output_path, plus a session-mode mismatch test.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.prepareReview",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:writeToOutput",
+          "plugins/immune-brain/skills/authority-review/SKILL.md",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.inspectReview",
+          "plugins/immune-brain/runtime/assurance/review_mediation.ts:submitMediatedReview"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-f3e229558ab5-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "herdr verification session passes the HOST_DEFAULT_MODEL sentinel as a real --model flag, so a Lane profile without review_model/review_verifier_model launches the verifier on a nonexistent model 'host-default' (process path filters this sentinel; session path does not)",
+      "anchor": "sha256:91045eb47da804143c79fbbc60e4f33b89246599e96de3746ad653e08a448daa",
+      "evidence": {
+        "trigger": "lanes.review_transport=herdr, review_host set, review_model and review_verifier_model unset, Review returns a rework verdict → inspectReview reports model 'host-default' (cli_review.ts inspectReview: reservation.profile.model ?? HOST_DEFAULT_MODEL) → selectReviewVerifierModel picks 'host-default' → prepareVerification calls sessionHostArguments(profile, {model: 'host-default'}) whose `options.model ?? profile.model` has no HOST_DEFAULT_MODEL guard (unlike verificationArguments) → verification_session.create_command contains `-- --model host-default` → the Host starts on an invalid model, output_path is never written, submit_verification stays pending until the deadline and then fails as timeout instead of producing a consumed verification receipt; the delivered test 'the findings verifier runs as an explicit session' exercises exactly this profile (reviewRepo('pi', {review_transport:'herdr'}), model_relation 'same') but never asserts the session's host arguments",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:AssuranceCoordinator.submitReview",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:prepareReviewVerificationDispatch",
+          "plugins/immune-brain/runtime/assurance/coordinator.ts:selectReviewVerifierModel",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.prepareVerification",
+          "plugins/immune-brain/runtime/assurance/cli_review.ts:sessionHostArguments"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:explicit-port-review-session:2026-11-15T13:16:11.517Z",
+      "at": "2026-11-15T13:16:11.517Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-port-review-session.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-port-review-session:2026-11-15T13:16:57.852Z",
+      "at": "2026-11-15T13:16:57.852Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ee8083cb\naction_v2_sha256:8252d5a2c7104ba1bdeb0587b3a73f8bf3871e5ee2595dbff33857c96e0c7b71",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T13:16:57.852Z"
+      }
+    },
+    {
+      "id": "request_rework:explicit-port-review-session:2026-11-15T13:19:54.352Z",
+      "at": "2026-11-15T13:19:54.352Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ad7f1f8c0dce1f24286c6d8310c33eb81f07ce978467035ff7a84bb504232cdc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:a786ced6-aa16-4389-83c2-cb5cbeac0a4c",
+        "confirmation_ref": "pi:cli:claude-code:a786ced6-aa16-4389-83c2-cb5cbeac0a4c",
+        "issued_at": "2026-11-15T13:19:54.353Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+        "review_commit": "1f4ffc11b7e808ad8ba35665e602d9c0168dd0d9",
+        "review_tree": "b5882bd957d7fde3ce858b79f6f83fdcf87a5e86",
+        "manifest_digest": "sha256:d5a2af74397194486578434c6adef0b833772aaaa9323142d0c05228484e1e41"
+      },
+      "review_started_at": "2026-11-15T13:17:04.287Z",
+      "review_submitted_at": "2026-11-15T13:19:52.805Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:explicit-port-review-session:2026-11-15T13:26:41.415Z",
+      "at": "2026-11-15T13:26:41.415Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a8303cfd4af2-1-review-1\naction_v2_sha256:e290b947a0ea8bd8aea2d9d3ff2d024010a2c50f8934da87f6f0e2844911b96e"
+    },
+    {
+      "id": "resolve_finding:explicit-port-review-session:2026-11-15T13:26:54.185Z",
+      "at": "2026-11-15T13:26:54.185Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-a8303cfd4af2-2-review-2\naction_v2_sha256:b359df31f79e74bc2a0debcb5f97b498120aea45a0c44fc152df6da1e35c4265"
+    },
+    {
+      "id": "freeze_artifacts:explicit-port-review-session:2026-11-15T13:27:07.015Z",
+      "at": "2026-11-15T13:27:07.015Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-port-review-session.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-port-review-session:2026-11-15T13:27:52.372Z",
+      "at": "2026-11-15T13:27:52.372Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-19c33e26\naction_v2_sha256:468f4dc402b91c2d620f7ae80cd59b92b36d42f420c9b699e936ff7618b727ce",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T13:27:52.372Z"
+      }
+    },
+    {
+      "id": "request_rework:explicit-port-review-session:2026-11-15T13:30:44.194Z",
+      "at": "2026-11-15T13:30:44.194Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:cdc09cbf27f9a3e3408ca0b2b287a1ad5b749d570cfbe386fa45a09879906255",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:29a55221-0b2f-438d-a4f0-a8bc04c0ee12",
+        "confirmation_ref": "pi:cli:claude-code:29a55221-0b2f-438d-a4f0-a8bc04c0ee12",
+        "issued_at": "2026-11-15T13:30:44.194Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+        "review_commit": "4ff8ac35d234120e3aeced42c88f03d91b863e5e",
+        "review_tree": "c9bf5c464ca1abd981dd6b18e60d4bca91f08ea8",
+        "manifest_digest": "sha256:5c1b79b32ab1cacab923a0891134bd7b97482731ae070a8d78738f4727be768f"
+      },
+      "review_started_at": "2026-11-15T13:27:58.966Z",
+      "review_submitted_at": "2026-11-15T13:30:42.583Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:explicit-port-review-session:2026-11-15T13:31:48.293Z",
+      "at": "2026-11-15T13:31:48.293Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f3e229558ab5-1-review-1\naction_v2_sha256:70b56a5d638e4a8213ec8d5e331312430c44820e6db03924c14ca77014166e22"
+    },
+    {
+      "id": "freeze_artifacts:explicit-port-review-session:2026-11-15T13:32:03.712Z",
+      "at": "2026-11-15T13:32:03.712Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/explicit-port-review-session.intent.json"
+    },
+    {
+      "id": "record_approval:explicit-port-review-session:2026-11-15T13:32:36.725Z",
+      "at": "2026-11-15T13:32:36.725Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-1fa31d32\naction_v2_sha256:df4be54298fc4f8a15ad175493f4a8d2c22200bde9f7a843f2abbcf1d49fc124",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T13:32:36.725Z"
+      }
+    },
+    {
+      "id": "record_approval:explicit-port-review-session:2026-11-15T13:33:49.598Z",
+      "at": "2026-11-15T13:33:49.598Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ffdf82cc\naction_v2_sha256:360451c4022387adb6356c88212e0301979b5c8f820bedaa5e2f41bdc6f28059",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:595eab80-2f6b-4b13-b4bf-506749cb2c34",
+        "confirmation_ref": "pi:cli:claude-code:595eab80-2f6b-4b13-b4bf-506749cb2c34",
+        "issued_at": "2026-11-15T13:33:49.598Z"
+      },
+      "review_started_at": "2026-11-15T13:32:43.508Z",
+      "review_submitted_at": "2026-11-15T13:33:48.035Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:explicit-port-review-session:2026-11-15T13:33:54.196Z",
+      "at": "2026-11-15T13:33:54.196Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:deb111361dfc0f4bd4c9abcd9269e6d9f14fbfdb21450efaaa0f8cb873bd9774"
+    }
+  ]
+}

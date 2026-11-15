@@ -158,7 +158,10 @@ Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and p
 
 Authority Review runs no Agent dispatch. The Parent runs the returned
 `review_command` (`sh <script>`) in the task's working directory and calls
-`submit_review` after the process exits. The runtime writes
+`submit_review` after the process exits. Under `lanes.review_transport: herdr`
+the reservation carries a `review_session` instead: the Parent runs
+`create_command`, awaits the printed handle once, and stops it only after the
+Kernel consumed a valid receipt. The runtime writes
 `review-packet-<operation>.md` beside `evidence.json` without changing the
 manifest bytes, and the script writes the reviewer's output under a temporary
 name and its exit status last, so a present exit file marks a complete output.

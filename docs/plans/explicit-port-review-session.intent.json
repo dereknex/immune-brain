@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "explicit-port-review-session",
+  "owner": "user",
+  "goal": "Implement explicit independent interactive Code Agent Review and Findings Verification sessions via SupervisedSessionPort (imm-session create/await/stop), dedicated out-of-tree JSON output files with sha256 receipt and Verification double-read plus D6 tree guard, Lane ReviewProfile propagation (transport, model, effort), and non-polling recovery wording per docs/specs/explicit-port-review-session.spec.md (BR-REQ-1, BR-REQ-2, BR-DEC-2, BR-DEC-3, BR-OUT-1, BR-SCN-1).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC1 and BR-SCN-1, Lane ReviewProfile (transport, host, model, effort, verifier model) propagates across layered_config.ts, host-core/runtime.ts, coordinator.ts, and cli_review.ts; when herdr transport is active, prepareReview and prepareVerification emit explicit imm-session create and imm-session await interactive Code Agent launch instructions with zero imports from runtime/session/ inside runtime/assurance/, Kernel, or Host adapters (BR-OUT-1), and pending recovery messages in cli_review.ts, review_mediation.ts, and coordinator.ts omit repeat submit_review/submit_verification polling instructions (BR-REQ-1, F1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC2 and BR-SCN-1, prepareReview and prepareVerification allocate dedicated out-of-tree temp JSON output_path targets (with Claude Write(<output_path>) allowlist and D6 Git tree guard across hosts), inspectReview and inspectVerification reject terminal scrollback and validate strict JSON from output_path with file-byte sha256 receipt (preserving Verification double-read consistency), and consumed PASS/REVISE/verification_ready/awaiting_user receipts instruct imm-session stop cleanup while abnormal exits, contract mismatches, dirty trees, or invalid JSON retain the session tab without cleanup (BR-REQ-2, BR-DEC-2, BR-DEC-3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per docs/specs/explicit-port-review-session.spec.md AC3, runtime/prompts/code-review.md, runtime/prompts/review-verifier.md, role_prompt_bridge.ts, skills/authority-review/SKILL.md, agents/immune-brain-review-verifier.md, dist/role-prompts/* mirrors, and dist/drive.md agree on writing strict JSON verdicts/verifications to the dedicated out-of-tree output_path and executing the explicit imm-session create -> await -> submit -> stop lifecycle without drift.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/specs/explicit-port-review-session.spec.md",
+    "plugins/immune-brain/agents/immune-brain-review-verifier.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/code-review.md",
+    "plugins/immune-brain/dist/role-prompts/review-verifier.md",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/runtime/assurance/review_mediation.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/prompts/code-review.md",
+    "plugins/immune-brain/runtime/prompts/review-verifier.md",
+    "plugins/immune-brain/runtime/role_prompt_bridge.ts",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "tests/cli-review-dispatch.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

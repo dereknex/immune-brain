@@ -301,19 +301,22 @@ test("review profile keys: absent keys default to null and the executor keys are
 test("chooseReviewer returns the resolved review profile", () => {
 	const f = fixture();
 	f.project({ lanes: { review_host: "pi", review_model: "m", review_effort: "high" } });
-	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", model: "m", effort: "high" });
+	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", model: "m", effort: "high", transport: "process" });
 	f.project({ lanes: { review_host: "antigravity" } });
 	const bare = chooseReviewer(f.read().lanes);
-	expect(bare).toEqual({ host: "antigravity" });
+	expect(bare).toEqual({ host: "antigravity", transport: "process" });
 	expect("model" in bare!).toBe(false);
 	expect("effort" in bare!).toBe(false);
+	// The transport travels with the profile, so Review dispatch reads it from one place (D3).
+	f.project({ lanes: { review_host: "pi", review_transport: "herdr" } });
+	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", transport: "herdr" });
 });
 
 test("chooseReviewer ignores the executor values and allows the same model", () => {
 	const f = fixture();
 	f.project({ lanes: { executor_host: "pi", executor_model: "x", review_host: "pi", review_model: "x" } });
 	const c = f.read();
-	expect(chooseReviewer(c.lanes)).toEqual({ host: "pi", model: "x" });
+	expect(chooseReviewer(c.lanes)).toEqual({ host: "pi", model: "x", transport: "process" });
 	expect(c.diagnostics.filter(d => d.code === "not_applied")).toEqual([]);
 });
 

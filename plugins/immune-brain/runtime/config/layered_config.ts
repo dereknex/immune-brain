@@ -9,7 +9,17 @@ import { projectIdentity } from "./project_identity.ts";
 
 type Obj = Record<string, any>;
 type ResolvedLeaf = { value: unknown; source: string };
-export type ReviewProfile = { host: "pi" | "claude-code" | "antigravity"; model?: string; effort?: string };
+/**
+ * Where a reserved Review or Verification round runs: one CLI process, or an
+ * explicit supervised session the Parent launches (Spec explicit-port-review-session D3).
+ */
+export type ReviewTransport = "process" | "herdr";
+export type ReviewProfile = {
+	host: "pi" | "claude-code" | "antigravity";
+	model?: string;
+	effort?: string;
+	transport?: ReviewTransport;
+};
 type Diagnostic = { code: string; severity: "error" | "warning"; file: string; key_path: string; message: string };
 const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const leaf = (value: unknown, source: string) => ({ value, source });
@@ -20,11 +30,15 @@ const envName = /^[A-Z_][A-Z0-9_]*$/;
 /** Defaults of the Lane keys that have one; every other key defaults to null. */
 const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
 
-export function chooseReviewer(lanes: { review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf }): ReviewProfile | null {
+export function chooseReviewer(lanes: {
+	review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf;
+	review_transport?: ResolvedLeaf;
+}): ReviewProfile | null {
 	const host = lanes.review_host.value as ReviewProfile["host"] | null;
 	if (!host) return null;
 	const model = lanes.review_model.value as string | null, effort = lanes.review_effort.value as string | null;
-	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+	const transport = lanes.review_transport?.value as ReviewTransport | null | undefined;
+	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(transport ? { transport } : {}) };
 }
 
 export const LOOP_MODES = ["off", "observe", "assist", "autonomous"] as const;

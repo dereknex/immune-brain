@@ -157,14 +157,21 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    process in the task's working directory with the profile it names
    (`review_profile`). Never dispatch the authority Review as an Agent, and do
    not replace this snapshot-bound reviewer with a generic role dispatch. The
-   Parent cannot issue its own QA or Review pass. A `review_preparation_failed`
+   Parent cannot issue its own QA or Review pass. A `review_session` replaces
+   the command pair: run its `create_command` once, keep the `handle` its JSON
+   prints, `await` that handle once, then call `submit_review`. The session
+   writes the strict JSON verdict to its out-of-tree `output_path`, so the
+   receipt is a file, never terminal text, and `submit_review` is never polled.
+   Run `stop_command` with the same handle only after `submit_review` consumed a
+   valid receipt; after any failure the tab stays open for inspection. A `review_preparation_failed`
    result with `review_profile_required` means no `lanes.review_host` resolves:
    set it in the active user lane profile or in `.imm/config.json`, then call
    `advance_assurance`; QA settlement is retained. On `verification_ready`
    with a `verification_command`, run it exactly as `review_command` (your own
    shell, in the background when the shell tool would otherwise time out), then
    call `submit_verification` without a result; a `verification result pending`
-   answer means it has not exited yet. Without one, invoke its exact
+   answer means it has not exited yet. A `verification_session` runs the same
+   create, await, submit and stop sequence. Without one, invoke its exact
    `agent_params` as one foreground verifier, then call `submit_verification`
    without a result to use the Host-observed receipt.
    Follow a returned `review_ready` or `awaiting_user` through the same loop.
@@ -359,14 +366,21 @@ reviewer in the task's working directory, invoking the packaged
 `authority-review` skill on that packet. The packet names the review contract
 hash; the skill compares it with its own and answers
 `REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
-install carries different rules. The process writes its output under a temporary
+install carries different rules — in a session that line is the whole content of
+the out-of-tree `output_path`, so the round ends instead of waiting. The process writes its output under a temporary
 name and its exit status last, so a present exit file marks a complete output.
-With `lanes.review_transport: herdr` the returned `review_command` instead runs
-that same script through `imm-session run --provider herdr` in a new Herdr tab
-the user can watch (#426 S4); it still exits once the script has, and the
-output and exit files remain the only result. Outside Herdr that setting makes
-Review preparation fail with `review_transport_unavailable` and its recovery
-action; it never falls back to a hidden process.
+With `lanes.review_transport: herdr` the round is an explicit supervised session
+instead (`review_session`): `create_command` opens one interactive Code Agent in
+a tab the user can watch, `await_command` waits once for it, and the agent
+writes the strict JSON verdict or verification to the reservation's out-of-tree
+`output_path` with the write allowlist that path alone carries. Terminal text is
+never a receipt, and the same tree guard covers the interactive session. Outside
+Herdr that setting makes Review preparation fail with
+`review_transport_unavailable` and its recovery action; it never falls back to a
+hidden process. `stop_command` closes the single round once the Kernel consumed a
+valid receipt into a pass, a rework, `verification_ready` or `awaiting_user`; a
+failed round, a contract mismatch, a changed tree or a non-JSON output keeps the
+tab open and runs no stop.
 Releasing the reservation removes the packet, the script and the output with the
 evidence directory; the manifest bytes remain unchanged. A finished review
 releases its reservation without a Review round when the process exits non-zero

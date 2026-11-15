@@ -282,7 +282,7 @@ export async function advancePiTask(root: string, taskId: string): Promise<any> 
 	if (result.state === "completed") return { state: "completed", ...facts };
 	if (result.state === "stopped") return { state: "stopped", ...facts };
 	if (result.state === "rework") return { state: "rework", operation: (result as any).operation, summary: (result as any).summary, ...facts };
-	if (result.state === "review_ready") return { state: "review_ready", operation_id: (result as any).operation_id, agent_params: (result as any).agent_params, review_command: (result as any).review_command, review_profile: (result as any).review_profile, ...facts };
+	if (result.state === "review_ready") return { state: "review_ready", operation_id: (result as any).operation_id, agent_params: (result as any).agent_params, review_command: (result as any).review_command, review_session: (result as any).review_session, review_profile: (result as any).review_profile, ...facts };
 	if (result.state === "review_preparation_failed") return { state: result.state, operation: (result as any).operation, operation_id: (result as any).operation_id, reason: (result as any).reason, code: (result as any).code, recovery_action: (result as any).recovery_action, ...facts };
 	if (result.state === "blocked") return { state: "blocked", reason: (result as any).reason, ...facts };
 	return { state: "failed", reason: (result as { reason?: string }).reason ?? "advance failed", ...facts };
@@ -1704,8 +1704,12 @@ function nextActionForAssuranceResult(result: Record<string, unknown>, taskState
 	if (result.code === "verdict_invalid") return "fix the verdict payload and resubmit submit_review; the Review reservation remains active; do not re-dispatch the reviewer";
 	if (taskState.lifecycle === "done" || taskState.lifecycle === "stopped") return "none";
 	switch (result.state) {
-		case "review_ready": return typeof (result as { review_command?: unknown }).review_command === "string" ? "run review_command in your shell, then submit_review" : "invoke the foreground reviewer and submit its verdict";
-		case "verification_ready": return "run the verification_command (or invoke the reserved foreground verifier) and submit_verification";
+		case "review_ready": return typeof (result as { review_session?: unknown }).review_session === "object"
+			? "run review_session.create_command, await its handle, then submit_review"
+			: typeof (result as { review_command?: unknown }).review_command === "string" ? "run review_command in your shell, then submit_review" : "invoke the foreground reviewer and submit its verdict";
+		case "verification_ready": return typeof (result as { verification_session?: unknown }).verification_session === "object"
+			? "run verification_session.create_command, await its handle, then submit_verification"
+			: "run the verification_command (or invoke the reserved foreground verifier) and submit_verification";
 		case "awaiting_user": return "request_authorization";
 		case "applied": return taskState.completion_ready ? "complete task" : taskState.next_obligation;
 		case "completed":

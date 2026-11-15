@@ -59,7 +59,7 @@ export function generateAuthorityReviewSkill(root: string): string {
 		rolePrompt,
 		...STATIC_REVIEW_RULES,
 		`Review contract hash: ${hash}`,
-		`The packet's first line reads \`review_contract_hash: <hash>\`. Compare it with ${hash} before reading any other line. If it differs, reply with exactly \`REVIEW_CONTRACT_MISMATCH ${hash}\` and stop; your install carries different review instructions than the Host that bound this Review.`,
+		`The packet's first line reads \`review_contract_hash: <hash>\`. Compare it with ${hash} before reading any other line. If it differs, answer with exactly \`REVIEW_CONTRACT_MISMATCH ${hash}\` and stop — as the reply, or as the whole content of the reservation's \`output_path\` when one is named; your install carries different review instructions than the Host that bound this Review.`,
 		"The packet states the Review turn budget and the verdict shapes. Return exactly one JSON object, never prose around it; if coverage cannot finish inside the turn budget, return the incomplete shape instead of a coverage finding.",
 		"",
 	].join("\n\n");
