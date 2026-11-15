@@ -12,8 +12,6 @@ const EXPECTED_REPOINTS: Record<string, Record<string, string>> = {
 		buildLoopRoleDispatch: "loop_contract.ts",
 		INTERNAL_ROLE_PROMPTS: "role_prompt_bridge.ts",
 		loadRolePrompt: "role_prompt_bridge.ts",
-		normalizeAdvisoryReviewerOutput: "loop_contract.ts",
-		normalizeArchitectureExplorerOutput: "loop_contract.ts",
 		resolveLoopRoute: "loop_contract.ts",
 		InternalRole: "role_prompt_bridge.ts",
 	},

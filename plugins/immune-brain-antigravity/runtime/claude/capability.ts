@@ -30,17 +30,6 @@ export function compareSemver(left: string, right: string): number {
 	return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 
-export function parsePermissionMode(raw: unknown): PermissionMode | null {
-	if (
-		raw === "manual"
-		|| raw === "acceptEdits"
-		|| raw === "auto"
-		|| raw === "bypassPermissions"
-		|| raw === "dontAsk"
-	) return raw;
-	return null;
-}
-
 /**
  * Trusted version sources, in priority order: the MCP handshake clientInfo
  * version announced by the connected Host (hostVersion), then the explicit
