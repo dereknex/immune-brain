@@ -1,0 +1,334 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s1-agent-config",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s1-agent-config",
+    "goal": "Unify Host profile selection for every agent role into agents.{profiles, presets, active} with an implicit default preset, keep legacy lanes configuration readable with deprecation diagnostics, and route Lane executor, Review and advisory consumers through one role resolver, per D1 of docs/specs/loop-agent-scheduling.spec.md.",
+    "acceptance": [
+      {
+        "id": "S1-AC1",
+        "assertion": "Source BR-DEC-2, BR-DEC-3, BR-DEC-9; meet D1 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts and tests/layered-config.test.ts over resolveConfig and imm-kernel config --json. Done looks like: with the BR-DEC-3 fixture, imm-kernel config --json lists every role (executor, code-review, review-verifier, advisory-reviewer, judging, clarify, plan, repair) with host, model, effort, transport, preset and layer, following the lookup order active roles[r], default roles[r], active roles[*], default roles[*]. Negative: a preset naming an unknown profile reports unknown_profile; active naming a missing preset reports unknown_preset; a default preset without '*' reports preset_incomplete; review-verifier bound to a host other than code-review's reports review_verifier_host_mismatch; profiles or presets in the project file report config_invalid; each error falls the agents section back to legacy or built-in resolution. Bound: max_parallel 0 and 9 are rejected, 1 and 8 accepted.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC2",
+        "assertion": "Source BR-DEC-5; meet D1 legacy mapping in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts over resolveConfig. Done looks like: a user file with only lanes.profiles and lanes.active resolves executor, code-review and max_parallel to the same values as before plus a deprecated_config_source diagnostic. Negative: a layer holding both agents and lanes uses agents and reports legacy_source_ignored. Bound: with neither agents nor lanes every role resolves unset and Lane executor selection still falls back to the Parent Host.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S1-AC3",
+        "assertion": "Source repository evidence unattended/batch_runner.ts:228 and assurance/cli_review.ts:307,353,360,422; meet D1 consumer list in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts and tests/cli-review-dispatch.test.ts. Done looks like: laneExecutorChoice, the batch Review profile, the Review transport and the review-verifier model read the resolved roles, and a request that names a preset overrides active for that batch. Negative: a resolved executor role never mixes host from one layer with model from another.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s1-agent-config.md",
+      "docs/adr/0034-layered-configuration.md",
+      "docs/plans/loop-sched-s1-agent-config.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/reference/subagent-dispatch-protocol.md",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/config/agent_roles.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/v4_runtime.ts",
+      "tests/agent-roles-config.test.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/layered-config.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s1-agent-config.intent.json",
+    "content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+  "git_base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+  "attestations": [
+    {
+      "id": "approval-qa-b588d0e8",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+      "diff_hash": "sha256:183b15cf7b4ee6087ed9f91689bb0389845dc0227b748916874015005022c946",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:a13fb92ee816001bce97c9ee5297f96045fdbec7a512057f7384b78c931adf93",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a13fb92ee816001bce97c9ee5297f96045fdbec7a512057f7384b78c931adf93"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a13fb92ee816001bce97c9ee5297f96045fdbec7a512057f7384b78c931adf93"
+        },
+        {
+          "acceptance_id": "S1-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:a13fb92ee816001bce97c9ee5297f96045fdbec7a512057f7384b78c931adf93"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-0c0cd416",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+      "diff_hash": "sha256:50c5acbe934692194cb22ec5169591e41795b40e4c742081131eed82d389b5b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:ef31f69b78cac89cdcce0aa73dc65fa9e2d706b1c4e1ac9bf35b17602a21350c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ef31f69b78cac89cdcce0aa73dc65fa9e2d706b1c4e1ac9bf35b17602a21350c"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ef31f69b78cac89cdcce0aa73dc65fa9e2d706b1c4e1ac9bf35b17602a21350c"
+        },
+        {
+          "acceptance_id": "S1-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ef31f69b78cac89cdcce0aa73dc65fa9e2d706b1c4e1ac9bf35b17602a21350c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2931b2be",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+      "diff_hash": "sha256:6def7bb89a65cc062caf41ccdb945f2f703c10033310f0ddd1843c799d7c3387",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:ee8cc0dd82a7a0a5cb3b293ae78660ce371b36be330ae81a5a8ba38286f37de0",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ee8cc0dd82a7a0a5cb3b293ae78660ce371b36be330ae81a5a8ba38286f37de0"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ee8cc0dd82a7a0a5cb3b293ae78660ce371b36be330ae81a5a8ba38286f37de0"
+        },
+        {
+          "acceptance_id": "S1-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:ee8cc0dd82a7a0a5cb3b293ae78660ce371b36be330ae81a5a8ba38286f37de0"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-2c4d5eb3",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+      "diff_hash": "sha256:18d14c654007b7ad5a0f95480e3538f7adb0d36fb58305d85e9f90f10a16f85c",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:bf7254386fc4b02611c450c07de67fa43577ef7b0c97a119a7fe22506f507cac",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S1-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf7254386fc4b02611c450c07de67fa43577ef7b0c97a119a7fe22506f507cac"
+        },
+        {
+          "acceptance_id": "S1-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf7254386fc4b02611c450c07de67fa43577ef7b0c97a119a7fe22506f507cac"
+        },
+        {
+          "acceptance_id": "S1-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:bf7254386fc4b02611c450c07de67fa43577ef7b0c97a119a7fe22506f507cac"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6bd10956",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ac3049de18edfa73feac8b64232f106e1989caa36ce1b79e4797c4f50cae0018",
+      "diff_hash": "sha256:18d14c654007b7ad5a0f95480e3538f7adb0d36fb58305d85e9f90f10a16f85c",
+      "actor_id": "cli:claude-code:c68d78fd-9edc-4d3f-940c-9dd3b28d637c",
+      "summary": "Provenance verified (commit 6ad4aa72 has single parent 1e6d3308 and tree b8aab157). The agents role table follows the D1 lookup order, error codes and section fallback. The legacy lanes mapping matches the previous executor, review, verifier, transport and max_parallel resolution. laneExecutorChoice, the CLI Review profile and transport, and the verifier model read the resolved roles, and chooseExecutor keeps host and model from one layer. The two bundles and the docs mirror the source. Blast radius medium: central config resolver layered_config.ts plus the new agent_roles.ts, the cli_review and batch_runner consumers, and the effective_config JSON gaining an agents section; nothing new is persisted.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+        "review_commit": "6ad4aa726d60ff1db6cbad87da07a21646efebf5",
+        "review_tree": "b8aab157dd80aa2a43a9ae8e19977c2591065533",
+        "manifest_digest": "sha256:cd3dae22b73592ead3bc8610d99d8809cc7d28cf222ced8d3157ef6ce93546b7"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-4732b413f2a6-1-review-1",
+          "acceptance_id": "S1-AC3",
+          "summary": "The preset parameter of agentRole is called only from tests. start_unattended_batch (host-core/mcp_runtime.ts:440-472, read because it is the request path the acceptance names) still takes only flat executor_* and review_* arguments, so a request naming a preset overrides active only if the Parent resolves that preset itself.",
+          "anchor": "sha256:16b0cc79311a663dc20dee9a38bd8078b43a1ad798537bd1b0dc8d6d4748ec13",
+          "evidence": {
+            "trigger": "Batch request naming preset 'review' while agents.active is 'local' → no runtime path passes the preset to agentRole; Lane executor and Review use the 'local' roles unless the Parent turns the preset into flat executor_host and review_host arguments",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:callTool start_unattended_batch",
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:laneExecutorChoice",
+              "plugins/immune-brain/runtime/config/agent_roles.ts:agentRole"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC3"
+            }
+          }
+        },
+        {
+          "id": "review-4732b413f2a6-2-review-2",
+          "acceptance_id": "S1-AC2",
+          "summary": "In the legacy mapping, a user Lane profile named 'project' overwrites the synthesized project-flat preset. With lanes.active unset, executor then resolves from that user profile; before this change it resolved from project flat lanes.",
+          "anchor": "sha256:13e3a3b822676e65c88f143a99638ba35853a37b0f780c0468898223604a3e06",
+          "evidence": {
+            "trigger": "User lanes.profiles {project: {executor_host: antigravity}} with no lanes.active, and project lanes {executor_host: pi} → agents.roles.executor.host becomes antigravity; before it was pi",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig laneTable",
+              "plugins/immune-brain/runtime/config/agent_roles.ts:resolveTable",
+              "plugins/immune-brain/runtime/unattended/batch_runner.ts:laneExecutorChoice"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-4732b413f2a6-3-review-3",
+          "acceptance_id": "S1-AC1",
+          "summary": "Two errors report config_invalid without falling the agents section back: an unknown key under projects.<key>.agents, and a non-object project agents value. Both are flagged by validKeys or section into failed('agents'), which resolveAgentRoles never reads, so agents.valid stays true.",
+          "anchor": "sha256:089af4b1001ef29da41de4cfc1057deab4f80b8a0efce5695bdeeaf35047e9d8",
+          "evidence": {
+            "trigger": "User file projects.<key>.agents {active: 'x', profiles: {}} → config_invalid error emitted, but agents.valid is true and roles still resolve from the user table",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/config/layered_config.ts:resolveConfig overrideAgents validKeys",
+              "plugins/immune-brain/runtime/config/agent_roles.ts:resolveAgentRoles"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S1-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:cbb78599af5977df54d0b65cb213f6ec0fe8cdd75cd36e827fd5d24c0f879b70"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s1-agent-config:2026-11-15T04:09:51.595Z",
+      "at": "2026-11-15T04:09:51.595Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s1-agent-config.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s1-agent-config:2026-11-15T04:10:21.628Z",
+      "at": "2026-11-15T04:10:21.628Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b588d0e8\naction_v2_sha256:17008e5ff458d88046f431b586353d265264448c3820fc969f46af4d7bb1aa07",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:10:21.629Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s1-agent-config:2026-11-15T04:19:46.685Z",
+      "at": "2026-11-15T04:19:46.685Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0c0cd416\naction_v2_sha256:9883e873a9273d2a44198b49759092309a9d2a45e0e850892a48bf695c5ad38a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:19:46.686Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s1-agent-config:2026-11-15T04:27:16.918Z",
+      "at": "2026-11-15T04:27:16.918Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2931b2be\naction_v2_sha256:88607d5ac3f6517509f73c4d9d0a757b0ea53959a15add2d81b3aa823c7a8e0a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:27:16.918Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s1-agent-config:2026-11-15T04:33:42.212Z",
+      "at": "2026-11-15T04:33:42.212Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2c4d5eb3\naction_v2_sha256:d834839fce8487d2298160babcf51a18cda2d88425427088d86755435cd272c6",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:33:42.213Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s1-agent-config:2026-11-15T04:37:33.125Z",
+      "at": "2026-11-15T04:37:33.125Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6bd10956\naction_v2_sha256:8bc1caf2216217298a9df60321b55c48701ce649211282c5a8c53092426cde6c",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:c68d78fd-9edc-4d3f-940c-9dd3b28d637c",
+        "confirmation_ref": "pi:cli:claude-code:c68d78fd-9edc-4d3f-940c-9dd3b28d637c",
+        "issued_at": "2026-11-15T04:37:33.125Z"
+      },
+      "review_started_at": "2026-11-15T04:33:46.618Z",
+      "review_submitted_at": "2026-11-15T04:37:31.875Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s1-agent-config:2026-11-15T04:37:36.932Z",
+      "at": "2026-11-15T04:37:36.932Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:385573bb473d7cb380981aacf20812544cd31339311bbff0d6ce945d34a8a5c6"
+    }
+  ]
+}

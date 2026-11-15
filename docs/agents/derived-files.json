@@ -130,6 +130,7 @@
         "plugins/immune-brain-antigravity/runtime/claude/role_agents.ts",
         "plugins/immune-brain-antigravity/runtime/claude/run_continuation.ts",
         "plugins/immune-brain-antigravity/runtime/commands/kernel.ts",
+        "plugins/immune-brain-antigravity/runtime/config/agent_roles.ts",
         "plugins/immune-brain-antigravity/runtime/config/layered_config.ts",
         "plugins/immune-brain-antigravity/runtime/config/project_identity.ts",
         "plugins/immune-brain-antigravity/runtime/decision_model/config.ts",

@@ -9624,6 +9624,225 @@ var init_delivery_workspace = __esm(() => {
   GIT_OBJECT_ID4 = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 });
 
+// plugins/immune-brain/runtime/config/agent_roles.ts
+function readTable(agents, file, errors) {
+  const err = (code, key_path, message) => errors.push({ code, file, key_path, message });
+  for (const key of Object.keys(agents))
+    if (!["profiles", "presets", "active"].includes(key))
+      err("config_invalid", `agents.${key}`, "unknown key");
+  const profiles = {};
+  if (agents.profiles !== undefined) {
+    if (!isObject2(agents.profiles))
+      err("config_invalid", "agents.profiles", "expected object");
+    else
+      for (const [name, value] of Object.entries(agents.profiles)) {
+        const path = `agents.profiles.${name}`;
+        if (!isObject2(value)) {
+          err("config_invalid", path, "expected object");
+          continue;
+        }
+        for (const key of Object.keys(value))
+          if (!PROFILE_KEYS.includes(key))
+            err("config_invalid", `${path}.${key}`, "unknown key");
+        if (!AGENT_HOSTS.includes(value.host)) {
+          err("config_invalid", `${path}.host`, `expected ${AGENT_HOSTS.join(", ")}`);
+          continue;
+        }
+        if (value.model !== undefined && !text(value.model)) {
+          err("config_invalid", `${path}.model`, "expected a non-empty string");
+          continue;
+        }
+        if (value.effort !== undefined && !text(value.effort)) {
+          err("config_invalid", `${path}.effort`, "expected a non-empty string");
+          continue;
+        }
+        if (value.transport !== undefined && !AGENT_TRANSPORTS.includes(value.transport)) {
+          err("config_invalid", `${path}.transport`, `expected ${AGENT_TRANSPORTS.join(", ")}`);
+          continue;
+        }
+        profiles[name] = { host: value.host, ...value.model ? { model: value.model } : {}, ...value.effort ? { effort: value.effort } : {}, ...value.transport ? { transport: value.transport } : {} };
+      }
+  }
+  const presets = {};
+  if (agents.presets !== undefined) {
+    if (!isObject2(agents.presets))
+      err("config_invalid", "agents.presets", "expected object");
+    else
+      for (const [name, value] of Object.entries(agents.presets)) {
+        const path = `agents.presets.${name}`;
+        if (!isObject2(value)) {
+          err("config_invalid", path, "expected object");
+          continue;
+        }
+        for (const key of Object.keys(value))
+          if (!PRESET_KEYS.includes(key))
+            err("config_invalid", `${path}.${key}`, "unknown key");
+        if (value.max_parallel !== undefined && !(Number.isSafeInteger(value.max_parallel) && value.max_parallel >= AGENT_MAX_PARALLEL.min && value.max_parallel <= AGENT_MAX_PARALLEL.max)) {
+          err("config_invalid", `${path}.max_parallel`, `expected an integer between ${AGENT_MAX_PARALLEL.min} and ${AGENT_MAX_PARALLEL.max}`);
+          continue;
+        }
+        const roles = {};
+        let ok = true;
+        if (value.roles !== undefined) {
+          if (!isObject2(value.roles)) {
+            err("config_invalid", `${path}.roles`, "expected object");
+            ok = false;
+          } else
+            for (const [role, profile] of Object.entries(value.roles)) {
+              if (role !== "*" && !AGENT_ROLES.includes(role)) {
+                err("config_invalid", `${path}.roles.${role}`, `expected one of ${[...AGENT_ROLES, "*"].join(", ")}`);
+                ok = false;
+                continue;
+              }
+              if (!text(profile)) {
+                err("config_invalid", `${path}.roles.${role}`, "expected a profile name");
+                ok = false;
+                continue;
+              }
+              roles[role] = profile;
+            }
+        }
+        if (ok)
+          presets[name] = { ...value.max_parallel !== undefined ? { max_parallel: value.max_parallel } : {}, ...Object.keys(roles).length ? { roles } : {} };
+      }
+  }
+  let active;
+  if (agents.active !== undefined) {
+    if (text(agents.active))
+      active = agents.active;
+    else
+      err("config_invalid", "agents.active", "expected preset name");
+  }
+  return { table: { profiles, presets, active: { value: active ?? "default", source: active ? "user" : "default" }, layer: "user" }, present: Object.keys(agents).length > 0 };
+}
+function resolveTable(table, options) {
+  const errors = [];
+  const file = options.file;
+  const err = (code, key_path, message) => {
+    if (options.strict && file)
+      errors.push({ code, file, key_path, message });
+  };
+  const preset = (name) => Object.hasOwn(table.presets, name) ? table.presets[name] : undefined;
+  const fallbackName = table.default_preset === undefined ? "default" : table.default_preset;
+  const activePreset = preset(table.active.value), defaultPreset = fallbackName === null ? undefined : preset(fallbackName);
+  if (table.active.source !== "default" && !activePreset)
+    err("unknown_preset", "agents.active", "unknown preset");
+  if (defaultPreset && fallbackName === "default" && !text(defaultPreset.roles?.["*"]))
+    err("preset_incomplete", "agents.presets.default.roles", 'a default preset must bind "*"');
+  const rolesOf = (p) => p && isObject2(p.roles) ? p.roles : {};
+  const roles = unsetRoles();
+  for (const role of AGENT_ROLES) {
+    const fallback = fallbackName ?? "";
+    const order = [[table.active.value, activePreset, role], [fallback, defaultPreset, role], [table.active.value, activePreset, "*"], [fallback, defaultPreset, "*"]];
+    let pick;
+    for (const [name, item, key] of order) {
+      const profile = rolesOf(item)[key];
+      if (text(profile)) {
+        pick = { preset: name, profile, key };
+        break;
+      }
+    }
+    if (!pick)
+      continue;
+    const profile = Object.hasOwn(table.profiles, pick.profile) ? table.profiles[pick.profile] : undefined;
+    if (!profile) {
+      err("unknown_profile", `agents.presets.${pick.preset}.roles.${pick.key}`, `unknown profile ${pick.profile}`);
+      continue;
+    }
+    const transport = profile.transport ?? ROLE_TRANSPORTS[role][0];
+    if (!ROLE_TRANSPORTS[role].includes(transport))
+      err("transport_invalid_for_role", `agents.profiles.${pick.profile}.transport`, `${role} runs only on ${ROLE_TRANSPORTS[role].join(" or ")}`);
+    roles[role] = { host: profile.host ?? null, model: profile.model ?? null, effort: profile.effort ?? null, transport, preset: pick.preset, layer: table.layer };
+  }
+  const review = roles["code-review"], verifier = roles["review-verifier"];
+  if (review.host && verifier.host && review.host !== verifier.host)
+    err("review_verifier_host_mismatch", `agents.presets.${verifier.preset}.roles.review-verifier`, `review-verifier must run on code-review's host ${review.host}`);
+  const maxOf = (p) => typeof p?.max_parallel === "number" ? p.max_parallel : undefined;
+  const activeMax = maxOf(activePreset), defaultMax = maxOf(defaultPreset);
+  const projectMax = typeof options.projectMaxParallel === "number" ? options.projectMaxParallel : undefined;
+  const max_parallel = activeMax !== undefined ? { value: activeMax, source: table.active.source } : defaultMax !== undefined ? { value: defaultMax, source: "default" } : projectMax !== undefined ? { value: projectMax, source: "project" } : { value: AGENT_MAX_PARALLEL.default, source: "default" };
+  return { roles, max_parallel, errors };
+}
+function validateRefs(table, file, errors) {
+  for (const [preset, value] of Object.entries(table.presets))
+    for (const [role, profile] of Object.entries(value.roles ?? {}))
+      if (!Object.hasOwn(table.profiles, profile))
+        errors.push({ code: "unknown_profile", file, key_path: `agents.presets.${preset}.roles.${role}`, message: `unknown profile ${profile}` });
+}
+function agentRole(agents, role, preset) {
+  const resolved = preset === undefined || preset === agents.active.value ? agents.roles[role] : resolveTable({
+    profiles: agents.profiles.value,
+    presets: agents.presets.value,
+    active: { value: preset, source: "request" },
+    layer: "request",
+    ...agents.source.value === "legacy" ? { default_preset: null } : {}
+  }, { strict: false }).roles[role];
+  return resolved !== undefined && resolved.preset !== null ? resolved : null;
+}
+function resolveAgentRoles(layers) {
+  const errors = [];
+  const read = layers.user === null ? null : readTable(layers.user, layers.file.user, errors);
+  if (layers.user === null)
+    errors.push({ code: "config_invalid", file: layers.file.user, key_path: "agents", message: "the user file is unreadable" });
+  for (const key of Object.keys(layers.project))
+    if (key !== "active")
+      errors.push({ code: "config_invalid", file: layers.file.project, key_path: `agents.${key}`, message: "only `active` may be set in the project file" });
+  const name = (value, file, key_path) => {
+    if (value === undefined)
+      return;
+    if (text(value))
+      return value;
+    errors.push({ code: "config_invalid", file, key_path, message: "expected preset name" });
+    return;
+  };
+  const overrideActive = name(layers.override.active, layers.file.override, "agents.active");
+  const projectActive = name(layers.project.active, layers.file.project, "agents.active");
+  const configured = read?.present ? {
+    profiles: read.table.profiles,
+    presets: read.table.presets,
+    active: overrideActive ? { value: overrideActive, source: "user:project" } : projectActive ? { value: projectActive, source: "project" } : read.table.active,
+    layer: "user"
+  } : null;
+  if (configured) {
+    validateRefs(configured, layers.file.user, errors);
+    errors.push(...resolveTable(configured, { strict: true, file: layers.file.user, projectMaxParallel: layers.projectMaxParallel }).errors);
+  }
+  const table = configured && errors.length === 0 ? configured : layers.legacy;
+  const resolved = table ? resolveTable(table, { strict: false, projectMaxParallel: layers.projectMaxParallel }) : null;
+  const maxOf = typeof layers.projectMaxParallel === "number" ? { value: layers.projectMaxParallel, source: "project" } : { value: AGENT_MAX_PARALLEL.default, source: "default" };
+  return {
+    agents: {
+      valid: errors.length === 0,
+      source: { value: table === null ? "default" : table === configured ? "agents" : "legacy", source: table?.layer ?? "default" },
+      active: table?.active ?? { value: "default", source: "default" },
+      profiles: { value: table?.profiles ?? {}, source: table?.layer ?? "default" },
+      presets: { value: table?.presets ?? {}, source: table?.layer ?? "default" },
+      roles: resolved?.roles ?? unsetRoles(),
+      max_parallel: resolved?.max_parallel ?? maxOf
+    },
+    errors
+  };
+}
+var isObject2 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), AGENT_ROLES, AGENT_HOSTS, AGENT_TRANSPORTS, ROLE_TRANSPORTS, AGENT_MAX_PARALLEL, PROFILE_KEYS, PRESET_KEYS, text = (v) => typeof v === "string" && v.trim().length > 0, unsetRoles = () => Object.fromEntries(AGENT_ROLES.map((role) => [role, { host: null, model: null, effort: null, transport: null, preset: null, layer: "unset" }]));
+var init_agent_roles = __esm(() => {
+  AGENT_ROLES = ["executor", "code-review", "review-verifier", "advisory-reviewer", "judging", "clarify", "plan", "repair"];
+  AGENT_HOSTS = ["claude-code", "pi", "antigravity"];
+  AGENT_TRANSPORTS = ["process", "herdr", "subagent"];
+  ROLE_TRANSPORTS = {
+    executor: ["process", "herdr"],
+    "code-review": ["herdr"],
+    "review-verifier": ["herdr"],
+    "advisory-reviewer": ["subagent", "herdr"],
+    judging: ["process"],
+    clarify: ["process"],
+    plan: ["process"],
+    repair: ["process"]
+  };
+  AGENT_MAX_PARALLEL = { min: 1, max: 8, default: 1 };
+  PROFILE_KEYS = ["host", "model", "effort", "transport"];
+  PRESET_KEYS = ["max_parallel", "roles"];
+});
+
 // plugins/immune-brain/runtime/decision_model/thresholds.ts
 var A1_REVIEW_FINDING_PRESCREEN, A14_PR_COMMENT_TRIAGE, A15_ISSUE_TRIAGE, A14_AMBIGUOUS_USER_INTENT, A15_TASK_GRANULARITY, A16_REVISIT_CHAIN_CLASS, A4_FINDING_EQUIVALENCE, A17_REVIEW_FINDING_KIND, A18_EVENT_PREFILTER, A19_OWNER_COMMENT_INTENT, A20_ISSUE_DUPLICATE_PAIR, POINT_REGISTRY;
 var init_thresholds = __esm(() => {
@@ -9825,7 +10044,7 @@ var init_contract = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/decision_model/config.ts
-function isObject2(value) {
+function isObject3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function invalid(file, why) {
@@ -9839,7 +10058,7 @@ function unknownKey(obj, allowed) {
 }
 function parseBindings(raw, registry) {
   const file = BINDINGS_PATH;
-  if (!isObject2(raw))
+  if (!isObject3(raw))
     return invalid(file, "top level must be an object");
   const extra = unknownKey(raw, ["contract", "default_profile", "bindings", "egress"]);
   if (extra !== null)
@@ -9849,7 +10068,7 @@ function parseBindings(raw, registry) {
   const defaultProfile = raw.default_profile;
   if (defaultProfile !== null && !nonEmptyString2(defaultProfile))
     return invalid(file, "default_profile must be a profile name or null");
-  if (!isObject2(raw.bindings))
+  if (!isObject3(raw.bindings))
     return invalid(file, "bindings must be an object");
   const bindings = {};
   for (const [point, profile] of Object.entries(raw.bindings)) {
@@ -9859,7 +10078,7 @@ function parseBindings(raw, registry) {
       return invalid(file, `bindings.${point} must be a profile name or null`);
     bindings[point] = profile;
   }
-  if (!isObject2(raw.egress))
+  if (!isObject3(raw.egress))
     return invalid(file, "egress must be an object");
   const egress = {};
   for (const [kind, categories] of Object.entries(raw.egress)) {
@@ -9885,12 +10104,12 @@ function parseBindings(raw, registry) {
 }
 function parseProfiles(raw) {
   const file = LOCAL_CONFIG_PATH;
-  if (!isObject2(raw))
+  if (!isObject3(raw))
     return invalid(file, "top level must be an object");
   const extra = unknownKey(raw, ["profiles"]);
   if (extra !== null)
     return invalid(file, `unknown key "${extra}"`);
-  if (!isObject2(raw.profiles))
+  if (!isObject3(raw.profiles))
     return invalid(file, "profiles must be an object");
   const profiles = {};
   for (const [name, value] of Object.entries(raw.profiles)) {
@@ -9904,7 +10123,7 @@ function parseProfiles(raw) {
 function parseProfile(name, raw) {
   const file = LOCAL_CONFIG_PATH;
   const where = `profiles.${name}`;
-  if (!isObject2(raw))
+  if (!isObject3(raw))
     return invalid(file, `${where} must be an object`);
   if (!isProviderKind(raw.kind))
     return invalid(file, `${where}.kind is not a known provider kind`);
@@ -9977,7 +10196,7 @@ function parseJevProfile(where, raw) {
   return { ok: true, value: profile };
 }
 function parseProbabilityMap(value) {
-  if (!isObject2(value))
+  if (!isObject3(value))
     return null;
   const out = {};
   for (const [key, p] of Object.entries(value)) {
@@ -9992,7 +10211,7 @@ function parseFakeProfile(where, raw) {
   const extra = unknownKey(raw, ["kind", "answers", "default"]);
   if (extra !== null)
     return invalid(file, `${where}: unknown key "${extra}"`);
-  if (!isObject2(raw.answers))
+  if (!isObject3(raw.answers))
     return invalid(file, `${where}.answers must be an object`);
   const answers = {};
   for (const [trace, map] of Object.entries(raw.answers)) {
@@ -10056,14 +10275,6 @@ import { execFileSync as execFileSync7 } from "node:child_process";
 import { existsSync as existsSync8, readFileSync as readFileSync13 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute as isAbsolute6, join as join13 } from "node:path";
-function chooseReviewer(lanes) {
-  const host = lanes.review_host.value;
-  if (!host)
-    return null;
-  const model = lanes.review_model.value, effort = lanes.review_effort.value;
-  const transport = lanes.review_transport?.value;
-  return { host, ...model ? { model } : {}, ...effort ? { effort } : {}, ...transport ? { transport } : {} };
-}
 function resolveConfig(root, options = {}) {
   const registry = options.registry ?? POINT_REGISTRY;
   const diagnostics = [];
@@ -10134,9 +10345,9 @@ function resolveConfig(root, options = {}) {
     for (const s of ["decision_models", "lanes", "git_integration", "initiative_carrier", "batch", "loop", "review_verifier"])
       failed.add(s);
   if (user)
-    validKeys(user, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "projects"], userPath, "", "user_file");
+    validKeys(user, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "projects"], userPath, "", "user_file");
   if (project)
-    validKeys(project, ["contract", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
+    validKeys(project, ["contract", "agents", "decision_models", "lanes", "initiative_carrier", "git_integration", "batch", "loop", "review_verifier"], projectPath, "", "project_file");
   const projects = section(user?.projects, userPath, "projects", "user_file");
   for (const [key, value] of Object.entries(projects))
     if (!object3(value)) {
@@ -10144,7 +10355,10 @@ function resolveConfig(root, options = {}) {
       failed.add("user_file");
     }
   const override = section(projects[projectKey], userPath, `projects.${projectKey}`, "user_file");
-  validKeys(override, ["decision_models", "lanes", "initiative_carrier"], userPath, `projects.${projectKey}`, "user_file");
+  validKeys(override, ["agents", "decision_models", "lanes", "initiative_carrier"], userPath, `projects.${projectKey}`, "user_file");
+  const overrideAgents = section(override.agents, userPath, `projects.${projectKey}.agents`, "agents");
+  validKeys(overrideAgents, ["active"], userPath, `projects.${projectKey}.agents`, "agents");
+  const projectAgents = section(project?.agents, projectPath, "agents", "agents");
   const ud = section(user?.decision_models, userPath, "decision_models", "decision_models");
   const od = section(override.decision_models, userPath, `projects.${projectKey}.decision_models`, "decision_models");
   const pd = section(project?.decision_models, projectPath, "decision_models", "decision_models");
@@ -10265,7 +10479,11 @@ function resolveConfig(root, options = {}) {
     if (key === projectKey || !object3(entry))
       continue;
     const base = `projects.${key}`;
-    validKeys(entry, ["decision_models", "lanes", "initiative_carrier"], userPath, base, "user_file");
+    validKeys(entry, ["decision_models", "lanes", "initiative_carrier", "agents"], userPath, base, "user_file");
+    const entryAgents = section(entry.agents, userPath, `${base}.agents`, "agents");
+    validKeys(entryAgents, ["active"], userPath, `${base}.agents`, "agents");
+    if (has(entryAgents, "active") && (typeof entryAgents.active !== "string" || !entryAgents.active))
+      invalid(userPath, `${base}.agents.active`, "expected preset name");
     const decision = section(entry.decision_models, userPath, `${base}.decision_models`, "decision_models");
     validKeys(decision, ["default_profile", "bindings", "egress"], userPath, `${base}.decision_models`, "decision_models");
     validateDecision(decision, userPath, `${base}.decision_models`);
@@ -10396,6 +10614,71 @@ function resolveConfig(root, options = {}) {
     for (const key of laneKeys)
       lanes[key] = leaf(LANE_DEFAULTS[key] ?? null, "default");
   }
+  const laneTable = () => {
+    if (failed.has("lanes"))
+      return null;
+    const names = has(ul, "profiles") ? laneProfiles : object3(legacyLane.profiles) ? legacyLane.profiles : {};
+    const roleProfiles = {}, presets = {};
+    const laneRoles = (name, source) => {
+      const roles = {};
+      const bind = (role, profile) => {
+        if (profile) {
+          roleProfiles[`lanes.${name}.${role}`] = profile;
+          roles[role] = `lanes.${name}.${role}`;
+        }
+      };
+      const group = (kind) => {
+        const holder = typeof source[`${kind}_host`] === "string" && source[`${kind}_host`] ? source : pl;
+        const host = holder[`${kind}_host`];
+        if (typeof host !== "string" || !host)
+          return null;
+        return { holder, profile: { host, ...holder[`${kind}_model`] ? { model: holder[`${kind}_model`] } : {}, ...holder[`${kind}_effort`] ? { effort: holder[`${kind}_effort`] } : {} } };
+      };
+      const transportOf = (key) => source[key] !== undefined ? source[key] : pl[key];
+      const executor = group("executor"), review = group("review");
+      bind("executor", executor?.profile ?? null);
+      bind("repair", executor?.profile ?? null);
+      bind("code-review", review ? { ...review.profile, ...typeof transportOf("review_transport") === "string" && transportOf("review_transport") ? { transport: transportOf("review_transport") } : {} } : null);
+      if (review && review.holder.review_verifier_model)
+        bind("review-verifier", { host: review.profile.host, model: review.holder.review_verifier_model });
+      const reviewTransport = transportOf("review_transport"), advisory = transportOf("advisory_transport");
+      if (!review && typeof reviewTransport === "string" && reviewTransport)
+        bind("code-review", { transport: reviewTransport });
+      const advisoryHost = review?.profile.host ?? executor?.profile.host;
+      if (typeof advisory === "string" && advisory)
+        bind("advisory-reviewer", { ...advisoryHost ? { host: advisoryHost } : {}, transport: advisory });
+      return roles;
+    };
+    presets.project = { ...pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}, roles: laneRoles("project", {}) };
+    for (const [name, value] of Object.entries(names))
+      if (object3(value))
+        presets[name] = { ...value.max_parallel !== undefined ? { max_parallel: value.max_parallel } : pl.max_parallel !== undefined ? { max_parallel: pl.max_parallel } : {}, roles: laneRoles(name, value) };
+    if (!Object.values(presets).some((preset) => Object.keys(preset.roles ?? {}).length))
+      return null;
+    const layer = lanes.active.source !== "default" ? lanes.active.source : Object.keys(pl).length ? "project" : "user";
+    return { profiles: roleProfiles, presets, active: { value: lanes.active.value ?? "project", source: lanes.active.source }, layer, default_preset: null };
+  };
+  const agentLayers = resolveAgentRoles({
+    file: { user: userPath, project: projectPath, override: `projects.${projectKey}` },
+    user: user === null || failed.has("user_file") ? null : section(user.agents, userPath, "agents", "agents"),
+    project: projectAgents,
+    override: overrideAgents,
+    legacy: laneTable(),
+    projectMaxParallel: pl.max_parallel
+  });
+  for (const error of agentLayers.errors)
+    diag(error.code, "error", error.file, error.key_path, error.message);
+  const agents = agentLayers.agents;
+  const laneSources = [[ul, userPath], [ol, userPath], [pl, projectPath]];
+  if (agents.source.value === "agents") {
+    for (const [source, file] of laneSources)
+      if (Object.keys(source).length)
+        diag("legacy_source_ignored", "warning", file, "lanes", `ignored because \`agents\` sets the role table; its replacement is user \`agents\` in ${userPath}`);
+  } else if (agents.source.value === "legacy") {
+    const file = agents.source.source === "project" ? projectPath : agents.source.source.startsWith("legacy:") ? null : userPath;
+    if (file)
+      diag("deprecated_config_source", "warning", file, "lanes", `deprecated; move the role table to user \`agents\` in ${userPath}`);
+  }
   const defaultProfile = choose([od.default_profile, "user:project"], [ud.default_profile, "user"], [legacyBindings.default_profile ?? undefined, "legacy:.imm/decision-bindings.json"]);
   const bindings = {};
   for (const key of new Set([...Object.keys(legacyBindings.bindings ?? {}), ...Object.keys(ud.bindings ?? {}), ...Object.keys(od.bindings ?? {})]))
@@ -10449,10 +10732,11 @@ function resolveConfig(root, options = {}) {
   if (options.checkEnv)
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
   const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
-  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
+  return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, agents, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }
 var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, DEFAULT_LOOP_CONFIG;
 var init_layered_config = __esm(() => {
+  init_agent_roles();
   init_config();
   init_contract();
   init_thresholds();
@@ -18635,6 +18919,7 @@ async function superviseLane(supervisor, input) {
 init_batch_preflight();
 init_batch_state();
 init_layered_config();
+init_agent_roles();
 init_backend_claim();
 init_batch_plan();
 init_batch_git();
@@ -18755,9 +19040,9 @@ function laneExecutorChoice(root, preferences, parentHost) {
   const project = config.lanes.project_defaults.value;
   if (preferences?.executor_host)
     return chooseExecutor([preferences, project], parentHost);
-  const active = config.lanes.active.value;
-  const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-  return chooseExecutor([preferences ?? {}, profile, project], parentHost);
+  const role = agentRole(config.agents, "executor");
+  const resolved = role?.host ? { executor_host: role.host, ...role.model ? { executor_model: role.model } : {}, ...role.effort ? { executor_effort: role.effort } : {} } : {};
+  return chooseExecutor([preferences ?? {}, resolved, project], parentHost);
 }
 async function superviseSingle(input, report) {
   const options = input.supervision;
@@ -24033,6 +24318,7 @@ init_batch_plan();
 
 // plugins/immune-brain/runtime/assurance/cli_review.ts
 init_layered_config();
+init_agent_roles();
 init_plugin_source_skew();
 init_batch_state();
 init_role_prompt_bridge();
@@ -24138,12 +24424,13 @@ function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 function resolveReviewProfile(root) {
-  const lanes = resolveConfig(root).lanes;
   const batch = laneBatchReviewProfile(root);
-  if (!batch)
-    return chooseReviewer(lanes);
-  const transport = lanes.review_transport?.value;
-  return { ...batch, ...transport ? { transport } : {} };
+  if (batch)
+    return { ...batch, transport: "herdr" };
+  const role = agentRole(resolveConfig(root).agents, "code-review");
+  if (!role?.host)
+    return null;
+  return { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {}, transport: "herdr" };
 }
 function sessionSpec(runner, label, input) {
   const command = (verb, ...argv) => [runner, verb, "--provider", "herdr", ...argv].map(shellQuote).join(" ");
@@ -24372,7 +24659,7 @@ ${writeToOutput(output, true)}`,
       return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
     if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
-    const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value;
+    const verifierModel = agentRole(resolveConfig(reservation.root).agents, "review-verifier")?.model ?? null;
     return {
       ok: true,
       receipt: {

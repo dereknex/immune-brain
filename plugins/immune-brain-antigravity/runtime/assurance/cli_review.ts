@@ -16,12 +16,8 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-	chooseReviewer,
-	resolveConfig,
-	type ReviewProfile,
-	type ReviewTransport,
-} from "../config/layered_config";
+import { resolveConfig, type ReviewProfile } from "../config/layered_config";
+import { agentRole } from "../config/agent_roles";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneBatchReviewProfile } from "../unattended/batch_state";
 import { currentReviewContractHash } from "../role_prompt_bridge";
@@ -168,15 +164,15 @@ function shellQuote(value: string): string {
 
 /**
  * The Review profile this task's round runs on: the Lane batch's recorded host,
- * model and effort (#426 F14), carried with the layered transport setting every
- * round runs under (D3).
+ * model and effort (#426 F14), else the resolved `code-review` role (Spec
+ * loop-agent-scheduling D1). The only transport a round runs on is Herdr (D3).
  */
 export function resolveReviewProfile(root: string): ReviewProfile | null {
-	const lanes = resolveConfig(root).lanes as Parameters<typeof chooseReviewer>[0];
 	const batch = laneBatchReviewProfile(root);
-	if (!batch) return chooseReviewer(lanes);
-	const transport = lanes.review_transport?.value as ReviewTransport | null | undefined;
-	return { ...batch, ...(transport ? { transport } : {}) };
+	if (batch) return { ...batch, transport: "herdr" };
+	const role = agentRole(resolveConfig(root).agents, "code-review");
+	if (!role?.host) return null;
+	return { host: role.host, ...(role.model ? { model: role.model } : {}), ...(role.effort ? { effort: role.effort } : {}), transport: "herdr" };
 }
 
 /**
@@ -473,7 +469,7 @@ export class CliReviewHost implements AssuranceHostPort {
 			return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
 		// A configured verifier model is offered, so the verifier runs on a different
 		// model from the reviewer's whenever one is set (#284 D1).
-		const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value as string | null | undefined;
+		const verifierModel = agentRole(resolveConfig(reservation.root).agents, "review-verifier")?.model ?? null;
 		return {
 			ok: true,
 			receipt: {

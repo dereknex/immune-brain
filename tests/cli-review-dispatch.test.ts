@@ -74,6 +74,15 @@ function reviewRepo(reviewHost: "pi" | "claude-code" | "antigravity" | null = "p
 	return root;
 }
 
+/** An `agents` role table in the user file the resolver reads; returns its cleanup. */
+function homeAgents(agents: object): () => void {
+	const dir = join(process.env.XDG_CONFIG_HOME!, "immune-brain");
+	mkdirSync(dir, { recursive: true });
+	const path = join(dir, "config.json");
+	writeFileSync(path, JSON.stringify({ contract: "immune_brain/user_config/v1", agents }));
+	return () => rmSync(path, { force: true });
+}
+
 /** A reviewer stand-in under the Host binary name, first on PATH (no model call). */
 function fakeReviewer(body: string): string {
 	const dir = scratchDir("bin");
@@ -620,6 +629,22 @@ describe("verification CLI stage", () => {
 		writeFileSync(join(dirname(session.output_path), "session-await.json"), JSON.stringify({ ok: true, transition: "exited" }));
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null });
+	});
+
+	test("agents roles: the Review profile and the verifier model come from the resolved roles (S1-AC3)", async () => {
+		const root = reviewRepo(null);
+		const cleanup = homeAgents({
+			profiles: { review: { host: "pi", model: "agent-reviewer-m" }, verify: { host: "pi", model: "agent-verifier-m" }, other: { host: "pi" } },
+			presets: { default: { roles: { "*": "other", "code-review": "review", "review-verifier": "verify" } } },
+		});
+		try {
+			const { kernel, pending } = await reworkToVerification(root);
+			const session = pending.verification_session!;
+			expect(session.create_command).toContain("'--model' 'agent-verifier-m'");
+			writeFileSync(session.output_path, verificationJsonFor(session));
+			await kernel.coordinator.submitVerification(TASK, ctx(root));
+			expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "agent-reviewer-m", verifier_model: "agent-verifier-m", model_relation: "different" });
+		} finally { cleanup(); }
 	});
 
 	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {

@@ -327,6 +327,24 @@ test("chooseReviewer returns null without a review_host", () => {
 	expect(chooseReviewer(f.read().lanes)).toBeNull();
 });
 
+test("agents: the role table resolves beside the legacy lanes keys and fails only its own section", () => {
+	const f = fixture();
+	f.project({ lanes: { max_parallel: 2, review_host: "pi" } });
+	f.user({ agents: { profiles: { sonnet: { host: "claude-code", model: "sonnet-5-5" }, opus: { host: "claude-code", model: "opus-5-5", effort: "medium" } }, presets: { default: { roles: { "*": "sonnet", plan: "opus" } } } } });
+	let c = f.read();
+	expect(c.agents.valid).toBe(true);
+	expect(c.agents.roles.executor).toEqual({ host: "claude-code", model: "sonnet-5-5", effort: null, transport: "process", preset: "default", layer: "user" });
+	expect(c.agents.roles.plan).toMatchObject({ model: "opus-5-5", effort: "medium" });
+	expect(c.lanes.review_host).toEqual({ value: "pi", source: "project" });
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "legacy_source_ignored", file: ".imm/config.json", key_path: "lanes" }));
+
+	f.project({ lanes: { max_parallel: 2, review_host: "pi" }, agents: { profiles: { x: { host: "pi" } } } });
+	c = f.read();
+	expect(c.agents.valid).toBe(false);
+	expect(c.diagnostics).toContainEqual(expect.objectContaining({ code: "config_invalid", severity: "error", file: ".imm/config.json", key_path: "agents.profiles" }));
+	expect(c.lanes.valid).toBe(true);
+});
+
 test("preload isolates configuration and required ADRs and tracked project config exist", () => {
 	expect(realpathSync(process.env.XDG_CONFIG_HOME!).startsWith(realpathSync(tmpdir()))).toBe(true);
 	expect(existsSync(join(process.env.XDG_CONFIG_HOME!, "immune-brain/config.json"))).toBe(false);

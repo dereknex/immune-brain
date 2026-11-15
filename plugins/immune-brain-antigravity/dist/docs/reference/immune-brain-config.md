@@ -68,14 +68,92 @@ and subagent preferences stay in the Host's agent instruction files (see
   "git_integration": "manual",
   "initiative_carrier": "github",
   "decision_models": { "enabled_points": ["a14_pr_comment_triage"], "egress": { "clef": [] } },
+  "agents": { "active": "default" },
   "lanes": { "max_parallel": 2, "executor_host": "pi" },
   "batch": { "final_verification": ["bun run typecheck"] }
 }
 ```
 
 - Every key is optional except `contract`. An unknown key is invalid.
+- `agents` accepts only `active`; `profiles` and `presets` are defined in the
+  user file (see [Agents](#agents)).
 - `batch.final_verification` holds at most 8 plain command strings.
 - `.imm/risk-floor.json` stays a separate file (see [Risk Floor](#risk-floor)).
+
+## Agents
+
+`agents` binds every agent role to one Host profile. Profiles and presets are
+defined only in the user file; the project file and `projects.<key>` may select a
+preset with `agents.active`.
+
+```json
+{
+  "contract": "immune_brain/user_config/v1",
+  "agents": {
+    "profiles": {
+      "sonnet-high": { "host": "claude-code", "model": "<model id>", "effort": "high" },
+      "opus-med": { "host": "claude-code", "model": "<model id>", "effort": "medium" }
+    },
+    "presets": {
+      "default": {
+        "max_parallel": 2,
+        "roles": {
+          "code-review": "opus-med", "review-verifier": "opus-med",
+          "plan": "opus-med", "judging": "opus-med", "clarify": "opus-med",
+          "*": "sonnet-high"
+        }
+      }
+    },
+    "active": "default"
+  }
+}
+```
+
+- The roles are `executor`, `code-review`, `review-verifier`,
+  `advisory-reviewer`, `judging`, `clarify`, `plan` and `repair`; `repair`
+  covers `pr-fix` and `test-fixer`. `"*"` is every role without a more specific
+  binding.
+- A profile carries one `host` (`claude-code`, `pi` or `antigravity`), an
+  optional `model`, an optional `effort` and an optional `transport`. Host, model
+  and effort always come from the same profile, so a role never mixes a host from
+  one layer with a model from another.
+- `active` order: `projects.<key>.agents.active` → project `agents.active` →
+  user `agents.active` → `default`. A named preset must exist
+  (`unknown_preset`); a `default` preset must bind `"*"` (`preset_incomplete`);
+  every preset entry must name a defined profile (`unknown_profile`).
+- Role lookup, first binding wins: active `roles.<role>` → `default`
+  `roles.<role>` → active `roles."*"` → `default` `roles."*"`. `max_parallel`:
+  active preset → `default` preset → project `lanes.max_parallel` → `1`; a value
+  outside 1..8 is `config_invalid`.
+- Transports: `executor` and `code-review` run `process` (default) or `herdr`;
+  `review-verifier` and the loop roles run `process`; `advisory-reviewer` runs
+  `subagent` (default) or `herdr`. A profile transport a role does not allow is
+  `transport_invalid_for_role`.
+- `review-verifier` must run on `code-review`'s host
+  (`review_verifier_host_mismatch`); only its model may differ.
+- Any error in the section falls the whole `agents` section back to the legacy
+  `lanes` mapping, else to built-in resolution: Review keeps
+  `review_profile_required`, the Lane executor keeps the Parent Host, and the loop
+  roles keep `claude-code`.
+- A request may name a preset for one batch; it overrides `active` for that batch
+  alone.
+
+### Legacy `lanes`
+
+`lanes` is the previous home of these choices and stays readable for one major
+version, mapped into the same table. `lanes.profiles.<name>` becomes preset
+`<name>`: `executor_*` binds `executor` and `repair` (the loop's repair read the
+same profile), `review_*` binds `code-review`, `review_verifier_model` binds
+`review-verifier` on the review host, `advisory_transport` binds
+`advisory-reviewer`, and `max_parallel` is kept. A group the profile does not set
+takes the project flat `lanes` value, which is also the `project` preset used
+when `lanes.active` is unset. A `review_transport` or `advisory_transport`
+applies without a host, because a Lane batch or the request may supply the host
+later. Nothing binds `"*"`, so a legacy Lane never reviews on its executor
+profile and the loop's `judging`, `clarify` and `plan` keep their `claude-code`
+fallback. Reading `lanes` for the role table reports
+`deprecated_config_source`; a layer that sets both uses `agents` and reports
+`legacy_source_ignored`.
 
 ## Precedence
 
@@ -85,6 +163,8 @@ request; the Parent or the Planner applies them on top of the resolved files.
 | Kind | Keys | Order |
 |---|---|---|
 | personal | `decision_models.default_profile`, `decision_models.bindings.<point>`, `lanes.active` | request → user per-project → user |
+| personal | `agents.active` | request → user per-project → project → user → `default` |
+| personal, per role | `agents` role table | the resolved profile of the role; `lanes` is the legacy source |
 | personal, field-wise | `lanes.max_parallel`, `lanes.executor_host`, `lanes.executor_model`, `lanes.executor_effort`, `lanes.review_host`, `lanes.review_model`, `lanes.review_effort`, `lanes.review_verifier_model`, `lanes.review_transport`, `lanes.advisory_transport` | request → selected user Lane profile → project `lanes` → default |
 | repository fact | `initiative_carrier` | request → project → user per-project → user → none (the Planner asks) |
 | personal | `git_integration` | user → project → default (`manual`) |
@@ -123,17 +203,26 @@ request; the Parent or the Planner applies them on top of the resolved files.
 has severity `error`, else 0. `--check-env` also reports, per decision-model
 profile, whether each named variable is `set` or `unset`, never its value.
 
+`agents.roles.<role>` holds `{ host, model, effort, transport, preset, layer }`
+for every role, with `null` and `layer: "unset"` when nothing binds it;
+`agents.max_parallel`, `agents.active`, `agents.profiles` and `agents.presets`
+are leaves like any other value.
+
 The status Tool on both Hosts carries the same object as `config` and adds every
 `error` diagnostic to its warnings as `config_invalid`.
 
 Each diagnostic is `{ code, severity, file, key_path, message }` with code
 `config_invalid`, `unknown_profile`, `egress_beyond_project_ceiling`,
-`not_applied`, `deprecated_config_source` or `legacy_source_ignored`. Messages
+`not_applied`, `deprecated_config_source`, `legacy_source_ignored`,
+`unknown_preset`, `preset_incomplete`, `transport_invalid_for_role` or
+`review_verifier_host_mismatch`. Messages
 never contain a configured `*_env` value or any environment variable's value.
 An error fails closed only in its own section:
 
 - `decision_models` invalid: a decision returns `unavailable` / `config_invalid`;
 - `lanes` invalid: the Parent reports it and starts no batch;
+- `agents` invalid: the role table falls back to `lanes`, else to built-in
+  values, and its diagnostics stay errors;
 - `git_integration` invalid: `manual`;
 - `initiative_carrier` invalid: none, and the Planner asks;
 - a file that is not JSON or has the wrong `contract` fails every section it
@@ -191,17 +280,18 @@ The Parent resolves Lane choices from `imm-kernel config --json` before the firs
 `start_unattended_batch` call for an Initiative; the batch runner and Lane
 worktrees read no configuration of their own.
 
-- With no `lanes` value, a batch runs one Lane at a time on the Parent's own
-  Host type with that Host's default model and effort.
-- `max_parallel` is passed as `max_parallel` and turns lane mode on. A resumed
-  batch keeps the value it recorded.
-- `executor_host` is `claude-code`, `pi` or `antigravity`. Every Lane uses it,
-  with no fallback to another Host.
-- A request may name a profile and state single fields, such as "use `cheap`,
-  but max parallel 3", for that batch only. The Parent shows each value with its
+- With no `executor` role and no `lanes` value, a batch runs one Lane at a time
+  on the Parent's own Host type with that Host's default model and effort.
+- `max_parallel` comes from the resolved preset (see [Agents](#agents)), is
+  passed as `max_parallel` and turns lane mode on. A resumed batch keeps the value
+  it recorded.
+- Every Lane runs the resolved `executor` role's host — `claude-code`, `pi` or
+  `antigravity` — with no fallback to another Host.
+- A request may name a preset and state single fields, such as "use `cheap`, but
+  max parallel 3", for that batch only. The Parent shows each value with its
   source.
-- An invalid `lanes` section or an unknown profile is reported and no batch
-  starts.
+- An invalid `lanes` section, an invalid `agents` section that no legacy source
+  backs, or an unknown profile or preset is reported and no batch starts.
 
 Lane-mode agents only create: they close no tab, stop no session and remove no
 Lane. The full contract is `plugins/immune-brain/dist/drive-batch.md#lane-preferences`.
