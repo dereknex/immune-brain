@@ -64,8 +64,8 @@ aloud in the report so the 口径 stays visible.
   `cwd`, and Antigravity CLI reads `conversations[<id>].summary.WorkspaceURIs[0]`
   from `conversation_metadata.json` with `file://` stripped (absent metadata or
   a missing id yields `unknown`, which `--project`/`--exclude` do not match).
-- Kernel operations normalize to `name: "imm_kernel_canary"` and `op: "<op>"`
-  across Hosts: Pi `imm_kernel_canary`, Claude Code `mcp__…__<op>`, and
+- Kernel operations normalize to one shared Kernel tool `name` and `op: "<op>"`
+  across Hosts: Pi's Kernel tool call, Claude Code `mcp__…__<op>`, and
   Antigravity CLI `call_mcp_tool` with `ServerName` starting with
   `immune-brain` and `ToolName` in the Kernel op set. Antigravity `Arguments`
   Python-repr strings are parsed by a bounded reader; an unparsable value

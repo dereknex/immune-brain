@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "revisit-multi-host-contract-repair",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:revisit-multi-host-contract-repair:2026-11-15T03:33:07.107Z",
+  "final_record_hash": "sha256:ea1ee867e47ff7fddb69c116b87dca0928bce06eebffdf30550af917efcf41f1",
+  "terminalized_at": "2026-11-15T03:33:07.107Z"
+}
