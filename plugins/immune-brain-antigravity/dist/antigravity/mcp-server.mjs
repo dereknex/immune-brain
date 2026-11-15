@@ -14245,91 +14245,10 @@ var init_batch_integration = __esm(() => {
   };
 });
 
-// plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync14, readFileSync as readFileSync17 } from "node:fs";
-import { resolve as resolve14 } from "node:path";
-function localInitiativePath(initiativeSlug) {
-  return `docs/initiatives/${initiativeSlug}.md`;
-}
-function hasLocalInitiative(root, initiativeSlug) {
-  const stat = lstatSync14(resolve14(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
-  if (!stat)
-    return false;
-  if (!stat.isFile())
-    throw new Error(`${localInitiativePath(initiativeSlug)} must be a regular file`);
-  return true;
-}
-function unquote(value) {
-  return value.trim().replace(/^`(.*)`$/, "$1");
-}
-function observeLocalInitiative(root, initiativeSlug) {
-  if (!ID_PATTERN.test(initiativeSlug))
-    throw new Error("initiative_slug is invalid");
-  const path = localInitiativePath(initiativeSlug);
-  if (!hasLocalInitiative(root, initiativeSlug))
-    throw new Error(`Local Initiative ${path} does not exist`);
-  const slices = [];
-  let inTasks = false;
-  let fence = false;
-  for (const raw of readFileSync17(resolve14(root, path), "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line.startsWith("```")) {
-      fence = !fence;
-      continue;
-    }
-    if (fence)
-      continue;
-    const heading = SLICE_HEADING.exec(line);
-    if (heading) {
-      slices.push({ slice_id: heading[1], tasks: [], blocked_by: [] });
-      inTasks = false;
-      continue;
-    }
-    const slice = slices.at(-1);
-    if (!slice)
-      continue;
-    if (TASKS.test(line)) {
-      inTasks = true;
-      continue;
-    }
-    const blocked = BLOCKED_BY.exec(line);
-    if (blocked) {
-      slice.blocked_by.push(...blocked[1].split(",").map(unquote).filter(Boolean));
-      inTasks = false;
-      continue;
-    }
-    const bullet = BULLET.exec(line);
-    if (inTasks && bullet)
-      slice.tasks.push(unquote(bullet[1]));
-    else if (line)
-      inTasks = false;
-  }
-  if (!slices.length)
-    throw new Error(`Local Initiative ${path} declares no Slice`);
-  return {
-    contract: "immune_brain/local_initiative_observation/v1",
-    initiative_id: initiativeSlug,
-    path,
-    tasks: slices.map((slice) => {
-      if (slice.tasks.length !== 1)
-        throw new Error(`Local Initiative Slice ${slice.slice_id} must name exactly one Task to run as a batch child`);
-      return { task_id: slice.tasks[0], slice_id: slice.slice_id, blocked_by: slice.blocked_by };
-    })
-  };
-}
-var ID_PATTERN, SLICE_HEADING, BLOCKED_BY, TASKS, BULLET;
-var init_local_initiative = __esm(() => {
-  ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-  SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
-  BLOCKED_BY = /^blocked by\s*:(.*)$/i;
-  TASKS = /^tasks\s*:\s*$/i;
-  BULLET = /^[-*]\s+(.*)$/;
-});
-
 // plugins/immune-brain/runtime/github_issue_tracker.ts
-import { spawn as spawn3, spawnSync as spawnSync13 } from "node:child_process";
-import { existsSync as existsSync11, readFileSync as readFileSync18, readdirSync as readdirSync8 } from "node:fs";
-import { basename as basename3, relative as relative7, resolve as resolve15, sep as sep9 } from "node:path";
+import { spawn as spawn3 } from "node:child_process";
+import { existsSync as existsSync11, readFileSync as readFileSync17 } from "node:fs";
+import { basename as basename3, relative as relative7, resolve as resolve14, sep as sep9 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
     return 0;
@@ -14375,8 +14294,8 @@ function publicText(value, name, max = 2000) {
   return redactSecrets(text).replaceAll("<!--", "&lt;!--").replaceAll("-->", "--&gt;");
 }
 function identifier(value, name) {
-  if (typeof value !== "string" || !ID_PATTERN2.test(value))
-    throw new Error(`${name} must match ${ID_PATTERN2}`);
+  if (typeof value !== "string" || !ID_PATTERN.test(value))
+    throw new Error(`${name} must match ${ID_PATTERN}`);
   if (/^(?:gh[pousr]_|github_pat_)/i.test(value))
     throw new Error(`${name} must not contain a token-like value`);
   return value;
@@ -14760,7 +14679,7 @@ async function readBlockedByIds(root, gh, operation, repository, childNumber) {
 }
 async function observeGithubInitiative(root, initiativeId, gh = createGhTransport()) {
   const id = identifier(initiativeId, "initiative_id");
-  const source = await snapshot(resolve15(root), gh, "create-initiative");
+  const source = await snapshot(resolve14(root), gh, "create-initiative");
   if ("contract" in source)
     throw new Error(source.message);
   const parent = initiativeLookup(source.issues, source.repository.id, id);
@@ -14849,7 +14768,7 @@ async function attachBlockedBy(root, gh, operation, repository, childNumber, blo
   return confirmed;
 }
 function carrierConflict(root, operation, initiativeId) {
-  if (!existsSync11(resolve15(root, "docs", "initiatives", `${initiativeId}.md`)))
+  if (!existsSync11(resolve14(root, "docs", "initiatives", `${initiativeId}.md`)))
     return null;
   return result(operation, "permanent_failure", `Initiative carrier conflict: docs/initiatives/${initiativeId}.md already owns this slug locally; remove the duplicate carrier before using the GitHub projection`);
 }
@@ -15498,7 +15417,7 @@ async function runGithubTrackerOperation(root, input, gh = createGhTransport()) 
   } catch (error) {
     return result(input.op, "permanent_failure", error instanceof Error ? error.message : String(error));
   }
-  const absoluteRoot = resolve15(root);
+  const absoluteRoot = resolve14(root);
   if (operation.op !== "mark-terminal") {
     const conflict = carrierConflict(absoluteRoot, operation.op, operation.initiative_id);
     if (conflict)
@@ -15527,14 +15446,94 @@ function issueTerminalEventId(body) {
     return "malformed";
   return eventId;
 }
-var CONTRACT2 = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN2, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
+var CONTRACT2 = "immune_brain/github_issue_tracker_result/v1", PROTOCOL_MARKER = "<!-- immune-brain-tracker:v1 -->", KIND_INITIATIVE_MARKER = "<!-- immune-brain:kind=initiative -->", KIND_TASK_MARKER = "<!-- immune-brain:kind=task -->", ID_PATTERN, MAX_GH_OUTPUT, MAX_DIAGNOSTIC = 512, GH_TIMEOUT_MS = 20000, MAX_SNAPSHOT_PAGES = 100, GITHUB_ISSUE_BODY_LIMIT = 65536, MAX_TERMINAL_EVENT_ID = 500, MAX_TITLE_LENGTH = 80, MAX_DISPLAY_SHORT_NAME = 32, MAX_DISPLAY_TITLE = 60, READY_FOR_AGENT_LABEL = "ready-for-agent", BLOCKED_LABEL = "blocked", MANAGED_ISSUE_LABELS, ISSUE_FOOTER = "---\n\n_Outbound visibility only: GitHub state never authorizes or settles work — Kernel TaskIntent, TaskRecord, QA, Review, and Assurance remain the execution authority. An Open Issue only means the Task still needs attention; only a claimless terminal projection closes it (`done` → Completed, `stopped` → Not planned)._", MAX_TERMINAL_SUFFIX_BYTES;
 var init_github_issue_tracker = __esm(() => {
-  init_local_initiative();
   init_intent();
-  ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+  ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
   MAX_GH_OUTPUT = 8 * 1024 * 1024;
   MANAGED_ISSUE_LABELS = [READY_FOR_AGENT_LABEL, BLOCKED_LABEL];
   MAX_TERMINAL_SUFFIX_BYTES = Buffer.byteLength(terminalSuffix("x".repeat(MAX_TERMINAL_EVENT_ID)), "utf8");
+});
+
+// plugins/immune-brain/runtime/local_initiative.ts
+import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
+import { resolve as resolve15 } from "node:path";
+function localInitiativePath(initiativeSlug) {
+  return `docs/initiatives/${initiativeSlug}.md`;
+}
+function hasLocalInitiative(root, initiativeSlug) {
+  const stat = lstatSync14(resolve15(root, localInitiativePath(initiativeSlug)), { throwIfNoEntry: false });
+  if (!stat)
+    return false;
+  if (!stat.isFile())
+    throw new Error(`${localInitiativePath(initiativeSlug)} must be a regular file`);
+  return true;
+}
+function unquote(value) {
+  return value.trim().replace(/^`(.*)`$/, "$1");
+}
+function observeLocalInitiative(root, initiativeSlug) {
+  if (!ID_PATTERN2.test(initiativeSlug))
+    throw new Error("initiative_slug is invalid");
+  const path = localInitiativePath(initiativeSlug);
+  if (!hasLocalInitiative(root, initiativeSlug))
+    throw new Error(`Local Initiative ${path} does not exist`);
+  const slices = [];
+  let inTasks = false;
+  let fence = false;
+  for (const raw of readFileSync18(resolve15(root, path), "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("```")) {
+      fence = !fence;
+      continue;
+    }
+    if (fence)
+      continue;
+    const heading = SLICE_HEADING.exec(line);
+    if (heading) {
+      slices.push({ slice_id: heading[1], tasks: [], blocked_by: [] });
+      inTasks = false;
+      continue;
+    }
+    const slice = slices.at(-1);
+    if (!slice)
+      continue;
+    if (TASKS.test(line)) {
+      inTasks = true;
+      continue;
+    }
+    const blocked = BLOCKED_BY.exec(line);
+    if (blocked) {
+      slice.blocked_by.push(...blocked[1].split(",").map(unquote).filter(Boolean));
+      inTasks = false;
+      continue;
+    }
+    const bullet = BULLET.exec(line);
+    if (inTasks && bullet)
+      slice.tasks.push(unquote(bullet[1]));
+    else if (line)
+      inTasks = false;
+  }
+  if (!slices.length)
+    throw new Error(`Local Initiative ${path} declares no Slice`);
+  return {
+    contract: "immune_brain/local_initiative_observation/v1",
+    initiative_id: initiativeSlug,
+    path,
+    tasks: slices.map((slice) => {
+      if (slice.tasks.length !== 1)
+        throw new Error(`Local Initiative Slice ${slice.slice_id} must name exactly one Task to run as a batch child`);
+      return { task_id: slice.tasks[0], slice_id: slice.slice_id, blocked_by: slice.blocked_by };
+    })
+  };
+}
+var ID_PATTERN2, SLICE_HEADING, BLOCKED_BY, TASKS, BULLET;
+var init_local_initiative = __esm(() => {
+  ID_PATTERN2 = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+  SLICE_HEADING = /^##\s+([^\s:]+)\s*:/;
+  BLOCKED_BY = /^blocked by\s*:(.*)$/i;
+  TASKS = /^tasks\s*:\s*$/i;
+  BULLET = /^[-*]\s+(.*)$/;
 });
 
 // plugins/immune-brain/runtime/unattended/batch_schedule.ts
@@ -15835,7 +15834,7 @@ var init_batch_plan = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_git.ts
-import { spawnSync as spawnSync14 } from "node:child_process";
+import { spawnSync as spawnSync13 } from "node:child_process";
 import { createHash as createHash22, randomUUID as randomUUID8 } from "node:crypto";
 import {
   constants as constants6,
@@ -15845,7 +15844,7 @@ import {
   mkdirSync as mkdirSync9,
   openSync as openSync6,
   realpathSync as realpathSync17,
-  readdirSync as readdirSync9,
+  readdirSync as readdirSync8,
   renameSync as renameSync4,
   rmSync as rmSync8,
   writeFileSync as writeFileSync9
@@ -15854,7 +15853,7 @@ import { dirname as dirname13, join as join21 } from "node:path";
 function runBatchGitPreflight(input) {
   const { root, base_head: baseHead } = input;
   const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
-  const git = (args) => spawnSync14("git", ["-C", root, ...args], {
+  const git = (args) => spawnSync13("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -15953,7 +15952,7 @@ function scopeRefusal(cause, entries) {
   return new Error(`dirty_outside_scope: ${JSON.stringify({ cause, entries: included, omitted: entries.length - included.length })}`);
 }
 function getUnsupportedIndexFlags(root) {
-  const result = spawnSync14("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
+  const result = spawnSync13("git", ["-C", root, "ls-files", "-v", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -15990,13 +15989,13 @@ function isPathAllowedForChild(path, taskId, scopeHint) {
   });
 }
 function getChangedProjectPaths(root) {
-  const tracked = spawnSync14("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const tracked = spawnSync13("git", ["-C", root, "diff-index", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (tracked.status !== 0)
     throw new Error("failed to inspect tracked diff vs HEAD");
-  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync13("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16006,7 +16005,7 @@ function getChangedProjectPaths(root) {
   return [...new Set([...splitZ(tracked.stdout), ...splitZ(untracked.stdout)])];
 }
 function getStagedProjectPaths(root) {
-  const staged = spawnSync14("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
+  const staged = spawnSync13("git", ["-C", root, "diff-index", "--cached", "--name-only", "-z", "--ignore-submodules=none", "HEAD", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16015,13 +16014,13 @@ function getStagedProjectPaths(root) {
   return staged.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function getUnstagedProjectPaths(root) {
-  const diffFiles = spawnSync14("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
+  const diffFiles = spawnSync13("git", ["-C", root, "diff-files", "--name-only", "-z", "--ignore-submodules=none", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
   if (diffFiles.status !== 0)
     throw new Error("failed to inspect unstaged tracked changes");
-  const untracked = spawnSync14("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
+  const untracked = spawnSync13("git", ["-C", root, "ls-files", "--others", "--exclude-standard", "-z", "--"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16031,7 +16030,7 @@ function getUnstagedProjectPaths(root) {
   return [...new Set([...splitZ(diffFiles.stdout), ...splitZ(untracked.stdout)])];
 }
 function getCommittedDeltaPaths(root) {
-  const delta = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const delta = spawnSync13("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", "HEAD~1", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (delta.status !== 0)
     throw new Error("failed to inspect committed tree delta");
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
@@ -16125,10 +16124,10 @@ function proofEquals(a, b) {
   return serializeTaskTombstone(a) === serializeTaskTombstone(b);
 }
 function readLaneDeliveryIntoIndex(root, commit) {
-  const indexed = spawnSync14("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
+  const indexed = spawnSync13("git", ["-C", root, "read-tree", commit], { encoding: "utf8" });
   if (indexed.status !== 0)
     throw new Error(`failed to index Lane delivery: ${indexed.stderr.trim()}`);
-  const refreshed = spawnSync14("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
+  const refreshed = spawnSync13("git", ["-C", root, "update-index", "-q", "--refresh"], { encoding: "utf8" });
   if (refreshed.status !== 0)
     throw new Error(`failed to refresh Lane index: ${refreshed.stderr.trim()}`);
 }
@@ -16182,11 +16181,11 @@ async function commitBatchChild(input) {
   const goal = typeof intentSnapshot.goal === "string" ? intentSnapshot.goal : "";
   const scopeHint = Array.isArray(intentSnapshot.scope_hint) ? intentSnapshot.scope_hint.filter((s) => typeof s === "string") : [];
   if (usesBranchDelivery(root, taskId)) {
-    const currentBranch = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
+    const currentBranch = spawnSync13("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" });
     if (expectedBranch !== undefined && currentBranch.stdout.trim() !== expectedBranch)
       throw new Error("batch_head_lineage_broken: Lane branch changed before commit");
-    const head = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
-    if (spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
+    const head = spawnSync13("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+    if (spawnSync13("git", ["-C", root, "merge-base", "--is-ancestor", expectedHead, head]).status !== 0)
       throw new Error("batch_head_lineage_broken: Lane base is not an ancestor of HEAD");
     const flagged = getUnsupportedIndexFlags(root);
     if (flagged.length)
@@ -16203,7 +16202,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     if (taskCommitRevisionIdentity(root, scopeHint, expectedHead, commit).diff_hash !== deliveryHash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     writeBatchCommitEvidence(root, { batchId: batchId ?? "native-task", taskId, commit, parentHead: expectedHead, previousHead: head });
-    const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
+    const moved = spawnSync13("git", ["-C", root, "update-ref", "HEAD", commit, head], { encoding: "utf8" });
     if (moved.status !== 0)
       throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     readLaneDeliveryIntoIndex(root, commit);
@@ -16231,7 +16230,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
     return { commit };
   }
   if (expectedBranch !== undefined) {
-    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync13("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16240,7 +16239,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
       throw new Error(`batch_head_lineage_broken: current branch ${currentBranch} does not match expected branch ${expectedBranch}`);
     }
   }
-  const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
+  const currentHeadResult = spawnSync13("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16259,7 +16258,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   }
   const pathsToStage = getUnstagedProjectPaths(root);
   if (pathsToStage.length > 0) {
-    const addResult = spawnSync14("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
+    const addResult = spawnSync13("git", ["-C", root, "--literal-pathspecs", "add", "-A", "--", ...pathsToStage], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16274,7 +16273,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   const staged = getStagedProjectPaths(root);
   const stagedOutside = staged.filter((p) => !isPathAllowedForChild(p, taskId, scopeHint));
   if (stagedOutside.length > 0) {
-    spawnSync14("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
+    spawnSync13("git", ["-C", root, "reset", "--quiet"], { stdio: ["ignore", "ignore", "ignore"] });
     throw scopeRefusal("staged_paths", stagedOutside.map((path) => ({ path })));
   }
   assertReviewedDelivery(root, authoritative, scopeHint, taskId);
@@ -16283,7 +16282,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
 
 ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${batchId}`}
 `;
-  const commitResult = spawnSync14("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
+  const commitResult = spawnSync13("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "commit", "--no-verify", "-F", "-"], {
     input: commitMessage,
     encoding: "utf8",
     stdio: ["pipe", "pipe", "pipe"],
@@ -16292,7 +16291,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (commitResult.status !== 0) {
     throw new Error(`commit failed for child ${taskId}: ${commitResult.stderr?.trim() || "git commit failed"}`);
   }
-  const newHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], {
+  const newHeadResult = spawnSync13("git", ["-C", root, "rev-parse", "HEAD"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16300,7 +16299,7 @@ ${batchId === null ? `Immune-Brain-Task: ${taskId}` : `Immune-Brain-Batch: ${bat
   if (newHeadResult.status !== 0 || !newHead || newHead === expectedHead) {
     throw new Error("commit_failed");
   }
-  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD^@"], {
+  const parentsResult = spawnSync13("git", ["-C", root, "rev-parse", "HEAD^@"], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -16338,13 +16337,13 @@ async function lookupBatchCommit(input) {
     if (!evidence || evidence.commit !== lane.lane_commit || evidence.parent_head !== lane.base_head)
       throw new Error("batch_head_lineage_broken: Lane delivery lacks matching production evidence");
     const common = (path) => {
-      const result = spawnSync14("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
+      const result = spawnSync13("git", ["-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8" });
       if (result.status !== 0)
         throw new Error("batch_head_lineage_broken: unreadable Lane repository");
       return realpathSync17(result.stdout.trim());
     };
-    const sourceParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
-    const candidateParent = spawnSync14("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const sourceParent = spawnSync13("git", ["-C", root, "rev-parse", `${lane.lane_commit}^@`], { encoding: "utf8" });
+    const candidateParent = spawnSync13("git", ["-C", root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = candidateParent.stdout.trim().split(/\s+/).filter(Boolean);
     if (common(lane.path) !== common(root) || sourceParent.status !== 0 || sourceParent.stdout.trim() !== lane.base_head || candidateParent.status !== 0 || parents.length !== 1 || !laneCandidateMatches({
       root,
@@ -16360,7 +16359,7 @@ async function lookupBatchCommit(input) {
   let candidates = [];
   let evidenceBacked = false;
   if (evidence && recordedCommit) {
-    const direct = spawnSync14("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const direct = spawnSync13("git", ["-C", root, "log", "-n", "1", `--format=${FORMAT}`, recordedCommit, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (direct.status !== 0) {
       throw new Error(`failed to inspect batch commit for ${taskId}: ${direct.stderr?.trim() || "git log failed"}`);
     }
@@ -16373,7 +16372,7 @@ async function lookupBatchCommit(input) {
     }
   }
   if (!candidates.length) {
-    const result = spawnSync14("git", [
+    const result = spawnSync13("git", [
       "-C",
       root,
       "log",
@@ -16411,7 +16410,7 @@ async function lookupBatchCommit(input) {
     throw new Error(`batch_head_lineage_broken: adopted commit author ${match.authorName} does not match batch authority ${DEFAULT_GIT_ENV.GIT_AUTHOR_NAME}`);
   }
   if (expectedBranch !== undefined && !isProgressRef(expectedBranch)) {
-    const currentBranchResult = spawnSync14("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
+    const currentBranchResult = spawnSync13("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -16428,7 +16427,7 @@ async function lookupBatchCommit(input) {
   requireMatchingSettledAudit(auditPair, adopted);
   const auditPaths = adopted.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, adopted.runId), proof: auditRunTerminalProofPath(taskId, adopted.runId) };
   for (const path of [auditPaths.record, auditPaths.proof]) {
-    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync13("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     if (committed.status !== 0 || committed.stdout !== readSecureProjectFile(root, path))
       throw new Error(`batch_head_lineage_broken: committed terminal evidence differs for ${taskId}`);
   }
@@ -16437,13 +16436,13 @@ async function lookupBatchCommit(input) {
   if (lifecycle !== "done") {
     throw new Error(`batch_head_lineage_broken: adopted commit task lifecycle is not done: ${lifecycle}`);
   }
-  const parentsResult = spawnSync14("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
+  const parentsResult = spawnSync13("git", ["-C", root, "rev-parse", `${commit}^@`], { encoding: "utf8" });
   const parents = parentsResult.stdout.trim().split(/\s+/).filter(Boolean);
   let pendingLaneHead = null;
   let indexLaneDelivery = false;
   if (isProgressRef(expectedBranch)) {
     const tip = readBatchRef(root, expectedBranch);
-    const reachable = tip !== null && (tip === commit || spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
+    const reachable = tip !== null && (tip === commit || spawnSync13("git", ["-C", root, "merge-base", "--is-ancestor", commit, tip], { stdio: "ignore" }).status === 0);
     if (!reachable) {
       if (tip !== null && parents.length === 1 && parents[0] === tip)
         moveBatchRef(root, expectedBranch, tip, commit);
@@ -16451,12 +16450,12 @@ async function lookupBatchCommit(input) {
         throw new Error(`batch_head_lineage_broken: ${expectedBranch} at ${tip ?? "nothing"} diverged from adopted commit ${commit}`);
     }
   } else {
-    const currentHeadResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+    const currentHeadResult = spawnSync13("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
     const currentHead = currentHeadResult.stdout.trim();
     if (currentHeadResult.status !== 0)
       throw new Error("batch_head_lineage_broken: unreadable Lane HEAD");
     indexLaneDelivery = usesBranchDelivery(root, taskId) && evidence?.previous_head !== undefined;
-    if (currentHead !== commit && spawnSync14("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
+    if (currentHead !== commit && spawnSync13("git", ["-C", root, "merge-base", "--is-ancestor", commit, currentHead], { stdio: "ignore" }).status !== 0) {
       if (indexLaneDelivery && evidence?.previous_head === currentHead)
         pendingLaneHead = currentHead;
       else
@@ -16467,7 +16466,7 @@ async function lookupBatchCommit(input) {
   if (parentsResult.status !== 0 || parents.length !== 1 || retained && parents[0] !== retained.parent_head || expectedHead !== undefined && parents[0] !== expectedHead)
     throw new Error(`batch_head_lineage_broken: adopted commit parent ${parents.join(",")} does not match expected_head ${expectedHead ?? "single-parent delivery"}`);
   const scopeHint = Array.isArray(authoritative.intent_snapshot.scope_hint) ? authoritative.intent_snapshot.scope_hint.filter((s) => typeof s === "string") : [];
-  const deltaResult = spawnSync14("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const deltaResult = spawnSync13("git", ["-C", root, "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", parents[0], commit], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (deltaResult.status !== 0)
     throw new Error("batch_head_lineage_broken: failed to inspect adopted commit delta");
   const outside = deltaResult.stdout.split("\x00").filter((p) => p.length > 0 && !isPathAllowedForChild(p, taskId, usesBranchDelivery(root, taskId) || input.lane ? ["**"] : scopeHint));
@@ -16479,7 +16478,7 @@ async function lookupBatchCommit(input) {
     if (qa && taskCommitRevisionIdentity(root, scopeHint, parents[0], commit).diff_hash !== qa.diff_hash)
       throw new Error("batch commit drifted from the reviewed delivery identity");
     if (pendingLaneHead !== null) {
-      const moved = spawnSync14("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
+      const moved = spawnSync13("git", ["-C", root, "update-ref", "HEAD", commit, pendingLaneHead], { encoding: "utf8" });
       if (moved.status !== 0)
         throw new Error(`batch_head_lineage_broken: ${moved.stderr.trim()}`);
     }
@@ -16494,13 +16493,13 @@ async function retainIntegratedLaneEvidence(input) {
       root: lane.path,
       taskId: input.taskId,
       batchId: input.batchId,
-      branch: spawnSync14("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
+      branch: spawnSync13("git", ["-C", lane.path, "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).stdout.trim(),
       expectedHead: lane.base_head
     });
-    const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
+    const parent = spawnSync13("git", ["-C", input.root, "rev-parse", `${lane.integrated_commit}^@`], { encoding: "utf8" });
     const parents = parent.stdout.trim().split(/\s+/).filter(Boolean);
     const tip = readBatchRef(input.root, input.branch);
-    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync14("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
+    if (source?.commit !== lane.lane_commit || parent.status !== 0 || parents.length !== 1 || !tip || spawnSync13("git", ["-C", input.root, "merge-base", "--is-ancestor", lane.integrated_commit, tip]).status !== 0 || !laneCandidateMatches({
       root: input.root,
       lane_base: lane.base_head,
       lane_commit: lane.lane_commit,
@@ -16520,7 +16519,7 @@ async function retainIntegratedLaneEvidence(input) {
   const landed = await lookupBatchCommit(input);
   if (!landed)
     throw new Error("batch_head_lineage_broken: missing integrated Lane delivery");
-  const parent = spawnSync14("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
+  const parent = spawnSync13("git", ["-C", input.root, "rev-parse", `${landed.commit}^`], { encoding: "utf8" });
   if (parent.status !== 0)
     throw new Error("batch_head_lineage_broken: unreadable integrated parent");
   writeBatchCommitEvidence(input.root, {
@@ -16554,7 +16553,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
   const directory = join21(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync12(directory))
-    for (const file of readdirSync9(directory).sort()) {
+    for (const file of readdirSync8(directory).sort()) {
       if (!file.endsWith(".json"))
         continue;
       const candidate = JSON.parse(readSecureProjectFile(root, `.imm/state/batches/${file}`));
@@ -16581,7 +16580,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
 async function observeParentCompletion(root, initiativeSlug, requiredTaskIds) {
   if (!requiredTaskIds.length || new Set(requiredTaskIds).size !== requiredTaskIds.length)
     throw new Error("Parent completion requires a non-empty, unique required Task list");
-  const headResult = spawnSync14("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+  const headResult = spawnSync13("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
   if (headResult.status !== 0)
     throw new Error("Parent completion requires a Git HEAD");
   const head = headResult.stdout.trim();
@@ -16713,7 +16712,7 @@ async function advanceNativeParent(root, initiativeSlug, commands, readInitiativ
 function settledDeliveryInTree(root, commit, taskId, settled) {
   const paths = settled.runId === null ? auditEvidencePaths(root, taskId) : { record: auditRunRecordPath(taskId, settled.runId), proof: auditRunTerminalProofPath(taskId, settled.runId) };
   return [paths.record, paths.proof].every((path) => {
-    const committed = spawnSync14("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
+    const committed = spawnSync13("git", ["-C", root, "show", `${commit}:${path}`], { encoding: "utf8" });
     try {
       return committed.status === 0 && committed.stdout === readSecureProjectFile(root, path);
     } catch {
@@ -16758,7 +16757,7 @@ async function integrateSettledCriticalSlices(root, initiativeSlug, readInitiati
       if (!live)
         throw new Error("cannot verify recovered critical integration HEAD");
       if (live === existing.commit && expectedBatchHead(batch) !== existing.commit) {
-        const predecessor = spawnSync14("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
+        const predecessor = spawnSync13("git", ["-C", root, "rev-parse", `${existing.commit}^`], { encoding: "utf8" });
         if (predecessor.status !== 0 || predecessor.stdout.trim() !== expectedBatchHead(batch))
           throw new Error("recovered critical integration does not extend the exact Parent HEAD");
         batch = { ...batch, adopted_heads: [...batch.adopted_heads ?? [], { from: expectedBatchHead(batch), to: existing.commit }] };
@@ -16853,11 +16852,11 @@ var init_intent_readiness = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
-import { spawnSync as spawnSync15 } from "node:child_process";
+import { spawnSync as spawnSync14 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
 import { dirname as dirname14, join as join22 } from "node:path";
 function git7(root, args) {
-  const result = spawnSync15("git", ["-C", root, ...args], {
+  const result = spawnSync14("git", ["-C", root, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
@@ -16954,10 +16953,10 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync14, readdirSync as readdirSync10, readFileSync as readFileSync19 } from "node:fs";
+import { existsSync as existsSync14, readdirSync as readdirSync9, readFileSync as readFileSync19 } from "node:fs";
 import { randomUUID as randomUUID9 } from "node:crypto";
 import { dirname as dirname15, join as join23 } from "node:path";
-import { spawnSync as spawnSync16 } from "node:child_process";
+import { spawnSync as spawnSync15 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
   return {
@@ -16978,7 +16977,7 @@ function findResumableBatchSlugForTask(root, taskId) {
   const batchesDir = join23(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
-  for (const file of readdirSync10(batchesDir)) {
+  for (const file of readdirSync9(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
@@ -17000,7 +16999,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   const batchesDir = join23(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
-  for (const file of readdirSync10(batchesDir)) {
+  for (const file of readdirSync9(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -17043,7 +17042,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
   if (!existsSync14(batchesDir))
     return null;
   let newest = null;
-  for (const file of readdirSync10(batchesDir).sort()) {
+  for (const file of readdirSync9(batchesDir).sort()) {
     if (!file.endsWith(".json"))
       continue;
     let record;
@@ -17091,7 +17090,7 @@ function parentBranchProvenance(root, slug, head, batchId) {
 }
 function classifyBatchLineage(input) {
   const { root, branch, expectedHead, childCommits } = input;
-  const run = (args) => spawnSync16("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const run = (args) => spawnSync15("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const broken = (reason) => ({
     kind: "broken",
     message: `batch_head_lineage_broken: ${reason}`
@@ -17160,7 +17159,7 @@ function isOwnBatchClaim(root, existingBatch, taskId, batchBranch) {
   if (currentTaskId !== taskId || !claim)
     return false;
   if (!isBatchRef(batchBranch)) {
-    const branch = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
+    const branch = spawnSync15("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" }).stdout.trim();
     if (branch !== batchBranch)
       return false;
   }
@@ -17216,7 +17215,7 @@ function authorizedScopeOf(root, taskId, state) {
   return scope;
 }
 function porcelainEntries(root) {
-  const statusProc = spawnSync16("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const statusProc = spawnSync15("git", ["-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   if (statusProc.status !== 0)
     return null;
   const entries = [];
@@ -17412,7 +17411,7 @@ async function projectPreflight(options, preparing) {
   if (options.plan_source === "single_task") {
     const batchesDir = join23(root, ".imm", "state", "batches");
     if (existsSync14(batchesDir))
-      for (const file of readdirSync10(batchesDir)) {
+      for (const file of readdirSync9(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
@@ -17455,7 +17454,7 @@ async function projectPreflight(options, preparing) {
       return reject("batch_resource_collision", error instanceof Error ? error.message : String(error));
     }
   } else {
-    const branchExists = spawnSync16("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
+    const branchExists = spawnSync15("git", ["-C", root, "show-ref", "--verify", "--quiet", `refs/heads/${batchBranch}`]);
     if (branchExists.status === 0 && !existingBatch)
       return reject("branch_already_exists", batchBranch);
   }
@@ -17539,7 +17538,7 @@ async function projectPreflight(options, preparing) {
       const scopeFailure = scopeEstimateFailure(root, read.intent);
       if (scopeFailure)
         throw new Error(scopeFailure);
-      if (spawnSync16("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
+      if (spawnSync15("git", ["-C", root, "ls-files", "--error-unmatch", "--", read.intent_ref.path]).status !== 0)
         throw new Error("TaskIntent must be tracked");
       preparation = preparePiCanary(root, { task_id: initiativeSlug, now });
       if (!preparation.intent || preparation.intent.content_hash !== read.content_hash || !preparation.git_base_head || preparation.task_record_v3?.present || preparation.task_tombstone.present || preparation.backend_claim.present || preparation.workspace.current_working)
@@ -17633,7 +17632,7 @@ async function authorizeBatch(options) {
     is_resuming: isResuming
   } = projection;
   const existingBatch = projection.existing_batch;
-  const branchBefore = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchBefore = spawnSync15("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchBefore.status !== 0)
     return { outcome: "rejected", rejection: batchRejection("repository_became_unreadable") };
   const fastForwardsRecordedHead = isResuming && existingBatch !== null && existingBatch.branch === batchBranch && expectedBatchHead(existingBatch) !== baseHead && classifyBatchLineage({
@@ -17729,7 +17728,7 @@ async function authorizeBatch(options) {
     if (!current || current.corrupt || JSON.stringify(current.record) !== JSON.stringify(existingBatch))
       return { outcome: "rejected", rejection: batchRejection("plan_changed") };
   }
-  const branchAfter = spawnSync16("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
+  const branchAfter = spawnSync15("git", ["-C", root, "branch", "--show-current"], { encoding: "utf8" });
   if (branchAfter.status !== 0 || branchAfter.stdout !== branchBefore.stdout)
     return { outcome: "rejected", rejection: batchRejection("confirmation_failed", "Git branch moved after native confirmation") };
   const binding = {
@@ -17786,9 +17785,9 @@ var init_batch_preflight = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_final_report.ts
-import { spawnSync as spawnSync17 } from "node:child_process";
+import { spawnSync as spawnSync16 } from "node:child_process";
 function git8(root, ...argv) {
-  return spawnSync17("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
+  return spawnSync16("git", ["--no-optional-locks", "-C", root, ...argv], { encoding: "utf8" });
 }
 function returnBatchToCoordinator(root, head, final) {
   const { mode } = readGitIntegrationPreference(root);
@@ -18090,7 +18089,7 @@ init_runtime_contracts();
 init_derived_files();
 init_batch_final_verification();
 init_batch_final_report();
-import { spawnSync as spawnSync20 } from "node:child_process";
+import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync18 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join27 } from "node:path";
@@ -18099,10 +18098,10 @@ import { readFileSync as readFileSync21 } from "node:fs";
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 init_git_integration_preference();
 init_batch_preflight();
-import { spawnSync as spawnSync18 } from "node:child_process";
+import { spawnSync as spawnSync17 } from "node:child_process";
 import { lstatSync as lstatSync16 } from "node:fs";
 import { join as join24 } from "node:path";
-var gitIn = (root, ...args) => spawnSync18("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
+var gitIn = (root, ...args) => spawnSync17("git", ["--no-optional-locks", "-C", root, ...args], { encoding: "utf8" });
 function deliveredPaths(root, base, head) {
   const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
   if (raw.status !== 0)
@@ -18179,12 +18178,12 @@ function deliverSingleTask(root, base, head) {
   }
   if (!pending.length)
     return { mode, status: "staged", reason: null };
-  const patch = spawnSync18("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
+  const patch = spawnSync17("git", ["--no-optional-locks", "--literal-pathspecs", "-C", root, "diff", "--binary", "--full-index", "--no-renames", base, head, "--", ...pending], { maxBuffer: 128 * 1024 * 1024 });
   if (patch.status !== 0)
     return blocked("checkout_delivery_conflict: cannot read delivery delta");
   if (!patch.stdout.length)
     return { mode, status: "staged", reason: null };
-  const apply = (check) => spawnSync18("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
+  const apply = (check) => spawnSync17("git", ["--no-optional-locks", "-C", root, "apply", "--index", ...check ? ["--check"] : []], { input: patch.stdout, encoding: "utf8" });
   const checked = apply(true);
   if (checked.status !== 0)
     return blocked(`checkout_delivery_conflict: ${checked.stderr.trim()}`);
@@ -18195,7 +18194,7 @@ function deliverSingleTask(root, base, head) {
 }
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
-import { spawnSync as spawnSync19 } from "node:child_process";
+import { spawnSync as spawnSync18 } from "node:child_process";
 var LANE_RETAINED_REASON = "batch_lane_retained";
 function exitProofCondition(generation, observation) {
   if (!generation)
@@ -18216,7 +18215,7 @@ function exitProofCondition(generation, observation) {
   return null;
 }
 function git9(cwd, ...args) {
-  return spawnSync19("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
+  return spawnSync18("git", ["--no-optional-locks", "-C", cwd, ...args], { encoding: "utf8" });
 }
 function retainedLaneReason(condition) {
   return `${LANE_RETAINED_REASON}: ${condition}; the Lane worktree and both branches are kept`;
@@ -19153,7 +19152,7 @@ function laneBranchName(initiativeSlug, taskId) {
   return `imm-lane/${initiativeSlug}/${taskId}`;
 }
 function gitRead(root, args) {
-  const result = spawnSync20("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const result = spawnSync19("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   return { status: result.status, stdout: (result.stdout ?? "").trim() };
 }
 function commonDir(root) {
@@ -21143,12 +21142,12 @@ function runMcpEntry(profile, entrySuffixes) {
 }
 
 // plugins/immune-brain/runtime/antigravity/review_host.ts
-import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync12, readSync as readSync2 } from "node:fs";
+import { constants as constants9, closeSync as closeSync8, fstatSync as fstatSync5, lstatSync as lstatSync19, openSync as openSync8, readdirSync as readdirSync11, readSync as readSync2 } from "node:fs";
 import { tmpdir as tmpdir6 } from "node:os";
 import { basename as basename4, join as join30, resolve as resolve16 } from "node:path";
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync11, rmSync as rmSync11 } from "node:fs";
+import { lstatSync as lstatSync18, readdirSync as readdirSync10, rmSync as rmSync11 } from "node:fs";
 import { dirname as dirname17, join as join29 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 
@@ -21306,7 +21305,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync11(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join29(dir, name)));
+      return readdirSync10(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join29(dir, name)));
     } catch {
       return [];
     }
@@ -21630,7 +21629,7 @@ function readSpawnRecords(subagentsDir) {
     return null;
   let entries;
   try {
-    entries = readdirSync12(subagentsDir, { withFileTypes: true });
+    entries = readdirSync11(subagentsDir, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -21657,7 +21656,7 @@ function readChildMessages(messagesDir) {
     return null;
   let entries;
   try {
-    entries = readdirSync12(messagesDir, { withFileTypes: true });
+    entries = readdirSync11(messagesDir, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -21804,7 +21803,7 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync21, lstatSync as lstatSync21, readdirSync as readdirSync13, realpathSync as realpathSync23 } from "node:fs";
+import { existsSync as existsSync21, lstatSync as lstatSync21, readdirSync as readdirSync12, realpathSync as realpathSync23 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir3, tmpdir as tmpdir9 } from "node:os";
 import { join as join38 } from "node:path";
@@ -25539,7 +25538,7 @@ function dropConversationConfirmations(conversationId, root) {
     return;
   const prefix = `${sessionHash(conversationId)}.`;
   try {
-    for (const file of readdirSync13(dir)) {
+    for (const file of readdirSync12(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
         dropPrivate(join38(dir, file));
       }

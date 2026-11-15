@@ -9,7 +9,6 @@ import {
 	captureReviewManifest,
 	listReviewRefs,
 	reconcileReviewRefs,
-	verifyReviewBundle,
 	writeNativeReviewEvidence,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { captureGitTaskRevisionSnapshot, taskDiffHash, taskRevisionDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
@@ -70,13 +69,6 @@ describe("native canary review evidence", () => {
 			rmSync(join(root, ".git"), { recursive: true, force: true });
 			expect(bundle.dirty_files["tracked.ts"].current_content).toContain("captured");
 			expect(bundle.dirty_files["tracked.ts"].base_oid).toMatch(/^[a-f0-9]{40,64}$/);
-			const tampered = structuredClone(bundle);
-			tampered.dirty_files["tracked.ts"].current_content = "tampered";
-			expect(() => verifyReviewBundle(tampered)).toThrow(/digest mismatch/i);
-
-			const outcomeTampered = structuredClone(bundle);
-			outcomeTampered.outcomes["acc-1"].status = "failed";
-			expect(() => verifyReviewBundle(outcomeTampered)).toThrow(/digest mismatch/i);
 			expect(bundle.outcomes["acc-1"].status).toBe("passed");
 		} finally {
 			rmSync(root, { recursive: true, force: true });

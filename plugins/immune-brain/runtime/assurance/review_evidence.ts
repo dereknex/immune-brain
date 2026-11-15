@@ -225,11 +225,6 @@ export function captureReviewBundle(
 	return { ...unsigned, bundle_digest: bundleDigest(unsigned) };
 }
 
-export function verifyReviewBundle(bundle: ReviewBundle): void {
-	const { bundle_digest, ...unsigned } = bundle;
-	if (bundle_digest !== bundleDigest(unsigned)) throw new Error("immutable review bundle digest mismatch");
-}
-
 // ---------------------------------------------------------------------------
 // TaskRecord v4 transport: the reviewed bytes are an immutable synthetic Git
 // revision, so the host envelope carries metadata only and source size, encoding,
@@ -618,28 +613,6 @@ export function reconcileReviewRefs(
 		}
 	}
 	return { removed, failed };
-}
-
-export function deleteReviewRef(root: string, revision: ReviewRevisionCommit): void {
-	const parts = revision.review_ref.split("/");
-	let validRef = false;
-	if (
-		parts.length === 5 &&
-		parts[0] === "refs" &&
-		parts[1] === "immune-brain" &&
-		parts[2] === "reviews" &&
-		parts[4] === revision.review_commit
-	) {
-		try {
-			taskIdFromReviewRefSegment(parts[3] ?? "");
-			validRef = true;
-		} catch {
-			validRef = false;
-		}
-	}
-	if (!validRef || !GIT_COMMIT_ID.test(revision.review_commit))
-		throw new Error("review ref has invalid identity");
-	gitEvidence(root, ["update-ref", "-d", revision.review_ref, revision.review_commit]);
 }
 
 export function writeNativeReviewEvidence(payload: unknown): ReviewEvidence {

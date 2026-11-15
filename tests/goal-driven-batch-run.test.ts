@@ -9,7 +9,6 @@ import { withCompletionDelivery } from "../plugins/immune-brain/runtime/claude/m
 import { canonicalIntentHash, parseTaskIntentV1 } from "../plugins/immune-brain/runtime/kernel/intent";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { prepareBatchLaneRunState, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
-import { assertIsolatedTaskPrerequisites, type GhTransport } from "../plugins/immune-brain/runtime/github_issue_tracker";
 import { observeNativeParent } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import { readBatchLaneRunState, writeNativeParentFinalReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { observeParentRun } from "../plugins/immune-brain/runtime/assurance/run_continuation";
@@ -68,65 +67,6 @@ function parentFixture(nativeRoot: boolean) {
   batch_id: args.batch_id, plan_digest: args.plan_digest } };
 }
 
-function githubPlan(line: string, edge: boolean): GhTransport {
- const markers = (kind: string) => `<!-- immune-brain-tracker:v1 -->\n<!-- immune-brain:kind=${kind} -->\n<!-- immune-brain:repo-id=1 -->\n<!-- immune-brain:initiative-id=parent -->`;
- const issue = (id: number, number: number, body: string) => ({ id, number, body, title: "Issue", state: "open", state_reason: null, html_url: `https://github.com/example/project/issues/${number}` });
- return { async run(args) {
-  const endpoint = args.at(-1) ?? "";
-  let value: unknown;
-  if (endpoint === "repos/{owner}/{repo}") value = { id: 1, full_name: "example/project" };
-  else if (endpoint.includes("issues?state=all")) value = [
-   issue(100, 1, `${markers("initiative")}\n## Slices\n${line}`),
-   issue(200, 2, `${markers("task")}\n<!-- immune-brain:slice-id=S5 -->\n<!-- immune-brain:task-id=T-a -->`),
-   issue(300, 3, `${markers("task")}\n<!-- immune-brain:slice-id=S6 -->\n<!-- immune-brain:task-id=s6 -->`),
-  ];
-  else if (endpoint.endsWith("/issues/1/sub_issues?per_page=100")) value = [[{ number: 2 }, { number: 3 }]];
-  else if (endpoint.endsWith("/issues/2/dependencies/blocked_by?per_page=100")) value = [[]];
-  else if (endpoint.endsWith("/issues/3/dependencies/blocked_by?per_page=100")) value = [edge ? [{ issue_id: 200 }] : []];
-  else throw new Error(`unexpected gh call: ${args.join(" ")}`);
-  return { exit_code: 0, stdout: JSON.stringify(value), stderr: "", timed_out: false, output_exceeded: false };
- } };
-}
-
-const sliceLine = "- [ ] <!-- immune-brain:slice-id=S6 --> **S6**: deliver";
-
-describe("GitHub isolated Slice prerequisites", () => {
- it.each([
-  [false, `${sliceLine} (blocked by: T-a)`], [true, `${sliceLine} (blocked by: T-a)`],
-  [true, `${sliceLine}\nwrapped\n\n- result list (blocked by: T-a)\n\n---\n\nfooter`],
-  [true, `${sliceLine}\nwrapped result\n  (blocked by: T-a)\n- [ ] <!-- immune-brain:slice-id=S7 --> **S7**: next`],
- ])("uses the published prerequisite with native edge=%p: %s", async (edge, line) => {
-  const f = settledDeliveryFixture("critical", "T-a");
-  try {
-   rmSync(join(f.root, "docs/initiatives/parent.md"));
-   const gh = githubPlan(line, edge);
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6", gh)).rejects.toThrow("Isolated Slice prerequisites are not integrated: T-a");
-   f.settle("s5"); f.git("add", "src"); f.git("commit", "-qm", "deliver prerequisite");
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6", gh)).resolves.toBeUndefined();
-  } finally { rmSync(f.root, { recursive: true, force: true }); }
- });
- it("ignores an edge absent from the published plan", async () => {
-  const f = settledDeliveryFixture("critical", "T-a");
-  try {
-   rmSync(join(f.root, "docs/initiatives/parent.md"));
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6", githubPlan(sliceLine, true))).resolves.toBeUndefined();
-  } finally { rmSync(f.root, { recursive: true, force: true }); }
- });
- it.each([
-  "no Slice here", `${sliceLine}\n${sliceLine}`, `${sliceLine} (blocked by: )`,
-  `${sliceLine} (blocked by: outside)`, `${sliceLine} (blocked by: s6)`,
-  `${sliceLine} (blocked by: T-a, T-a)`, `${sliceLine} (blocked by: bad/id)`,
-  `${sliceLine} (blocked by: T-a`, `${sliceLine}\nwrapped (blocked by: T-a) trailing`,
-  `${sliceLine} (blocked by: T-a)\nwrapped (blocked by: T-a)`,
- ])("rejects an unreadable published plan: %s", async line => {
-  const f = settledDeliveryFixture("critical", "T-a");
-  try {
-   rmSync(join(f.root, "docs/initiatives/parent.md"));
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6", githubPlan(line, false))).rejects.toThrow("Slice S6");
-  } finally { rmSync(f.root, { recursive: true, force: true }); }
- });
-});
-
 describe("native task transitions inside a Parent", () => {
  it.each([false, true])("Parent progress ignores timing/revision noise (native=%s)", async native => {
   // A native Parent is one whose remaining work is already delivered (run-entry
@@ -153,28 +93,6 @@ describe("native task transitions inside a Parent", () => {
    write(10); const first = await observeParentRun(binding, "one");
    write(200); const second = await observeParentRun(binding, "two");
    expect(second.progress_digest).toBe(first.progress_digest);
-  } finally { rmSync(h.root, { recursive: true, force: true }); }
- });
-
- it("Local carrier dependencies are enforced before either Host can enroll a Child without remotes", async () => {
-  const h = parentFixture(false);
-  try {
-   writeFileSync(join(h.root, "docs/initiatives/parent.md"), "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: child\nTasks:\n- other-task\nBlocked by: root-task\n");
-   await expect(assertIsolatedTaskPrerequisites(h.root, "other-task")).rejects.toThrow("Isolated Slice prerequisites are not integrated: root-task");
-   await expect(assertIsolatedTaskPrerequisites(h.root, "root-task")).resolves.toBeUndefined();
-  } finally { rmSync(h.root, { recursive: true, force: true }); }
- });
-
- it("an unrelated or malformed Initiative file never blocks Enrollment, but a malformed file naming the Task does", async () => {
-  const h = parentFixture(false);
-  try {
-   writeFileSync(join(h.root, "docs/initiatives/parent.md"), "# Parent\n## S1: root\nTasks:\n- root-task\n## S2: child\nTasks:\n- other-task\nBlocked by: root-task\n");
-   writeFileSync(join(h.root, "docs/initiatives/README.md"), "# Notes\nNo Slice is declared here.\n");
-   writeFileSync(join(h.root, "docs/initiatives/draft.md"), "# Draft\n## S1: split\nTasks:\n- one\n- two\n");
-   await expect(assertIsolatedTaskPrerequisites(h.root, "other-task")).rejects.toThrow("Isolated Slice prerequisites are not integrated: root-task");
-   await expect(assertIsolatedTaskPrerequisites(h.root, "root-task")).resolves.toBeUndefined();
-   await expect(assertIsolatedTaskPrerequisites(h.root, "unrelated-task")).resolves.toBeUndefined();
-   await expect(assertIsolatedTaskPrerequisites(h.root, "one")).rejects.toThrow("must name exactly one Task");
   } finally { rmSync(h.root, { recursive: true, force: true }); }
  });
 
@@ -307,7 +225,6 @@ describe("settled is delivered", () => {
    f.settle("s5"); f.git("add", f.source.s5); f.git("commit", "-qm", "my own message, no trailer");
    const commits = commitCount(f); const head = f.git("rev-parse", "HEAD");
    expect(await observeParentCompletion(f.root, "parent", ["s5"])).toMatchObject({ integrated_task_ids: ["s5"], missing_task_ids: [] });
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6")).resolves.toBeUndefined();
    // The unsettled critical s6 is batch work now, not a native Parent step (D5).
    expect(await observeNativeParent(f.root, "parent", f.reader)).toBeNull();
    expect(await advanceNativeParent(f.root, "parent", undefined, f.reader, undefined, noGate)).toBeNull();
@@ -351,7 +268,6 @@ describe("settled is delivered", () => {
   try {
    arrange(f);
    expect(await observeParentCompletion(f.root, "parent", ["s5"])).toMatchObject({ integrated_task_ids: [], missing_task_ids: ["s5"] });
-   await expect(assertIsolatedTaskPrerequisites(f.root, "s6")).rejects.toThrow("prerequisites are not integrated: s5");
   } finally { rmSync(f.root, { recursive: true, force: true }); }
  });
 });

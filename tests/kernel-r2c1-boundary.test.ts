@@ -28,7 +28,6 @@ describe("additive export surface", () => {
 		expect(typeof kernel.parseTaskRecordV2).toBe("function");
 		expect(typeof kernel.completionDecision).toBe("function");
 		expect(typeof kernel.projectTask).toBe("function");
-		expect(typeof kernel.assertKernelInvariantsV2).toBe("function");
 	});
 
 	test("no mutation, issuer, import, token consumer, or dispatcher surface is exported", () => {

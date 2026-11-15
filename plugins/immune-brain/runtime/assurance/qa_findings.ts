@@ -13,12 +13,6 @@ export function qaFindingId(acceptanceId: string, snapshotDigest: string): strin
 	return `qa-${acceptanceId}-${attemptRef(snapshotDigest)}`;
 }
 
-/** Digest-scoped id for an evidence-freshness QA rework finding. */
-export function qaEvidenceFreshnessId(snapshotDigest: string): string {
-	const digest16 = snapshotDigest.slice("sha256:".length, "sha256:".length + 16);
-	return `qa-evidence-freshness-${digest16}-${attemptRef(snapshotDigest)}`;
-}
-
 /** Summary prefix that marks a baseline failure also present at `base_head`. */
 export const PRE_EXISTING_BASELINE_PREFIX = "pre-existing baseline failure:";
 
@@ -30,29 +24,4 @@ export function qaBaselineFindingId(checkId: string, snapshotDigest: string): st
 function attemptRef(snapshotDigest: string): string {
 	const digest8 = snapshotDigest.slice("sha256:".length, "sha256:".length + 8);
 	return `${digest8}-${randomUUID().slice(0, 6)}`;
-}
-
-/**
- * Preserve the original QA verdict details (which acceptance failed and why)
- * when applying an authority verdict fails. The raw reducer error alone masks
- * the failure reason that matters; append the verdict findings when present.
- */
-export function describeQaFailure(
-	boundedBase: string,
-	findings?: Array<{ id: string; summary: string }>,
-): string {
-	if (!findings?.length) return boundedBase;
-	const detail = findings.map((finding) => `${finding.id}: ${finding.summary}`).join(" | ");
-	const marker = "; verdict: ";
-	const totalBudget = 300;
-	// Reserve room for at least the first 160 chars of verdict detail.
-	const baseBudget = Math.max(0, totalBudget - marker.length - Math.min(detail.length, 160));
-	const trimmedBase =
-		boundedBase.length <= baseBudget
-			? boundedBase
-			: `${boundedBase.slice(0, Math.max(0, baseBudget - 1))}…`;
-	const detailBudget = Math.max(0, totalBudget - trimmedBase.length - marker.length);
-	const bounded =
-		detail.length <= detailBudget ? detail : `${detail.slice(0, Math.max(0, detailBudget - 3))}...`;
-	return `${trimmedBase}${marker}${bounded}`;
 }
