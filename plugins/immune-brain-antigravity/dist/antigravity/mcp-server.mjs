@@ -20263,7 +20263,7 @@ function listMcpTools() {
 function supportsElicitationProtocol(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= MCP_PROTOCOL_VERSION;
 }
-function withCompletionDelivery(taskId, result, root = process.cwd()) {
+function withCompletionDelivery(taskId, result, root) {
   if (result?.state !== "completed")
     return result;
   try {

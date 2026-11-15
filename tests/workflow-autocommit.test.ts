@@ -406,6 +406,18 @@ describe("settle commit under the Git integration preference (ADR 0024, SCN-4)",
 		expect(statusLines(root)).toEqual(status);
 	});
 
+	// BR-REQ-3: the workspace root is a required argument, so no caller can silently
+	// read settled evidence from the server process's own cwd. tsconfig.json includes
+	// this file so the @ts-expect-error below is a real compile-time check: an optional
+	// or defaulted root turns it into an unused-directive error.
+	test("withCompletionDelivery requires the workspace root instead of defaulting to cwd", () => {
+		// @ts-expect-error root: string is required
+		const omitRoot = () => withCompletionDelivery(taskId, { state: "completed" });
+		expect(omitRoot).toBeFunction();
+		const { root } = settled("auto");
+		expect(withCompletionDelivery(taskId, { state: "completed" }, root)).toHaveProperty("delivery");
+	});
+
 	test("auto never sweeps an in-scope edit made after settlement into the commit", () => {
 		const { root, base } = settled("auto");
 		writeFileSync(join(root, "src/a.ts"), "a2\n");
