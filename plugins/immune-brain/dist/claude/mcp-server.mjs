@@ -15648,20 +15648,12 @@ function blockedByParked(children) {
   }
   return blocked;
 }
-function positiveLimit(maxParallel) {
-  if (maxParallel === Number.POSITIVE_INFINITY)
-    return maxParallel;
-  if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
-    throw new Error("max_parallel must be a positive safe integer");
-  return maxParallel;
-}
 function startableChildren(children, maxParallel) {
-  const limit = positiveLimit(maxParallel);
   const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
   const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
   const startable = [];
   for (const child of children) {
-    if (occupied.length >= limit)
+    if (occupied.length >= maxParallel)
       break;
     if (child.state !== "pending")
       continue;
@@ -15672,21 +15664,25 @@ function startableChildren(children, maxParallel) {
   }
   return startable;
 }
-function projectParallelGroups(children) {
-  const remaining = [...children];
+function dependencyWaves(nodes, cycleMessage) {
+  const remaining = [...nodes];
   const placed = new Set;
-  const groups = [];
+  const waves = [];
   while (remaining.length) {
-    const wave = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
+    const wave = remaining.filter((node) => node.blocked_by.every((id) => placed.has(id)));
     if (!wave.length)
-      throw new Error("Initiative Task dependencies must form an acyclic graph");
-    groups.push(wave.map((child) => child.task_id));
-    for (const child of wave) {
-      placed.add(child.task_id);
-      remaining.splice(remaining.indexOf(child), 1);
+      throw new Error(cycleMessage);
+    waves.push(wave);
+    for (const node of wave) {
+      placed.add(node.task_id);
+      remaining.splice(remaining.indexOf(node), 1);
     }
   }
-  return { parallel_groups: groups, scope_conflicts: [] };
+  return waves;
+}
+function projectParallelGroups(children) {
+  const parallel_groups = dependencyWaves(children, "Initiative Task dependencies must form an acyclic graph").map((wave) => wave.map((child) => child.task_id));
+  return { parallel_groups, scope_conflicts: [] };
 }
 var IN_FLIGHT_STATES, DONE_STATES, PARKED_STATES;
 var init_batch_schedule = __esm(() => {
@@ -17323,17 +17319,7 @@ async function readConfirmedBatchTopology(root, batch, readInitiative = observeI
   const tasks = [...observation.tasks].sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
   if (new Set(tasks.map((task) => task.task_id)).size !== tasks.length)
     throw new Error("duplicate Initiative Task");
-  const remaining = [...tasks];
-  const visited = new Set;
-  while (remaining.length) {
-    const ready = remaining.filter((task) => task.blocked_by.every((dependency) => visited.has(dependency)));
-    if (!ready.length)
-      throw new Error("Initiative dependencies contain a cycle or unknown Task");
-    for (const task of ready) {
-      visited.add(task.task_id);
-      remaining.splice(remaining.indexOf(task), 1);
-    }
-  }
+  dependencyWaves(tasks, "Initiative dependencies contain a cycle or unknown Task");
   const topology_digest = batchTopologyDigest(tasks);
   if (!isLaneBatchRecord(batch) || batch.topology_digest !== topology_digest)
     throw new Error("confirmed Parent topology changed or its recorded identity is missing");
@@ -17865,6 +17851,7 @@ var init_batch_preflight = __esm(() => {
   init_storage();
   init_workspace_scope();
   init_batch_plan();
+  init_batch_schedule();
   init_verification_descriptor();
   init_intent_readiness();
   init_batch_reasons();

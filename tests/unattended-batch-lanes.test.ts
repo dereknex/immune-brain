@@ -9,7 +9,7 @@ import { createEnrollmentAuthorityRegistry } from "../plugins/immune-brain/runti
 import { canonicalIntentHash, intentAuthorityHash, parseTaskIntentV1, readTaskIntent, observeEnrollmentTaskIntent } from "../plugins/immune-brain/runtime/kernel/intent";
 import { preparePiCanary } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { createBatchKernelPort } from "../plugins/immune-brain/runtime/unattended/batch_kernel_port";
-import { projectBatchPreflight, readActiveClaimTaskId } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
+import { projectBatchPreflight, readActiveClaimTaskId, readConfirmedBatchTopology } from "../plugins/immune-brain/runtime/unattended/batch_preflight";
 import { seedKernelRunForTest } from "./fixtures/mutation-authority-test-seam";
 import { observeParentCompletion, runBatchGitPreflight, type BatchRunnerGitPort } from "../plugins/immune-brain/runtime/unattended/batch_git";
 import {
@@ -33,7 +33,7 @@ import {
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { completedParentReport, startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
-import { readAnyBatchRunState, prepareBatchLaneRunState, writeBatchLaneRunState, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { readAnyBatchRunState, prepareBatchLaneRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { retireStaleBatch } from "../plugins/immune-brain/runtime/unattended/batch_disposition";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 
@@ -516,6 +516,29 @@ describe("lane mode parameters", () => {
 				{ task_id: "task-a", path: "/tmp/y" },
 			]),
 		).toThrow(/duplicate/);
+	});
+});
+
+describe("batch topology preflight", () => {
+	const observation = (tasks: Array<{ task_id: string; slice_id: string; blocked_by: string[] }>) =>
+		async (_root: string, slug: string) => ({
+			contract: "immune_brain/local_initiative_observation/v1" as const,
+			initiative_id: slug,
+			path: "docs/initiative.md",
+			tasks,
+		});
+	const serialRecord = { contract: "assurance_kernel/batch_run_state/v1", initiative_slug: SLUG } as unknown as AnyBatchRunStateRecord;
+
+	it("rejects a two-Task cycle and a blocker naming an unknown Task", async () => {
+		const rejected = "Initiative dependencies contain a cycle or unknown Task";
+		await expect(readConfirmedBatchTopology("/tmp", serialRecord, observation([
+			{ task_id: "a", slice_id: "S1", blocked_by: ["b"] },
+			{ task_id: "b", slice_id: "S2", blocked_by: ["a"] },
+		]))).rejects.toThrow(rejected);
+		await expect(readConfirmedBatchTopology("/tmp", serialRecord, observation([
+			{ task_id: "a", slice_id: "S1", blocked_by: [] },
+			{ task_id: "b", slice_id: "S2", blocked_by: ["ghost"] },
+		]))).rejects.toThrow(rejected);
 	});
 });
 
