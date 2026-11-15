@@ -15459,6 +15459,9 @@ var init_workflow_autocommit = __esm(() => {
 
 // plugins/immune-brain/runtime/unattended/batch_integration.ts
 import { spawnSync as spawnSync12 } from "node:child_process";
+import { mkdtempSync as mkdtempSync6, rmSync as rmSync8 } from "node:fs";
+import { tmpdir as tmpdir5 } from "node:os";
+import { join as join21 } from "node:path";
 function git6(root, args, extra = {}) {
   const result = spawnSync12("git", ["-C", root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", ...args], {
     encoding: "utf8",
@@ -15526,6 +15529,61 @@ function changedDerivedEntries(root, base, laneCommit, entries) {
   const paths = [...changeIdentity(root, base, laneCommit).keys()];
   return entries.filter((entry) => paths.some((path) => entry.outputs.includes(path) || entry.sources.some((pattern) => sourceMatches(path, pattern))));
 }
+function mergeDerivedDeclaration(root, base, head, lane) {
+  const texts = [base, head, lane].map((commit) => {
+    const shown = git6(root, ["cat-file", "blob", `${commit}:${DERIVED_FILES_PATH}`]);
+    return shown.status === 0 ? shown.stdout : null;
+  });
+  if (texts.some((text) => text === null))
+    return null;
+  try {
+    const [b, h, l] = texts.map((text) => JSON.parse(text));
+    for (const declaration of [b, h, l])
+      parseDerivedFiles(declaration);
+    if (`${JSON.stringify(h, null, 2)}
+` !== texts[1])
+      return null;
+    const shape = (declaration) => JSON.stringify({ ...declaration, entries: declaration.entries.map((entry) => ({ ...entry, outputs: [] })) });
+    if (shape(b) !== shape(h) || shape(b) !== shape(l))
+      return null;
+    const merged = { ...h, entries: h.entries.map((entry, index) => {
+      const before = new Set(b.entries[index].outputs);
+      const after = l.entries[index].outputs;
+      const outputs = entry.outputs.filter((path) => !before.has(path) || after.includes(path));
+      for (const path of after)
+        if (!before.has(path) && !outputs.includes(path))
+          outputs.push(path);
+      const sorted = entry.outputs.every((path, at) => at === 0 || entry.outputs[at - 1] <= path);
+      return { ...entry, outputs: sorted ? outputs.sort() : outputs };
+    }) };
+    parseDerivedFiles(merged);
+    return `${JSON.stringify(merged, null, 2)}
+`;
+  } catch {
+    return null;
+  }
+}
+function withDeclaration(root, tree, text) {
+  const mode = gitOut(root, ["ls-tree", tree, "--", DERIVED_FILES_PATH], "read declaration mode").split(" ")[0];
+  const blob = git6(root, ["hash-object", "-w", "--stdin"], { input: text });
+  if (blob.status !== 0 || !mode)
+    throw new Error("write merged derived-files declaration failed");
+  const directory = mkdtempSync6(join21(tmpdir5(), "imm-batch-declaration-"));
+  try {
+    const env = { GIT_INDEX_FILE: join21(directory, "index") };
+    const step = (args) => {
+      const result = git6(root, args, { env });
+      if (result.status !== 0)
+        throw new Error(`merge derived-files declaration: ${result.stderr.trim() || "git failed"}`);
+      return result.stdout;
+    };
+    step(["read-tree", tree]);
+    step(["update-index", "--cacheinfo", `${mode},${blob.stdout.trim()},${DERIVED_FILES_PATH}`]);
+    return step(["write-tree"]).trim();
+  } finally {
+    rmSync8(directory, { recursive: true, force: true });
+  }
+}
 function buildCandidate(input) {
   const { root, batch_head: head, lane_base: base, lane_commit: laneCommit } = input;
   const entries = readDerivedFilesAt(root, input.declaration_head ?? base);
@@ -15539,9 +15597,18 @@ function buildCandidate(input) {
   const originalTree = tree;
   const conflicts = merged?.status === 1 ? merged.stdout.split("\x00").slice(1) : [];
   const paths = conflicts.slice(0, conflicts.indexOf(""));
+  let declarationMerged = false;
+  if (paths.includes(DERIVED_FILES_PATH)) {
+    const declaration = mergeDerivedDeclaration(root, base, head, laneCommit);
+    if (declaration !== null) {
+      tree = withDeclaration(root, tree, declaration);
+      paths.splice(paths.indexOf(DERIVED_FILES_PATH), 1);
+      declarationMerged = true;
+    }
+  }
   const conflictEntries = entries.filter((entry) => entry.outputs.some((path) => paths.includes(path)));
   const conflictOutputs = new Set(conflictEntries.flatMap((entry) => entry.outputs));
-  if (merged?.status === 1 && (!paths.length || paths.some((path) => !conflictOutputs.has(path))))
+  if (merged?.status === 1 && (!paths.length && !declarationMerged || paths.some((path) => !conflictOutputs.has(path))))
     throw new BatchIntegrationError("batch_integration_conflict", "batch_integration_conflict: conflicts include undeclared outputs");
   const selected = entries.filter((entry) => touched.includes(entry) || conflictEntries.includes(entry));
   if (selected.length) {
@@ -15910,7 +15977,7 @@ var init_batch_final_report = __esm(() => {
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 import { spawnSync as spawnSync14 } from "node:child_process";
 import { lstatSync as lstatSync15 } from "node:fs";
-import { join as join21 } from "node:path";
+import { join as join22 } from "node:path";
 function deliveredPaths(root, base, head) {
   const raw = gitIn(root, "diff", "--raw", "-z", "--abbrev=40", "--no-renames", base, head, "--");
   if (raw.status !== 0)
@@ -15933,7 +16000,7 @@ function pathSatisfied(root, entry) {
     if (staged.stdout.length)
       return false;
     try {
-      lstatSync15(join21(root, entry.path));
+      lstatSync15(join22(root, entry.path));
       return false;
     } catch {
       return true;
@@ -15944,7 +16011,7 @@ function pathSatisfied(root, entry) {
     return false;
   let stat;
   try {
-    stat = lstatSync15(join21(root, entry.path));
+    stat = lstatSync15(join22(root, entry.path));
   } catch {
     return false;
   }
@@ -16020,10 +16087,10 @@ import {
   realpathSync as realpathSync17,
   readdirSync as readdirSync8,
   renameSync as renameSync4,
-  rmSync as rmSync8,
+  rmSync as rmSync9,
   writeFileSync as writeFileSync9
 } from "node:fs";
-import { dirname as dirname13, join as join22 } from "node:path";
+import { dirname as dirname13, join as join23 } from "node:path";
 function runBatchGitPreflight(input) {
   const { root, base_head: baseHead } = input;
   const scopes = input.progress_mode === "parent_branch" ? [] : input.blocking_scopes ?? [];
@@ -16210,13 +16277,13 @@ function getCommittedDeltaPaths(root) {
   return delta.stdout.split("\x00").filter((p) => p.length > 0);
 }
 function commitEvidencePath(batchId, taskId) {
-  return join22(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
+  return join23(".imm", "state", "batches", "commits", `${batchId}-${taskId}.json`);
 }
 function ensureSecureDirectory3(root, relativePath) {
   const segments = relativePath.split("/").filter(Boolean);
   let current = root;
   for (const segment of segments) {
-    current = join22(current, segment);
+    current = join23(current, segment);
     if (existsSync12(current)) {
       const stats = lstatSync16(current);
       if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -16229,7 +16296,7 @@ function ensureSecureDirectory3(root, relativePath) {
   return current;
 }
 function writeFileAtomically2(root, relativePath, bytes) {
-  const target = join22(root, relativePath);
+  const target = join23(root, relativePath);
   const targetDir = dirname13(target);
   ensureSecureDirectory3(root, dirname13(relativePath));
   const stats = lstatSync16(targetDir);
@@ -16255,7 +16322,7 @@ function writeFileAtomically2(root, relativePath, bytes) {
       closeSync6(fd);
     if (existsSync12(tempPath)) {
       try {
-        rmSync8(tempPath);
+        rmSync9(tempPath);
       } catch {}
     }
   }
@@ -16276,7 +16343,7 @@ function writeBatchCommitEvidence(root, evidence) {
 }
 function readBatchCommitEvidence(root, batchId, taskId) {
   const path = commitEvidencePath(batchId, taskId);
-  const fullPath = join22(root, path);
+  const fullPath = join23(root, path);
   if (!existsSync12(fullPath))
     return null;
   try {
@@ -16724,7 +16791,7 @@ function deliveryScopes(root, taskIds) {
   return [...scopes].sort();
 }
 function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
-  const directory = join22(root, ".imm", "state", "batches");
+  const directory = join23(root, ".imm", "state", "batches");
   const records = [];
   if (existsSync12(directory))
     for (const file of readdirSync8(directory).sort()) {
@@ -16737,7 +16804,7 @@ function parentDeliveryTasks(root, initiativeSlug, requiredTaskIds) {
       if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
         continue;
       if (kind === "newer")
-        throw new BatchRuntimeTooOldError(join22(directory, file), candidate.contract);
+        throw new BatchRuntimeTooOldError(join23(directory, file), candidate.contract);
       const record = readAnyBatchRunState(root, file.slice(0, -5));
       if (!record)
         throw new Error("Parent batch record disappeared during observation");
@@ -17043,7 +17110,7 @@ var init_intent_readiness = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_leak_restore.ts
 import { spawnSync as spawnSync16 } from "node:child_process";
 import { copyFileSync as copyFileSync2, existsSync as existsSync13, mkdirSync as mkdirSync10, renameSync as renameSync5, writeFileSync as writeFileSync10 } from "node:fs";
-import { dirname as dirname14, join as join23 } from "node:path";
+import { dirname as dirname14, join as join24 } from "node:path";
 function git8(root, args) {
   const result = spawnSync16("git", ["-C", root, ...args], {
     encoding: "utf8",
@@ -17069,7 +17136,7 @@ function laneOrigin(root, record, path, blob) {
       continue;
     if (blobAt(root, lane.base_head, path) === blob)
       continue;
-    if (existsSync13(join23(lane.path, path)) && blobOfFile(lane.path, join23(lane.path, path)) === blob)
+    if (existsSync13(join24(lane.path, path)) && blobOfFile(lane.path, join24(lane.path, path)) === blob)
       return child.task_id;
     const commits = git8(root, ["rev-list", `${lane.base_head}..${lane.branch}`]);
     if (commits.status !== 0)
@@ -17091,7 +17158,7 @@ function planLaneLeakRestore(root, record, entries) {
     const kind = code === "??" ? "untracked" : code === " M" ? "modified" : null;
     if (!kind)
       return { kind: "unprovable", path, detail: `status ${code.trim() || code} is not a Lane write` };
-    const blob = blobOfFile(root, join23(root, path));
+    const blob = blobOfFile(root, join24(root, path));
     if (!blob)
       return { kind: "unprovable", path, detail: "its bytes cannot be read" };
     const origin = laneOrigin(root, record, path, blob);
@@ -17107,28 +17174,28 @@ function restoreProvableLaneLeaks(root, record, entries, now) {
     return plan;
   const planned = plan.paths;
   const stamp = now.replace(/[^0-9TZ]/g, "");
-  const backup = join23(".imm", "state", "batches", "restores", record.batch_id, stamp);
-  const backupRoot = join23(root, backup);
-  mkdirSync10(join23(backupRoot, "files"), { recursive: true });
+  const backup = join24(".imm", "state", "batches", "restores", record.batch_id, stamp);
+  const backupRoot = join24(root, backup);
+  mkdirSync10(join24(backupRoot, "files"), { recursive: true });
   const tracked = planned.filter((p) => p.kind === "modified").map((p) => p.path);
   if (tracked.length > 0) {
     const diff = git8(root, ["diff", "--binary", "HEAD", "--", ...tracked]);
-    writeFileSync10(join23(backupRoot, "restore.patch"), diff.stdout);
+    writeFileSync10(join24(backupRoot, "restore.patch"), diff.stdout);
   }
   for (const { path, kind } of planned) {
-    mkdirSync10(dirname14(join23(backupRoot, "files", path)), { recursive: true });
+    mkdirSync10(dirname14(join24(backupRoot, "files", path)), { recursive: true });
     if (kind === "modified")
-      copyFileSync2(join23(root, path), join23(backupRoot, "files", path));
+      copyFileSync2(join24(root, path), join24(backupRoot, "files", path));
   }
   const restore = { at: now, backup, paths: planned };
-  writeFileSync10(join23(backupRoot, "restore.json"), `${JSON.stringify({
+  writeFileSync10(join24(backupRoot, "restore.json"), `${JSON.stringify({
     ...restore,
     undo: "copy each file under files/ back to the same repository path"
   }, null, 2)}
 `);
   for (const { path, kind } of planned) {
     if (kind === "untracked") {
-      renameSync5(join23(root, path), join23(backupRoot, "files", path));
+      renameSync5(join24(root, path), join24(backupRoot, "files", path));
       continue;
     }
     const restored = git8(root, ["restore", "--source=HEAD", "--worktree", "--", path]);
@@ -17144,7 +17211,7 @@ var init_batch_leak_restore = __esm(() => {
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
 import { existsSync as existsSync14, readdirSync as readdirSync9, readFileSync as readFileSync19 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
-import { dirname as dirname15, join as join24 } from "node:path";
+import { dirname as dirname15, join as join25 } from "node:path";
 import { spawnSync as spawnSync17 } from "node:child_process";
 function batchRejection(key, detail = "") {
   const resolved = batchReason(key, detail);
@@ -17163,14 +17230,14 @@ function readActiveClaimTaskId(root) {
   return workspace.state.current_working || (claim?.lifecycle_status === "active" ? claim.task_id : null);
 }
 function findResumableBatchSlugForTask(root, taskId) {
-  const batchesDir = join24(root, ".imm", "state", "batches");
+  const batchesDir = join25(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   for (const file of readdirSync9(batchesDir)) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync19(join24(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync19(join25(batchesDir, file), "utf8"));
       if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract)))
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -17185,7 +17252,7 @@ function findResumableBatchSlugForTask(root, taskId) {
 }
 function findExistingActiveBatch(root, initiativeSlug) {
   let found = null;
-  const batchesDir = join24(root, ".imm", "state", "batches");
+  const batchesDir = join25(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   for (const file of readdirSync9(batchesDir)) {
@@ -17193,7 +17260,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join24(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync19(join25(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -17204,7 +17271,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
     if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
       continue;
     if (kind === "newer")
-      return { corrupt: true, path: join24(batchesDir, file), newer_contract: candidate.contract };
+      return { corrupt: true, path: join25(batchesDir, file), newer_contract: candidate.contract };
     if (kind === "unreadable")
       return { corrupt: true, path: file };
     if (candidate.initiative_slug !== initiativeSlug)
@@ -17227,7 +17294,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
   return found;
 }
 function findSettledBatchRecord(root, initiativeSlug) {
-  const batchesDir = join24(root, ".imm", "state", "batches");
+  const batchesDir = join25(root, ".imm", "state", "batches");
   if (!existsSync14(batchesDir))
     return null;
   let newest = null;
@@ -17236,7 +17303,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync19(join24(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync19(join25(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -17247,9 +17314,9 @@ function findSettledBatchRecord(root, initiativeSlug) {
     if (typeof candidate.initiative_slug === "string" && candidate.initiative_slug !== initiativeSlug)
       continue;
     if (kind === "newer")
-      throw new BatchRuntimeTooOldError(join24(batchesDir, file), candidate.contract);
+      throw new BatchRuntimeTooOldError(join25(batchesDir, file), candidate.contract);
     if (kind === "unreadable")
-      throw new Error(`batch run state is unreadable or invalid: ${join24(batchesDir, file)}`);
+      throw new Error(`batch run state is unreadable or invalid: ${join25(batchesDir, file)}`);
     if (candidate.initiative_slug !== initiativeSlug)
       continue;
     if (!isTerminalBatchState(candidate.batch_state))
@@ -17588,13 +17655,13 @@ async function projectPreflight(options, preparing) {
   if (existingBatch && (isLaneBatchRecord(existingBatch) ? existingBatch.plan_source : undefined) !== options.plan_source)
     return reject("batch_entry_kind_mismatch");
   if (options.plan_source === "single_task") {
-    const batchesDir = join24(root, ".imm", "state", "batches");
+    const batchesDir = join25(root, ".imm", "state", "batches");
     if (existsSync14(batchesDir))
       for (const file of readdirSync9(batchesDir)) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
-          const candidate = JSON.parse(readFileSync19(join24(batchesDir, file), "utf8"));
+          const candidate = JSON.parse(readFileSync19(join25(batchesDir, file), "utf8"));
           if (classifyBatchRunStateContract(candidate?.contract) === "foreign")
             continue;
           const record = readAnyBatchRunState(root, file.slice(0, -5));
@@ -17969,7 +18036,7 @@ init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync21, readdirSync as readdirSync11 } from "node:fs";
 import { createInterface } from "node:readline";
-import { join as join38 } from "node:path";
+import { join as join39 } from "node:path";
 import { stdin as stdin2 } from "node:process";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
@@ -18205,7 +18272,7 @@ init_checkout_delivery();
 import { spawnSync as spawnSync19 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync18 } from "node:fs";
-import { isAbsolute as isAbsolute11, join as join27 } from "node:path";
+import { isAbsolute as isAbsolute11, join as join28 } from "node:path";
 import { readFileSync as readFileSync21 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/lane_cleanup.ts
@@ -18287,15 +18354,15 @@ init_batch_state();
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
 import { spawn as spawn4 } from "node:child_process";
 import { accessSync as accessSync3, constants as constants7 } from "node:fs";
-import { delimiter as delimiter4, join as join26 } from "node:path";
+import { delimiter as delimiter4, join as join27 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/lane_decision_request.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync11, readFileSync as readFileSync20, rmSync as rmSync9, writeFileSync as writeFileSync11 } from "node:fs";
-import { dirname as dirname16, join as join25 } from "node:path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync11, readFileSync as readFileSync20, rmSync as rmSync10, writeFileSync as writeFileSync11 } from "node:fs";
+import { dirname as dirname16, join as join26 } from "node:path";
 var LANE_EXECUTOR_ENV = "IMM_LANE_EXECUTOR";
 var LANE_EXECUTOR_HEADLESS = "headless";
 function laneDecisionRequestPath(lanePath) {
-  return join25(lanePath, ".imm", "state", "lane-decision-request.json");
+  return join26(lanePath, ".imm", "state", "lane-decision-request.json");
 }
 function writeLaneDecisionRequest(lanePath, request) {
   const value = { contract: "assurance_kernel/lane_decision_request/v1", ...request };
@@ -18319,7 +18386,7 @@ function readLaneDecisionRequest(lanePath, taskId, recordRevision) {
   }
 }
 function clearLaneDecisionRequest(lanePath) {
-  rmSync9(laneDecisionRequestPath(lanePath), { force: true });
+  rmSync10(laneDecisionRequestPath(lanePath), { force: true });
 }
 
 // plugins/immune-brain/runtime/unattended/lane_supervisor.ts
@@ -18382,7 +18449,7 @@ class LaneSupervisor {
       return { state: current?.state === "exited" ? "exited" : "stopped", generation: current?.generation ?? null, exit: current?.exit ?? null };
     if (!handle && !input.stop) {
       const binaryName = input.choice.host === "claude-code" ? "claude" : input.choice.host === "antigravity" ? "agy" : "pi";
-      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join26(dir || ".", binaryName)).find((path) => {
+      const executable = (process.env.PATH ?? "").split(delimiter4).map((dir) => join27(dir || ".", binaryName)).find((path) => {
         try {
           accessSync3(path, constants7.X_OK);
           return true;
@@ -19126,7 +19193,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync21(join27(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync21(join28(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -19566,7 +19633,7 @@ async function runLaneBatch(input, persisted) {
       for (const child of record.children) {
         if (!child.lane || child.state === "released")
           continue;
-        const expectedPath = common ? join27(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
+        const expectedPath = common ? join28(common, "imm", "worktrees", record.initiative_slug, child.task_id) : null;
         const facts = lanes.inspectLane(input.root, child.lane.path);
         const bindingMatches = child.lane.path === expectedPath && child.lane.branch === laneBranchName(record.initiative_slug, child.task_id);
         const headMatches = facts.head && (facts.head === child.redo_head || (child.lane.lane_commit ? facts.head === child.lane.lane_commit : gitRead(input.root, ["merge-base", "--is-ancestor", child.lane.base_head, facts.head]).status === 0));
@@ -19745,7 +19812,7 @@ async function runLaneBatch(input, persisted) {
     record.children = record.children.map((c) => c.task_id === child.task_id ? { ...c, state: "released" } : c);
     persist();
   }
-  const lineage = existsSync16(join27(input.root, ".git")) ? classifyBatchLineage({
+  const lineage = existsSync16(join28(input.root, ".git")) ? classifyBatchLineage({
     root: input.root,
     branch: record.branch ?? "",
     expectedHead: expectedBatchHead(record),
@@ -21317,19 +21384,19 @@ var CLAUDE_CAPABILITY = validateHostCapabilityDeclaration({
 });
 
 // plugins/immune-brain/runtime/host-core/hook_event_log.ts
-import { lstatSync as lstatSync18, readdirSync as readdirSync10, rmSync as rmSync11 } from "node:fs";
-import { dirname as dirname17, join as join29 } from "node:path";
-import { tmpdir as tmpdir5 } from "node:os";
+import { lstatSync as lstatSync18, readdirSync as readdirSync10, rmSync as rmSync12 } from "node:fs";
+import { dirname as dirname17, join as join30 } from "node:path";
+import { tmpdir as tmpdir6 } from "node:os";
 
 // plugins/immune-brain/runtime/host-core/private_file.ts
 import { createHash as createHash24 } from "node:crypto";
-import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, rmSync as rmSync10, writeSync } from "node:fs";
-import { join as join28 } from "node:path";
+import { constants as constants8, closeSync as closeSync7, fstatSync as fstatSync4, ftruncateSync, lstatSync as lstatSync17, mkdirSync as mkdirSync12, openSync as openSync7, readSync, rmSync as rmSync11, writeSync } from "node:fs";
+import { join as join29 } from "node:path";
 function sessionHash(sessionId) {
   return createHash24("sha256").update(sessionId).digest("hex");
 }
 function cacheDir(root, cacheName) {
-  return join28(root, cacheName);
+  return join29(root, cacheName);
 }
 function ownedByUs(stat) {
   if (stat.isSymbolicLink())
@@ -21382,7 +21449,7 @@ function dropPrivate(path) {
   try {
     const stat = lstatSync17(path);
     if (ownedByUs(stat) && stat.isFile())
-      rmSync10(path, { force: true });
+      rmSync11(path, { force: true });
   } catch {}
 }
 function readPrivate(path, maxBytes = Number.POSITIVE_INFINITY) {
@@ -21430,14 +21497,14 @@ class MemoryHookEventLog {
     }
   }
 }
-function hookEventPath(cacheName, sessionId, root = tmpdir5()) {
-  return join29(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
+function hookEventPath(cacheName, sessionId, root = tmpdir6()) {
+  return join30(cacheDir(root, cacheName), `${sessionHash(sessionId)}.jsonl`);
 }
 
 class FileHookEventLog {
   cacheName;
   root;
-  constructor(cacheName, root = tmpdir5()) {
+  constructor(cacheName, root = tmpdir6()) {
     this.cacheName = cacheName;
     this.root = root;
   }
@@ -21453,7 +21520,7 @@ class FileHookEventLog {
     if (!ensurePrivateDir(dir))
       return [];
     try {
-      return readdirSync10(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join29(dir, name)));
+      return readdirSync10(dir).filter((name) => name.endsWith(".jsonl") && !name.endsWith(".events.jsonl")).flatMap((name) => this.readFile(join30(dir, name)));
     } catch {
       return [];
     }
@@ -21489,7 +21556,7 @@ class FileHookEventLog {
       const stat = lstatSync18(path);
       if (!ownedByUs(stat) || stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 511) !== 384)
         return;
-      rmSync11(path, { force: true });
+      rmSync12(path, { force: true });
     } catch {}
   }
 }
@@ -21697,12 +21764,12 @@ class VerifierObservation {
 
 // plugins/immune-brain/runtime/claude/review_host.ts
 import { realpathSync as realpathSync20 } from "node:fs";
-import { basename as basename4, dirname as dirname18, isAbsolute as isAbsolute13, join as join30 } from "node:path";
-import { tmpdir as tmpdir6 } from "node:os";
+import { basename as basename4, dirname as dirname18, isAbsolute as isAbsolute13, join as join31 } from "node:path";
+import { tmpdir as tmpdir7 } from "node:os";
 var AGENT_TOOL = "Agent";
 var VERIFIER_AGENTS = ["immune-brain-review-verifier", "immune-brain:immune-brain-review-verifier"];
 var CLAUDE_CACHE_DIR = "immune-brain-claude";
-function claudeHookEventLog(root = tmpdir6()) {
+function claudeHookEventLog(root = tmpdir7()) {
   return new FileHookEventLog(CLAUDE_CACHE_DIR, root);
 }
 var MAX_TRANSCRIPT_BYTES = 32 * 1024 * 1024;
@@ -21782,7 +21849,7 @@ function readSyncAgentTranscript(post, stop) {
   const session = post.transcriptPath;
   if (!session || !isAbsolute13(session) || !AGENT_ID_PATTERN.test(post.agentId))
     return;
-  const derived = join30(dirname18(session), basename4(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
+  const derived = join31(dirname18(session), basename4(session, ".jsonl"), "subagents", `agent-${post.agentId}.jsonl`);
   return readAgentTranscript(derived);
 }
 function parseReviewMarker(prompt) {
@@ -22005,8 +22072,8 @@ function parseHookStdin(raw) {
 init_lane_workspace();
 import { lstatSync as lstatSync19, realpathSync as realpathSync21 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { homedir as homedir2, tmpdir as tmpdir7 } from "node:os";
-import { join as join32 } from "node:path";
+import { homedir as homedir2, tmpdir as tmpdir8 } from "node:os";
+import { join as join33 } from "node:path";
 
 // plugins/immune-brain/runtime/assurance/active_task_notice.ts
 init_storage();
@@ -22374,7 +22441,7 @@ function decideRunContinuation(previous, observation) {
 
 // plugins/immune-brain/runtime/assurance/alias_file.ts
 import { closeSync as closeSync8, constants as constants9, fstatSync as fstatSync5, openSync as openSync8, readSync as readSync2, statSync as statSync6 } from "node:fs";
-import { join as join31 } from "node:path";
+import { join as join32 } from "node:path";
 var MAX_ALIAS_BYTES = 64 * 1024;
 function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
   let fd;
@@ -22402,7 +22469,7 @@ function readAliasFile(path, maxBytes = MAX_ALIAS_BYTES) {
 }
 function localSkillExists(dir, name) {
   try {
-    statSync6(join31(dir, name, "SKILL.md"));
+    statSync6(join32(dir, name, "SKILL.md"));
     return true;
   } catch (error) {
     return !isAbsent(error);
@@ -22441,10 +22508,10 @@ async function activeTaskHookOutput(payload) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: notice } });
 }
 function entryLogPath(sessionId, root) {
-  return join32(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join33(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join32(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join33(cacheDir(root, CLAUDE_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function sessionIdOf(payload) {
   return typeof payload.session_id === "string" ? payload.session_id : "";
@@ -22453,20 +22520,20 @@ function cwdOf(payload) {
   return typeof payload.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
 }
 function claudeLocalNames(cwd, home) {
-  const roots = [join32(cwd, ".claude"), join32(home, ".claude")];
+  const roots = [join33(cwd, ".claude"), join33(home, ".claude")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join32(root, "commands", `${name}.md`));
+        const body = readAliasFile(join33(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join32(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join33(root, "skills"), name))
   };
 }
-function readPhaseEntryState(sessionId, root = tmpdir7(), read = readPrivate) {
+function readPhaseEntryState(sessionId, root = tmpdir8(), read = readPrivate) {
   if (!sessionId)
     return null;
   const path = entryLogPath(sessionId, root);
@@ -22495,11 +22562,11 @@ function appendPhaseEntry(sessionId, line, root, locations) {
     dropPrivate(path);
   return recorded;
 }
-function dropPhaseEntryLog(sessionId, root = tmpdir7()) {
+function dropPhaseEntryLog(sessionId, root = tmpdir8()) {
   if (sessionId)
     dropPrivate(entryLogPath(sessionId, root));
 }
-function revokeEntryToken(sessionId, reason, root = tmpdir7()) {
+function revokeEntryToken(sessionId, reason, root = tmpdir8()) {
   if (sessionId && readPhaseEntryState(sessionId, root)?.token)
     appendPhaseEntry(sessionId, entryRevocationLogLine(reason), root, {});
 }
@@ -22519,7 +22586,7 @@ function recordPhaseEntryPrompt(payload, locations = {}) {
     } catch {}
   }
   const line = phaseEntryLogLine(entry, workspace ? { token: randomUUID11(), workspace } : undefined);
-  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir7(), locations);
+  return appendPhaseEntry(sessionId, line, locations.root ?? tmpdir8(), locations);
 }
 function gatedOperation(payload) {
   const toolName = String(payload.tool_name ?? "");
@@ -22539,7 +22606,7 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
     return null;
   if (operation.kind === "skill" && operation.skill !== "drive")
     return null;
-  const root = locations.root ?? tmpdir7();
+  const root = locations.root ?? tmpdir8();
   const sessionId = sessionIdOf(payload);
   let state = null;
   try {
@@ -22568,7 +22635,7 @@ function phaseEntryGateHookOutput(payload, locations = {}) {
     return null;
   return denyPreToolUse(`${RUN_ENTRY_REQUIRED}: the admission for this ${operation.name} call could not be recorded; recovery: ${PHASE_ENTRY_RECOVERY[RUN_ENTRY_REQUIRED]}`);
 }
-function consumePhaseAdmission(toolUseId, operation, root = tmpdir7()) {
+function consumePhaseAdmission(toolUseId, operation, root = tmpdir8()) {
   if (!toolUseId || !ensurePrivateDir(cacheDir(root, CLAUDE_CACHE_DIR)))
     return false;
   const path = admissionPath(toolUseId, root);
@@ -22611,7 +22678,7 @@ function consumePhaseAdmission(toolUseId, operation, root = tmpdir7()) {
 
 // plugins/immune-brain/runtime/claude/run_continuation.ts
 import { realpathSync as realpathSync23, openSync as openSync9, fstatSync as fstatSync6, readSync as readSync3, closeSync as closeSync9 } from "node:fs";
-import { tmpdir as tmpdir8, homedir as homedir3 } from "node:os";
+import { tmpdir as tmpdir9, homedir as homedir3 } from "node:os";
 
 // plugins/immune-brain/runtime/assurance/review_mediation.ts
 import { createHash as createHash26 } from "node:crypto";
@@ -22706,9 +22773,9 @@ async function submitMediatedReview(coordinator, ctx, taskId, verdictInput, insp
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync17, lstatSync as lstatSync20, realpathSync as realpathSync22, renameSync as renameSync6, rmSync as rmSync12 } from "node:fs";
+import { existsSync as existsSync17, lstatSync as lstatSync20, realpathSync as realpathSync22, renameSync as renameSync6, rmSync as rmSync13 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
-import { join as join33 } from "node:path";
+import { join as join34 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
@@ -22724,8 +22791,8 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join33(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join33(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join34(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
   if (!existsSync17(path))
     return;
@@ -22734,7 +22801,7 @@ function drop(host, path, root) {
   try {
     const stat = lstatSync20(path);
     if (stat.isFile() && ownedByUs(stat))
-      rmSync12(path);
+      rmSync13(path);
   } catch {}
 }
 function readLast(path, dir) {
@@ -23034,10 +23101,10 @@ var claudeContinuationHost = (root) => ({
   revoke_entry: (sessionId) => revokeEntryToken(sessionId, "spent", root),
   drop_entry_log: (sessionId) => dropPhaseEntryLog(sessionId, root)
 });
-function readRunToolSession(toolId, operation, workspace, root = tmpdir8()) {
+function readRunToolSession(toolId, operation, workspace, root = tmpdir9()) {
   return readSessionToolCall(claudeContinuationHost(root), root, toolId, operation, workspace);
 }
-function selectedClaudeParent(toolId, workspace, slug, root = tmpdir8()) {
+function selectedClaudeParent(toolId, workspace, slug, root = tmpdir9()) {
   return selectedParentSession(claudeContinuationHost(root), root, toolId, workspace, slug);
 }
 function stopBoundary(payload) {
@@ -23157,7 +23224,7 @@ function render(outcome) {
       return null;
   }
 }
-async function runContinuationHookOutput(payload, root = tmpdir8()) {
+async function runContinuationHookOutput(payload, root = tmpdir9()) {
   const sessionId = typeof payload.session_id === "string" ? payload.session_id : "";
   if (!sessionId)
     return null;
@@ -23177,7 +23244,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync20, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname20, join as join37, resolve as resolve16 } from "node:path";
+import { dirname as dirname20, join as join38, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -23340,11 +23407,11 @@ init_actor_identity();
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync14 } from "node:child_process";
 import { readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join34 } from "node:path";
+import { join as join35 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync22(join34(root, relativePath)),
+    bytes: readFileSync22(join35(root, relativePath)),
     index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -23352,7 +23419,7 @@ function captureStagedIntent(root, relativePath) {
   };
 }
 function restoreStagedIntent(root, snapshot) {
-  writeFileSync12(join34(root, snapshot.path), snapshot.bytes);
+  writeFileSync12(join35(root, snapshot.path), snapshot.bytes);
   execFileSync14("git", ["update-index", "--force-remove", "--", snapshot.path], {
     cwd: root,
     stdio: ["ignore", "pipe", "pipe"]
@@ -23364,7 +23431,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync22(join34(root, snapshot.path));
+  const restoredBytes = readFileSync22(join35(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -23772,7 +23839,7 @@ init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
 import { existsSync as existsSync18 } from "node:fs";
-import { join as join35 } from "node:path";
+import { join as join36 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -23792,7 +23859,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync18(join35(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync18(join36(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -23971,10 +24038,10 @@ init_batch_state();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync7, readFileSync as readFileSync23, realpathSync as realpathSync24, rmSync as rmSync14, writeFileSync as writeFileSync13 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
-import { tmpdir as tmpdir9 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname19, join as join36 } from "node:path";
+import { tmpdir as tmpdir10 } from "node:os";
+import { delimiter as delimiter5, dirname as dirname19, join as join37 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -24016,7 +24083,7 @@ function claudeOutputWriteRule(outputPath) {
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join36(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join37(dir || ".", name)).find((path) => {
     try {
       accessSync4(path, constants10.X_OK);
       return true;
@@ -24036,7 +24103,7 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname19(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join36(dir, "bin", "imm-session");
+    const candidate = join37(dir, "bin", "imm-session");
     if (existsSync19(candidate))
       return candidate;
     dir = dirname19(dir);
@@ -24174,11 +24241,11 @@ class CliReviewHost {
     const profile = request.profile ?? review.profile;
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
-    const directory = realpathSync24(mkdtempSync6(join36(tmpdir9(), "imm-cli-verify-")));
+    const directory = realpathSync24(mkdtempSync7(join37(tmpdir10(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
-    const packet = join36(directory, "verify-packet.md");
-    const output = join36(directory, `verify-output-${request.operationId}.json`);
-    const awaitRecord = join36(directory, "session-await.json");
+    const packet = join37(directory, "verify-packet.md");
+    const output = join37(directory, `verify-output-${request.operationId}.json`);
+    const awaitRecord = join37(directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     writeFileSync13(packet, request.prompt, { encoding: "utf8", mode: 420 });
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
@@ -24233,11 +24300,11 @@ ${writeToOutput(output)}`,
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
     const tree = reviewTreeState(root);
-    const directory = realpathSync24(mkdtempSync6(join36(tmpdir9(), "imm-cli-review-")));
+    const directory = realpathSync24(mkdtempSync7(join37(tmpdir10(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join36(directory, "packet.md");
-    const output = join36(directory, `review-output-${request.operationId}.json`);
-    const awaitRecord = join36(directory, "session-await.json");
+    const packet = join37(directory, "packet.md");
+    const output = join37(directory, `review-output-${request.operationId}.json`);
+    const awaitRecord = join37(directory, "session-await.json");
     const contractHash = currentReviewContractHash();
     writeFileSync13(packet, `review_contract_hash: ${contractHash}
 
@@ -24323,7 +24390,7 @@ ${writeToOutput(output, true)}`,
     const verification = this.verifications.get(reservation.id);
     if (verification) {
       this.verifications.delete(reservation.id);
-      rmSync13(verification.directory, { recursive: true, force: true });
+      rmSync14(verification.directory, { recursive: true, force: true });
       return;
     }
     const owned = this.reservations.get(reservation.id);
@@ -24332,7 +24399,7 @@ ${writeToOutput(output, true)}`,
       return;
     }
     this.reservations.delete(reservation.id);
-    rmSync13(owned.directory, { recursive: true, force: true });
+    rmSync14(owned.directory, { recursive: true, force: true });
   }
 }
 
@@ -24358,7 +24425,7 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join37(root, priorIntent.intent_ref.path);
+  const sidecar = join38(root, priorIntent.intent_ref.path);
   const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
@@ -24605,7 +24672,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync20(join37(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync20(join38(this.cwd, ".imm", "audit", taskId)))
         execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -24798,7 +24865,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join37(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join38(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -25545,7 +25612,7 @@ async function runHook() {
     return;
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
   if (!readActiveClaimTaskId(cwd)) {
-    const batchesDir = join38(cwd, ".imm", "state", "batches");
+    const batchesDir = join39(cwd, ".imm", "state", "batches");
     const activeBatch = existsSync21(batchesDir) && readdirSync11(batchesDir).some((file) => {
       if (!file.endsWith(".json") || file.endsWith(".report.json"))
         return false;

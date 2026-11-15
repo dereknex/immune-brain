@@ -6,9 +6,12 @@
 // index; the only ref it moves is the hidden ref the batch already owns.
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { noTouchPaths, readNoTouchAt } from "../no_touch";
 import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
-import { readDerivedFilesAt, runDerivedCommand, type DerivedFile } from "../derived_files";
+import { DERIVED_FILES_PATH, parseDerivedFiles, readDerivedFilesAt, runDerivedCommand, type DerivedFile } from "../derived_files";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
 import { runDeterministicQa } from "../assurance/qa";
 import { VerificationAbortedError, type VerificationDescriptor } from "../assurance/verification";
@@ -128,6 +131,64 @@ function changedDerivedEntries(root: string, base: string, laneCommit: string, e
 	return entries.filter(entry => paths.some(path => entry.outputs.includes(path) || entry.sources.some(pattern => sourceMatches(path, pattern))));
 }
 
+interface RawDeclaration { contract: unknown; entries: Array<Record<string, unknown> & { outputs: string[] }> }
+
+/**
+ * The three-way merge of the derived-files declaration when the batch head and
+ * the lane only add or remove `outputs` paths of the same entries, as two
+ * parallel Lanes that each add a mirrored source file do. Any other divergence,
+ * a non-canonical layout, or an invalid result returns null, and the textual
+ * conflict stands.
+ */
+function mergeDerivedDeclaration(root: string, base: string, head: string, lane: string): string | null {
+	const texts = [base, head, lane].map(commit => {
+		const shown = git(root, ["cat-file", "blob", `${commit}:${DERIVED_FILES_PATH}`]);
+		return shown.status === 0 ? shown.stdout : null;
+	});
+	if (texts.some(text => text === null)) return null;
+	try {
+		const [b, h, l] = texts.map(text => JSON.parse(text!) as RawDeclaration);
+		for (const declaration of [b!, h!, l!]) parseDerivedFiles(declaration);
+		if (`${JSON.stringify(h, null, 2)}\n` !== texts[1]) return null;
+		const shape = (declaration: RawDeclaration) =>
+			JSON.stringify({ ...declaration, entries: declaration.entries.map(entry => ({ ...entry, outputs: [] })) });
+		if (shape(b!) !== shape(h!) || shape(b!) !== shape(l!)) return null;
+		const merged: RawDeclaration = { ...h!, entries: h!.entries.map((entry, index) => {
+			const before = new Set(b!.entries[index]!.outputs);
+			const after = l!.entries[index]!.outputs;
+			const outputs = entry.outputs.filter(path => !before.has(path) || after.includes(path));
+			for (const path of after) if (!before.has(path) && !outputs.includes(path)) outputs.push(path);
+			const sorted = entry.outputs.every((path, at) => at === 0 || entry.outputs[at - 1]! <= path);
+			return { ...entry, outputs: sorted ? outputs.sort() : outputs };
+		}) };
+		parseDerivedFiles(merged);
+		return `${JSON.stringify(merged, null, 2)}\n`;
+	} catch {
+		return null;
+	}
+}
+
+/** `tree` with the derived-files declaration replaced by `text`, keeping its mode. */
+function withDeclaration(root: string, tree: string, text: string): string {
+	const mode = gitOut(root, ["ls-tree", tree, "--", DERIVED_FILES_PATH], "read declaration mode").split(" ")[0];
+	const blob = git(root, ["hash-object", "-w", "--stdin"], { input: text });
+	if (blob.status !== 0 || !mode) throw new Error("write merged derived-files declaration failed");
+	const directory = mkdtempSync(join(tmpdir(), "imm-batch-declaration-"));
+	try {
+		const env = { GIT_INDEX_FILE: join(directory, "index") };
+		const step = (args: string[]) => {
+			const result = git(root, args, { env });
+			if (result.status !== 0) throw new Error(`merge derived-files declaration: ${result.stderr.trim() || "git failed"}`);
+			return result.stdout;
+		};
+		step(["read-tree", tree]);
+		step(["update-index", "--cacheinfo", `${mode},${blob.stdout.trim()},${DERIVED_FILES_PATH}`]);
+		return step(["write-tree"]).trim();
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+}
+
 /**
  * The batch-branch candidate for a lane commit. When the batch head is still
  * the lane base the lane commit itself is the candidate. Otherwise the lane's
@@ -146,9 +207,18 @@ export function buildCandidate(input: { root: string; batch_head: string; lane_b
 	const originalTree = tree;
 	const conflicts = merged?.status === 1 ? merged.stdout.split("\0").slice(1) : [];
 	const paths = conflicts.slice(0, conflicts.indexOf(""));
+	let declarationMerged = false;
+	if (paths.includes(DERIVED_FILES_PATH)) {
+		const declaration = mergeDerivedDeclaration(root, base, head, laneCommit);
+		if (declaration !== null) {
+			tree = withDeclaration(root, tree, declaration);
+			paths.splice(paths.indexOf(DERIVED_FILES_PATH), 1);
+			declarationMerged = true;
+		}
+	}
 	const conflictEntries = entries.filter(entry => entry.outputs.some(path => paths.includes(path)));
 	const conflictOutputs = new Set(conflictEntries.flatMap(entry => entry.outputs));
-	if (merged?.status === 1 && (!paths.length || paths.some(path => !conflictOutputs.has(path))))
+	if (merged?.status === 1 && ((!paths.length && !declarationMerged) || paths.some(path => !conflictOutputs.has(path))))
 		throw new BatchIntegrationError("batch_integration_conflict", "batch_integration_conflict: conflicts include undeclared outputs");
 	const selected = entries.filter(entry => touched.includes(entry) || conflictEntries.includes(entry));
 	if (selected.length) {
