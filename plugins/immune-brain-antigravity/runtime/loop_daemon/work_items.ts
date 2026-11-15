@@ -21,6 +21,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { observeEnrollmentTaskIntent } from "../kernel/intent.ts";
+import { readPlanPublication } from "./agent_handlers.ts";
 import { eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { NormalizedLoopEvent, ObservationInput } from "./types.ts";
@@ -236,6 +238,12 @@ export function recordWorkItemOutcome(
 	if (input.plan_digest && item.binding.plan_digest !== input.plan_digest) {
 		item = { ...item, binding: { ...item.binding, plan_digest: input.plan_digest } };
 	}
+	// D7: the bound task ids are the scheduler's scope evidence, so an event that
+	// names its task binds it before the next tick schedules the target.
+	const eventTaskId = "task_id" in input.event ? input.event.task_id : null;
+	if (typeof eventTaskId === "string" && eventTaskId && !item.binding.task_ids.includes(eventTaskId)) {
+		item = { ...item, binding: { ...item.binding, task_ids: [...item.binding.task_ids, eventTaskId] } };
+	}
 	if (item.state === "planning" && item.binding.plan_digest) {
 		item = advanceWorkItem(item, "plan_published", {
 			reason: "published plan observed",
@@ -253,6 +261,47 @@ export function recordWorkItemOutcome(
 	}
 	writeWorkItem(stateDir, item);
 	return { item, refused };
+}
+
+/**
+ * D7 ready buffer: the targets whose plan is published and awaiting execution.
+ * The scheduler holds further planning at `max_ready_buffer` of these.
+ */
+export function plannedWorkItemCount(stateDir: string): number {
+	return listWorkItems(stateDir).filter((item) => item.state === "plan_published").length;
+}
+
+/**
+ * D7 candidate scope: the `scope_hint` of the target's bound TaskIntents, or of
+ * the intents its published plan drafted (plan framing) when none is bound yet.
+ * An empty result proves nothing about the target, so the scheduler serializes
+ * it behind every in-flight lease instead of guessing.
+ */
+export function workItemScopeHint(root: string, stateDir: string, target: string): string[] {
+	const scopes = new Set<string>();
+	for (const taskId of readWorkItem(stateDir, target)?.binding.task_ids ?? []) {
+		try {
+			for (const entry of observeEnrollmentTaskIntent(root, taskId).intent.scope_hint) scopes.add(entry);
+		} catch {}
+	}
+	const issueNumber = /^issue-(\d+)$/.exec(target);
+	const plan = issueNumber ? readPlanPublication(stateDir, Number(issueNumber[1])) : null;
+	if (plan) {
+		for (const intent of plan.intents) {
+			for (const entry of intentPathScopeHint(join(plan.worktree_path, intent.path))) scopes.add(entry);
+		}
+	}
+	return [...scopes].sort();
+}
+
+/** One drafted TaskIntent's `scope_hint`, or [] when the file is gone or unreadable. */
+function intentPathScopeHint(path: string): string[] {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as { scope_hint?: unknown };
+		return Array.isArray(parsed.scope_hint) ? parsed.scope_hint.filter((entry): entry is string => typeof entry === "string") : [];
+	} catch {
+		return [];
+	}
 }
 
 const LEVEL_EVENT_KINDS: ReadonlySet<NormalizedLoopEvent["kind"]> = new Set([

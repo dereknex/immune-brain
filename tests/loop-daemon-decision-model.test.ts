@@ -745,14 +745,15 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 		expect(ghPort.postedComments[0]!.body).toContain("a19_format_reminder:issue:10:comment:701");
 		expect(ghPort.postedComments[1]!.body).toContain("a19_format_reminder:issue:10:comment:702");
 
-		// Simulate repeating comment #701 escalation: deduplicates against existing comment holding same escalation key
+		// Simulate repeating comment #701 escalation: deduplicates against existing comment holding same escalation key.
+		// S9/D7: E2 needs an Issue body change, so a comment-only update no longer escalates.
 		const repeatSnap: ObservationInput = {
 			issues: [
 				{
 					id: 1,
 					number: 10,
 					title: "Issue 10",
-					body: "Body",
+					body: "Body edited after the reminder",
 					state: "open",
 					created_at: TS,
 					updated_at: "2026-11-13T01:05:00.000Z",

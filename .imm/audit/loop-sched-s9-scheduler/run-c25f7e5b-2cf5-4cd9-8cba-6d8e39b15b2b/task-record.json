@@ -1,0 +1,176 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s9-scheduler",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s9-scheduler",
+    "goal": "Make the scheduler's scope-overlap check and ready buffer use work item facts, emit E2 only on Issue body or title change, and include head_sha in E8 event identity, per D7 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: scheduling internals.",
+    "acceptance": [
+      {
+        "id": "S9-AC1",
+        "assertion": "Source BR-GAP-2, BR-GAP-3; meet D7 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-scheduler.test.ts over scheduleLoopWork fed from dispatch. Done looks like: two candidates whose work item scopes overlap run one and hold the other, and ready_buffer equals the number of work items in plan_published. Negative: disjoint scopes both run. Bound: reaching max_ready_buffer holds further planning candidates.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-scheduler.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S9-AC2",
+        "assertion": "Source BR-GAP-6, BR-GAP-7; meet D7 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-scheduler.test.ts and tests/loop-daemon-observe.test.ts, characterization first for E2. Done looks like: an Issue body edit emits E2 and two failures of one check on different heads get different E8 event_id values. Negative: a comment-only update that changes updated_at emits no E2. Bound: the same head and failure signature share one event_id.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-scheduler.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s9-scheduler.md",
+      "docs/plans/loop-sched-s9-scheduler.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/events.ts",
+      "plugins/immune-brain/runtime/loop_daemon/scheduler.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/loop-daemon-observe.test.ts",
+      "tests/loop-daemon-schedule-plan.test.ts",
+      "tests/loop-sched-scheduler.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s9-scheduler.intent.json",
+    "content_hash": "sha256:ca264f4c0d3d6cb424b407a24744d4e54400113316b9d905b0484b5c98872bb0"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ca264f4c0d3d6cb424b407a24744d4e54400113316b9d905b0484b5c98872bb0",
+  "git_base_head": "ae176a54a97f9200f45174a166ded20bcfc8eed9",
+  "attestations": [
+    {
+      "id": "approval-qa-4cf3385e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ca264f4c0d3d6cb424b407a24744d4e54400113316b9d905b0484b5c98872bb0",
+      "diff_hash": "sha256:3836c213fde334944c42bdf0c5bc469ced0d644ec5e66d721684a4b70b7641ca",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:fef5d0985449750d34643c5c678911e678b602540170a08e97b78e885f800f45",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S9-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fef5d0985449750d34643c5c678911e678b602540170a08e97b78e885f800f45"
+        },
+        {
+          "acceptance_id": "S9-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:fef5d0985449750d34643c5c678911e678b602540170a08e97b78e885f800f45"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f718e054",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ca264f4c0d3d6cb424b407a24744d4e54400113316b9d905b0484b5c98872bb0",
+      "diff_hash": "sha256:3836c213fde334944c42bdf0c5bc469ced0d644ec5e66d721684a4b70b7641ca",
+      "actor_id": "cli:claude-code:882057ad-226b-4f80-bce1-243249ebdcd6",
+      "summary": "Provenance verified: the commit's only parent is the base and the tree is 0e64e77. The scheduler now builds each candidate's scope from its work item's bound TaskIntents or published plan; an empty scope still overlaps every lease through scopesOverlap. ready_buffer now counts plan_published work items. E2 fires only when the stored title+body hash changes, and the E8 event_id now carries head_sha. Tests cover overlap, disjoint scopes, the buffer bound and the E2/E8 identity cases. Blast radius: medium, in loop_daemon dispatch.ts, events.ts, observer.ts and work_items.ts, plus the persisted issue-content keys in etag_by_resource. The antigravity mirrors are byte-identical to the main plugin files.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ae176a54a97f9200f45174a166ded20bcfc8eed9",
+        "review_commit": "da8dd7545bd06b2ea83a5c97ee1e487b0530a509",
+        "review_tree": "0e64e7729dfd990a75647a2a3fb089bc40ddee9a",
+        "manifest_digest": "sha256:74364932b932ff7f0ec94388b174cd8bb3ea538dcde8d098f8135c8d86ed4f51"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-0038157b38cf-1-review-1",
+          "acceptance_id": "S9-AC1",
+          "summary": "The tests rebuild the candidate with the helpers dispatch uses, but they never call dispatchDecisions, so the two dispatch wiring lines (scope_hint from workItemScopeHint, ready_buffer from plannedWorkItemCount) have no test at the 'fed from dispatch' seam.",
+          "anchor": "sha256:cb5b44b42ee36ad19df50b3d59b4be4f6a4bf99f3bbf97a6fe07a29dae6965d0",
+          "evidence": {
+            "trigger": "If someone reverts dispatch.ts to read scope_hint from the event or sets ready_buffer back to 0, tests/loop-sched-scheduler.test.ts still passes because it calls scheduleLoopWork directly.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/scheduler.ts:scheduleLoopWork",
+              "tests/loop-sched-scheduler.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S9-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-0038157b38cf-2-review-2",
+          "acceptance_id": "S9-AC1",
+          "summary": "workItemScopeHint silently drops a bound task whose intent fails to read, so a partly readable binding gives a smaller non-empty scope instead of the empty scope that serializes the work.",
+          "anchor": "sha256:2e4bdc4c77af96b8517627f6c394c33ed93330f3b15638d6031e25244a4e4ca0",
+          "evidence": {
+            "trigger": "A work item is bound to tasks [a, b] and b's intent sidecar is unreadable, so the scope is only a's scope_hint and a candidate that overlaps only b's paths is dispatched at the same time.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:workItemScopeHint",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/scheduler.ts:scheduleLoopWork"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S9-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:9d48ab107f3af29f3be4080adb9db3529df688b6ee9ac4416d7c37d652a0b394"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s9-scheduler:2026-11-15T05:10:24.847Z",
+      "at": "2026-11-15T05:10:24.847Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s9-scheduler.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s9-scheduler:2026-11-15T05:10:38.296Z",
+      "at": "2026-11-15T05:10:38.296Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-4cf3385e\naction_v2_sha256:3219e73c76601ec13c2209ec9588faf2220dde045ee003ab44b7df27623b001a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T05:10:38.297Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s9-scheduler:2026-11-15T08:24:42.986Z",
+      "at": "2026-11-15T08:24:42.986Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f718e054\naction_v2_sha256:76d1bcaf213715704265d3df627f4f3a35c0121a81838ffb5105da619ea4282e",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:882057ad-226b-4f80-bce1-243249ebdcd6",
+        "confirmation_ref": "pi:cli:claude-code:882057ad-226b-4f80-bce1-243249ebdcd6",
+        "issued_at": "2026-11-15T08:24:42.986Z"
+      },
+      "review_started_at": "2026-11-15T05:10:42.005Z",
+      "review_submitted_at": "2026-11-15T08:24:42.213Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s9-scheduler:2026-11-15T08:24:45.532Z",
+      "at": "2026-11-15T08:24:45.532Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:fcf1166d1f87658809aa7411bde6d6df79780aa76e61d50ee73dfddb693d57a9"
+    }
+  ]
+}

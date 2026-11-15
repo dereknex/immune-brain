@@ -74,6 +74,7 @@ import {
 	loadLoopDecisions,
 	saveLoopState,
 } from "./state.ts";
+import { plannedWorkItemCount, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
@@ -330,6 +331,7 @@ export async function dispatchDecisions(
 	options: DispatchDecisionsOptions,
 ): Promise<DispatchDecisionsResult> {
 	const {
+		root,
 		stateDir,
 		loopConfig,
 		events,
@@ -512,7 +514,8 @@ export async function dispatchDecisions(
 			target_id: targetId,
 			handler: decision.handler,
 			event_kind: evt?.kind,
-			scope_hint: (evt as any)?.scope_hint,
+			// D7: the scope the work item's TaskIntents cover, never an event field.
+			scope_hint: workItemScopeHint(root, stateDir, targetId),
 			candidate_id: candidateId,
 		};
 
@@ -534,7 +537,8 @@ export async function dispatchDecisions(
 	const scheduleResult = scheduleLoopWork({
 		candidates,
 		active_leases: listLeases(stateDir),
-		ready_buffer: 0,
+		// D7: the buffer is the number of work items awaiting execution, not a constant.
+		ready_buffer: plannedWorkItemCount(stateDir),
 		open_daemon_prs: snapshot.pull_requests.filter((pr) => isDaemonManagedPr(pr)).length,
 		limits,
 		budget: {

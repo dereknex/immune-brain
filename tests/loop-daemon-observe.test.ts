@@ -54,7 +54,7 @@ import {
 	saveLoopState,
 } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import { normalizeEvents } from "../plugins/immune-brain/runtime/loop_daemon/events.ts";
-import { observeGithub, pollPRsFromGithub } from "../plugins/immune-brain/runtime/loop_daemon/observer.ts";
+import { calculateNewWatermarks, observeGithub, pollPRsFromGithub } from "../plugins/immune-brain/runtime/loop_daemon/observer.ts";
 import { rebuildLoopState } from "../plugins/immune-brain/runtime/loop_daemon/rebuild.ts";
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
@@ -184,6 +184,53 @@ describe("loop daemon observe, normalization, and state persistence (S1)", () =>
 			expect(e2).toBeDefined();
 			expect(e2?.issue_number).toBe(102);
 			expect(e2?.author).toBe("bob");
+		});
+
+		// D7 characterization, kept as the documented fallback: a state written before
+		// the content hash existed still fires E2 on the timestamp rule for one
+		// observation; once the observation stores the hash, a comment-only update is silent.
+		it("sends no E2 for a comment-only update once the issue content hash is stored (D7)", () => {
+			const issue: RawIssue = {
+				id: 103,
+				number: 103,
+				title: "Comment-only update",
+				body: "Body that never changes",
+				state: "open",
+				created_at: "2026-11-10T08:00:00Z",
+				updated_at: "2026-11-11T11:00:00Z",
+				author: { login: "owner" },
+				labels: [],
+				comments: [
+					{
+						id: 901,
+						body: "a comment that moves updated_at",
+						user: { login: "owner" },
+						author_association: "OWNER",
+						created_at: "2026-11-11T11:00:00Z",
+						updated_at: "2026-11-11T11:00:00Z",
+					},
+				],
+			};
+			const observation: ObservationInput = {
+				issues: [issue],
+				pull_requests: [],
+				observed_at: "2026-11-11T12:00:00Z",
+			};
+
+			// Today's rule, before any content hash is stored: the timestamp alone fires E2.
+			const legacyState = initLoopState();
+			legacyState.watermarks.issues_updated_at = "2026-11-10T12:00:00Z";
+			expect(normalizeEvents(observation, legacyState).some((event) => event.kind === "E2_ISSUE_EDITED")).toBe(true);
+
+			// The observer stores the hash, and the same comment-only update is then silent.
+			const watermarks = calculateNewWatermarks(observation, legacyState.watermarks);
+			const storedState = { ...legacyState, watermarks };
+			const later = {
+				...observation,
+				issues: [{ ...issue, updated_at: "2026-11-11T13:00:00Z" }],
+				observed_at: "2026-11-11T14:00:00Z",
+			};
+			expect(normalizeEvents(later, storedState).some((event) => event.kind === "E2_ISSUE_EDITED")).toBe(false);
 		});
 
 		it("normalizes E3 (owner comment) and E4 (plan approval)", () => {
