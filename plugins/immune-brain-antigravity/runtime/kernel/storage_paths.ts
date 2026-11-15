@@ -35,17 +35,12 @@ import { DatabaseSync } from "node:sqlite";
 export const STATE_RELATIVE = ".imm/state";
 export const AUDIT_RELATIVE = ".imm/audit";
 export const LEGACY_V3_RELATIVE = ".imm/audit/legacy-v3";
-export const JOURNAL_RELATIVE = ".imm/state/journal.jsonl";
 export const MIGRATION_MARKER_RELATIVE =
 	".imm/state/transactions/storage-layout-migration.json";
 
 /** The single worktree authority database (never committed; `.imm/state` is ignored). */
 export const KERNEL_DB_RELATIVE = ".imm/state/kernel.sqlite";
 export const KERNEL_STORE_SCHEMA_VERSION = 1;
-export const KERNEL_DB_SIDECARS = [
-	".imm/state/kernel.sqlite-wal",
-	".imm/state/kernel.sqlite-shm",
-] as const;
 
 /**
  * The retired file-store authority layout (`.imm/state/*.json`) written by the
@@ -88,9 +83,6 @@ export const FILE_STORE_INERT_FILES = [
 	".imm/state/migration.lock",
 ] as const;
 
-/** A file-store migration manifest left by the retired migrator. */
-export const FILE_STORE_MIGRATION_MARKER = MIGRATION_MARKER_RELATIVE;
-
 /* Transaction marker file names under `.imm/state/transactions/`. */
 export const KERNEL_TRANSACTION_MARKERS = [
 	"workspace-transaction-v2.json",
@@ -125,14 +117,6 @@ export function stateTaskRecordPath(taskId: string): string {
 	return `${STATE_RELATIVE}/tasks/${taskId}.json`;
 }
 
-export function stateWorkspacePath(): string {
-	return `${STATE_RELATIVE}/workspace.json`;
-}
-
-export function stateClaimPath(): string {
-	return `${STATE_RELATIVE}/active-claim.json`;
-}
-
 /**
  * Creation marker for the worktree store, written once when the database is
  * first initialized. A worktree keeps its identity even if the database is
@@ -143,16 +127,6 @@ export function stateClaimPath(): string {
  */
 export function kernelStoreIdentityPath(): string {
 	return `${STATE_RELATIVE}/kernel.identity.json`;
-}
-
-export function stateStoreLockPath(): string {
-	return `${STATE_RELATIVE}/locks/kernel-store.lock`;
-}
-
-export function stateTransactionPath(name: string): string {
-	if (!/^[A-Za-z0-9._-]+\.json$/.test(name))
-		throw new Error(`invalid transaction marker name: ${name}`);
-	return `${STATE_RELATIVE}/transactions/${name}`;
 }
 
 export function auditTaskDirPath(taskId: string): string {
@@ -221,12 +195,6 @@ export function batchStatePath(batchId: string): string {
 	return `${BATCH_STATE_RELATIVE}/${batchId}.json`;
 }
 
-/** Durable batch child commit evidence: `.imm/state/batches/commits/<batch-id>-<task-id>.json`. */
-export function batchCommitEvidencePath(batchId: string, taskId: string): string {
-	validateTaskId(taskId);
-	return `${BATCH_STATE_RELATIVE}/commits/${batchId}-${taskId}.json`;
-}
-
 /** Historical v3 machine evidence root under the tracked audit store. */
 export function legacyV3Path(...segments: string[]): string {
 	for (const segment of segments)
@@ -239,7 +207,6 @@ export function legacyV3Path(...segments: string[]): string {
 // Old layout recognition (inspection and one-release migrator only)
 // ---------------------------------------------------------------------------
 
-export const LEGACY_CLAIM_RELATIVE = ".imm/tasks/.backend-claim.json";
 export const LEGACY_WORKSPACE_RELATIVE = ".imm/workspace.json";
 export const LEGACY_TASKS_RELATIVE = ".imm/tasks";
 export const LEGACY_MEMORY_RELATIVE = ".imm/memory";

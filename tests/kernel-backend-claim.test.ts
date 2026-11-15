@@ -6,7 +6,6 @@ import { join } from "node:path";
 import {
 	readBackendClaim,
 	readTaskTombstone,
-	assertNoKernelBackendForV3,
 	parseBackendClaim,
 	parseTaskTombstone,
 	type BackendClaim,
@@ -89,24 +88,16 @@ function tombstone(overrides: Partial<TaskTombstone> = {}): TaskTombstone {
 }
 
 describe("backend claim guard", () => {
-	test("absent claim allows v3 managed mutation", () => {
-		const root = makeRoot();
-		expect(() => assertNoKernelBackendForV3(root, "any-task")).not.toThrow();
-	});
-
-	test("an active run derives a workspace claim that rejects v3 mutation", () => {
+	test("an active run derives a workspace claim", () => {
 		const root = makeRoot();
 		seedClaim(root);
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("active");
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow(/backend-owned|kernel backend/i);
-		expect(() => assertNoKernelBackendForV3(root, "task-other")).toThrow(/backend-owned|kernel backend/i);
 	});
 
-	test("draining claim rejects v3 mutation", () => {
+	test("draining claim is projected from the run", () => {
 		const root = makeRoot();
 		seedClaim(root, "draining");
 		expect(readBackendClaim(root)?.lifecycle_status).toBe("draining");
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).toThrow(/backend-owned|kernel backend/i);
 	});
 
 	test("a settled run leaves no workspace claim and never projects a terminal claim", () => {
@@ -133,17 +124,15 @@ describe("backend claim guard", () => {
 		});
 		// Terminal state lives in the run/tombstone, never in a workspace claim.
 		expect(readBackendClaim(root)).toBeNull();
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).not.toThrow();
 	});
 
-	test("terminal tombstone alone does not block v3 routing for any task", () => {
+	test("terminal tombstone alone leaves no workspace claim", () => {
 		const root = makeRoot();
 		writeFileSync(
 			join(root, ".imm/audit/task-001/terminal-proof.json"),
 			`${JSON.stringify(tombstone(), null, 2)}\n`,
 		);
-		// No workspace-active claim remains; v3 routing is released.
-		expect(() => assertNoKernelBackendForV3(root, "task-001")).not.toThrow();
+		expect(readBackendClaim(root)).toBeNull();
 		const read = readTaskTombstone(root, "task-001");
 		expect(read?.terminal_lifecycle).toBe("done");
 	});

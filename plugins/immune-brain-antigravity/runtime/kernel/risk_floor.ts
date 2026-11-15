@@ -235,21 +235,6 @@ export function outsideRoutineAllowlist(changedPaths: readonly string[], floor: 
 	return pathsOutsideRoutineClasses(changedPaths, floor.routine ?? null);
 }
 
-/**
- * Whether a concrete scope entry equals a floored path, sits beneath one, or is
- * an ancestor directory that would swallow one. Used by the same-directory
- * scope rule (ADR 0021), which never self-serves an addition on a floored path.
- */
-export function touchesChangedPathFloor(entry: string, floor: RiskFloor): boolean {
-	if (floor.invalid !== null) return true;
-	return SELF_CRITICAL_DECLARATIONS.some((file) => entryReachesFile(entry, file)) || entryTouches(entry, [
-		...floor.critical.paths,
-		...floor.critical.changed_only,
-		...floor.material.paths,
-		...floor.material.changed_only,
-	]);
-}
-
 export function raiseRisk(declared: TaskRisk, floor: TaskRisk | null): TaskRisk {
 	return floor !== null && RISK_RANK[declared] < RISK_RANK[floor] ? floor : declared;
 }

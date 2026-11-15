@@ -187,7 +187,6 @@ import {
   lstatSync as lstatSync2,
   mkdirSync,
   openSync as openSync2,
-  readFileSync as readFileSync2,
   realpathSync as realpathSync2,
   statSync,
   renameSync,
@@ -670,7 +669,7 @@ var init_sqlite_store = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/backend_claim.ts
-import { lstatSync as lstatSync3, readFileSync as readFileSync3 } from "node:fs";
+import { lstatSync as lstatSync3, readFileSync as readFileSync2 } from "node:fs";
 import { join, resolve as resolve3 } from "node:path";
 function validateTaskId2(taskId) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(taskId))
@@ -688,7 +687,7 @@ function readJsonOrNull(path) {
       return null;
     throw error;
   }
-  return JSON.parse(readFileSync3(path, "utf8"));
+  return JSON.parse(readFileSync2(path, "utf8"));
 }
 function parseBackendClaim(raw) {
   const unknown = Object.keys(raw).filter((key) => !ALLOWED.includes(key));
@@ -888,7 +887,7 @@ var init_types = __esm(() => {
 
 // plugins/immune-brain/runtime/kernel/tracked_declaration.ts
 import { execFileSync } from "node:child_process";
-import { lstatSync as lstatSync4, readFileSync as readFileSync4, realpathSync as realpathSync3 } from "node:fs";
+import { lstatSync as lstatSync4, readFileSync as readFileSync3, realpathSync as realpathSync3 } from "node:fs";
 import { join as join2 } from "node:path";
 function readTrackedDeclaration(root, path, maxBytes) {
   const invalid = (reason) => ({ kind: "invalid", reason });
@@ -925,7 +924,7 @@ function readTrackedDeclaration(root, path, maxBytes) {
       return present ? invalid(`${path} is not committed`) : { kind: "absent" };
     if (!present || !/^100(?:644|755) blob /.test(entry))
       return invalid(`${path} does not match a committed regular file`);
-    const bytes = readFileSync4(target);
+    const bytes = readFileSync3(target);
     const committed = execFileSync("git", ["show", `HEAD:${path}`], { cwd: canonicalRoot, maxBuffer: maxBytes, stdio: ["ignore", "pipe", "pipe"] });
     if (!bytes.equals(committed))
       return invalid(`${path} differs from its committed bytes`);
@@ -1337,7 +1336,7 @@ var init_verification_descriptor = __esm(() => {
 
 // plugins/immune-brain/runtime/no_touch.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { lstatSync as lstatSync5, readFileSync as readFileSync5, realpathSync as realpathSync4 } from "node:fs";
+import { lstatSync as lstatSync5, readFileSync as readFileSync4, realpathSync as realpathSync4 } from "node:fs";
 import { join as join3 } from "node:path";
 function parseNoTouch(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -1362,7 +1361,7 @@ function readNoTouch(root) {
     const stat = lstatSync5(target);
     if (realpathSync4(target) !== join3(realpathSync4(root), NO_TOUCH_PATH) || !stat.isFile() || stat.size > 65536)
       throw new Error("invalid no_touch: expected regular file at most 64 KiB");
-    return parseNoTouch(JSON.parse(readFileSync5(target, "utf8")));
+    return parseNoTouch(JSON.parse(readFileSync4(target, "utf8")));
   } catch (error) {
     if (error.code === "ENOENT")
       return [];
@@ -1400,7 +1399,7 @@ import {
   fstatSync as fstatSync2,
   lstatSync as lstatSync6,
   openSync as openSync3,
-  readFileSync as readFileSync6,
+  readFileSync as readFileSync5,
   realpathSync as realpathSync5
 } from "node:fs";
 import { execFileSync as execFileSync3 } from "node:child_process";
@@ -1684,7 +1683,7 @@ function readTaskIntentSource(root, taskId, requestedPath, requireTracked = true
     const fdStat = fstatSync2(fd);
     assertSameIdentity(statIdentity(before), fdStat, "intent sidecar descriptor");
     intentReaderTestHook?.onBeforeDescriptorRead?.();
-    bytes = readFileSync6(fd);
+    bytes = readFileSync5(fd);
   } finally {
     closeSync3(fd);
   }
@@ -3952,7 +3951,7 @@ import {
   lstatSync as lstatSync7,
   mkdirSync as mkdirSync2,
   openSync as openSync4,
-  readFileSync as readFileSync7,
+  readFileSync as readFileSync6,
   readdirSync as readdirSync2,
   realpathSync as realpathSync6,
   renameSync as renameSync2,
@@ -3999,7 +3998,7 @@ function isRetiredFileProvablySuperseded(path, db, taskId) {
     return false;
   let raw;
   try {
-    raw = JSON.parse(readFileSync7(path, "utf8"));
+    raw = JSON.parse(readFileSync6(path, "utf8"));
   } catch {
     return false;
   }
@@ -4194,7 +4193,7 @@ function readSecureProjectBytes(root, relativePath) {
     const opened = fstatSync3(fd);
     if (opened.dev !== before.dev || opened.ino !== before.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
-    const content = readFileSync7(fd);
+    const content = readFileSync6(fd);
     const after = lstatSync7(candidate.path);
     if (after.dev !== opened.dev || after.ino !== opened.ino)
       throw new KernelStoreSecurityError(`source identity changed: ${relativePath}`);
@@ -4232,7 +4231,7 @@ function clearStaleLock(lockPath) {
   let fd = null;
   try {
     fd = openSync4(lockPath, constants2.O_RDONLY | (constants2.O_NOFOLLOW ?? 0));
-    const raw = JSON.parse(readFileSync7(fd, "utf8"));
+    const raw = JSON.parse(readFileSync6(fd, "utf8"));
     stale = Number.isInteger(raw.pid) && Number(raw.pid) > 0 && !processIsAlive(Number(raw.pid));
   } catch {
     stale = Date.now() - Number(before.mtimeMs) > 30000;
@@ -5557,7 +5556,7 @@ import {
   existsSync as existsSync3,
   lstatSync as lstatSync8,
   mkdirSync as mkdirSync3,
-  readFileSync as readFileSync8,
+  readFileSync as readFileSync7,
   readlinkSync,
   realpathSync as realpathSync7,
   writeFileSync as writeFileSync3
@@ -5623,7 +5622,7 @@ function readEnrollmentBaseline(root) {
   if (!existsSync3(baselinePath))
     return null;
   try {
-    const baseline = JSON.parse(readFileSync8(baselinePath, "utf8"));
+    const baseline = JSON.parse(readFileSync7(baselinePath, "utf8"));
     return isGitWorkspaceSnapshot(baseline) ? baseline : null;
   } catch {
     throw new Error("enrollment baseline is unreadable");
@@ -5671,7 +5670,7 @@ function fileFingerprint(root, relativePath) {
     return `symlink:${readlinkSync(absolutePath)}`;
   if (!stat.isFile())
     return `other:${stat.mode}:${stat.size}`;
-  return `file:${stat.mode}:${createHash9("sha256").update(readFileSync8(absolutePath)).digest("hex")}`;
+  return `file:${stat.mode}:${createHash9("sha256").update(readFileSync7(absolutePath)).digest("hex")}`;
 }
 function dirtyPaths(root) {
   const tracked = git(root, ["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"]);
@@ -6532,7 +6531,7 @@ var init_batch_final_verification = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/kernel/runtime_contracts.ts
-import { existsSync as existsSync5, readFileSync as readFileSync9 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync8 } from "node:fs";
 import { dirname as dirname5, join as join9, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 function runningRuntimeSource() {
@@ -6552,7 +6551,7 @@ function readRuntimeContracts(runtimeDir) {
   const path = candidates.find((candidate) => existsSync5(candidate));
   if (!path)
     return null;
-  const raw = JSON.parse(readFileSync9(path, "utf8"));
+  const raw = JSON.parse(readFileSync8(path, "utf8"));
   if (raw.contract !== "immune_brain/runtime_contracts/v1")
     throw new Error(`${path} is not an immune_brain/runtime_contracts/v1 manifest`);
   for (const key of KEYS) {
@@ -7564,7 +7563,7 @@ import {
   lstatSync as lstatSync11,
   mkdirSync as mkdirSync6,
   mkdtempSync as mkdtempSync2,
-  readFileSync as readFileSync10,
+  readFileSync as readFileSync9,
   readlinkSync as readlinkSync2,
   rmSync as rmSync4,
   symlinkSync,
@@ -7736,7 +7735,7 @@ function workingEntry(root, path) {
     return { mode: "120000", oid: hashOf(root, Buffer.from(readlinkSync2(full))) };
   if (!stat.isFile())
     return { mode: "other", oid: "" };
-  return { mode: (stat.mode & 73) !== 0 ? "100755" : "100644", oid: hashOf(root, readFileSync10(full)) };
+  return { mode: (stat.mode & 73) !== 0 ? "100755" : "100644", oid: hashOf(root, readFileSync9(full)) };
 }
 function checkDeltaApplies(root, from, to, paths) {
   const conflicts = [];
@@ -7811,7 +7810,7 @@ var init_batch_ref = __esm(() => {
 // plugins/immune-brain/runtime/assurance/delivery_workspace.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { createHash as createHash11 } from "node:crypto";
-import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync5, readFileSync as readFileSync11, readlinkSync as readlinkSync3, realpathSync as realpathSync10, rmSync as rmSync5 } from "node:fs";
+import { chmodSync as chmodSync2, lstatSync as lstatSync12, mkdirSync as mkdirSync7, mkdtempSync as mkdtempSync3, readdirSync as readdirSync5, readFileSync as readFileSync10, readlinkSync as readlinkSync3, realpathSync as realpathSync10, rmSync as rmSync5 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
 import { dirname as dirname8, isAbsolute as isAbsolute5, join as join12, parse, relative as relative4, resolve as resolve9, sep as sep5 } from "node:path";
 function removeTaskOwnedTree(root) {
@@ -7952,7 +7951,7 @@ function workspaceFiles(root, dir = root, result = Object.create(null)) {
       result[rel] = `${stat.mode & 4095}:directory`;
       workspaceFiles(root, path, result);
     } else if (stat.isFile())
-      result[rel] = `${stat.mode & 4095}:${createHash11("sha256").update(readFileSync11(path)).digest("hex")}`;
+      result[rel] = `${stat.mode & 4095}:${createHash11("sha256").update(readFileSync10(path)).digest("hex")}`;
     else
       throw new DeliveryWorkspaceError("delivery contains an unsupported filesystem entry");
   }
@@ -8470,7 +8469,7 @@ var init_project_identity = () => {};
 
 // plugins/immune-brain/runtime/config/layered_config.ts
 import { execFileSync as execFileSync7 } from "node:child_process";
-import { existsSync as existsSync7, readFileSync as readFileSync12 } from "node:fs";
+import { existsSync as existsSync7, readFileSync as readFileSync11 } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute as isAbsolute6, join as join13 } from "node:path";
 function chooseReviewer(lanes) {
@@ -8501,7 +8500,7 @@ function resolveConfig(root, options = {}) {
     if (!existsSync7(path))
       return {};
     try {
-      const data = JSON.parse(readFileSync12(path, "utf8"));
+      const data = JSON.parse(readFileSync11(path, "utf8"));
       if (!object3(data)) {
         invalid(label, "$", "expected object");
         return null;
@@ -8836,7 +8835,7 @@ function resolveConfig(root, options = {}) {
     for (const file of ["AGENTS.md", "CLAUDE.md"])
       if (tracked(file)) {
         try {
-          for (const line of readFileSync12(join13(root, file), "utf8").split(/\r?\n/)) {
+          for (const line of readFileSync11(join13(root, file), "utf8").split(/\r?\n/)) {
             const match = regex.exec(line);
             if (match)
               return { value: match[1].trim().replace(/^`|`$/g, ""), file };
@@ -8943,7 +8942,7 @@ function acceptanceRepeatSeries(findings, latestRound) {
 // plugins/immune-brain/runtime/assurance/verification.ts
 import { createHash as createHash12, randomBytes } from "node:crypto";
 import { execFileSync as execFileSync8, spawn as spawn2 } from "node:child_process";
-import { accessSync, constants as constants4, readFileSync as readFileSync13, readdirSync as readdirSync6, realpathSync as realpathSync12, statSync as statSync3 } from "node:fs";
+import { accessSync, constants as constants4, readFileSync as readFileSync12, readdirSync as readdirSync6, realpathSync as realpathSync12, statSync as statSync3 } from "node:fs";
 import { delimiter as delimiter3, isAbsolute as isAbsolute7, join as join14, relative as relative5, resolve as resolve10, sep as sep6 } from "node:path";
 function insideVerificationRoot(root, candidate) {
   const realRoot = realpathSync12(root);
@@ -8981,7 +8980,7 @@ function identity(path) {
     const stat = statSync3(real);
     if (!stat.isFile())
       throw new Error("not a file");
-    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash12("sha256").update(readFileSync13(real)).digest("hex")}` };
+    return { path: real, invocation_path: path, dev: stat.dev, ino: stat.ino, content_hash: `sha256:${createHash12("sha256").update(readFileSync12(real)).digest("hex")}` };
   } catch {
     throw new VerificationDescriptorError("verification executable is unavailable or not executable");
   }
@@ -9040,7 +9039,7 @@ async function runFixedVerification(root, command, frozen, options) {
     };
     const procEnviron = (pid) => {
       try {
-        return readFileSync13(join14(procRoot, String(pid), "environ"), "utf8");
+        return readFileSync12(join14(procRoot, String(pid), "environ"), "utf8");
       } catch {
         return null;
       }
@@ -9048,7 +9047,7 @@ async function runFixedVerification(root, command, frozen, options) {
     const procSession = (entry) => {
       let stat;
       try {
-        stat = readFileSync13(join14(procRoot, entry, "stat"), "utf8");
+        stat = readFileSync12(join14(procRoot, entry, "stat"), "utf8");
       } catch (error) {
         if (error.code === "ENOENT")
           return null;
@@ -9330,7 +9329,7 @@ function createInvocationRegistry() {
 
 // plugins/immune-brain/runtime/role_prompt_bridge.ts
 import { createHash as createHash13 } from "node:crypto";
-import { existsSync as existsSync8, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync13 } from "node:fs";
 import { join as join15, dirname as dirname10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 function roleSpec(role) {
@@ -9353,7 +9352,7 @@ function loadRolePrompt(role) {
   for (const dir of rolePromptSearchDirs(RUNTIME_DIR)) {
     const path = join15(dir, spec.file);
     if (existsSync8(path))
-      return readFileSync14(path, "utf8");
+      return readFileSync13(path, "utf8");
   }
   throw new Error(`internal role prompt is not packaged: ${role}`);
 }
@@ -10454,7 +10453,7 @@ var init_authority_port = __esm(() => {
 // plugins/immune-brain/runtime/assurance/review_packet.ts
 import { createHash as createHash15 } from "node:crypto";
 import { isAbsolute as isAbsolute8 } from "node:path";
-import { readFileSync as readFileSync15 } from "node:fs";
+import { readFileSync as readFileSync14 } from "node:fs";
 function packetDigest(content) {
   return createHash15("sha256").update(content, "utf8").digest("hex");
 }
@@ -10485,7 +10484,7 @@ function reviewPacketError(prompt) {
     return "Review packet handle differs from its canonical form; dispatch the reserved prompt verbatim.";
   let bytes;
   try {
-    bytes = readFileSync15(handle.packet.path);
+    bytes = readFileSync14(handle.packet.path);
   } catch {
     return "Review packet is missing or unreadable; call advance_assurance for a fresh reservation.";
   }
@@ -10517,7 +10516,7 @@ import {
   rmSync as rmSync6,
   writeFileSync as writeFileSync7,
   statSync as statSync4,
-  readFileSync as readFileSync16,
+  readFileSync as readFileSync15,
   realpathSync as realpathSync13,
   chmodSync as chmodSync3
 } from "node:fs";
@@ -10891,7 +10890,7 @@ function assertReviewArtifact(path) {
   }
   if (!stat.isFile() || stat.size === 0)
     throw new Error(`review evidence artifact is missing or empty: ${path}`);
-  const read = readFileSync16(targetPath, { encoding: "utf8" });
+  const read = readFileSync15(targetPath, { encoding: "utf8" });
   if (read.trim().length === 0)
     throw new Error(`review evidence artifact is empty: ${path}`);
 }
@@ -11289,7 +11288,7 @@ var init_verdict_authority = __esm(() => {
 // plugins/immune-brain/runtime/plugin_source_skew.ts
 import { createHash as createHash17 } from "node:crypto";
 import { execFileSync as execFileSync11, spawnSync as spawnSync9 } from "node:child_process";
-import { existsSync as existsSync10, readFileSync as readFileSync17, realpathSync as realpathSync14, statSync as statSync5 } from "node:fs";
+import { existsSync as existsSync10, readFileSync as readFileSync16, realpathSync as realpathSync14, statSync as statSync5 } from "node:fs";
 import { dirname as dirname11, join as join18, sep as sep7 } from "node:path";
 function pluginRootAbove(dir) {
   let current = dir;
@@ -11313,7 +11312,7 @@ function sameBuild(a, b) {
     return false;
   if (statSync5(left).size !== statSync5(right).size)
     return false;
-  return readFileSync17(left).equals(readFileSync17(right));
+  return readFileSync16(left).equals(readFileSync16(right));
 }
 function pluginSourceSkewWarning(root, loadedFrom = runningRuntimeSource()) {
   try {
@@ -11350,7 +11349,7 @@ function parentRuntimeSkew(root, head, integrated, loadedFrom = runningRuntimeSo
   let loaded = null;
   try {
     if (loadedRoot)
-      loaded = readFileSync17(join18(loadedRoot, BUILD_PROXY));
+      loaded = readFileSync16(join18(loadedRoot, BUILD_PROXY));
   } catch {
     loaded = null;
   }
@@ -11365,7 +11364,7 @@ function watchBundleIdentity(path) {
   const read = () => {
     try {
       const stat = statSync5(path);
-      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync17(path)).digest("hex") };
+      return { stamp: { size: stat.size, mtimeMs: stat.mtimeMs }, hash: createHash17("sha256").update(readFileSync16(path)).digest("hex") };
     } catch {
       return null;
     }
@@ -14337,7 +14336,7 @@ var init_batch_final_report = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/local_initiative.ts
-import { lstatSync as lstatSync14, readFileSync as readFileSync18 } from "node:fs";
+import { lstatSync as lstatSync14, readFileSync as readFileSync17 } from "node:fs";
 import { resolve as resolve14 } from "node:path";
 function localInitiativePath(initiativeSlug) {
   return `docs/initiatives/${initiativeSlug}.md`;
@@ -14362,7 +14361,7 @@ function observeLocalInitiative(root, initiativeSlug) {
   const slices = [];
   let inTasks = false;
   let fence = false;
-  for (const raw of readFileSync18(resolve14(root, path), "utf8").split(/\r?\n/)) {
+  for (const raw of readFileSync17(resolve14(root, path), "utf8").split(/\r?\n/)) {
     const line = raw.trim();
     if (line.startsWith("```")) {
       fence = !fence;
@@ -14419,7 +14418,7 @@ var init_local_initiative = __esm(() => {
 
 // plugins/immune-brain/runtime/github_issue_tracker.ts
 import { spawn as spawn3, spawnSync as spawnSync14 } from "node:child_process";
-import { existsSync as existsSync11, readFileSync as readFileSync19, readdirSync as readdirSync8 } from "node:fs";
+import { existsSync as existsSync11, readFileSync as readFileSync18, readdirSync as readdirSync8 } from "node:fs";
 import { basename as basename3, relative as relative7, resolve as resolve15, sep as sep9 } from "node:path";
 function countLiteral(value, needle) {
   if (!needle)
@@ -17045,7 +17044,7 @@ var init_batch_leak_restore = __esm(() => {
 });
 
 // plugins/immune-brain/runtime/unattended/batch_preflight.ts
-import { existsSync as existsSync14, readdirSync as readdirSync10, readFileSync as readFileSync20 } from "node:fs";
+import { existsSync as existsSync14, readdirSync as readdirSync10, readFileSync as readFileSync19 } from "node:fs";
 import { randomUUID as randomUUID8 } from "node:crypto";
 import { dirname as dirname15, join as join23 } from "node:path";
 import { spawnSync as spawnSync17 } from "node:child_process";
@@ -17073,7 +17072,7 @@ function findResumableBatchSlugForTask(root, taskId) {
     if (!file.endsWith(".json"))
       continue;
     try {
-      const record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      const record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
       if (!["v1", "v2"].includes(classifyBatchRunStateContract(record?.contract)))
         continue;
       if (record.batch_state !== "running" && record.batch_state !== "needs_human")
@@ -17096,7 +17095,7 @@ function findExistingActiveBatch(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
     } catch {
       return { corrupt: true, path: file };
     }
@@ -17139,7 +17138,7 @@ function findSettledBatchRecord(root, initiativeSlug) {
       continue;
     let record;
     try {
-      record = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+      record = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
     } catch {
       continue;
     }
@@ -17507,7 +17506,7 @@ async function projectPreflight(options, preparing) {
         if (!file.endsWith(".json") || file.endsWith(".report.json"))
           continue;
         try {
-          const candidate = JSON.parse(readFileSync20(join23(batchesDir, file), "utf8"));
+          const candidate = JSON.parse(readFileSync19(join23(batchesDir, file), "utf8"));
           if (classifyBatchRunStateContract(candidate?.contract) === "foreign")
             continue;
           const record = readAnyBatchRunState(root, file.slice(0, -5));
@@ -18110,7 +18109,7 @@ import { spawnSync as spawnSync20 } from "node:child_process";
 import { createHash as createHash23 } from "node:crypto";
 import { existsSync as existsSync16, realpathSync as realpathSync18 } from "node:fs";
 import { isAbsolute as isAbsolute11, join as join27 } from "node:path";
-import { readFileSync as readFileSync22 } from "node:fs";
+import { readFileSync as readFileSync21 } from "node:fs";
 
 // plugins/immune-brain/runtime/unattended/checkout_delivery.ts
 init_git_integration_preference();
@@ -18292,7 +18291,7 @@ import { accessSync as accessSync3, constants as constants7 } from "node:fs";
 import { delimiter as delimiter4, join as join26 } from "node:path";
 
 // plugins/immune-brain/runtime/unattended/lane_decision_request.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync11, readFileSync as readFileSync21, rmSync as rmSync9, writeFileSync as writeFileSync11 } from "node:fs";
+import { existsSync as existsSync15, mkdirSync as mkdirSync11, readFileSync as readFileSync20, rmSync as rmSync9, writeFileSync as writeFileSync11 } from "node:fs";
 import { dirname as dirname16, join as join25 } from "node:path";
 var LANE_EXECUTOR_ENV = "IMM_LANE_EXECUTOR";
 var LANE_EXECUTOR_HEADLESS = "headless";
@@ -18312,7 +18311,7 @@ function readLaneDecisionRequest(lanePath, taskId, recordRevision) {
   if (!existsSync15(path))
     return null;
   try {
-    const value = JSON.parse(readFileSync21(path, "utf8"));
+    const value = JSON.parse(readFileSync20(path, "utf8"));
     if (value.contract !== "assurance_kernel/lane_decision_request/v1" || value.task_id !== taskId || value.operation !== "approve_breaking_intent_revision" || value.record_revision !== recordRevision || !value.next_intent || typeof value.next_intent !== "object")
       return null;
     return value;
@@ -19128,7 +19127,7 @@ function laneRuntimeDir(root, explicit) {
   if (explicit)
     return explicit;
   try {
-    const manifest = JSON.parse(readFileSync22(join27(root, "package.json"), "utf8"));
+    const manifest = JSON.parse(readFileSync21(join27(root, "package.json"), "utf8"));
     return manifest.name === "immune-brain" ? root : null;
   } catch {
     return null;
@@ -23147,7 +23146,7 @@ async function runContinuationHookOutput(payload, root = tmpdir8()) {
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync20, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync20, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
 import { dirname as dirname20, join as join37, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
@@ -23311,12 +23310,12 @@ init_actor_identity();
 
 // plugins/immune-brain/runtime/staged_intent.ts
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { readFileSync as readFileSync23, writeFileSync as writeFileSync12 } from "node:fs";
+import { readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
 import { join as join34 } from "node:path";
 function captureStagedIntent(root, relativePath) {
   return {
     path: relativePath,
-    bytes: readFileSync23(join34(root, relativePath)),
+    bytes: readFileSync22(join34(root, relativePath)),
     index_state: execFileSync14("git", ["ls-files", "--stage", "-z", "--", relativePath], {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"]
@@ -23336,7 +23335,7 @@ function restoreStagedIntent(root, snapshot) {
       stdio: ["pipe", "ignore", "pipe"]
     });
   }
-  const restoredBytes = readFileSync23(join34(root, snapshot.path));
+  const restoredBytes = readFileSync22(join34(root, snapshot.path));
   if (!restoredBytes.equals(snapshot.bytes)) {
     throw new Error("failed to restore prior intent bytes");
   }
@@ -23943,7 +23942,7 @@ init_batch_state();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync24, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir9 } from "node:os";
 import { delimiter as delimiter5, dirname as dirname19, join as join36, resolve as resolve16 } from "node:path";
@@ -24177,10 +24176,10 @@ class CliReviewHost {
     }
     if (!existsSync19(owned.exitFile))
       return { ok: false, release: false, reason: "verification process still running; wait for it to exit, then call submit_verification again" };
-    const status = Number.parseInt(readFileSync24(owned.exitFile, "utf8").trim(), 10);
+    const status = Number.parseInt(readFileSync23(owned.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
-    const bytes = existsSync19(owned.output) ? readFileSync24(owned.output, "utf8") : "";
+    const bytes = existsSync19(owned.output) ? readFileSync23(owned.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
     return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
@@ -24250,10 +24249,10 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    const status = Number.parseInt(readFileSync24(reservation.exitFile, "utf8").trim(), 10);
+    const status = Number.parseInt(readFileSync23(reservation.exitFile, "utf8").trim(), 10);
     if (status !== 0)
       return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
-    const bytes = existsSync19(reservation.output) ? readFileSync24(reservation.output, "utf8") : "";
+    const bytes = existsSync19(reservation.output) ? readFileSync23(reservation.output, "utf8") : "";
     if (!bytes.trim())
       return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
@@ -24313,7 +24312,7 @@ async function executeOrdinaryKernelOperation(input) {
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
   const sidecar = join37(root, priorIntent.intent_ref.path);
-  const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
+  const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
     if (priorBytes) {

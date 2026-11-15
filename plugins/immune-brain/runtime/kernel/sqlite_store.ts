@@ -24,7 +24,6 @@ import {
 	lstatSync,
 	mkdirSync,
 	openSync,
-	readFileSync,
 	realpathSync,
 	statSync,
 	renameSync,
@@ -234,10 +233,6 @@ function ensureStoreDirectory(canonical: string): void {
 			);
 	}
 	assertSafeStoreTarget(canonical, target);
-}
-
-export function kernelStoreExists(root: string): boolean {
-	return existsSync(kernelStorePath(root));
 }
 
 const SCHEMA_SQL = `
@@ -800,20 +795,6 @@ export function readRunRowById(db: DatabaseSync, runId: string): KernelRunRow | 
 	return row ? mapRunRow(row) : null;
 }
 
-export function readActiveRun(db: DatabaseSync): KernelRunRow | null {
-	const row = db.prepare("SELECT * FROM runs WHERE state = 'active'").get() as
-		| Record<string, unknown>
-		| undefined;
-	return row ? mapRunRow(row) : null;
-}
-
-export function listTerminalRuns(db: DatabaseSync): KernelRunRow[] {
-	const rows = db
-		.prepare("SELECT * FROM runs WHERE state <> 'active' ORDER BY updated_at, task_id")
-		.all() as Array<Record<string, unknown>>;
-	return rows.map(mapRunRow);
-}
-
 export function listPendingAuditExports(db: DatabaseSync): KernelRunRow[] {
 	const rows = db
 		.prepare(
@@ -1182,12 +1163,4 @@ function checkpointLiveStore(canonical: string, target: string): void {
 	} finally {
 		closeSync(fd);
 	}
-}
-
-export function readStoreBytes(path: string): Buffer {
-	return readFileSync(path);
-}
-
-export function writeStoreBytes(path: string, bytes: Buffer): void {
-	writeFileSync(path, bytes);
 }
