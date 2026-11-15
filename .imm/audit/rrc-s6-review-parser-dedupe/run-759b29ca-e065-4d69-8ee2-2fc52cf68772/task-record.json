@@ -1,0 +1,201 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s6-review-parser-dedupe",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s6-review-parser-dedupe",
+    "goal": "remove-redundant-checks S6 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S6 and threat model; U2, U3). The Review coordinator parser drops caller-side checks that a rebuild or a retained check already covers: B1 unknown-field rejection on finding evidence, evidence.violated, incomplete, pass approval and finding; B4 rework approval rejection; B5 approval kind and role self-assertion; B6 the empty-id trim; B7 the duplicate verification identity check; B11 the security-boundary revalidation and second git show, keeping the missing-boundary throw. The child-verdict top-level and verifier-output unknown-field checks stay. The Kernel receives the same verdict for every input accepted today. Execution posture: characterization-first.",
+    "acceptance": [
+      {
+        "id": "RC-S6-A1",
+        "assertion": "In tests/pi-canary-assurance-authority.test.ts and tests/pi-canary-assurance-progression.test.ts, a verdict with one extra field on finding evidence, evidence.violated, an incomplete verdict, a pass approval or a finding parses and the result carries no extra field; a QA finding carrying evidence parses without evidence; an extra top-level child-verdict field still throws unknown field; a missing trigger, caller_chain or approval summary still throws its current message.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S6-A2",
+        "assertion": "In tests/pi-canary-assurance-authority.test.ts, a rework verdict carrying an approval object parses to a rework verdict without approval; a pass approval with a wrong kind or authority_role parses to the expected kind and role; a finding id of spaces parses to a regenerated id; a non-string id and an empty approval summary still throw.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S6-A3",
+        "assertion": "In tests/host-neutral-assurance-coordinator.test.ts, the verification packet for a rework verdict with an acceptance finding and one with a security_boundary finding equals the packet built before the change; an unknown boundary ref still throws security boundary source is invalid; verifier output with an extra field still discards the whole output and keeps every finding.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S6-A4",
+        "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s6-review-parser-dedupe.md",
+      "docs/plans/rrc-s6-review-parser-dedupe.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "tests/antigravity-assurance-conformance.test.ts",
+      "tests/host-neutral-assurance-coordinator.test.ts",
+      "tests/pi-canary-assurance-authority.test.ts",
+      "tests/pi-canary-assurance-progression.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s6-review-parser-dedupe.intent.json",
+    "content_hash": "sha256:98472a5810a748b8dff0de24921952cb0b911a4b47612fe1e4c40d67295949a9"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:98472a5810a748b8dff0de24921952cb0b911a4b47612fe1e4c40d67295949a9",
+  "git_base_head": "6e964634b60a06d0bd50db5932f9047b010e8da0",
+  "attestations": [
+    {
+      "id": "approval-qa-0a9bf0e0",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:98472a5810a748b8dff0de24921952cb0b911a4b47612fe1e4c40d67295949a9",
+      "diff_hash": "sha256:0fa4f41320660154d6ef605bd4ae1c67411f8929f16832a949bb986e5a990523",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:029979d562d5b91dff61e83fd47e0efedbccab4e5d1b091569216582b1c59c56",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S6-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:029979d562d5b91dff61e83fd47e0efedbccab4e5d1b091569216582b1c59c56"
+        },
+        {
+          "acceptance_id": "RC-S6-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:029979d562d5b91dff61e83fd47e0efedbccab4e5d1b091569216582b1c59c56"
+        },
+        {
+          "acceptance_id": "RC-S6-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:029979d562d5b91dff61e83fd47e0efedbccab4e5d1b091569216582b1c59c56"
+        },
+        {
+          "acceptance_id": "RC-S6-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:029979d562d5b91dff61e83fd47e0efedbccab4e5d1b091569216582b1c59c56"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-c1fe967e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:98472a5810a748b8dff0de24921952cb0b911a4b47612fe1e4c40d67295949a9",
+      "diff_hash": "sha256:112569f2974e88167abe4622c07b85aa60dad779e2a7d83b47db7a2e0a19f01b",
+      "actor_id": "deterministic-qa",
+      "summary": "all 5 project verification check(s) passed; execution=sha256:9cdb62acc75eabc991d6fc891bac4cf2f7b929364f433521dd8a6f9addc1be78",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S6-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9cdb62acc75eabc991d6fc891bac4cf2f7b929364f433521dd8a6f9addc1be78"
+        },
+        {
+          "acceptance_id": "RC-S6-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9cdb62acc75eabc991d6fc891bac4cf2f7b929364f433521dd8a6f9addc1be78"
+        },
+        {
+          "acceptance_id": "RC-S6-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9cdb62acc75eabc991d6fc891bac4cf2f7b929364f433521dd8a6f9addc1be78"
+        },
+        {
+          "acceptance_id": "RC-S6-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 5 project verification check(s) passed; execution=sha256:9cdb62acc75eabc991d6fc891bac4cf2f7b929364f433521dd8a6f9addc1be78"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-cf97b56e",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:98472a5810a748b8dff0de24921952cb0b911a4b47612fe1e4c40d67295949a9",
+      "diff_hash": "sha256:112569f2974e88167abe4622c07b85aa60dad779e2a7d83b47db7a2e0a19f01b",
+      "actor_id": "cli:claude-code:2c248d1c-977c-458d-9fb9-475a7b361260",
+      "summary": "Every removed parser check is covered by something the change keeps: the parse functions rebuild verdict, approval, finding, evidence and incomplete objects from named fields only. reviewSecurityBoundarySources still reads the boundary line from the immutable review_commit. Finding ids embed their index, so they cannot collide. Tests pin the packet, the strict top-level whitelist and the kept messages. The two coordinator copies are identical blobs and both dist bundles match them. Blast radius: medium; the load-bearing path is runtime/assurance/coordinator.ts (Review verdict parsing and the verifier packet) and no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6e964634b60a06d0bd50db5932f9047b010e8da0",
+        "review_commit": "83eca7d8e4801a7792a4380aaeaf3acb741285d3",
+        "review_tree": "e5af9666275cc5fb752552a6d2643865142a1a43",
+        "manifest_digest": "sha256:2583550608b8bfd8240b1579506975c5b47967efc37769ee395c920cff85e363"
+      },
+      "reviewer_verdict_sha256": "sha256:34bfab22034e634c1bc20a34241618acbf5f0ee2b2c2ff16f7b7d70223bd9868"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s6-review-parser-dedupe:2026-11-15T08:17:51.079Z",
+      "at": "2026-11-15T08:17:51.079Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s6-review-parser-dedupe.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s6-review-parser-dedupe:2026-11-15T08:18:33.376Z",
+      "at": "2026-11-15T08:18:33.376Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-0a9bf0e0\naction_v2_sha256:d57405a30f1489ad1e365bfaf795d887482b4b56144971195b92f95e67ebb7b7",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T08:18:33.376Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s6-review-parser-dedupe:2026-11-15T08:21:04.648Z",
+      "at": "2026-11-15T08:21:04.648Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c1fe967e\naction_v2_sha256:2e3724f536ac07ad9935a981851e1242a317f0c148cc5f1ea72892b0429193ce",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T08:21:04.648Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s6-review-parser-dedupe:2026-11-15T08:22:14.894Z",
+      "at": "2026-11-15T08:22:14.894Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-cf97b56e\naction_v2_sha256:7fb0572eb61b76d2add5638823599bfff7e769fe3c5725a651f1c6dbfc6e1b1f",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:2c248d1c-977c-458d-9fb9-475a7b361260",
+        "confirmation_ref": "pi:cli:claude-code:2c248d1c-977c-458d-9fb9-475a7b361260",
+        "issued_at": "2026-11-15T08:22:14.894Z"
+      },
+      "review_started_at": "2026-11-15T08:21:07.404Z",
+      "review_submitted_at": "2026-11-15T08:22:14.172Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s6-review-parser-dedupe:2026-11-15T08:22:17.010Z",
+      "at": "2026-11-15T08:22:17.010Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:f0c49fbab0018e9cdd4f7b77135baf573e85acc2ffd9b8e83ff69eb074823a88"
+    }
+  ]
+}

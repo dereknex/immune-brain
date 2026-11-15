@@ -15,12 +15,19 @@ describe("Review incomplete is a durable non-verdict outcome", () => {
    expect(() => parseAssuranceVerdict(valid, s)).toThrow();
    const qa = { ...s, role: "qa" as const };
    expect(() => parseChildVerdict(f.incomplete(qa, { role: "qa", snapshot_digest: snapshotDigest(qa) }), qa)).toThrow(/Review/);
-   for (const override of [ { approval: null }, { approval: {} }, { findings: [] }, { findings: null },
+   for (const override of [
     { inspected_paths: [f.paths[0], f.paths[0]] }, { inspected_paths: ["foreign.ts"] }, { inspected_paths: null },
     { inspected_paths: [""] }, { reason: "" }, { reason: "  " }, { reason: "a\nb" }, { reason: "a\rb" },
     { reason: null }, { task_id: "wrong" }, { snapshot_digest: "wrong" } ]) {
     expect(() => parseChildVerdict(f.incomplete(s, override), s)).toThrow();
     expect(await c.submitReview(f.taskId, f.ctx, f.incomplete(s, override))).toMatchObject({ state: "blocked", code: "verdict_invalid" });
+   }
+   // B1: fields the incomplete rebuild drops are no longer rejected.
+   for (const dropped of [{ approval: null }, { approval: {} }, { findings: [] }, { findings: null }, { extra: true }]) {
+    const parsed = parseChildVerdict(f.incomplete(s, dropped), s);
+    expect(parsed).not.toHaveProperty("approval");
+    expect(parsed).not.toHaveProperty("findings");
+    expect(parsed).not.toHaveProperty("extra");
    }
    expect(f.record().record!.history.filter(e => e.type === "record_review_incomplete")).toHaveLength(0);
    expect(f.record().record!.findings).toEqual([]);

@@ -11785,16 +11785,9 @@ function buildReviewVerificationPacket(snapshot, verdict, verdictSha256, securit
     let acceptance;
     if (violated.kind === "security_boundary") {
       const boundary = securityBoundaries[violated.ref];
-      if (!boundary || !/^docs\/specs\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.md$/.test(boundary.path) || boundary.path.split("/").some((part) => part === "..") || !boundary.line.trim() || /[\r\n]/.test(boundary.line) || !/^[a-f0-9]{40,64}$/.test(snapshot.review_revision.review_commit))
+      if (!boundary)
         throw new Error("security boundary source is invalid");
-      try {
-        const contents = execFileSync12("git", ["show", `${snapshot.review_revision.review_commit}:${boundary.path}`], { cwd: snapshot.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
-        if (!contents.split(/\r?\n/).includes(boundary.line))
-          throw new Error("line missing");
-        acceptance = `${violated.ref}: ${boundary.line}`;
-      } catch {
-        throw new Error("security boundary is not in the immutable revision");
-      }
+      acceptance = `${violated.ref}: ${boundary.line}`;
     } else
       acceptance = snapshot.acceptance.find((item) => item.id === finding.acceptance_id)?.assertion;
     if (!acceptance?.trim())
@@ -11807,8 +11800,6 @@ function buildReviewVerificationPacket(snapshot, verdict, verdictSha256, securit
       acceptance
     };
   });
-  if (new Set(findings.map((f) => f.id)).size !== findings.length)
-    throw new Error("duplicate verification finding identity");
   const { base_head, review_commit, review_tree, manifest_digest } = snapshot.review_revision;
   return {
     contract: "assurance_kernel/review_verification_packet/v1",
@@ -11959,9 +11950,6 @@ function parseVerdictEvidence(value, index) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error(`finding ${index} evidence is required`);
   const evidence = value;
-  const unknown = Object.keys(evidence).find((key) => !["trigger", "caller_chain", "violated"].includes(key));
-  if (unknown)
-    throw new Error(`finding ${index} evidence has unknown field: ${unknown}`);
   if (typeof evidence.trigger !== "string" || !evidence.trigger.trim())
     throw new Error(`finding ${index} evidence.trigger must be a non-empty string`);
   const chain = evidence.caller_chain;
@@ -11971,9 +11959,6 @@ function parseVerdictEvidence(value, index) {
   if (!violated || typeof violated !== "object" || Array.isArray(violated))
     throw new Error(`finding ${index} evidence.violated is required`);
   const violatedRecord = violated;
-  const unknownViolated = Object.keys(violatedRecord).find((key) => !["kind", "ref"].includes(key));
-  if (unknownViolated)
-    throw new Error(`finding ${index} evidence.violated has unknown field: ${unknownViolated}`);
   if (violatedRecord.kind !== "acceptance" && violatedRecord.kind !== "security_boundary")
     throw new Error(`finding ${index} evidence.violated.kind must be acceptance or security_boundary`);
   if (typeof violatedRecord.ref !== "string" || !violatedRecord.ref.trim())
@@ -12015,9 +12000,6 @@ function parseChildVerdict(input, snapshot) {
     throw new Error("incomplete is only valid for Review");
   if (raw.contract !== "assurance_kernel/assurance_verdict/v2" || raw.task_id !== snapshot.task_id || raw.snapshot_digest !== snapshotDigest(snapshot))
     throw new Error("incomplete snapshot identity mismatch");
-  const unknown = Object.keys(raw).find((key) => !["contract", "role", "task_id", "snapshot_digest", "decision", "inspected_paths", "reason"].includes(key));
-  if (unknown)
-    throw new Error(`incomplete has unknown field: ${unknown}`);
   if (typeof raw.reason !== "string" || !raw.reason.trim() || /[\r\n\u2028\u2029]/.test(raw.reason))
     throw new Error("incomplete reason must be a non-empty single line");
   const paths = raw.inspected_paths;
@@ -12045,7 +12027,7 @@ function parseAssuranceVerdict(input, snapshot) {
     const approval = raw.approval;
     const expectedKind = snapshot.role === "qa" ? "qa" : "review";
     const expectedRole = snapshot.role === "qa" ? "qa" : "reviewer";
-    if (!approval || approval.kind !== expectedKind || approval.authority_role !== expectedRole || typeof approval.summary !== "string" || !approval.summary.trim())
+    if (!approval || typeof approval.summary !== "string" || !approval.summary.trim())
       throw new Error("pass verdict approval is invalid");
     if (snapshot.role === "review") {
       const required = snapshot.dirty_files;
@@ -12067,10 +12049,6 @@ function parseAssuranceVerdict(input, snapshot) {
       if (missing.length)
         throw new Error(`review pass verdict approval.inspected_paths omits reviewed changed paths: ${missing.join(", ")}`);
     }
-    const allowedApproval = snapshot.role === "review" ? ["kind", "authority_role", "summary", "inspected_paths"] : ["kind", "authority_role", "summary"];
-    const unknownApproval = Object.keys(approval).find((key) => !allowedApproval.includes(key));
-    if (unknownApproval)
-      throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
     const passFindings = raw.findings === undefined ? [] : parseVerdictFindings(raw.findings, snapshot);
     if (passFindings.some((finding) => finding.kind !== "advisory"))
       throw new Error("pass verdict findings must all be advisory");
@@ -12086,8 +12064,6 @@ function parseAssuranceVerdict(input, snapshot) {
   }
   if (!Array.isArray(raw.findings) || raw.findings.length === 0)
     throw new Error("rework verdict findings are invalid");
-  if (raw.approval !== undefined && raw.approval !== null)
-    throw new Error("rework verdict must omit approval");
   const findings = parseVerdictFindings(raw.findings, snapshot);
   if (snapshot.role === "review") {
     const outOfDelta = outOfDeltaBlockingFindings(findings, snapshot);
@@ -12121,11 +12097,7 @@ function callerChainPath(entry) {
 function parseVerdictFindings(rawFindings, snapshot) {
   return rawFindings.map((item, index) => {
     const finding = item;
-    const allowedFindingKeys = snapshot.role === "review" ? ["id", "kind", "acceptance_id", "summary", "evidence"] : ["id", "kind", "acceptance_id", "summary"];
-    const unknownFinding = Object.keys(finding).find((key) => !allowedFindingKeys.includes(key));
-    if (unknownFinding)
-      throw new Error(`finding ${index} has unknown field: ${unknownFinding}`);
-    if (typeof finding.id !== "string" || !finding.id.trim() || finding.kind !== "blocking" && finding.kind !== "advisory" || finding.acceptance_id !== null && typeof finding.acceptance_id !== "string" || typeof finding.summary !== "string" || !finding.summary.trim())
+    if (typeof finding.id !== "string" || finding.kind !== "blocking" && finding.kind !== "advisory" || finding.acceptance_id !== null && typeof finding.acceptance_id !== "string" || typeof finding.summary !== "string" || !finding.summary.trim())
       throw new Error(`finding ${index} is invalid`);
     const id = `review-${snapshotDigest(snapshot).slice(7, 19)}-${index + 1}-${finding.id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48)}`;
     const normalized = { id, kind: finding.kind, acceptance_id: finding.acceptance_id, summary: finding.summary };

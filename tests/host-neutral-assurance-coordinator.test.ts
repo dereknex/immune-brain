@@ -288,6 +288,9 @@ describe("review verification packet", () => {
 			expect(parseReviewVerification({ ...valid, results }, packet, root)).toEqual({ valid: false,
 				results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
 		}
+		// Verifier output stays strict: one extra top-level field discards it whole.
+		expect(parseReviewVerification({ ...valid, extra: true }, packet, root)).toEqual({ valid: false,
+			results: [{ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" }] });
 	});
 	test("prepares a verifier dispatch on both native hosts with the selected model", () => {
 		const pi = makePiReviewHost(root);
@@ -557,15 +560,21 @@ describe("review verification packet", () => {
 		expect(readFileSync(packetPath, "utf8")).toContain("authority: Only the owner may mutate state.");
 	});
 
-	test("requires the security boundary's threat-model text", () => {
+	test("pins the security boundary packet and keeps the missing-source control", () => {
 		const security = parseAssuranceVerdict({ contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: TASK,
 			snapshot_digest: snapshotDigest(s), decision: "rework", findings: [{ id: "security", kind: "blocking", acceptance_id: null,
 				summary: "boundary claim", evidence: { trigger: "input fails", caller_chain: ["src/change.ts"],
 					violated: { kind: "security_boundary", ref: "authority" } } }] }, s);
-		expect(() => buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`)).toThrow();
-		expect(buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`, { authority: { path: "docs/specs/test.spec.md", line: "Only the owner may mutate state." } }).findings[0]?.acceptance)
-			.toBe("authority: Only the owner may mutate state.");
-		expect(() => buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`, { authority: { path: "docs/specs/test.spec.md", line: "invented" } })).toThrow();
+		// B11: a missing boundary keeps today's message; the boundary's own source
+		// (`reviewSecurityBoundarySources`) is the only production input.
+		expect(() => buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`)).toThrow("security boundary source is invalid");
+		// The packet built from a supplied boundary is unchanged by the deletion.
+		expect(buildReviewVerificationPacket(s, security, `sha256:${"e".repeat(64)}`, { authority: { path: "docs/specs/test.spec.md", line: "Only the owner may mutate state." } }))
+			.toEqual({ contract: "assurance_kernel/review_verification_packet/v1", task_id: TASK, snapshot_digest: snapshotDigest(s),
+				verdict_sha256: `sha256:${"e".repeat(64)}`, review_revision: s.review_revision,
+				findings: [{ id: security.findings![0]!.id, anchor: security.findings![0]!.anchor, summary: "boundary claim",
+					evidence: { trigger: "input fails", caller_chain: ["src/change.ts"], violated: { kind: "security_boundary", ref: "authority" } },
+					acceptance: "authority: Only the owner may mutate state." }] });
 	});
 });
 
