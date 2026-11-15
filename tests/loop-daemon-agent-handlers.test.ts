@@ -421,6 +421,7 @@ function makeHarness(
 		},
 		runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
 		gitCommitAndPush: async () => ({ commit_sha: "e".repeat(40) }),
+		gitForcePushWithLease: async () => ({ commit_sha: "f".repeat(40) }),
 		rebaseOrMerge: async () => ({ success: true }),
 		now: () => TS,
 	};

@@ -149,6 +149,12 @@ function makeFakeGitHubPort(): {
 			return { number: 200, url: "https://example.test/pr/200" };
 		},
 		async markPrReady() {},
+		async checkLog() {
+			return null;
+		},
+		async prReviewComments() {
+			return [];
+		},
 	};
 
 	return { port, postedComments, editedComments, createdIssues, closedIssues };

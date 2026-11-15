@@ -1,0 +1,391 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s8-pr-repair",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s8-pr-repair",
+    "goal": "Give PR repair sessions the inputs they need: the failing CI log, an agent session for rebase conflicts with lease-guarded push on daemon branches, one batched session per review head, and a worktree reset to the PR head first, per D9 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: only the repair path differs.",
+    "acceptance": [
+      {
+        "id": "S8-AC1",
+        "assertion": "Source BR-GAP-C1, BR-GAP-C4; meet D9 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-pr-repair.test.ts and tests/loop-daemon-repair.test.ts with fake GitHub and git. Done looks like: the CI repair prompt contains the failing check's bounded log excerpt and details URL, and the PR worktree is fetched and reset to the PR head before the session. Negative: a log fetch failure escalates and starts no session. Bound: the excerpt never exceeds its byte limit.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-pr-repair.test.ts\",\n      \"tests/loop-daemon-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S8-AC2",
+        "assertion": "Source BR-GAP-C2; meet D9 conflict bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-pr-repair.test.ts, characterization first. Done looks like: a conflicted rebase keeps the conflicted tree and runs a repair session, then pushes with --force-with-lease to the daemon-created branch. Negative: a branch outside the daemon prefixes is never force-pushed. Bound: the two-attempt cap per (head_sha, signature) still holds.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-pr-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S8-AC3",
+        "assertion": "Source BR-GAP-C3; meet D9 review bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-pr-repair.test.ts. Done looks like: three review comments on one PR head produce one repair session and one push, and the prompt carries each comment's path, line and diff hunk. Negative: a comment whose path is outside the TaskIntent scope_hint escalates instead of being applied.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-pr-repair.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s8-pr-repair.md",
+      "docs/plans/loop-sched-s8-pr-repair.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/events.ts",
+      "plugins/immune-brain/runtime/loop_daemon/github_port.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+      "tests/loop-daemon-repair.test.ts",
+      "tests/loop-sched-pr-repair.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s8-pr-repair.intent.json",
+    "content_hash": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef",
+  "git_base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+  "attestations": [
+    {
+      "id": "approval-qa-5073a660",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef",
+      "diff_hash": "sha256:dee11bf98c00595d9b680f20b856974a0291d8a7a7666d561fafe91a7a6a6a06",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:3dc51a6db3a0675b8f4a5b72473e5ef011ecbb27235fec38902ad2d46eedd35a",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3dc51a6db3a0675b8f4a5b72473e5ef011ecbb27235fec38902ad2d46eedd35a"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3dc51a6db3a0675b8f4a5b72473e5ef011ecbb27235fec38902ad2d46eedd35a"
+        },
+        {
+          "acceptance_id": "S8-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:3dc51a6db3a0675b8f4a5b72473e5ef011ecbb27235fec38902ad2d46eedd35a"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9f8c2178",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef",
+      "diff_hash": "sha256:701785d554e1d0b5847de405c5fefab39ce67715290e8954177940b3900fc086",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:fc92e3311f2cb56c1dcd55c7e8d67213678963d4f4ce9ef44d573062d9d2d243",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fc92e3311f2cb56c1dcd55c7e8d67213678963d4f4ce9ef44d573062d9d2d243"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fc92e3311f2cb56c1dcd55c7e8d67213678963d4f4ce9ef44d573062d9d2d243"
+        },
+        {
+          "acceptance_id": "S8-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fc92e3311f2cb56c1dcd55c7e8d67213678963d4f4ce9ef44d573062d9d2d243"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-6ad595bd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef",
+      "diff_hash": "sha256:18c24e2196165a87509084b2103962d78f35776a6c766e0b5c100f9aca8f1844",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:cd0191e5220f6c57465c6cbedf1b45304b9dda6fd341905d98ddd3b201a43753",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S8-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cd0191e5220f6c57465c6cbedf1b45304b9dda6fd341905d98ddd3b201a43753"
+        },
+        {
+          "acceptance_id": "S8-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cd0191e5220f6c57465c6cbedf1b45304b9dda6fd341905d98ddd3b201a43753"
+        },
+        {
+          "acceptance_id": "S8-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:cd0191e5220f6c57465c6cbedf1b45304b9dda6fd341905d98ddd3b201a43753"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-43d9e7a8",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e24bee4e7b528520b285b395f0ec01d6845752b033a60278fbb4e808777bf6ef",
+      "diff_hash": "sha256:18c24e2196165a87509084b2103962d78f35776a6c766e0b5c100f9aca8f1844",
+      "actor_id": "cli:claude-code:7499427d-d707-4b5a-b5a8-07dea3fca9f7",
+      "summary": "Round-3 delta moves leftover-rebase abort into syncWorktreeToHead (fails closed on abort error) which prWorktree runs before every repair handler incl. repairConflict→rebaseOrMerge, with clean and rebasing cases pinned in tests; blast radius medium: loop_daemon/agent_handlers.ts PR worktree sync path, no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+        "review_commit": "68d8d37279545edcec35b25032fad9df840803b9",
+        "review_tree": "4dc87ed60a1e2346e3b834c05a89fb664be3a021",
+        "manifest_digest": "sha256:be9b1e7c55da6010ecf594d76cb396265c3fbd07305fdf9fdb37ebaf21c25c1c"
+      },
+      "reviewer_verdict_sha256": "sha256:c2d00460e8595a5899aa3b318fffaa257bfcf4856fb93f9be7c6dd808f0fa0ac"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-3a7d8d1148e6-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S8-AC3",
+      "source": "review",
+      "review_round": 1,
+      "summary": "Review batching pulls every PR inline comment with id >= the triggering comment from prReviewComments regardless of author, then overwrites author/author_association with the guarded event's values, so unvetted comments bypass the actor/association guard and enter the repair session prompt.",
+      "anchor": "sha256:4969388cd0948f4908ba81770da110e7d8ab3de2e912ae133ef867bbe86235c5",
+      "evidence": {
+        "trigger": "Allowed MEMBER posts inline comment 9001 on src/x.ts; a non-allowed actor (association NONE) posts comment 9002 on src/x.ts with arbitrary instructions → handling evt for 9001 batches 9002, relabels it as the MEMBER's, triageByEvent has no entry so classifyComment falls back to pathInScope (in scope) → 9002's body is applied by the repair session and pushed",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:address_pr_review handler",
+          "plugins/immune-brain/runtime/loop_daemon/github_port.ts:prReviewComments",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:classifyComment fallback",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:addressPrReview",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:applyReviewFix prompt"
+        ],
+        "violated": {
+          "kind": "security_boundary",
+          "ref": "loop allowed_actors/allowed_associations guard on E10 review comments"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-3a7d8d1148e6-2-review-2",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S8-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The spec diff rewrites the D2 read-only role bullet (not D9): it replaces the verified Host flags and stdout-result rule with an 'unverified' placeholder, regressing landed S2 documentation outside this task's goal.",
+      "anchor": "sha256:cb2e1decfa5079bab73ef6eb4e88a82389b59ef479ca341aeb9d5d065162c739",
+      "evidence": {
+        "trigger": "docs/specs/loop-agent-scheduling.spec.md D2 section at review commit → now states read-only Host flags are unverified and drops the stdout-result requirement, contradicting the already-landed role-session contract",
+        "caller_chain": [
+          "docs/specs/loop-agent-scheduling.spec.md:D2 agent_runner.ts read-only roles bullet"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S8-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-6b19d01f89d7-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S8-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "syncWorktreeToHead does not clear a rebase left by an escalated conflict repair, so later repairs run 'rebase --continue' instead of a commit or force-push a stale rebase over newer remote commits",
+      "anchor": "sha256:ef4076d2eb9fdecf1df6d984ea7dd34b4cec46893ba5f2ca88d76768c007a844",
+      "evidence": {
+        "trigger": "E9 conflict repair escalates (session fails, scope check fails or verification fails) after rebaseOrMerge no longer runs 'rebase --abort', leaving the PR worktree with REBASE_HEAD set → later E8/E10 repair: prWorktree runs syncWorktreeToHead (fetch + reset --hard on the detached rebase HEAD only), then commitWorktree sees REBASE_HEAD and runs 'rebase --continue', replaying the old rebase instead of committing the fix on the PR head; later E9 after the owner pushes a new head: rebaseOrMerge runs 'rebase --abort', restoring the branch ref to the old head, then gitForcePushWithLease pushes against the just-fetched origin/<branch> lease, which passes, overwriting the newer remote commits",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:createDefaultAgentHandlerDeps.prWorktree",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:syncWorktreeToHead",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:createDefaultAgentHandlerDeps.rebaseOrMerge",
+          "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts:repairPrConflict",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:commitWorktree",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:createDefaultAgentHandlerDeps.gitForcePushWithLease"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S8-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s8-pr-repair:2026-11-15T10:27:47.446Z",
+      "at": "2026-11-15T10:27:47.446Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s8-pr-repair.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s8-pr-repair:2026-11-15T10:28:09.777Z",
+      "at": "2026-11-15T10:28:09.777Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5073a660\naction_v2_sha256:750a069ccb68db36d256fc93a04f626e442f077e1e719112d21a779f75c41bfa",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T10:28:09.777Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-sched-s8-pr-repair:2026-11-15T10:29:44.456Z",
+      "at": "2026-11-15T10:29:44.456Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:81c9eab18efbcd2c0157a5beb17e31a788c4b66a0938382cbcc5973e540f6182",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:a66cc948-cf63-4db2-9ac5-63a7c2565d05",
+        "confirmation_ref": "pi:cli:claude-code:a66cc948-cf63-4db2-9ac5-63a7c2565d05",
+        "issued_at": "2026-11-15T10:29:44.456Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+        "review_commit": "d5599a76d7bf89f8193149b1b4aa43f1c23ae744",
+        "review_tree": "49e3329609e57112ab899ec0841bb4bc7da02da7",
+        "manifest_digest": "sha256:bbd9c760cccede91f9d24d84862be051b62fff92de9d72d4fbd94db3927c6326"
+      },
+      "review_started_at": "2026-11-15T10:28:13.056Z",
+      "review_submitted_at": "2026-11-15T10:29:43.548Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "freeze_artifacts:loop-sched-s8-pr-repair:2026-11-15T10:31:47.400Z",
+      "at": "2026-11-15T10:31:47.400Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s8-pr-repair.intent.json"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s8-pr-repair:2026-11-15T10:31:55.743Z",
+      "at": "2026-11-15T10:31:55.743Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-3a7d8d1148e6-1-review-1\naction_v2_sha256:570f87c5255eabac45237573fbc63ca0e1b1c8eb95606f5824247b986ad26a03"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s8-pr-repair:2026-11-15T10:32:04.423Z",
+      "at": "2026-11-15T10:32:04.423Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-3a7d8d1148e6-2-review-2\naction_v2_sha256:fe7fcf8a3f9da682871fca1b103f3b527dad4beaa850a3d5cea6d13dd30f1133"
+    },
+    {
+      "id": "record_approval:loop-sched-s8-pr-repair:2026-11-15T10:32:27.348Z",
+      "at": "2026-11-15T10:32:27.348Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9f8c2178\naction_v2_sha256:5b84465c14368e07f0f5e65c37737771f88e2d3d8d2d3f48f0249311742b9969",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T10:32:27.349Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-sched-s8-pr-repair:2026-11-15T12:44:04.715Z",
+      "at": "2026-11-15T12:44:04.715Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:c9a35b60f8b3e664cbb5ecf26c8bc8e1a95935797df1e602c4afd4d39e7a57c7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:f58bfd94-eca4-4b11-8ca6-b942223262cb",
+        "confirmation_ref": "pi:cli:claude-code:f58bfd94-eca4-4b11-8ca6-b942223262cb",
+        "issued_at": "2026-11-15T12:44:04.716Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+        "review_commit": "e0a9e57d975c9703d04ece2f72f0111305f9a44f",
+        "review_tree": "630844621816dfb23fbe267ca79b7d178bc022fd",
+        "manifest_digest": "sha256:89cbb5be2eb12bd875b9197d8e5a57ce3d7d87b3fbc102b9d9349a3001693406"
+      },
+      "review_started_at": "2026-11-15T10:33:54.135Z",
+      "review_submitted_at": "2026-11-15T12:44:04.092Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "freeze_artifacts:loop-sched-s8-pr-repair:2026-11-15T12:45:32.861Z",
+      "at": "2026-11-15T12:45:32.861Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s8-pr-repair.intent.json"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s8-pr-repair:2026-11-15T12:45:42.148Z",
+      "at": "2026-11-15T12:45:42.148Z",
+      "type": "resolve_finding",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "review-6b19d01f89d7-1-review-1\naction_v2_sha256:22ad4c205f4c3cf2ac17c0525022f9ec4ab9528c8c5cf699eb46f010a43bf8ad"
+    },
+    {
+      "id": "record_approval:loop-sched-s8-pr-repair:2026-11-15T12:45:59.603Z",
+      "at": "2026-11-15T12:45:59.603Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6ad595bd\naction_v2_sha256:90dc234f0b2283dc947dbf836ea729066f352a8468239519ad95b2dac1076a29",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T12:45:59.603Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s8-pr-repair:2026-11-15T12:46:53.662Z",
+      "at": "2026-11-15T12:46:53.662Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-43d9e7a8\naction_v2_sha256:fc5a2e9f8df29d604a42004b358297492def44757e423afe877a53fb3f9fa857",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:7499427d-d707-4b5a-b5a8-07dea3fca9f7",
+        "confirmation_ref": "pi:cli:claude-code:7499427d-d707-4b5a-b5a8-07dea3fca9f7",
+        "issued_at": "2026-11-15T12:46:53.662Z"
+      },
+      "review_started_at": "2026-11-15T12:46:02.235Z",
+      "review_submitted_at": "2026-11-15T12:46:53.050Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s8-pr-repair:2026-11-15T12:46:55.443Z",
+      "at": "2026-11-15T12:46:55.443Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:1bd59900623e7f307d29b46a6db4d50c9e52396f1a4aeb82221faa6d332d3a99"
+    }
+  ]
+}

@@ -70,7 +70,7 @@ import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
 import { startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
-import type { GuardFacts } from "./guards.ts";
+import { isVerifiedActor, type GuardFacts } from "./guards.ts";
 import type { LoopDecisionRecord } from "./decision_record.ts";
 import type { LoopHandler } from "./handlers.ts";
 import { parseOwnerCommand } from "./owner_commands.ts";
@@ -86,6 +86,9 @@ import {
 	DEFAULT_REPAIR_RETRY_CAP,
 	addressPrReview,
 	computeFailureSignature,
+	isDaemonBranch,
+	isReviewHeadBatched,
+	markReviewHeadBatched,
 	repairPrCi,
 	repairPrConflict,
 	type DaemonPrInput,
@@ -223,8 +226,8 @@ export interface AgentHandlerDeps {
 	session_credential: string | null;
 	/** Create a daemon-owned worktree (`branch: null` is detached) and return its path. */
 	createWorktree(input: { root: string; branch: string | null; name: string }): string;
-	/** The PR's own worktree, created on first use. */
-	prWorktree(input: { root: string; pr_number: number; branch: string }): string;
+	/** The PR's own worktree, created on first use and reset to the PR head before any repair. */
+	prWorktree(input: { root: string; pr_number: number; branch: string; head_sha: string }): string;
 	head(input: { root: string; cwd?: string; branch?: string | null }): string | null;
 	baseBranch(root: string): string;
 	runKernel(input: { argv: string[]; cwd: string; stdin?: string }): KernelIntentResult;
@@ -238,11 +241,43 @@ export interface AgentHandlerDeps {
 		task_id: string | null;
 	}): Promise<{ exit_code: number; stdout: string; stderr: string }>;
 	gitCommitAndPush(input: { worktree_path: string; branch: string; message: string }): Promise<{ commit_sha: string }>;
+	/** Commit a resolved rebase and push it back with `--force-with-lease` (D9). */
+	gitForcePushWithLease(input: { worktree_path: string; branch: string; message: string }): Promise<{ commit_sha: string }>;
 	rebaseOrMerge(input: {
 		worktree_path: string;
 		base_branch: string;
 	}): Promise<{ success: boolean; conflicting_paths?: string[]; error?: string }>;
 	now?: () => string;
+}
+
+/** The `git` invocation a worktree sync runs through; the seam tests replace. */
+export type WorktreeGitRunner = (
+	cwd: string,
+	argv: string[],
+) => { status: number; stdout: string; stderr: string };
+
+/**
+ * D9: before any repair the PR worktree fetches and resets to the PR head, so a
+ * session never repairs a stale tree the daemon left behind. A rebase an escalated
+ * conflict repair left in progress is aborted first: `reset --hard` alone moves the
+ * head but keeps the rebase state, which a later commit would then continue.
+ */
+export function syncWorktreeToHead(
+	input: { worktree_path: string; branch: string; head_sha: string },
+	run: WorktreeGitRunner,
+): void {
+	const rebasing = run(input.worktree_path, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]);
+	if (rebasing.status === 0) {
+		const aborted = run(input.worktree_path, ["rebase", "--abort"]);
+		if (aborted.status !== 0)
+			throw new Error(`loop_worktree_failed: rebase --abort: ${aborted.stderr.trim()}`);
+	}
+	const fetched = run(input.worktree_path, ["fetch", "origin", input.branch]);
+	if (fetched.status !== 0)
+		throw new Error(`loop_worktree_failed: fetch ${input.branch}: ${fetched.stderr.trim()}`);
+	const reset = run(input.worktree_path, ["reset", "--hard", input.head_sha]);
+	if (reset.status !== 0)
+		throw new Error(`loop_worktree_failed: reset ${input.head_sha}: ${reset.stderr.trim()}`);
 }
 
 const REPAIR_OUTPUT = ".imm-loop/repair.json";
@@ -866,7 +901,12 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: pr.head_sha,
+		});
 
 		const result = await repairPrCi({
 			pr: daemonPrInput(pr),
@@ -884,6 +924,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				retry_cap: DEFAULT_REPAIR_RETRY_CAP,
 			},
 			deps: {
+				fetchCheckLog: (input) => context.gitHubPort.checkLog(input),
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				applyFix: async (input) => {
 					const session = await runSession(context, {
@@ -892,6 +933,9 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						output_path: REPAIR_OUTPUT,
 						prompt: [
 							`Reproduce and fix the failing check ${input.check_name} (signature ${input.failure_signature.toLowerCase()}).`,
+							...(input.details_url ? [`Details: ${input.details_url}`] : []),
+							"Failing check log:",
+							input.log_excerpt || "(the check carried no log)",
 							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
 						].join("\n"),
@@ -915,20 +959,44 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: pr.head_sha,
+		});
+		const scopeHint = intent?.scope_hint;
 
 		const result = await repairPrConflict({
 			pr: daemonPrInput(pr),
 			context: {
 				worktree_path: worktree,
 				task_id: taskId,
-				scope_hint: intent?.scope_hint,
+				scope_hint: scopeHint,
 				state_dir: context.stateDir,
 			},
 			deps: {
 				rebaseOrMerge: deps.rebaseOrMerge,
+				applyConflictFix: async (input) => {
+					const session = await runSession(context, {
+						kind: "repair",
+						worktree_path: input.worktree_path,
+						output_path: REPAIR_OUTPUT,
+						prompt: [
+							`Resolve the rebase of this branch onto ${input.base_branch} in the conflicted tree, keeping both sides' intent.`,
+							`Conflicted paths: ${input.conflicting_paths.join(", ") || "unknown"}.`,
+							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
+							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
+						].join("\n"),
+						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
+					});
+					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
+					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
+					return parsed;
+				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				gitCommitAndPush: deps.gitCommitAndPush,
+				gitForcePushWithLease: deps.gitForcePushWithLease,
 			},
 		});
 		return mapRepairResult(result);
@@ -942,8 +1010,23 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
 		const scopeHint = intent?.scope_hint ?? [];
+		const headSha = pr.head_sha;
+
+		// D9: one session and one push per PR head, however many comments arrived.
+		if (context.stateDir && isReviewHeadBatched(context.stateDir, headSha)) {
+			return {
+				outcome: "executed",
+				detail: `review comments of PR #${pr.number} head ${headSha.slice(0, 12)} already batched into one session`,
+			};
+		}
+
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: headSha,
+		});
 
 		const recordedChoice = (() => {
 			if (context.decision.corrected_option) {
@@ -963,16 +1046,61 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			return prior?.corrected_option ?? prior?.classification?.choice ?? null;
 		})();
 
+		// Sibling triage answers the same tick already recorded, keyed by their event id.
+		const triageByEvent = new Map<string, string>();
+		for (const row of loadLoopDecisions(context.stateDir)) {
+			if (row?.classification?.point !== "a14_pr_comment_triage") continue;
+			const choice = row.corrected_option ?? row.classification.choice;
+			if (choice) triageByEvent.set(row.event_id, choice);
+		}
+
+		// A review body carries no diff hunk and no sibling inline comments, so only an
+		// inline comment reads the PR's comment list to batch its head's comments.
+		let facts: Awaited<ReturnType<LoopGitHubPort["prReviewComments"]>> = [];
+		if (event.review_id === undefined) {
+			try {
+				facts = await context.gitHubPort.prReviewComments(pr.number);
+			} catch (error: any) {
+				await escalateOnce(
+					context,
+					"review_comments_unavailable",
+					`pr-${pr.number}`,
+					headSha,
+					`Could not read the review comments of PR #${pr.number}: ${error?.message || String(error)}`,
+				);
+				return { outcome: "failed", detail: `review comments unreadable: ${error?.message || String(error)}` };
+			}
+		}
+
+		// This comment and the ones created after it share the head being repaired. A
+		// sibling joins the batch only when it clears the same actor boundary its own
+		// event would have to clear (G7); the triggering comment already did.
+		const comments = facts
+			.filter((comment) => comment.id >= event.comment_id)
+			.filter(
+				(comment) =>
+					comment.id === event.comment_id ||
+					isVerifiedActor(
+						comment.author ?? "",
+						comment.author_association ?? "",
+						context.guardFacts,
+					),
+			);
+
 		const result = await addressPrReview({
 			pr: daemonPrInput(pr),
-			comment: {
-				id: event.comment_id,
-				body: event.body,
-				path: event.path,
-				line: event.line,
-				author: event.author,
-				author_association: event.author_association,
-			},
+			comments: comments.length > 0
+				? comments
+				: [
+						{
+							id: event.comment_id,
+							body: event.body,
+							path: event.path,
+							line: event.line,
+							author: event.author,
+							author_association: event.author_association,
+						},
+					],
 			context: {
 				worktree_path: worktree,
 				task_id: taskId,
@@ -983,10 +1111,13 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				// Reuse the recorded `a14_pr_comment_triage` answer (`blocking`/`nit` -> in scope,
 				// `out_of_scope` -> escalate); only fall back to path heuristics when unavailable.
 				classifyComment: async ({ comment }) => {
-					if (recordedChoice === "blocking" || recordedChoice === "nit") {
+					const choice = comment.id === event.comment_id
+						? recordedChoice
+						: (triageByEvent.get(`evt-e10-${pr.number}-${comment.id}`) ?? null);
+					if (choice === "blocking" || choice === "nit") {
 						return { is_scope_changing: false };
 					}
-					if (recordedChoice === "out_of_scope") {
+					if (choice === "out_of_scope") {
 						return {
 							is_scope_changing: true,
 							reason: "a14_pr_comment_triage classified review comment as out_of_scope",
@@ -1005,7 +1136,14 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						worktree_path: input.worktree_path,
 						output_path: REPAIR_OUTPUT,
 						prompt: [
-							`Apply this review comment (${input.comment.path ?? "no path"}): ${input.comment.body}`,
+							`Address these ${input.comments.length} review comments on PR #${pr.number} in one pass:`,
+							...input.comments.flatMap((comment) => [
+								"",
+								`Review comment #${comment.id} (${comment.path || "no path"}${comment.line === undefined ? "" : `:${comment.line}`}):`,
+								...(comment.diff_hunk ? ["```diff", comment.diff_hunk, "```"] : []),
+								comment.body,
+							]),
+							"",
 							`Stay inside the task scope: ${scopeHint.join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
 						].join("\n"),
@@ -1019,6 +1157,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
+		if (result.action === "repaired" && context.stateDir) markReviewHeadBatched(context.stateDir, headSha);
 		return mapRepairResult(result);
 	}
 
@@ -1082,6 +1221,20 @@ function git(root: string, argv: string[]): { status: number; stdout: string; st
 	return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 
+/**
+ * Stages and records the worktree's changes. A rebase the repair session resolved
+ * is continued instead of committed, because git refuses a plain commit mid-rebase.
+ */
+function commitWorktree(worktreePath: string, message: string): void {
+	const staged = git(worktreePath, ["add", "--all"]);
+	if (staged.status !== 0) throw new Error(`git_add_failed: ${staged.stderr.trim()}`);
+	const rebasing = git(worktreePath, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]).status === 0;
+	const commit = rebasing
+		? git(worktreePath, ["-c", "core.editor=true", "rebase", "--continue"])
+		: git(worktreePath, ["commit", "--no-verify", "-m", message]);
+	if (commit.status !== 0) throw new Error(`git_commit_failed: ${commit.stderr.trim()}`);
+}
+
 /** The daemon's own worktree root, mirroring the batch Lanes' placement. */
 export function loopWorktreeDirectory(root: string): string {
 	const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
@@ -1128,13 +1281,16 @@ export function createDefaultAgentHandlerDeps(
 		return path;
 	};
 
-	const prWorktree: AgentHandlerDeps["prWorktree"] = ({ root: repository, pr_number, branch }) => {
+	const prWorktree: AgentHandlerDeps["prWorktree"] = ({ root: repository, pr_number, branch, head_sha }) => {
 		const directory = loopWorktreeDirectory(repository);
 		mkdirSync(directory, { recursive: true });
 		const path = join(directory, `pr-${pr_number}`);
-		if (existsSync(path)) return path;
-		const res = git(repository, ["worktree", "add", path, branch]);
-		if (res.status !== 0) throw new Error(`loop_worktree_failed: ${res.stderr.trim() || `pr-${pr_number} ${branch}`}`);
+		if (!existsSync(path)) {
+			const res = git(repository, ["worktree", "add", path, branch]);
+			if (res.status !== 0) throw new Error(`loop_worktree_failed: ${res.stderr.trim() || `pr-${pr_number} ${branch}`}`);
+		}
+		// D9: a reused worktree is never repaired from where the last session left it.
+		syncWorktreeToHead({ worktree_path: path, branch, head_sha }, (cwd, argv) => git(cwd, argv));
 		return path;
 	};
 
@@ -1259,23 +1415,31 @@ export function createDefaultAgentHandlerDeps(
 			return { exit_code: 0, stdout: "acceptance verification passed", stderr: "" };
 		},
 		gitCommitAndPush: async ({ worktree_path, branch, message }) => {
-			const staged = git(worktree_path, ["add", "--all"]);
-			if (staged.status !== 0) throw new Error(`git_add_failed: ${staged.stderr.trim()}`);
-			const commit = git(worktree_path, ["commit", "--no-verify", "-m", message]);
-			if (commit.status !== 0) throw new Error(`git_commit_failed: ${commit.stderr.trim()}`);
+			commitWorktree(worktree_path, message);
 			const push = git(worktree_path, ["push", "origin", `HEAD:refs/heads/${branch}`]);
 			if (push.status !== 0) throw new Error(`git_push_failed: ${push.stderr.trim()}`);
 			const head = git(worktree_path, ["rev-parse", "HEAD"]);
 			if (head.status !== 0) throw new Error(`git_head_unreadable: ${head.stderr.trim()}`);
 			return { commit_sha: head.stdout.trim() };
 		},
+		gitForcePushWithLease: async ({ worktree_path, branch, message }) => {
+			// ADR 0039 Decision 10: a rewritten history only goes back to a daemon branch.
+			if (!isDaemonBranch(branch)) throw new Error(`force_push_refused: ${branch} is not a daemon-created branch`);
+			commitWorktree(worktree_path, message);
+			const push = git(worktree_path, ["push", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`]);
+			if (push.status !== 0) throw new Error(`git_force_push_failed: ${push.stderr.trim()}`);
+			const head = git(worktree_path, ["rev-parse", "HEAD"]);
+			if (head.status !== 0) throw new Error(`git_head_unreadable: ${head.stderr.trim()}`);
+			return { commit_sha: head.stdout.trim() };
+		},
 		rebaseOrMerge: async ({ worktree_path, base_branch }) => {
+			// `syncWorktreeToHead` cleared any leftover rebase before this handler ran.
 			const fetch = git(worktree_path, ["fetch", "origin", base_branch]);
 			if (fetch.status !== 0) return { success: false, error: fetch.stderr.trim() };
 			const rebase = git(worktree_path, ["rebase", `origin/${base_branch}`]);
 			if (rebase.status === 0) return { success: true };
+			// D9: keep the conflicted tree so a repair session can resolve it.
 			const conflicting = git(worktree_path, ["diff", "--name-only", "--diff-filter=U"]);
-			git(worktree_path, ["rebase", "--abort"]);
 			return {
 				success: false,
 				conflicting_paths: conflicting.stdout.split("\n").map((line) => line.trim()).filter(Boolean),

@@ -102,6 +102,11 @@ export interface RepairResult {
 	waiting_for_owner_merge?: boolean;
 }
 
+/** The branch prefixes the daemon itself creates; only these may be force-pushed (D9). */
+export function isDaemonBranch(branch: string): boolean {
+	return branch.startsWith("imm/") || branch.startsWith("imm-loop/");
+}
+
 /**
  * Validates that the pull request is managed by the loop daemon.
  * Must be on `imm/*` or `imm-loop/*` and its body must carry `<!-- immune-brain:kind=loop-pr -->`.
@@ -112,8 +117,7 @@ export function isDaemonManagedPr(pr: {
 	body?: string | null;
 }): boolean {
 	const branch = pr.head_ref_name || pr.branch || "";
-	const isBranchMatch = branch.startsWith("imm/") || branch.startsWith("imm-loop/");
-	if (!isBranchMatch) return false;
+	if (!isDaemonBranch(branch)) return false;
 	const body = pr.body ?? "";
 	return body.includes(LOOP_PR_MARKER);
 }
@@ -211,6 +215,27 @@ export function normalizeLogExcerpt(raw: string): string {
 		.trim();
 }
 
+/** The hard byte bound on the excerpt a repair prompt may carry (D9). */
+export const LOG_EXCERPT_BYTE_LIMIT = 16 * 1024;
+
+/**
+ * Normalizes a log and keeps its tail inside `limit` bytes: the failing step is
+ * the last thing a CI log prints, so the head is what gets dropped.
+ */
+export function boundLogExcerpt(raw: string, limit: number = LOG_EXCERPT_BYTE_LIMIT): string {
+	const normalized = normalizeLogExcerpt(raw);
+	if (Buffer.byteLength(normalized, "utf8") <= limit) return normalized;
+	let kept = "";
+	let bytes = 0;
+	for (const char of Array.from(normalized).reverse()) {
+		const size = Buffer.byteLength(char, "utf8");
+		if (bytes + size > limit) break;
+		kept = char + kept;
+		bytes += size;
+	}
+	return kept;
+}
+
 /**
  * Computes deterministic failure signature: sha256(check_name + normalized_log_excerpt).
  */
@@ -272,12 +297,15 @@ export function recordRepairAttempt(stateDir: string, headSha: string, failureSi
 export interface RepairCiDeps {
 	/** Run local verification in the isolated worktree. Exit code !== 0 means failure reproduced. */
 	runVerification: (worktreePath: string) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
+	/** Read the failing check's log; null or a throw means the log is unavailable. */
+	fetchCheckLog?: (input: { check_name: string; details_url?: string }) => Promise<string | null>;
 	/** Dispatch fix-pr implementation to fix the reproduced failure. */
 	applyFix: (input: {
 		worktree_path: string;
 		check_name: string;
 		failure_signature: string;
 		log_excerpt?: string | null;
+		details_url?: string;
 		scope_hint?: string[];
 	}) => Promise<{ success: boolean; modified_paths: string[]; reason?: string }>;
 	/** Commit and push the verified fix. */
@@ -341,7 +369,31 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 		};
 	}
 
-	// 1. Local reproduction via the task's verification seam
+	// 1. The failing check's own log is the repair session's first input (D9):
+	// without it the session would guess, so an unavailable log escalates first.
+	let logExcerpt: string | null = input.check.log_excerpt ?? null;
+	if (input.deps.fetchCheckLog) {
+		try {
+			const fetched = await input.deps.fetchCheckLog({
+				check_name: input.check.name,
+				details_url: input.check.details_url,
+			});
+			if (!fetched) throw new Error("the check carries no readable log");
+			logExcerpt = boundLogExcerpt(fetched);
+		} catch (error: any) {
+			return {
+				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+				action: "escalate",
+				handler: "escalate",
+				pr_number: input.pr.number,
+				reason: `check log unavailable for ${input.check.name}: ${error?.message || String(error)}`,
+				failure_signature: failureSignature,
+				attempts: existingAttempts,
+			};
+		}
+	}
+
+	// 2. Local reproduction via the task's verification seam
 	const repro = await input.deps.runVerification(input.context.worktree_path);
 	if (repro.exit_code === 0) {
 		// Could not reproduce failure locally: record attempt and do not commit speculative changes
@@ -362,12 +414,13 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 		};
 	}
 
-	// 2. Local failure reproduced: execute repair fix
+	// 3. Local failure reproduced: execute repair fix
 	const fixResult = await input.deps.applyFix({
 		worktree_path: input.context.worktree_path,
 		check_name: input.check.name,
 		failure_signature: failureSignature,
-		log_excerpt: input.check.log_excerpt,
+		log_excerpt: logExcerpt,
+		details_url: input.check.details_url,
 		scope_hint: input.context.scope_hint,
 	});
 
@@ -408,7 +461,7 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 		};
 	}
 
-	// 3. Post-fix verification
+	// 4. Post-fix verification
 	const postFix = await input.deps.runVerification(input.context.worktree_path);
 	if (postFix.exit_code === 0) {
 		const commitMessage = `fix(pr): repair CI check ${input.check.name} [${failureSignature.slice(0, 8)}]`;
@@ -449,15 +502,28 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 }
 
 export interface RepairConflictDeps {
-	/** Attempt rebase or merge from base branch. */
+	/** Start a rebase onto the base branch; on conflict the conflicted tree is left in place. */
 	rebaseOrMerge: (input: {
 		worktree_path: string;
 		base_branch: string;
 	}) => Promise<{ success: boolean; conflicting_paths?: string[]; error?: string }>;
+	/** Resolve the conflicted tree in a repair session; absent means escalate. */
+	applyConflictFix?: (input: {
+		worktree_path: string;
+		base_branch: string;
+		conflicting_paths: string[];
+		scope_hint?: string[];
+	}) => Promise<{ success: boolean; modified_paths: string[]; reason?: string }>;
 	/** Run verification seam in worktree. */
 	runVerification: (worktreePath: string) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
 	/** Commit and push rebased branch. */
 	gitCommitAndPush: (input: {
+		worktree_path: string;
+		branch: string;
+		message: string;
+	}) => Promise<{ commit_sha: string }>;
+	/** Commit the resolved rebase and push with `--force-with-lease` (daemon branches only). */
+	gitForcePushWithLease?: (input: {
 		worktree_path: string;
 		branch: string;
 		message: string;
@@ -511,13 +577,46 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 				reason: `semantic conflict outside scope_hint: ${scopeCheck.reason}`,
 			};
 		}
-		return {
-			contract: LOOP_REPAIR_DISPATCH_CONTRACT,
-			action: "escalate",
-			handler: "escalate",
-			pr_number: input.pr.number,
-			reason: `unresolvable merge conflict: ${rebaseRes.error || conflictingPaths.join(", ")}`,
-		};
+		if (!input.deps.applyConflictFix) {
+			return {
+				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+				action: "escalate",
+				handler: "escalate",
+				pr_number: input.pr.number,
+				reason: `unresolvable merge conflict: ${rebaseRes.error || conflictingPaths.join(", ")}`,
+			};
+		}
+
+		// D9: keep the conflicted tree and let a repair session resolve it.
+		const resolution = await input.deps.applyConflictFix({
+			worktree_path: input.context.worktree_path,
+			base_branch: baseBranch,
+			conflicting_paths: conflictingPaths,
+			scope_hint: input.context.scope_hint,
+		});
+		if (!resolution.success) {
+			return {
+				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+				action: "escalate",
+				handler: "escalate",
+				pr_number: input.pr.number,
+				reason: resolution.reason || "conflict repair session did not resolve the conflicted tree",
+			};
+		}
+		const resolvedScope = validatePathsInScope(
+			resolution.modified_paths,
+			input.context.scope_hint,
+			input.context.worktree_path,
+		);
+		if (!resolvedScope.valid) {
+			return {
+				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+				action: "escalate",
+				handler: "escalate",
+				pr_number: input.pr.number,
+				reason: `conflict repair touched unauthorized files: ${resolvedScope.reason}`,
+			};
+		}
 	}
 
 	// Re-run verification after rebase
@@ -533,7 +632,22 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 	}
 
 	const commitMessage = `chore(pr): rebase ${baseBranch} onto ${branch}`;
-	const { commit_sha } = await input.deps.gitCommitAndPush({
+	// ADR 0039 Decision 10: a rewrite is only ever pushed back to a branch the daemon created.
+	const push = rebaseRes.success
+		? input.deps.gitCommitAndPush
+		: isDaemonBranch(branch) && input.deps.gitForcePushWithLease
+			? input.deps.gitForcePushWithLease
+			: null;
+	if (!push) {
+		return {
+			contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+			action: "escalate",
+			handler: "escalate",
+			pr_number: input.pr.number,
+			reason: `refusing to force-push the resolved rebase: ${branch || "unknown branch"} is not a daemon-created branch`,
+		};
+	}
+	const { commit_sha } = await push({
 		worktree_path: input.context.worktree_path,
 		branch,
 		message: commitMessage,
@@ -549,14 +663,24 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 	};
 }
 
+export interface ReviewCommentInput {
+	id: number;
+	body: string;
+	path?: string;
+	line?: number;
+	diff_hunk?: string;
+	author?: string;
+	author_association?: string;
+}
+
 export interface AddressReviewDeps {
 	classifyComment?: (input: {
-		comment: { id: number; body: string; path?: string; line?: number; author?: string };
+		comment: ReviewCommentInput;
 		scope_hint?: string[];
 	}) => Promise<{ is_scope_changing: boolean; reason?: string }>;
 	applyReviewFix: (input: {
 		worktree_path: string;
-		comment: { id: number; body: string; path?: string; line?: number; author?: string };
+		comments: ReviewCommentInput[];
 	}) => Promise<{ success: boolean; modified_paths: string[]; reason?: string }>;
 	runVerification: (worktreePath: string) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
 	gitCommitAndPush: (input: {
@@ -568,21 +692,27 @@ export interface AddressReviewDeps {
 
 export interface AddressReviewInput {
 	pr: DaemonPrInput;
-	comment: {
-		id: number;
-		body: string;
-		path?: string;
-		line?: number;
-		author?: string;
-		author_association?: string;
-	};
+	comments: ReviewCommentInput[];
 	context: RepairContext;
 	deps: AddressReviewDeps;
 }
 
+/** True once one PR head's review comments have been batched into a session (D9). */
+export function isReviewHeadBatched(stateDir: string, headSha: string): boolean {
+	return Boolean(loadRepairRetries(stateDir)[`review:${headSha}`]);
+}
+
+export function markReviewHeadBatched(stateDir: string, headSha: string): void {
+	const retries = loadRepairRetries(stateDir);
+	retries[`review:${headSha}`] = 1;
+	saveRepairRetries(stateDir, retries);
+}
+
 /**
  * Handles PR review comments (`address_pr_review`).
- * Classifies comments into actionable in-scope fixes vs scope-changing requests (which escalate).
+ * Every comment of one PR head goes into one session and one push (D9): the
+ * comments are classified together, so a scope-changing one escalates the batch
+ * instead of being applied.
  */
 export async function addressPrReview(input: AddressReviewInput): Promise<RepairResult> {
 	if (!isDaemonManagedPr(input.pr)) {
@@ -594,48 +724,58 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 			reason: "PR not on imm/* or imm-loop/* or lacking loop-pr marker",
 		};
 	}
+	if (input.comments.length === 0) {
+		return {
+			contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+			action: "ignored",
+			handler: "address_pr_review",
+			pr_number: input.pr.number,
+			reason: "no review comments to batch",
+		};
+	}
 
 	const branch = input.pr.head_ref_name || input.pr.branch || "";
 
-	// Check if target file path is unauthorized (outside scope_hint or touches no_touch)
-	if (input.comment.path) {
-		const scopeCheck = validatePathsInScope(
-			[input.comment.path],
-			input.context.scope_hint,
-			input.context.worktree_path,
-		);
-		if (!scopeCheck.valid) {
-			return {
-				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
-				action: "escalate",
-				handler: "escalate",
-				pr_number: input.pr.number,
-				reason: `review comment references unauthorized path (${input.comment.path}): ${scopeCheck.reason}`,
-			};
+	for (const comment of input.comments) {
+		// Check if target file path is unauthorized (outside scope_hint or touches no_touch)
+		if (comment.path) {
+			const scopeCheck = validatePathsInScope(
+				[comment.path],
+				input.context.scope_hint,
+				input.context.worktree_path,
+			);
+			if (!scopeCheck.valid) {
+				return {
+					contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+					action: "escalate",
+					handler: "escalate",
+					pr_number: input.pr.number,
+					reason: `review comment #${comment.id} references unauthorized path (${comment.path}): ${scopeCheck.reason}`,
+				};
+			}
+		}
+
+		if (input.deps.classifyComment) {
+			const classified = await input.deps.classifyComment({
+				comment,
+				scope_hint: input.context.scope_hint,
+			});
+			if (classified.is_scope_changing) {
+				return {
+					contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+					action: "escalate",
+					handler: "escalate",
+					pr_number: input.pr.number,
+					reason: `scope-changing review comment #${comment.id}: ${classified.reason || "request beyond original task intent"}; escalating to owner`,
+				};
+			}
 		}
 	}
 
-	// Classify comment if classifier provided
-	if (input.deps.classifyComment) {
-		const classified = await input.deps.classifyComment({
-			comment: input.comment,
-			scope_hint: input.context.scope_hint,
-		});
-		if (classified.is_scope_changing) {
-			return {
-				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
-				action: "escalate",
-				handler: "escalate",
-				pr_number: input.pr.number,
-				reason: `scope-changing review comment: ${classified.reason || "request beyond original task intent"}; escalating to owner`,
-			};
-		}
-	}
-
-	// Apply actionable review fix
+	// Apply the whole batch in one session
 	const fixResult = await input.deps.applyReviewFix({
 		worktree_path: input.context.worktree_path,
-		comment: input.comment,
+		comments: input.comments,
 	});
 
 	if (!fixResult.success) {
@@ -676,7 +816,8 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 		};
 	}
 
-	const commitMessage = `fix(pr): address review comment #${input.comment.id}`;
+	const ids = input.comments.map((comment) => `#${comment.id}`).join(", ");
+	const commitMessage = `fix(pr): address review comments ${ids}`;
 	const { commit_sha } = await input.deps.gitCommitAndPush({
 		worktree_path: input.context.worktree_path,
 		branch,
@@ -688,7 +829,7 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 		action: "repaired",
 		handler: "address_pr_review",
 		pr_number: input.pr.number,
-		reason: `addressed review comment #${input.comment.id}, re-verified cleanly, and pushed commit ${commit_sha}`,
+		reason: `addressed review comments ${ids} in one session, re-verified cleanly, and pushed commit ${commit_sha}`,
 		commit_sha,
 	};
 }
