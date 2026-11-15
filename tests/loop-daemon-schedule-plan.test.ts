@@ -5,7 +5,7 @@
  * S4 / D4 in docs/specs/loop-daemon.spec.md:
  * - Positive Control: the scheduler dispatches in priority order under
  *   `max_concurrent`, `max_ready_buffer` and `max_pr_buffer`; leases are claimed
- *   atomically with heartbeats; analysis is cached under
+ *   atomically; analysis is cached under
  *   `.imm/state/loop/analysis/`; a validated plan is published on
  *   `imm-loop/<issue>` with a `plan_digest`.
  * - Negative Control: a candidate whose `scope_hint` overlaps an active lease via
@@ -29,15 +29,12 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts";
 import {
 	acquireLoopLease,
-	heartbeatLoopLease,
 	leaseExpired,
-	reclaimExpiredLeases,
 	releaseLoopLease,
 } from "../plugins/immune-brain/runtime/loop_daemon/leases.ts";
 import {
 	PLAN_DIGEST_MARKER,
 	draftAndPublishPlan,
-	parsePlanDigest,
 	planBranchName,
 	type PlanDraftDeps,
 	type PlanDraftRequest,
@@ -367,15 +364,9 @@ describe("S4 atomic leases", () => {
 		expect(listLeases(dir)[0]!.host_token).toBe("host-a");
 	});
 
-	it("heartbeats and releases only the lease's own host token", () => {
+	it("releases only the lease's own host token", () => {
 		const dir = stateDir();
 		acquireLoopLease(dir, { target_id: "issue-7", kind: "drive", host_token: "host-a", owner_pid: 4242, now: TS });
-
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-b", now: FIVE_MINUTES_LATER })).toBeNull();
-		expect(listLeases(dir)[0]!.heartbeat_at).toBe(TS);
-
-		const refreshed = heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: FIVE_MINUTES_LATER });
-		expect(refreshed?.heartbeat_at).toBe(FIVE_MINUTES_LATER);
 
 		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-b" })).toBe(false);
 		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-a" })).toBe(true);
@@ -386,7 +377,6 @@ describe("S4 atomic leases", () => {
 		const dir = stateDir();
 		acquireLoopLease(dir, { target_id: "issue-7", kind: "drive", host_token: "host-a", owner_pid: 4242, now: TS });
 
-		expect(heartbeatLoopLease(dir, "issue-7", {} as { host_token: string })).toBeNull();
 		expect(releaseLoopLease(dir, "issue-7", {} as { host_token: string })).toBe(false);
 		const [stored] = listLeases(dir);
 		expect(stored?.host_token).toBe("host-a");
@@ -399,12 +389,12 @@ describe("S4 atomic leases", () => {
 		const liveGate = join(dir, "leases", ".issue-7.gate.1");
 		writeFileSync(liveGate, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), gen: 1 }));
 
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER })).toBeNull();
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER })).toBeNull();
+		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-a" })).toBe(false);
+		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-a" })).toBe(false);
 		expect(existsSync(liveGate)).toBe(true);
 
 		rmSync(liveGate, { force: true });
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER })?.heartbeat_at).toBe(ONE_HOUR_LATER);
+		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-a" })).toBe(true);
 	});
 
 	it("takes over an abandoned gate without leaving a live one behind", () => {
@@ -412,13 +402,17 @@ describe("S4 atomic leases", () => {
 		saveLease(dir, lease("issue-7", { heartbeat_at: TS, owner_pid: 4242, host_token: "host-a" }));
 		writeFileSync(join(dir, "leases", ".issue-7.gate.1"), JSON.stringify({ pid: 999999, at: TS, gen: 1 }));
 
-		const reclaimed = reclaimExpiredLeases(dir, { now: ONE_HOUR_LATER, is_alive: () => false });
-		expect(reclaimed.map((entry) => entry.target_id)).toEqual(["issue-7"]);
+		const takeover = acquireLoopLease(
+			dir,
+			{ target_id: "issue-7", kind: "drive", host_token: "host-b", owner_pid: 4242, now: ONE_HOUR_LATER },
+			{ now: ONE_HOUR_LATER, is_alive: () => false },
+		);
+		expect(takeover.acquired).toBe(true);
 		expect(existsSync(join(dir, "leases", ".issue-7.gate.1"))).toBe(false);
 		const gateFilesNow = readdirSync(join(dir, "leases")).filter((name) => name.includes(".gate."));
 		expect(gateFilesNow.every((name) => JSON.parse(readFileSync(join(dir, "leases", name), "utf8")).released === true)).toBe(true);
-		// The reclaimed lease is gone, so the old owner cannot revive it.
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER })).toBeNull();
+		// The replaced lease is gone, so its old owner cannot release it.
+		expect(releaseLoopLease(dir, "issue-7", { host_token: "host-a" })).toBe(false);
 	});
 
 	it("never reuses a gate generation, so a delayed release writes only its own path", () => {
@@ -456,29 +450,8 @@ describe("S4 atomic leases", () => {
 			JSON.stringify({ pid: process.pid, at: new Date().toISOString(), gen: 1, released: true }),
 		);
 		expect(gateRecords().find((gate) => gate.gen === 3)).toEqual(current);
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "h2", now: FIVE_MINUTES_LATER })?.heartbeat_at).toBe(FIVE_MINUTES_LATER);
+		expect(releaseLoopLease(dir, "issue-7", { host_token: "h2" })).toBe(true);
 		expect(highestGeneration()).toBe(4);
-	});
-
-	it("keeps heartbeat and reclaim mutually exclusive", () => {
-		const dir = stateDir();
-		saveLease(dir, lease("issue-7", { heartbeat_at: TS, owner_pid: 4242, host_token: "host-a" }));
-
-		let heartbeat: LoopLease | null = null;
-		const reclaimed = reclaimExpiredLeases(dir, {
-			now: ONE_HOUR_LATER,
-			is_alive: () => {
-				// The reclaim already owns this target's gate: a heartbeat cannot land inside it.
-				heartbeat = heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER });
-				return false;
-			},
-		});
-
-		expect(heartbeat).toBeNull();
-		expect(reclaimed.map((entry) => entry.target_id)).toEqual(["issue-7"]);
-		expect(listLeases(dir)).toEqual([]);
-		// The old owner cannot resurrect a lease the reclaimer took.
-		expect(heartbeatLoopLease(dir, "issue-7", { host_token: "host-a", now: ONE_HOUR_LATER })).toBeNull();
 	});
 
 	it("reclaims an expired lease with a dead PID cleanly", () => {
@@ -504,13 +477,6 @@ describe("S4 atomic leases", () => {
 		expect(leaseExpired(lease("a"), { now: ONE_HOUR_LATER, ...live })).toBe(true);
 		expect(leaseExpired(lease("a"), { now: FIVE_MINUTES_LATER, is_alive: () => false })).toBe(true);
 		expect(leaseExpired(lease("a", { heartbeat_at: "not-a-time" }), { now: FIVE_MINUTES_LATER, ...live })).toBe(true);
-
-		const dir = stateDir();
-		saveLease(dir, lease("issue-7", { heartbeat_at: TS, owner_pid: 999999 }));
-		saveLease(dir, lease("issue-8", { heartbeat_at: FIVE_MINUTES_LATER, owner_pid: 4242 }));
-		const reclaimed = reclaimExpiredLeases(dir, { now: ONE_HOUR_LATER, is_alive: () => false });
-		expect(reclaimed.map((entry) => entry.target_id).sort()).toEqual(["issue-7", "issue-8"]);
-		expect(listLeases(dir)).toEqual([]);
 	});
 });
 
@@ -632,7 +598,6 @@ describe("S4 headless draw-up plan publication", () => {
 		expect(fake.kernel_calls[0]).toEqual(["intent", "author", "docs/plans/issue-7.intent.json", "--stdin", "--json"]);
 		expect(fake.comments).toHaveLength(1);
 		expect(fake.comments[0]).toStartWith(`${PLAN_DIGEST_MARKER}${draft.digest} -->`);
-		expect(parsePlanDigest(fake.comments[0]!)).toBe(draft.digest);
 		expect(draft.comment_body).toBe(fake.comments[0]!);
 		expect(draft.spec?.path).toBe("docs/specs/issue-7.spec.md");
 		expect(draft.spec?.content_hash).toHaveLength(64);

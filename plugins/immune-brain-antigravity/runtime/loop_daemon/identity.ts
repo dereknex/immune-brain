@@ -15,20 +15,6 @@ import type { GhTransport } from "../github_issue_tracker.ts";
 
 export type LoopIdentityPosture = "isolated" | "degraded";
 
-export const LOOP_CAPABILITIES = [
-	"observe",
-	"triage",
-	"publish_plan",
-	"publish_question",
-	"policy_auto",
-	"merge_pr",
-] as const;
-
-export type LoopCapability = (typeof LOOP_CAPABILITIES)[number];
-
-/** Capabilities the degraded same-UID posture withholds. */
-const DEGRADED_DENIED: readonly LoopCapability[] = ["policy_auto", "merge_pr"];
-
 export interface IdentityInspection {
 	/** OS UID of the daemon process, or null when the platform cannot report one. */
 	daemon_uid: number | null;
@@ -84,23 +70,10 @@ export function inspectDaemonIdentity(
 	};
 }
 
-/** The denial reason for one capability under a posture, or null when it is permitted. */
-export function capabilityRefusal(posture: LoopIdentityPosture, capability: LoopCapability): string | null {
-	if (capability === "merge_pr") return "merge_pr is human-only in every posture";
-	if (posture === "degraded" && DEGRADED_DENIED.includes(capability)) {
-		return `same-UID degraded posture withholds ${capability}`;
-	}
-	return null;
-}
-
 let cachedDaemonGithubLogin: string | null = null;
 
 export function setCachedDaemonGithubLogin(login: string | null): void {
 	cachedDaemonGithubLogin = login;
-}
-
-export function getCachedDaemonGithubLogin(): string | null {
-	return cachedDaemonGithubLogin;
 }
 
 /**

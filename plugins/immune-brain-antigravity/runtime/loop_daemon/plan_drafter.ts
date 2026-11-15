@@ -26,8 +26,6 @@ export const PLAN_DIGEST_MARKER = "<!-- immune-brain:plan-digest=";
 /** The kernel report `imm-kernel intent overlap --json` must carry before its evidence counts. */
 const INTENT_OVERLAP_CONTRACT = "assurance_kernel/intent_scope_overlap/v1";
 
-const PLAN_DIGEST_PATTERN = /<!--\s*immune-brain:plan-digest=([0-9a-f]{64})\s*-->/i;
-
 /** The branch one Issue's plan is drafted on. */
 export function planBranchName(issueNumber: number): string {
 	return `imm-loop/${issueNumber}`;
@@ -109,11 +107,6 @@ export function planDigest(input: {
 		.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
 		.map(({ path, task_id, content_hash, risk }) => ({ path, task_id, content_hash, risk }));
 	return digest(stableStringify({ issue_number: input.issue_number, branch: input.branch, spec: input.spec, intents }));
-}
-
-export function parsePlanDigest(body: string): string | null {
-	const match = body.match(PLAN_DIGEST_PATTERN);
-	return match ? match[1].toLowerCase() : null;
 }
 
 export interface PlanSummaryInput extends Omit<PlanDraft, "comment_body" | "digest"> {

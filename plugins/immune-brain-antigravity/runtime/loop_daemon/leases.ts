@@ -26,7 +26,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { isPidAlive } from "./lock.ts";
-import { deleteLease, ensureLoopStateDir, listLeases, loadLease, saveLease } from "./state.ts";
+import { deleteLease, ensureLoopStateDir, loadLease, saveLease } from "./state.ts";
 import { LOOP_DAEMON_LEASE_CONTRACT, type LoopLease } from "./types.ts";
 
 /** A lease whose heartbeat is older than this is reclaimable even if its PID answers. */
@@ -266,30 +266,6 @@ export function acquireLoopLease(
 	}
 }
 
-/**
- * Refresh one owned lease. A missing lease, another owner's, or a target being
- * reclaimed right now is left untouched and reports null.
- */
-export function heartbeatLoopLease(
-	stateDir: string,
-	targetId: string,
-	options: { host_token: string; now?: string },
-): LoopLease | null {
-	const gate = acquireGate(stateDir, targetId);
-	if (gate === null) return null;
-	try {
-		const lease = loadLease(stateDir, targetId);
-		if (lease === null || lease.host_token !== options.host_token) return null;
-		// Holding the gate is what makes this write safe: no reclaim can replace
-		// the file between this read and the rename inside `saveLease`.
-		const next: LoopLease = { ...lease, heartbeat_at: options.now ?? new Date().toISOString() };
-		saveLease(stateDir, next);
-		return next;
-	} finally {
-		releaseGate(gate.path, targetId, gate.gen);
-	}
-}
-
 /** Release one owned lease. Another host's lease is never released. */
 export function releaseLoopLease(stateDir: string, targetId: string, options: { host_token: string }): boolean {
 	const gate = acquireGate(stateDir, targetId);
@@ -352,29 +328,4 @@ export function resumeLoopLeaseFromDecision(
 	} finally {
 		releaseGate(gate.path, targetId, gate.gen);
 	}
-}
-
-/** Reclaim every expired lease in one pass and report what was taken back. */
-export function reclaimExpiredLeases(stateDir: string, expiry: LeaseExpiryFacts = {}): LoopLease[] {
-	const reclaimed: LoopLease[] = [];
-	for (const candidate of listLeases(stateDir)) {
-		const gate = acquireGate(stateDir, candidate.target_id);
-		if (gate === null) continue;
-		try {
-			// Expiry is re-evaluated under the gate: a heartbeat that landed first wins.
-			const lease = readLeaseFile(leaseFilePath(stateDir, candidate.target_id));
-			if (lease === null || !leaseExpired(lease, expiry)) continue;
-			const stalePath = join(stateDir, "leases", `${lease.target_id}.${randomUUID()}.reclaimed.tmp`);
-			try {
-				renameSync(leaseFilePath(stateDir, lease.target_id), stalePath);
-			} catch {
-				continue;
-			}
-			rmSync(stalePath, { force: true });
-			reclaimed.push(lease);
-		} finally {
-			releaseGate(gate.path, candidate.target_id, gate.gen);
-		}
-	}
-	return reclaimed;
 }

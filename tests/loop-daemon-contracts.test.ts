@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import {
 	APPLICATION_POINTS,
 	isApplicationPointId,
-	assertApplicationPointId,
 	POINT_REGISTRY,
 	A18_EVENT_PREFILTER,
 	A19_OWNER_COMMENT_INTENT,
@@ -125,9 +124,6 @@ describe("loop daemon upstream contracts (loop-daemon-s0-contracts)", () => {
 		expect(isApplicationPointId("a19_owner_comment_intent")).toBe(true);
 		expect(isApplicationPointId("a20_issue_duplicate_pair")).toBe(true);
 		expect(isApplicationPointId("a99_nonexistent")).toBe(false);
-
-		expect(() => assertApplicationPointId("a18_event_prefilter")).not.toThrow();
-		expect(() => assertApplicationPointId("a99_nonexistent")).toThrow('unknown application point "a99_nonexistent"');
 	});
 
 	test("POINT_REGISTRY registers a18, a19, and a20 with valid structure and criteria", () => {

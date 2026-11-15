@@ -1,0 +1,153 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s4-dead-loop-daemon",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s4-dead-loop-daemon",
+    "goal": "remove-redundant-checks S4 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The loop daemon and decision-model contract no longer export code that no production path reaches: the S4 symbols in the Spec table are deleted together with test cases whose only subject is a deleted symbol, and private helpers left unreferenced. Observable behavior is unchanged. Delegated choices: docs/specs/loop-daemon.spec.md keeps its historical GAP-7 mention; the release changeset is a patch entry.",
+    "acceptance": [
+      {
+        "id": "RC-S4-A1",
+        "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S4 symbols and exits 1; an error exit fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1\",\n      \"sh\",\n      \"-e\",\n      \"clearRepairAttempt\",\n      \"-e\",\n      \"dispatchRepair\",\n      \"-e\",\n      \"heartbeatLoopLease\",\n      \"-e\",\n      \"reclaimExpiredLeases\",\n      \"-e\",\n      \"parsePlanDigest\",\n      \"-e\",\n      \"capabilityRefusal\",\n      \"-e\",\n      \"getCachedDaemonGithubLogin\",\n      \"-e\",\n      \"MIN_CLASSIFIER_CONFIDENCE\",\n      \"-e\",\n      \"DECISION_CHOICE_MARKER_PREFIX\",\n      \"-e\",\n      \"assertApplicationPointId\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S4-A2",
+        "assertion": "The surviving loop daemon and decision-model tests pass: repair, schedule and plan, config and comms, judge, contracts and decision model; the regenerated Claude bundle and Antigravity mirror match source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-repair.test.ts\",\n      \"tests/loop-daemon-schedule-plan.test.ts\",\n      \"tests/loop-daemon-config-comms.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/loop-daemon-contracts.test.ts\",\n      \"tests/decision-model.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S4-A3",
+        "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s4-dead-loop-daemon.md",
+      "docs/plans/rrc-s4-dead-loop-daemon.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "plugins/immune-brain/runtime/decision_model/contract.ts",
+      "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+      "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/leases.ts",
+      "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+      "tests/decision-model.test.ts",
+      "tests/loop-daemon-config-comms.test.ts",
+      "tests/loop-daemon-contracts.test.ts",
+      "tests/loop-daemon-judge.test.ts",
+      "tests/loop-daemon-repair.test.ts",
+      "tests/loop-daemon-schedule-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s4-dead-loop-daemon.intent.json",
+    "content_hash": "sha256:afae7628c65defe9257f24201b0ea54e0f1089b2c09d5df317152c07f982e82e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:afae7628c65defe9257f24201b0ea54e0f1089b2c09d5df317152c07f982e82e",
+  "git_base_head": "391e1d64785b026abc25ad49cb12a91fe6dc4bfd",
+  "attestations": [
+    {
+      "id": "approval-qa-c2f6cc47",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:afae7628c65defe9257f24201b0ea54e0f1089b2c09d5df317152c07f982e82e",
+      "diff_hash": "sha256:51b96dbadbbb97b18b468798e0daa9743276fba3e12b7d597da818f9c89435f3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:6abda9f5bc39ecdfa8dee1b6783c3e2b7d579612dab00bf17631ee4c4a93f2bf",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S4-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6abda9f5bc39ecdfa8dee1b6783c3e2b7d579612dab00bf17631ee4c4a93f2bf"
+        },
+        {
+          "acceptance_id": "RC-S4-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6abda9f5bc39ecdfa8dee1b6783c3e2b7d579612dab00bf17631ee4c4a93f2bf"
+        },
+        {
+          "acceptance_id": "RC-S4-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:6abda9f5bc39ecdfa8dee1b6783c3e2b7d579612dab00bf17631ee4c4a93f2bf"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-cbe21194",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:afae7628c65defe9257f24201b0ea54e0f1089b2c09d5df317152c07f982e82e",
+      "diff_hash": "sha256:51b96dbadbbb97b18b468798e0daa9743276fba3e12b7d597da818f9c89435f3",
+      "actor_id": "cli:claude-code:442a0974-0f64-4fbe-a442-4a8b5fd8a5b0",
+      "summary": "Provenance verified (96fffe30 has single parent 391e1d64 and tree 595514de). The change only deletes the ten S4 dead symbols plus their private helpers (LOOP_CAPABILITIES, DEGRADED_DENIED, PLAN_DIGEST_PATTERN, the listLeases and NormalizedLoopEvent imports). The Antigravity mirror blobs match the source OIDs exactly. Gate-exclusion lease tests now go through the remaining releaseLoopLease and acquireLoopLease paths instead of being dropped. Blast radius: low, limited to the loop_daemon and decision_model runtime modules and their tests, with no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "391e1d64785b026abc25ad49cb12a91fe6dc4bfd",
+        "review_commit": "96fffe30e132654563057ce7335ac773c469f061",
+        "review_tree": "595514de9f01f41f437a32ada62e94beae8cff86",
+        "manifest_digest": "sha256:1baa2f85ab03422491543a1ed2e4114caa5ad1fd0aa498df3ad2bfce2c43b3d7"
+      },
+      "reviewer_verdict_sha256": "sha256:4d43f6419491f36a439be8c096091bb22327db77d0bb424a1b7452b39e6878f2"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s4-dead-loop-daemon:2026-11-15T03:39:22.978Z",
+      "at": "2026-11-15T03:39:22.978Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s4-dead-loop-daemon.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s4-dead-loop-daemon:2026-11-15T03:40:57.894Z",
+      "at": "2026-11-15T03:40:57.894Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-c2f6cc47\naction_v2_sha256:20a71e7bb1603375d1d5b2ba31002709abe70930971e41477fa3782de43ea56b",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T03:40:57.895Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s4-dead-loop-daemon:2026-11-15T03:42:08.028Z",
+      "at": "2026-11-15T03:42:08.028Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-cbe21194\naction_v2_sha256:5644a9598d584c1f960906ad6ae02d5d92ab7799b142cde557a842e489ed642a",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:442a0974-0f64-4fbe-a442-4a8b5fd8a5b0",
+        "confirmation_ref": "pi:cli:claude-code:442a0974-0f64-4fbe-a442-4a8b5fd8a5b0",
+        "issued_at": "2026-11-15T03:42:08.028Z"
+      },
+      "review_started_at": "2026-11-15T03:41:08.751Z",
+      "review_submitted_at": "2026-11-15T03:42:05.070Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s4-dead-loop-daemon:2026-11-15T03:42:16.428Z",
+      "at": "2026-11-15T03:42:16.428Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:53192403c016243787a6426de400385e83cdd3f722b71ce6fb895ab7e9044e8c"
+    }
+  ]
+}
