@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-sched-s5-work-items",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-sched-s5-work-items:2026-11-15T04:28:48.374Z",
+  "final_record_hash": "sha256:b506ba6d46be3fbda6f799dd7d6be0b51cd698e81cebae36f3c1d0babe9bfccf",
+  "terminalized_at": "2026-11-15T04:28:48.374Z"
+}

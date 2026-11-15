@@ -220,6 +220,7 @@
         "plugins/immune-brain-antigravity/runtime/loop_daemon/state.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/status_issue.ts",
         "plugins/immune-brain-antigravity/runtime/loop_daemon/types.ts",
+        "plugins/immune-brain-antigravity/runtime/loop_daemon/work_items.ts",
         "plugins/immune-brain-antigravity/runtime/managed_task_routing_policy.ts",
         "plugins/immune-brain-antigravity/runtime/no_touch.ts",
         "plugins/immune-brain-antigravity/runtime/plan_core.ts",

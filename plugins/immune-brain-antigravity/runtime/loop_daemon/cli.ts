@@ -51,6 +51,13 @@ import { acquireDaemonLock, cleanStaleDaemonLock, isPidAlive, readDaemonLock } f
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
+import {
+	ensureWorkItems,
+	recordJudgedEvents,
+	recordWorkItemOutcome,
+	selectUnjudgedEvents,
+	type JudgedEventSelection,
+} from "./work_items.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
@@ -1059,7 +1066,16 @@ Options:
 				},
 			};
 
-			const judgements = await judgeEvents(obs.events, {
+			// S5/D5: the rebuildable work-item store is restored before scheduling, and a
+			// level event is judged only when its fact fingerprint changed.
+			if (!isDryRun) {
+				ensureWorkItems(absoluteRoot, stateDir, obs.snapshot, loadPublishedPlanDigests(stateDir), recordedAt);
+			}
+			const judged: JudgedEventSelection = isDryRun
+				? { events: obs.events, pending: [] }
+				: selectUnjudgedEvents(obs.events, stateDir);
+
+			const judgements = await judgeEvents(judged.events, {
 				facts,
 				classify,
 				enabledPoints,
@@ -1075,13 +1091,25 @@ Options:
 					return findLatestLaneDecisionQuestion(issueComments)?.options;
 				},
 			});
-			const decisions = obs.events.map((event, index) =>
+			const decisions = judged.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
 			);
 
 			if (!isDryRun) {
 				for (const decision of decisions) {
 					appendLoopDecision(stateDir, decision);
+				}
+				recordJudgedEvents(judged, stateDir, recordedAt);
+				for (let index = 0; index < judged.events.length; index += 1) {
+					const event = judged.events[index]!;
+					const issueNumber = "issue_number" in event ? event.issue_number : undefined;
+					recordWorkItemOutcome(stateDir, {
+						event,
+						handler: decisions[index]!.handler,
+						plan_digest:
+							issueNumber === undefined ? null : (facts.expected_plan_digests?.[issueNumber] ?? null),
+						now: recordedAt,
+					});
 				}
 			}
 
@@ -1090,7 +1118,7 @@ Options:
 				root: absoluteRoot,
 				stateDir,
 				loopConfig,
-				events: obs.events,
+				events: judged.events,
 				decisions,
 				snapshot: obs.snapshot,
 				state,

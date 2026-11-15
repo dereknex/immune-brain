@@ -286,11 +286,22 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 		classification: null,
 	});
 
+	/**
+	 * D5 / BR-GAP-A1: `ready-for-agent` is the approval signal only once a plan is
+	 * published; without one it routes to planning and never skips to enrollment.
+	 */
+	const readyTask = (issueNumber: number): Judgement => {
+		const published = facts.expected_plan_digests?.[issueNumber] ?? null;
+		return published
+			? decided("enroll_and_drive", "ready-for-agent with a published plan is the approval signal")
+			: decided("draft_plan", "ready-for-agent without a published plan routes to planning");
+	};
+
 	switch (event.kind) {
 		case "E1_NEW_ISSUE":
 		case "E2_ISSUE_EDITED":
 			if (event.labels.includes("blocked")) return decided("noop_record", "label transitioned to blocked");
-			if (event.labels.includes("ready-for-agent")) return decided("enroll_and_drive", "label transitioned to ready-for-agent");
+			if (event.labels.includes("ready-for-agent")) return readyTask(event.issue_number);
 			return null;
 		case "E3_OWNER_COMMENT": {
 			const resolved = resolveOwnerCommand(event, facts);
@@ -301,7 +312,7 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 		case "E4_PLAN_APPROVED":
 			return decided("enroll_and_drive", "verified plan approval marker");
 		case "E5_READY_TASK":
-			return decided("enroll_and_drive", "ready-for-agent task with no unresolved blocker");
+			return readyTask(event.issue_number);
 		case "E6_LANE_DECISION_NEEDED":
 			return decided("relay_lane_decision_question", "lane parked on a literal-user decision");
 		case "E7_LANE_DECISION_REPLIED":

@@ -400,13 +400,25 @@ describe("Tier 0: deterministic code guards G1-G10", () => {
 describe("Tier 1: deterministic rule matchers", () => {
 	const cases: Array<{ name: string; event: Parameters<typeof judgeEvent>[0]; handler: string; facts?: GuardFacts }> = [
 		{ name: "blocked label", event: issueEvent({ labels: ["blocked"] }), handler: "noop_record" },
-		{ name: "ready-for-agent label", event: issueEvent({ labels: ["ready-for-agent"] }), handler: "enroll_and_drive" },
+		{ name: "ready-for-agent label without a published plan", event: issueEvent({ labels: ["ready-for-agent"] }), handler: "draft_plan" },
+		{
+			name: "ready-for-agent label with a published plan",
+			event: issueEvent({ labels: ["ready-for-agent"] }),
+			handler: "enroll_and_drive",
+			facts: { expected_plan_digests: { 10: "sha256:plan-a" } },
+		},
 		{ name: "edited issue marked blocked", event: editedEvent({ labels: ["blocked"] }), handler: "noop_record" },
 		{ name: "verified @imm-loop replan", event: commentEvent({ body: "@imm-loop replan please" }), handler: "draft_plan", facts: OWNER_FACTS },
 		{ name: "verified @imm-loop retry", event: commentEvent({ body: "@imm-loop retry" }), handler: "repair_pr_ci", facts: OWNER_FACTS },
 		{ name: "verified @imm-loop ignore", event: commentEvent({ body: "@imm-loop ignore" }), handler: "noop_record", facts: OWNER_FACTS },
 		{ name: "plan approval marker", event: approvalEvent(), handler: "enroll_and_drive", facts: OWNER_FACTS },
-		{ name: "ready task", event: readyEvent(), handler: "enroll_and_drive" },
+		{ name: "ready task without a published plan", event: readyEvent(), handler: "draft_plan" },
+		{
+			name: "ready task with a published plan",
+			event: readyEvent(),
+			handler: "enroll_and_drive",
+			facts: { expected_plan_digests: { 10: "sha256:plan-a" } },
+		},
 		{ name: "parked lane decision", event: laneNeededEvent(), handler: "relay_lane_decision_question" },
 		{ name: "lane decision reply", event: laneRepliedEvent(), handler: "apply_lane_decision_reply", facts: OWNER_FACTS },
 		{ name: "failed check", event: checkFailedEvent(), handler: "repair_pr_ci" },

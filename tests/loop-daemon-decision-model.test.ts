@@ -791,7 +791,14 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			guardFacts: { daemon_identity: "imm-bot" },
 			snapshotOverride: repeatSnap,
 		});
-		expect(ghPort.postedComments).toHaveLength(2);
+		// S5/D5: the already-judged comment 701 is not judged again, so no second
+		// reminder; the daemon's own reminder comment stays a noop. What does post is
+		// the E2 issue-edit escalation, which the same-target lease hold used to mask.
+		expect(
+			ghPort.postedComments.filter((c) => c.body.includes("a19_format_reminder:issue:10:comment:701")),
+		).toHaveLength(1);
+		expect(ghPort.postedComments.filter((c) => c.body.includes(":comment:9991"))).toHaveLength(0);
+		expect(ghPort.postedComments).toHaveLength(3);
 	});
 
 	it("invalid or unavailable judging agent runs nothing side-effecting, falls back to exact D12 baselines, and counts against loop.budget", async () => {
