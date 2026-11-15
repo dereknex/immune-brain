@@ -6,14 +6,17 @@
  * `agent_runner.ts`, so a session's completion is decided from evidence and
  * never from its prose:
  *
- *   - `analyze_codebase` binds `CodebaseAnalysisProbe` to a read-only session
- *   - `draft_plan` binds `PlanDraftDeps` to a planning session whose candidate
- *     TaskIntents are authored by `imm-kernel intent author`
+ *   - `clarify_issue`, `draft_plan` and `apply_clarify_reply` share one chain:
+ *     the read-only `clarify` session returns the framing planning receives
+ *     (`scopes`, `seams`, `risks`, `acceptance`) or the questions the owner is
+ *     asked through the S3 Interaction protocol, after which the work item
+ *     waits in `awaiting_input` until an allowlisted answer re-runs `clarify`
+ *     with that answer appended (Spec D8)
  *   - `publish_plan_for_approval` posts that plan summary through the S8 write port
- *   - `triage_issue` analyzes an uncached key and drafts an already-cached one
  *   - `enroll_and_drive` turns a REST-read approval into a `tracker_approval_proof`,
- *     enrolls through the Kernel's single entry, drives the Lane inside the
- *     standing `imm-loop run` process and opens the PR after settlement
+ *     enrolls every intent of the approved plan and drives them as one batch
+ *     inside the standing `imm-loop run` process, then opens the PR after
+ *     settlement (Spec D8: `intents[0]` is no longer special)
  *   - `repair_pr_ci`, `repair_pr_conflict` and `address_pr_review` bind the S7
  *     deps to repair sessions in the PR's worktree, keeping the S7 attempt cap
  *
@@ -21,7 +24,7 @@
  * system and GitHub are injected seams.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -68,6 +71,8 @@ import {
 } from "./agent_runner.ts";
 import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
+import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
+import { clarifyQuestionRequest } from "./interaction/protocol.ts";
 import { startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import { isVerifiedActor, type GuardFacts } from "./guards.ts";
@@ -95,6 +100,7 @@ import {
 	type RepairResult,
 } from "./repair_agent.ts";
 import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
+import { markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait } from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -290,17 +296,31 @@ function stringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function parseAnalysisFindings(bytes: string): CodebaseAnalysisFindings | null {
+/** The one schema a `clarify` session returns: questions, or the D8 framing. */
+interface ClarifyResult {
+	questions: string[];
+	framing: CodebaseAnalysisFindings;
+}
+
+function parseClarifyResult(bytes: string): ClarifyResult | null {
 	try {
 		const value = JSON.parse(bytes) as Record<string, unknown>;
 		if (!value || typeof value !== "object") return null;
-		if (!stringArray(value.scopes) || !stringArray(value.seams)) return null;
-		if (value.questions !== undefined && !stringArray(value.questions)) return null;
-		return {
-			scopes: value.scopes,
-			seams: value.seams,
-			questions: (value.questions as string[] | undefined) ?? [],
+		const questions = value.questions === undefined ? [] : value.questions;
+		if (!stringArray(questions)) return null;
+		const fields = ["scopes", "seams", "risks", "acceptance"] as const;
+		for (const field of fields) {
+			if (value[field] !== undefined && !stringArray(value[field])) return null;
+		}
+		const framing: CodebaseAnalysisFindings = {
+			scopes: (value.scopes as string[] | undefined) ?? [],
+			seams: (value.seams as string[] | undefined) ?? [],
+			risks: (value.risks as string[] | undefined) ?? [],
+			acceptance: (value.acceptance as string[] | undefined) ?? [],
 		};
+		// Neither a question nor a framing is not a clarification result.
+		if (questions.length === 0 && framing.scopes.length === 0) return null;
+		return { questions: [...questions], framing };
 	} catch {
 		return null;
 	}
@@ -422,6 +442,11 @@ function issueOf(context: AgentHandlerContext): IssueFacts | null {
 	return Number.isFinite(resolved) ? { number: resolved, title: "", body: "" } : null;
 }
 
+/** The work item this decision moves, in the store's own target vocabulary. */
+function workItemTargetOf(context: AgentHandlerContext): string {
+	return `${context.decision.target.kind}-${context.decision.target.id}`;
+}
+
 function taskIdOfEvent(context: AgentHandlerContext): string | null {
 	const event = context.event;
 	if (event && "task_id" in event && typeof event.task_id === "string" && event.task_id) return event.task_id;
@@ -530,62 +555,159 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		);
 	}
 
-	async function analyze(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * D8: the read-only `clarify` session answers either with questions for the
+	 * owner or with the framing planning receives. A framing is cached under its
+	 * cache key, so the same Issue with the same answers never probes twice.
+	 */
+	async function runClarify(
+		context: AgentHandlerContext,
+		answers: readonly string[],
+	): Promise<
+		| { kind: "framing"; findings: CodebaseAnalysisFindings; cached: boolean }
+		| { kind: "questions"; questions: string[] }
+		| { kind: "failed"; detail: string }
+	> {
 		const issue = issueOf(context);
-		if (!issue) return { outcome: "failed", detail: "analyze_codebase needs an Issue target" };
+		if (!issue) return { kind: "failed", detail: "clarify needs an Issue target" };
 		const baseTreeSha = deps.head({ root: context.root, cwd: context.root });
-		if (!baseTreeSha) return { outcome: "failed", detail: "analyze_codebase could not read the repository HEAD" };
+		if (!baseTreeSha) return { kind: "failed", detail: "clarify could not read the repository HEAD" };
 
 		const probeInput = {
 			issue_number: issue.number,
 			issue_body: issue.body,
 			base_tree_sha: baseTreeSha,
+			answers,
 		};
-		const cacheKey = analysisCacheKey(probeInput);
-		const cached = readCachedAnalysis(context.stateDir, cacheKey);
-		if (cached) {
-			return {
-				outcome: "executed",
-				detail: `analysis ${cacheKey.slice(0, 12)} cached scopes=${cached.findings.scopes.join(",") || "none"}`,
-			};
-		}
+		const cached = readCachedAnalysis(context.stateDir, analysisCacheKey(probeInput));
+		if (cached) return { kind: "framing", findings: cached.findings, cached: true };
 
-		const worktree = deps.createWorktree({ root: context.root, branch: null, name: `analysis-${issue.number}` });
+		const worktree = deps.createWorktree({ root: context.root, branch: null, name: `clarify-${issue.number}` });
 		const session = await runSession(context, {
-			kind: "analysis",
+			kind: "clarify",
 			worktree_path: worktree,
 			prompt: [
-				`Read-only codebase analysis for Issue #${issue.number}: ${issue.title}`,
+				`Read-only clarification for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
+				...(answers.length > 0
+					? ["", "The owner answered the clarification question:", ...answers.map((answer) => `- ${answer}`)]
+					: []),
 				"",
-				'Print JSON {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "questions": ["facts the plan must settle"]}.',
+				'If a fact the plan must settle is missing, print JSON {"questions": ["one question per missing fact"]}.',
+				'Otherwise print the framing planning receives: {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "risks": ["what the plan risks getting wrong"], "acceptance": ["what the plan will have to prove"]}.',
 				"Do not modify any file: this session has no write tools.",
 			].join("\n"),
-			evidence: { validate: (bytes) => parseAnalysisFindings(bytes) !== null },
+			evidence: { validate: (bytes) => parseClarifyResult(bytes) !== null },
 		});
 		const refused = requireSession(session);
-		if (refused) return refused;
-		const findings = parseAnalysisFindings(session.output ?? "");
-		if (!findings) return { outcome: "failed", detail: `analysis session produced no valid findings: ${session.reason}` };
+		if (refused) return { kind: "failed", detail: refused.detail };
+		const parsed = parseClarifyResult(session.output ?? "");
+		if (!parsed) return { kind: "failed", detail: `clarify session produced no valid result: ${session.reason}` };
+		if (parsed.questions.length > 0) return { kind: "questions", questions: parsed.questions };
 
-		const result = analyzeCodebase({
-			...probeInput,
-			stateDir: context.stateDir,
-			probe: () => findings,
-			now: context.now,
-		});
+		analyzeCodebase({ ...probeInput, stateDir: context.stateDir, probe: () => parsed.framing, now: context.now });
+		return { kind: "framing", findings: parsed.framing, cached: false };
+	}
+
+	/** The `github` Interaction channel bound to one Issue's current revision. */
+	function clarifyChannel(
+		context: AgentHandlerContext,
+		issue: IssueFacts,
+		comments: RawComment[],
+	): { channel: ReturnType<typeof createGithubInteractionChannel>; issue_revision: string } {
+		const issueRevision = createHash("sha256").update(`${issue.title}\n${issue.body}`).digest("hex").slice(0, 12);
 		return {
-			outcome: "executed",
-			detail: `analysis ${result.entry.cache_key.slice(0, 12)} cached=false scopes=${result.entry.findings.scopes.join(",") || "none"}`,
+			issue_revision: issueRevision,
+			channel: createGithubInteractionChannel({
+				port: {
+					postComment: (issueNumber, body) => context.gitHubPort.postComment(issueNumber, body),
+					editComment: (commentId, body) => context.gitHubPort.editComment(commentId, body),
+				},
+				comments: () => comments,
+				binding: () => ({ issue_revision: issueRevision }),
+				guardFacts: context.guardFacts,
+			}),
 		};
 	}
 
-	async function draftPlan(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * Post this Issue's questions once through the `github` Interaction channel and
+	 * park the work item in `awaiting_input`. The channel's idempotency key is the
+	 * question set, so a tick that observes no answer posts nothing new.
+	 */
+	async function askClarify(
+		context: AgentHandlerContext,
+		issue: IssueFacts,
+		questions: string[],
+	): Promise<AgentHandlerResult> {
+		const comments = [...existingCommentsOf(context, issue.number)];
+		const { channel, issue_revision } = clarifyChannel(context, issue, comments);
+		const request = clarifyQuestionRequest({ issue_number: issue.number, questions, issue_revision });
+		// One marker comment per interaction id: a tick that observed the answer
+		// posts nothing, and a re-asked question set posts nothing either.
+		const posted = await channel.post(request);
+		const parked = parkOnClarifyQuestion(
+			context.stateDir,
+			workItemTargetOf(context),
+			request.interaction_id,
+			context.now,
+		);
+		if (parked.state !== "awaiting_input" || parked.pending_interactions[0] !== request.interaction_id)
+			return {
+				outcome: "failed",
+				detail: `clarify question ${request.interaction_id} could not park the work item (state ${parked.state}); the answer would not resume`,
+			};
+		return {
+			outcome: "executed",
+			detail: `clarify question ${request.interaction_id} ${posted === "posted" ? "posted" : "already posted"}; asked ${questions.length} question(s), work item awaits the answer`,
+		};
+	}
+
+	/**
+	 * D8: an allowlisted reply re-runs `clarify` with the answer appended and then
+	 * plans. A reply the channel does not accept for this request resumes nothing.
+	 */
+	async function applyClarifyReply(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+		const issue = issueOf(context);
+		if (!issue) return { outcome: "failed", detail: "apply_clarify_reply needs an Issue target" };
+		const interactionId = readWorkItem(context.stateDir, workItemTargetOf(context))?.pending_interactions[0];
+		if (!interactionId) return { outcome: "failed", detail: `issue #${issue.number} waits on no clarify question` };
+
+		const { channel } = clarifyChannel(context, issue, [...existingCommentsOf(context, issue.number)]);
+		const polled = await channel.poll(interactionId);
+		if (polled.state !== "answered")
+			return {
+				outcome: "failed",
+				detail: `clarify ${interactionId} is ${polled.state}: the reply is not an allowlisted answer`,
+			};
+
+		const answered = await clarifyThenPlan(context, [polled.value]);
+		if (answered.outcome !== "executed") return answered;
+		return { outcome: "executed", detail: `clarify ${interactionId} answered by ${polled.actor}; ${answered.detail}` };
+	}
+
+	async function planFromFraming(
+		context: AgentHandlerContext,
+		findings: CodebaseAnalysisFindings,
+	): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
 		if (!issue) return { outcome: "failed", detail: "draft_plan needs an Issue target" };
 		const branch = planBranchName(issue.number);
 		const worktree = deps.createWorktree({ root: context.root, branch, name: `plan-${issue.number}` });
+		// D8: the plan receives the clarify framing, not only the Issue body's first 4000 chars.
+		const framing = [
+			"Clarify framing:",
+			`- scopes: ${findings.scopes.join(", ") || "none"}`,
+			`- seams: ${findings.seams.join(", ") || "none"}`,
+			`- risks: ${findings.risks.join(", ") || "none"}`,
+			`- acceptance: ${findings.acceptance.join(", ") || "none"}`,
+		];
+		// D8: a15 `needs_initiative_decomposition` asks for a decomposition instruction.
+		const decomposition =
+			context.decision.classification?.choice === "needs_initiative_decomposition"
+				? ["", "Decompose the Issue into an Initiative: one TaskIntent per Slice, in dependency order, each small enough to land alone."]
+				: [];
 		const session = await runSession(context, {
 			kind: "planning",
 			worktree_path: worktree,
@@ -593,6 +715,9 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				`Draft the plan for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
+				"",
+				...framing,
+				...decomposition,
 				"",
 				'Print JSON {"intents": [{"path": "docs/plans/<task-id>.intent.json", "intent": {<TaskIntent body>}}], "spec": {"path": "docs/specs/<name>.spec.md", "content": "<Spec markdown>"} | null}.',
 				"Do not modify any file: this session has no write tools. The daemon writes every artifact.",
@@ -650,6 +775,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		// summary, and an owner cannot approve a plan they cannot see.
 		const published = await publishPlan(context);
 		if (published.outcome !== "executed") return published;
+		markPlanPublished(context.stateDir, workItemTargetOf(context), draft.digest, context.now);
 
 		return {
 			outcome: "executed",
@@ -683,22 +809,27 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		};
 	}
 
-	async function triage(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * D8: the one chain the planning handlers share. The framing is a precondition
+	 * of every plan, so `clarify_issue`, `draft_plan` and `apply_clarify_reply` all
+	 * run `clarify` first; only the questions path stops before planning, and it
+	 * stops in `awaiting_input` with exactly one posted question.
+	 */
+	async function clarifyThenPlan(
+		context: AgentHandlerContext,
+		answers: readonly string[],
+	): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
-		if (!issue) return { outcome: "failed", detail: "triage_issue needs an Issue target" };
-		const baseTreeSha = deps.head({ root: context.root, cwd: context.root });
-		if (!baseTreeSha) return { outcome: "failed", detail: "triage_issue could not read the repository HEAD" };
-		const cached = readCachedAnalysis(
-			context.stateDir,
-			analysisCacheKey({ issue_number: issue.number, issue_body: issue.body, base_tree_sha: baseTreeSha }),
-		);
-		if (!cached) {
-			const analyzed = await analyze(context);
-			if (analyzed.outcome !== "executed") return analyzed;
-		}
-		const drafted = await draftPlan(context);
+		if (!issue) return { outcome: "failed", detail: `clarify needs an Issue target` };
+		const clarified = await runClarify(context, answers);
+		if (clarified.kind === "failed") return { outcome: "failed", detail: clarified.detail };
+		if (clarified.kind === "questions") return askClarify(context, issue, clarified.questions);
+
+		releaseClarifyWait(context.stateDir, workItemTargetOf(context), context.now);
+		const drafted = await planFromFraming(context, clarified.findings);
 		if (drafted.outcome !== "executed") return drafted;
-		return { outcome: "executed", detail: `${cached ? "analysis cached" : "analysis probed"}; ${drafted.detail}` };
+		const source = clarified.cached ? "framing cached" : answers.length > 0 ? `framing from ${answers.length} answer(s)` : "framing probed";
+		return { outcome: "executed", detail: `${source}; ${drafted.detail}` };
 	}
 
 	function approvalCommentOf(context: AgentHandlerContext): { issue_number: number; comment_id: number } | null {
@@ -794,26 +925,35 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (plan.published_at === null)
 			return { outcome: "failed", detail: `plan ${plan.digest.slice(0, 12)} for #${issue.number} is not published yet` };
 
-		const taskId = taskIdOfEvent(context) ?? plan.task_id;
-		if (!plan.intents.some((intent) => intent.task_id === taskId))
-			return { outcome: "failed", detail: `task ${taskId} is not in the published plan for #${issue.number}` };
-		const intent = deps.readIntent(taskId);
-		if (!intent) return { outcome: "failed", detail: `task intent is not readable: ${taskId}` };
+		// D8: every intent of the approved plan is driven; an event naming one task
+		// narrows this to that task, and `intents[0]` is no longer special.
+		const named = taskIdOfEvent(context);
+		if (named !== null && !plan.intents.some((intent) => intent.task_id === named))
+			return { outcome: "failed", detail: `task ${named} is not in the published plan for #${issue.number}` };
+		const taskIds = named === null ? plan.intents.map((intent) => intent.task_id) : [named];
+		const taskId = taskIds[0]!;
 
 		// Driving belongs to the process that owns `loopDaemonSupervisor`.
 		if (!context.standing_daemon)
 			return {
 				outcome: "requires_standing_daemon",
-				detail: `enroll_and_drive drives ${taskId} only inside imm-loop run`,
+				detail: `enroll_and_drive drives ${taskIds.join(", ")} only inside imm-loop run`,
 			};
 
 		// D6 re-entry: an enrolled, nonterminal TaskRecord resumes; re-entry never
 		// mints a second nonce for a task the Kernel already holds.
-		const enrolled = readTaskRecordRaw(context.root, taskId);
+		const confirmationRefs = new Map<string, string>();
 		let confirmationSource: string | null = null;
-		let confirmationRef = `resume:${taskId}`;
-		let recordRevision = enrolled.revision;
-		if (!enrolled.record) {
+		let recordRevision = "";
+		for (const candidateTaskId of taskIds) {
+			const intent = deps.readIntent(candidateTaskId);
+			if (!intent) return { outcome: "failed", detail: `task intent is not readable: ${candidateTaskId}` };
+
+			const enrolled = readTaskRecordRaw(context.root, candidateTaskId);
+			recordRevision = enrolled.revision;
+			confirmationRefs.set(candidateTaskId, `resume:${candidateTaskId}`);
+			if (enrolled.record) continue;
+
 			const resolved = await resolveConfirmation(context, issue, plan, intent);
 			if (!resolved.ok) {
 				const escalated = await escalateOnce(
@@ -826,11 +966,11 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				return { outcome: "failed", detail: `${resolved.reason} (${escalated})` };
 			}
 			confirmationSource = resolved.source;
-			confirmationRef = resolved.confirmation_ref;
+			confirmationRefs.set(candidateTaskId, resolved.confirmation_ref);
 			try {
 				const record = await deps.enroll({
 					root: context.root,
-					task_id: taskId,
+					task_id: candidateTaskId,
 					intent,
 					plan_digest: plan.digest,
 					confirmation_ref: resolved.confirmation_ref,
@@ -841,7 +981,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			} catch (error) {
 				return {
 					outcome: "failed",
-					detail: `enrollment failed for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
+					detail: `enrollment failed for ${candidateTaskId}: ${error instanceof Error ? error.message : String(error)}`,
 				};
 			}
 		}
@@ -862,34 +1002,53 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				now: now(),
 			},
 			async () => {
-				const driven = await deps.drive({
-					root: context.root,
-					task_id: taskId,
-					intent,
-					plan_digest: plan.digest,
-					confirmation_ref: confirmationRef,
-					base_head: baseHead,
-					now: now(),
-				});
-				const exit = driven.exit;
-				const settled =
-					driven.settled &&
-					exit?.state === "exited" &&
-					exit.exit_code === 0 &&
-					Boolean(exit.verification_evidence_digest);
+				// D8: the approved plan's intents are one batch, driven in plan order and
+				// serialized in this one job, so the first failure stops the batch.
+				// shortcut: E13 names one task, so the job carries the first Lane's exit
+				// and only its PR opens; per-intent PRs need `open_pr` to iterate the plan
+				// (D6 follow-up).
+				let firstExit: AgentDriveExit | null = null;
+				for (const candidateTaskId of taskIds) {
+					const intent = deps.readIntent(candidateTaskId);
+					if (!intent)
+						return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
+					const driven = await deps.drive({
+						root: context.root,
+						task_id: candidateTaskId,
+						intent,
+						plan_digest: plan.digest,
+						confirmation_ref: confirmationRefs.get(candidateTaskId) ?? `resume:${candidateTaskId}`,
+						base_head: baseHead,
+						now: now(),
+					});
+					const exit = driven.exit;
+					firstExit ??= exit ?? null;
+					const settled =
+						driven.settled &&
+						exit?.state === "exited" &&
+						exit.exit_code === 0 &&
+						Boolean(exit.verification_evidence_digest);
+					if (!settled)
+						return {
+							outcome: "failed" as const,
+							detail: `${candidateTaskId} did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
+							exit,
+						};
+				}
 				return {
-					outcome: settled ? ("settled" as const) : ("failed" as const),
-					detail: settled
-						? `lane settled (generation ${exit?.generation}, commit ${exit?.final_commit_sha ?? "unknown"}, digest ${exit?.verification_evidence_digest})`
-						: `lane did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
-					exit: exit ?? null,
+					outcome: "settled" as const,
+					detail:
+						taskIds.length === 1
+							? `lane settled (generation ${firstExit?.generation}, commit ${firstExit?.final_commit_sha ?? "unknown"}, digest ${firstExit?.verification_evidence_digest})`
+							: `batch settled ${taskIds.length} lanes: ${taskIds.join(", ")} (first commit ${firstExit?.final_commit_sha ?? "unknown"})`,
+					exit: firstExit,
 				};
 			},
 		);
 
 		return {
 			outcome: "executed",
-			detail: `started drive job ${job.job_id} for ${taskId} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
+			detail: `started drive job ${job.job_id} for ${taskIds.join(", ")} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
 		};
 	}
 
@@ -1164,14 +1323,13 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 	return {
 		async handle(handler: LoopHandler, context: AgentHandlerContext): Promise<AgentHandlerResult> {
 			switch (handler) {
-				case "analyze_codebase":
-					return analyze(context);
+				case "clarify_issue":
 				case "draft_plan":
-					return draftPlan(context);
+					return clarifyThenPlan(context, []);
+				case "apply_clarify_reply":
+					return applyClarifyReply(context);
 				case "publish_plan_for_approval":
 					return publishPlan(context);
-				case "triage_issue":
-					return triage(context);
 				case "enroll_and_drive":
 					return enrollAndDrive(context);
 				case "repair_pr_ci":
@@ -1273,6 +1431,17 @@ export function createDefaultAgentHandlerDeps(
 		const directory = loopWorktreeDirectory(repository);
 		mkdirSync(directory, { recursive: true });
 		const path = join(directory, name);
+		// A read-only probe re-runs for the same Issue (D8: every answer re-runs
+		// clarify), so its detached tree is reused at the current HEAD instead of
+		// failing `worktree add`. A branch worktree keeps the tree it already has.
+		if (existsSync(path)) {
+			if (branch !== null) return path;
+			const head = git(repository, ["rev-parse", "HEAD"]);
+			const reset = head.status === 0 ? git(path, ["checkout", "--detach", head.stdout.trim()]) : head;
+			if (reset.status !== 0)
+				throw new Error(`loop_worktree_failed: ${reset.stderr.trim() || `${name} at HEAD`}`);
+			return path;
+		}
 		const argv = branch === null
 			? ["worktree", "add", "--detach", path, "HEAD"]
 			: ["worktree", "add", path, branch];

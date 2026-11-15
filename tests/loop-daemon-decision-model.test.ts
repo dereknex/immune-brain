@@ -298,7 +298,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 		});
 		expect(judged).toBe(0);
 		expect(result.tier).toBe(2);
-		expect(result.handler).toBe("triage_issue");
+		expect(result.handler).toBe("draft_plan");
 	});
 
 	it("routes below-threshold ignore/duplicate/granularity, truncation!=none, disabled points, and unavailable answers to S9 judging agent", async () => {
@@ -410,7 +410,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 			// fakeAdapter returns truncation: "unknown", so S10 routes to judging agent while keeping full Envelope on classification!
 			judgingAgent: async () => {
 				judged += 1;
-				return { handler: "triage_issue", reason: "confirmed clear single task" };
+				return { handler: "draft_plan", reason: "confirmed clear single task" };
 			},
 		});
 		expect(res.returncode).toBe(0);
@@ -498,7 +498,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 				observed_at: TS,
 			},
 			judgingAgent: async () => ({
-				handler: "triage_issue",
+				handler: "draft_plan",
 				corrected_option: "actionable",
 				reason: "issue describes an actual bug",
 			}),
@@ -508,7 +508,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 		expect(heldPayload.checked).toBe(1);
 		expect(heldPayload.overrides).toBe(1);
 		expect(heldPayload.labels_appended).toBe(1);
-		expect(heldPayload.dispatches[0]).toMatchObject({ handler: "triage_issue", outcome: "held" });
+		expect(heldPayload.dispatches[0]).toMatchObject({ handler: "draft_plan", outcome: "held" });
 
 		// Verify labels.jsonl mode 0600 and loadCorpus() compatibility
 		const lp = labelsFilePath(ws.stateDir);

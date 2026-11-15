@@ -5,7 +5,7 @@
  * and S9 / D11 in docs/specs/loop-daemon.spec.md (SCN-6).
  *
  * - Positive control (SCN-6): successive ticks of the standing run process carry a
- *   new Issue through analyze_codebase, draft_plan via `imm-kernel intent author`,
+ *   new Issue through clarify, draft_plan via `imm-kernel intent author`,
  *   plan summary publication, a REST-read `/approve <digest>` comment turned into a
  *   `tracker_approval_proof`, enrollment, `dispatchLoopDrive()` to settlement with the
  *   Executor exit recorded, and open_pr on `imm/<slug>` — all against a fake session
@@ -168,7 +168,13 @@ interface FakeSessions {
 }
 
 function payloadFor(kind: AgentSessionKind): string {
-	if (kind === "analysis") return JSON.stringify({ scopes: ["src/"], seams: ["src/seed.ts"], questions: [] });
+	if (kind === "clarify")
+		return JSON.stringify({
+			scopes: ["src/"],
+			seams: ["src/seed.ts"],
+			risks: ["the seed fixture may drift"],
+			acceptance: ["the fixture task delivers"],
+		});
 	if (kind === "planning")
 		return JSON.stringify({
 			intents: [
@@ -515,11 +521,11 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(first.returncode).toBe(0);
 		const firstPayload = jsonPayload(first.stdout);
 		expect(firstPayload.dispatches).toHaveLength(1);
-		expect(firstPayload.dispatches[0]).toMatchObject({ handler: "triage_issue", outcome: "executed" });
-		expect(firstPayload.dispatches[0].detail).toContain("analysis");
+		expect(firstPayload.dispatches[0]).toMatchObject({ handler: "draft_plan", outcome: "executed" });
+		expect(firstPayload.dispatches[0].detail).toContain("framing");
 
-		// The planning session ran the read-only analysis probe first, then drafted the plan.
-		expect(harness.sessions.requests.map((request) => request.kind)).toEqual(["analysis", "planning"]);
+		// The read-only clarify session framed the Issue first, then the plan was drafted.
+		expect(harness.sessions.requests.map((request) => request.kind)).toEqual(["clarify", "planning"]);
 		for (const request of harness.sessions.requests) {
 			// Sessions receive the daemon's GitHub credential and nothing else.
 			expect(Object.keys(request.env).sort()).toEqual(["GH_TOKEN", "GITHUB_TOKEN", "PATH"]);
@@ -843,13 +849,13 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 
 	it("fails a session that leaves no expected output, wrong schema, or no moved Git head", async () => {
 		const cases: Array<{
-			handler: "analyze_codebase" | "draft_plan";
+			handler: "clarify_issue" | "draft_plan";
 			behavior: Partial<Record<AgentSessionKind, SessionBehavior>>;
 			expected: string;
 		}> = [
-			{ handler: "analyze_codebase", behavior: { analysis: "missing_output" }, expected: "session_output_missing" },
-			{ handler: "analyze_codebase", behavior: { analysis: "invalid_output" }, expected: "expected_output_invalid" },
-			{ handler: "analyze_codebase", behavior: { analysis: "exit_nonzero" }, expected: "session_exit_nonzero" },
+			{ handler: "clarify_issue", behavior: { clarify: "missing_output" }, expected: "session_output_missing" },
+			{ handler: "clarify_issue", behavior: { clarify: "invalid_output" }, expected: "expected_output_invalid" },
+			{ handler: "clarify_issue", behavior: { clarify: "exit_nonzero" }, expected: "session_exit_nonzero" },
 			{ handler: "draft_plan", behavior: { planning: "invalid_output" }, expected: "expected_output_invalid" },
 		];
 

@@ -108,8 +108,8 @@ export interface LoopDispatchRecord {
 }
 
 export const AGENT_BACKED_HANDLERS: readonly LoopHandler[] = [
-	"triage_issue",
-	"analyze_codebase",
+	"clarify_issue",
+	"apply_clarify_reply",
 	"draft_plan",
 	"publish_plan_for_approval",
 	"enroll_and_drive",

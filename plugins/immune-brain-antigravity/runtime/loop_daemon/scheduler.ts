@@ -32,18 +32,19 @@ export type SchedulePriority = keyof typeof SCHEDULE_PRIORITY;
 const HANDLER_PRIORITY: Partial<Record<LoopHandler, SchedulePriority>> = {
 	// Class 1: an in-Lane decision reply is always the owner's own answer.
 	apply_lane_decision_reply: "owner_control",
+	apply_clarify_reply: "owner_control",
 	repair_pr_ci: "pr_repair",
 	repair_pr_conflict: "pr_repair",
 	address_pr_review: "pr_repair",
 	enroll_and_drive: "ready_task",
-	analyze_codebase: "planning",
+	clarify_issue: "planning",
 	draft_plan: "planning",
 	publish_plan_for_approval: "planning",
-	triage_issue: "triage",
 };
 
 const ALL_HANDLER_PRIORITY: Partial<Record<LoopHandler, SchedulePriority>> = {
 	apply_lane_decision_reply: "owner_control",
+	apply_clarify_reply: "owner_control",
 	repair_pr_ci: "pr_repair",
 	repair_pr_conflict: "pr_repair",
 	address_pr_review: "pr_repair",
@@ -51,11 +52,10 @@ const ALL_HANDLER_PRIORITY: Partial<Record<LoopHandler, SchedulePriority>> = {
 	close_out: "pr_repair",
 	enroll_and_drive: "ready_task",
 	open_pr: "ready_task",
-	analyze_codebase: "planning",
+	clarify_issue: "planning",
 	draft_plan: "planning",
 	publish_plan_for_approval: "planning",
 	relay_lane_decision_question: "planning",
-	triage_issue: "triage",
 	escalate: "triage",
 };
 

@@ -91,10 +91,10 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 	it("runs every loop role at 40 turns / 900 s from one per-role table (S2-AC1)", () => {
 		expect(Object.keys(ROLE_SESSION_LIMITS).sort()).toEqual([...ROLES].sort());
 		for (const role of ROLES) expect(ROLE_SESSION_LIMITS[role]).toEqual({ turn_budget: 40, timeout_ms: 900_000 });
-		// The four loop roles own the read-only judgement, while analysis is the plan probe.
+		// Each session kind runs as the role that owns it (D1/D2, D8).
 		expect(sessionRole("judging")).toBe("judging");
+		expect(sessionRole("clarify")).toBe("clarify");
 		expect(sessionRole("planning")).toBe("plan");
-		expect(sessionRole("analysis")).toBe("plan");
 		expect(sessionRole("repair")).toBe("repair");
 	});
 

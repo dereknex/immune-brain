@@ -47,7 +47,9 @@ export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly Work
 	triage: ["clarifying", "planning", "escalated"],
 	clarifying: ["awaiting_input", "planning", "escalated"],
 	awaiting_input: ["clarifying", "driving"],
-	planning: ["plan_published", "escalated"],
+	// D8: a plan that cannot be finalised without the clarify framing returns to
+	// `clarifying`, so the question has somewhere to park.
+	planning: ["clarifying", "plan_published", "escalated"],
 	plan_published: ["driving"],
 	driving: ["awaiting_input", "pr_open", "escalated"],
 	pr_open: ["repairing", "ready_for_merge"],
@@ -59,8 +61,8 @@ export const WORK_ITEM_TRANSITIONS: Readonly<Record<WorkItemState, readonly Work
 
 /** The state one handler moves its target to; `null` handlers move nothing. */
 const HANDLER_STATES: Partial<Record<LoopHandler, WorkItemState>> = {
-	triage_issue: "triage",
-	analyze_codebase: "planning",
+	clarify_issue: "clarifying",
+	apply_clarify_reply: "clarifying",
 	draft_plan: "planning",
 	publish_plan_for_approval: "plan_published",
 	enroll_and_drive: "driving",
@@ -261,6 +263,66 @@ export function recordWorkItemOutcome(
 	}
 	writeWorkItem(stateDir, item);
 	return { item, refused };
+}
+
+/** Issue number -> the clarify interaction that Issue waits on. Read-only. */
+export function pendingClarifyInteractions(stateDir: string): Record<number, string> {
+	const pending: Record<number, string> = {};
+	for (const item of listWorkItems(stateDir)) {
+		const issue = /^issue-(\d+)$/.exec(item.target);
+		const interaction = item.pending_interactions[0];
+		if (issue && item.state === "awaiting_input" && interaction) pending[Number(issue[1])] = interaction;
+	}
+	return pending;
+}
+
+/** Park one target on its clarify question: the interaction it waits for, in `awaiting_input`. */
+export function parkOnClarifyQuestion(
+	stateDir: string,
+	target: string,
+	interactionId: string,
+	now: string,
+): WorkItem {
+	let item = readWorkItem(stateDir, target) ?? newWorkItem(target, "clarifying", now);
+	if (item.state === "planning") {
+		item = advanceWorkItem(item, "clarifying", {
+			reason: `clarify question ${interactionId} re-opens the framing`,
+			now,
+		}).item;
+	}
+	const moved = advanceWorkItem(item, "awaiting_input", { reason: `clarify question ${interactionId} posted`, now }).item;
+	const next: WorkItem = { ...moved, pending_interactions: [interactionId] };
+	writeWorkItem(stateDir, next);
+	return next;
+}
+
+/** Leave `awaiting_input` for planning once the clarify answer produced a framing. */
+export function releaseClarifyWait(stateDir: string, target: string, now: string): WorkItem {
+	const item = readWorkItem(stateDir, target) ?? newWorkItem(target, "clarifying", now);
+	let next: WorkItem = { ...item, pending_interactions: [] };
+	if (next.state === "awaiting_input") {
+		next = advanceWorkItem(next, "clarifying", { reason: "clarify answer applied", now }).item;
+	}
+	next = advanceWorkItem(next, "planning", { reason: "clarify framing ready", now }).item;
+	writeWorkItem(stateDir, next);
+	return next;
+}
+
+/** Record that a target's plan is published (D5: `planning` -> `plan_published`). */
+export function markPlanPublished(
+	stateDir: string,
+	target: string,
+	planDigest: string,
+	now: string,
+): WorkItem {
+	const item = readWorkItem(stateDir, target) ?? newWorkItem(target, "planning", now);
+	let next: WorkItem = { ...item, binding: { ...item.binding, plan_digest: planDigest } };
+	if (next.state === "awaiting_input") {
+		next = advanceWorkItem(next, "clarifying", { reason: "clarify answer applied", now }).item;
+	}
+	next = advanceWorkItem(next, "plan_published", { reason: `plan ${planDigest.slice(0, 12)} published`, now }).item;
+	writeWorkItem(stateDir, next);
+	return next;
 }
 
 /**

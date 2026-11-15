@@ -8,8 +8,8 @@
 
 export const LOOP_HANDLERS = [
 	"noop_record",
-	"triage_issue",
-	"analyze_codebase",
+	"clarify_issue",
+	"apply_clarify_reply",
 	"draft_plan",
 	"publish_plan_for_approval",
 	"enroll_and_drive",

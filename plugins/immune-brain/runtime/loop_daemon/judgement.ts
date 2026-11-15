@@ -306,7 +306,13 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 			return null;
 		case "E3_OWNER_COMMENT": {
 			const resolved = resolveOwnerCommand(event, facts);
-			if (resolved.command === null) return null;
+			if (resolved.command === null) {
+				// D8: a comment on an Issue that waits on its clarify question is the answer.
+				const pending = facts.pending_clarify?.[event.issue_number];
+				return pending
+					? decided("apply_clarify_reply", `issue #${event.issue_number} waits on clarify ${pending}`)
+					: null;
+			}
 			if (resolved.handler !== null) return decided(resolved.handler, resolved.reason);
 			return decided("noop_record", `rejected @imm-loop ${resolved.command}: ${resolved.reason}`);
 		}
@@ -438,8 +444,8 @@ async function triageIssue(
 			case "clear_single_task":
 				return {
 					tier: 2,
-					handler: "triage_issue",
-					reason: "a15_task_granularity judged the issue one clear task",
+					handler: "draft_plan",
+					reason: "a15_task_granularity judged the issue one clear task; planning one intent",
 					guard: null,
 					classification: granularity.classification,
 				};
@@ -447,18 +453,23 @@ async function triageIssue(
 				return {
 					tier: 2,
 					handler: "draft_plan",
-					reason: "issue must be split into an initiative before it can be driven",
+					reason: "issue must be split into an initiative before it can be driven; planning a decomposition",
 					guard: null,
 					classification: granularity.classification,
 				};
-			default:
+			case "needs_clarification":
 				return {
 					tier: 2,
-					handler: "escalate",
+					handler: "clarify_issue",
 					reason: "issue needs clarification before it can be planned",
 					guard: null,
 					classification: granularity.classification,
 				};
+			default:
+				return escalated(
+					`a15_task_granularity returned an unknown choice: ${granularity.choice}`,
+					granularity.classification,
+				);
 		}
 	}
 

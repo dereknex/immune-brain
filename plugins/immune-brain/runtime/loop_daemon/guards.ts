@@ -64,6 +64,8 @@ export interface GuardFacts {
 		options?: Array<{ id: string; label: string; description?: string }>;
 		issue_number?: number;
 	};
+	/** Issue number -> the clarify interaction that Issue is waiting on (D8). */
+	pending_clarify?: Record<number, string>;
 }
 
 export const DEFAULT_ALLOWED_ASSOCIATIONS: readonly string[] = ["OWNER", "MEMBER", "COLLABORATOR"];

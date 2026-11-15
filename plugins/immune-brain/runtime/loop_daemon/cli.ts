@@ -53,6 +53,7 @@ import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
 import {
 	ensureWorkItems,
+	pendingClarifyInteractions,
 	recordJudgedEvents,
 	recordWorkItemOutcome,
 	selectUnjudgedEvents,
@@ -1022,6 +1023,7 @@ Options:
 				retry_counts: loadRepairRetries(stateDir),
 				unresolved_blockers,
 				duplicate_candidates_by_issue,
+				pending_clarify: pendingClarifyInteractions(stateDir),
 				expected_plan_digests: {
 					...loadPublishedPlanDigests(stateDir),
 					...(options?.guardFacts?.expected_plan_digests ?? {}),
@@ -1246,6 +1248,7 @@ Options:
 				daemon_identity: daemonLogin,
 				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
 				retry_counts: loadRepairRetries(stateDir),
+				pending_clarify: pendingClarifyInteractions(stateDir),
 				expected_plan_digests: loadPublishedPlanDigests(stateDir),
 				...options?.guardFacts,
 			};

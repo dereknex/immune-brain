@@ -25,7 +25,7 @@ import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 
 export const AGENT_SESSION_CONTRACT = "assurance_kernel/loop_agent_session/v1" as const;
 
-export type AgentSessionKind = "analysis" | "planning" | "repair" | "judging";
+export type AgentSessionKind = "clarify" | "planning" | "repair" | "judging";
 
 /** The loop roles a session runs as (Spec loop-agent-scheduling D1/D2). */
 export type AgentSessionRole = "judging" | "clarify" | "plan" | "repair";
@@ -44,9 +44,9 @@ export const ROLE_SESSION_LIMITS: Record<AgentSessionRole, { turn_budget: number
 	repair: { turn_budget: 40, timeout_ms: 900_000 },
 };
 
-/** A session kind runs as the role that owns it; analysis is the plan role's read-only probe. */
+/** A session kind runs as the role that owns it (Spec D1/D2). */
 const ROLE_OF_KIND: Record<AgentSessionKind, AgentSessionRole> = {
-	analysis: "plan",
+	clarify: "clarify",
 	planning: "plan",
 	judging: "judging",
 	repair: "repair",

@@ -1,0 +1,317 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s7-clarify-plan",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s7-clarify-plan",
+    "goal": "Replace analysis with a clarify stage that asks through the Interaction protocol and resumes on the answer, pass its framing to planning, correct the a15 handler mapping, and drive every intent of an approved plan as one batch, per D8 of docs/specs/loop-agent-scheduling.spec.md.",
+    "acceptance": [
+      {
+        "id": "S7-AC1",
+        "assertion": "Source BR-SCN-1, BR-DEC-6; meet D8 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts with fake GitHub and session ports. Done looks like: a clarify result with questions posts exactly one clarify_question comment, the work item waits in awaiting_input, and an allowlisted reply re-runs clarify with the answer and then plans. Negative: a non-allowlisted reply does not resume. Bound: a tick with no answer posts nothing new.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S7-AC2",
+        "assertion": "Source BR-GAP-A2, BR-GAP-A3; meet D8 mapping bullets in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts and tests/loop-daemon-schedule-plan.test.ts. Done looks like: clear_single_task goes to plan, needs_initiative_decomposition goes to plan with a decomposition instruction, needs_clarification goes to clarify, and the plan prompt contains the clarify framing (scopes, seams, risks, acceptance).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\",\n      \"tests/loop-daemon-schedule-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S7-AC3",
+        "assertion": "Source BR-GAP-A4; meet D8 batch bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts. Done looks like: a two-intent plan approved by its plan digest is enrolled and driven as one batch covering both intents. Negative: an approval whose digest differs from the published plan enrolls nothing.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s7-clarify-plan.md",
+      "docs/plans/loop-sched-s7-clarify-plan.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts",
+      "plugins/immune-brain/runtime/loop_daemon/handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/loop-daemon-agent-handlers.test.ts",
+      "tests/loop-daemon-schedule-plan.test.ts",
+      "tests/loop-sched-clarify-plan.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s7-clarify-plan.intent.json",
+    "content_hash": "sha256:df5cd8e097225dd301f8bd2f48d20384ad06abd6a5cdb2e0e49a89bb8894e863"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:df5cd8e097225dd301f8bd2f48d20384ad06abd6a5cdb2e0e49a89bb8894e863",
+  "git_base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+  "attestations": [
+    {
+      "id": "approval-qa-63932848",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:df5cd8e097225dd301f8bd2f48d20384ad06abd6a5cdb2e0e49a89bb8894e863",
+      "diff_hash": "sha256:3e6db6cab8ee6f8de8e435d85a245c6abd5e89c5b829e1bf26f371419f68a3b6",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:fa22fe921a55dac2c67cc4876e21b5f274bd7d37bbcc1fc655502d54f3ce597f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fa22fe921a55dac2c67cc4876e21b5f274bd7d37bbcc1fc655502d54f3ce597f"
+        },
+        {
+          "acceptance_id": "S7-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fa22fe921a55dac2c67cc4876e21b5f274bd7d37bbcc1fc655502d54f3ce597f"
+        },
+        {
+          "acceptance_id": "S7-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:fa22fe921a55dac2c67cc4876e21b5f274bd7d37bbcc1fc655502d54f3ce597f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7245ed31",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:df5cd8e097225dd301f8bd2f48d20384ad06abd6a5cdb2e0e49a89bb8894e863",
+      "diff_hash": "sha256:32599fc98f150841afa7f4ae4caf4416ac8809cf89b67fec58509c4664474fcf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:43ba8aad69693fdc6a17b4b6a205a8e9b80b6b9100ef871078f0247d3f202999",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S7-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43ba8aad69693fdc6a17b4b6a205a8e9b80b6b9100ef871078f0247d3f202999"
+        },
+        {
+          "acceptance_id": "S7-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43ba8aad69693fdc6a17b4b6a205a8e9b80b6b9100ef871078f0247d3f202999"
+        },
+        {
+          "acceptance_id": "S7-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:43ba8aad69693fdc6a17b4b6a205a8e9b80b6b9100ef871078f0247d3f202999"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-b304ea84",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:df5cd8e097225dd301f8bd2f48d20384ad06abd6a5cdb2e0e49a89bb8894e863",
+      "diff_hash": "sha256:32599fc98f150841afa7f4ae4caf4416ac8809cf89b67fec58509c4664474fcf",
+      "actor_id": "cli:claude-code:c2fe53ab-0788-4fcb-b36a-c378e2270774",
+      "summary": "Provenance verified (b259e8f7 has the single parent 28027170 and tree f9f999ec; each antigravity copy has the same blob OID as its plugins/immune-brain copy). D8 delivered: clarify posts one clarify_question through the github Interaction channel and parks the item in awaiting_input, E3 routes to apply_clarify_reply, the a15 mapping and plan-prompt framing are fixed, and every intent of an approved plan is enrolled and driven in one job. Blast radius medium: loop_daemon agent_handlers.ts, judgement.ts and the persisted work_items.ts transition table (planning->clarifying added).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+        "review_commit": "b259e8f7c766f8d91ef7fe6adce8f2ab3acbfca3",
+        "review_tree": "f9f999ec2d4ec6db51ffbc337879c6e77d215603",
+        "manifest_digest": "sha256:3a9b292fa3562bf24822da74dc8f717114f54b7c2db747697ec011e72f799141"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-03a5f9e7bb55-1-review-1",
+          "acceptance_id": "S7-AC1",
+          "summary": "recordWorkItemOutcome runs before dispatch and moves the item from awaiting_input to clarifying for apply_clarify_reply. If the handler then fails (the poll is not answered or the clarify session fails), the item stays in clarifying, and pendingClarifyInteractions only counts awaiting_input items, so a later valid reply never resumes it.",
+          "anchor": "sha256:34dc35516571ffdb0da5b5ea28636df6704ecd8cf7894bf7370fecd24745b1fe",
+          "evidence": {
+            "trigger": "An allowlisted E3 comment whose channel.poll returns stale or pending (for example the Issue was edited after the question was posted), or a clarify session that exits nonzero → the work item is left in clarifying with the pending interaction still set; the next allowlisted reply gets pending_clarify undefined, and judgement returns null instead of apply_clarify_reply",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts:1115 recordWorkItemOutcome",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts recordWorkItemOutcome",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts applyClarifyReply",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts pendingClarifyInteractions",
+              "plugins/immune-brain/runtime/loop_daemon/judgement.ts matchTier1 E3_OWNER_COMMENT"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S7-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-03a5f9e7bb55-2-review-2",
+          "acceptance_id": "S7-AC1",
+          "summary": "applyClarifyReply passes only the latest polled answer to runClarify, so a second clarify round drops the first round's answer from the prompt and from the answers_digest cache key.",
+          "anchor": "sha256:cc0fc29fe7fc2d8e6c496d5acb75e76eb97913483c980ee481bd74486fa05e69",
+          "evidence": {
+            "trigger": "clarify asks Q1, the owner answers A1, clarify with [A1] asks Q2, the owner answers A2 → clarify runs with answers=[A2] only; A1 is missing from the prompt and the session may ask Q1 again",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts applyClarifyReply",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts clarifyThenPlan",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts runClarify"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S7-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-03a5f9e7bb55-3-review-3",
+          "acceptance_id": "S7-AC3",
+          "summary": "The batch drive job records only the first Lane's exit, so only the first intent's PR opens after settlement. The code comment marks this as a known shortcut deferred to D6; it is outside S7-AC3's done condition, which covers only enrollment and driving.",
+          "anchor": "sha256:7a2d97e51878fae30cc491e41dd3383ad997442e85039f5f73e750aadfe5abb3",
+          "evidence": {
+            "trigger": "A two-intent plan is approved and both Lanes settle → the job's exit carries only firstExit, so E13 and open_pr cover s7-batch-one only, and the second intent's settled commit gets no PR",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts enrollAndDrive",
+              "plugins/immune-brain/runtime/loop_daemon/jobs.ts startLoopJob"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S7-AC3"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:02316c6ba87fc28887c92c1087b671765607684dadab7b32f9a59575658cbc94"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-dea487fe7e93-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S7-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "When clarify returns questions during draft_plan, the item cannot move to awaiting_input, so the owner's allowlisted reply is never routed to apply_clarify_reply and the Issue stays stuck in planning.",
+      "anchor": "sha256:89baa2214758a3d58607812c8b53cc6e94c70496d84abd6e77aba6afb5a438f7",
+      "evidence": {
+        "trigger": "An Issue that a15 judges clear_single_task or needs_initiative_decomposition, or that carries the ready-for-agent label with no published plan, goes to draft_plan. cli.ts recordWorkItemOutcome runs before dispatch and moves the item from triage to planning. In clarifyThenPlan the clarify session returns {\"questions\":[...]}, so askClarify posts the clarify_question comment and calls parkOnClarifyQuestion. WORK_ITEM_TRANSITIONS.planning lists only plan_published and escalated, so advanceWorkItem refuses planning→awaiting_input and the item stays in planning with pending_interactions set. The handler still reports 'work item awaits the answer'. On the next tick pendingClarifyInteractions skips the item because its state is not awaiting_input. matchTier1 then finds no pending_clarify entry for the owner's allowlisted E3 reply and returns null. The reply goes to the a19 Tier-2 path and never reaches apply_clarify_reply: clarify does not re-run with the answer and no plan is drafted. The S7 tests only cover the questions path through clarify_issue, which enters clarifying first; no test pins the draft_plan path. Fix the transition, for example by moving planning to clarifying before parking or by having the chain own the clarifying state, and add a test where draft_plan's clarify asks a question and a later allowlisted reply resumes.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts#triageIssue",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts#recordWorkItemOutcome",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts#clarifyThenPlan",
+          "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts#askClarify",
+          "plugins/immune-brain/runtime/loop_daemon/work_items.ts#parkOnClarifyQuestion",
+          "plugins/immune-brain/runtime/loop_daemon/work_items.ts#pendingClarifyInteractions",
+          "plugins/immune-brain/runtime/loop_daemon/judgement.ts#matchTier1"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S7-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s7-clarify-plan:2026-11-15T11:01:15.146Z",
+      "at": "2026-11-15T11:01:15.146Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s7-clarify-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s7-clarify-plan:2026-11-15T11:01:39.495Z",
+      "at": "2026-11-15T11:01:39.495Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-63932848\naction_v2_sha256:a737f269da390aa7a1bbc4afa0e0dbc19f6b673262176d1d473dd14041e3ebd3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T11:01:39.496Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-sched-s7-clarify-plan:2026-11-15T12:44:34.728Z",
+      "at": "2026-11-15T12:44:34.728Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:ef2637d37ec141be5437bf41e4de1e82cff7d3e87bdd2cc692df1b6ba7602b30",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:a124570f-9b44-4d1b-9b6d-10b3f286a2ad",
+        "confirmation_ref": "pi:cli:claude-code:a124570f-9b44-4d1b-9b6d-10b3f286a2ad",
+        "issued_at": "2026-11-15T12:44:34.728Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "28027170f1fd2fd55d2d53efaddb236dd50aa997",
+        "review_commit": "022dd7fb5e6c337f4404cb7ebbb3218723960cca",
+        "review_tree": "a664a46ef89fb9709269c5f1f4d968504eb718f7",
+        "manifest_digest": "sha256:d7ef54ce7ab7126af2e81981c690620433ccfbb24ad355fe32b48c7c252697c5"
+      },
+      "review_started_at": "2026-11-15T11:02:37.947Z",
+      "review_submitted_at": "2026-11-15T12:44:33.499Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s7-clarify-plan:2026-11-15T12:47:11.077Z",
+      "at": "2026-11-15T12:47:11.077Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-dea487fe7e93-1-review-1\naction_v2_sha256:10c57e443f8cdf9b09c0dbc6aef662a3a44f937f7c9b1cafcf14d6a5ea92f670"
+    },
+    {
+      "id": "freeze_artifacts:loop-sched-s7-clarify-plan:2026-11-15T12:47:29.641Z",
+      "at": "2026-11-15T12:47:29.641Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s7-clarify-plan.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s7-clarify-plan:2026-11-15T12:47:52.142Z",
+      "at": "2026-11-15T12:47:52.142Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7245ed31\naction_v2_sha256:37e847634f7c1a0fc7e2ad47d8dd49c5de14e12663ce3512655ed9150a3f2426",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T12:47:52.142Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s7-clarify-plan:2026-11-15T12:50:04.962Z",
+      "at": "2026-11-15T12:50:04.962Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-b304ea84\naction_v2_sha256:749ab8881d372e09df5842fdd5b3a99db9792c00d060a8b31e8ab54f4abc845d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:c2fe53ab-0788-4fcb-b36a-c378e2270774",
+        "confirmation_ref": "pi:cli:claude-code:c2fe53ab-0788-4fcb-b36a-c378e2270774",
+        "issued_at": "2026-11-15T12:50:04.962Z"
+      },
+      "review_started_at": "2026-11-15T12:47:57.352Z",
+      "review_submitted_at": "2026-11-15T12:50:03.610Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s7-clarify-plan:2026-11-15T12:50:08.827Z",
+      "at": "2026-11-15T12:50:08.827Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:a178a7b41316aabf55a4f6d1ffae02af4f0d3cd2f5427a093f5e67db0c854e9d"
+    }
+  ]
+}

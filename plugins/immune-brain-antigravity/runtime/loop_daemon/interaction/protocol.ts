@@ -12,6 +12,8 @@
  * and 12 already grant; everything else is a notice.
  */
 
+import { createHash } from "node:crypto";
+
 export const INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
 
 export type InteractionKind =
@@ -117,6 +119,41 @@ export function localOnlyNotice(input: {
 		answer: "none",
 		authority: interactionAuthority("notice"),
 	};
+}
+
+/**
+ * The `clarify` question of one Issue (D8): the questions are the whole prompt,
+ * the answer is free text and the request is advisory, so any allowlisted answer
+ * re-runs `clarify` with it.
+ */
+export function clarifyQuestionRequest(input: {
+	issue_number: number;
+	questions: readonly string[];
+	issue_revision: string;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: clarifyInteractionId(input.issue_number, input.questions),
+		kind: "clarify_question",
+		subject: { issue: input.issue_number },
+		binding: { issue_revision: input.issue_revision },
+		prompt: [
+			`Issue #${input.issue_number} needs clarification before it can be planned:`,
+			"",
+			input.questions.map((question, index) => `${index + 1}. ${question}`).join("\n"),
+		].join("\n"),
+		answer: "free_text",
+		authority: interactionAuthority("clarify_question"),
+	};
+}
+
+/**
+ * One clarify question set per Issue: the idempotency key is stable for the same
+ * questions, so a tick that observes no answer posts nothing new (D8).
+ */
+export function clarifyInteractionId(issueNumber: number, questions: readonly string[]): string {
+	const digest = createHash("sha256").update(`${issueNumber}\n${questions.join("\n")}`).digest("hex");
+	return `clarify:issue-${issueNumber}:${digest.slice(0, 12)}`;
 }
 
 /** The binding fields whose value moved since the request was posted; empty means unchanged. */
