@@ -1,0 +1,211 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s6-async-drive",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s6-async-drive",
+    "goal": "Run drive and agent sessions as background jobs that hold their lease until terminal, add job_finished and lane_settled events, resume enrolled tasks instead of re-enrolling, record the settled commit and verification digest, and open the PR on settlement, per D6 of docs/specs/loop-agent-scheduling.spec.md.",
+    "acceptance": [
+      {
+        "id": "S6-AC1",
+        "assertion": "Source BR-SCN-6, BR-GAP-5, BR-GAP-B1, BR-GAP-B2, BR-GAP-B3, BR-GAP-B5; meet D6 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts and tests/loop-daemon-drive-pr.test.ts with a fake Lane that settles after more than one tick. Done looks like: an approved task's drive outlives the tick, a later tick observes lane_settled from the Kernel projection, the exit record carries final_commit_sha and the verification digest, and open_pr opens the pull request with no second approval. Negative: a settlement without a commit digest opens no PR and records failed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\",\n      \"tests/loop-daemon-drive-pr.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S6-AC2",
+        "assertion": "Source BR-GAP-B4; meet D6 re-entry bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts. Done looks like: re-entry for an enrolled nonterminal task resumes through drive_dispatcher. Negative: no enrollment is attempted for a task whose TaskRecord exists. Bound: a job whose pid is dead with no outcome is marked lost, retried once, then escalated.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S6-AC3",
+        "assertion": "Source BR-GAP-1, BR-GAP-D; meet D6 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-async-drive.test.ts and tests/loop-daemon-dispatch.test.ts. Done looks like: tick returns while a job runs and an owner command arriving meanwhile is handled on the next tick. Negative: with max_concurrent jobs running, the next agent candidate is held. Bound: the lease is released only when the job record is terminal.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-async-drive.test.ts\",\n      \"tests/loop-daemon-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s6-async-drive.md",
+      "docs/plans/loop-sched-s6-async-drive.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts",
+      "plugins/immune-brain/runtime/loop_daemon/events.ts",
+      "plugins/immune-brain/runtime/loop_daemon/exit_recorder.ts",
+      "plugins/immune-brain/runtime/loop_daemon/jobs.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/observer.ts",
+      "plugins/immune-brain/runtime/loop_daemon/pr_opener.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/loop-daemon-dispatch.test.ts",
+      "tests/loop-daemon-drive-pr.test.ts",
+      "tests/loop-sched-async-drive.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s6-async-drive.intent.json",
+    "content_hash": "sha256:4d289a93c94e4f2266d969eda005353d6cc29611c5e9c40f756aa44bdf2b4291"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4d289a93c94e4f2266d969eda005353d6cc29611c5e9c40f756aa44bdf2b4291",
+  "git_base_head": "ae176a54a97f9200f45174a166ded20bcfc8eed9",
+  "attestations": [
+    {
+      "id": "approval-qa-32bd68dd",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4d289a93c94e4f2266d969eda005353d6cc29611c5e9c40f756aa44bdf2b4291",
+      "diff_hash": "sha256:10044bd017990b8ebb204b1089c859b101ba96543dba12192335bdd9e09cce2a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:7bc99dc25af44aa534e108560e862c653aefbe2ea78055a0eab45f5919336d43",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S6-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7bc99dc25af44aa534e108560e862c653aefbe2ea78055a0eab45f5919336d43"
+        },
+        {
+          "acceptance_id": "S6-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7bc99dc25af44aa534e108560e862c653aefbe2ea78055a0eab45f5919336d43"
+        },
+        {
+          "acceptance_id": "S6-AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:7bc99dc25af44aa534e108560e862c653aefbe2ea78055a0eab45f5919336d43"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-6c58047f",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4d289a93c94e4f2266d969eda005353d6cc29611c5e9c40f756aa44bdf2b4291",
+      "diff_hash": "sha256:10044bd017990b8ebb204b1089c859b101ba96543dba12192335bdd9e09cce2a",
+      "actor_id": "cli:claude-code:65ffc64e-16c9-4e7b-af65-2db542e7f60a",
+      "summary": "D6 delivered: enroll_and_drive starts a background job that keeps its lease until the job record is terminal; reconcile marks dead-pid jobs lost and releases the lease; E12/E13 drive open_pr with no re-approval; open_pr fails when final_commit_sha is missing; re-entry resumes an existing TaskRecord without enrolling again; tests cover multi-tick settle, owner command mid-job, max_concurrent hold, and lost retry then escalate; the antigravity copies have the same blob OIDs as the primary files; blast radius medium (dispatch.ts lease finally, agent_handlers.ts enroll_and_drive, new persisted .imm/state/loop/jobs/<target>.json shape).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "ae176a54a97f9200f45174a166ded20bcfc8eed9",
+        "review_commit": "ac278d7e8514cbd8f401e7647b941eb93546dc48",
+        "review_tree": "2b19e39540c8b543bdcb1b0b22f85981614fea60",
+        "manifest_digest": "sha256:701c29d403052fb86e2a1dad28ce5e70a3b7e898c7e091ba0b6e7f399815f3f6"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-cce3b6bc7654-1-review-1",
+          "acceptance_id": "S6-AC2",
+          "summary": "Re-entry checks only that a TaskRecord exists, not that it is nonterminal as D6 says, so a stopped or done task is resumed and started as a drive job.",
+          "anchor": "sha256:f5ce3115dec2b9dc541247e0f757ec549ad7452b8d9c69daba146b4c95676944",
+          "evidence": {
+            "trigger": "enroll_and_drive for an Issue whose TaskRecord exists in a terminal lifecycle → readTaskRecordRaw(...).record is set, so the handler skips enrollment and starts a drive job for that task; the expected outcome is a refusal or escalation",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions",
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:createAgentHandlerPort enroll_and_drive",
+              "plugins/immune-brain/runtime/loop_daemon/jobs.ts:startLoopJob"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S6-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-cce3b6bc7654-2-review-2",
+          "acceptance_id": "S6-AC1",
+          "summary": "The production settled_facts in driveSingleTaskLane reads final_commit_sha from git rev-parse HEAD in the Lane, not from the Kernel projection, and no test covers it: every S6 test uses a fake drive that writes its own exit record.",
+          "anchor": "sha256:5847e2a4b3e13245b47529b22224e855020b11740edd5bcb62d77277399edfca",
+          "evidence": {
+            "trigger": "a real drive whose batch completes after the Lane worktree has moved or been removed → git rev-parse fails, final_commit_sha is null, and open_pr records failed for a real delivery; no test exercises this path",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts:driveSingleTaskLane",
+              "plugins/immune-brain/runtime/loop_daemon/drive_dispatcher.ts:dispatchLoopDrive",
+              "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions open_pr"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S6-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-cce3b6bc7654-3-review-3",
+          "acceptance_id": "S6-AC2",
+          "summary": "startLoopJob adds 1 to any earlier record's attempts, including a settled or failed one, so the attempt count keeps growing across unrelated jobs on the same target.",
+          "anchor": "sha256:a0c440b98e962cffaac19a5a7d5c0fdf019484fc25cb2c56ea2b6a910cb5a10e",
+          "evidence": {
+            "trigger": "a target whose first drive job settled (attempts 1) gets a later job that is lost → that job has attempts 2 = LOOP_JOB_MAX_ATTEMPTS and escalates on its first loss instead of retrying once",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/jobs.ts:startLoopJob",
+              "plugins/immune-brain/runtime/loop_daemon/jobs.ts:loopJobEvents",
+              "plugins/immune-brain/runtime/loop_daemon/judgement.ts:matchTier1 E12_JOB_FINISHED"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S6-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:71dce63a602c609fd23f01ea3c93ff853785fcdb52bdc19229a3692fbc484584"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s6-async-drive:2026-11-15T05:16:02.769Z",
+      "at": "2026-11-15T05:16:02.769Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s6-async-drive.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s6-async-drive:2026-11-15T05:16:25.733Z",
+      "at": "2026-11-15T05:16:25.733Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-32bd68dd\naction_v2_sha256:65304819bf9f251f460d0dc3a4dd008c7d72fce15c79059221f4310174a4fbed",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T05:16:25.733Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s6-async-drive:2026-11-15T08:25:11.216Z",
+      "at": "2026-11-15T08:25:11.216Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-6c58047f\naction_v2_sha256:a42094babd11708d2818355b36ec1f307317f910a506eb851275b1bf46c3bb37",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:65ffc64e-16c9-4e7b-af65-2db542e7f60a",
+        "confirmation_ref": "pi:cli:claude-code:65ffc64e-16c9-4e7b-af65-2db542e7f60a",
+        "issued_at": "2026-11-15T08:25:11.216Z"
+      },
+      "review_started_at": "2026-11-15T05:16:29.249Z",
+      "review_submitted_at": "2026-11-15T08:25:10.297Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s6-async-drive:2026-11-15T08:25:13.874Z",
+      "at": "2026-11-15T08:25:13.874Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:318dd1d1a94d8cc9f4109fa2174f6f88edbb4ac8980174cedf659cdbce451c4c"
+    }
+  ]
+}

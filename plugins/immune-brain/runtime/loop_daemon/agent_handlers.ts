@@ -68,6 +68,7 @@ import {
 } from "./agent_runner.ts";
 import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
+import { startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import type { GuardFacts } from "./guards.ts";
 import type { LoopDecisionRecord } from "./decision_record.ts";
@@ -81,7 +82,6 @@ import {
 	type PlanIntentDraft,
 	type PlanIntentSummary,
 } from "./plan_drafter.ts";
-import { openLoopPullRequest } from "./pr_opener.ts";
 import {
 	DEFAULT_REPAIR_RETRY_CAP,
 	addressPrReview,
@@ -765,85 +765,96 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const intent = deps.readIntent(taskId);
 		if (!intent) return { outcome: "failed", detail: `task intent is not readable: ${taskId}` };
 
-		const confirmation = await resolveConfirmation(context, issue, plan, intent);
-		if (!confirmation.ok) {
-			const escalated = await escalateOnce(
-				context,
-				"enroll_rejected",
-				`issue-${issue.number}`,
-				confirmation.reason,
-				`Enrollment refused for #${issue.number}: ${confirmation.reason}`,
-			);
-			return { outcome: "failed", detail: `${confirmation.reason} (${escalated})` };
-		}
-
 		// Driving belongs to the process that owns `loopDaemonSupervisor`.
 		if (!context.standing_daemon)
 			return {
 				outcome: "requires_standing_daemon",
-				detail: `enroll_and_drive drives ${taskId} only inside imm-loop run (${confirmation.source} verified)`,
+				detail: `enroll_and_drive drives ${taskId} only inside imm-loop run`,
 			};
+
+		// D6 re-entry: an enrolled, nonterminal TaskRecord resumes; re-entry never
+		// mints a second nonce for a task the Kernel already holds.
+		const enrolled = readTaskRecordRaw(context.root, taskId);
+		let confirmationSource: string | null = null;
+		let confirmationRef = `resume:${taskId}`;
+		let recordRevision = enrolled.revision;
+		if (!enrolled.record) {
+			const resolved = await resolveConfirmation(context, issue, plan, intent);
+			if (!resolved.ok) {
+				const escalated = await escalateOnce(
+					context,
+					"enroll_rejected",
+					`issue-${issue.number}`,
+					resolved.reason,
+					`Enrollment refused for #${issue.number}: ${resolved.reason}`,
+				);
+				return { outcome: "failed", detail: `${resolved.reason} (${escalated})` };
+			}
+			confirmationSource = resolved.source;
+			confirmationRef = resolved.confirmation_ref;
+			try {
+				const record = await deps.enroll({
+					root: context.root,
+					task_id: taskId,
+					intent,
+					plan_digest: plan.digest,
+					confirmation_ref: resolved.confirmation_ref,
+					confirmation: resolved.input,
+					now: now(),
+				});
+				recordRevision = record.record_revision;
+			} catch (error) {
+				return {
+					outcome: "failed",
+					detail: `enrollment failed for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
+				};
+			}
+		}
 
 		const baseHead = deps.head({ root: context.root, cwd: context.root });
 		if (!baseHead) return { outcome: "failed", detail: "enroll_and_drive could not read the repository HEAD" };
 
-		let recordRevision: string;
-		try {
-			const enrolled = await deps.enroll({
-				root: context.root,
-				task_id: taskId,
-				intent,
-				plan_digest: plan.digest,
-				confirmation_ref: confirmation.confirmation_ref,
-				confirmation: confirmation.input,
-				now: now(),
-			});
-			recordRevision = enrolled.record_revision;
-		} catch (error) {
-			return {
-				outcome: "failed",
-				detail: `enrollment failed for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
-			};
-		}
-
-		const driven = await deps.drive({
-			root: context.root,
-			task_id: taskId,
-			intent,
-			plan_digest: plan.digest,
-			confirmation_ref: confirmation.confirmation_ref,
-			base_head: baseHead,
-			now: now(),
-		});
-		if (!driven.settled) return { outcome: "failed", detail: `lane did not settle: ${driven.reason}` };
-		const exit = driven.exit;
-		if (!exit || exit.state !== "exited" || exit.exit_code !== 0)
-			return {
-				outcome: "failed",
-				detail: `executor exit is not a delivery: ${exit ? `state=${exit.state} exit_code=${exit.exit_code}` : "no exit recorded"}`,
-			};
-		if (!exit.verification_evidence_digest)
-			return { outcome: "failed", detail: `executor exit carries no verification evidence for ${taskId}` };
-
-		const opened = await openLoopPullRequest(
+		// D6: the drive runs as a background job that holds its lease until the
+		// record is terminal; the tick returns here and `open_pr` runs on E13.
+		const job = startLoopJob(
+			context.stateDir,
 			{
-				slug: taskId,
+				kind: "drive",
+				target_id: `issue-${issue.number}`,
 				task_id: taskId,
 				issue_number: issue.number,
-				risk: intent.risk,
-				base: deps.baseBranch(context.root),
-				title: `imm(${taskId}): deliver #${issue.number}`,
-				verification_summary: [
-					`Verification evidence digest: \`${exit.verification_evidence_digest}\``,
-					`Commit SHA: \`${exit.final_commit_sha ?? "unknown"}\``,
-				].join("\n"),
+				expected_output: "executor_exit_record",
+				now: now(),
 			},
-			context.gitHubPort,
+			async () => {
+				const driven = await deps.drive({
+					root: context.root,
+					task_id: taskId,
+					intent,
+					plan_digest: plan.digest,
+					confirmation_ref: confirmationRef,
+					base_head: baseHead,
+					now: now(),
+				});
+				const exit = driven.exit;
+				const settled =
+					driven.settled &&
+					exit?.state === "exited" &&
+					exit.exit_code === 0 &&
+					Boolean(exit.verification_evidence_digest);
+				return {
+					outcome: settled ? ("settled" as const) : ("failed" as const),
+					detail: settled
+						? `lane settled (generation ${exit?.generation}, commit ${exit?.final_commit_sha ?? "unknown"}, digest ${exit?.verification_evidence_digest})`
+						: `lane did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
+					exit: exit ?? null,
+				};
+			},
 		);
 
 		return {
 			outcome: "executed",
-			detail: `enrolled ${taskId} via ${confirmation.source} (record ${recordRevision}); drove the Lane to settlement (generation ${exit.generation}, exit ${exit.exit_code}); opened PR #${opened.number} on ${opened.branch}`,
+			detail: `started drive job ${job.job_id} for ${taskId} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
 		};
 	}
 
@@ -1364,8 +1375,31 @@ async function driveSingleTaskLane(
 					: {}),
 			},
 			run_id: input.task_id,
-			final_commit_sha: null,
-			verification_evidence: null,
+			// D6: the exit record carries what the settled Kernel projection reports,
+			// not the `null` the drive used to record before it knew.
+			settled_facts: async (settledReport, laneExit) => {
+				if (settledReport.batch_state !== "completed") return { final_commit_sha: null, verification_evidence: null };
+				const lanePath = (laneExit as { lane_path?: string } | null)?.lane_path;
+				const head = lanePath ? git(lanePath, ["rev-parse", "HEAD"]) : null;
+				const final_commit_sha = head?.status === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null;
+				let projection: Awaited<ReturnType<typeof projectAssurance>>["projection"] | null = null;
+				try {
+					projection = (await projectAssurance(lanePath ?? input.root, input.task_id)).projection;
+				} catch {
+					projection = null;
+				}
+				return {
+					final_commit_sha,
+					verification_evidence: projection
+						? JSON.stringify({
+							lifecycle: projection.lifecycle,
+							record_revision: projection.record_revision,
+							fresh_acceptance_ids: projection.fresh_acceptance_ids,
+							completion_ready: projection.completion_ready,
+						})
+						: null,
+				};
+			},
 			state_dir: context.stateDir,
 		});
 		return {

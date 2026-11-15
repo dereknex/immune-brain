@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "loop-sched-s6-async-drive",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:loop-sched-s6-async-drive:2026-11-15T08:25:13.874Z",
+  "final_record_hash": "sha256:9c3650146c83777d353ce977e62dd322aba7e1098d0acef82540607363139240",
+  "terminalized_at": "2026-11-15T08:25:13.874Z"
+}

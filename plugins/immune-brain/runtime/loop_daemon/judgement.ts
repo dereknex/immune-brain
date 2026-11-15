@@ -31,6 +31,7 @@ import {
 	firstBlock,
 } from "./guards.ts";
 import { isLoopHandler, type LoopHandler } from "./handlers.ts";
+import { LOOP_JOB_MAX_ATTEMPTS } from "./jobs.ts";
 import type { JudgingAgentFn, JudgingContext, JudgingDecision } from "./judging_agent.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
@@ -327,6 +328,16 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 			return event.status === "merged"
 				? decided("close_out", "daemon PR merged")
 				: decided("mark_pr_ready", "daemon PR ready for owner merge");
+		case "E12_JOB_FINISHED":
+			// D6: a lost job is restarted once; the second loss is owner-visible.
+			if (event.outcome === "lost")
+				return event.attempts < LOOP_JOB_MAX_ATTEMPTS
+					? decided("enroll_and_drive", `job ${event.job_id} was lost; restarting it once`)
+					: decided("escalate", `job ${event.job_id} was lost ${event.attempts} times`);
+			if (event.outcome === "settled") return decided("noop_record", `job ${event.job_id} settled; E13 opens the PR`);
+			return decided("escalate", `job ${event.job_id} failed: ${event.detail}`);
+		case "E13_LANE_SETTLED":
+			return decided("open_pr", "lane settled with a Kernel projection");
 		default:
 			return null;
 	}

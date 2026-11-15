@@ -49,6 +49,7 @@ import { readExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/ex
 import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
+import { readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
 import { LOOP_PR_MARKER, repairKey, saveRepairRetries } from "../plugins/immune-brain/runtime/loop_daemon/repair_agent.ts";
 import { initLoopState, loadLoopDispatches } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import {
@@ -461,6 +462,16 @@ function jsonPayload(stdout: string): any {
 	return JSON.parse(stdout);
 }
 
+/** Wait for the background job to write its terminal outcome (D6). */
+async function settleJob(stateDir: string, targetId: string): Promise<void> {
+	for (let attempt = 0; attempt < 200; attempt += 1) {
+		const job = readLoopJob(stateDir, targetId);
+		if (job && job.outcome !== null) return;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	throw new Error(`job ${targetId} never reached a terminal outcome`);
+}
+
 const s9IssueClassifier = async (point: string) => {
 	if (point === "a18_event_prefilter") return { status: "decided" as const, choice: "actionable", confidence: 0.95 };
 	if (point === "a15_task_granularity") return { status: "decided" as const, choice: "clear_single_task", confidence: 0.9 };
@@ -591,10 +602,49 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		// The Lane was driven to settlement and the Executor exit was recorded.
 		expect(harness.drives).toHaveLength(1);
 		expect(harness.drives[0]!.plan_digest).toBe(plan!.digest);
+
+		// D6: the drive is a background job, so this tick returned before it settled.
+		expect(readLoopJob(workspace.stateDir, "issue-10")?.outcome).toBeNull();
+		await settleJob(workspace.stateDir, "issue-10");
+
+		// The published plan's intent is on the repository, where `open_pr` reads it.
+		mkdirSync(join(workspace.root, "docs", "plans"), { recursive: true });
+		writeFileSync(
+			join(workspace.root, "docs", "plans", `${PLAN_TASK_ID}.intent.json`),
+			JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: PLAN_TASK_ID,
+				owner: "user",
+				goal: "Add the S9 fixture behaviour",
+				acceptance: [{ id: "AC1", assertion: "the fixture task delivers", verification: "{\"contract\":\"x\"}" }],
+				scope_hint: ["src/"],
+				risk: "routine",
+				revision: 1,
+			}),
+		);
+
+		// Tick 3: the settled job becomes E13 and opens the PR without a second approval.
+		const third = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(),
+			gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
+			agentPort: harness.port,
+			standingDaemon: true,
+		});
+		expect(third.returncode).toBe(0);
+		const thirdPayload = jsonPayload(third.stdout);
+		expect(thirdPayload.dispatches).toHaveLength(1);
+		expect(thirdPayload.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "executed" });
+		expect(thirdPayload.dispatches[0].detail).toContain("opened PR");
+		expect(harness.enrollments).toHaveLength(1);
+
 		const exitRecord = readExecutorExit(workspace.stateDir, PLAN_TASK_ID);
 		expect(exitRecord).not.toBeNull();
 		expect(exitRecord).toMatchObject({ state: "exited", exit_code: 0, run_id: "run-s9" });
 		expect(exitRecord!.verification_evidence_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(exitRecord!.final_commit_sha).toBe("d".repeat(40));
 
 		// The PR opened on `imm/<slug>`.
 		const opens = harness.gitHubPort.calls.filter((call) => call.method === "upsert");
@@ -603,11 +653,10 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(opened.head).toBe(`imm/${PLAN_TASK_ID}`);
 		expect(opened.body).toContain(LOOP_PR_MARKER);
 		expect(opened.body).toContain("Closes #10");
-		expect(secondPayload.dispatches[0].detail).toContain("opened PR");
 
-		// Both dispatches are on disk with their outcomes.
+		// Every dispatch is on disk with its outcome.
 		const dispatched = loadLoopDispatches(workspace.stateDir).map((entry) => entry.outcome);
-		expect(dispatched).toEqual(["executed", "executed"]);
+		expect(dispatched).toEqual(["executed", "executed", "executed"]);
 	});
 
 	it("does not enroll an approval whose digest is not the published one", async () => {

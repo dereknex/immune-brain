@@ -2,7 +2,7 @@
  * Loop Daemon: Types and Schemas (S1)
  *
  * Implements S1 and D2 of docs/specs/loop-daemon.spec.md and ADR 0039.
- * Defines the state, lock, lease, and normalized events (E1-E11).
+ * Defines the state, lock, lease, and normalized events (E1-E13).
  */
 
 export const LOOP_DAEMON_STATE_CONTRACT = "assurance_kernel/loop_daemon_state/v1" as const;
@@ -23,7 +23,9 @@ export type LoopEventKind =
 	| "E8_PR_CHECK_FAILED"
 	| "E9_PR_CONFLICT"
 	| "E10_PR_REVIEW_COMMENT"
-	| "E11_PR_READY_OR_MERGED";
+	| "E11_PR_READY_OR_MERGED"
+	| "E12_JOB_FINISHED"
+	| "E13_LANE_SETTLED";
 
 export interface BaseLoopEvent {
 	contract: typeof LOOP_DAEMON_EVENT_CONTRACT;
@@ -152,6 +154,27 @@ export interface E11PRReadyOrMergedEvent extends BaseLoopEvent {
 	status: "ready" | "merged";
 }
 
+/** A background job (D6) reached a terminal outcome. */
+export interface E12JobFinishedEvent extends BaseLoopEvent {
+	kind: "E12_JOB_FINISHED";
+	issue_number: number;
+	task_id: string;
+	job_id: string;
+	outcome: "settled" | "failed" | "lost";
+	attempts: number;
+	detail: string;
+}
+
+/** A Lane settled, as the Kernel projection reported it; this is what opens the PR. */
+export interface E13LaneSettledEvent extends BaseLoopEvent {
+	kind: "E13_LANE_SETTLED";
+	issue_number: number;
+	task_id: string;
+	job_id: string;
+	final_commit_sha: string | null;
+	verification_evidence_digest: string | null;
+}
+
 export type NormalizedLoopEvent =
 	| E1NewIssueEvent
 	| E2IssueEditedEvent
@@ -163,7 +186,9 @@ export type NormalizedLoopEvent =
 	| E8PRCheckFailedEvent
 	| E9PRConflictEvent
 	| E10PRReviewCommentEvent
-	| E11PRReadyOrMergedEvent;
+	| E11PRReadyOrMergedEvent
+	| E12JobFinishedEvent
+	| E13LaneSettledEvent;
 
 export interface LoopLease {
 	contract: typeof LOOP_DAEMON_LEASE_CONTRACT;

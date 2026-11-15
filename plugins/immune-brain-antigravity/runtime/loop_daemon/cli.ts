@@ -39,6 +39,7 @@ import { dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } fr
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
+import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
 	createDecisionModelClassifier,
@@ -884,6 +885,13 @@ Options:
 			}
 
 			const recordedAt = new Date().toISOString();
+			// D6: a background job that reached a terminal outcome releases its lease and
+			// becomes E12 `job_finished` / E13 `lane_settled` on this tick. A dead pid
+			// with no outcome is `lost`, which the judgement retries once then escalates.
+			if (!isDryRun) {
+				reconcileLoopJobs(stateDir, { now: recordedAt });
+				obs.events.push(...loopJobEvents(stateDir, { now: recordedAt }));
+			}
 			let declaredNoTouch: string[];
 			try {
 				declaredNoTouch = readNoTouch(absoluteRoot);

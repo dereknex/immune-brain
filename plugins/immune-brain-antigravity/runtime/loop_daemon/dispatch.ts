@@ -48,6 +48,7 @@ import { readExecutorExit } from "./exit_recorder.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { JudgingAgentFn } from "./judging_agent.ts";
+import { activeLoopJob } from "./jobs.ts";
 import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
@@ -951,6 +952,17 @@ export async function dispatchDecisions(
 					continue;
 				}
 
+				// D6 negative control: a settlement with no commit digest is not a delivery.
+				if (!exitRecord.final_commit_sha) {
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"failed",
+						`executor exit has no final commit sha for ${taskId}`,
+					);
+					continue;
+				}
+
 				const baseBranch = detectBaseBranch(options.root);
 				const acceptanceSummary = (intent.acceptance ?? [])
 					.map((ac: any) => `- ${ac.id}: ${ac.assertion}`)
@@ -1091,7 +1103,14 @@ export async function dispatchDecisions(
 				error?.message || String(error),
 			);
 		} finally {
-			if (acquiredNewLease && lease && decision.handler !== "close_out") {
+			// D6: a job holds its target's lease until its record is terminal, so the
+			// next tick still counts this target as one of `max_concurrent`.
+			if (
+				acquiredNewLease &&
+				lease &&
+				decision.handler !== "close_out" &&
+				activeLoopJob(stateDir, lease.target_id) === null
+			) {
 				releaseLoopLease(stateDir, lease.target_id, { host_token: lease.host_token });
 			}
 		}
