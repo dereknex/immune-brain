@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s4-dead-loop-daemon",
+  "owner": "user",
+  "goal": "remove-redundant-checks S4 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The loop daemon and decision-model contract no longer export code that no production path reaches: the S4 symbols in the Spec table are deleted together with test cases whose only subject is a deleted symbol, and private helpers left unreferenced. Observable behavior is unchanged. Delegated choices: docs/specs/loop-daemon.spec.md keeps its historical GAP-7 mention; the release changeset is a patch entry.",
+  "acceptance": [
+    {
+      "id": "RC-S4-A1",
+      "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S4 symbols and exits 1; an error exit fails.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1\",\n      \"sh\",\n      \"-e\",\n      \"clearRepairAttempt\",\n      \"-e\",\n      \"dispatchRepair\",\n      \"-e\",\n      \"heartbeatLoopLease\",\n      \"-e\",\n      \"reclaimExpiredLeases\",\n      \"-e\",\n      \"parsePlanDigest\",\n      \"-e\",\n      \"capabilityRefusal\",\n      \"-e\",\n      \"getCachedDaemonGithubLogin\",\n      \"-e\",\n      \"MIN_CLASSIFIER_CONFIDENCE\",\n      \"-e\",\n      \"DECISION_CHOICE_MARKER_PREFIX\",\n      \"-e\",\n      \"assertApplicationPointId\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S4-A2",
+      "assertion": "The surviving loop daemon and decision-model tests pass: repair, schedule and plan, config and comms, judge, contracts and decision model; the regenerated Claude bundle and Antigravity mirror match source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-daemon-repair.test.ts\",\n      \"tests/loop-daemon-schedule-plan.test.ts\",\n      \"tests/loop-daemon-config-comms.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\",\n      \"tests/loop-daemon-contracts.test.ts\",\n      \"tests/decision-model.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S4-A3",
+      "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s4-dead-loop-daemon.md",
+    "docs/plans/rrc-s4-dead-loop-daemon.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "plugins/immune-brain/runtime/decision_model/contract.ts",
+    "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+    "plugins/immune-brain/runtime/loop_daemon/identity.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "plugins/immune-brain/runtime/loop_daemon/leases.ts",
+    "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+    "plugins/immune-brain/runtime/loop_daemon/repair_agent.ts",
+    "tests/decision-model.test.ts",
+    "tests/loop-daemon-config-comms.test.ts",
+    "tests/loop-daemon-contracts.test.ts",
+    "tests/loop-daemon-judge.test.ts",
+    "tests/loop-daemon-repair.test.ts",
+    "tests/loop-daemon-schedule-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}
