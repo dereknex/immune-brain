@@ -350,7 +350,7 @@ describe("internal role-prompt bridge", () => {
 			"(Claude Code) runs it as a Host background command, so its return re-invokes the Parent",
 			"runs it in the foreground with `--timeout-ms 600000`",
 			"Start it only after the create reported `entry_submitted: true` and `state: \"working\"`",
-			"a `blocked` or `working` session is refused (`state_refused`) and receives nothing",
+			"only when accepted does the Parent submit it",
 			"The Parent sends that tab no keys and no prompt",
 			"a relaunch submits the entry again in the same tab instead of creating another",
 			"The Parent adds no permission or trust option of its own",

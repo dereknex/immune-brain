@@ -636,7 +636,10 @@ describe("plugin package runtime cutover parity", () => {
 			expect(contract).toContain("fresh claimless");
 			expect(contract).toContain("completed");
 			expect(contract).toContain("not planned");
-			expect(contract).toMatch(/never (use it|treat (it|them)) as evidence/);
+			// The projection never blocking or counting as evidence is the coordinator's
+			// own behaviour (Spec remove-redundant-checks S5 I31).
+			expect(contract).toContain("tracker failure separately");
+			expect(contract).not.toContain("never use it as evidence");
 			expect(contract).not.toContain("Enrollment projects `active`");
 		}
 		expect(existsSync(join(REPO_ROOT, "plugins/immune-brain/runtime/github_issue_tracker.ts"))).toBe(true);
