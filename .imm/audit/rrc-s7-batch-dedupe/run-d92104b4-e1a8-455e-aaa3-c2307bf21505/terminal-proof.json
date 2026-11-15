@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "rrc-s7-batch-dedupe",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:rrc-s7-batch-dedupe:2026-11-15T07:57:26.727Z",
+  "final_record_hash": "sha256:6abe07e4f6d84d6f009450a1face10dbf26eebaba74cb35f659db8c5121386f9",
+  "terminalized_at": "2026-11-15T07:57:26.727Z"
+}

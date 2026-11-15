@@ -1,0 +1,45 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s1-dead-kernel",
+  "owner": "user",
+  "goal": "remove-redundant-checks S1 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The Kernel and store layer no longer export code that no production path reaches: the S1 symbols in the Spec table and the whole module runtime/kernel/canary_eligibility.ts are deleted together with test cases whose only subject is a deleted symbol, the package.json import-map entry and the derived-files.json mirror output entry. Private helpers left unreferenced by a deletion go too. Observable behavior is unchanged. Delegated choices: a test file whose every case goes is deleted; historical fixtures under tests/fixtures stay unchanged; the release changeset is a patch entry.",
+  "acceptance": [
+    {
+      "id": "RC-S1-A1",
+      "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S1 symbols, nor kernel/canary_eligibility, and exits 1; an error exit fails.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1; test ! -e plugins/immune-brain/runtime/kernel/canary_eligibility.ts\",\n      \"sh\",\n      \"-e\",\n      \"stateWorkspacePath\",\n      \"-e\",\n      \"stateClaimPath\",\n      \"-e\",\n      \"stateStoreLockPath\",\n      \"-e\",\n      \"stateTransactionPath\",\n      \"-e\",\n      \"batchCommitEvidencePath\",\n      \"-e\",\n      \"LEGACY_CLAIM_RELATIVE\",\n      \"-e\",\n      \"JOURNAL_RELATIVE\",\n      \"-e\",\n      \"KERNEL_DB_SIDECARS\",\n      \"-e\",\n      \"FILE_STORE_MIGRATION_MARKER\",\n      \"-e\",\n      \"kernelStoreExists\",\n      \"-e\",\n      \"readActiveRun\",\n      \"-e\",\n      \"listTerminalRuns\",\n      \"-e\",\n      \"readStoreBytes\",\n      \"-e\",\n      \"writeStoreBytes\",\n      \"-e\",\n      \"inspectImportState\",\n      \"-e\",\n      \"appendObservationJournalEntry\",\n      \"-e\",\n      \"terminalProofRunId\",\n      \"-e\",\n      \"touchesChangedPathFloor\",\n      \"-e\",\n      \"TASK_ACTION_CONTRACT\",\n      \"-e\",\n      \"assertNoKernelBackendForV3\",\n      \"-e\",\n      \"evaluateCanaryEligibility\",\n      \"-e\",\n      \"kernel/canary_eligibility\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S1-A2",
+      "assertion": "The surviving tests of the touched Kernel modules pass: backend claim, Pi canary prepare, Pi canary lifecycle package composition (import map lists every module the extensions still use), Pi canary package boundary, storage layout migration, terminal transaction and risk floor; the regenerated Claude bundle and Antigravity mirror match source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-backend-claim.test.ts\",\n      \"tests/kernel-pi-canary-prepare.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/pi-canary-package-boundary.test.ts\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/kernel-canary-terminal-transaction.test.ts\",\n      \"tests/risk-tier-floor.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S1-A3",
+      "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s1-dead-kernel.md",
+    "docs/agents/derived-files.json",
+    "docs/plans/rrc-s1-dead-kernel.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "package.json",
+    "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+    "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+    "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+    "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+    "plugins/immune-brain/runtime/kernel/storage.ts",
+    "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+    "plugins/immune-brain/runtime/kernel/types.ts",
+    "tests/kernel-backend-claim.test.ts",
+    "tests/kernel-canary-eligibility.test.ts",
+    "tests/kernel-pi-canary-live-boundary.test.ts",
+    "tests/kernel-pi-canary-prepare.test.ts",
+    "tests/pi-canary-lifecycle-package.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

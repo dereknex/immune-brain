@@ -14,10 +14,6 @@ import {
 	type PiCanaryPreparation,
 } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
 import { reconcileKernelAuthority } from "../plugins/immune-brain/runtime/kernel/storage";
-import {
-	evaluateCanaryEligibility,
-	type CanaryWaiver,
-} from "../plugins/immune-brain/runtime/kernel/canary_eligibility";
 
 function git(root: string, args: string[]): void {
 	execFileSync("git", args, { cwd: root, stdio: "ignore" });
@@ -88,17 +84,6 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function baseWaiver(): CanaryWaiver {
-	return {
-		gate: "observation_window_days",
-		task_id: TASK,
-		reason: "user risk acceptance",
-		actor: "user",
-		confirmation_ref: "confirm-ref-1",
-		nonce: "nonce-1",
-	};
-}
-
 describe("pi canary prepare read-only identity", () => {
 	test("shared authority projection reports the empty workspace as unowned", () => {
 		expect(reconcileKernelAuthority(root, TASK)).toMatchObject({
@@ -110,22 +95,6 @@ describe("pi canary prepare read-only identity", () => {
 	test("malformed task id rejects", () => {
 		expect(() => preparePiCanary(root, { task_id: "../evil", now: "2026-08-12T00:00:00.000Z" })).toThrow(/task id/);
 		expect(() => preparePiCanary(root, { task_id: "a/b", now: "2026-08-12T00:00:00.000Z" })).toThrow(/task id/);
-	});
-
-	test("missing intent rejects eligibility (v4: kernel-owner only)", () => {
-		const now = "2026-08-12T00:00:00.000Z";
-		const prep = preparePiCanary(root, { task_id: TASK, now });
-		expect(prep.evidence).toBeUndefined();
-		const eligibility = evaluateCanaryEligibility({
-			task: {
-				id: TASK,
-				intent_path: "docs/plans/123-short-goal.intent.json",
-				intent_revision: 1,
-				intent_content_hash: prep.intent?.content_hash ?? "",
-			},
-			now,
-		});
-		expect(eligibility.eligible).toBe(true);
 	});
 
 	test("preparation aggregates canonical owners and is deterministic", () => {
@@ -187,86 +156,6 @@ describe("pi canary prepare read-only identity", () => {
 		expect(module).not.toContain("runEnrollmentRehearsal");
 		expect(module).not.toContain("enrollCanaryTask");
 	});
-});
-
-describe("canary eligibility waiver policy", () => {
-	test("synthetic candidate without waiver is eligible", () => {
-		const result = evaluateCanaryEligibility({
-			readiness: {
-				contract: "assurance_kernel/readiness_report/v1",
-				status: "candidate",
-				observer_version: 2,
-				epoch_started_at: "2026-07-29T00:00:00.000Z",
-				window_started_at: "2026-07-29T00:00:00.000Z",
-				window_days: 14,
-				receipts_v2_count: 30,
-				observations_v2_count: 30,
-				reconciled_terminal_count: 30,
-				lifecycle_count: 3,
-				families_covered: ["execution", "review", "termination"],
-				families_missing: [],
-				gaps: [],
-				legacy_counts: { receipts_v1: 0, observations_v1: 0 },
-				migration_digest: { presented: "sha256:1", current: "sha256:1", match: true },
-				rollback_rehearsal: { present: true, result: "passed", at: "2026-08-10T00:00:00.000Z" },
-				generated_at: "2026-08-12T00:00:00.000Z",
-			} as never,
-			evidence: { status: "valid", bundle: {
-				contract: "assurance_kernel/readiness_evidence/v1",
-				generated_at: "2026-08-10T00:00:00.000Z",
-				migration_dry_run: { digest: "sha256:1", writes_performed: false },
-				rollback_rehearsal: {
-					result: "passed",
-					at: "2026-08-10T00:00:00.000Z",
-					summary: "rehearsed",
-					receipt_record_ids: ["sha256:1"],
-				},
-			} },
-			task: {
-				id: TASK,
-				intent_path: "docs/plans/123-short-goal.intent.json",
-				intent_revision: 1,
-				intent_content_hash: "sha256:abc",
-			},
-			now: "2026-08-12T00:00:00.000Z",
-		});
-		expect(result.eligible).toBe(true);
-	});
-
-	test("synthetic collecting report with waiver is rejected (v4: waiver retired)", () => {
-		const result = evaluateCanaryEligibility({
-			readiness: { contract: "assurance_kernel/readiness_report/v1", status: "collecting", gaps: [{ code: "window_too_short", reference: null, detail: "2 days" }] } as never,
-			evidence: { status: "valid" } as never,
-			task: {
-				id: TASK,
-				intent_path: "docs/plans/123-short-goal.intent.json",
-				intent_revision: 1,
-				intent_content_hash: "sha256:abc",
-			},
-			waiver: baseWaiver(),
-			now: "2026-08-12T00:00:00.000Z",
-		});
-		expect(result.eligible).toBe(false);
-		expect(result.rejections).toContain("waiver route retired");
-	});
-
-	test("non-waivable gates with waiver are rejected (v4: waiver retired)", () => {
-		const result = evaluateCanaryEligibility({
-			readiness: { contract: "assurance_kernel/readiness_report/v1", status: "blocked", gaps: [{ code: "missing_observation", reference: "r1", detail: "missing" }] } as never,
-			evidence: { status: "valid" } as never,
-			task: {
-				id: TASK,
-				intent_path: "docs/plans/123-short-goal.intent.json",
-				intent_revision: 1,
-				intent_content_hash: "sha256:abc",
-			},
-			waiver: baseWaiver(),
-			now: "2026-08-12T00:00:00.000Z",
-		});
-		expect(result.eligible).toBe(false);
-		expect(result.rejections).toContain("waiver route retired");
-	});
-
 });
 
 // keep type import used for TS

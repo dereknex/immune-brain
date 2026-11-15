@@ -1,0 +1,34 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s7-batch-dedupe",
+  "owner": "user",
+  "goal": "remove-redundant-checks S7 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S7; U2, U3). The unattended batch layer drops positiveLimit, whose input every production entry already validates with parseMaxParallel, and merges the two topological traversals of batch_preflight.ts and batch_schedule.ts into one shared helper; each caller keeps its current error text, and batch_authority.ts keeps its own DFS. Lane instruction and session close parsing stay as they are. Execution posture: characterization-first. Delegated choices: the shared helper lives in batch_schedule.ts.",
+  "acceptance": [
+    {
+      "id": "RC-S7-A1",
+      "assertion": "In tests/unattended-batch-schedule.test.ts and tests/unattended-batch-lanes.test.ts, a two-Task cycle and a blocker naming an unknown Task are rejected by the preflight path with Initiative dependencies contain a cycle or unknown Task and by projectParallelGroups with Initiative Task dependencies must form an acyclic graph; parallel groups for a diamond and a chain are unchanged.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S7-A2",
+      "assertion": "In tests/unattended-batch-schedule.test.ts and tests/unattended-batch-lanes.test.ts, startableChildren returns the same children for limits 1, 2, Infinity and above the child count, and parseMaxParallel still throws for 0, -1, 1.5 and a string.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S7-A3",
+      "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s7-batch-dedupe.md",
+    "docs/plans/rrc-s7-batch-dedupe.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+    "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+    "tests/unattended-batch-lanes.test.ts",
+    "tests/unattended-batch-schedule.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -50,7 +50,6 @@
   "imports": {
     "#kernel/enrollment_authority": "./plugins/immune-brain/runtime/kernel/enrollment_authority.ts",
     "#kernel/pi_canary_prepare": "./plugins/immune-brain/runtime/kernel/pi_canary_prepare.ts",
-    "#kernel/canary_eligibility": "./plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
     "#kernel/enrollment": "./plugins/immune-brain/runtime/kernel/enrollment.ts",
     "#kernel/authority_port": "./plugins/immune-brain/runtime/kernel/authority_port.ts",
     "#kernel/canary_application": "./plugins/immune-brain/runtime/kernel/canary_application.ts",

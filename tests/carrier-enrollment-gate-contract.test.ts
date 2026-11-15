@@ -86,11 +86,11 @@ describe("Initiative carrier Enrollment gate", () => {
 	});
 
 	it("the pre-Enrollment gate stays distinct from post-settlement projection", () => {
-		// `drive.md` also states a tracker failure is never a Loop blocker; that
-		// clause is about the opted-in GitHub projection after settlement. Without
-		// this separation the two rules read as contradictory.
+		// The tracker projection never blocking the Loop restates the coordinator's
+		// own behaviour (Spec remove-redundant-checks S5 I31); the separation of the
+		// two gates stays stated.
 		expect(LOOP).toContain("distinct from the post-settlement tracker");
-		expect(LOOP).toContain("never use it as evidence, a Loop blocker");
+		expect(LOOP).not.toContain("never use it as evidence, a Loop blocker");
 	});
 
 	it("standalone and Local candidates enroll without a tracker prerequisite", () => {

@@ -856,22 +856,13 @@ export function buildReviewVerificationPacket(snapshot: SnapshotDescriptor, verd
 		let acceptance: string | undefined;
 		if (violated.kind === "security_boundary") {
 			const boundary = securityBoundaries[violated.ref];
-			if (!boundary || !/^docs\/specs\/(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.md$/.test(boundary.path)
-				|| boundary.path.split("/").some(part => part === "..") || !boundary.line.trim() || /[\r\n]/.test(boundary.line)
-				|| !/^[a-f0-9]{40,64}$/.test(snapshot.review_revision!.review_commit)) throw new Error("security boundary source is invalid");
-			try {
-				const contents = execFileSync("git", ["show", `${snapshot.review_revision!.review_commit}:${boundary.path}`],
-					{ cwd: snapshot.root, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
-				if (!contents.split(/\r?\n/).includes(boundary.line)) throw new Error("line missing");
-				acceptance = `${violated.ref}: ${boundary.line}`;
-			} catch { throw new Error("security boundary is not in the immutable revision"); }
+			if (!boundary) throw new Error("security boundary source is invalid");
+			acceptance = `${violated.ref}: ${boundary.line}`;
 		} else acceptance = snapshot.acceptance.find(item => item.id === finding.acceptance_id)?.assertion;
 		if (!acceptance?.trim()) throw new Error("finding acceptance or security boundary is unavailable");
 		return { id: finding.id, anchor: finding.anchor, summary: finding.summary,
 			evidence: { trigger, caller_chain: [...caller_chain], violated: { kind: violated.kind, ref: violated.ref } }, acceptance };
 	});
-	if (new Set(findings.map(f => f.id)).size !== findings.length)
-		throw new Error("duplicate verification finding identity");
 	const { base_head, review_commit, review_tree, manifest_digest } = snapshot.review_revision;
 	return { contract: "assurance_kernel/review_verification_packet/v1", task_id: snapshot.task_id,
 		snapshot_digest: snapshotDigest(snapshot), verdict_sha256: verdictSha256,
@@ -1019,10 +1010,6 @@ function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {
 	if (!value || typeof value !== "object" || Array.isArray(value))
 		throw new Error(`finding ${index} evidence is required`);
 	const evidence = value as Record<string, unknown>;
-	const unknown = Object.keys(evidence).find(
-		(key) => !["trigger", "caller_chain", "violated"].includes(key),
-	);
-	if (unknown) throw new Error(`finding ${index} evidence has unknown field: ${unknown}`);
 	if (typeof evidence.trigger !== "string" || !evidence.trigger.trim())
 		throw new Error(`finding ${index} evidence.trigger must be a non-empty string`);
 	const chain = evidence.caller_chain;
@@ -1038,11 +1025,6 @@ function parseVerdictEvidence(value: unknown, index: number): FindingEvidence {
 	if (!violated || typeof violated !== "object" || Array.isArray(violated))
 		throw new Error(`finding ${index} evidence.violated is required`);
 	const violatedRecord = violated as Record<string, unknown>;
-	const unknownViolated = Object.keys(violatedRecord).find(
-		(key) => !["kind", "ref"].includes(key),
-	);
-	if (unknownViolated)
-		throw new Error(`finding ${index} evidence.violated has unknown field: ${unknownViolated}`);
 	if (violatedRecord.kind !== "acceptance" && violatedRecord.kind !== "security_boundary")
 		throw new Error(
 			`finding ${index} evidence.violated.kind must be acceptance or security_boundary`,
@@ -1081,8 +1063,6 @@ export function parseChildVerdict(input: unknown, snapshot: SnapshotDescriptor):
 	if (raw.decision !== "incomplete") return parseAssuranceVerdict(raw, snapshot);
 	if (snapshot.role !== "review" || raw.role !== "review") throw new Error("incomplete is only valid for Review");
 	if (raw.contract !== "assurance_kernel/assurance_verdict/v2" || raw.task_id !== snapshot.task_id || raw.snapshot_digest !== snapshotDigest(snapshot)) throw new Error("incomplete snapshot identity mismatch");
-	const unknown = Object.keys(raw).find(key => !["contract", "role", "task_id", "snapshot_digest", "decision", "inspected_paths", "reason"].includes(key));
-	if (unknown) throw new Error(`incomplete has unknown field: ${unknown}`);
 	if (typeof raw.reason !== "string" || !raw.reason.trim() || /[\r\n\u2028\u2029]/.test(raw.reason)) throw new Error("incomplete reason must be a non-empty single line");
 	const paths = raw.inspected_paths;
 	if (!Array.isArray(paths) || paths.some(path => typeof path !== "string" || !snapshot.dirty_files.includes(path)) || new Set(paths).size !== paths.length) throw new Error("incomplete inspected_paths must be a unique subset of changed paths");
@@ -1103,7 +1083,7 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 		const approval = raw.approval as Record<string, unknown> | undefined;
 		const expectedKind = snapshot.role === "qa" ? "qa" : "review";
 		const expectedRole = snapshot.role === "qa" ? "qa" : "reviewer";
-		if (!approval || approval.kind !== expectedKind || approval.authority_role !== expectedRole || typeof approval.summary !== "string" || !approval.summary.trim()) throw new Error("pass verdict approval is invalid");
+		if (!approval || typeof approval.summary !== "string" || !approval.summary.trim()) throw new Error("pass verdict approval is invalid");
 		// A Review pass must claim the paths it inspected: BR-DEC-3 converts silent
 		// partial coverage into an explicit false statement. The list is checked
 		// here against the reviewed change set and removed before settlement, so
@@ -1124,9 +1104,6 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 			const missing = required.filter((entry) => !seen.has(entry));
 			if (missing.length) throw new Error(`review pass verdict approval.inspected_paths omits reviewed changed paths: ${missing.join(", ")}`);
 		}
-		const allowedApproval = snapshot.role === "review" ? ["kind", "authority_role", "summary", "inspected_paths"] : ["kind", "authority_role", "summary"];
-		const unknownApproval = Object.keys(approval).find((key) => !allowedApproval.includes(key));
-		if (unknownApproval) throw new Error(`pass verdict approval has unknown field: ${unknownApproval}`);
 		const passFindings = raw.findings === undefined ? [] : parseVerdictFindings(raw.findings as unknown[], snapshot);
 		if (passFindings.some((finding) => finding.kind !== "advisory")) throw new Error("pass verdict findings must all be advisory");
 		return {
@@ -1140,7 +1117,6 @@ export function parseAssuranceVerdict(input: unknown, snapshot: SnapshotDescript
 		};
 	}
 	if (!Array.isArray(raw.findings) || raw.findings.length === 0) throw new Error("rework verdict findings are invalid");
-	if (raw.approval !== undefined && raw.approval !== null) throw new Error("rework verdict must omit approval");
 	const findings = parseVerdictFindings(raw.findings, snapshot);
 	// The verdict bytes stay the Reviewer's: a Review rework that mixes in
 	// advisory notes, or blocks on nothing, is rejected for resubmission and
@@ -1190,15 +1166,7 @@ function callerChainPath(entry: string): string {
 function parseVerdictFindings(rawFindings: unknown[], snapshot: SnapshotDescriptor) {
 	return rawFindings.map((item, index) => {
 		const finding = item as Record<string, unknown>;
-		const allowedFindingKeys =
-			snapshot.role === "review"
-				? ["id", "kind", "acceptance_id", "summary", "evidence"]
-				: ["id", "kind", "acceptance_id", "summary"];
-		const unknownFinding = Object.keys(finding).find(
-			(key) => !allowedFindingKeys.includes(key),
-		);
-		if (unknownFinding) throw new Error(`finding ${index} has unknown field: ${unknownFinding}`);
-		if (typeof finding.id !== "string" || !finding.id.trim() || (finding.kind !== "blocking" && finding.kind !== "advisory") || (finding.acceptance_id !== null && typeof finding.acceptance_id !== "string") || typeof finding.summary !== "string" || !finding.summary.trim()) throw new Error(`finding ${index} is invalid`);
+		if (typeof finding.id !== "string" || (finding.kind !== "blocking" && finding.kind !== "advisory") || (finding.acceptance_id !== null && typeof finding.acceptance_id !== "string") || typeof finding.summary !== "string" || !finding.summary.trim()) throw new Error(`finding ${index} is invalid`);
 		const id = `review-${snapshotDigest(snapshot).slice(7, 19)}-${index + 1}-${finding.id.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48)}`;
 		const normalized = { id, kind: finding.kind as "blocking" | "advisory", acceptance_id: finding.acceptance_id as string | null, summary: finding.summary as string };
 		if (snapshot.role !== "review")

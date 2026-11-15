@@ -36,7 +36,6 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import type { LoopHandler } from "../plugins/immune-brain/runtime/loop_daemon/handlers.ts";
 import {
-	capabilityRefusal,
 	detectIdentityPosture,
 	inspectDaemonIdentity,
 } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
@@ -223,7 +222,7 @@ describe("loop configuration block", () => {
 });
 
 describe("same-UID identity posture", () => {
-	it("degrades on the same UID, withholding policy_auto and merge_pr but not publication", () => {
+	it("degrades on the same UID", () => {
 		const posture = detectIdentityPosture({
 			daemon_uid: 501,
 			worktree_uid: 501,
@@ -231,11 +230,6 @@ describe("same-UID identity posture", () => {
 			worktree_shares_credentials: false,
 		});
 		expect(posture).toBe("degraded");
-		expect(capabilityRefusal(posture, "policy_auto")).toBe("same-UID degraded posture withholds policy_auto");
-		expect(capabilityRefusal(posture, "merge_pr")).toBe("merge_pr is human-only in every posture");
-		expect(capabilityRefusal(posture, "publish_plan")).toBeNull();
-		expect(capabilityRefusal(posture, "publish_question")).toBeNull();
-		expect(capabilityRefusal(posture, "observe")).toBeNull();
 	});
 
 	it("is isolated only behind a proven separate identity", () => {
@@ -246,8 +240,6 @@ describe("same-UID identity posture", () => {
 			worktree_shares_credentials: false,
 		});
 		expect(separate).toBe("isolated");
-		expect(capabilityRefusal(separate, "policy_auto")).toBeNull();
-		expect(capabilityRefusal(separate, "merge_pr")).not.toBeNull();
 
 		const sharedCredentials = detectIdentityPosture({
 			daemon_uid: 501,

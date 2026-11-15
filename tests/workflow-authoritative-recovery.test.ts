@@ -112,10 +112,6 @@ describe("S3 authoritative recovery consumer", () => {
 			"when it conflicts with the projection, correct the prose and resume the existing owner instead of trusting the summary",
 			"The workflow stages are distinct and never inferred from one another: authored, validated, published, enrolled, assured, and completed each require their own evidence",
 			"An open or closed Issue is not Enrollment or completion; a published Issue is not Enrollment; a plan-only delivery is not execution readiness",
-			"Consume a successful operation's fresh projection directly",
-			"Do not add a status read after an operation that already returned the current projection",
-			"never repeat a mutation merely to re-observe its result",
-			"Kernel CAS and freshness checks remain mandatory",
 			"A falsely claimed later-Slice enrollment is a summary defect, not authority",
 			"Retain the actual owner, and do not create or replay a mutation, gate, or completion to match the prose",
 			"Summary production outside this repository is not locally fixed",
@@ -124,9 +120,8 @@ describe("S3 authoritative recovery consumer", () => {
 			expect(contract).toContain(fragment);
 		}
 		// The pre-existing read-discipline and ownership rules are preserved.
-		expect(contract).toContain(
-			"Use the fresh projection returned by a successful operation when supplied",
-		);
+		// Fresh-projection reuse and the CAS requirement are Kernel behaviour
+		// (Spec remove-redundant-checks S5 I14), so only the Parent-side rules stay.
 		expect(contract).toContain("Read `status` after interruption, ambiguous mutation results, absent projections, or suspected external changes");
 		expect(contract).toContain("Do not poll or create detached jobs");
 		expect(contract).not.toContain("imm-autowork");
@@ -137,9 +132,8 @@ describe("S3 authoritative recovery consumer", () => {
 		expect(contract).toContain(
 			"Submit the rework verdict first, then edit",
 		);
-		expect(contract).toContain(
-			"staging an in-scope change while the artifacts are frozen invalidates the snapshot and discards that verdict",
-		);
+		// Discarding a verdict staged over a frozen snapshot is the QA drift check
+		// plus C33 (Spec remove-redundant-checks S5 I11), not a Loop restatement.
 		expect(contract).toContain(
 			"Every line reports authority evidence, not prose inference",
 		);

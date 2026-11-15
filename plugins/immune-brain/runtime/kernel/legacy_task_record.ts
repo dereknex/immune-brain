@@ -8,8 +8,6 @@
 import {
 	TASK_PHASES,
 	TASK_RECORD_CONTRACT_V2,
-	type ApprovalAuthorityRole,
-	type ApprovalKind,
 	type AuthorityAuditDescriptor,
 	type EvidenceStatus,
 	type TaskFinding,
@@ -22,7 +20,6 @@ import {
 import { canonicalIntentHash, parseTaskIntentV1 } from "./intent";
 import {
 	EVIDENCE_STATUSES,
-	KernelInvariantError,
 	KernelValidationError,
 	SHA256_HEX,
 	arrayAt,
@@ -293,31 +290,4 @@ export function parseTaskRecordV2(raw: unknown): TaskRecordV2 {
 /** Strict v3 drain parser: unknown fields and revision identity stay illegal. */
 export function parseTaskRecordV3(raw: unknown): TaskRecordV3 {
 	return parseTaskRecordAtVersion(raw, 3) as TaskRecordV3;
-}
-
-export function assertKernelInvariantsV2(
-	intentRaw: TaskIntentV1,
-	recordRaw: TaskRecordV2,
-): void {
-	const intent = parseTaskIntentV1(intentRaw);
-	const record = parseTaskRecordV2(recordRaw);
-	const violations: string[] = [];
-	if (intent.task_id !== record.task_id)
-		violations.push("intent and record task_id must match");
-	if (intent.revision !== record.intent_revision)
-		violations.push("intent revision and record intent_revision must match");
-	if (canonicalIntentHash(record.intent_snapshot) !== record.intent_ref.content_hash)
-		violations.push("record intent_ref.content_hash must match its snapshot");
-	const requiredRole: Record<ApprovalKind, ApprovalAuthorityRole> = {
-		review: "reviewer",
-		qa: "qa",
-		user: "user",
-	};
-	for (const approval of record.approvals) {
-		if (approval.authority_role !== requiredRole[approval.kind])
-			violations.push(
-				`approval ${approval.id} kind ${approval.kind} requires authority_role ${requiredRole[approval.kind]}`,
-			);
-	}
-	if (violations.length > 0) throw new KernelInvariantError(violations);
 }

@@ -363,8 +363,6 @@ export type IntentRevisionClass =
 	| "compatible"
 	| "breaking";
 
-export const TASK_ACTION_CONTRACT = "assurance_kernel/task_action/v2" as const;
-
 export type MutationAuthorityKind = "review" | "qa" | "user";
 
 export interface AuthorityAuditDescriptor {

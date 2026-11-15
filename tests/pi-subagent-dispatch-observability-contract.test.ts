@@ -79,7 +79,9 @@ test("canonical Loop contract describes direct QA and Parent-mediated Review ver
 	expect(contract).toContain("advance_assurance");
 	expect(contract).toMatch(/foreground|前台/i);
 	expect(contract).toMatch(/submit_review|structured verdict/);
-	for (const statement of ["Provider quota", "Review budget exhaustion", "fresh QA", "recovery_action", "attestations[].advisory_findings"]) {
+	// Quota/interruption-is-not-budget-exhaustion and malformed-output-is-not-a-verdict
+	// are coordinator outcomes (Spec remove-redundant-checks S5 I28), not Loop text.
+	for (const statement of ["fresh QA", "recovery_action", "attestations[].advisory_findings"]) {
 		expect(contract).toContain(statement);
 	}
 	const batch = read("plugins/immune-brain/dist/drive-batch.md");

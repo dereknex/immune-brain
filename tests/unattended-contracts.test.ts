@@ -449,7 +449,9 @@ describe("unattended batch contract text", () => {
 	it("states that task QA runs in place against the frozen snapshot (ADR 0022)", () => {
 		const loop = LOOP_CONTRACT.replace(/\s+/g, " ");
 		expect(loop).toContain("Deterministic QA runs all descriptors in the task's working directory");
-		expect(loop).toContain("the tracked content inside the task's scope must equal the frozen snapshot");
+		// In-scope content parity is the QA drift check (Spec remove-redundant-checks S5 I9).
+		expect(loop).toContain("Content outside the scope, and untracked or ignored files, are the user's environment and are not compared");
+		expect(loop).not.toContain("must equal the frozen snapshot");
 		expect(loop).toContain("`protected_input_or_output_drift`");
 		expect(loop).not.toContain("disposable delivery");
 		const adrPath = resolve(REPO_ROOT, "docs/adr/0022-deterministic-qa-runs-in-place.md");
@@ -629,8 +631,11 @@ describe("unattended batch contract text", () => {
 		const batch = normalized(BATCH_CONTRACT);
 		expect(batch).toContain("Frozen acceptance remains the authority subject (ADR 0026)");
 		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
-		expect(batch).toContain("cannot approve revisions or reseal `plan_digest`");
-		expect(batch).toContain("those fields grant no current authority");
+		// No-reseal and delegation retirement are Kernel authority (S5 H4),
+		// stated once in the Loop contract.
+		const loop = normalized(LOOP_CONTRACT);
+		expect(loop).toContain("the coordinator cannot approve them or reseal the batch");
+		expect(loop).toContain("Existing records with delegation fields remain readable and retireable (ADR 0028)");
 		expect(batch).toContain("scope-only revision keeping the bound Spec path is compatible");
 		const state = read("plugins/immune-brain/runtime/unattended/batch_state.ts");
 		expect(state).toContain("Legacy v2 fields, preserved for reading and retirement only (D20)");

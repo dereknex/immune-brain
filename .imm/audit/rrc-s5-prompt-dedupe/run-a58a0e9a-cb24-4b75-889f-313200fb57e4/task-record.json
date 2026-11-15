@@ -1,0 +1,167 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s5-prompt-dedupe",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s5-prompt-dedupe",
+    "goal": "remove-redundant-checks S5 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S5; U1, U2, U5). The agent contracts stop restating rules that code already enforces: each S5 row's sentence is deleted from dist/drive.md, dist/drive-batch.md, skills/authority-review/SKILL.md and runtime/prompts/executor.md, I22 merges into I20, and I4 keeps its stop rule without the number. Every rule the Spec lists as prompt-only stays. Mirrors are regenerated with scripts/sync-dist-docs.ts and the plugin build scripts. The PR carries the Spec's anchor table re-read on its merge base. Delegated choices: one new contract test lists the deleted sentences and the kept prompt-only rules; existing contract tests that pin a deleted sentence are updated to the retained wording.",
+    "acceptance": [
+      {
+        "id": "RC-S5-A1",
+        "assertion": "In tests/prompt-dedupe-contract.test.ts, none of the deleted S5 sentences (I2, I3, I5, I9, I10, I11, I14, I15, I18, I22, I24, I25, I27, I28, I31, H2-H7, H9-H13, SKILL H1 and H5, PR1) occurs in its source file, drive.md states the unchanged-observation stop without a number, and each kept prompt-only rule (I1, I6, I7, I8, I12, I13, I16, I17, I19, I20, I21, I23, I26, I29, I30, K5, SKILL H10) still occurs; a fixture copy with one kept rule removed fails the check.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/prompt-dedupe-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S5-A2",
+        "assertion": "The existing contract tests that read the edited sources pass against the edited text and regenerated mirrors: phase-entry run contract, unattended contracts, baseline packaging, authoritative recovery, phase-entry gate, QA prepare diagnostics, carrier Enrollment gate, scope revision and role prompt bridge; the Antigravity mirror matches the edited sources.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/workflow-authoritative-recovery.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/qa-prepare-diagnostics.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/scope-revision-contract.test.ts\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s5-prompt-dedupe.md",
+      "docs/plans/rrc-s5-prompt-dedupe.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/dist/role-prompts/executor.md",
+      "plugins/immune-brain/runtime/prompts/executor.md",
+      "plugins/immune-brain/skills/authority-review/SKILL.md",
+      "tests/baseline-packaging-contract.test.ts",
+      "tests/carrier-enrollment-gate-contract.test.ts",
+      "tests/claude-phase-entry-gate.test.ts",
+      "tests/explicit-phase-entry-run-contract.test.ts",
+      "tests/prompt-dedupe-contract.test.ts",
+      "tests/qa-prepare-diagnostics.test.ts",
+      "tests/role-prompt-bridge.test.ts",
+      "tests/scope-revision-contract.test.ts",
+      "tests/unattended-contracts.test.ts",
+      "tests/workflow-authoritative-recovery.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s5-prompt-dedupe.intent.json",
+    "content_hash": "sha256:ff8e33a91c117bf943dfc43d928e77f1abf11eb0e517a34251889bca535e4bcd"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:ff8e33a91c117bf943dfc43d928e77f1abf11eb0e517a34251889bca535e4bcd",
+  "git_base_head": "476bb145d6919fbe7f0528209cc215219d2f2385",
+  "attestations": [
+    {
+      "id": "approval-qa-9eb07825",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff8e33a91c117bf943dfc43d928e77f1abf11eb0e517a34251889bca535e4bcd",
+      "diff_hash": "sha256:8a62b0787d117dc3b2f48ce055f45c2fcddf314ee14bce5ef09315ca1e594535",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:99f61db6bca7f579d897d605379c85af851f71c0d5c0aeefd97e4c37a8a0dfae",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S5-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:99f61db6bca7f579d897d605379c85af851f71c0d5c0aeefd97e4c37a8a0dfae"
+        },
+        {
+          "acceptance_id": "RC-S5-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:99f61db6bca7f579d897d605379c85af851f71c0d5c0aeefd97e4c37a8a0dfae"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-f69c0257",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:ff8e33a91c117bf943dfc43d928e77f1abf11eb0e517a34251889bca535e4bcd",
+      "diff_hash": "sha256:8a62b0787d117dc3b2f48ce055f45c2fcddf314ee14bce5ef09315ca1e594535",
+      "actor_id": "cli:claude-code:ddab6224-edda-41cd-a20b-fc110bc132b7",
+      "summary": "Provenance verified (single parent 476bb145, tree d75df333). The edits to drive.md, drive-batch.md, SKILL.md and executor.md delete only the S5 restating sentences and keep every prompt-only anchor, including K5 'never recommend another Host' and the drive.md no-reseal/delegation lines. The unchanged-observation stop has no number. The Antigravity, dist and role-prompt mirrors have the same blob OIDs as their sources. The updated contract tests assert the new text. Blast radius: medium; load-bearing paths are the canonical Loop/batch contracts and the authority-review SKILL contract hash.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "476bb145d6919fbe7f0528209cc215219d2f2385",
+        "review_commit": "7214e0ea5d2078ec6303284033c7910f4bd2c853",
+        "review_tree": "d75df33380db543ee3288ceee764de1f87140d4a",
+        "manifest_digest": "sha256:c63c5602f101b77cae2608c9778bf1f5d93ce019042894d35af77a9eaf878127"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-62332b164051-1-review-1",
+          "acceptance_id": "RC-S5-A1",
+          "summary": "Several legacy contract tests now carry not.toContain assertions for deleted S5 sentences (I2, I9, I10, I31) that tests/prompt-dedupe-contract.test.ts already pins through its DELETED table, so the same coverage exists twice.",
+          "anchor": "sha256:a1a7c0df2a1dd83919e98995d85f8725a722ba6239ecc916c31839ce9ed9c19c",
+          "evidence": {
+            "trigger": "Deleted sentences such as 'material and critical work additionally require fresh independent Review' are asserted absent both in baseline-packaging-contract.test.ts and in the prompt-dedupe DELETED table, so re-wording one source would require editing two tests for one retired behavior",
+            "caller_chain": [
+              "tests/prompt-dedupe-contract.test.ts",
+              "tests/baseline-packaging-contract.test.ts",
+              "tests/unattended-contracts.test.ts",
+              "tests/carrier-enrollment-gate-contract.test.ts",
+              "tests/explicit-phase-entry-run-contract.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S5-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:e5d302b00b3f1b23e29386199d85694743c64220077ca82757f682a090cb0cbb"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s5-prompt-dedupe:2026-11-15T05:20:52.222Z",
+      "at": "2026-11-15T05:20:52.222Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s5-prompt-dedupe.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s5-prompt-dedupe:2026-11-15T05:21:12.489Z",
+      "at": "2026-11-15T05:21:12.489Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9eb07825\naction_v2_sha256:cdf94a82f0cb3f1442e04a8bbe997337038e27ff5aa152f50a32c2f14393cfe9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T05:21:12.489Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s5-prompt-dedupe:2026-11-15T07:43:27.026Z",
+      "at": "2026-11-15T07:43:27.026Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-f69c0257\naction_v2_sha256:ece76a8b0d3d9140b016fc7e2d2ba0460bdc164ca0618c88364d3c8135a4f0bc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:ddab6224-edda-41cd-a20b-fc110bc132b7",
+        "confirmation_ref": "pi:cli:claude-code:ddab6224-edda-41cd-a20b-fc110bc132b7",
+        "issued_at": "2026-11-15T07:43:27.026Z"
+      },
+      "review_started_at": "2026-11-15T05:21:58.757Z",
+      "review_submitted_at": "2026-11-15T07:43:25.987Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s5-prompt-dedupe:2026-11-15T07:43:30.143Z",
+      "at": "2026-11-15T07:43:30.143Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:356660bb19e339ac8b4dd3cc9c24b9cf23ccfcd8803de5d55897c1a73fbb3071"
+    }
+  ]
+}

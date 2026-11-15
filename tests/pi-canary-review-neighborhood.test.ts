@@ -6,7 +6,6 @@ import { join } from "node:path";
 
 import {
 	captureReviewBundle,
-	verifyReviewBundle,
 } from "../plugins/immune-brain/.pi-extension/pi-canary-review-bundle.ts";
 import { taskDiffHash } from "../plugins/immune-brain/runtime/workspace_scope.ts";
 
@@ -54,10 +53,6 @@ describe("review semantic neighborhood", () => {
 			expect(sibling.base_oid).toBe(git(root, ["rev-parse", "HEAD:src/settle.ts"]));
 			expect(sibling.oid).toBe(sibling.base_oid);
 			expect(sibling.current_content).toContain("terminal");
-
-			const tampered = structuredClone(bundle);
-			tampered.neighborhood_files!["src/settle.ts"].current_content = "tampered";
-			expect(() => verifyReviewBundle(tampered)).toThrow(/digest mismatch/i);
 
 			writeFileSync(join(root, "src/settle.ts"), "mutated after capture\n");
 			rmSync(join(root, ".git"), { recursive: true, force: true });

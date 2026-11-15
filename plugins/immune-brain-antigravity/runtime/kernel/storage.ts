@@ -74,7 +74,6 @@ import {
 	KernelStoreSecurityError,
 	activeRunId,
 	appendJournalRow,
-	findJournalObservation,
 	insertOperationRow,
 	insertRunRow,
 	listPendingAuditExports,
@@ -1262,29 +1261,6 @@ export function appendJournalEntry(root: string, entry: JournalEntry): void {
 	});
 }
 
-export function appendObservationJournalEntry(
-	root: string,
-	entry: JournalEntry & { observation: V3AuthorityObservation },
-): "appended" | "duplicate" {
-	return withKernelTransaction(root, (db) => {
-		const existing = findJournalObservation(db, entry.observation.commit_id);
-		if (existing) {
-			if (existing.observation_id === entry.observation.observation_id) return "duplicate";
-			throw new KernelStoreConflictError(
-				`observation commit identity conflict: ${entry.observation.commit_id}`,
-			);
-		}
-		appendJournalRow(
-			db,
-			JSON.stringify(entry),
-			entry.task_id,
-			entry.observation.commit_id,
-			entry.observation.observation_id,
-		);
-		return "appended";
-	});
-}
-
 // ---------------------------------------------------------------------------
 // Locked transaction boundary.
 // ---------------------------------------------------------------------------
@@ -1488,11 +1464,6 @@ export function assertCapabilityRun(
 		throw new KernelStoreSecurityError(
 			`${operation} authority was issued for run ${capabilityRunId} but this worktree holds run ${current.run_id}`,
 		);
-}
-
-export function terminalProofRunId(proof: TaskTombstone): string | null {
-	const value = (proof as unknown as { run_id?: unknown }).run_id;
-	return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function claimBytesFromRun(run: KernelRunRow): string {

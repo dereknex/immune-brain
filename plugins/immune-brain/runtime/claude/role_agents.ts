@@ -1,5 +1,3 @@
-import type { InternalRole } from "../role_prompt_bridge";
-
 /**
  * Claude plugin agent definitions for the read-only internal roles.
  *
@@ -67,18 +65,3 @@ export const CLAUDE_READONLY_TOOLS = ["Read", "Grep", "Glob"] as const;
 export const CLAUDE_HOST_PROVIDED_ROLE_AGENTS = {
 	"arch-explorer": { agent: "Explore" },
 } as const satisfies Record<string, { agent: string }>;
-
-/**
- * Roles that are not dispatched as native Claude agents.
- *
- * `code-review` ships its own definition with a wider allowlist (it must run
- * read-only Git commands), so it is not part of this table. The remaining roles
- * write: `executor`, `test-fixer` and `pr-fix` mutate the workspace,
- * `compounder` writes learning storage, and `lane-steward` supplies and
- * releases a separate working tree. A write-capable role stays bounded by its
- * dispatch envelope and the Parent, not by an agent definition.
- */
-export const CLAUDE_NATIVE_AGENT_ROLES = new Set<InternalRole>([
-	...CLAUDE_READONLY_ROLES,
-	...(Object.keys(CLAUDE_HOST_PROVIDED_ROLE_AGENTS) as InternalRole[]),
-]);

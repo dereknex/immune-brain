@@ -208,17 +208,3 @@ export function serializeTaskTombstone(tombstone: TaskTombstone): string {
 	return `${JSON.stringify(tombstone, null, 2)}\n`;
 }
 
-/**
- * v3 routing guard: while a workspace-active Kernel claim exists (active or
- * draining) for ANY task, canonical v3 managed mutations must fail closed.
- * A terminal task leaves no workspace claim (only an immutable task tombstone),
- * so v3 routing for unrelated tasks is released. Read-only commands are
- * unaffected.
- */
-export function assertNoKernelBackendForV3(root: string, _commandTask?: string): void {
-	const claim = readBackendClaim(root);
-	if (!claim) return;
-	throw new KernelBackendClaimError(
-		`backend-owned workspace: task ${claim.task_id} is managed by the Kernel backend (${claim.lifecycle_status}); v3 managed mutation is rejected`,
-	);
-}

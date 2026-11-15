@@ -21,7 +21,7 @@ Review handoff under the same still-valid batch authorization. A child settlemen
 returns execution to the bound Parent; continue dependency-ready independent
 work until whole-plan integration and final verification pass. Critical and new
 repair tasks start through the Single-Task Lane with their own `task_id` and
-native gate; stopped or excluded work never counts as Parent success.
+native gate.
 
 Before handoff, run the permitted diagnostic checks and stage the task-owned
 changes. On rework, also complete the Delivery Evidence check below and return
