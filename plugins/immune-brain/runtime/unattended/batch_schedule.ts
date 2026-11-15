@@ -146,21 +146,16 @@ export function blockedByParked(
 	return blocked;
 }
 
-function positiveLimit(maxParallel: number): number {
-	if (maxParallel === Number.POSITIVE_INFINITY) return maxParallel;
-	if (!Number.isSafeInteger(maxParallel) || maxParallel <= 0)
-		throw new Error("max_parallel must be a positive safe integer");
-	return maxParallel;
-}
-
-/** Pending children whose declared dependencies are done, up to the free slots. */
+/**
+ * Pending children whose declared dependencies are done, up to the free slots.
+ * `maxParallel` arrives already validated (`parseMaxParallel`, record check).
+ */
 export function startableChildren(children: readonly ScheduleChild[], maxParallel: number): string[] {
-	const limit = positiveLimit(maxParallel);
 	const done = new Set(children.filter((child) => DONE_STATES.has(child.state)).map((child) => child.task_id));
 	const occupied = children.filter((child) => IN_FLIGHT_STATES.has(child.state));
 	const startable: string[] = [];
 	for (const child of children) {
-		if (occupied.length >= limit) break;
+		if (occupied.length >= maxParallel) break;
 		if (child.state !== "pending") continue;
 		if (!child.blocked_by.every((id) => done.has(id))) continue;
 		startable.push(child.task_id);
@@ -176,22 +171,36 @@ export interface PlanScheduleChild {
 	scope_hint: string[];
 }
 
+/**
+ * Peel the declared dependency graph wave by wave. A graph whose remaining
+ * nodes all wait on an unplaced or unknown dependency never yields a wave, so
+ * the caller names that rejection in its own terms.
+ */
+export function dependencyWaves<T extends { task_id: string; blocked_by: string[] }>(
+	nodes: readonly T[],
+	cycleMessage: string,
+): T[][] {
+	const remaining = [...nodes];
+	const placed = new Set<string>();
+	const waves: T[][] = [];
+	while (remaining.length) {
+		const wave = remaining.filter((node) => node.blocked_by.every((id) => placed.has(id)));
+		if (!wave.length) throw new Error(cycleMessage);
+		waves.push(wave);
+		for (const node of wave) {
+			placed.add(node.task_id);
+			remaining.splice(remaining.indexOf(node), 1);
+		}
+	}
+	return waves;
+}
+
 /** Project the declared dependency graph into start waves for the batch gate. */
 export function projectParallelGroups(children: readonly PlanScheduleChild[]): {
 	parallel_groups: BatchPlanParallelGroups;
 	scope_conflicts: BatchPlanScopeConflict[];
 } {
-	const remaining = [...children];
-	const placed = new Set<string>();
-	const groups: BatchPlanParallelGroups = [];
-	while (remaining.length) {
-		const wave = remaining.filter((child) => child.blocked_by.every((id) => placed.has(id)));
-		if (!wave.length) throw new Error("Initiative Task dependencies must form an acyclic graph");
-		groups.push(wave.map((child) => child.task_id));
-		for (const child of wave) {
-			placed.add(child.task_id);
-			remaining.splice(remaining.indexOf(child), 1);
-		}
-	}
-	return { parallel_groups: groups, scope_conflicts: [] };
+	const parallel_groups = dependencyWaves(children, "Initiative Task dependencies must form an acyclic graph")
+		.map((wave) => wave.map((child) => child.task_id));
+	return { parallel_groups, scope_conflicts: [] };
 }

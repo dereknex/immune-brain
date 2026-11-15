@@ -35,9 +35,6 @@ import type { JudgingAgentFn, JudgingContext, JudgingDecision } from "./judging_
 import { resolveOwnerCommand } from "./owner_commands.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
 
-/** Legacy floor export kept for caller reference; Tier-2 points enforce POINT_REGISTRY thresholds. */
-export const MIN_CLASSIFIER_CONFIDENCE = 0.6;
-
 export type ClassifyResult =
 	| {
 			status: "decided";

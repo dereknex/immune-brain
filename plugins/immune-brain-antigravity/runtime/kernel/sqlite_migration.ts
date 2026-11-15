@@ -27,7 +27,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
@@ -939,12 +939,4 @@ function importLegacyWorkspaceLocked(rootInput: string, now: string): SqliteImpo
 			uncommitted_evidence: [],
 		};
 	}
-}
-
-/** Read-only diagnosis of an interrupted import, for operators and tests. */
-export function inspectImportState(root: string): { candidate: boolean; receipt: boolean } {
-	return {
-		candidate: existsSync(resolve(root, MIGRATION_STORE_RELATIVE)),
-		receipt: existsSync(resolve(root, MIGRATION_RECEIPT_RELATIVE)),
-	};
 }

@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s5-prompt-dedupe",
+  "owner": "user",
+  "goal": "remove-redundant-checks S5 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S5; U1, U2, U5). The agent contracts stop restating rules that code already enforces: each S5 row's sentence is deleted from dist/drive.md, dist/drive-batch.md, skills/authority-review/SKILL.md and runtime/prompts/executor.md, I22 merges into I20, and I4 keeps its stop rule without the number. Every rule the Spec lists as prompt-only stays. Mirrors are regenerated with scripts/sync-dist-docs.ts and the plugin build scripts. The PR carries the Spec's anchor table re-read on its merge base. Delegated choices: one new contract test lists the deleted sentences and the kept prompt-only rules; existing contract tests that pin a deleted sentence are updated to the retained wording.",
+  "acceptance": [
+    {
+      "id": "RC-S5-A1",
+      "assertion": "In tests/prompt-dedupe-contract.test.ts, none of the deleted S5 sentences (I2, I3, I5, I9, I10, I11, I14, I15, I18, I22, I24, I25, I27, I28, I31, H2-H7, H9-H13, SKILL H1 and H5, PR1) occurs in its source file, drive.md states the unchanged-observation stop without a number, and each kept prompt-only rule (I1, I6, I7, I8, I12, I13, I16, I17, I19, I20, I21, I23, I26, I29, I30, K5, SKILL H10) still occurs; a fixture copy with one kept rule removed fails the check.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/prompt-dedupe-contract.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S5-A2",
+      "assertion": "The existing contract tests that read the edited sources pass against the edited text and regenerated mirrors: phase-entry run contract, unattended contracts, baseline packaging, authoritative recovery, phase-entry gate, QA prepare diagnostics, carrier Enrollment gate, scope revision and role prompt bridge; the Antigravity mirror matches the edited sources.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/explicit-phase-entry-run-contract.test.ts\",\n      \"tests/unattended-contracts.test.ts\",\n      \"tests/baseline-packaging-contract.test.ts\",\n      \"tests/workflow-authoritative-recovery.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\",\n      \"tests/qa-prepare-diagnostics.test.ts\",\n      \"tests/carrier-enrollment-gate-contract.test.ts\",\n      \"tests/scope-revision-contract.test.ts\",\n      \"tests/role-prompt-bridge.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s5-prompt-dedupe.md",
+    "docs/plans/rrc-s5-prompt-dedupe.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/dist/role-prompts/executor.md",
+    "plugins/immune-brain/runtime/prompts/executor.md",
+    "plugins/immune-brain/skills/authority-review/SKILL.md",
+    "tests/baseline-packaging-contract.test.ts",
+    "tests/carrier-enrollment-gate-contract.test.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/explicit-phase-entry-run-contract.test.ts",
+    "tests/prompt-dedupe-contract.test.ts",
+    "tests/qa-prepare-diagnostics.test.ts",
+    "tests/role-prompt-bridge.test.ts",
+    "tests/scope-revision-contract.test.ts",
+    "tests/unattended-contracts.test.ts",
+    "tests/workflow-authoritative-recovery.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

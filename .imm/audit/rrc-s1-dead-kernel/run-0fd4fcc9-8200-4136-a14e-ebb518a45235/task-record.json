@@ -1,0 +1,175 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s1-dead-kernel",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s1-dead-kernel",
+    "goal": "remove-redundant-checks S1 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The Kernel and store layer no longer export code that no production path reaches: the S1 symbols in the Spec table and the whole module runtime/kernel/canary_eligibility.ts are deleted together with test cases whose only subject is a deleted symbol, the package.json import-map entry and the derived-files.json mirror output entry. Private helpers left unreferenced by a deletion go too. Observable behavior is unchanged. Delegated choices: a test file whose every case goes is deleted; historical fixtures under tests/fixtures stay unchanged; the release changeset is a patch entry.",
+    "acceptance": [
+      {
+        "id": "RC-S1-A1",
+        "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S1 symbols, nor kernel/canary_eligibility, and exits 1; an error exit fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1; test ! -e plugins/immune-brain/runtime/kernel/canary_eligibility.ts\",\n      \"sh\",\n      \"-e\",\n      \"stateWorkspacePath\",\n      \"-e\",\n      \"stateClaimPath\",\n      \"-e\",\n      \"stateStoreLockPath\",\n      \"-e\",\n      \"stateTransactionPath\",\n      \"-e\",\n      \"batchCommitEvidencePath\",\n      \"-e\",\n      \"LEGACY_CLAIM_RELATIVE\",\n      \"-e\",\n      \"JOURNAL_RELATIVE\",\n      \"-e\",\n      \"KERNEL_DB_SIDECARS\",\n      \"-e\",\n      \"FILE_STORE_MIGRATION_MARKER\",\n      \"-e\",\n      \"kernelStoreExists\",\n      \"-e\",\n      \"readActiveRun\",\n      \"-e\",\n      \"listTerminalRuns\",\n      \"-e\",\n      \"readStoreBytes\",\n      \"-e\",\n      \"writeStoreBytes\",\n      \"-e\",\n      \"inspectImportState\",\n      \"-e\",\n      \"appendObservationJournalEntry\",\n      \"-e\",\n      \"terminalProofRunId\",\n      \"-e\",\n      \"touchesChangedPathFloor\",\n      \"-e\",\n      \"TASK_ACTION_CONTRACT\",\n      \"-e\",\n      \"assertNoKernelBackendForV3\",\n      \"-e\",\n      \"evaluateCanaryEligibility\",\n      \"-e\",\n      \"kernel/canary_eligibility\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S1-A2",
+        "assertion": "The surviving tests of the touched Kernel modules pass: backend claim, Pi canary prepare, Pi canary lifecycle package composition (import map lists every module the extensions still use), Pi canary package boundary, storage layout migration, terminal transaction and risk floor; the regenerated Claude bundle and Antigravity mirror match source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/kernel-backend-claim.test.ts\",\n      \"tests/kernel-pi-canary-prepare.test.ts\",\n      \"tests/pi-canary-lifecycle-package.test.ts\",\n      \"tests/pi-canary-package-boundary.test.ts\",\n      \"tests/kernel-storage-layout-migration.test.ts\",\n      \"tests/kernel-canary-terminal-transaction.test.ts\",\n      \"tests/risk-tier-floor.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S1-A3",
+        "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s1-dead-kernel.md",
+      "docs/agents/derived-files.json",
+      "docs/plans/rrc-s1-dead-kernel.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "package.json",
+      "plugins/immune-brain/runtime/kernel/backend_claim.ts",
+      "plugins/immune-brain/runtime/kernel/canary_eligibility.ts",
+      "plugins/immune-brain/runtime/kernel/risk_floor.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_migration.ts",
+      "plugins/immune-brain/runtime/kernel/sqlite_store.ts",
+      "plugins/immune-brain/runtime/kernel/storage.ts",
+      "plugins/immune-brain/runtime/kernel/storage_paths.ts",
+      "plugins/immune-brain/runtime/kernel/types.ts",
+      "tests/kernel-backend-claim.test.ts",
+      "tests/kernel-canary-eligibility.test.ts",
+      "tests/kernel-pi-canary-live-boundary.test.ts",
+      "tests/kernel-pi-canary-prepare.test.ts",
+      "tests/pi-canary-lifecycle-package.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s1-dead-kernel.intent.json",
+    "content_hash": "sha256:617096c8b07fb3c35e614b4fb5d54e148543c1286d0eaf0bda65d794ad1abe8a"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:617096c8b07fb3c35e614b4fb5d54e148543c1286d0eaf0bda65d794ad1abe8a",
+  "git_base_head": "6eb45a1544fc89f78815128fdf92815351419371",
+  "attestations": [
+    {
+      "id": "approval-qa-6b98a992",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:617096c8b07fb3c35e614b4fb5d54e148543c1286d0eaf0bda65d794ad1abe8a",
+      "diff_hash": "sha256:29e6e031c80263aebb3122e8bfeba9eeafaeb9f42a12eb73ea8514b9dd56c5ae",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:dea5b7cdb2b3b0c49a1b8fd142531212766f41adb4ac8c8e826ff90214ff17f7",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S1-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dea5b7cdb2b3b0c49a1b8fd142531212766f41adb4ac8c8e826ff90214ff17f7"
+        },
+        {
+          "acceptance_id": "RC-S1-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dea5b7cdb2b3b0c49a1b8fd142531212766f41adb4ac8c8e826ff90214ff17f7"
+        },
+        {
+          "acceptance_id": "RC-S1-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:dea5b7cdb2b3b0c49a1b8fd142531212766f41adb4ac8c8e826ff90214ff17f7"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-71c971c4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:617096c8b07fb3c35e614b4fb5d54e148543c1286d0eaf0bda65d794ad1abe8a",
+      "diff_hash": "sha256:29e6e031c80263aebb3122e8bfeba9eeafaeb9f42a12eb73ea8514b9dd56c5ae",
+      "actor_id": "cli:claude-code:afcf7630-1f79-49a3-81d7-9a491fc3a3c4",
+      "summary": "Provenance verified (single parent 6eb45a15, tree 14d78b63). The change deletes the S1 dead exports and the canary_eligibility module and removes their import-map, derived-file and test references. Antigravity mirrors match source blob for blob, and both dist bundles change only by readFileSync alias renumbering. Blast radius is medium: kernel storage, sqlite store and path modules are touched, but persisted shape and migrations are unchanged.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6eb45a1544fc89f78815128fdf92815351419371",
+        "review_commit": "e9b4f91c86078e581f87b8073d721737300f8daa",
+        "review_tree": "14d78b6300910ac578493874be2fa9ed901470dc",
+        "manifest_digest": "sha256:9a3147f2703a002e50a76d77c51d91c24d6ef80327cbf02a389a2b6c317ec1f6"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-ef7c0544c198-1-review-1",
+          "acceptance_id": "RC-S1-A2",
+          "summary": "Deleting tests/kernel-canary-eligibility.test.ts also removed its 'enrollment capability' describe block, which tested the surviving enrollment_authority module. Two of its cases are not repeated in tests/kernel-enrollment-authority.test.ts: an R2C2 mutation capability passed to enrollment inspect must be rejected, and a capability must not survive JSON or spread serialization. Consider moving them there.",
+          "anchor": "sha256:ee8836beb64a5fe6d1f9f60b0b58afb37332ed10c6d597ee598021e3fa6b5764",
+          "evidence": {
+            "trigger": "A regression that lets EnrollmentAuthorityRegistry.inspect accept a MutationAuthorityRegistry capability, or that makes an enrollment capability JSON- or spread-serializable, now passes the suite without being caught. The read-only review checked only tests/kernel-enrollment-authority.test.ts at e9b4f91c for overlapping coverage.",
+            "caller_chain": [
+              "tests/kernel-canary-eligibility.test.ts",
+              "plugins/immune-brain/runtime/kernel/enrollment_authority.ts#createEnrollmentAuthorityRegistry",
+              "tests/kernel-enrollment-authority.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S1-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:1ef00bae1b178123492fe75134166e94fac8bb0e86ce034261533d04f37f108c"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s1-dead-kernel:2026-11-15T04:19:28.919Z",
+      "at": "2026-11-15T04:19:28.919Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s1-dead-kernel.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s1-dead-kernel:2026-11-15T04:20:36.684Z",
+      "at": "2026-11-15T04:20:36.684Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-6b98a992\naction_v2_sha256:e001a920df69ec9173893562420f3a4611b0e0145611940bf0c3d336cc15479e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:20:36.684Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s1-dead-kernel:2026-11-15T04:22:54.076Z",
+      "at": "2026-11-15T04:22:54.076Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-71c971c4\naction_v2_sha256:ee9b75f3c8642e4eb4ed0f31fcd430a815a23b982bd9b4392ba4d94830849f16",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:afcf7630-1f79-49a3-81d7-9a491fc3a3c4",
+        "confirmation_ref": "pi:cli:claude-code:afcf7630-1f79-49a3-81d7-9a491fc3a3c4",
+        "issued_at": "2026-11-15T04:22:54.076Z"
+      },
+      "review_started_at": "2026-11-15T04:20:42.072Z",
+      "review_submitted_at": "2026-11-15T04:22:52.863Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s1-dead-kernel:2026-11-15T04:22:57.917Z",
+      "at": "2026-11-15T04:22:57.917Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:eaaf96e29593bccbace1a9ce5c1335101dd0308700e9c6ef6a30980dd4662f72"
+    }
+  ]
+}

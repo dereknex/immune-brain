@@ -1,9 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import {
-	describeQaFailure,
-	qaEvidenceFreshnessId,
-	qaFindingId,
-} from "../.pi-extension/pi-canary-qa-findings"
+import { qaFindingId } from "../.pi-extension/pi-canary-qa-findings"
 
 const DIGEST =
 	"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
@@ -30,33 +26,3 @@ describe("qaFindingId", () => {
 	})
 })
 
-describe("qaEvidenceFreshnessId", () => {
-	it("is digest-scoped and unique per attempt", () => {
-		const id = qaEvidenceFreshnessId(DIGEST)
-		expect(id).toMatch(/^qa-evidence-freshness-[0-9a-f]{16}-[0-9a-f]{8}-[0-9a-f]{6}$/)
-		const again = qaEvidenceFreshnessId(DIGEST)
-		expect(again).not.toBe(id)
-	})
-})
-
-describe("describeQaFailure", () => {
-	it("preserves the original verdict findings when apply fails", () => {
-		const message = describeQaFailure("findings contains duplicate id qa-AC-TEST-x", [
-			{ id: "qa-AC-TEST-x", summary: "verification failed (exit 1) stdout=0B stderr=6B: boom" },
-		])
-		expect(message).toContain("qa-AC-TEST-x")
-		expect(message).toContain("boom")
-	})
-
-	it("returns the plain error when no verdict findings exist", () => {
-		expect(describeQaFailure("boom", undefined)).toBe("boom")
-	})
-
-	it("caps the composed message to the notification budget", () => {
-		const longSummary = "x".repeat(2000)
-		const message = describeQaFailure("y".repeat(300), [
-			{ id: "qa-AC-TEST-x", summary: longSummary },
-		])
-		expect(message.length).toBeLessThanOrEqual(300)
-	})
-})

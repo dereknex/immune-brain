@@ -38,7 +38,6 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import {
 	type ClassifyFn,
-	MIN_CLASSIFIER_CONFIDENCE,
 	createDecisionModelClassifier,
 	judgeEvent,
 	judgeEvents,

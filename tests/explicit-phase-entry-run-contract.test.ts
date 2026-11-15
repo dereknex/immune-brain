@@ -48,8 +48,8 @@ describe("explicit phase entry: drive owns Enrollment", () => {
 		expect(entry).toContain("A batch child keeps its Lane's confirmed scope disclosure");
 		expect(entry).toContain("`status` is a read, not a freeze");
 		expect(entry).toContain("returns them as a `warnings` entry beside the projection");
-		expect(entry).toContain("Freezing a snapshot still refuses those paths");
-		expect(entry).toContain("skip-worktree or assume-unchanged index flag still refuses both");
+		// The freeze refusal is the Kernel snapshot check (S5 I2), not a Loop restatement.
+		expect(entry).not.toContain("Freezing a snapshot still refuses those paths");
 	});
 
 	// Spec run-entry-decision-hosting D9, D10; ADR 0025.

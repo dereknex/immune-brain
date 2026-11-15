@@ -62,6 +62,7 @@ describe("startable children", () => {
 		expect(startableChildren(children, 3)).toEqual(["a", "b", "c"]);
 		expect(startableChildren(children, 2)).toEqual(["a", "b"]);
 		expect(startableChildren(children, Number.POSITIVE_INFINITY)).toEqual(["a", "b", "c"]);
+		expect(startableChildren(children, 10)).toEqual(["a", "b", "c"]);
 	});
 
 	it("starts identical, nested and pattern estimates concurrently", () => {
@@ -161,10 +162,8 @@ describe("startable children", () => {
 		expect(startableChildren(children, 1)).toEqual([]);
 	});
 
-	it("rejects an invalid limit", () => {
-		for (const bad of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 2])
-			expect(() => startableChildren([child("a", ["runtime/a.ts"])], bad)).toThrow("max_parallel");
-	});
+	// A bad limit is refused by parseMaxParallel before the scheduler sees it
+	// (tests/unattended-batch-lanes.test.ts, "lane mode parameters").
 });
 
 describe("plan parallel groups", () => {

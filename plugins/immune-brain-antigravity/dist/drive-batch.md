@@ -199,33 +199,16 @@ and reports the attempt in `tracker_observations`. A parked or lost child is
 never integrated, so its Issue stays open; an explicit stop inside a Lane still
 projects `not planned` at once.
 
-A fresh literal-user Batch Authorization resumes recoverable parked owned runs.
 In runtime-owned Parent Lanes, a stopped run, an unreadable or missing Lane, an
 integration conflict or a durable redo grant is not exit evidence: the child
 parks `needs_human` with `batch_lane_redo_retained`, its Lane is neither deleted
 nor recreated, and no redo grant is spent. A child with an open user decision or
 replan, an identity/contract conflict or dirty Lane data also remains parked with
-its dependents; independent children resume. A repeated tick or a newer caller
-timestamp without a fresh confirmation grants no recovery authority. Do not
-retire the batch just because one child stays parked.
-
-In the Immune-Brain plugin source repository, a child that integrates a change to
-`plugins/immune-brain/dist/claude/mcp-server.mjs` leaves the Parent tip on a build
-the coordinator and its Lane Executors have not loaded. The next admission then
-creates no Lane: the batch parks `needs_human` with
-`runtime_reload_required` naming that integrated commit, while in-flight
-Executors keep running and their `executor` handoffs remain. Reload the Host
-(Claude Code `/mcp` reconnect; Pi `/reload`), then resume with a fresh
-literal-user confirmation. If the loaded build then equals the Parent tip bundle,
-nothing is recorded; if it still differs, the admitted child and `final_report`
-carry `runtime_skew_acknowledged`.
+its dependents; independent children resume. Do not retire the batch just
+because one child stays parked.
 
 Frozen acceptance remains the authority subject (ADR 0026). A Lane child whose
-acceptance changes pauses for the literal user's native gate; the coordinator
-cannot approve revisions or reseal `plan_digest` (ADR 0028). There is no
-`lane_revision` input or delegation checkbox. Existing v2 records containing
-`revision_delegation`, `delegated_revisions` or `reseals` remain readable and
-retireable as historical evidence; those fields grant no current authority.
+acceptance changes pauses for the literal user's native gate.
 `scope_hint` is an estimate: disclose changed paths beyond it as `beyond_estimate`
 instead of revising scope. A scope-only revision keeping the bound Spec path is
 compatible; a changed authority subject parks the child rather than resealing
@@ -236,24 +219,18 @@ progress, even without an enrolled Parent TaskRecord. This evidence-only read
 never grants execution authority; retired records remain visible.
 
 The v2 record also fixes the complete confirmed Parent topology in
-`topology_digest`, including excluded prerequisites. Confirmation drift and
-resume compare that identity before Lane admission; changed topology, or an
-older record without that evidence, refuses as `plan_changed` rather than
-reconstructing authorization from the current carrier.
+`topology_digest`, including excluded prerequisites.
 
 Before a new lane batch provisions any Lane, the runner compares the Kernel
 contract identifiers (TaskRecord, tombstone, projection, store schema) of the
 coordinator's runtime with those of the runtime a Lane Executor loads — never the
-plugin version number — and refuses with `batch_runtime_contract_mismatch`,
-naming both sources, when they differ; a match adds no confirmation. A Lane whose
-state exists but whose contract the coordinator refuses to read parks as
+plugin version number. A Lane whose state exists but whose contract the
+coordinator refuses to read parks as
 `batch_lane_contract_mismatch` with the original parse error, distinct from a
 missing Lane's `batch_lane_lost`.
 
-Inside a Lane, the Pi extension and the Claude Code `PreToolUse` hook refuse an
-`edit`/`write` (Claude: `Edit`, `Write`, `MultiEdit`, `NotebookEdit`) whose
-resolved target lies outside the Lane, naming the Lane path. A shell command is
-not intercepted; this is no bash sandbox. Parent-branch batches never restore
+Inside a Lane, a shell command is not intercepted; this is no bash sandbox.
+Parent-branch batches never restore
 coordinator edits. Only when a legacy lane batch is re-entered with a
 dirty coordinator checkout, each dirty path is restored to HEAD only if every one
 of them is an unstaged modification or untracked file that a Lane of this batch
@@ -263,9 +240,8 @@ the runner restores after the batch is authorized. The bytes are
 backed up first under `.imm/state/batches/restores/`, and the backup is recorded
 in the batch record and report as `restores`. If any change has another origin,
 or is staged or deleted, no file is touched and the refusal names it; never
-stage such changes to get past the refusal. A resume with any different explicit
-`max_parallel` is refused with `batch_parallel_mismatch`. A Lane holds no batch
-state and its Host session never re-enters the batch.
+stage such changes to get past the refusal. A Lane holds no batch state and its
+Host session never re-enters the batch.
 
 #### Lane Preferences
 
@@ -280,7 +256,7 @@ Instruction-file lane directives are not read.
 | `executor_host` | `claude-code`, `pi` or `antigravity` | Every Lane's Executor Host is that Host. When the `lane-steward` did not report it available in a Lane, that Lane has no Executor Host; the Parent does not fall back to another one. | The Parent's own Host type, else another allowlisted Host the `lane-steward` reported available |
 | `executor_model` | a model identifier of that Executor Host | Passed to the Executor Host as `--model <model>` | The Executor Host's own default |
 | `executor_effort` | a level that Executor Host accepts | Passed as `--effort <level>` to `claude-code` and `antigravity`, and as `--thinking <level>` to `pi` | The Executor Host's own default |
-| `review_host`, `review_model`, `review_effort` | the selected profile's Review fields | The Parent passes them as `review_host`, `review_model` and `review_effort` when it starts a batch. The batch records them as `review_profile`, the native confirmation shows them, and every CLI Review of the batch's Lanes runs on them; a resume keeps the recorded profile. A model or effort without `review_host` is refused. | Review resolves `lanes.active` when it is prepared |
+| `review_host`, `review_model`, `review_effort` | the selected profile's Review fields | The Parent passes them as `review_host`, `review_model` and `review_effort` when it starts a batch. The batch records them as `review_profile`, the native confirmation shows them, and every CLI Review of the batch's Lanes runs on them; a resume keeps the recorded profile. | Review resolves `lanes.active` when it is prepared |
 
 Each field resolves on its own, in order: literal request, selected user Lane
 profile, project `lanes` defaults, then the default above. Select the profile
@@ -485,8 +461,7 @@ Executor's approach, never an answer to a dialog. It first calls
 `imm-session observe <handle> --provider herdr`). The runner records the text in the batch record and report
 as `interventions` and answers `lane_instruction.accepted`; only when accepted
 does the Parent submit it with `imm-session send <handle> --provider herdr --text "<text>"`
-and re-arm step 3. `imm-session send` observes the session again first: a
-`blocked` or `working` session is refused (`state_refused`) and receives nothing. Every instruction the
+and re-arm step 3. Every instruction the
 coordinator sent is therefore in the report, so Executor-initiated behavior and
 coordinator intervention can be told apart afterwards. This never applies to the
 authority Review: it runs as a separate CLI process the Lane Executor starts and
@@ -501,10 +476,10 @@ writes one design-level correction — the invariant to hold and the shared seam
 fix — never a patch of its own. It starts a new Executor session in the Lane
 (the old context is not reused; the new session resumes from the Kernel
 projection and the Lane workspace alone) and sends the correction as
-`lane_instruction` kind `correction`; the runner counts it. At most two
-corrections are spent per child: the third exhaustion parks the child as
-`batch_correction_limit_reached`, its dependents are skipped, siblings that do not
-depend on it keep executing and integrating, and the batch reports it at the end.
+`lane_instruction` kind `correction`; the runner counts it. An exhaustion that
+parks the child as `batch_correction_limit_reached` skips its dependents, while
+siblings that do not depend on it keep executing and integrating; the batch
+reports it at the end.
 Single tasks outside a batch keep their existing budget behavior, and Review
 independence is unchanged. A Review rework budget that the Kernel turns into a
 `replan_required` decision still needs the user's own native decision.
@@ -530,9 +505,7 @@ finishes the batch, so the Parent never re-enters a finished batch to ask.
 Once the wait has returned that session `idle`, `done` or `exited`, the Parent
 runs `imm-session close <handle> --provider herdr --batch <batch_id> --task <task_id> --recorded-at <at>`
 from the coordinator checkout; `imm-session` reads the batch record and closes
-only a session it lists. `start_unattended_batch` with `lane_session_close`
-(`task_id`) still answers for a running batch: the same record if one exists,
-a refusal otherwise. A refused close leaves the tab open. Every other tab (a parked, failed,
+only a session it lists. Every other tab (a parked, failed,
 stopped or not yet integrated child's, and any tab the Parent did not create)
 stays open for the user to read and close. Closing a session removes no Lane and
 no branch. It splits no pane and creates no workspace. The Parent never invokes

@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "rrc-s2-dead-assurance-batch",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:rrc-s2-dead-assurance-batch:2026-11-15T03:33:44.472Z",
+  "final_record_hash": "sha256:71dd1d28d43d529854830bb059fb7fd1e4a5a0191abd28cf6dbe5d43a62960e6",
+  "terminalized_at": "2026-11-15T03:33:44.472Z"
+}

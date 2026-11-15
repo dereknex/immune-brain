@@ -19,7 +19,7 @@
  *   attempts are recorded on all outcomes including cannot_reproduce and out-of-scope;
  *   guard G5 blocks and falls back to escalate; mark_pr_ready verifies open draft,
  *   review gates, and non-empty passing checks; close_out requires merged PR and
- *   clears active_leases in state.json; unified `dispatchRepair` routes E8, E9, E10, E11.
+ *   clears active_leases in state.json.
  */
 
 import { afterAll, describe, expect, it } from "bun:test";
@@ -37,7 +37,6 @@ import {
 	assertNoAutoMerge,
 	closeOut,
 	computeFailureSignature,
-	dispatchRepair,
 	isDaemonManagedPr,
 	loadRepairRetries,
 	markPrReady,
@@ -55,9 +54,6 @@ import {
 	LOOP_DAEMON_EVENT_CONTRACT,
 	LOOP_DAEMON_LEASE_CONTRACT,
 	type E8PRCheckFailedEvent,
-	type E9PRConflictEvent,
-	type E10PRReviewCommentEvent,
-	type E11PRReadyOrMergedEvent,
 	type LoopLease,
 } from "../plugins/immune-brain/runtime/loop_daemon/types.ts";
 
@@ -1087,174 +1083,5 @@ describe("Suite 9: PR Lifecycle Completion: close_out State Cleanup (review-4)",
 		expect(loadLease(stateDir, "task-42")).toBeNull();
 		// Verified that active_leases in state.json is also cleared!
 		expect(loadLoopState(stateDir)?.active_leases["task-42"]).toBeUndefined();
-	});
-});
-
-describe("Suite 10: Unified Dispatcher (dispatchRepair)", () => {
-	it("dispatches E8_PR_CHECK_FAILED to repairPrCi", async () => {
-		const pr = daemonPr();
-		const event: E8PRCheckFailedEvent = {
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: "evt-e8",
-			kind: "E8_PR_CHECK_FAILED",
-			timestamp: TS,
-			pr_number: 42,
-			branch: "imm/task-42",
-			head_sha: pr.head_sha,
-			check_name: "test-run",
-			failure_signature: "sig123",
-		};
-
-		let called = false;
-		const result = await dispatchRepair({
-			event,
-			pr,
-			context: { worktree_path: "/dummy", task_id: "task-42" },
-			deps: {
-				ci: {
-					runVerification: async () => {
-						called = true;
-						return { exit_code: 0, stdout: "", stderr: "" };
-					},
-					applyFix: async () => ({ success: true, modified_paths: [] }),
-					gitCommitAndPush: async () => ({ commit_sha: "abc" }),
-				},
-			},
-		});
-
-		expect(called).toBe(true);
-		expect(result.action).toBe("cannot_reproduce");
-	});
-
-	it("dispatches E9_PR_CONFLICT to repairPrConflict", async () => {
-		const pr = daemonPr();
-		const event: E9PRConflictEvent = {
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: "evt-e9",
-			kind: "E9_PR_CONFLICT",
-			timestamp: TS,
-			pr_number: 42,
-			branch: "imm/task-42",
-			base_branch: "main",
-			head_sha: pr.head_sha,
-		};
-
-		let rebased = false;
-		const result = await dispatchRepair({
-			event,
-			pr,
-			context: { worktree_path: "/dummy", task_id: "task-42" },
-			deps: {
-				conflict: {
-					rebaseOrMerge: async () => {
-						rebased = true;
-						return { success: true };
-					},
-					runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
-					gitCommitAndPush: async () => ({ commit_sha: "rebased-sha" }),
-				},
-			},
-		});
-
-		expect(rebased).toBe(true);
-		expect(result.action).toBe("repaired");
-	});
-
-	it("dispatches E10_PR_REVIEW_COMMENT to addressPrReview", async () => {
-		const pr = daemonPr();
-		const event: E10PRReviewCommentEvent = {
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: "evt-e10",
-			kind: "E10_PR_REVIEW_COMMENT",
-			timestamp: TS,
-			pr_number: 42,
-			branch: "imm/task-42",
-			comment_id: 88,
-			author: "owner",
-			author_association: "OWNER",
-			body: "please update",
-		};
-
-		let fixApplied = false;
-		const result = await dispatchRepair({
-			event,
-			pr,
-			context: { worktree_path: "/dummy", task_id: "task-42" },
-			deps: {
-				review: {
-					applyReviewFix: async () => {
-						fixApplied = true;
-						return { success: true, modified_paths: [] };
-					},
-					runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
-					gitCommitAndPush: async () => ({ commit_sha: "fix-sha" }),
-				},
-			},
-		});
-
-		expect(fixApplied).toBe(true);
-		expect(result.action).toBe("repaired");
-	});
-
-	it("dispatches E11_PR_READY_OR_MERGED (ready) to markPrReady and (merged) to closeOut", async () => {
-		const pr = daemonPr({
-			checks: [{ name: "ci", status: "completed", conclusion: "success" }],
-		});
-
-		const readyEvent: E11PRReadyOrMergedEvent = {
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: "evt-e11-ready",
-			kind: "E11_PR_READY_OR_MERGED",
-			timestamp: TS,
-			pr_number: 42,
-			branch: "imm/task-42",
-			head_sha: pr.head_sha,
-			status: "ready",
-		};
-
-		let marked = false;
-		const readyResult = await dispatchRepair({
-			event: readyEvent,
-			pr,
-			context: { worktree_path: "/dummy", task_id: "task-42" },
-			deps: {
-				mark_ready: {
-					markReady: async () => {
-						marked = true;
-						return { success: true };
-					},
-				},
-			},
-		});
-		expect(marked).toBe(true);
-		expect(readyResult.action).toBe("marked_ready");
-
-		const mergedEvent: E11PRReadyOrMergedEvent = {
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: "evt-e11-merged",
-			kind: "E11_PR_READY_OR_MERGED",
-			timestamp: TS,
-			pr_number: 42,
-			branch: "imm/task-42",
-			head_sha: pr.head_sha,
-			status: "merged",
-		};
-
-		let cleaned = false;
-		const mergedPr = daemonPr({ state: "merged", merged: true });
-		const mergedResult = await dispatchRepair({
-			event: mergedEvent,
-			pr: mergedPr,
-			context: { worktree_path: "/dummy", task_id: "task-42" },
-			deps: {
-				close_out: {
-					removeWorktree: async () => {
-						cleaned = true;
-					},
-				},
-			},
-		});
-		expect(cleaned).toBe(true);
-		expect(mergedResult.action).toBe("closed_out");
 	});
 });

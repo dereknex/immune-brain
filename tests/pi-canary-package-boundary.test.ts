@@ -51,7 +51,6 @@ describe("pi canary package boundary", () => {
 		expect(index).not.toContain("createEnrollmentAuthorityRegistry");
 		expect(index).not.toContain("enrollCanaryTask");
 		expect(index).not.toContain("pi_canary_prepare");
-		expect(index).not.toContain("canary_eligibility");
 		expect(index).not.toContain("pi_canary_prepare");
 	});
 

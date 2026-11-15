@@ -158,7 +158,6 @@
         "plugins/immune-brain-antigravity/runtime/kernel/backend_claim.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/batch_authority.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/canary_application.ts",
-        "plugins/immune-brain-antigravity/runtime/kernel/canary_eligibility.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/capability_registry.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/completion.ts",
         "plugins/immune-brain-antigravity/runtime/kernel/enrollment.ts",

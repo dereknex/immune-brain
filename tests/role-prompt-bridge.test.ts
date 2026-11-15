@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
 	buildLoopAction,
 	buildLoopRoleDispatch,
-	normalizeAdvisoryReviewerOutput,
-	normalizeArchitectureExplorerOutput,
 	resolveLoopRoute,
 } from "../plugins/immune-brain/runtime/loop_contract";
 import {
@@ -71,14 +69,6 @@ describe("internal role-prompt bridge", () => {
 			expect(archAction.dispatch.packet.tool_policy).toBe("read-only tools");
 			expect(archAction.dispatch.call.subagent_type).toBe("Explore");
 		}
-		const architectureEvidence = normalizeArchitectureExplorerOutput({
-			candidates: [{ path: "runtime/loop_contract.ts" }],
-			evidence: ["The bridge is the routing boundary."],
-			risks: [],
-			open_questions: [],
-		});
-		expect(architectureEvidence.valid).toBe(true);
-		expect(normalizeArchitectureExplorerOutput({ candidates: [], evidence: [], risks: [], open_questions: [], state_write: true }).valid).toBe(false);
 
 		const advisoryAction = buildLoopAction({
 			ownership: "planner",
@@ -90,13 +80,6 @@ describe("internal role-prompt bridge", () => {
 			expect(advisoryAction.dispatch.packet.tool_policy).toBe("no tools");
 			expect(advisoryAction.dispatch.packet.prompt).toContain('"lens": "reliability"');
 		}
-		const advisoryEvidence = normalizeAdvisoryReviewerOutput({
-			recommendations: [],
-			disagreements: [],
-			open_questions: ["Should this be a separate Plan?"],
-			blockers: [],
-		});
-		expect(advisoryEvidence.valid).toBe(true);
 		expect(() =>
 			buildLoopAction({
 				ownership: "planner",
@@ -367,7 +350,7 @@ describe("internal role-prompt bridge", () => {
 			"(Claude Code) runs it as a Host background command, so its return re-invokes the Parent",
 			"runs it in the foreground with `--timeout-ms 600000`",
 			"Start it only after the create reported `entry_submitted: true` and `state: \"working\"`",
-			"a `blocked` or `working` session is refused (`state_refused`) and receives nothing",
+			"only when accepted does the Parent submit it",
 			"The Parent sends that tab no keys and no prompt",
 			"a relaunch submits the entry again in the same tab instead of creating another",
 			"The Parent adds no permission or trust option of its own",

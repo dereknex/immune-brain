@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s2-dead-assurance-batch",
+  "owner": "user",
+  "goal": "remove-redundant-checks S2 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The assurance, batch, tracker and workspace-scope modules no longer export code that no production path reaches: the S2 symbols in the Spec table are deleted together with test cases whose only subject is a deleted symbol, and private helpers left unreferenced. assertIsolatedTaskPrerequisites lost its production callers when in-place Enrollment retired (3838e09703). Observable behavior is unchanged. Delegated choices: a test file whose every case goes is deleted; historical Specs that name these symbols stay unchanged; the release changeset is a patch entry.",
+  "acceptance": [
+    {
+      "id": "RC-S2-A1",
+      "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S2 symbols and exits 1; an error exit fails.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1\",\n      \"sh\",\n      \"-e\",\n      \"verifyReviewBundle\",\n      \"-e\",\n      \"deleteReviewRef\",\n      \"-e\",\n      \"qaEvidenceFreshnessId\",\n      \"-e\",\n      \"describeQaFailure\",\n      \"-e\",\n      \"replaceBatchRunState\",\n      \"-e\",\n      \"assertKernelInvariantsV2\",\n      \"-e\",\n      \"assertIsolatedTaskPrerequisites\",\n      \"-e\",\n      \"workspaceDiffHash\",\n      \"-e\",\n      \"replacementChangedFilesSinceSnapshot\",\n      \"-e\",\n      \"changedFilesSinceSnapshot\",\n      \"-e\",\n      \"assertCheckCommandsCiteExistingTests\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S2-A2",
+      "assertion": "The surviving tests of the touched modules pass: Review bundle and outcome evidence, Review neighborhood, record v2 boundary, goal-driven batch run, batch scope estimate and Pi canary package boundary; the regenerated Claude bundle and Antigravity mirror match source.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-bundle.test.ts\",\n      \"tests/pi-canary-review-outcome-evidence.test.ts\",\n      \"tests/pi-canary-review-neighborhood.test.ts\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-scope-estimate.test.ts\",\n      \"tests/pi-canary-package-boundary.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S2-A3",
+      "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s2-dead-assurance-batch.md",
+    "docs/plans/rrc-s2-dead-assurance-batch.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "plugins/immune-brain/runtime/assurance/qa_findings.ts",
+    "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+    "plugins/immune-brain/runtime/github_issue_tracker.ts",
+    "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/workspace_scope.ts",
+    "tests/goal-driven-batch-run.test.ts",
+    "tests/kernel-r2c1-boundary.test.ts",
+    "tests/pi-canary-review-bundle.test.ts",
+    "tests/pi-canary-review-neighborhood.test.ts",
+    "tests/pi-canary-review-outcome-evidence.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

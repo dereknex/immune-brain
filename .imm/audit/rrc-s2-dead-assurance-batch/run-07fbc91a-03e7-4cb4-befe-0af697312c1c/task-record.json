@@ -1,0 +1,171 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s2-dead-assurance-batch",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s2-dead-assurance-batch",
+    "goal": "remove-redundant-checks S2 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S1-S4; U2, U6). The assurance, batch, tracker and workspace-scope modules no longer export code that no production path reaches: the S2 symbols in the Spec table are deleted together with test cases whose only subject is a deleted symbol, and private helpers left unreferenced. assertIsolatedTaskPrerequisites lost its production callers when in-place Enrollment retired (3838e09703). Observable behavior is unchanged. Delegated choices: a test file whose every case goes is deleted; historical Specs that name these symbols stay unchanged; the release changeset is a patch entry.",
+    "acceptance": [
+      {
+        "id": "RC-S2-A1",
+        "assertion": "A word grep over runtime, .pi-extension, hooks, bin, scripts, tests (fixtures excluded), package.json and docs/agents finds none of the S2 symbols and exits 1; an error exit fails.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -rnw --exclude-dir=fixtures \\\"$@\\\"; test $? -eq 1\",\n      \"sh\",\n      \"-e\",\n      \"verifyReviewBundle\",\n      \"-e\",\n      \"deleteReviewRef\",\n      \"-e\",\n      \"qaEvidenceFreshnessId\",\n      \"-e\",\n      \"describeQaFailure\",\n      \"-e\",\n      \"replaceBatchRunState\",\n      \"-e\",\n      \"assertKernelInvariantsV2\",\n      \"-e\",\n      \"assertIsolatedTaskPrerequisites\",\n      \"-e\",\n      \"workspaceDiffHash\",\n      \"-e\",\n      \"replacementChangedFilesSinceSnapshot\",\n      \"-e\",\n      \"changedFilesSinceSnapshot\",\n      \"-e\",\n      \"assertCheckCommandsCiteExistingTests\",\n      \"plugins/immune-brain/runtime\",\n      \"plugins/immune-brain/.pi-extension\",\n      \"plugins/immune-brain/hooks\",\n      \"plugins/immune-brain/bin\",\n      \"scripts\",\n      \"tests\",\n      \"package.json\",\n      \"docs/agents\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 30000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S2-A2",
+        "assertion": "The surviving tests of the touched modules pass: Review bundle and outcome evidence, Review neighborhood, record v2 boundary, goal-driven batch run, batch scope estimate and Pi canary package boundary; the regenerated Claude bundle and Antigravity mirror match source.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-review-bundle.test.ts\",\n      \"tests/pi-canary-review-outcome-evidence.test.ts\",\n      \"tests/pi-canary-review-neighborhood.test.ts\",\n      \"tests/kernel-r2c1-boundary.test.ts\",\n      \"tests/goal-driven-batch-run.test.ts\",\n      \"tests/batch-scope-estimate.test.ts\",\n      \"tests/pi-canary-package-boundary.test.ts\",\n      \"tests/claude-host-package.test.ts\",\n      \"tests/antigravity-host-package.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S2-A3",
+        "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s2-dead-assurance-batch.md",
+      "docs/plans/rrc-s2-dead-assurance-batch.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "plugins/immune-brain/runtime/assurance/qa_findings.ts",
+      "plugins/immune-brain/runtime/assurance/review_evidence.ts",
+      "plugins/immune-brain/runtime/github_issue_tracker.ts",
+      "plugins/immune-brain/runtime/kernel/legacy_task_record.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "plugins/immune-brain/runtime/workspace_scope.ts",
+      "tests/goal-driven-batch-run.test.ts",
+      "tests/kernel-r2c1-boundary.test.ts",
+      "tests/pi-canary-review-bundle.test.ts",
+      "tests/pi-canary-review-neighborhood.test.ts",
+      "tests/pi-canary-review-outcome-evidence.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s2-dead-assurance-batch.intent.json",
+    "content_hash": "sha256:1d4313aa0dffd7e4745a519b9a0409aade869ddaf0aa9c43952da5ce6aaa0ac7"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:1d4313aa0dffd7e4745a519b9a0409aade869ddaf0aa9c43952da5ce6aaa0ac7",
+  "git_base_head": "6eb45a1544fc89f78815128fdf92815351419371",
+  "attestations": [
+    {
+      "id": "approval-qa-ccd13af4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d4313aa0dffd7e4745a519b9a0409aade869ddaf0aa9c43952da5ce6aaa0ac7",
+      "diff_hash": "sha256:2c9ed3ab8c4fcdd5a3eecd2b7c838b191e094a181bed2a1cb2a36cb4a2c62dea",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:e65681a11c9074c50948da7674ceb18e05d8724aa94b0d871d1c9259d79bc6bb",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S2-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e65681a11c9074c50948da7674ceb18e05d8724aa94b0d871d1c9259d79bc6bb"
+        },
+        {
+          "acceptance_id": "RC-S2-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e65681a11c9074c50948da7674ceb18e05d8724aa94b0d871d1c9259d79bc6bb"
+        },
+        {
+          "acceptance_id": "RC-S2-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:e65681a11c9074c50948da7674ceb18e05d8724aa94b0d871d1c9259d79bc6bb"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-80aaade7",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:1d4313aa0dffd7e4745a519b9a0409aade869ddaf0aa9c43952da5ce6aaa0ac7",
+      "diff_hash": "sha256:2c9ed3ab8c4fcdd5a3eecd2b7c838b191e094a181bed2a1cb2a36cb4a2c62dea",
+      "actor_id": "cli:claude-code:12678706-e06e-48b3-b92d-1b8b5d1bc389",
+      "summary": "Provenance checked: commit 941540e3 has a single parent, 6eb45a15, and tree e509cc68. The change deletes 11 exports that production never calls (verifyReviewBundle, deleteReviewRef, qaEvidenceFreshnessId, describeQaFailure, replaceBatchRunState, assertKernelInvariantsV2, assertIsolatedTaskPrerequisites, workspaceDiffHash, replacementChangedFilesSinceSnapshot, changedFilesSinceSnapshot, assertCheckCommandsCiteExistingTests), plus their now-unused imports, a private helper and a type. It also deletes the test cases whose only subject was a deleted export. The Antigravity runtime files are byte-identical to their Claude sources (same blob oids). In both rebuilt bundles the diff only moves the local_initiative module, swaps the ID_PATTERN/ID_PATTERN2 names and shifts import-alias numbers; I found no behavior change. Blast radius: low. The touched paths are review_evidence.ts, workspace_scope.ts, github_issue_tracker.ts and the generated dist bundles; no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6eb45a1544fc89f78815128fdf92815351419371",
+        "review_commit": "941540e36e4d1a562be4909813bfc7ae7bc58917",
+        "review_tree": "e509cc68f7316b03cb0a8f1af79219328da275d3",
+        "manifest_digest": "sha256:c37c8fb75307ee4bc823b0a957cb98a313fe8fee82a3c21e8584004c42f53186"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-82d85783f8c5-1-review-1",
+          "acceptance_id": "RC-S2-A2",
+          "summary": "The three review-bundle tests no longer check that tampering with bundle content or outcomes changes bundle_digest. They only did this by calling verifyReviewBundle, and no production code calls it. Nothing checks this anymore, but no live behavior depends on it either.",
+          "anchor": "sha256:53d3e3faa8fe23c6395f56e990b34dd3ec1d4e361ace77b8753341b89f79198f",
+          "evidence": {
+            "trigger": "A captured ReviewBundle has its outcomes or dirty_files content changed. No surviving test checks bundle_digest, so a regression that dropped outcomes from the digest input would go unnoticed.",
+            "caller_chain": [
+              "tests/pi-canary-review-bundle.test.ts",
+              "plugins/immune-brain/runtime/assurance/review_evidence.ts:captureReviewBundle",
+              "plugins/immune-brain/runtime/assurance/review_evidence.ts:bundleDigest"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S2-A2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b6f1b2f9e84343ebd83424a8acd77d8c3ade7175ec33e1c96336053dae9d78c6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s2-dead-assurance-batch:2026-11-15T03:30:36.227Z",
+      "at": "2026-11-15T03:30:36.227Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s2-dead-assurance-batch.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s2-dead-assurance-batch:2026-11-15T03:32:06.294Z",
+      "at": "2026-11-15T03:32:06.294Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ccd13af4\naction_v2_sha256:1a8cc01d3bb60c76bd1831662e679ac44bcfff25b55d530d5bda3cc977f0dba9",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T03:32:06.294Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s2-dead-assurance-batch:2026-11-15T03:33:39.763Z",
+      "at": "2026-11-15T03:33:39.763Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-80aaade7\naction_v2_sha256:0a47e7dfddcfc54b70d170aff50ac7b3e2bed8f46517d9ea16b66c81fccc18cf",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:12678706-e06e-48b3-b92d-1b8b5d1bc389",
+        "confirmation_ref": "pi:cli:claude-code:12678706-e06e-48b3-b92d-1b8b5d1bc389",
+        "issued_at": "2026-11-15T03:33:39.764Z"
+      },
+      "review_started_at": "2026-11-15T03:32:12.218Z",
+      "review_submitted_at": "2026-11-15T03:33:38.242Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s2-dead-assurance-batch:2026-11-15T03:33:44.472Z",
+      "at": "2026-11-15T03:33:44.472Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:b26c41ab1c09f92d156bf46460fcb3cba12545407edea755813f04323f35cbba"
+    }
+  ]
+}

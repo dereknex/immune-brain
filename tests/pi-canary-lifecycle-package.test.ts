@@ -71,7 +71,6 @@ describe("pi canary lifecycle package composition", () => {
 		for (const key of [
 			"#kernel/enrollment_authority",
 			"#kernel/pi_canary_prepare",
-			"#kernel/canary_eligibility",
 			"#kernel/enrollment",
 			"#kernel/authority_port",
 			"#kernel/canary_application",

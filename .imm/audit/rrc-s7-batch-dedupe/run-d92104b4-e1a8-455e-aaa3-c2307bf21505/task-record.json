@@ -1,0 +1,164 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "rrc-s7-batch-dedupe",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "rrc-s7-batch-dedupe",
+    "goal": "remove-redundant-checks S7 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S7; U2, U3). The unattended batch layer drops positiveLimit, whose input every production entry already validates with parseMaxParallel, and merges the two topological traversals of batch_preflight.ts and batch_schedule.ts into one shared helper; each caller keeps its current error text, and batch_authority.ts keeps its own DFS. Lane instruction and session close parsing stay as they are. Execution posture: characterization-first. Delegated choices: the shared helper lives in batch_schedule.ts.",
+    "acceptance": [
+      {
+        "id": "RC-S7-A1",
+        "assertion": "In tests/unattended-batch-schedule.test.ts and tests/unattended-batch-lanes.test.ts, a two-Task cycle and a blocker naming an unknown Task are rejected by the preflight path with Initiative dependencies contain a cycle or unknown Task and by projectParallelGroups with Initiative Task dependencies must form an acyclic graph; parallel groups for a diamond and a chain are unchanged.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S7-A2",
+        "assertion": "In tests/unattended-batch-schedule.test.ts and tests/unattended-batch-lanes.test.ts, startableChildren returns the same children for limits 1, 2, Infinity and above the child count, and parseMaxParallel still throws for 0, -1, 1.5 and a string.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/unattended-batch-schedule.test.ts\",\n      \"tests/unattended-batch-lanes.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RC-S7-A3",
+        "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/rrc-s7-batch-dedupe.md",
+      "docs/plans/rrc-s7-batch-dedupe.intent.json",
+      "docs/specs/remove-redundant-checks.spec.md",
+      "plugins/immune-brain/runtime/unattended/batch_preflight.ts",
+      "plugins/immune-brain/runtime/unattended/batch_schedule.ts",
+      "tests/unattended-batch-lanes.test.ts",
+      "tests/unattended-batch-schedule.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/rrc-s7-batch-dedupe.intent.json",
+    "content_hash": "sha256:d3e2babfbdce2520e66018a635e8fcc7e4127a856b4e500bc47a073915ab0738"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:d3e2babfbdce2520e66018a635e8fcc7e4127a856b4e500bc47a073915ab0738",
+  "git_base_head": "6e964634b60a06d0bd50db5932f9047b010e8da0",
+  "attestations": [
+    {
+      "id": "approval-qa-ec15ba8e",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3e2babfbdce2520e66018a635e8fcc7e4127a856b4e500bc47a073915ab0738",
+      "diff_hash": "sha256:fddaca4ff7413632bae5f0244f7be942933c90368e68d3fb316886d97856b299",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:b5bf562645dd59f4525f8ec658433f7222a17752044cccc89800f185f3466636",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RC-S7-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b5bf562645dd59f4525f8ec658433f7222a17752044cccc89800f185f3466636"
+        },
+        {
+          "acceptance_id": "RC-S7-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b5bf562645dd59f4525f8ec658433f7222a17752044cccc89800f185f3466636"
+        },
+        {
+          "acceptance_id": "RC-S7-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:b5bf562645dd59f4525f8ec658433f7222a17752044cccc89800f185f3466636"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-a7eb531d",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:d3e2babfbdce2520e66018a635e8fcc7e4127a856b4e500bc47a073915ab0738",
+      "diff_hash": "sha256:fddaca4ff7413632bae5f0244f7be942933c90368e68d3fb316886d97856b299",
+      "actor_id": "cli:claude-code:2d5da757-dffa-4985-b1bb-121eeff05732",
+      "summary": "Provenance checked: f58a582 has the single parent 6e96463 and tree 1b9d0344, and both Antigravity runtime copies have the same blob OIDs as the Claude copies. dependencyWaves keeps the old wave-peeling logic and each caller's own rejection text. Removing positiveLimit leaves only an unchecked `>=` comparison inside startableChildren; that is safe because parseMaxParallel (tested for 0, -1, 1.5, \"1\", NaN and Infinity) and the record check still validate the limit. Both dist bundles match the source change. Blast radius: low. The load-bearing paths are runtime/unattended/batch_schedule.ts and batch_preflight.ts, and no persisted shape changes.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "6e964634b60a06d0bd50db5932f9047b010e8da0",
+        "review_commit": "f58a5829972ba3b7e6c39154b24c8fbc5ff202cc",
+        "review_tree": "1b9d0344f39c4aeaaef3741519e704476befc7a9",
+        "manifest_digest": "sha256:bdef64ef1bcade5f2d32b083691014b76542e4c2f4afebb09e1231af91bfd6da"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-e8fee074a64b-1-review-1",
+          "acceptance_id": "RC-S7-A1",
+          "summary": "The tests check the unknown-blocker rejection only through readConfirmedBatchTopology. No test passes an unknown blocker to projectParallelGroups, and the projectParallelGroups cycle test matches only the substring 'acyclic'. The shared dependencyWaves helper still covers the case structurally.",
+          "anchor": "sha256:4b545bfc6a790dba01fb49753f740f3241aea75f23240edc6cad6a80269a1cd6",
+          "evidence": {
+            "trigger": "projectParallelGroups([{task_id:'a',blocked_by:[]},{task_id:'b',blocked_by:['ghost']}]) has no test. A future change to projectParallelGroups that let unknown ids through would not fail tests/unattended-batch-schedule.test.ts.",
+            "caller_chain": [
+              "tests/unattended-batch-schedule.test.ts",
+              "plugins/immune-brain/runtime/unattended/batch_schedule.ts:projectParallelGroups",
+              "plugins/immune-brain/runtime/unattended/batch_schedule.ts:dependencyWaves"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "RC-S7-A1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:4130ece1e73b3551b4b6179ecd3aaaa015904edc878ec1ee129a1a9cd0519593"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:rrc-s7-batch-dedupe:2026-11-15T07:53:24.936Z",
+      "at": "2026-11-15T07:53:24.936Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/rrc-s7-batch-dedupe.intent.json"
+    },
+    {
+      "id": "record_approval:rrc-s7-batch-dedupe:2026-11-15T07:56:02.769Z",
+      "at": "2026-11-15T07:56:02.769Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-ec15ba8e\naction_v2_sha256:47abe15d9bc47023f2c3d1d0347bdfd76b911f5e496bd4a097c3173e3c28af11",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T07:56:02.769Z"
+      }
+    },
+    {
+      "id": "record_approval:rrc-s7-batch-dedupe:2026-11-15T07:57:24.795Z",
+      "at": "2026-11-15T07:57:24.795Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-a7eb531d\naction_v2_sha256:a11f972b114d3204244743b99125581829ec887334af5e0aecd43c733bba8cf7",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:2d5da757-dffa-4985-b1bb-121eeff05732",
+        "confirmation_ref": "pi:cli:claude-code:2d5da757-dffa-4985-b1bb-121eeff05732",
+        "issued_at": "2026-11-15T07:57:24.795Z"
+      },
+      "review_started_at": "2026-11-15T07:56:05.606Z",
+      "review_submitted_at": "2026-11-15T07:57:24.133Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:rrc-s7-batch-dedupe:2026-11-15T07:57:26.727Z",
+      "at": "2026-11-15T07:57:26.727Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:ff7164187419e8f86283a3e425f0c43294e46ec862bee2e6ffccce0743503e05"
+    }
+  ]
+}

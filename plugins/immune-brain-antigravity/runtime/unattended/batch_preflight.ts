@@ -28,6 +28,7 @@ import { readTaskRecordRaw, readSettledTaskEvidence, readWorkspaceStateRaw, enro
 import type { TaskRecord } from "../kernel/types";
 import { pathMatchesScope } from "../workspace_scope";
 import { observeInitiative, observeSingleTask, projectBatchPlan } from "./batch_plan";
+import { dependencyWaves } from "./batch_schedule";
 import { parseVerificationDescriptor } from "../verification_descriptor";
 import { scopeEstimateFailure } from "../kernel/intent_readiness";
 import { batchReason, type BatchReasonKey } from "./batch_reasons";
@@ -473,16 +474,7 @@ export async function readConfirmedBatchTopology(root: string, batch: AnyBatchRu
 	if (observation.initiative_id !== batch.initiative_slug) throw new Error("Initiative identity changed");
 	const tasks = [...observation.tasks].sort((a, b) => a.task_id < b.task_id ? -1 : a.task_id > b.task_id ? 1 : 0);
 	if (new Set(tasks.map(task => task.task_id)).size !== tasks.length) throw new Error("duplicate Initiative Task");
-	const remaining = [...tasks];
-	const visited = new Set<string>();
-	while (remaining.length) {
-		const ready = remaining.filter(task => task.blocked_by.every(dependency => visited.has(dependency)));
-		if (!ready.length) throw new Error("Initiative dependencies contain a cycle or unknown Task");
-		for (const task of ready) {
-			visited.add(task.task_id);
-			remaining.splice(remaining.indexOf(task), 1);
-		}
-	}
+	dependencyWaves(tasks, "Initiative dependencies contain a cycle or unknown Task");
 	const topology_digest = batchTopologyDigest(tasks);
 	if (!isLaneBatchRecord(batch) || batch.topology_digest !== topology_digest)
 		throw new Error("confirmed Parent topology changed or its recorded identity is missing");

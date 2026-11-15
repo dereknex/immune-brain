@@ -1,0 +1,9 @@
+{
+  "contract": "assurance_kernel/task_tombstone/v2",
+  "task_id": "rrc-s5-prompt-dedupe",
+  "lifecycle_status": "terminal",
+  "terminal_lifecycle": "done",
+  "terminal_event_id": "complete:rrc-s5-prompt-dedupe:2026-11-15T07:43:30.143Z",
+  "final_record_hash": "sha256:4ab8512db974b52f15444a22fbfe3bb8d11acd4d01d8e070db2e13ed8bb37b70",
+  "terminalized_at": "2026-11-15T07:43:30.143Z"
+}

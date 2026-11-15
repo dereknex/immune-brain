@@ -1,0 +1,40 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "rrc-s6-review-parser-dedupe",
+  "owner": "user",
+  "goal": "remove-redundant-checks S6 (Spec docs/specs/remove-redundant-checks.spec.md, Technical Design S6 and threat model; U2, U3). The Review coordinator parser drops caller-side checks that a rebuild or a retained check already covers: B1 unknown-field rejection on finding evidence, evidence.violated, incomplete, pass approval and finding; B4 rework approval rejection; B5 approval kind and role self-assertion; B6 the empty-id trim; B7 the duplicate verification identity check; B11 the security-boundary revalidation and second git show, keeping the missing-boundary throw. The child-verdict top-level and verifier-output unknown-field checks stay. The Kernel receives the same verdict for every input accepted today. Execution posture: characterization-first.",
+  "acceptance": [
+    {
+      "id": "RC-S6-A1",
+      "assertion": "In tests/pi-canary-assurance-authority.test.ts and tests/pi-canary-assurance-progression.test.ts, a verdict with one extra field on finding evidence, evidence.violated, an incomplete verdict, a pass approval or a finding parses and the result carries no extra field; a QA finding carrying evidence parses without evidence; an extra top-level child-verdict field still throws unknown field; a missing trigger, caller_chain or approval summary still throws its current message.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\",\n      \"tests/pi-canary-assurance-progression.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S6-A2",
+      "assertion": "In tests/pi-canary-assurance-authority.test.ts, a rework verdict carrying an approval object parses to a rework verdict without approval; a pass approval with a wrong kind or authority_role parses to the expected kind and role; a finding id of spaces parses to a regenerated id; a non-string id and an empty approval summary still throw.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/pi-canary-assurance-authority.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S6-A3",
+      "assertion": "In tests/host-neutral-assurance-coordinator.test.ts, the verification packet for a rework verdict with an acceptance finding and one with a security_boundary finding equals the packet built before the change; an unknown boundary ref still throws security boundary source is invalid; verifier output with an extra field still discards the whole output and keeps every finding.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/host-neutral-assurance-coordinator.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RC-S6-A4",
+      "assertion": "bun run typecheck passes over the whole repository after the change, so no remaining import, re-export or call names a deleted or changed symbol.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/rrc-s6-review-parser-dedupe.md",
+    "docs/plans/rrc-s6-review-parser-dedupe.intent.json",
+    "docs/specs/remove-redundant-checks.spec.md",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "tests/antigravity-assurance-conformance.test.ts",
+    "tests/host-neutral-assurance-coordinator.test.ts",
+    "tests/pi-canary-assurance-authority.test.ts",
+    "tests/pi-canary-assurance-progression.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

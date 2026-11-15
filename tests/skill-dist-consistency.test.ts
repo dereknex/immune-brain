@@ -255,7 +255,6 @@ describe("skill dist consistency", () => {
 		const recovery = linkedSections(loopPath, routeLine(loop, "rework,"));
 		expect(recovery).toContain("For `settlement_unknown`");
 		expect(recovery).toContain("request_authorization");
-		expect(recovery).toContain("fail-closed");
 		expect(recovery).toContain("never replay the uncertain write");
 	});
 

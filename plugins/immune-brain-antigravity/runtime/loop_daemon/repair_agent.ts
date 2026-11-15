@@ -31,7 +31,6 @@ import type { LoopHandler } from "./handlers.ts";
 import { LOOP_PR_MARKER } from "./pr_opener.ts";
 import { deleteLease, ensureLoopStateDir, loadLoopState, saveLoopState } from "./state.ts";
 import type {
-	NormalizedLoopEvent,
 	RawComment,
 	RawPRCheck,
 	RawPRReview,
@@ -268,15 +267,6 @@ export function recordRepairAttempt(stateDir: string, headSha: string, failureSi
 	retries[key] = count;
 	saveRepairRetries(stateDir, retries);
 	return count;
-}
-
-export function clearRepairAttempt(stateDir: string, headSha: string, failureSignature: string): void {
-	const retries = loadRepairRetries(stateDir);
-	const key = repairKey(headSha, failureSignature);
-	if (key in retries) {
-		delete retries[key];
-		saveRepairRetries(stateDir, retries);
-	}
 }
 
 export interface RepairCiDeps {
@@ -913,82 +903,4 @@ export async function closeOut(input: CloseOutInput): Promise<RepairResult> {
 		cleaned_worktree: cleanedWorktree,
 		released_lease: releasedLease,
 	};
-}
-
-export interface DispatchRepairInput {
-	event: NormalizedLoopEvent;
-	pr: DaemonPrInput;
-	context: RepairContext;
-	deps: {
-		ci?: RepairCiDeps;
-		conflict?: RepairConflictDeps;
-		review?: AddressReviewDeps;
-		mark_ready?: MarkReadyDeps;
-		close_out?: CloseOutDeps;
-	};
-}
-
-/**
- * Unified dispatch entrypoint for PR repair and lifecycle events.
- */
-export async function dispatchRepair(input: DispatchRepairInput): Promise<RepairResult> {
-	switch (input.event.kind) {
-		case "E8_PR_CHECK_FAILED": {
-			if (!input.deps.ci) throw new Error("missing ci deps for E8_PR_CHECK_FAILED");
-			return repairPrCi({
-				pr: input.pr,
-				check: {
-					name: input.event.check_name,
-					failure_signature: input.event.failure_signature,
-					details_url: input.event.details_url,
-				},
-				context: input.context,
-				deps: input.deps.ci,
-			});
-		}
-		case "E9_PR_CONFLICT": {
-			if (!input.deps.conflict) throw new Error("missing conflict deps for E9_PR_CONFLICT");
-			return repairPrConflict({
-				pr: input.pr,
-				context: input.context,
-				deps: input.deps.conflict,
-			});
-		}
-		case "E10_PR_REVIEW_COMMENT": {
-			if (!input.deps.review) throw new Error("missing review deps for E10_PR_REVIEW_COMMENT");
-			return addressPrReview({
-				pr: input.pr,
-				comment: {
-					id: input.event.comment_id,
-					body: input.event.body,
-					path: input.event.path,
-					line: input.event.line,
-					author: input.event.author,
-					author_association: input.event.author_association,
-				},
-				context: input.context,
-				deps: input.deps.review,
-			});
-		}
-		case "E11_PR_READY_OR_MERGED": {
-			if (input.event.status === "merged") {
-				return closeOut({
-					pr: input.pr,
-					context: {
-						worktree_path: input.context.worktree_path,
-						state_dir: input.context.state_dir,
-						lease_target_id: input.context.lease_target_id,
-					},
-					deps: input.deps.close_out,
-				});
-			}
-			if (!input.deps.mark_ready) throw new Error("missing mark_ready deps for E11 ready");
-			return markPrReady({
-				pr: input.pr,
-				deps: input.deps.mark_ready,
-			});
-		}
-		default:
-			throw new Error(`unsupported event for repair dispatch: ${(input.event as any).kind}`);
-	}
 }

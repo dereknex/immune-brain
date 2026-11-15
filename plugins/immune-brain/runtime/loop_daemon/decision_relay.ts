@@ -37,7 +37,6 @@ export const REVISION_MISMATCH_NOTICE_MARKER = "<!-- immune-brain:kind=revision-
 export const RUN_ID_MARKER_PREFIX = "<!-- immune-brain:run-id=";
 export const RECORD_REVISION_MARKER_PREFIX = "<!-- immune-brain:record-revision=";
 export const TASK_ID_MARKER_PREFIX = "<!-- immune-brain:task-id=";
-export const DECISION_CHOICE_MARKER_PREFIX = "<!-- immune-brain:decision-choice=";
 export const STALE_REVISION_MARKER_PREFIX = "<!-- immune-brain:stale-revision=";
 export const CURRENT_REVISION_MARKER_PREFIX = "<!-- immune-brain:current-revision=";
 

@@ -11,7 +11,6 @@ import {
   preparePiCanary,
   revalidatePiCanary,
 } from "../plugins/immune-brain/runtime/kernel/pi_canary_prepare";
-import { evaluateCanaryEligibility } from "../plugins/immune-brain/runtime/kernel/canary_eligibility";
 import { INITIAL_WORKSPACE_REVISION } from "../plugins/immune-brain/runtime/kernel/storage";
 
 const TASK = "isolated-canary-boundary";
@@ -79,7 +78,7 @@ afterEach(() => {
 });
 
 describe("isolated repository preparation boundary", () => {
-  test("preparation is zero-write and new-task eligibility remains a pure projection", () => {
+  test("preparation is zero-write", () => {
     const before = snapshot();
     const now = "2026-08-13T00:00:00.000Z";
     const preparation = preparePiCanary(root, { task_id: TASK, now });
@@ -94,19 +93,6 @@ describe("isolated repository preparation boundary", () => {
       current_working: null,
       revision: INITIAL_WORKSPACE_REVISION,
     });
-
-    const eligibility = evaluateCanaryEligibility({
-      task: {
-        id: TASK,
-        intent_path: preparation.intent!.path,
-        intent_revision: preparation.intent!.revision,
-        intent_content_hash: preparation.intent!.content_hash,
-      },
-      now,
-    });
-    expect(eligibility.eligible).toBe(true);
-    expect(eligibility.waived_gates).toEqual([]);
-    expect(eligibility.unmet_non_waivable).toEqual([]);
   });
 
   test("revalidation equality holds while isolated owners remain unchanged", () => {

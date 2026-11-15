@@ -63,8 +63,7 @@ disclosure.
 
 `status` is a read, not a freeze. It stays readable while the scope holds
 unstaged or untracked paths and returns them as a `warnings` entry beside the
-projection. Freezing a snapshot still refuses those paths, and an in-scope path
-carrying a skip-worktree or assume-unchanged index flag still refuses both.
+projection.
 
 Before the first Enrollment of a candidate TaskIntent, confirm the Planner
 returned `tracker_associated` — but only when the candidate belongs to an
@@ -78,14 +77,12 @@ complete carrier batch succeeds; report the stable carrier reason and its exact
 retry action instead of enrolling. A carrier command the Host refused, cancelled,
 or never ran is not a completed batch, and a later `drive` entry does not
 clear it. This pre-Enrollment gate is distinct from the post-settlement tracker
-projection below, which never blocks the Loop.
+projection below.
 For a new single-task entry this check runs before `start_unattended_batch`
 with `task_id` (Child entry included); the Enrollment it guards is the Lane
 child's, derived under that call's one native gate.
 
-TaskIntent defines the goal, acceptance, and `scope_hint`; TaskRecord and the
-Kernel projection own lifecycle, artifact state, freshness, and next obligation.
-Conversation memory, GitHub Issues, and `CONTEXT.md` never override them.
+TaskIntent defines the goal, acceptance, and `scope_hint`.
 Historical prose Plans and State Ledgers are read-only history, not execution
 instructions. Do not create Steps, workflow profiles, follow-up ledgers, or
 successor Plans to drive a Kernel task.
@@ -120,9 +117,8 @@ and Claude's Stop Hook re-read facts for the active session binding. A valid act
 returns to this Loop; waiting Review/Executor invocations keep their existing call
 identity. Submit a returned verdict before editing; use projected recovery after
 a rejected submission. Only changed task/delivery facts or scoped source bytes
-reset substantive progress. Three unchanged observations stop with one recovery
+reset substantive progress. Unchanged observations stop with one recovery
 action; status, formatting and repeated failed commands do not reset the count.
-Host native-gate failures pause with same-Host recovery and never auto-retry.
 A single Slice ends at its own terminal proof; a Parent uses whole-plan completion
 from the [batch contract](drive-batch.md#unattended-batch-opt-in).
 
@@ -152,12 +148,9 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    result. The Kernel freezes the artifacts itself before QA: it binds Git
    content identity in place without relocating source paths. A simple task has
    TaskIntent only; a complex task may bind one active Spec. Deterministic QA
-   runs all descriptors in the task's working directory. Before the first
-   command and after every command, the tracked content inside the task's scope
-   must equal the frozen snapshot; a difference fails as
-   `protected_input_or_output_drift`. Content outside the scope, and untracked
-   or ignored files, are the user's environment and are not compared. Do not
-   dispatch a separate per-Step QA Agent.
+   runs all descriptors in the task's working directory. Content outside the
+   scope, and untracked or ignored files, are the user's environment and are not
+   compared. Do not dispatch a separate per-Step QA Agent.
 3. On `review_ready`, run the returned `review_command` from your own shell, in
    the background when that shell tool would otherwise time out, then call
    `submit_review` once the process exits. The command launches one reviewer
@@ -175,13 +168,11 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    `agent_params` as one foreground verifier, then call `submit_verification`
    without a result to use the Host-observed receipt.
    Follow a returned `review_ready` or `awaiting_user` through the same loop.
-4. Follow the returned Kernel obligation. Fresh QA suffices for routine work;
-   material and critical work additionally require fresh independent Review.
+4. Follow the returned Kernel obligation. Fresh QA suffices for routine work.
    Normal completion does not require a second user confirmation.
 5. For rework, follow the projected artifact state before editing. Submit the
-   rework verdict first, then edit: staging an in-scope change while the
-   artifacts are frozen invalidates the snapshot and discards that verdict,
-   forcing a fresh QA round. After the Kernel returns the artifacts to active,
+   rework verdict first, then edit. After the Kernel returns the artifacts to
+   active,
    make the fix, resolve findings only after fixing and verifying their cause,
    then run the newly required obligations. Changed snapshots
    invalidate old evidence; run the newly required obligations. On the second
@@ -213,15 +204,10 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    continue from the returned projection. Stop on terminal `done` or `stopped`,
    explicit cancellation, or a failure without a safe projected action.
 
-Use the fresh projection returned by a successful operation when supplied. Read
-`status` after interruption, ambiguous mutation results, absent projections, or
-suspected external changes. Never repeat a mutation merely to obtain its result.
-Kernel CAS and freshness checks remain mandatory; reducing Parent reads does
-not bypass them. Do not poll or create detached jobs.
+Read `status` after interruption, ambiguous mutation results, absent
+projections, or suspected external changes. Do not poll or create detached jobs.
 
 ## Decisions and Recovery
-
-A snapshot exhausted by two `incomplete` Reviews must not be redispatched automatically. When Kernel exposes `authorization.state: authorize_review_retry`, call `request_authorization` directly: the Host confirms exactly one extra attempt, bound to the current run, record, intent, diff and loaded Review contract. Preserve all history, QA evidence and frozen artifacts. A known previous contract must differ; legacy history without a contract hash requires an explicit “previous contract unknown; change cannot be verified” notice in the native gate. This legacy reader is drain-only (owner: runtime; remove when hash-less active tasks have drained). A grant cannot be repeated for the same snapshot, reused after content/intent changes, or treated as a Review approval. If the grant is exhausted or unavailable, stop and report the remaining constraint; do not clear counters or manufacture a TaskIntent change.
 
 - Resume from authority facts, not prose. After an uncertain interruption, bind
 the exact `task_id`, `run_id`, record revision, lifecycle, artifact state,
@@ -234,11 +220,6 @@ authored, validated, published, enrolled, assured, and completed each require
 their own evidence. An open or closed Issue is not Enrollment or completion; a
 published Issue is not Enrollment; a plan-only delivery is not execution
 readiness.
-- Consume a successful operation's fresh projection directly. Do not add a
-status read after an operation that already returned the current projection, and
-never repeat a mutation merely to re-observe its result. Kernel CAS and
-freshness checks remain mandatory, and reducing Parent reads does not bypass
-them.
 - A falsely claimed later-Slice enrollment is a summary defect, not authority.
 Retain the actual owner, and do not create or replay a mutation, gate, or
 completion to match the prose. Summary production outside this repository is not
@@ -246,9 +227,9 @@ locally fixed; the consumer-side protection is these rules, and a producer bug
 is recorded as a separate follow-up rather than resolved here.
 - `scope_hint` is an estimate (ADR 0028). Deliver files needed for the accepted
   outcome and disclose paths beyond it as `beyond_estimate`; a missing caller,
-  test or generated mirror does not require a scope revision. Hard no-touch
-  paths remain prohibited. Any scope-only revision that keeps the bound Spec
-  path is `compatible` through `revise_intent`, including additions, removals,
+  test or generated mirror does not require a scope revision. Any scope-only
+  revision that keeps the bound Spec path is `compatible` through `revise_intent`,
+  including additions, removals,
   directories and globs; it has no same-directory exception or `scope_added:`
   history. A change of goal, bound Spec design or decomposition returns to
   Planner's Enrolled Intent Revision route: Planner prepares the complete
@@ -265,8 +246,8 @@ is recorded as a separate follow-up rather than resolved here.
   Within one entry, only a side-effect-free rejection is retried, at most twice,
   and preflight is rerun before each retry; judge retryability from the
   rejection text and `recovery_action`. `plan_changed`, `head_moved` and a claim
-  conflict are never retried. The third native-operation failure under one entry
-  pauses the run and ends its token; only a new literal entry resumes. When
+  conflict are never retried, and a third native-operation failure pauses the
+  run and ends the token — only a new literal entry resumes. When
   preflight names a deterministic fix (for example a `.gitignore` that ignores
   `.imm/audit/`), apply it, commit the fixed files alone in one commit even under
   `Git integration: manual`, list that commit in the manifest, then retry. Push,
@@ -307,32 +288,21 @@ is recorded as a separate follow-up rather than resolved here.
   Cancellation is not task termination. A busy invocation must finish or be
   cancelled through existing Host controls before requesting stop; never clear
   claims manually or use this operation to force-kill QA.
-- Invoke `repair_authority_state` directly for a proven stale claim. Kernel
-  revalidation removes only the redundant claim without user interaction.
-- A Managed native authority failure stays fail-closed. Report its stable reason
-  and exactly one same-Host recovery action. Never recommend another Host,
-  worktree, Direct Path, unmanaged implementation, or automatic retry.
-- After interruption, read a fresh projection and run only the pending obligation.
-  `recovery` carries that task/run/record identity, affected acceptance/finding IDs
-  and one legal `next_action`; it is an observation, never execution readiness.
+- After interruption, run only the pending obligation.
   Own-claim technical rework goes to foreground Executor, not user authorization.
-  `review_preparation_failed` keeps the batch running/enrolled: repair the Review
-  evidence environment and resume `run_review`, retaining fresh QA without batch
-  re-confirmation.
   Repair and verify the cause, then dispose each identified finding explicitly by
   `resolve_finding` or evidence-bound `refute_finding`. Local green cannot close
   findings or settle the task; obtain fresh Kernel QA and required Review.
   Environment preparation/resolution/integrity failure is not an assertion finding.
   Use its canonical descriptor reference/digest, phase/outcome, timing and byte
-  counts to diagnose; QA diagnostic metadata is capped at 16 KiB and contains no
-  stdout/stderr, argv, environment values or arbitrary executor error text.
+  counts to diagnose.
   The stage decides what else a failed result carries. A `prepare` stage ending
   in timeout, nonzero exit or output limit adds `prepare_observation` to the
   direct Tool result only: the execution conditions (the task's working
-  directory), the declared timeout, and at most 2048 bytes of
-  the end of stderr with control characters other than newline and tab removed. It is never persisted. A failing `check`
-  stage returns no output text at all. A `protected_input_or_output_drift`
-  failure adds `prepare_observation.drift_paths`, at most 64 in-scope paths that
+  directory), the declared timeout, and the end of stderr with control
+  characters other than newline and tab removed. It is never persisted. A
+  failing `check` stage returns no output text at all. A `protected_input_or_output_drift`
+  failure adds `prepare_observation.drift_paths`, the in-scope paths that
   differ from the frozen snapshot, to the direct Tool result only; restore or
   stage those paths before a fresh attempt. The Lane batch integration recheck
   is the one run that still uses an isolated copy with no worktree
@@ -347,11 +317,10 @@ is recorded as a separate follow-up rather than resolved here.
   Scope/authority exceptions still use their existing native gates. A committed
   QA result is honored; an interrupted precommit QA run produces no approval.
   Do not rerun fresh QA simply because Review was interrupted.
-- Provider quota or interruption is not Review budget exhaustion. Preserve
-  fresh QA and follow the Host's exact `recovery_action`; an unchanged envelope
-  returned by `advance_assurance` alone does not authorize redispatch of an
-  already-dispatched reservation. Malformed or stale reviewer output is not a
-  verdict. Keep a reservation only if the Host reports it valid; obtain a new
+- Preserve fresh QA and follow the Host's exact `recovery_action`; an unchanged
+  envelope returned by `advance_assurance` alone does not authorize redispatch
+  of an already-dispatched reservation. Keep a reservation only if the Host
+  reports it valid; obtain a new
   one only through its supported recovery. If the returned action cannot clear
   the observed fault, report that concrete Host blocker rather than loop.
 - Missing tools, credentials, invalid projections, or repeated unchanged failures
@@ -433,8 +402,7 @@ It cannot approve successors or delay terminal settlement. A projection with
 The Host may attach an opted-in GitHub projection after settlement. Only a fresh claimless
 `done`/`stopped` projection plus its exact terminal tombstone projects
 `completed`/`not planned`; Enrollment performs no GitHub projection. Report a
-tracker failure separately; never use it as evidence, a Loop blocker, or a reason to
-repeat a Kernel mutation.
+tracker failure separately.
 
 ## Observable Output
 

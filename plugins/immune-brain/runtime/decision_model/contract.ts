@@ -82,12 +82,6 @@ export function isApplicationPointId(value: unknown): value is ApplicationPointI
 	return typeof value === "string" && (APPLICATION_POINTS as readonly string[]).includes(value);
 }
 
-export function assertApplicationPointId(value: unknown): asserts value is ApplicationPointId {
-	if (!isApplicationPointId(value)) {
-		throw new Error(`unknown application point "${String(value)}"`);
-	}
-}
-
 export type ProbabilityMap = Record<string, number>;
 
 export interface ClefProfile {

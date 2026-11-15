@@ -340,6 +340,20 @@ describe("foreground assurance progression", () => {
 		expect(h.counts().applyCount).toBe(2);
 	});
 
+	test("a verdict carrying fields the parser drops still settles", async () => {
+		const h = makeHarness();
+		const ready = await h.progression.advance(TASK, ctx);
+		expect(ready.state).toBe("review_ready");
+		const base = passVerdict(snapshot("review"));
+		// B1: extra fields on the approval and on a finding are dropped, not rejected.
+		const noisy = { ...base,
+			approval: { ...base.approval, note: "extra" },
+			findings: [{ id: "note-1", kind: "advisory", acceptance_id: null, summary: "note", severity: "low",
+				evidence: { trigger: "the note is advisory", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
+		runReservedReview(ready, noisy);
+		expect(await h.progression.submitMediated(TASK, ctx, noisy)).toEqual({ state: "completed" });
+	});
+
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
 		const h = makeHarness();
 		const ready = await h.progression.advance(TASK, ctx);
@@ -483,10 +497,14 @@ test("parseAssuranceVerdict rejects a verdict bound to another snapshot", () => 
 	expect(() => parseAssuranceVerdict(resultText({ ...s, diff_hash: "sha256:other" }), s)).toThrow(/snapshot digest/i);
 });
 
-test("parseAssuranceVerdict rejects unknown approval fields", () => {
+test("parseAssuranceVerdict drops unknown approval fields but still rejects a top-level one", () => {
 	const s = snapshot("review");
-	const pass = JSON.parse(resultText(s)) as { approval: Record<string, unknown> };
+	// B1: extra approval fields are dropped by the rebuild.
+	const pass = JSON.parse(resultText(s)) as { approval: Record<string, unknown> } & Record<string, unknown>;
 	pass.approval.extra = "nope";
+	expect(parseAssuranceVerdict(JSON.stringify(pass), s).approval).not.toHaveProperty("extra");
+	// The child-verdict whitelist stays strict.
+	pass.extra = "nope";
 	expect(() => parseAssuranceVerdict(JSON.stringify(pass), s)).toThrow(/unknown field/i);
 });
 

@@ -28,9 +28,12 @@ describe("scope is an estimate in workflow source contracts (ADR 0028)", () => {
 	it("batch revisions retain user authority without delegated approval or reseal", () => {
 		const batch = read(`${PLUGIN}/dist/drive-batch.md`);
 		expect(batch).toContain("acceptance changes pauses for the literal user's native gate");
-		expect(batch).toContain("cannot approve revisions or reseal `plan_digest`");
-		expect(batch).toContain("remain readable and retireable as historical evidence");
 		expect(batch).not.toContain("confirmation offers one opt-in choice");
+		// The no-reseal and delegation-retirement rules are Kernel authority
+		// (Spec remove-redundant-checks S5 H4), stated once in the Loop contract.
+		const loop = read(`${PLUGIN}/dist/drive.md`);
+		expect(loop).toContain("the coordinator cannot approve them or reseal the batch");
+		expect(loop).toContain("Existing records with delegation fields remain readable and retireable (ADR 0028)");
 	});
 
 	it("the merge queue regenerates derived outputs on child changes and parks failures", () => {

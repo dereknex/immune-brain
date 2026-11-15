@@ -162,7 +162,9 @@ describe("immune-brain BASELINE packaging contract", () => {
   it("keeps Kernel risk obligations in the canonical Loop contract", () => {
     const loop = read(resolve(DIST_DIR, "drive.md"))
     expect(loop).toContain("Fresh QA suffices for routine work")
-    expect(loop).toContain("material and critical work additionally require fresh independent Review")
+    // The material/critical Review requirement is a Kernel completion obligation
+    // (Spec remove-redundant-checks S5 I10), so the Loop contract no longer restates it.
+    expect(loop).not.toContain("material and critical work additionally require fresh independent Review")
     expect(loop).toContain("submit_review")
     expect(read(resolve(DIST_DIR, "role-prompts/compounder.md"))).toContain(
       "# Internal role: compounder",

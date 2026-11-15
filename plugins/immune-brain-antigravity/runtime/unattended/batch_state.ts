@@ -716,19 +716,6 @@ function writeFileAtomically(root: string, relative: string, bytes: string): voi
 	}
 }
 
-/** Replace an existing authorization only after a locked expected-byte check. */
-export function replaceBatchRunState(root: string, expected: Buffer, next: BatchRunStateRecord, validate: () => void): BatchRunStateRecord {
-	const path = statePath(next.batch_id);
-	validateRecordShape(next, next.batch_id);
-	return withKernelStoreLock(root, () => {
-		if (!readSecureProjectBytes(root, path).equals(expected)) throw new Error("batch state CAS mismatch");
-		validate();
-		const stored = withoutRetiredClock({ ...next, updated_at: new Date().toISOString() });
-		writeFileAtomically(root, path, canonicalBytes(stored));
-		return stored;
-	});
-}
-
 /** Replace a record of either version only after a locked expected-byte check. */
 export function replaceAnyBatchRunState(
 	root: string,

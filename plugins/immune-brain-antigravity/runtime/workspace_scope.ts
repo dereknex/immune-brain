@@ -210,14 +210,6 @@ export function captureGitWorkspaceSnapshot(
 	};
 }
 
-export function workspaceDiffHash(projectRoot: string): string {
-	const snapshot = captureGitWorkspaceSnapshot(projectRoot);
-	if (!snapshot) throw new Error("Cannot derive workspace diff without a Git workspace.");
-	return `sha256:${createHash("sha256")
-		.update(JSON.stringify(snapshot))
-		.digest("hex")}`;
-}
-
 export interface GitTaskIndexEntry {
 	status: "added" | "modified" | "deleted";
 	mode: "100644" | "100755" | "120000" | null;
@@ -873,123 +865,6 @@ function isGitWorkspaceSnapshot(value: unknown): value is GitWorkspaceSnapshot {
 	);
 }
 
-function canonicalizeClaimedPath(value: string): string {
-	const normalized = value.trim().replace(/\\/g, "/");
-	if (
-		!normalized ||
-		normalized.includes("\0") ||
-		normalized.startsWith("/") ||
-		/^[A-Za-z]:\//.test(normalized)
-	) {
-		throw new Error(`Invalid replacement changed file claim: ${value}`);
-	}
-	const parts: string[] = [];
-	for (const part of normalized.split("/")) {
-		if (!part || part === ".") continue;
-		if (part === "..") {
-			throw new Error(`Invalid replacement changed file claim: ${value}`);
-		}
-		parts.push(part);
-	}
-	if (parts.length === 0) {
-		throw new Error(`Invalid replacement changed file claim: ${value}`);
-	}
-	return parts.join("/");
-}
-
-export type ReplacementChangedFiles = {
-	changedFiles: string[] | null;
-	carriedFiles: string[];
-	workspaceSnapshot: GitWorkspaceSnapshot;
-};
-
-export function replacementChangedFilesSinceSnapshot(
-	projectRoot: string,
-	baseline: unknown,
-	claimedFiles: string[],
-): ReplacementChangedFiles | null {
-	const baselineSnapshot = isGitWorkspaceSnapshot(baseline) ? baseline : null;
-	const current = captureGitWorkspaceSnapshot(projectRoot);
-	if (!current) {
-		if (!baselineSnapshot) return null;
-		throw new Error(
-			"Cannot verify execution scope because the Git workspace is unavailable.",
-		);
-	}
-	if (!baselineSnapshot || current.head !== baselineSnapshot.head) {
-		return {
-			changedFiles: null,
-			carriedFiles: [],
-			workspaceSnapshot: current,
-		};
-	}
-	if (current.repository_root !== baselineSnapshot.repository_root) {
-		throw new Error("Git workspace root changed after Step activation.");
-	}
-
-	const currentDirty = new Set(Object.keys(current.dirty_files));
-	const claimed = new Set(claimedFiles.map(canonicalizeClaimedPath));
-	const carriedFiles = Object.keys(baselineSnapshot.dirty_files)
-		.filter((path) => !isRuntimeAuthorityPath(path))
-		.filter((path) => claimed.has(path))
-		.filter((path) => currentDirty.has(path))
-		.sort(comparePaths);
-	const changedFiles = [
-		...new Set([
-			...Object.keys(baselineSnapshot.dirty_files),
-			...Object.keys(current.dirty_files),
-		]),
-	]
-		.filter((path) => !isRuntimeAuthorityPath(path))
-		.filter(
-			(path) =>
-				baselineSnapshot.dirty_files[path] !== current.dirty_files[path],
-		)
-		.filter((path) => currentDirty.has(path));
-
-	return {
-		changedFiles: [...new Set([...changedFiles, ...carriedFiles])].sort(
-			comparePaths,
-		),
-		carriedFiles,
-		workspaceSnapshot: current,
-	};
-}
-
-export function changedFilesSinceSnapshot(
-	projectRoot: string,
-	baseline: unknown,
-): string[] | null {
-	if (!isGitWorkspaceSnapshot(baseline)) return null;
-	const current = captureGitWorkspaceSnapshot(projectRoot);
-	if (!current) {
-		throw new Error(
-			"Cannot verify execution scope because the Git workspace is unavailable.",
-		);
-	}
-	if (current.repository_root !== baseline.repository_root) {
-		throw new Error("Git workspace root changed after Step activation.");
-	}
-	if (current.head !== baseline.head) {
-		// Commits after activation invalidate git-delta derivation (the baseline
-		// dirty set cannot be compared against a different tree). Rather than
-		// blocking execution recording entirely — which strands HITL steps that
-		// legitimately commit deploy fixes mid-step — fall back to the same
-		// self-reported provenance path used when no baseline exists. The
-		// claimed files still pass the Step Scope check and independent QA.
-		return null;
-	}
-	return [
-		...new Set([
-			...Object.keys(baseline.dirty_files),
-			...Object.keys(current.dirty_files),
-		]),
-	]
-		.filter((path) => !isRuntimeAuthorityPath(path))
-		.filter((path) => baseline.dirty_files[path] !== current.dirty_files[path])
-		.sort(comparePaths);
-}
-
 function normalizeBoundaryPath(value: string): string {
 	return value
 		.trim()
@@ -1041,50 +916,6 @@ export function pathMatchesScope(path: string, scopePath: string): boolean {
 		normalizedPath === normalizedScope ||
 		normalizedPath.startsWith(`${normalizedScope}/`)
 	);
-}
-
-const TEST_FILE_REFERENCE = /[\w./-]*\.(?:test|spec)\.[cm]?[jt]sx?\b/g;
-
-/**
- * `bun test` treats its arguments as filters rather than paths, so a command
- * naming three files where one was renamed away runs the other two and still
- * exits 0. Left unchecked the evidence records a pass whose coverage silently
- * shrank. Verification runs after the work is done, so a cited test file is
- * expected to exist by the time evidence is recorded.
- *
- * Only passing checks are held to this. A failure must stay recordable — that
- * is how a missing test file gets reported in the first place, since a command
- * naming nothing else exits non-zero — and it cannot manufacture false
- * confidence because QA refuses to pass on failed evidence.
- */
-export function assertCheckCommandsCiteExistingTests(
-	checks: unknown,
-	root: string,
-): void {
-	if (!Array.isArray(checks)) return;
-	const missing = new Set<string>();
-	for (const check of checks) {
-		if (typeof check !== "object" || check === null || Array.isArray(check))
-			continue;
-		const entry = check as Record<string, unknown>;
-		if (entry.kind === "manual" || entry.status !== "passed") continue;
-		const command = entry.command;
-		if (typeof command !== "string") continue;
-		// A command that moves elsewhere first resolves its paths against that
-		// directory, not the project root, so the check cannot be trusted.
-		if (/(^|\s|&|;)cd\s/.test(command)) continue;
-		for (const [candidate] of command.matchAll(TEST_FILE_REFERENCE)) {
-			// A glob is resolved by the shell or the runner, which reports its own
-			// miss; only a literal path can be confirmed here.
-			if (!candidate.includes("/") || /[*?[\]]/.test(candidate)) continue;
-			if (!existsSync(resolve(root, candidate))) missing.add(candidate);
-		}
-	}
-	if (missing.size > 0) {
-		throw new Error(
-			`Evidence cites test files that do not exist: ${[...missing].join(", ")}. A renamed or deleted test leaves the command passing on a smaller set than it names.`,
-		);
-	}
 }
 
 function gitBlobId(body: Buffer, length: number): string {

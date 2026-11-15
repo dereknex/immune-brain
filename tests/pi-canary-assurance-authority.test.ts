@@ -82,6 +82,7 @@ const {
 } = await import("../plugins/immune-brain/.pi-extension/imm-canary-work.ts");
 type SnapshotDescriptor = import("../plugins/immune-brain/runtime/assurance/coordinator").SnapshotDescriptor;
 import { findingsDigestV2 } from "../plugins/immune-brain/runtime/kernel/reducer";
+import { parseChildVerdict } from "../plugins/immune-brain/runtime/assurance/coordinator";
 import { runDeterministicQa } from "../plugins/immune-brain/runtime/assurance/qa";
 import {
 	parseVerificationDescriptor,
@@ -189,16 +190,26 @@ describe("canary assurance authority", () => {
 		expect(first.findings?.[0].anchor).toMatch(/^sha256:[a-f0-9]{64}$/);
 		const reworkObject = JSON.parse(rework);
 		expect(parseAssuranceVerdict({ ...reworkObject, approval: null }, s).decision).toBe("rework");
-		expect(() => parseAssuranceVerdict({ ...reworkObject, approval: { kind: "review" } }, s)).toThrow("rework verdict must omit approval");
+		// B4: an approval on a rework verdict is dropped; the rebuilt verdict never
+		// carries one.
+		const withApproval = parseAssuranceVerdict({ ...reworkObject, approval: { kind: "review", authority_role: "reviewer", summary: "x", extra: true } }, s);
+		expect(withApproval.decision).toBe("rework");
+		expect(withApproval).not.toHaveProperty("approval");
 		const nextSnapshot = snapshot({ record_revision: "sha256:" + "f".repeat(64) });
 		const nextRework = rework.replaceAll(snapshotDigest(s), snapshotDigest(nextSnapshot));
 		expect(parseAssuranceVerdict(nextRework, nextSnapshot).findings?.[0].id).not.toBe(first.findings?.[0].id);
 		expect(() => parseAssuranceVerdict(passVerdict(s).replace('"role":"review"', '"role":"qa"'), s)).toThrow(/role mismatch/i);
 		expect(() => parseAssuranceVerdict(passVerdict(s).replace(snapshotDigest(s), "sha256:" + "0".repeat(64)), s)).toThrow(/snapshot digest mismatch/i);
-		expect(() => parseAssuranceVerdict(rework.replace('"summary":"broken"', '"summary":"broken","findings_digest":"forged"'), s)).toThrow(/unknown field/i);
+		// The child-verdict whitelist stays strict; only fields inside the rebuilt
+		// objects are dropped.
+		expect(() => parseAssuranceVerdict({ ...reworkObject, findings_digest: "forged" }, s)).toThrow(/unknown field/i);
+		// B1: an extra field on a finding is dropped, never carried into the result.
+		const extraFinding = parseAssuranceVerdict(rework.replace('"summary":"broken"', '"summary":"broken","findings_digest":"forged"'), s);
+		expect(extraFinding.findings?.[0].findings_digest).toMatch(/^sha256:/);
+		expect(JSON.stringify(extraFinding)).not.toContain("forged");
 	});
 
-	test("review rework findings require evidence and reject an anchor they assert", () => {
+	test("review rework findings require evidence and drop an asserted anchor", () => {
 		const s = snapshot();
 		const withoutEvidence = JSON.parse(reworkVerdict(s)) as { findings: Array<Record<string, unknown>> };
 		delete withoutEvidence.findings[0].evidence;
@@ -206,8 +217,15 @@ describe("canary assurance authority", () => {
 		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, caller_chain: [] }), s)).toThrow(/caller_chain/);
 		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, trigger: "  " }), s)).toThrow(/trigger/);
 		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, violated: { kind: "other", ref: "A1" } }), s)).toThrow(/violated.kind/);
-		expect(() => parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, anchor: "sha256:" + "0".repeat(64) }), s)).toThrow(/unknown field/);
-		// QA-role rework verdicts keep the pre-extension finding contract.
+		// B1: an asserted anchor and an extra evidence or violated field are
+		// dropped; every result is rebuilt from the named fields.
+		const asserted = parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, anchor: "sha256:" + "0".repeat(64) }), s);
+		expect(asserted.findings?.[0].evidence).toEqual(REVIEW_EVIDENCE);
+		expect(asserted.findings?.[0].anchor).not.toBe("sha256:" + "0".repeat(64));
+		const extraViolated = parseAssuranceVerdict(reworkVerdict(s, { ...REVIEW_EVIDENCE, violated: { ...REVIEW_EVIDENCE.violated, severity: "high" } }), s);
+		expect(extraViolated.findings?.[0].evidence?.violated).toEqual({ kind: "acceptance", ref: "A1" });
+		// QA-role rework verdicts keep the pre-extension finding contract: a stray
+		// evidence field is dropped rather than rejected.
 		const qa = snapshot({ role: "qa" });
 		const qaVerdict = JSON.stringify({
 			contract: "assurance_kernel/assurance_verdict/v2",
@@ -226,7 +244,9 @@ describe("canary assurance authority", () => {
 			decision: "rework",
 			findings: [{ id: "q-1", kind: "blocking", acceptance_id: "A1", summary: "failed", evidence: REVIEW_EVIDENCE }],
 		});
-		expect(() => parseAssuranceVerdict(qaWithEvidence, qa)).toThrow(/unknown field/);
+		const qaParsed = parseAssuranceVerdict(qaWithEvidence, qa);
+		expect(qaParsed.findings?.[0]).not.toHaveProperty("evidence");
+		expect(JSON.stringify(qaParsed)).not.toContain("caller_chain");
 	});
 
 	test("both host adapters forward the derived anchor and evidence into findingsDigestV2", () => {
@@ -299,18 +319,58 @@ describe("canary assurance authority", () => {
 		).decision).toBe("pass");
 	});
 
-	test("QA passes and rework verdicts still reject the field as unknown", () => {
+	test("pass approvals and rework verdicts keep the shape the coordinator rebuilds", () => {
 		const qa = snapshot({ role: "qa" });
 		expect(parseAssuranceVerdict(passVerdict(qa), qa).decision).toBe("pass");
 		const withPaths = JSON.parse(passVerdict(qa)) as { approval: Record<string, unknown> };
 		withPaths.approval.inspected_paths = ["src/new.ts"];
-		expect(() => parseAssuranceVerdict(JSON.stringify(withPaths), qa)).toThrow(/unknown field: inspected_paths/);
-		// A rework verdict keeps its shape: findings, no approval, and no path list.
-		const rework = JSON.parse(reworkVerdict(snapshot())) as Record<string, unknown>;
+		withPaths.approval.extra = "dropped";
+		// B1/B5: QA never carries the Review-only path list, and the approval is
+		// rebuilt from the coordinator's own kind, role and summary.
+		expect(parseAssuranceVerdict(JSON.stringify(withPaths), qa).approval)
+			.toEqual({ kind: "qa", authority_role: "qa", summary: "verified" });
+		// A rework verdict keeps its shape: findings and no approval, whatever
+		// approval object the reviewer emitted.
+		const s = snapshot();
+		const rework = JSON.parse(reworkVerdict(s)) as Record<string, unknown>;
 		const reviewRework = { ...rework, approval: { kind: "review", authority_role: "reviewer", summary: "x", inspected_paths: [] } };
-		expect(() => parseAssuranceVerdict(JSON.stringify(reviewRework), snapshot())).toThrow(/rework verdict must omit approval/);
-		delete (reviewRework as Record<string, unknown>).approval;
-		expect(parseAssuranceVerdict(JSON.stringify(reviewRework), snapshot()).decision).toBe("rework");
+		expect(parseAssuranceVerdict(JSON.stringify(reviewRework), s)).toEqual(parseAssuranceVerdict(JSON.stringify(rework), s));
+	});
+
+	test("child verdicts rebuild approval identity, finding ids and incomplete fields", () => {
+		const s = snapshot();
+		// B5: a self-asserted kind and role are replaced by the expected values.
+		const asserted = JSON.parse(passVerdict(s)) as { approval: Record<string, unknown> };
+		asserted.approval.kind = "qa";
+		asserted.approval.authority_role = "qa";
+		expect(parseAssuranceVerdict(JSON.stringify(asserted), s).approval)
+			.toEqual({ kind: "review", authority_role: "reviewer", summary: "verified" });
+		// The summary stays a required, non-empty field.
+		const noSummary = JSON.parse(passVerdict(s)) as { approval: Record<string, unknown> };
+		delete noSummary.approval.summary;
+		expect(() => parseAssuranceVerdict(JSON.stringify(noSummary), s)).toThrow("pass verdict approval is invalid");
+		// An empty or blank summary stays rejected by the retained trim check.
+		for (const summary of ["", "  "]) {
+			const blankSummary = JSON.parse(passVerdict(s)) as { approval: Record<string, unknown> };
+			blankSummary.approval.summary = summary;
+			expect(() => parseAssuranceVerdict(JSON.stringify(blankSummary), s)).toThrow("pass verdict approval is invalid");
+		}
+		// B6: a blank finding id is regenerated from the snapshot digest and index.
+		const blank = JSON.parse(reworkVerdict(s)) as { findings: Array<Record<string, unknown>> };
+		blank.findings[0].id = "   ";
+		expect(parseAssuranceVerdict(JSON.stringify(blank), s).findings?.[0].id).toMatch(new RegExp(`^review-${snapshotDigest(s).slice(7, 19)}-1-+$`));
+		// A non-string id stays rejected.
+		const numeric = JSON.parse(reworkVerdict(s)) as { findings: Array<Record<string, unknown>> };
+		numeric.findings[0].id = 7;
+		expect(() => parseAssuranceVerdict(JSON.stringify(numeric), s)).toThrow(/finding 0 is invalid/);
+		// B1: an incomplete verdict drops an extra field but still requires reason
+		// and a unique subset of the changed paths.
+		const incomplete = { contract: "assurance_kernel/assurance_verdict/v2", role: "review", task_id: s.task_id,
+			snapshot_digest: snapshotDigest(s), decision: "incomplete", inspected_paths: ["src/new.ts"], reason: "coverage unfinished", extra: "dropped" };
+		const parsedIncomplete = parseChildVerdict(incomplete, s);
+		expect(parsedIncomplete).toMatchObject({ decision: "incomplete", inspected_paths: ["src/new.ts"], reason: "coverage unfinished" });
+		expect(parsedIncomplete).not.toHaveProperty("extra");
+		expect(() => parseChildVerdict({ ...incomplete, reason: "a\nb" }, s)).toThrow(/single line/);
 	});
 
 	test("deterministic QA runs fixed descriptors without executor-authored evidence", async () => {
