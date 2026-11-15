@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import type { StatusProjectionResult } from "./coordinator";
 import { captureGitWorkspaceSnapshot, pathMatchesScope } from "../workspace_scope";
 import { startableChildren } from "../unattended/batch_schedule";
-import { readAnyBatchRunState, isLaneBatchRecord } from "../unattended/batch_state";
-import { observeInitiative } from "../unattended/batch_plan";
+import { readAnyBatchRunState, isLaneBatchRecord, type AnyBatchRunStateRecord } from "../unattended/batch_state";
+import { observeInitiative, observeSingleTask } from "../unattended/batch_plan";
 import { observeParentCompletion, observeNativeParent } from "../unattended/batch_git";
 import { projectTaskStatus } from "./coordinator";
 import { readActiveClaimTaskId } from "../unattended/batch_preflight";
@@ -43,6 +43,8 @@ export interface ParentContinuationObservation extends RunSessionIdentity {
 	initiative_slug: string;
 	batch_id: string | null;
 	plan_digest: string;
+	/** The binding digest a contiguous `lane_rebinds` chain advanced from, when this observation rebound it. */
+	rebound_from_plan_digest?: string;
 	/** Includes dependency readiness, integrations, corrections and final verification. */
 	progress_digest: string;
 	all_required_integrated: boolean;
@@ -87,6 +89,20 @@ export function releasesRunBinding(prompt: string, phase: "run" | "planner" | "b
 
 function digest(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+/**
+ * Whether `record.plan_digest` is reachable from `fromDigest` through one
+ * contiguous `lane_rebinds` suffix ending at the recorded digest (D3). A digest
+ * that changed without that chain is not the same Parent identity.
+ */
+export function hasContiguousLaneRebind(record: AnyBatchRunStateRecord, fromDigest: string): boolean {
+	if (!isLaneBatchRecord(record) || record.plan_source !== "single_task") return false;
+	const rebinds = record.lane_rebinds;
+	if (!Array.isArray(rebinds) || rebinds.length === 0) return false;
+	if (rebinds.at(-1)!.to_digest !== record.plan_digest) return false;
+	return rebinds.some((entry, start) => entry.from_digest === fromDigest &&
+		rebinds.slice(start + 1).every((next, offset) => next.from_digest === rebinds[start + offset]!.to_digest));
 }
 
 export function scopedSourceDigest(root: string, scope: readonly string[]): string {
@@ -135,10 +151,14 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 			next_action: nextAction, blocked_reason: facts.proof.reason ?? undefined };
 	}
 	const record = readAnyBatchRunState(root, binding.batch_id);
-	if (!record || record.initiative_slug !== binding.initiative_slug || record.plan_digest !== binding.plan_digest)
+	const rebound = record !== null && record.initiative_slug === binding.initiative_slug &&
+		hasContiguousLaneRebind(record, binding.plan_digest);
+	if (!record || record.initiative_slug !== binding.initiative_slug ||
+		(record.plan_digest !== binding.plan_digest && !rebound))
 		throw new Error("Parent continuation has no matching persisted batch identity");
 	if (!isLaneBatchRecord(record)) throw new Error("batch_record_shape_retired: inspect the record, then use retire_stale_batch in the current Host");
-	const plan = await observeInitiative(root, binding.initiative_slug);
+	// A remote-less single_task Lane has no Initiative carrier to observe (D1).
+	const plan = await (record.plan_source === "single_task" ? observeSingleTask : observeInitiative)(root, binding.initiative_slug);
 	const completion = await observeParentCompletion(root, binding.initiative_slug, plan.tasks.map(child => child.task_id));
 	let runnable = false;
 	let running = false;
@@ -198,7 +218,9 @@ export async function observeParentRun(binding: RunBinding & { kind: "parent" },
 	if (exhausted) nextAction = "Parent coordinator correction budget exhausted; resolve the final failure with a user decision before further repair Enrollment";
 	return { kind: "parent", workspace: root, session_id: binding.session_id, boundary_id: boundaryId,
 		initiative_slug: record.initiative_slug, batch_id: record.batch_id, plan_digest: record.plan_digest,
-		progress_digest: digest({ children: record.children.map(child => ({ task_id: child.task_id, state: child.state, commit: child.commit })),
+		rebound_from_plan_digest: rebound ? binding.plan_digest : undefined,
+		progress_digest: digest({ plan_digest: record.plan_digest,
+			children: record.children.map(child => ({ task_id: child.task_id, state: child.state, commit: child.commit })),
 			commits: record.commits, completion, childProgress, final: finalProgress(record.final_verification_result) }), all_required_integrated: completion.missing_task_ids.length === 0,
 		final_passed: completion.final_passed, pending_repair: failedFinal, runnable: !exhausted && (runnable || (failedFinal && !activeChild)),
 		executors_running: running, next_action: nextAction, blocked_reason: completion.reason ?? undefined };
@@ -219,13 +241,18 @@ export function decideRunContinuation(previous: RunContinuationState,
 	let progressDigest: string;
 	let nextAction: string;
 	let wait = false;
+	let base = previous;
 	if (binding.kind === "parent" && observation.kind === "parent") {
-		if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id || binding.plan_digest !== observation.plan_digest)
+		if (binding.initiative_slug !== observation.initiative_slug || binding.batch_id !== observation.batch_id ||
+			(binding.plan_digest !== observation.plan_digest && observation.rebound_from_plan_digest !== binding.plan_digest))
 			return result("pause", "batch identity changed; reread its authorized plan", null);
+		// An approved contiguous rebind advances the binding without a false identity failure (D3).
+		if (observation.rebound_from_plan_digest === binding.plan_digest && observation.plan_digest !== binding.plan_digest)
+			base = { ...previous, binding: { ...binding, plan_digest: observation.plan_digest } };
 		if (observation.all_required_integrated && observation.final_passed && !observation.pending_repair)
-			return result("settled", "every required delivery is integrated and final verification passed", null);
+			return result("settled", "every required delivery is integrated and final verification passed", null, base);
 		if (!observation.runnable && !observation.executors_running)
-			return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action);
+			return result("pause", observation.blocked_reason ?? "no executable Parent work remains", observation.next_action, base);
 		progressDigest = observation.progress_digest;
 		nextAction = observation.next_action;
 		wait = !observation.runnable && observation.executors_running;
@@ -273,7 +300,7 @@ export function decideRunContinuation(previous: RunContinuationState,
 	if (previous.boundary_id === observation.boundary_id)
 		return result("wait", "duplicate Host boundary", null);
 	const unchanged = wait ? previous.unchanged_observations : previous.progress_digest === progressDigest ? previous.unchanged_observations + 1 : 0;
-	const state = { ...previous, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
+	const state = { ...base, progress_digest: progressDigest, unchanged_observations: unchanged, boundary_id: observation.boundary_id };
 	// Running reviewers/executors progress through their own supervised exit boundary.
 	if (!wait && unchanged >= UNCHANGED_CONTINUATION_LIMIT)
 		return { ...result("pause", "no substantive progress across continuation boundaries", nextAction, state), stalled: true };
