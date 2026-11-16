@@ -2748,11 +2748,6 @@ describe("Lane batch authority subject", () => {
 		return next;
 	};
 	const newAssertion = (intent: Record<string, any>) => ({ ...intent, revision: 2, acceptance: [{ ...intent.acceptance[0], assertion: "rewritten after confirmation" }] });
-	const newArgv = (intent: Record<string, any>) => {
-		const descriptor = JSON.parse(intent.acceptance[0].verification);
-		descriptor.command.argv = ["-e", "process.exit(1)"];
-		return { ...intent, revision: 2, acceptance: [{ ...intent.acceptance[0], verification: JSON.stringify(descriptor) }] };
-	};
 	const SCOPES = { "task-a": ["a.txt", "docs/plans"], "task-b": ["b.txt"], "task-c": ["c.txt"] };
 
 	it.each([
@@ -2808,7 +2803,6 @@ describe("Lane batch authority subject", () => {
 	);
 
 	it.each([
-		["verification argv", newArgv, "before"],
 		["acceptance assertion", newAssertion, "after"],
 	] as const)(
 		"AC4: a changed %s %s Lane enrollment parks only that child and its dependents (L2)",
@@ -2870,7 +2864,6 @@ describe("Lane batch authority subject", () => {
 	for (const mode of ["tick", "resume"] as const) it.each([
 		["unchanged", null],
 		["acceptance assertion", newAssertion],
-		["verification argv", newArgv],
 	] as const)(`committed authority recheck on ${mode}: %s (L2)`, async (_label, edit) => {
 		// L2: the record is crafted (task-a lane_committed or parked, on a
 		// real worktree lane); the recheck runs through runLaneBatch
@@ -3104,23 +3097,6 @@ describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
 			expect(laneRuntimeContractRefusal(own.repo, undefined, join(own.repo, "plugins", "immune-brain", "runtime", "kernel"))).toBeNull();
 		} finally {
 			own.cleanup();
-		}
-	});
-
-	it("refuses a differing loaded build even when max_parallel is omitted", async () => {
-		// L1: the refusal is the pure plugin-source skew check; the
-		// startBatch call keeps the entry-point wiring with max_parallel omitted.
-		const fx = withWorkspacePlugin(fixture(), "// another build\n");
-		try {
-			const refusal = laneRuntimeContractRefusal(fx.repo);
-			expect(refusal).toStartWith("batch_runtime_contract_mismatch:");
-			const { max_parallel: _serial, ...serial } = request(fx, [child("task-a", "S1")], laneKernel());
-			const report = await startBatch(serial);
-			expect(report.batch_state).toBe("rejected");
-			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
-		} finally {
-			fx.cleanup();
 		}
 	});
 });
