@@ -17,9 +17,9 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 import { resolveAgentRoles, type AgentRoleLayers } from "../plugins/immune-brain/runtime/config/agent_roles.ts";
 import {
@@ -88,6 +88,18 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 		return path;
 	}
 
+	/** Puts stub Host executables first on PATH, so resolution never depends on the machine. */
+	function stubHostsOnPath(...names: string[]): void {
+		const dir = mkdtempSync(join(tmpdir(), "imm-role-bins-"));
+		for (const name of names) writeFileSync(join(dir, name), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+		const previous = process.env.PATH;
+		process.env.PATH = [dir, previous ?? ""].join(delimiter);
+		cleanups.push(() => {
+			process.env.PATH = previous;
+			rmSync(dir, { recursive: true, force: true });
+		});
+	}
+
 	it("runs every loop role at 40 turns / 900 s from one per-role table (S2-AC1)", () => {
 		expect(Object.keys(ROLE_SESSION_LIMITS).sort()).toEqual([...ROLES].sort());
 		for (const role of ROLES) expect(ROLE_SESSION_LIMITS[role]).toEqual({ turn_budget: 40, timeout_ms: 900_000 });
@@ -135,6 +147,7 @@ describe("Loop Daemon: Per-Role Sessions (S2)", () => {
 		expect(loopRoleProfile(agents, "repair")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null });
 		expect(loopRoleProfile(agents, "executor")).toEqual({ host: "pi", model: "auto/deepseek-v4.1-flash", effort: null });
 
+		stubHostsOnPath("claude", "pi");
 		const asked: AgentSessionRole[] = [];
 		const spawned: Array<{ binary: string; argv: string[] }> = [];
 		const provider = createCliAgentSessionProvider({
