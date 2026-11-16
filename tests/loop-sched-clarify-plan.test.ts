@@ -289,6 +289,7 @@ function makeHarness(
 		sessionProvider: sessions.provider,
 		session_credential: "ghs_daemon_credential",
 		createWorktree,
+		changedPaths: () => [],
 		prWorktree: ({ root, branch, pr_number }) => {
 			const path = join(root, ".imm-worktrees", `pr-${pr_number}`);
 			mkdirSync(dirname(path), { recursive: true });

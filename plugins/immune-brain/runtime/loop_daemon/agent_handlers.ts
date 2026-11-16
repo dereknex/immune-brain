@@ -235,6 +235,8 @@ export interface AgentHandlerDeps {
 	/** The PR's own worktree, created on first use and reset to the PR head before any repair. */
 	prWorktree(input: { root: string; pr_number: number; branch: string; head_sha: string }): string;
 	head(input: { root: string; cwd?: string; branch?: string | null }): string | null;
+	/** Every path the worktree changed since `base_head`, committed or not; null when unreadable. */
+	changedPaths(input: { worktree_path: string; base_head: string }): string[] | null;
 	baseBranch(root: string): string;
 	runKernel(input: { argv: string[]; cwd: string; stdin?: string }): KernelIntentResult;
 	readIntent(task_id: string): AgentTaskIntent | null;
@@ -548,11 +550,40 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				...(input.output_path === undefined ? {} : { output_path: input.output_path }),
 				turn_budget: limits.turn_budget,
 				timeout_ms: limits.timeout_ms,
-				env: sessionEnvironment(deps.session_credential),
+				// A repair session writes a PR branch; only the daemon pushes it, so it holds no GitHub credential.
+				env: sessionEnvironment(input.kind === "repair" ? null : deps.session_credential),
 			},
 			deps.sessionProvider,
 			input.evidence ?? {},
 		);
+	}
+
+	/**
+	 * A repair session's result, with its scope taken from what the session
+	 * actually changed: the paths it reports are joined with every path that
+	 * differs from the head it started at, including commits it made and
+	 * untracked files, so an unreported write still meets the scope check.
+	 */
+	async function runRepairSession(
+		context: AgentHandlerContext,
+		worktreePath: string,
+		branch: string,
+		prompt: string,
+	): Promise<RepairSessionResult> {
+		const startHead = deps.head({ root: context.root, cwd: worktreePath });
+		const session = await runSession(context, {
+			kind: "repair",
+			worktree_path: worktreePath,
+			output_path: REPAIR_OUTPUT,
+			prompt,
+			evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch },
+		});
+		const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
+		if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
+		const observed = startHead === null ? null : deps.changedPaths({ worktree_path: worktreePath, base_head: startHead });
+		if (observed === null)
+			return { success: false, modified_paths: [], reason: "repair_paths_unobservable: the worktree changes could not be read" };
+		return { ...parsed, modified_paths: [...new Set([...parsed.modified_paths, ...observed])] };
 	}
 
 	/**
@@ -1086,23 +1117,14 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				fetchCheckLog: (input) => context.gitHubPort.checkLog(input),
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				applyFix: async (input) => {
-					const session = await runSession(context, {
-						kind: "repair",
-						worktree_path: input.worktree_path,
-						output_path: REPAIR_OUTPUT,
-						prompt: [
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
 							`Reproduce and fix the failing check ${input.check_name} (signature ${input.failure_signature.toLowerCase()}).`,
 							...(input.details_url ? [`Details: ${input.details_url}`] : []),
 							"Failing check log:",
 							input.log_excerpt || "(the check carried no log)",
 							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
-						].join("\n"),
-						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
-					});
-					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
-					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
-					return parsed;
+						].join("\n"));
 				},
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
@@ -1137,21 +1159,12 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			deps: {
 				rebaseOrMerge: deps.rebaseOrMerge,
 				applyConflictFix: async (input) => {
-					const session = await runSession(context, {
-						kind: "repair",
-						worktree_path: input.worktree_path,
-						output_path: REPAIR_OUTPUT,
-						prompt: [
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
 							`Resolve the rebase of this branch onto ${input.base_branch} in the conflicted tree, keeping both sides' intent.`,
 							`Conflicted paths: ${input.conflicting_paths.join(", ") || "unknown"}.`,
 							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
-						].join("\n"),
-						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
-					});
-					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
-					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
-					return parsed;
+						].join("\n"));
 				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				gitCommitAndPush: deps.gitCommitAndPush,
@@ -1290,11 +1303,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					};
 				},
 				applyReviewFix: async (input) => {
-					const session = await runSession(context, {
-						kind: "repair",
-						worktree_path: input.worktree_path,
-						output_path: REPAIR_OUTPUT,
-						prompt: [
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
 							`Address these ${input.comments.length} review comments on PR #${pr.number} in one pass:`,
 							...input.comments.flatMap((comment) => [
 								"",
@@ -1305,12 +1314,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 							"",
 							`Stay inside the task scope: ${scopeHint.join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
-						].join("\n"),
-						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
-					});
-					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
-					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
-					return parsed;
+						].join("\n"));
 				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				gitCommitAndPush: deps.gitCommitAndPush,
@@ -1379,12 +1383,28 @@ function git(root: string, argv: string[]): { status: number; stdout: string; st
 	return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 
+/** Session result files live here and never reach a commit or a scope check. */
+const SESSION_SCRATCH_DIR = ".imm-loop";
+
+/**
+ * Every repository path that differs from `baseHead`: tracked changes (committed,
+ * staged or not) plus untracked files, without session scratch. Null when git
+ * cannot answer, so a caller fails closed.
+ */
+export function observedWorktreePaths(worktreePath: string, baseHead: string): string[] | null {
+	const tracked = git(worktreePath, ["diff", "--name-only", "-z", baseHead, "--"]);
+	const untracked = git(worktreePath, ["ls-files", "--others", "--exclude-standard", "-z"]);
+	if (tracked.status !== 0 || untracked.status !== 0) return null;
+	const paths = `${tracked.stdout}\0${untracked.stdout}`.split("\0").filter((path) => path.length > 0);
+	return [...new Set(paths)].filter((path) => path !== SESSION_SCRATCH_DIR && !path.startsWith(`${SESSION_SCRATCH_DIR}/`));
+}
+
 /**
  * Stages and records the worktree's changes. A rebase the repair session resolved
  * is continued instead of committed, because git refuses a plain commit mid-rebase.
  */
 function commitWorktree(worktreePath: string, message: string): void {
-	const staged = git(worktreePath, ["add", "--all"]);
+	const staged = git(worktreePath, ["add", "--all", "--", ".", `:(exclude)${SESSION_SCRATCH_DIR}`]);
 	if (staged.status !== 0) throw new Error(`git_add_failed: ${staged.stderr.trim()}`);
 	const rebasing = git(worktreePath, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]).status === 0;
 	const commit = rebasing
@@ -1463,6 +1483,9 @@ export function createDefaultAgentHandlerDeps(
 		return path;
 	};
 
+	const changedPaths: AgentHandlerDeps["changedPaths"] = ({ worktree_path, base_head }) =>
+		observedWorktreePaths(worktree_path, base_head);
+
 	const readIntent: AgentHandlerDeps["readIntent"] = (taskId) => {
 		try {
 			const observed = observeEnrollmentTaskIntent(root, taskId);
@@ -1487,6 +1510,7 @@ export function createDefaultAgentHandlerDeps(
 		session_credential: credential,
 		createWorktree,
 		prWorktree,
+		changedPaths,
 		head: ({ root: repository, cwd, branch }) => {
 			const res = git(cwd ?? repository, ["rev-parse", "--verify", "--quiet", branch ? `refs/heads/${branch}` : "HEAD"]);
 			const sha = res.stdout.trim();

@@ -464,6 +464,7 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 			},
 			session_credential: "ghs_test",
 			createWorktree: () => join(ws.root, ".imm-worktrees", "lane"),
+			changedPaths: () => [],
 			prWorktree: () => join(ws.root, ".imm-worktrees", "pr"),
 			head: () => "b".repeat(40),
 			baseBranch: () => "main",

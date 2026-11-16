@@ -24,6 +24,7 @@ import { dirname, join } from "node:path";
 import type { LoopConfig } from "../plugins/immune-brain/runtime/config/layered_config.ts";
 import {
 	createAgentHandlerPort,
+	observedWorktreePaths,
 	syncWorktreeToHead,
 	type AgentHandlerContext,
 	type AgentHandlerDeps,
@@ -122,7 +123,9 @@ interface Harness {
 	) => AgentHandlerContext;
 }
 
-function makeHarness(options: { scopeHint?: string[]; verification?: number[] } = {}): Harness {
+function makeHarness(
+	options: { scopeHint?: string[]; verification?: number[]; changedPaths?: string[] | null } = {},
+): Harness {
 	const workspace = makeWorkspace();
 	const gitHubPort = createFakeLoopGitHubPort();
 	const sessions: AgentSessionRequest[] = [];
@@ -159,6 +162,8 @@ function makeHarness(options: { scopeHint?: string[]; verification?: number[] } 
 		sessionProvider,
 		session_credential: "ghs_daemon_credential",
 		createWorktree: () => workspace.root,
+		// What the session really changed, read from the worktree, not from its report.
+		changedPaths: () => (options.changedPaths === undefined ? ["src/seed.ts"] : options.changedPaths),
 		prWorktree: ({ pr_number, branch, head_sha }) => {
 			trace.push(`worktree:${pr_number}:${branch}:${head_sha}`);
 			return workspace.root;
@@ -331,6 +336,60 @@ describe("Suite 1: CI repair inputs (S8-AC1, D9)", () => {
 		expect(harness.pushed).toHaveLength(1);
 	});
 
+	it("runs the repair session without the daemon's GitHub credential", async () => {
+		const harness = makeHarness({ verification: [1, 0] });
+		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
+
+		await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
+
+		expect(harness.sessions).toHaveLength(1);
+		expect(Object.keys(harness.sessions[0]!.env)).toEqual(["PATH"]);
+	});
+
+	it("escalates without pushing when the session changed a path it did not report and scope_hint excludes", async () => {
+		// The session reports only src/seed.ts but also rewrote a workflow file.
+		const harness = makeHarness({ verification: [1, 0], changedPaths: ["src/seed.ts", ".github/workflows/ci.yml"] });
+		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
+
+		const result = await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
+
+		expect(result.outcome).toBe("failed");
+		expect(result.detail).toContain("escalate");
+		expect(result.detail).toContain(".github/workflows/ci.yml");
+		expect(harness.pushed).toHaveLength(0);
+	});
+
+	it("fails closed without pushing when the worktree changes cannot be read", async () => {
+		const harness = makeHarness({ verification: [1, 0], changedPaths: null });
+		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
+
+		const result = await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
+
+		expect(result.outcome).toBe("failed");
+		expect(harness.pushed).toHaveLength(0);
+	});
+
+	it("observes committed, uncommitted and untracked changes since the start head, without session scratch", () => {
+		const { root } = makeWorkspace();
+		const run = (...argv: string[]) => execFileSync("git", argv, { cwd: root, encoding: "utf8" }).trim();
+		run("add", "--all");
+		run("commit", "-q", "--allow-empty", "-m", "base");
+		const start = run("rev-parse", "HEAD");
+
+		// A commit the session made itself, an unstaged edit, an untracked file and its result file.
+		mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+		writeFileSync(join(root, ".github", "workflows", "ci.yml"), "on: push\n");
+		run("add", ".github");
+		run("commit", "-q", "-m", "session commit");
+		writeFileSync(join(root, "src", "seed.ts"), "two\n");
+		writeFileSync(join(root, "src", "new.ts"), "new\n");
+		mkdirSync(join(root, ".imm-loop"), { recursive: true });
+		writeFileSync(join(root, ".imm-loop", "repair.json"), "{}");
+
+		expect(observedWorktreePaths(root, start)?.sort()).toEqual([".github/workflows/ci.yml", "src/new.ts", "src/seed.ts"]);
+		expect(observedWorktreePaths(root, "0".repeat(40))).toBeNull();
+	});
+
 	it("escalates an unavailable check log and starts no session", async () => {
 		const harness = makeHarness();
 		// No log registered for the details URL: the fetch yields nothing.
@@ -423,6 +482,7 @@ describe("Suite 2: Conflict repair (S8-AC2, D9)", () => {
 			},
 			session_credential: null,
 			createWorktree: () => harness.root,
+			changedPaths: () => ["src/seed.ts"],
 			prWorktree: ({ head_sha }) => {
 				harness.trace.push(`worktree:${head_sha}`);
 				return harness.root;

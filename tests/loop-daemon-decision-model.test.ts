@@ -1000,6 +1000,8 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			enrollTask: () => {},
 			runDrive: () => ({ exit_code: 0, timed_out: false, run_id: "r1", verification_evidence_digest: "sha256:" + "a".repeat(64) }),
 			openPrDeps: {} as any,
+			head: () => "a".repeat(40),
+			changedPaths: () => [],
 			prWorktree: () => ws.root,
 			readIntent: () => ({
 				task_id: "t1",
