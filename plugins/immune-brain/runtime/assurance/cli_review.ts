@@ -1,21 +1,27 @@
 // Host-neutral CLI Review dispatch (Spec review-cli-stage D3-D9, D12).
 //
-// The runtime prepares one packet, one POSIX sh script and one output pair; the
-// Parent runs the script from its own shell and submits the result through the
-// existing mediation path. This is the only authority Review path (D11). The reviewer process is trusted to return a verdict,
-// not to stay read-only, so a tree guard over HEAD, the index and tracked
-// content releases any round that changed the reviewed state (D6).
-//
-// Findings verification is untouched: prepareVerification/inspectVerification
-// delegate to the wrapped Host (BR-DEC-4).
+// The runtime prepares one packet, one receipt file and one explicit supervised
+// session the Parent creates, awaits and stops (Spec explicit-port-review-session
+// D1). The receipt is the out-of-tree JSON file, never terminal text. This is the
+// only authority Review path (D11). The reviewer is trusted to return a verdict,
+// not to stay read-only, so a tree guard over HEAD, the index and tracked content
+// releases any round that changed the reviewed state (D6). The hidden background
+// `--print` process transport is retired, so a Host outside Herdr fails closed
+// instead of running an unobserved subprocess (Spec retire-process-review-transport
+// D1, D2).
 
 import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chooseReviewer, resolveConfig, type ReviewProfile } from "../config/layered_config";
+import {
+	chooseReviewer,
+	resolveConfig,
+	type ReviewProfile,
+	type ReviewTransport,
+} from "../config/layered_config";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneBatchReviewProfile } from "../unattended/batch_state";
 import { currentReviewContractHash } from "../role_prompt_bridge";
@@ -24,6 +30,7 @@ import {
 	type AssuranceHostPort,
 	type HostReviewReservation,
 	type ReviewRequest,
+	type ReviewSessionSpec,
 	type VerificationReceipt,
 	type VerificationRequest,
 } from "./host_port";
@@ -38,7 +45,21 @@ const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 	antigravity: "agy",
 };
 
-/**
+/** The skill invocation that carries the review contract to a Host; one spelling per Host. */
+export function reviewSkillPrompt(profile: ReviewProfile, packetPath: string): string {
+	if (profile.host === "claude-code") return `/immune-brain:authority-review ${packetPath}`;
+	if (profile.host === "pi") return `/skill:authority-review ${packetPath}`;
+	return `/authority-review ${packetPath}`;
+}
+
+/** The verifier's single instruction: the packet carries the whole role contract. */
+export function verificationInstruction(packetPath: string): string {
+	return `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
+}
+
+/** The model a Host runs on when the profile names none; never passed as `--model`. */
+const HOST_DEFAULT_MODEL = "host-default";
+
 /**
  * The read-only git rules a claude-code reviewer and verifier may run (#426 D1). One list, so the
  * reviewer and verifier argv cannot drift. `-C`, pipes and redirection stay out: a prefix rule cannot
@@ -62,108 +83,12 @@ export const CLAUDE_REVIEW_SETTINGS = JSON.stringify({
 });
 
 /**
- * Resolves the explicit absolute path to authority-review SKILL.md.
- * Resolves from the package root in both source and bundled layouts (Spec S7 D8).
+ * The one write a claude-code session may make. Claude Code governs Write through
+ * `Edit` rules, and an absolute path in a rule takes a leading `//`; a `Write(/abs)`
+ * rule matches nothing, so `dontAsk` would deny the receipt itself (D2).
  */
-export function resolveAuthorityReviewSkillPath(moduleDir: string = dirname(fileURLToPath(import.meta.url))): string {
-	const candidates = [
-		resolve(moduleDir, "../../skills/authority-review/SKILL.md"),
-		resolve(moduleDir, "../skills/authority-review/SKILL.md"),
-		resolve(moduleDir, "skills/authority-review/SKILL.md"),
-	];
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
-	}
-	throw new Error(`authority-review skill not found from ${moduleDir}`);
-}
-
-/**
- * The reviewer argv for one Host, model and effort applied only when the profile sets them (D5).
- * `readDirs` are the out-of-tree directories the reviewer must read (packet, evidence).
- */
-export function reviewArguments(
-	profile: ReviewProfile,
-	packetPath: string,
-	turnBudget: number,
-	readDirs: string[] = [],
-	pluginDir: string | null = null,
-	skillPath?: string,
-): string[] {
-	const model = profile.model ? ["--model", profile.model] : [];
-	if (profile.host === "claude-code") {
-		return [
-			"--print",
-			"--no-session-persistence",
-			"--settings",
-			CLAUDE_REVIEW_SETTINGS,
-			// The skill must come from the plugin the Kernel runs, not an older user install (#426 F13).
-			...(pluginDir ? ["--plugin-dir", pluginDir] : []),
-			// Variadic: keep a flag after it so the prompt is never taken as a directory.
-			...(readDirs.length ? ["--add-dir", ...readDirs] : []),
-			"--max-turns",
-			String(turnBudget),
-			"--tools",
-			"Read,Grep,Glob,Bash",
-			"--allowedTools",
-			...REVIEW_GIT_ALLOWED_TOOLS,
-			"--permission-mode",
-			"dontAsk",
-			...model,
-			...(profile.effort ? ["--effort", profile.effort] : []),
-			`/immune-brain:authority-review ${packetPath}`,
-		];
-	}
-	if (profile.host === "pi") {
-		const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
-		return [
-			"--print",
-			"--no-session",
-			"--no-extensions",
-			"--no-skills",
-			"--no-mcp",
-			"--skill",
-			explicitSkill,
-			"--tools",
-			"read,grep,find,ls,bash",
-			...model,
-			...(profile.effort ? ["--thinking", profile.effort] : []),
-			`/skill:authority-review ${packetPath}`,
-		];
-	}
-	// Antigravity (`agy`) parses `--print <prompt>` as taking the very next
-	// argument as the prompt, so option flags precede `--print` (verified on agy 1.5.8; #426 F15).
-	return [
-		...model,
-		...(profile.effort ? ["--effort", profile.effort] : []),
-		"--print",
-		`/authority-review ${packetPath}`,
-	];
-}
-
-/** The model a Host runs on when the profile names none; never passed as `--model`. */
-const HOST_DEFAULT_MODEL = "host-default";
-
-/**
- * The verifier argv (verification CLI stage): the same fresh, read-only print
- * session as the reviewer's, on the selected verifier model, told to read the
- * verification packet. The packet carries the whole `review-verifier` role
- * contract, so no packaged skill is needed.
- */
-export function verificationArguments(profile: ReviewProfile, model: string, packetPath: string, turnBudget: number): string[] {
-	const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
-	const instruction = `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
-	if (profile.host === "claude-code") {
-		return [
-			// The packet lives outside the reviewed tree; `dontAsk` denies a Read outside it (#426 F12).
-			// Variadic: a flag follows it so the instruction is never taken as a directory.
-			"--print", "--no-session-persistence", "--add-dir", dirname(packetPath), "--max-turns", String(turnBudget),
-			"--tools", "Read,Grep,Glob,Bash",
-			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS,
-			"--permission-mode", "dontAsk", "--settings", CLAUDE_REVIEW_SETTINGS, ...modelFlag, instruction,
-		];
-	}
-	if (profile.host === "pi") return ["--print", "--no-session", ...modelFlag, instruction];
-	return [...modelFlag, "--print", instruction];
+export function claudeOutputWriteRule(outputPath: string): string {
+	return `Edit(/${outputPath})`;
 }
 
 /** Resolve the reviewer executable from PATH as the Lane supervisor does; absent means unavailable. */
@@ -176,6 +101,13 @@ function reviewBinary(host: ReviewProfile["host"]): string | null {
 		}) ?? null;
 }
 
+function requireReviewBinary(profile: ReviewProfile): void {
+	if (reviewBinary(profile.host)) return;
+	throw new ReviewPreparationError("review_host_unavailable",
+		`review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`,
+		`Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+}
+
 interface ReviewTreeState {
 	head: string;
 	index: string;
@@ -183,14 +115,15 @@ interface ReviewTreeState {
 }
 
 /**
- * The `imm-session` wrapper for `lanes.review_transport: herdr`. It names its
- * provider; outside Herdr it fails closed rather than falling back to a process.
+ * The `imm-session` wrapper every Authority Review and findings Verification runs
+ * in. It names its provider; outside Herdr preparation fails closed, because the
+ * hidden `--print` process transport is retired.
  */
 function reviewSessionRunner(env: NodeJS.ProcessEnv = process.env): string {
 	if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
 		throw new ReviewPreparationError("review_transport_unavailable",
-			"lanes.review_transport is herdr but this Review is not prepared inside Herdr",
-			"Run the Lane inside Herdr, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+			"an Authority Review or findings Verification needs an explicit Herdr session and this Host is not inside Herdr",
+			"Run this Lane inside Herdr, then call `advance_assurance`");
 	}
 	let dir = dirname(fileURLToPath(import.meta.url));
 	for (let level = 0; level < 5; level++) {
@@ -199,7 +132,7 @@ function reviewSessionRunner(env: NodeJS.ProcessEnv = process.env): string {
 		dir = dirname(dir);
 	}
 	throw new ReviewPreparationError("review_transport_unavailable",
-		"imm-session is not shipped beside this runtime", "Reinstall the plugin, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+		"imm-session is not shipped beside this runtime", "Reinstall the plugin, then call `advance_assurance`");
 }
 
 function git(root: string, argv: string[]): string {
@@ -233,6 +166,126 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * The Review profile this task's round runs on: the Lane batch's recorded host,
+ * model and effort (#426 F14), carried with the layered transport setting every
+ * round runs under (D3).
+ */
+export function resolveReviewProfile(root: string): ReviewProfile | null {
+	const lanes = resolveConfig(root).lanes as Parameters<typeof chooseReviewer>[0];
+	const batch = laneBatchReviewProfile(root);
+	if (!batch) return chooseReviewer(lanes);
+	const transport = lanes.review_transport?.value as ReviewTransport | null | undefined;
+	return { ...batch, ...(transport ? { transport } : {}) };
+}
+
+/**
+ * One supervised session a round runs in: `create` prints the `handle` that
+ * `await` and `stop` take. The Parent runs all three from its own shell, so this
+ * module still imports nothing from `runtime/session/` (BR-OUT-1, D1). `await`
+ * also copies its result beside the receipt, so a round can tell a session that
+ * stopped without writing its file from one still running (D5).
+ */
+function sessionSpec(runner: string, label: string, input: {
+	root: string;
+	host: ReviewProfile["host"];
+	entry: string;
+	hostArgs: string[];
+	output: string;
+	awaitRecord: string;
+}): ReviewSessionSpec {
+	const command = (verb: string, ...argv: string[]) =>
+		[runner, verb, "--provider", "herdr", ...argv].map(shellQuote).join(" ");
+	const create = (...resume: string[]) => command("create", "--cwd", input.root, "--label", label, "--host", input.host,
+		"--entry", input.entry, ...resume, ...(input.hostArgs.length ? ["--", ...input.hostArgs] : []));
+	return {
+		transport: "herdr",
+		output_path: input.output,
+		create_command: create(),
+		resume_command: create("--resume", "<handle>"),
+		await_command: `${command("await", "<handle>")} | tee ${shellQuote(input.awaitRecord)}`,
+		stop_command: command("stop", "<handle>"),
+	};
+}
+
+/**
+ * What the Parent's recorded `await` says about a session that has not written its
+ * receipt. It `ended` when its process is gone (`exited`) or the agent stopped
+ * working (`changed` to `idle` or `done`): it will never write. A `blocked` session
+ * waits on a dialog the user answers in its tab, so the round stays open. A missing
+ * record, a `timeout`, lost events or a refusal claim nothing, so the round keeps waiting.
+ */
+type SessionAwaitOutcome = { ended: string } | { blocked: true } | null;
+
+function sessionAwaitOutcome(awaitRecord: string): SessionAwaitOutcome {
+	let record: unknown;
+	try { record = JSON.parse(readFileSync(awaitRecord, "utf8")); } catch { return null; }
+	if (!record || typeof record !== "object") return null;
+	const { ok, transition, state } = record as { ok?: unknown; transition?: unknown; state?: unknown };
+	if (ok !== true) return null;
+	if (transition === "exited") return { ended: `exited, state ${typeof state === "string" ? state : "unknown"}` };
+	if (transition !== "changed") return null;
+	if (state === "idle" || state === "done") return { ended: `changed, state ${state}` };
+	return state === "blocked" ? { blocked: true } : null;
+}
+
+/** The pending reason for a session that is still running or waits on its user. */
+function sessionPending(outcome: SessionAwaitOutcome, role: "reviewer" | "verifier", output: string, submit: string): string {
+	if (outcome && "blocked" in outcome)
+		return `${role} session is blocked on a dialog: relay it to the user; once they answered it in the session's tab, run \`resume_command\` once if \`create_command\` printed \`entry_submitted: false\` (the entry was never delivered), then \`await_command\` again, then ${submit} once`;
+	return `${role === "reviewer" ? "review" : "verification"} session still running; the ${role} writes ${output} when it finishes — await it with \`imm-session await\`, then ${submit} once`;
+}
+
+/** The one sentence that turns any role instruction into a file-only receipt (D2). */
+function writeToOutput(output: string, mismatchLine = false): string {
+	return `Write the one JSON object you owe to ${output} as that file's whole content, then stop.`
+		+ (mismatchLine ? " A review contract mismatch goes there instead, as the whole content, in the exact form the instruction names." : "")
+		+ " It is outside the reviewed worktree and is the only path you may create; print no verdict.";
+}
+
+/**
+ * The Host arguments one supervised session starts with: the profile's model and
+ * effort, the out-of-tree directories it reads, and the reviewer tool boundary.
+ * On Claude Code that is the read-only tool set, the git allowlist, a write rule
+ * for the reservation's single output file and `dontAsk`, with user hooks off so
+ * no rewrite escapes the allowlist (D2, #426 F11). Pi gets its read-only tools plus
+ * `write`; the D6 tree guard still backs every Host.
+ */
+export function sessionHostArguments(
+	profile: ReviewProfile,
+	options: { outputPath: string; model?: string; readDirs?: string[]; pluginDir?: string | null },
+): string[] {
+	const model = options.model ?? profile.model;
+	// The sentinel is not a model name; never pass it as one.
+	const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
+	if (profile.host === "claude-code")
+		return [
+			"--settings", CLAUDE_REVIEW_SETTINGS,
+			// The skill must come from the plugin the Kernel runs, not an older user install (#426 F13).
+			...(options.pluginDir ? ["--plugin-dir", options.pluginDir] : []),
+			// Variadic: a flag always follows it.
+			...(options.readDirs?.length ? ["--add-dir", ...options.readDirs] : []),
+			"--tools", "Read,Grep,Glob,Bash,Write",
+			"--allowedTools", ...REVIEW_GIT_ALLOWED_TOOLS, claudeOutputWriteRule(options.outputPath),
+			"--permission-mode", "dontAsk",
+			...modelFlag,
+			...(profile.effort ? ["--effort", profile.effort] : []),
+		];
+	if (profile.host === "pi")
+		return ["--tools", "read,grep,find,ls,bash,write", ...modelFlag, ...(profile.effort ? ["--thinking", profile.effort] : [])];
+	return [...modelFlag, ...(profile.effort ? ["--effort", profile.effort] : [])];
+}
+
+/** A receipt is one strict JSON object: no prose, fences or surrounding lines (D2). */
+function strictJsonObject(bytes: string): Record<string, unknown> | null {
+	const trimmed = bytes.trim();
+	if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+	try {
+		const parsed: unknown = JSON.parse(trimmed);
+		return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+	} catch { return null; }
+}
+
 interface CliVerificationReservation {
 	taskId: string;
 	actorId: string;
@@ -240,27 +293,8 @@ interface CliVerificationReservation {
 	model: string;
 	directory: string;
 	output: string;
-	exitFile: string;
-}
-
-/** Turn budget of one verifier process: it reads one packet and the revision, nothing else. */
-const VERIFICATION_TURNS = 16;
-
-/** The script both CLI stages run: output under a temporary name, the exit status last (ADR 0037 D2). */
-function writeProcessScript(script: string, root: string, command: string[], output: string, exitFile: string): void {
-	writeFileSync(script, [
-		"#!/bin/sh",
-		`cd ${shellQuote(root)} || exit 1`,
-		`out=${shellQuote(output)}`,
-		`tmp="$out.part"`,
-		`${command.map(shellQuote).join(" ")} >"$tmp" 2>&1`,
-		"status=$?",
-		`mv -f "$tmp" "$out"`,
-		`printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
-		`exit "$status"`,
-		"",
-	].join("\n"), { encoding: "utf8", mode: 0o755 });
-	chmodSync(script, 0o755);
+	/** Where the session's `await_command` copies its result. */
+	awaitRecord: string;
 }
 
 interface CliReviewReservation {
@@ -270,29 +304,34 @@ interface CliReviewReservation {
 	profile: ReviewProfile;
 	actorId: string;
 	directory: string;
+	/** The receipt: the session's out-of-tree JSON file. */
 	output: string;
-	exitFile: string;
+	/** Where the session's `await_command` copies its result. */
+	awaitRecord: string;
 	tree: ReviewTreeState;
 }
 
 /**
  * The review-profile CLI dispatcher: one reservation writes the packet and the
- * script, and `inspectReview` reads the finished pair back (D3, D4).
+ * session spec, and `inspectReview` reads the finished receipt back (D3, D4).
  */
 export class CliReviewHost implements AssuranceHostPort {
 	readonly host: AssuranceHostPort["host"];
 	private readonly reservations = new Map<string, CliReviewReservation>();
 	private readonly verifications = new Map<string, CliVerificationReservation>();
+	private readonly env: NodeJS.ProcessEnv;
 
-	constructor(private readonly wrapped: AssuranceHostPort) {
+	constructor(private readonly wrapped: AssuranceHostPort, options: { env?: NodeJS.ProcessEnv } = {}) {
 		this.host = wrapped.host;
+		this.env = options.env ?? process.env;
 	}
 
 	/**
 	 * Verification CLI stage: a verification that follows a CLI Review runs as one
-	 * more CLI process, in the same working directory and with the same reviewer
-	 * Host, and its output bytes are the receipt (ADR 0017 binds them by reading
-	 * twice). One that follows no CLI Review goes to the wrapped Host as before.
+	 * more explicit supervised session, in the same working directory and with the
+	 * same reviewer Host, and its out-of-tree JSON bytes are the receipt (ADR 0017
+	 * binds them by reading twice). One that follows no CLI Review goes to the
+	 * wrapped Host as before.
 	 */
 	prepareVerification(request: VerificationRequest): HostReviewReservation {
 		const review = [...this.reservations.values()].reverse().find((item) => item.taskId === request.taskId);
@@ -300,48 +339,58 @@ export class CliReviewHost implements AssuranceHostPort {
 			if (!this.wrapped.prepareVerification) throw new Error("host verifier dispatch is unavailable");
 			return this.wrapped.prepareVerification(request);
 		}
-		const executable = reviewBinary(review.profile.host);
-		if (!executable) throw new ReviewPreparationError("review_host_unavailable",
-			`review_host ${review.profile.host} executable ${REVIEW_BINARY[review.profile.host]} is not on PATH`,
-			`Install ${REVIEW_BINARY[review.profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
-		const transport = resolveConfig(review.root).lanes.review_transport?.value ?? "process";
-		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
+		// The Lane profile the coordinator forwards from the Review reservation, else the one that round ran on.
+		const profile = request.profile ?? review.profile;
+		// The transport comes first: outside Herdr nothing can run, whatever is installed.
+		const sessionRunner = reviewSessionRunner(this.env);
+		requireReviewBinary(profile);
 		const directory = realpathSync(mkdtempSync(join(tmpdir(), "imm-cli-verify-")));
 		chmodSync(directory, 0o755);
 		const packet = join(directory, "verify-packet.md");
-		const script = join(directory, "verify.sh");
-		const output = join(directory, `verify-output-${request.operationId}.txt`);
-		const exitFile = join(directory, `verify-exit-${request.operationId}`);
+		const output = join(directory, `verify-output-${request.operationId}.json`);
+		const awaitRecord = join(directory, "session-await.json");
+		const label = `verify ${request.taskId}`.slice(0, 32);
 		writeFileSync(packet, request.prompt, { encoding: "utf8", mode: 0o644 });
-		writeProcessScript(script, review.root, [executable, ...verificationArguments(review.profile, request.model, packet, VERIFICATION_TURNS)], output, exitFile);
-		// S3 (#426): with a session transport the verifier runs in a watched tab too.
-		const command = sessionRunner
-			? [sessionRunner, "run", "--provider", "herdr", "--cwd", review.root, "--label", `verify ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ")
-			: `sh ${script}`;
-		const actorId = `cli-verifier:${review.profile.host}:${request.operationId}`;
-		this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, exitFile });
+		const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
+		const session = sessionSpec(sessionRunner, label, {
+			root: review.root,
+			host: profile.host,
+			entry: `${verificationInstruction(packet)}\n\n${writeToOutput(output)}`,
+			hostArgs: sessionHostArguments(profile, { outputPath: output, model: request.model, readDirs: [directory] }),
+			output,
+			awaitRecord,
+		});
+		this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, awaitRecord });
 		return {
 			id: request.operationId,
-			dispatch: { verification_command: command, verifier_model: request.model },
-			verification_command: command,
-			review_profile: review.profile,
+			dispatch: { verification_session: session, verifier_model: request.model },
+			verification_session: session,
+			review_profile: profile,
 			review_actor_id: actorId,
 		};
 	}
 
-	/** No exit file keeps the reservation; a failed or silent process releases it with no receipt. */
+	/**
+	 * A session that has not written its file keeps the reservation; a receipt that
+	 * is not one strict JSON object releases it with no receipt (D2).
+	 */
 	inspectVerification(reservation: HostReviewReservation): VerificationReceipt {
 		const owned = this.verifications.get(reservation.id);
 		if (!owned) {
 			if (!this.wrapped.inspectVerification) return { ok: false, release: true, reason: "no verification reservation" };
 			return this.wrapped.inspectVerification(reservation);
 		}
-		if (!existsSync(owned.exitFile))
-			return { ok: false, release: false, reason: "verification process still running; wait for it to exit, then call submit_verification again" };
-		const status = Number.parseInt(readFileSync(owned.exitFile, "utf8").trim(), 10);
-		if (status !== 0) return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
-		const bytes = existsSync(owned.output) ? readFileSync(owned.output, "utf8") : "";
-		if (!bytes.trim()) return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
+		if (!existsSync(owned.output)) {
+			const outcome = sessionAwaitOutcome(owned.awaitRecord);
+			if (outcome && "ended" in outcome)
+				return { ok: false, release: true,
+					reason: `verification_session_aborted: the verifier session ended (${outcome.ended}) without writing ${owned.output}; its tab stays open for inspection` };
+			return { ok: false, release: false, reason: sessionPending(outcome, "verifier", owned.output, "submit_verification") };
+		}
+		const bytes = readFileSync(owned.output, "utf8");
+		// The session's file is the authority channel, so it must be strict JSON (D2).
+		if (!strictJsonObject(bytes))
+			return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
 		return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
 	}
 
@@ -350,57 +399,55 @@ export class CliReviewHost implements AssuranceHostPort {
 		const root: string = request.root;
 		// A Lane Review runs on the profile its batch fixed at confirmation, so a
 		// request-selected Lane profile reaches Review (#426 F14).
-		const profile = laneBatchReviewProfile(root) ?? chooseReviewer(resolveConfig(root).lanes as Parameters<typeof chooseReviewer>[0]);
+		const profile = request.profile ?? resolveReviewProfile(root);
 		if (!profile) throw new ReviewPreparationError("review_profile_required",
 			"Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
-		const executable = reviewBinary(profile.host);
-		if (!executable) throw new ReviewPreparationError("review_host_unavailable",
-			`review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`,
-			`Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
-		const transport = resolveConfig(root).lanes.review_transport?.value ?? "process";
-		const sessionRunner = transport === "herdr" ? reviewSessionRunner() : null;
+		// The transport comes first: outside Herdr nothing can run, whatever is installed.
+		const sessionRunner = reviewSessionRunner(this.env);
+		requireReviewBinary(profile);
 		const tree = reviewTreeState(root);
 
 		const directory = realpathSync(mkdtempSync(join(tmpdir(), "imm-cli-review-")));
 		chmodSync(directory, 0o755);
 		const packet = join(directory, "packet.md");
-		const script = join(directory, "review.sh");
-		const output = join(directory, `review-output-${request.operationId}.txt`);
-		const exitFile = join(directory, `review-exit-${request.operationId}`);
+		const output = join(directory, `review-output-${request.operationId}.json`);
+		const awaitRecord = join(directory, "session-await.json");
 		const contractHash = currentReviewContractHash();
 		writeFileSync(packet, `review_contract_hash: ${contractHash}\n\n${request.snapshotPrompt}`, { encoding: "utf8", mode: 0o644 });
 		const readDirs = [...new Set([directory, dirname(request.evidencePath)])];
-		const argv = reviewArguments(profile, packet, request.maxTurns, readDirs, runtimeClaudePluginDir());
-		writeProcessScript(script, root, [executable, ...argv], output, exitFile);
-
-		// S4 (#426): the same script, in a Herdr tab the user can watch; the verdict
-		// still comes from the output and exit files, never from the tab.
-		const reviewCommand = sessionRunner
-			? [sessionRunner, "run", "--provider", "herdr", "--cwd", root, "--label", `review ${request.taskId}`.slice(0, 32), "--", "sh", script].map(shellQuote).join(" ")
-			: `sh ${script}`;
 		const actorId = `cli:${profile.host}:${request.operationId}`;
+		// D1: an explicit interactive session the user can watch; its verdict comes
+		// only from the out-of-tree JSON file, never from the terminal.
+		const session = sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
+			root,
+			host: profile.host,
+			entry: `${reviewSkillPrompt(profile, packet)}\n\n${writeToOutput(output, true)}`,
+			hostArgs: sessionHostArguments(profile, { outputPath: output, readDirs, pluginDir: runtimeClaudePluginDir() }),
+			output,
+			awaitRecord,
+		});
 		this.reservations.set(request.operationId, {
 			taskId: request.taskId, operationId: request.operationId, root,
-			profile, actorId, directory, output, exitFile, tree,
+			profile, actorId, directory, output, awaitRecord, tree,
 		});
 		return {
 			id: request.operationId,
-			dispatch: { review_command: reviewCommand, review_profile: profile },
-			review_command: reviewCommand,
+			dispatch: { review_session: session, review_profile: profile },
+			review_session: session,
 			review_profile: profile,
 			review_actor_id: actorId,
 		};
 	}
 
 	/**
-	 * D4: no exit file keeps the reservation; a failed process, a changed tree or
-	 * a contract mismatch releases it; otherwise the output bytes are the receipt.
+	 * D4: a session that has not written its file keeps the reservation unless its
+	 * recorded `await` shows it stopped (`review_session_aborted`); a changed tree,
+	 * a contract mismatch or a non-JSON receipt releases it; otherwise the file
+	 * bytes are the receipt.
 	 */
 	inspectReview(taskId: string): ReviewObservation {
 		const reservation = [...this.reservations.values()].reverse().find((item) => item.taskId === taskId);
 		if (!reservation) return { ok: false, release: true, reason: "no CLI Review reservation for this task" };
-		if (!existsSync(reservation.exitFile))
-			return { ok: false, release: false, reason: "review process still running; wait for it to exit, then call submit_review again" };
 		let changed: string[];
 		try {
 			changed = treeChanged(reservation.root, reservation.tree);
@@ -410,13 +457,20 @@ export class CliReviewHost implements AssuranceHostPort {
 		if (changed.length)
 			return { ok: false, release: true,
 				reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.` };
-		const status = Number.parseInt(readFileSync(reservation.exitFile, "utf8").trim(), 10);
-		if (status !== 0) return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
-		const bytes = existsSync(reservation.output) ? readFileSync(reservation.output, "utf8") : "";
-		if (!bytes.trim()) return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
+		if (!existsSync(reservation.output)) {
+			const outcome = sessionAwaitOutcome(reservation.awaitRecord);
+			if (outcome && "ended" in outcome)
+				return { ok: false, release: true,
+					reason: `review_session_aborted: the reviewer session ended (${outcome.ended}) without writing ${reservation.output}; its tab stays open for inspection` };
+			return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", reservation.output, "submit_review") };
+		}
+		const bytes = readFileSync(reservation.output, "utf8");
 		const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
 		if (mismatch)
 			return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
+		// The session's file is the authority channel, so it must be strict JSON (D2).
+		if (!strictJsonObject(bytes))
+			return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
 		// A configured verifier model is offered, so the verifier runs on a different
 		// model from the reviewer's whenever one is set (#284 D1).
 		const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value as string | null | undefined;

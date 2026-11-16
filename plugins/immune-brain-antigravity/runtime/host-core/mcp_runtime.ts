@@ -278,7 +278,7 @@ export interface McpRuntimeOptions {
  * its final attestation bound, and reports any auto settle commit. Read from
  * settled evidence after completion, so the shared coordinator result is unchanged.
  */
-export function withCompletionDelivery<T>(taskId: string, result: T, root = process.cwd()): T {
+export function withCompletionDelivery<T>(taskId: string, result: T, root: string): T {
 	if ((result as { state?: unknown })?.state !== "completed") return result;
 	try {
 		const record = readSettledTaskEvidence(root, taskId)?.record as { attestations?: Array<{ diff_hash?: unknown }> } | undefined;

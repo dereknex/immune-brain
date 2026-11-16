@@ -1,0 +1,229 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "mcp-completion-delivery-workspace-typing",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "mcp-completion-delivery-workspace-typing",
+    "goal": "Enforce explicit workspace root parameter typing on withCompletionDelivery in plugins/immune-brain/runtime/host-core/mcp_runtime.ts:281 by removing the unused root = process.cwd() default while preserving composition-root fallback options.cwd ?? process.cwd() at mcp_runtime.ts:295; no user-visible change: internal TypeScript helper signature tightening with all callers already passing explicit workspace/root (mcp_runtime.ts:505,508,512; tests/workflow-autocommit.test.ts:383,402; tests/goal-driven-batch-run.test.ts:252,255). Brainstorm Trace: BR-REQ-3 & BR-DEC-4 owned here; BR-DEFER-1 (full HostRuntime.this.cwd/bindWorkspace and serveStdio callChain at mcp_runtime.ts:897-901) deferred; BR-REQ-1..2/BR-DEC-1..3/BR-OUT-1/BR-SCN-1..2 in S1/S2; BR-REQ-4/BR-DEC-5/BR-SCN-3 in S4; BR-OUT-2 excluded; BR-Q-1 resolved none.",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "withCompletionDelivery in plugins/immune-brain/runtime/host-core/mcp_runtime.ts requires an explicit root: string parameter with no = process.cwd() default (BR-REQ-3, F2), while createMcpRuntime preserves options.cwd ?? process.cwd() at composition root (BR-DEC-4) and full project TypeScript typecheck passes cleanly across all callers.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "tests/workflow-autocommit.test.ts verifies withCompletionDelivery delivery attachment with explicit workspace root and confirms omitting the third workspace argument fails statically under TypeScript checking.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "tests/workflow-autocommit.test.ts"
+    ],
+    "risk": "routine",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/mcp-completion-delivery-workspace-typing.intent.json",
+    "content_hash": "sha256:013f94bb7553f8cddea82838654bf4030bbef9a3e83b9301f57c8c973fbee2cd"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:013f94bb7553f8cddea82838654bf4030bbef9a3e83b9301f57c8c973fbee2cd",
+  "git_base_head": "d01f1092778e5cd648a4b3da551af374e54d21c8",
+  "attestations": [
+    {
+      "id": "approval-qa-2062e2a6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:013f94bb7553f8cddea82838654bf4030bbef9a3e83b9301f57c8c973fbee2cd",
+      "diff_hash": "sha256:7022e719b46fd37f5c56e3f240e4f94a2cf662fc87c2b80da88231aff0ba318a",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:ce511bfae321f6b37bf1aed409cb36063d2cf01655063a1dec3e7c2e314dee93",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ce511bfae321f6b37bf1aed409cb36063d2cf01655063a1dec3e7c2e314dee93"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ce511bfae321f6b37bf1aed409cb36063d2cf01655063a1dec3e7c2e314dee93"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-7579ac02",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:013f94bb7553f8cddea82838654bf4030bbef9a3e83b9301f57c8c973fbee2cd",
+      "diff_hash": "sha256:798e82553a31fbab3f18d7ef3df41172fa3dd9828e6863ff6b35193b7cb6f373",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:94400797068f2ecec5029c8e771623cc02440d0a83d27e3c8e86e2a780b34fa3",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:94400797068f2ecec5029c8e771623cc02440d0a83d27e3c8e86e2a780b34fa3"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:94400797068f2ecec5029c8e771623cc02440d0a83d27e3c8e86e2a780b34fa3"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-7f0c62b3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:013f94bb7553f8cddea82838654bf4030bbef9a3e83b9301f57c8c973fbee2cd",
+      "diff_hash": "sha256:798e82553a31fbab3f18d7ef3df41172fa3dd9828e6863ff6b35193b7cb6f373",
+      "actor_id": "cli:claude-code:bfb48af9-3fbe-4b27-bafa-94e8648e4bc9",
+      "summary": "The review commit's only parent is d01f1092 and its tree is f58ba1fd, as the packet requires. AC1 is met: withCompletionDelivery now takes a required root: string with no default; createMcpRuntime still uses options.cwd ?? process.cwd() at mcp_runtime.ts:295; all three runtime callers pass the workspace (mcp_runtime.ts:505,508,512); and typecheck passed. AC2 is met: the test checks that delivery is attached when the root is passed, and a @ts-expect-error line is type-checked because tsconfig.json now includes tests/workflow-autocommit.test.ts. A test outside the original scope hint was added to the typecheck so AC2's static check actually runs. Blast radius is low: one internal helper signature, one test, and one tsconfig include entry.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d01f1092778e5cd648a4b3da551af374e54d21c8",
+        "review_commit": "9cfff5dc440a7a192eb6b5b824a5e23540d88448",
+        "review_tree": "f58ba1fdc46337f0052ea517cfc0eba97ac9f0d1",
+        "manifest_digest": "sha256:c50795cdbf311f6d0e3e660bd34c818825ddb6732c2de9e1147e236ed110a760"
+      },
+      "reviewer_verdict_sha256": "sha256:c7729127c18f3e2447cb6c42584c56e9ffbd41b614cf84d19dbb8c19140cce91"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-f962dbe7f332-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "AC2",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The AC2 test checks arity at runtime with withCompletionDelivery.length === 3 but never shows that leaving out the root argument fails TypeScript checking. tsconfig.json includes no tests/** path, so neither `bun run typecheck` nor `bun test` type-checks tests/workflow-autocommit.test.ts. A regression to `root?: string` with `root ?? process.cwd()` in the body would keep arity 3, compile cleanly and pass both AC1 and AC2. Fix: add a compile-time check that a type-checking step actually runs, such as a @ts-expect-error call without root in a typechecked file, or a test that runs tsc on a fixture and expects the error.",
+      "anchor": "sha256:f61da9d4be714e98b58483479487fcee88e1c0a8b230de216e6a4c5f36ba9ebd",
+      "evidence": {
+        "trigger": "Change the signature to `withCompletionDelivery<T>(taskId: string, result: T, root?: string)` and read evidence from `root ?? process.cwd()`. Function.length stays 3, so the new test passes. tsconfig.json only includes plugins/immune-brain/runtime/**, .pi-extension/**, skills/**, scripts/** and types/**, so typecheck still passes. A caller that leaves out root compiles and silently falls back to the server process cwd, which is the behavior BR-REQ-3 forbids, and no AC2 check fails.",
+        "caller_chain": [
+          "tests/workflow-autocommit.test.ts",
+          "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:withCompletionDelivery",
+          "tsconfig.json#include"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "AC2"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:mcp-completion-delivery-workspace-typing:2026-11-15T14:07:25.176Z",
+      "at": "2026-11-15T14:07:25.176Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/mcp-completion-delivery-workspace-typing.intent.json"
+    },
+    {
+      "id": "record_approval:mcp-completion-delivery-workspace-typing:2026-11-15T14:08:17.948Z",
+      "at": "2026-11-15T14:08:17.948Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2062e2a6\naction_v2_sha256:02f98bea39e21bb7227c3125a167eff5dbf9c4ee9926582ea6fd55c50fc8698a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T14:08:17.948Z"
+      }
+    },
+    {
+      "id": "request_rework:mcp-completion-delivery-workspace-typing:2026-11-15T14:09:23.588Z",
+      "at": "2026-11-15T14:09:23.588Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:301a837c55653deba126677c6719eaedd807bf03fbae40a15c2fe24008cabae8",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:5e95b45b-9e8e-4249-9806-256434eaf960",
+        "confirmation_ref": "pi:cli:claude-code:5e95b45b-9e8e-4249-9806-256434eaf960",
+        "issued_at": "2026-11-15T14:09:23.588Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "d01f1092778e5cd648a4b3da551af374e54d21c8",
+        "review_commit": "a2076968d40b8e952f8298f370ab49891dfe08cc",
+        "review_tree": "3b98b80072030bba6a4c2348bc4d6e793d172c3c",
+        "manifest_digest": "sha256:0b23eefe3fc48fcdb2829f591857d685c4c9b42e54a018abe8652b1517569e30"
+      },
+      "review_started_at": "2026-11-15T14:08:20.329Z",
+      "review_submitted_at": "2026-11-15T14:09:22.983Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:mcp-completion-delivery-workspace-typing:2026-11-15T14:11:52.068Z",
+      "at": "2026-11-15T14:11:52.068Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-f962dbe7f332-1-review-1\naction_v2_sha256:35deaf5c12759921be234d25f2c12eb4051e39713f5f7a3f0da73a86d8af36ea"
+    },
+    {
+      "id": "freeze_artifacts:mcp-completion-delivery-workspace-typing:2026-11-15T14:12:01.541Z",
+      "at": "2026-11-15T14:12:01.541Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/mcp-completion-delivery-workspace-typing.intent.json"
+    },
+    {
+      "id": "record_approval:mcp-completion-delivery-workspace-typing:2026-11-15T14:12:53.804Z",
+      "at": "2026-11-15T14:12:53.804Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-7579ac02\naction_v2_sha256:0e510a2e2b15146f98eeba30708400a93d3e1038f7f07b0d92a33be00dd86df3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T14:12:53.804Z"
+      }
+    },
+    {
+      "id": "record_approval:mcp-completion-delivery-workspace-typing:2026-11-15T14:13:38.871Z",
+      "at": "2026-11-15T14:13:38.871Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-7f0c62b3\naction_v2_sha256:8cfa71b07a15802c43f756bd61b40bdea674a49458e5cc00616a8bebc772c7d1",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:bfb48af9-3fbe-4b27-bafa-94e8648e4bc9",
+        "confirmation_ref": "pi:cli:claude-code:bfb48af9-3fbe-4b27-bafa-94e8648e4bc9",
+        "issued_at": "2026-11-15T14:13:38.871Z"
+      },
+      "review_started_at": "2026-11-15T14:12:55.891Z",
+      "review_submitted_at": "2026-11-15T14:13:38.334Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:mcp-completion-delivery-workspace-typing:2026-11-15T14:13:40.381Z",
+      "at": "2026-11-15T14:13:40.381Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:2dad1a1145d2d3635fac1d5712f487fec053657ba7b63de5005953a10f9a0c68"
+    }
+  ]
+}

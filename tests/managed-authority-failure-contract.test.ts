@@ -117,10 +117,12 @@ describe("Managed native authority failure contract", () => {
 		expect(protocol).toContain("不得把多个 foreground Agent 假定为并发 batch");
 	});
 
-	test("the Loop contract runs the CLI reviewer and releases unbound or failed reviews", () => {
+	test("the Loop contract runs the Review session and releases unbound or failed reviews", () => {
 		const loop = read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ");
-		expect(loop).toContain("Authority Review is a separate CLI process");
-		expect(loop).toContain("run the returned `review_command`");
+		expect(loop).toContain("Authority Review is a separate explicit Code Agent session");
+		expect(loop).toContain("run the returned `review_session` once");
+		// A Host outside Herdr fails closed instead of running a hidden process.
+		expect(loop).toContain("`review_transport_unavailable`");
 		expect(loop).toContain("releases its reservation without a Review round");
 		expect(loop).toContain("`submit_review` retains the reservation");
 		expect(loop).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");

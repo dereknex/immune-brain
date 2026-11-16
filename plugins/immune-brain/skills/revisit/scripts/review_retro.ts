@@ -373,7 +373,7 @@ function candidates(events: SessionEvent[]): CandidateGroup[] {
 		}
 		if (e.type === "turn_end" && ["stop", "error", "aborted"].includes(e.stop_reason)) {
 			state.stop = e; state.stopResult = state.result; state.user = undefined;
-		} else if (e.type === "user_input" && state.stop) state.user = e;
+		} else if (e.type === "user_input" && !e.synthetic && state.stop) state.user = e;
 		else if (e.type === "tool_call" && e.name === "imm_kernel_canary") {
 			const { stop, user, last, stopResult } = state;
 			if (stop?.type === "turn_end" && user?.type === "user_input" && last && last.task_id !== "unknown" && e.task_id === last.task_id && !state.stopped.has(last.line)) {
@@ -447,7 +447,7 @@ async function sessionReport(args: Args): Promise<string> {
 		for (const g of ofKind.slice(0, GROUPS_PER_KIND)) emit(`${g.kind}: ${g.key} x${g.occurrences} ${g.chains[0]!.pointers.join(" ")}`);
 		if (ofKind.length > GROUPS_PER_KIND) emit(`${kind}: +${ofKind.length - GROUPS_PER_KIND} more groups (see --json)`);
 	}
-	emit(`user inputs: ${events.filter(e => e.type === "user_input").length}`);
+	emit(`user inputs: ${events.filter(e => e.type === "user_input" && !e.synthetic).length}`);
 	emit(""); emit("=== findings (deduped per session) ===");
 	const uniqOf = (kind: string) => findUniq.get(kind)?.size ?? 0;
 	emit(`blocking: ${uniqOf("blocking")} | advisory: ${uniqOf("advisory")} | bookkeeping marker (unverified): ${uniqOf("bookkeeping")}`);

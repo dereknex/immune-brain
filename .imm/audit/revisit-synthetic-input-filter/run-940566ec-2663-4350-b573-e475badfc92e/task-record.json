@@ -1,0 +1,152 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "revisit-synthetic-input-filter",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "revisit-synthetic-input-filter",
+    "goal": "Classify pure Host-injected pseudo-user transcript frames (<task-notification>, Tool loaded., Base directory for this skill:..., usage-limit reset notices, [plan review]) with synthetic: true in session_evidence.ts while preserving genuine /skill human instructions and human prompts as synthetic: false, keeping all events in --json (immune_brain/revisit_evidence/v2) events[], and excluding synthetic: true from user_resume candidates and human user inputs totals in review_retro.ts and dist/revisit.md per docs/specs/revisit-synthetic-input-filter.spec.md (BR-REQ-4, BR-DEC-5, BR-SCN-3, F3).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/revisit-synthetic-input-filter.spec.md AC1 and BR-SCN-3, SessionEvent user_input in plugins/immune-brain/skills/revisit/scripts/session_evidence.ts carries synthetic: boolean, marking pure Host-injected entries (<task-notification>, Tool loaded., Base directory for this skill:..., usage-limit reset notices, [plan review]) synthetic: true while retaining them in --json (immune_brain/revisit_evidence/v2) events[] (BR-DEC-5), and preserving genuine human follow-ups and /skill invocations carrying human instructions as synthetic: false (BR-REQ-4).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/revisit-synthetic-input-filter.spec.md AC2 and BR-SCN-3, review_retro.ts excludes synthetic: true user_input events from user_resume candidates after turn_end(stop) and from human user inputs summary totals (F3), while plugins/immune-brain/dist/revisit.md documents synthetic classification and human-only resume accounting.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/review-retro-analyzer.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/specs/revisit-synthetic-input-filter.spec.md",
+      "plugins/immune-brain/dist/revisit.md",
+      "plugins/immune-brain/skills/revisit/scripts/review_retro.ts",
+      "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts",
+      "tests/review-retro-analyzer.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/revisit-synthetic-input-filter.intent.json",
+    "content_hash": "sha256:6ad0ad843c462e7a3e80a4548de6b91ad496ee546ae20ee1e589166868402e22"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:6ad0ad843c462e7a3e80a4548de6b91ad496ee546ae20ee1e589166868402e22",
+  "git_base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+  "attestations": [
+    {
+      "id": "approval-qa-d96fdb0a",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6ad0ad843c462e7a3e80a4548de6b91ad496ee546ae20ee1e589166868402e22",
+      "diff_hash": "sha256:f4a3feb991b0b18c39a89ebb71b5069fa3156731dcd18b8202d024bec89e4093",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:5a08de8dc2b14a85e5d82e7f1f2708f901d4fcff9f7f646c68de39157d0e351b",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5a08de8dc2b14a85e5d82e7f1f2708f901d4fcff9f7f646c68de39157d0e351b"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:5a08de8dc2b14a85e5d82e7f1f2708f901d4fcff9f7f646c68de39157d0e351b"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-3f3a3ef1",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:6ad0ad843c462e7a3e80a4548de6b91ad496ee546ae20ee1e589166868402e22",
+      "diff_hash": "sha256:f4a3feb991b0b18c39a89ebb71b5069fa3156731dcd18b8202d024bec89e4093",
+      "actor_id": "cli:claude-code:568d83c5-d7b9-4d17-86c3-e225818a54fc",
+      "summary": "Provenance checked (739b181e has single parent 9d41df38 and tree 0f9a104c). AC1: user_input events now carry synthetic from isSyntheticInput, which covers the whole-envelope, Tool loaded., skill-preamble, usage-reset and [plan review] cases, keeps <skill> blocks and text outside the envelope human, and leaves every event in events[]. AC2: review_retro.ts skips synthetic events for user_resume and for the user inputs total, revisit.md documents the rule, and the new test checks the 7-true/2-false classification, one user_resume group and user inputs: 2. Blast radius is low: an offline revisit analyzer, with no persisted or kernel state touched.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "9d41df3817f2346c60e0e20bb5ec119a5e878ff2",
+        "review_commit": "739b181ea8f007c92f0a332c959a0f7c7190b077",
+        "review_tree": "0f9a104c1387bfb0640b1c4022a0cca4faf60aea",
+        "manifest_digest": "sha256:543e83f3f510909f52afb00f5f2c951ca55531dca6766524cc8693ef375e199a"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-6913a6ad5adc-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "HOST_PREAMBLE matches any input that starts with 'Base directory for this skill:', even when human text such as 'ARGUMENTS: <instruction>' follows. Spec D1 limits synthetic to a pure preamble with no trailing human instruction. In Claude, the separate <command-name>/<command-args> turn still counts as human, so the user_resume impact is small.",
+          "anchor": "sha256:d90712fc54f97f9c6bfe4f61e1af9e845692a0d7cd71d1732473d12d13e1605b",
+          "evidence": {
+            "trigger": "Claude user turn 'Base directory for this skill: /x\\n...\\nARGUMENTS: fix the bug' after turn_end(stop) → synthetic: true and the turn is not counted as a human input",
+            "caller_chain": [
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:readClaudeSession",
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:emitUserInput",
+              "plugins/immune-brain/skills/revisit/scripts/session_evidence.ts:isSyntheticInput"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:94ea386896375f946c1bc9f6031826c18e4dd1a3bee903c7bd8bc073cb794c89"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:revisit-synthetic-input-filter:2026-11-15T13:55:41.770Z",
+      "at": "2026-11-15T13:55:41.770Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/revisit-synthetic-input-filter.intent.json"
+    },
+    {
+      "id": "record_approval:revisit-synthetic-input-filter:2026-11-15T13:55:49.792Z",
+      "at": "2026-11-15T13:55:49.792Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-d96fdb0a\naction_v2_sha256:32e336e9d588c0f0f36165cf460f84bb24ad24be56a2327be6d0098d5e7c513a",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T13:55:49.792Z"
+      }
+    },
+    {
+      "id": "record_approval:revisit-synthetic-input-filter:2026-11-15T13:56:57.022Z",
+      "at": "2026-11-15T13:56:57.022Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-3f3a3ef1\naction_v2_sha256:6bf4e8410c246aaadf55d23707e73e6f063b2784563cfb93b66c674eb01d81ec",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:568d83c5-d7b9-4d17-86c3-e225818a54fc",
+        "confirmation_ref": "pi:cli:claude-code:568d83c5-d7b9-4d17-86c3-e225818a54fc",
+        "issued_at": "2026-11-15T13:56:57.022Z"
+      },
+      "review_started_at": "2026-11-15T13:55:52.193Z",
+      "review_submitted_at": "2026-11-15T13:56:56.394Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:revisit-synthetic-input-filter:2026-11-15T13:56:58.743Z",
+      "at": "2026-11-15T13:56:58.743Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:82e2aa25f6dbe5d59dc6edeb63ad49ff9ad0854dc110e9afd63f173a40330331"
+    }
+  ]
+}

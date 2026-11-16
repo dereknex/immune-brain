@@ -7,6 +7,17 @@ status: accepted
 **Amended:** Decision 9 by [ADR 0039](0039-verification-cli-stage.md): findings
 verification after a CLI Review is now a CLI process as well.
 
+**Amendment (retire process review transport S2):** the hidden background
+`--print` process stage is retired. A Review is prepared only as an explicit
+supervised session (`review_session`) that the Parent creates, awaits and stops,
+and its receipt is the session's out-of-tree JSON file. The `--print` argv
+builders, the generated `sh` script and its exit file are gone; `LANE_DEFAULTS`
+`review_transport` is `herdr` and `validateLane` rejects the retired `process`
+value. A Host outside Herdr fails closed with `review_preparation_failed`
+(`code: review_transport_unavailable`) and one same-Host recovery action, and
+the QA attestation already earned is retained. Source:
+`docs/specs/retire-process-review-transport.spec.md` (BR-DEC-1, BR-OUT-1).
+
 **Status update:** this ADR partially supersedes
 [ADR 0006](0006-unattended-review-dispatch-authority.md) (its rejected
 alternative "the runtime invokes the reviewer model" is not the shape here, but

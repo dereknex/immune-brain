@@ -151,21 +151,31 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    runs all descriptors in the task's working directory. Content outside the
    scope, and untracked or ignored files, are the user's environment and are not
    compared. Do not dispatch a separate per-Step QA Agent.
-3. On `review_ready`, run the returned `review_command` from your own shell, in
-   the background when that shell tool would otherwise time out, then call
-   `submit_review` once the process exits. The command launches one reviewer
-   process in the task's working directory with the profile it names
-   (`review_profile`). Never dispatch the authority Review as an Agent, and do
-   not replace this snapshot-bound reviewer with a generic role dispatch. The
-   Parent cannot issue its own QA or Review pass. A `review_preparation_failed`
+3. On `review_ready`, run the returned `review_session` once: `create_command`
+   opens one interactive reviewer in the task's working directory with the
+   profile it names (`review_profile`), the JSON it prints carries the `handle`,
+   and `await_command` waits once for that handle to finish writing the strict
+   JSON verdict to its out-of-tree `output_path`. When `create_command` prints
+   `entry_submitted: false`, a startup dialog (such as workspace trust) held the
+   entry back: relay it to the user, send nothing into the tab, and after they
+   answered run `resume_command` with that handle once, then `await_command`.
+   Then call `submit_review` once. The receipt is a file, never terminal text, and `submit_review` is
+   never polled. Never dispatch the authority Review as an Agent, and do not
+   replace this snapshot-bound reviewer with a generic role dispatch. The Parent
+   cannot issue its own QA or Review pass. Run the `stop_command` that the
+   consuming `submit_review` result returns, with the same handle; a result
+   without `stop_command` is a failure and the tab stays open for inspection.
+   A session that stopped without writing the file returns
+   `review_session_aborted` and releases the round. A `review_preparation_failed`
    result with `review_profile_required` means no `lanes.review_host` resolves:
    set it in the active user lane profile or in `.imm/config.json`, then call
-   `advance_assurance`; QA settlement is retained. On `verification_ready`
-   with a `verification_command`, run it exactly as `review_command` (your own
-   shell, in the background when the shell tool would otherwise time out), then
-   call `submit_verification` without a result; a `verification result pending`
-   answer means it has not exited yet. Without one, invoke its exact
-   `agent_params` as one foreground verifier, then call `submit_verification`
+   `advance_assurance`; QA settlement is retained. `review_transport_unavailable`
+   means this Host is not inside Herdr: run the Lane inside Herdr, then call
+   `advance_assurance`, which reuses the retained QA. On `verification_ready`
+   run its `verification_session` through the same create, await, submit and
+   stop sequence; a `verification result pending` answer means it has not
+   written its receipt yet. Without a session, invoke its exact `agent_params`
+   as one foreground verifier, then call `submit_verification`
    without a result to use the Host-observed receipt.
    Follow a returned `review_ready` or `awaiting_user` through the same loop.
 4. Follow the returned Kernel obligation. Fresh QA suffices for routine work.
@@ -352,39 +362,46 @@ explicit runtime-supported role boundary requests it, followed by the returned
 foreground Agent envelope exactly. It is not an extra gate on Kernel Assurance.
 Pass the returned Agent envelope through unchanged.
 
-Authority Review is a separate CLI process, not an Agent call. The runtime
-writes the review packet beside the evidence manifest and returns
-`review_command` (`sh <script>`) with `review_profile`; the script runs one
+Authority Review is a separate explicit Code Agent session, not an Agent call.
+The runtime writes the review packet beside the evidence manifest and returns
+`review_session` with `review_profile`; `create_command` opens one interactive
 reviewer in the task's working directory, invoking the packaged
 `authority-review` skill on that packet. The packet names the review contract
 hash; the skill compares it with its own and answers
 `REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the reviewer's
-install carries different rules. The process writes its output under a temporary
-name and its exit status last, so a present exit file marks a complete output.
-With `lanes.review_transport: herdr` the returned `review_command` instead runs
-that same script through `imm-session run --provider herdr` in a new Herdr tab
-the user can watch (#426 S4); it still exits once the script has, and the
-output and exit files remain the only result. Outside Herdr that setting makes
-Review preparation fail with `review_transport_unavailable` and its recovery
-action; it never falls back to a hidden process.
-Releasing the reservation removes the packet, the script and the output with the
-evidence directory; the manifest bytes remain unchanged. A finished review
-releases its reservation without a Review round when the process exits non-zero
-or prints nothing (`review_process_failed`), when HEAD, the index or tracked
+install carries different rules — that line is the whole content of the
+out-of-tree `output_path`, so the round ends instead of waiting. `await_command`
+waits once for the agent to write the strict JSON verdict or verification to
+`output_path`, the only path its write allowlist carries. Terminal text is never
+a receipt, and the same tree guard covers the interactive session. The hidden
+background `--print` process transport is retired: outside Herdr both Review and
+Verification preparation fail with `review_transport_unavailable` and one
+same-Host recovery action that never falls back to a hidden process.
+`await_command` also copies its result to `session-await.json` beside the
+receipt, so a session that ended or went idle without writing `output_path`
+releases the round as `review_session_aborted` / `verification_session_aborted`
+instead of reading as still running. `stop_command` closes the single round
+once the Kernel consumed a valid receipt into a pass, a rework,
+`verification_ready` or `awaiting_user`, and that consuming result carries it; a
+failed round, an aborted session, a contract mismatch, a changed tree or a non-JSON output keeps the
+tab open and runs no stop.
+Releasing the reservation removes the packet and the output with the
+session directory; the manifest bytes remain unchanged. A finished review
+releases its reservation without a Review round when the receipt is not one
+strict JSON object (`review_output_invalid`), when HEAD, the index or tracked
 content differ from the reviewed tree (`review_tree_changed` with the changed
 paths), or when the reviewer reports a contract mismatch. Restore the listed
-paths to the reviewed state, then call `advance_assurance`. A process that has
-not exited is not an error: `submit_review` retains the reservation. A blocked
-`submit_review` is recovered only through its returned `recovery_action`.
-Findings verification after a CLI Review is a CLI process too (ADR 0039):
-`verification_ready` returns `verification_command`, which runs one fresh,
-read-only print session of the reviewer Host on the selected verifier model
+paths to the reviewed state, then call `advance_assurance`. A session that has
+not written its file is not an error: `submit_review` retains the reservation. A
+blocked `submit_review` is recovered only through its returned `recovery_action`.
+Findings verification after a CLI Review is an explicit session too (ADR 0039):
+`verification_ready` returns `verification_session`, which opens one verifier
+session of the reviewer Host on the selected verifier model
 (`lanes.review_verifier_model` when set, so it differs from the reviewer's) and
-writes its output and exit status the same way. `submit_verification` reads
-those bytes twice and binds them as the receipt; a failed or silent verifier
-keeps every finding. With `lanes.review_transport: herdr` it runs in a Herdr
-tab like the Review (#426 S3). A verification that follows no CLI Review keeps
-its Host subagent dispatch through `agent_params`.
+writes its JSON receipt to the reservation's `output_path`. `submit_verification`
+reads those bytes twice and binds them as the receipt; an invalid or missing
+verifier receipt keeps every finding. A verification that follows no CLI Review
+keeps its Host subagent dispatch through `agent_params`.
 
 Role dispatches follow the user's interaction language: include
 `"interaction_language"` in the `dispatch_role` or routed role context with

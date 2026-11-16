@@ -155,6 +155,12 @@ Environment, preparation, and cleanup breakdowns are environment findings, not
 assertion findings. Keep automated behavioral or geometry evidence separated
 from a human quality judgment.
 
+When the reservation names an `output_path`, that out-of-tree JSON file is the
+receipt: write the single verdict object there as the file's whole content and
+print nothing. A review contract mismatch is written there instead, as that
+file's whole content. It is the only path you create; every other file, and
+every Git ref, stays untouched.
+
 Return exactly one JSON object with the fields required by the Loop review
 contract: `contract`, `role`, `task_id`, `snapshot_digest`, `decision` (`pass`
 or `rework`), and for `pass` include `approval` (`kind`, `authority_role`,

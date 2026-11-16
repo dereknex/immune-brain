@@ -19,6 +19,8 @@ export interface ReviewRequest {
 	operationId: string;
 	/** The task's working directory; set by the coordinator for a Host that writes reviewer files. */
 	root?: string;
+	/** The request-selected Lane Review profile; resolved from the layered config when absent. */
+	profile?: ReviewProfile;
 	/**
 	 * The per-dispatch facts alone: internal role contract references, the snapshot,
 	 * the evidence file and the turn budget. Static instructions stay generated from
@@ -34,13 +36,34 @@ export interface ReviewRequest {
 export interface HostReviewReservation {
 	id: string;
 	dispatch: unknown;
-	/** Set by a Host that dispatches Review to a CLI process instead of an in-process agent. */
-	review_command?: string;
-	/** Set by a Host that dispatches findings verification to a CLI process (verification CLI stage). */
-	verification_command?: string;
+	/** Set by a Host that dispatches Review to an explicit supervised session instead of an in-process agent. */
+	review_session?: ReviewSessionSpec;
+	verification_session?: ReviewSessionSpec;
 	review_profile?: ReviewProfile;
 	/** The actor identity the Kernel records for this reservation's verdict. */
 	review_actor_id?: string;
+}
+
+/**
+ * One explicit supervised session a Review or Verification round runs in
+ * (Spec explicit-port-review-session D1, D2, D5). The Parent launches it, so no
+ * authority module imports `runtime/session/` (BR-OUT-1).
+ */
+export interface ReviewSessionSpec {
+	transport: "herdr";
+	/** The out-of-tree JSON file the session writes its result to; its bytes are the receipt. */
+	output_path: string;
+	/** Launch it; the printed JSON names the `handle` the other verbs take. */
+	create_command: string;
+	/**
+	 * Submit the entry a startup dialog held back: when `create_command` printed
+	 * `entry_submitted: false`, the user answers the dialog in the tab, then this runs once.
+	 */
+	resume_command: string;
+	/** Wait once for the session to finish writing `output_path`; never a submit poll. */
+	await_command: string;
+	/** Close the single-round session after a consumed receipt; never after a failed one. */
+	stop_command: string;
 }
 
 /**
@@ -64,6 +87,8 @@ export interface VerificationRequest {
 	prompt: string;
 	model: string;
 	writePacket: ReviewEvidence["writePacket"];
+	/** The Lane Review profile the verification inherits from its Review round. */
+	profile?: ReviewProfile;
 }
 
 export type VerificationReceipt =

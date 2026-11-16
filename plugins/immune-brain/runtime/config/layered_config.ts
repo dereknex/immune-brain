@@ -9,7 +9,18 @@ import { projectIdentity } from "./project_identity.ts";
 
 type Obj = Record<string, any>;
 type ResolvedLeaf = { value: unknown; source: string };
-export type ReviewProfile = { host: "pi" | "claude-code" | "antigravity"; model?: string; effort?: string };
+/**
+ * Where a reserved Review or Verification round runs: one explicit supervised
+ * session the Parent launches inside Herdr. The hidden `--print` process
+ * transport is retired (Spec retire-process-review-transport D1, D2).
+ */
+export type ReviewTransport = "herdr";
+export type ReviewProfile = {
+	host: "pi" | "claude-code" | "antigravity";
+	model?: string;
+	effort?: string;
+	transport?: ReviewTransport;
+};
 type Diagnostic = { code: string; severity: "error" | "warning"; file: string; key_path: string; message: string };
 const object = (v: unknown): v is Obj => v !== null && typeof v === "object" && !Array.isArray(v);
 const leaf = (value: unknown, source: string) => ({ value, source });
@@ -18,13 +29,17 @@ const envName = /^[A-Z_][A-Z0-9_]*$/;
 
 /** The Review profile `lanes` resolves to, or null when no `review_host` is set. No model-distinctness rule (BR-DEC-2). */
 /** Defaults of the Lane keys that have one; every other key defaults to null. */
-const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
+const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "herdr", advisory_transport: "subagent" };
 
-export function chooseReviewer(lanes: { review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf }): ReviewProfile | null {
+export function chooseReviewer(lanes: {
+	review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf;
+	review_transport?: ResolvedLeaf;
+}): ReviewProfile | null {
 	const host = lanes.review_host.value as ReviewProfile["host"] | null;
 	if (!host) return null;
 	const model = lanes.review_model.value as string | null, effort = lanes.review_effort.value as string | null;
-	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+	const transport = lanes.review_transport?.value as ReviewTransport | null | undefined;
+	return { host, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(transport ? { transport } : {}) };
 }
 
 export const LOOP_MODES = ["off", "observe", "assist", "autonomous"] as const;
@@ -121,7 +136,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		for (const [k, v] of Object.entries(o)) {
 			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0
 				// ADR 0038: a supervised-session transport names its provider; no value is auto-detected.
-				: k === "review_transport" ? v === "process" || v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
+				: k === "review_transport" ? v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
 			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
 		}
 	};

@@ -22,6 +22,7 @@
 		"plugins/immune-brain/.pi-extension/**/*.ts",
 		"plugins/immune-brain/skills/**/*.ts",
 		"scripts/**/*.ts",
+		"tests/workflow-autocommit.test.ts",
 		"types/**/*.d.ts"
 	],
 	"exclude": [

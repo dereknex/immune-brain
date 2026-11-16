@@ -72,7 +72,7 @@ test("terminal settlement ambiguity reconciles without a second completion write
 		}
 	};
 	expect((await h.progression.advance(TASK, ctx)).state).toBe("settlement_unknown");
-	expect(await h.progression.advance(TASK, ctx)).toEqual({ state: "completed" });
+	expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "completed" });
 	expect(completions).toBe(1);
 	expect(h.counts().applyCount).toBe(1);
 });
@@ -113,18 +113,18 @@ for (const operation of ["advance", "submitReview"] as const) {
 	}
 }
 
-test("QA continuation hands one CLI Review command to the Parent turn", async () => {
+test("QA continuation hands one explicit Review session to the Parent turn", async () => {
 	const h = makeAssuranceHarness();
 	const ready = await h.progression.advance(TASK, ctx);
 	expect(ready.state).toBe("review_ready");
-	expect(typeof (ready as { review_command?: string }).review_command).toBe("string");
+	expect(typeof (ready as { review_session?: { create_command?: string } }).review_session?.create_command).toBe("string");
 	expect(ready).not.toHaveProperty("agent_params");
 });
 
 test("Parent submits a structured reviewer verdict without host event receipts", async () => {
 	const h = makeAssuranceHarness();
 	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
-	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 	expect(h.counts().applyCount).toBe(2);
 });
 
@@ -157,7 +157,7 @@ test("malformed verdict can be corrected without rebuilding Review evidence", as
 	expect((await h.progression.advance(TASK, ctx)).state).toBe("review_ready");
 	expect(await h.progression.submitReview(TASK, ctx, { decision: "pass" })).toMatchObject({ state: "blocked" });
 	expect(h.progression.active(TASK)?.state).toBe("review_ready");
-	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+	expect(await h.progression.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 });
 
 test("snapshot drift discards the verdict without Review authority writes", async () => {

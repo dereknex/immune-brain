@@ -438,7 +438,7 @@ export class HostRuntime {
 		this.batchTracker = options.batchTracker;
 		this.readInitiative = options.readInitiative;
 		this.host = options.host ?? profile.createHost();
-		this.reviewHost = new CliReviewHost(this.host);
+		this.reviewHost = new CliReviewHost(this.host, { env: this.env });
 		this.coordinator = new AssuranceCoordinator({
 			...this.createKernelPorts(),
 			...options.ports,

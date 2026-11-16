@@ -1,0 +1,43 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "retire-process-review-transport",
+  "owner": "user",
+  "goal": "Enforce global mandatory SupervisedSessionPort herdr transport for Authority Review and CLI Findings Verification, failing closed outside Herdr with review_preparation_failed (code review_transport_unavailable) and one same-Host recovery action while preserving QA attestation, retiring the hidden background --print process transport default/fallback across layered config, batch state, cli_review, Loop contracts, reference docs/mirrors, ADRs 0037/0039, and conformance tests per docs/specs/retire-process-review-transport.spec.md (BR-DEC-1, BR-REQ-1, BR-OUT-1, BR-SCN-2).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC1 and BR-SCN-2, writeProcessScript and all hidden background --print process review/verification execution fallbacks are retired from cli_review.ts; outside Herdr (no admitted herdr provider), Review and Verification preparation fails closed with state review_preparation_failed, code review_transport_unavailable, one same-Host Herdr recovery action (with no suggestion of lanes.review_transport process), preserves prior QA attestation intact across hosts, and maintains zero imports from runtime/session/ inside runtime/assurance/, Kernel, and Host adapters (BR-DEC-1, BR-OUT-1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC2, LANE_DEFAULTS.review_transport defaults to herdr, validateLane in layered_config.ts rejects process, and batch_state.ts (parseBatchReviewProfile, reviewProfileFromArgs, laneBatchReviewProfile) propagates only admitted herdr transport without process fallback (BR-DEC-1, BR-REQ-1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC3, docs/reference/immune-brain-config.md and docs/reference/supervised-session-port.md match their plugins/immune-brain/dist/docs/reference/* packaged mirrors byte-for-byte, dist/drive.md and dist/drive-batch.md retire process fallback prose, docs/adr/0037-authority-review-cli-stage.md and docs/adr/0039-verification-cli-stage.md record explicit Port retirement notes, and docs/adr/0038-supervised-session-port.md remains intact.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/loop-daemon-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "docs/adr/0037-authority-review-cli-stage.md",
+    "docs/adr/0039-verification-cli-stage.md",
+    "docs/reference/immune-brain-config.md",
+    "docs/reference/supervised-session-port.md",
+    "docs/specs/retire-process-review-transport.spec.md",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+    "plugins/immune-brain/dist/drive-batch.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/dual-host-assurance-conformance.test.ts",
+    "tests/helpers/cli-reviewer.ts",
+    "tests/layered-config.test.ts"
+  ],
+  "risk": "critical",
+  "revision": 1
+}

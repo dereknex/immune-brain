@@ -1,0 +1,24 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "mcp-completion-delivery-workspace-typing",
+  "owner": "user",
+  "goal": "Enforce explicit workspace root parameter typing on withCompletionDelivery in plugins/immune-brain/runtime/host-core/mcp_runtime.ts:281 by removing the unused root = process.cwd() default while preserving composition-root fallback options.cwd ?? process.cwd() at mcp_runtime.ts:295; no user-visible change: internal TypeScript helper signature tightening with all callers already passing explicit workspace/root (mcp_runtime.ts:505,508,512; tests/workflow-autocommit.test.ts:383,402; tests/goal-driven-batch-run.test.ts:252,255). Brainstorm Trace: BR-REQ-3 & BR-DEC-4 owned here; BR-DEFER-1 (full HostRuntime.this.cwd/bindWorkspace and serveStdio callChain at mcp_runtime.ts:897-901) deferred; BR-REQ-1..2/BR-DEC-1..3/BR-OUT-1/BR-SCN-1..2 in S1/S2; BR-REQ-4/BR-DEC-5/BR-SCN-3 in S4; BR-OUT-2 excluded; BR-Q-1 resolved none.",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "withCompletionDelivery in plugins/immune-brain/runtime/host-core/mcp_runtime.ts requires an explicit root: string parameter with no = process.cwd() default (BR-REQ-3, F2), while createMcpRuntime preserves options.cwd ?? process.cwd() at composition root (BR-DEC-4) and full project TypeScript typecheck passes cleanly across all callers.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "tests/workflow-autocommit.test.ts verifies withCompletionDelivery delivery attachment with explicit workspace root and confirms omitting the third workspace argument fails statically under TypeScript checking.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/workflow-autocommit.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+    "tests/workflow-autocommit.test.ts"
+  ],
+  "risk": "routine",
+  "revision": 1
+}

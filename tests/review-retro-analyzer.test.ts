@@ -568,5 +568,45 @@ describe("review-retro analyzer", () => {
 			rmSync(multiHome, { recursive: true, force: true });
 		}
 	});
+	test("classifies pure Host-injected pseudo-user frames as synthetic and keeps human resume accounting human-only", async () => {
+		const skillBody = "Base directory for this skill: /tmp/skills/revisit\n\nRead the sessions and report friction.";
+		const frames = [
+			"<task-notification>task done</task-notification>",
+			"Tool loaded.",
+			skillBody,
+			`${skillBody}\n\n\nARGUMENTS: `,
+			"Your claude.ai usage limit has reset.",
+			"Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete.\n [Earlier usage-limit notes no longer apply. Continue working normally. Don't mention this to the user.]",
+			"[plan review]",
+			"<command-name>/revisit</command-name>",
+			"<system-reminder>context</system-reminder>",
+			"<local-command-stdout>ok</local-command-stdout>",
+		];
+		// Each turn a human wrote, even after a Host notice or as a skill's arguments.
+		const humans = [
+			"<command-name>/revisit</command-name>\n<command-args>inspect this</command-args>",
+			"Tool loaded.\n再看一下 #539",
+			`${skillBody}\n\n\nARGUMENTS: #539`,
+			"<skill name=\"revisit\" location=\"/tmp/skills/revisit/SKILL.md\">Read the sessions.</skill>",
+		];
+		const { root, cleanup } = sessionRoot([
+			JSON.stringify({ type: "session", cwd: "/project" }),
+			...frames.flatMap((text, i) => [turnEnd(i * 4, "stop"), userInput(i * 4 + 1, text), kernelCall(i * 4 + 2, `n${i}`, { op: "status" })]),
+			turnEnd(40, "stop"), userInput(41, "<task-notification>settled</task-notification>"), userInput(42, "继续"), kernelCall(43, "h", { op: "status" }),
+			...humans.flatMap((text, i) => [turnEnd(44 + i * 4, "stop"), userInput(45 + i * 4, text), kernelCall(46 + i * 4, `s${i}`, { op: "status" })]),
+		]);
+		try {
+			const args = ["--since", stamp(0), "--until", stamp(59), "--root", root];
+			const doc = JSON.parse(await run([...args, "--json"]));
+			const inputs = doc.events.filter((e: any) => e.type === "user_input");
+			// Host frames stay in events[] with synthetic: true; "继续" and every human-written turn stay human.
+			expect(inputs.map((e: any) => e.synthetic)).toEqual([...frames.map(() => true), true, false, ...humans.map(() => false)]);
+			for (const e of inputs) expect(typeof e.instruction).toBe("string");
+			expect(doc.candidates.map((g: any) => [g.kind, g.key, g.occurrences])).toEqual([["user_resume", "/project / t", 1 + humans.length]]);
+			const report = await run(args);
+			expect(report).toContain(`user inputs: ${1 + humans.length}`);
+			expect(candidateSection(report)).toHaveLength(1);
+		} finally { cleanup(); }
+	});
 
 });

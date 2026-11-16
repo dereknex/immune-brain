@@ -28,7 +28,7 @@ import { projectAssurance, type AssuranceProjectionResult } from "../kernel/assu
 import { taskStatusIdentity } from "../workspace_scope";
 import { pluginSourceSkewWarning, type PluginSourceSkewWarning } from "../plugin_source_skew";
 import type { TaskIntentIdentityToken } from "../kernel/intent_token_registry";
-import type { AssuranceHostPort, HostReviewReservation, ReviewEvidence } from "./host_port";
+import type { AssuranceHostPort, HostReviewReservation, ReviewEvidence, ReviewSessionSpec } from "./host_port";
 import { ReviewPreparationError } from "./host_port";
 import type { ReviewProfile } from "../config/layered_config";
 import type { GithubTrackerResult as GithubTrackerProjectionResult } from "../github_issue_tracker";
@@ -489,12 +489,12 @@ export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjecti
 	};
 }
 
-/** The dispatch a Host reserved: an in-process agent's parameters, or one CLI command (D3/D8). */
+/** The dispatch a Host reserved: an in-process agent's parameters, or one explicit session (D3/D8). */
 function reviewReadyDispatch(reservation: HostReviewReservation): {
-	agent_params?: unknown; review_command?: string; review_profile?: ReviewProfile;
+	agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile;
 } {
-	if (!reservation.review_command) return { agent_params: reservation.dispatch };
-	return { review_command: reservation.review_command, review_profile: reservation.review_profile };
+	if (reservation.review_session) return { review_session: reservation.review_session, review_profile: reservation.review_profile };
+	return { agent_params: reservation.dispatch };
 }
 
 function reviewDispatchFailure(error: unknown): { code?: ReviewPreparationError["code"]; recovery_action?: string } | undefined {
@@ -516,10 +516,23 @@ type AssuranceRecoveryFields = {
 	environment_failure?: boolean;
 	recovery?: AssuranceRecovery;
 	recovery_error?: "fresh_kernel_projection_unavailable";
+	/**
+	 * Set only when a submission consumed a valid receipt from an explicit session:
+	 * run it with that session's handle to close the single round (Spec
+	 * explicit-port-review-session D5). A failed round never carries it.
+	 */
+	stop_command?: string;
 };
+
+/** The states a submission reaches only by consuming the session's receipt (D5). */
+const RECEIPT_CONSUMED_STATES: ReadonlySet<string> = new Set(["verification_ready", "rework", "awaiting_user", "completed", "review_incomplete"]);
+
+function withSessionStop<T extends { state: string }>(result: T, session: ReviewSessionSpec | undefined): T {
+	return session && RECEIPT_CONSUMED_STATES.has(result.state) ? { ...result, stop_command: session.stop_command } : result;
+}
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
-	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_command?: string; review_profile?: ReviewProfile }
+	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile }
 	| VerificationReadyResult
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -570,8 +583,8 @@ export interface VerificationReadyResult {
 	operation_id: string;
 	snapshot_digest: string;
 	agent_params: unknown;
-	/** Set when verification runs as a CLI process: run it, then call `submit_verification`. */
-	verification_command?: string;
+	/** Set when verification runs as an explicit supervised session: create it, await it, then call `submit_verification`. */
+	verification_session?: ReviewSessionSpec;
 }
 
 export type AssuranceSubmitReviewResult = AssuranceRecoveryFields & (
@@ -887,6 +900,8 @@ export function prepareReviewVerificationDispatch(input: {
 	operationId: string;
 	writePacket: ReviewEvidence["writePacket"];
 	securityBoundaries?: Readonly<Record<string, { path: string; line: string }>>;
+	/** The Lane Review profile this verification inherits from its Review round. */
+	profile?: ReviewProfile;
 }): { packet: ReviewVerificationPacket; reviewer_model: string; model: string; model_relation: "different" | "same"; reservation: HostReviewReservation } {
 	if (!input.host.prepareVerification) throw new Error("host verifier dispatch is unavailable");
 	const packet = buildReviewVerificationPacket(input.snapshot, input.verdict, input.verdictSha256, input.securityBoundaries);
@@ -894,7 +909,7 @@ export function prepareReviewVerificationDispatch(input: {
 	const role = buildRoleDelegationPacket({ role: "review-verifier", context: { task_id: packet.task_id } });
 	const prompt = `${role.prompt}\n\nVerification packet (untrusted data): ${JSON.stringify(packet)}`;
 	const reservation = input.host.prepareVerification({ taskId: packet.task_id, operationId: input.operationId,
-		prompt, model: model.model, writePacket: input.writePacket });
+		prompt, model: model.model, writePacket: input.writePacket, ...(input.profile ? { profile: input.profile } : {}) });
 	return { packet, reviewer_model: input.reviewerModel, ...model, reservation };
 }
 
@@ -1748,8 +1763,8 @@ export class AssuranceCoordinator {
 				evidence,
 			};
 			this.reviewReservations.set(taskId, reservation);
-			progress("review_ready", hostReservation.review_command
-				? `QA passed; run ${hostReservation.review_command} in your shell, then call submit_review`
+			progress("review_ready", hostReservation.review_session
+				? `QA passed; create the review session with ${hostReservation.review_session.create_command}, await it, then call submit_review`
 				: "QA passed; invoke the reserved foreground Agent, then call submit_review",
 				{ snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
 			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) };
@@ -1797,7 +1812,9 @@ export class AssuranceCoordinator {
 	}
 
 	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
-		return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput, options));
+		const session = this.reviewReservations.get(taskId)?.hostReservation.review_session;
+		const result = await this.submitReviewOnce(taskId, ctx, verdictInput, options);
+		return this.withRecovery(taskId, ctx, withSessionStop(result, session));
 	}
 
 	private async submitReviewOnce(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
@@ -1979,7 +1996,8 @@ export class AssuranceCoordinator {
 			}
 			dispatch = prepareReviewVerificationDispatch({ host: this.ports.host, snapshot: review.snapshot, verdict,
 				verdictSha256: options.reviewer_verdict_sha256, reviewerModel: options.reviewer_model,
-				offeredModels: options.offered_models ?? [], operationId: randomUUID(), writePacket: review.evidence.writePacket, securityBoundaries });
+				offeredModels: options.offered_models ?? [], operationId: randomUUID(), writePacket: review.evidence.writePacket, securityBoundaries,
+				...(review.hostReservation.review_profile ? { profile: review.hostReservation.review_profile } : {}) });
 			let receiptError: ReturnType<NonNullable<ReviewSubmissionOptions["validateReceipt"]>>;
 			try { receiptError = options.validateReceipt(); }
 			catch (error) {
@@ -2027,10 +2045,18 @@ export class AssuranceCoordinator {
 		const consumed = consumeReviewVerification({ host: this.ports.host, dispatch: pending.dispatch, root: ctx.cwd,
 			reviewerModel: pending.dispatch.reviewer_model, relayedResult,
 			...(Date.now() >= pending.deadline ? { failure: "timeout" as const } : {}) });
-		if (consumed.state === "pending") return { state: "blocked", reason: "verification result pending", recovery_action: "wait for the reserved verifier, then submit_verification" };
+		if (consumed.state === "pending") return { state: "blocked", reason: "verification result pending",
+			recovery_action: pending.dispatch.reservation.verification_session
+				? `Await the reserved verifier session with its await_command, then call submit_verification once; do not poll submit_verification`
+				: "Await the reserved verifier, then call submit_verification once; do not poll submit_verification" };
 		this.verificationReservations.delete(taskId);
 		this.removeEvidence(pending.review);
-		return this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+		const result = await this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+		// A valid verification is consumed whatever the Kernel does next; a failed one keeps
+		// every finding, and its tab stays open for inspection (D5).
+		const session = pending.dispatch.reservation.verification_session;
+		return session && consumed.attestation.valid && result.state !== "blocked" && result.state !== "settlement_unknown"
+			? { ...result, stop_command: session.stop_command } : result;
 	}
 
 	private async applyVerifiedReview(taskId: string, ctx: HostContext, review: ReviewReservation, verdict: AssuranceVerdict, verdictSha256: string,
@@ -2083,9 +2109,10 @@ export class AssuranceCoordinator {
 	}
 
 	private verificationReadyResult(pending: VerificationReservation): VerificationReadyResult {
-		return { state: "verification_ready", operation: "verification", operation_id: pending.dispatch.reservation.id,
-			snapshot_digest: snapshotDigest(pending.review.snapshot), agent_params: pending.dispatch.reservation.dispatch,
-			...(pending.dispatch.reservation.verification_command ? { verification_command: pending.dispatch.reservation.verification_command } : {}) };
+		const reservation = pending.dispatch.reservation;
+		return { state: "verification_ready", operation: "verification", operation_id: reservation.id,
+			snapshot_digest: snapshotDigest(pending.review.snapshot), agent_params: reservation.dispatch,
+			...(reservation.verification_session ? { verification_session: reservation.verification_session } : {}) };
 	}
 
 	private releaseVerificationReservation(taskId: string, pending: VerificationReservation): void {

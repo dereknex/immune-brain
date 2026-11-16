@@ -117,8 +117,9 @@ those exact commands; a decline, cancellation or missing gate leaves no command
 effect. A Parent whose final commands are already recorded needs no gate. Recorded commands rerun under that earlier
 confirmation, and changed commands need a fresh explicit Parent entry.
 
-After diagnostics pass, the Lane Executor advances Kernel QA and runs any
-returned `review_command` once in the Lane's own tree, then submits the result
+After diagnostics pass, the Lane Executor advances Kernel QA and runs the
+returned `review_session` create, await and stop sequence — once in the Lane's
+own tree — then submits the result
 through `submit_review`. Review runs before integration: a PASS gates the
 integration, and a REVISE returns the child to the Lane Executor. A missing
 review profile fails that child closed with `review_profile_required` and one
@@ -464,7 +465,8 @@ does the Parent submit it with `imm-session send <handle> --provider herdr --tex
 and re-arm step 3. Every instruction the
 coordinator sent is therefore in the report, so Executor-initiated behavior and
 coordinator intervention can be told apart afterwards. This never applies to the
-authority Review: it runs as a separate CLI process the Lane Executor starts and
+authority Review: it runs as a separate explicit Code Agent session the Lane
+Executor starts and
 submits, so no Lane instruction reaches it.
 
 When a Lane child exhausts its rework budget (the per-child `qa_failure_limit`)

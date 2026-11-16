@@ -49,7 +49,7 @@ export type ReviewObservation =
 const RELEASED_REVIEW_RECOVERY =
 	"Call advance_assurance to obtain a new Review reservation, then dispatch one fresh reviewer with the returned envelope unchanged";
 const RETAINED_REVIEW_RECOVERY =
-	"Wait for the dispatched reviewer to finish, then call submit_review again with its verdict; do not dispatch or continue another reviewer";
+	"Await the dispatched reviewer once (a Port session's await_command when the reservation carries one), then call submit_review once; do not poll submit_review and do not dispatch another reviewer";
 const MISMATCH_REVIEW_RECOVERY =
 	"Resubmit without a verdict to apply the observed reviewer receipt, or resubmit the reviewer's verdict exactly as the reviewer returned it";
 
