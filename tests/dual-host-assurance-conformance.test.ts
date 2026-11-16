@@ -145,7 +145,8 @@ afterAll(() => {
 });
 
 const FIXTURE_NOW = "2026-08-12T10:00:00.000Z";
-const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+// A Review is prepared only inside Herdr (Spec retire-process-review-transport D2).
+const HOST_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent" };
 
 /**
  * Settle one Review through the CLI dispatcher (Spec review-cli-stage D11): the
@@ -3337,8 +3338,8 @@ describe("runtime composition", () => {
 		const taskId = "composition-task";
 		const claudeRoot = compositionRepo(taskId);
 		const antigravityRoot = compositionRepo(taskId);
-		const claude = new ClaudeRuntime({ cwd: claudeRoot, env: { CLAUDE_CODE_VERSION: "2.1.236" }, interactive: true });
-		const antigravity = new AntigravityRuntime({ cwd: antigravityRoot, env: { ANTIGRAVITY_VERSION: "0.2.0" }, interactive: true });
+		const claude = new ClaudeRuntime({ cwd: claudeRoot, env: { CLAUDE_CODE_VERSION: "2.1.236", HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent" }, interactive: true });
+		const antigravity = new AntigravityRuntime({ cwd: antigravityRoot, env: { ANTIGRAVITY_VERSION: "0.2.0", HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent" }, interactive: true });
 		try {
 			// One implementation, two profiles: the same class carries both Hosts.
 			expect(claude.runtime).toBeInstanceOf(HostRuntime);

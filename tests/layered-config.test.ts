@@ -301,10 +301,10 @@ test("review profile keys: absent keys default to null and the executor keys are
 test("chooseReviewer returns the resolved review profile", () => {
 	const f = fixture();
 	f.project({ lanes: { review_host: "pi", review_model: "m", review_effort: "high" } });
-	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", model: "m", effort: "high", transport: "process" });
+	expect(chooseReviewer(f.read().lanes)).toEqual({ host: "pi", model: "m", effort: "high", transport: "herdr" });
 	f.project({ lanes: { review_host: "antigravity" } });
 	const bare = chooseReviewer(f.read().lanes);
-	expect(bare).toEqual({ host: "antigravity", transport: "process" });
+	expect(bare).toEqual({ host: "antigravity", transport: "herdr" });
 	expect("model" in bare!).toBe(false);
 	expect("effort" in bare!).toBe(false);
 	// The transport travels with the profile, so Review dispatch reads it from one place (D3).
@@ -316,7 +316,7 @@ test("chooseReviewer ignores the executor values and allows the same model", () 
 	const f = fixture();
 	f.project({ lanes: { executor_host: "pi", executor_model: "x", review_host: "pi", review_model: "x" } });
 	const c = f.read();
-	expect(chooseReviewer(c.lanes)).toEqual({ host: "pi", model: "x", transport: "process" });
+	expect(chooseReviewer(c.lanes)).toEqual({ host: "pi", model: "x", transport: "herdr" });
 	expect(c.diagnostics.filter(d => d.code === "not_applied")).toEqual([]);
 });
 
@@ -335,15 +335,16 @@ test("preload isolates configuration and required ADRs and tracked project confi
 	expect(resolveConfig(process.cwd()).initiative_carrier).toEqual({ value: "github", source: "project" });
 });
 
-test("supervised-session transports default off and accept only a named provider (#426 S2, S4)", () => {
+test("the Review transport is herdr only and the advisory transport still defaults off (#426 S2, S4)", () => {
 	const f = fixture();
 	f.project({ git_integration: "auto" });
-	expect(f.read().lanes.review_transport).toEqual({ value: "process", source: "default" });
+	// The retired `process` transport is not a default and not a value any layer may set.
+	expect(f.read().lanes.review_transport).toEqual({ value: "herdr", source: "default" });
 	expect(f.read().lanes.advisory_transport).toEqual({ value: "subagent", source: "default" });
 	f.project({ lanes: { review_transport: "herdr", advisory_transport: "herdr" } });
 	expect(f.read().lanes.review_transport).toEqual({ value: "herdr", source: "project" });
 	expect(f.read().lanes.advisory_transport).toEqual({ value: "herdr", source: "project" });
-	for (const [key, value] of [["review_transport", "session"], ["advisory_transport", "process"], ["review_transport", "herdr-core"]] as const) {
+	for (const [key, value] of [["review_transport", "process"], ["review_transport", "session"], ["advisory_transport", "process"], ["review_transport", "herdr-core"]] as const) {
 		f.project({ lanes: { [key]: value } });
 		const c = f.read();
 		expect({ key, flagged: c.diagnostics.some(d => d.severity === "error" && d.key_path === `lanes.${key}`) }).toEqual({ key, flagged: true });

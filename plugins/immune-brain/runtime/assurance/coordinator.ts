@@ -489,13 +489,12 @@ export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjecti
 	};
 }
 
-/** The dispatch a Host reserved: an in-process agent's parameters, one CLI command, or one session (D3/D8). */
+/** The dispatch a Host reserved: an in-process agent's parameters, or one explicit session (D3/D8). */
 function reviewReadyDispatch(reservation: HostReviewReservation): {
-	agent_params?: unknown; review_command?: string; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile;
+	agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile;
 } {
 	if (reservation.review_session) return { review_session: reservation.review_session, review_profile: reservation.review_profile };
-	if (!reservation.review_command) return { agent_params: reservation.dispatch };
-	return { review_command: reservation.review_command, review_profile: reservation.review_profile };
+	return { agent_params: reservation.dispatch };
 }
 
 function reviewDispatchFailure(error: unknown): { code?: ReviewPreparationError["code"]; recovery_action?: string } | undefined {
@@ -520,7 +519,7 @@ type AssuranceRecoveryFields = {
 };
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
-	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_command?: string; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile }
+	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile }
 	| VerificationReadyResult
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
@@ -571,9 +570,7 @@ export interface VerificationReadyResult {
 	operation_id: string;
 	snapshot_digest: string;
 	agent_params: unknown;
-	/** Set when verification runs as a CLI process: run it, then call `submit_verification`. */
-	verification_command?: string;
-	/** Set instead when verification runs as an explicit supervised session. */
+	/** Set when verification runs as an explicit supervised session: create it, await it, then call `submit_verification`. */
 	verification_session?: ReviewSessionSpec;
 }
 
@@ -1755,8 +1752,6 @@ export class AssuranceCoordinator {
 			this.reviewReservations.set(taskId, reservation);
 			progress("review_ready", hostReservation.review_session
 				? `QA passed; create the review session with ${hostReservation.review_session.create_command}, await it, then call submit_review`
-				: hostReservation.review_command
-				? `QA passed; run ${hostReservation.review_command} in your shell, then call submit_review`
 				: "QA passed; invoke the reserved foreground Agent, then call submit_review",
 				{ snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
 			return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) };
@@ -2097,7 +2092,6 @@ export class AssuranceCoordinator {
 		const reservation = pending.dispatch.reservation;
 		return { state: "verification_ready", operation: "verification", operation_id: reservation.id,
 			snapshot_digest: snapshotDigest(pending.review.snapshot), agent_params: reservation.dispatch,
-			...(reservation.verification_command ? { verification_command: reservation.verification_command } : {}),
 			...(reservation.verification_session ? { verification_session: reservation.verification_session } : {}) };
 	}
 

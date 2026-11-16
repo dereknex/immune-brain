@@ -10,10 +10,11 @@ import { projectIdentity } from "./project_identity.ts";
 type Obj = Record<string, any>;
 type ResolvedLeaf = { value: unknown; source: string };
 /**
- * Where a reserved Review or Verification round runs: one CLI process, or an
- * explicit supervised session the Parent launches (Spec explicit-port-review-session D3).
+ * Where a reserved Review or Verification round runs: one explicit supervised
+ * session the Parent launches inside Herdr. The hidden `--print` process
+ * transport is retired (Spec retire-process-review-transport D1, D2).
  */
-export type ReviewTransport = "process" | "herdr";
+export type ReviewTransport = "herdr";
 export type ReviewProfile = {
 	host: "pi" | "claude-code" | "antigravity";
 	model?: string;
@@ -28,7 +29,7 @@ const envName = /^[A-Z_][A-Z0-9_]*$/;
 
 /** The Review profile `lanes` resolves to, or null when no `review_host` is set. No model-distinctness rule (BR-DEC-2). */
 /** Defaults of the Lane keys that have one; every other key defaults to null. */
-const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
+const LANE_DEFAULTS: Record<string, unknown> = { max_parallel: 1, review_transport: "herdr", advisory_transport: "subagent" };
 
 export function chooseReviewer(lanes: {
 	review_host: ResolvedLeaf; review_model: ResolvedLeaf; review_effort: ResolvedLeaf;
@@ -135,7 +136,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		for (const [k, v] of Object.entries(o)) {
 			const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0
 				// ADR 0038: a supervised-session transport names its provider; no value is auto-detected.
-				: k === "review_transport" ? v === "process" || v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
+				: k === "review_transport" ? v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
 			if (!ok) { invalid(file, `${path}.${k}`, "invalid value"); failed.add("lanes"); }
 		}
 	};

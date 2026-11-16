@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
 	AssuranceCoordinator,
 	snapshotDigest,
@@ -23,7 +23,7 @@ import type { ReviewBundle } from "../plugins/immune-brain/runtime/assurance/rev
 import type { VerdictAuthority } from "../plugins/immune-brain/runtime/assurance/verdict_authority";
 import { currentReviewContractHash } from "../plugins/immune-brain/runtime/role_prompt_bridge";
 import { writeTestReviewPacket } from "./helpers/review-packet-fixture";
-import { laneBatchReviewProfile, prepareBatchLaneRunState, reviewProfileFromArgs, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { laneBatchReviewProfile, parseBatchReviewProfile, prepareBatchLaneRunState, reviewProfileFromArgs, writeBatchLaneRunState } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { createLaneWorktree } from "../plugins/immune-brain/runtime/unattended/batch_worktrees";
 
 setDefaultTimeout(120_000);
@@ -87,29 +87,53 @@ function onPath(dir: string | undefined): void {
 	process.env.PATH = [dir, ROOT_PATH].filter(Boolean).join(":");
 }
 
-function heredoc(text: string): string {
-	return `cat <<'IMM_VERDICT'\n${text}\nIMM_VERDICT`;
+/** One admitted Herdr workspace: the only place an authority Review runs. */
+function enterHerdr(): string {
+	const state = join(scratchDir("herdr"), "state.json");
+	writeFileSync(state, JSON.stringify({ protocol: 22, panes: {}, after_prompt: "idle" }));
+	Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state });
+	return state;
 }
 
-function reviewReadyCommand(result: { state: string; review_command?: string }): string {
-	if (result.state !== "review_ready" || !result.review_command) throw new Error(`expected a CLI review_ready, got ${JSON.stringify(result)}`);
-	return result.review_command;
+const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE", "VERIFIER_LOG"] as const;
+const SAVED_HERDR = Object.fromEntries(HERDR_KEYS.map((key) => [key, process.env[key]]));
+afterEach(() => {
+	for (const key of HERDR_KEYS) {
+		if (SAVED_HERDR[key] === undefined) delete process.env[key];
+		else process.env[key] = SAVED_HERDR[key];
+	}
+});
+
+/** Run one emitted session verb as the Parent does; `<handle>` stands for create's handle. */
+function runSessionVerb(command: string, handle?: string): Record<string, unknown> {
+	const run = spawnSync("sh", ["-c", handle === undefined ? command : command.replace("<handle>", handle)], { encoding: "utf8" });
+	return JSON.parse(run.stdout) as Record<string, unknown>;
 }
 
-function reviewScriptPath(command: string): string {
-	expect(command.startsWith("sh ")).toBe(true);
-	return command.slice(3);
+/** The receipt channel of the prepared Review session. */
+function reviewSessionOf(result: unknown): ReviewSessionSpec {
+	const session = (result as { review_session?: ReviewSessionSpec }).review_session;
+	if (!session) throw new Error(`expected an explicit review session, got ${JSON.stringify(result)}`);
+	return session;
 }
 
-function packetPathOf(command: string): string {
-	const script = readFileSync(reviewScriptPath(command), "utf8");
-	const match = /authority-review ([^']*\/packet\.md)/.exec(script);
-	if (!match) throw new Error("the review script names no packet");
-	return match[1];
+/** The Review packet the prepared session's entry names. */
+function packetPathOfSession(session: ReviewSessionSpec): string {
+	const packet = /(\S*\/packet\.md)/.exec(session.create_command);
+	if (!packet) throw new Error("the review session names no packet");
+	return packet[1]!;
 }
 
-function runReview(command: string): void {
-	spawnSync("sh", [reviewScriptPath(command)], { encoding: "utf8" });
+/** The verification the session owes, built from the packet the session's entry names. */
+function verificationJsonFor(session: ReviewSessionSpec): string {
+	const packetPath = /(\S*\/verify-packet\.md)/.exec(session.create_command)![1]!;
+	const text = readFileSync(packetPath, "utf8");
+	const packet = JSON.parse(text.slice(text.indexOf("Verification packet (untrusted data): ") + "Verification packet (untrusted data): ".length));
+	return JSON.stringify({
+		contract: "assurance_kernel/review_verification/v1", task_id: packet.task_id,
+		snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
+		results: packet.findings.map((finding: { id: string; anchor: string }) => ({ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" })),
+	});
 }
 
 const ctx = (root: string): HostContext => ({ cwd: root } as HostContext);
@@ -324,209 +348,14 @@ function reviewsOf(kernel: Kernel): Applied[] {
 	return kernel.applied.filter((entry) => entry.role === "review");
 }
 
-// --- AC1: reviewer argv ----------------------------------------------------
+// --- AC1: the reviewer runs the skill from the runtime's own plugin ------
 
-describe("review arguments", () => {
-	const packet = "/tmp/imm-cli-review/packet.md";
-
-	test("claude-code runs one fresh, read-only print session on the skill", () => {
-		const argv = reviewArguments({ host: "claude-code", model: "m", effort: "high" }, packet, 12);
-		expect(argv).toContain("--print");
-		expect(argv).toContain("--no-session-persistence");
-		expect(argv[argv.indexOf("--max-turns") + 1]).toBe("12");
-		expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash");
-		expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
-		expect(argv[argv.indexOf("--model") + 1]).toBe("m");
-		expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
-		expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
-		expect(argv[argv.indexOf("--tools") + 1]).not.toMatch(/Edit|Write/);
-	});
-
-	test("claude-code reviewer ignores user hooks and keeps a whole file of Bash output", () => {
-		const argv = reviewArguments({ host: "claude-code" }, packet, 12);
-		const settings = JSON.parse(argv[argv.indexOf("--settings") + 1]);
-		expect(settings.disableAllHooks).toBe(true);
-		expect(Number(settings.env.BASH_MAX_OUTPUT_LENGTH)).toBeGreaterThanOrEqual(100_000);
-		expect(argv).not.toContain("--add-dir");
-	});
-
-	test("claude-code reads the packet and evidence directories without taking the prompt as one", () => {
-		const dirs = ["/tmp/imm-cli-review-x", "/tmp/imm-canary-native-review-y"];
-		const argv = reviewArguments({ host: "claude-code", model: "m" }, packet, 12, dirs);
-		const at = argv.indexOf("--add-dir");
-		expect(argv.slice(at + 1, at + 1 + dirs.length)).toEqual(dirs);
-		expect(argv[at + 1 + dirs.length]).toMatch(/^--/);
-		expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
-	});
-
-	test("pi and antigravity take no out-of-tree directory flags", () => {
-		for (const host of ["pi", "antigravity"] as const) {
-			expect(reviewArguments({ host }, packet, 12, ["/tmp/d"])).toEqual(reviewArguments({ host }, packet, 12));
-		}
-	});
-
-	test("pi runs an isolated print session with explicit skill and narrowed tools (S7 AC1, BR-SCN-3)", () => {
-		const skillPath = resolveAuthorityReviewSkillPath();
-		expect(isAbsolute(skillPath)).toBe(true);
-		expect(existsSync(skillPath)).toBe(true);
-		expect(skillPath.endsWith("skills/authority-review/SKILL.md")).toBe(true);
-
-		const argv = reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12);
-		expect(argv).toEqual([
-			"--print",
-			"--no-session",
-			"--no-extensions",
-			"--no-skills",
-			"--no-mcp",
-			"--skill",
-			skillPath,
-			"--tools",
-			"read,grep,find,ls,bash",
-			"--model",
-			"m",
-			"--thinking",
-			"high",
-			`/skill:authority-review ${packet}`,
-		]);
-
-		// Explicit skill remains loadable and has valid frontmatter
-		const skillContent = readFileSync(skillPath, "utf8");
-		expect(skillContent).toContain("name: authority-review");
-
-		// Negative: ambient configuration and implicit skill lookups are absent
-		for (const flag of ["--skill-dir", "--extension", "--mcp", "--no-context-files"]) {
-			expect(argv).not.toContain(flag);
-		}
-		expect(argv).toContain("--no-extensions");
-		expect(argv).toContain("--no-skills");
-		expect(argv).toContain("--no-mcp");
-
-		// Bound: Claude and Antigravity argv are unchanged
-		const claudeArgv = reviewArguments({ host: "claude-code", model: "m", effort: "high" }, packet, 12);
-		expect(claudeArgv).toContain("--no-session-persistence");
-		expect(claudeArgv).toContain("--settings");
-		const agyArgv = reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12);
-		expect(agyArgv).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
-
-		// Bound: Bash is NOT described as argument-restricted (narrowed tools only)
-		expect(argv[argv.indexOf("--tools") + 1]).toBe("read,grep,find,ls,bash");
-		expect(argv.some((arg) => arg.includes("Bash(git"))).toBe(false);
-	});
-
-	test("explicit authority-review skill path resolves in source and bundled layouts (S7 AC3)", () => {
-		const root = resolve(import.meta.dir, "..");
-		const sourceSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain/runtime/assurance"));
-		expect(existsSync(sourceSkill)).toBe(true);
-		expect(sourceSkill).toBe(resolve(root, "plugins/immune-brain/skills/authority-review/SKILL.md"));
-
-		const claudeBundleSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain/dist/claude"));
-		expect(existsSync(claudeBundleSkill)).toBe(true);
-		expect(claudeBundleSkill).toBe(resolve(root, "plugins/immune-brain/skills/authority-review/SKILL.md"));
-
-		const agyBundleSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain-antigravity/dist/antigravity"));
-		expect(existsSync(agyBundleSkill)).toBe(true);
-		expect(agyBundleSkill).toBe(resolve(root, "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md"));
-
-		const agySourceSkill = resolveAuthorityReviewSkillPath(resolve(root, "plugins/immune-brain-antigravity/runtime/assurance"));
-		expect(existsSync(agySourceSkill)).toBe(true);
-		expect(agySourceSkill).toBe(resolve(root, "plugins/immune-brain-antigravity/skills/authority-review/SKILL.md"));
-	});
-
-	test("antigravity runs a print session and invokes the same skill", () => {
-		const argv = reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12);
-		expect(argv).toContain("--print");
-		expect(argv).toContain("--model");
-		expect(argv.at(-1)).toBe(`/authority-review ${packet}`);
-	});
-
-	test("no Host carries a drive entry, and only claude-code takes the runtime's plugin dir", () => {
-		for (const host of ["claude-code", "pi", "antigravity"] as const) {
-			const argv = reviewArguments({ host, model: "m", effort: "high" }, packet, 12, [], "/plugins/immune-brain");
-			for (const arg of argv) expect(arg).not.toContain("drive");
-			if (host === "claude-code") {
-				expect(argv[argv.indexOf("--plugin-dir") + 1]).toBe("/plugins/immune-brain");
-				expect(argv.at(-1)).toBe(`/immune-brain:authority-review ${packet}`);
-			} else expect(argv).not.toContain("--plugin-dir");
-			expect(reviewArguments({ host }, packet, 12)).not.toContain("--plugin-dir");
-		}
-	});
-
+describe("reviewer plugin directory", () => {
 	test("#426 F13: the runtime resolves the Claude plugin it was loaded from", () => {
 		const root = join(import.meta.dir, "..", "plugins", "immune-brain");
 		expect(runtimeClaudePluginDir(join(root, "runtime", "assurance"))).toBe(realpathSync(root));
 		expect(runtimeClaudePluginDir(join(root, "dist", "claude"))).toBe(realpathSync(root));
 		expect(runtimeClaudePluginDir(join(import.meta.dir, "..", "plugins", "immune-brain-antigravity", "runtime", "assurance"))).toBeNull();
-	});
-
-	test("a profile without model or effort omits those flags", () => {
-		for (const host of ["claude-code", "pi", "antigravity"] as const) {
-			const argv = reviewArguments({ host }, packet, 7);
-			expect(argv).not.toContain("--model");
-			expect(argv).not.toContain("--effort");
-			expect(argv).not.toContain("--thinking");
-		}
-	});
-});
-
-// --- #426 A1: the claude-code git allow-list -------------------------------
-
-describe("#426 reviewer and verifier git allow-list", () => {
-	const packet = "/tmp/imm-cli-review/packet.md";
-	const expected = [
-		"Bash(git show:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git cat-file:*)", "Bash(git rev-parse:*)", "Bash(git ls-tree:*)",
-		"Bash(git --no-pager show:*)", "Bash(git --no-pager diff:*)", "Bash(git --no-pager log:*)",
-		"Bash(git --no-pager cat-file:*)", "Bash(git --no-pager rev-parse:*)", "Bash(git --no-pager ls-tree:*)",
-	];
-	const rulesOf = (argv: string[]) => argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
-	const claudeArgv = () => [
-		reviewArguments({ host: "claude-code" }, packet, 12),
-		verificationArguments({ host: "claude-code" }, "model", packet, 12),
-	];
-
-	test("both claude-code argv carry the same twelve git rules", () => {
-		for (const argv of claudeArgv()) {
-			expect(rulesOf(argv)).toEqual(expected);
-			expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash");
-			expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
-		}
-	});
-
-	test("#426 F11: both claude-code argv turn every hook off so no rewrite hides git from the rules", () => {
-		for (const argv of claudeArgv()) {
-			const settings = argv[argv.indexOf("--settings") + 1]!;
-			expect(JSON.parse(settings).disableAllHooks).toBe(true);
-			expect(argv.filter((arg) => arg === "--settings")).toHaveLength(1);
-			expect(argv).not.toContain("--setting-sources");
-		}
-		for (const host of ["pi", "antigravity"] as const) {
-			expect(reviewArguments({ host }, packet, 12)).not.toContain("--settings");
-			expect(verificationArguments({ host }, "model", packet, 12)).not.toContain("--settings");
-		}
-	});
-
-	test("#426 F12: the claude-code verifier may read its out-of-tree packet directory", () => {
-		const argv = verificationArguments({ host: "claude-code" }, "model", packet, 12);
-		expect(argv[argv.indexOf("--add-dir") + 1]).toBe("/tmp/imm-cli-review");
-		expect(argv[argv.indexOf("--add-dir") + 2]).toBe("--max-turns");
-		expect(argv.at(-1)).toContain(packet);
-	});
-
-	test("no rule admits -C, a non-git command or a bare Bash", () => {
-		for (const rule of rulesOf(claudeArgv()[0]!)) {
-			expect(rule).toMatch(/^Bash\(git (--no-pager )?(show|diff|log|cat-file|rev-parse|ls-tree):\*\)$/);
-		}
-	});
-
-	test("pi isolated reviewer and antigravity reviewer/verifier argv remain consistent", () => {
-		const instruction = `Read ${packet} and do exactly what it says. Reply with only the JSON it asks for.`;
-		expect(reviewArguments({ host: "pi", model: "m", effort: "high" }, packet, 12)).toEqual([
-			"--print", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--skill", resolveAuthorityReviewSkillPath(), "--tools", "read,grep,find,ls,bash", "--model", "m", "--thinking", "high", `/skill:authority-review ${packet}`,
-		]);
-		expect(verificationArguments({ host: "pi" }, "m", packet, 12)).toEqual(["--print", "--no-session", "--model", "m", instruction]);
-		expect(reviewArguments({ host: "antigravity" }, packet, 12)).toEqual(["--print", `/authority-review ${packet}`]);
-		expect(verificationArguments({ host: "antigravity" }, "m", packet, 12)).toEqual(["--model", "m", "--print", instruction]);
-		// agy reads the argument after `--print` as the prompt, so no flag may follow it (#426 F15).
-		expect(reviewArguments({ host: "antigravity", model: "m", effort: "high" }, packet, 12)).toEqual(["--model", "m", "--effort", "high", "--print", `/authority-review ${packet}`]);
 	});
 });
 
@@ -547,20 +376,21 @@ describe("#426 plain-cwd git instruction", () => {
 	});
 });
 
-// --- AC3: settlement and process failures ---------------------------------
+// --- AC3: settlement and session failures ---------------------------------
 
 describe("cli review settlement", () => {
-	test("a pass verdict settles through the reviewer output bytes", async () => {
+	test("a pass verdict settles through the reviewer's out-of-tree receipt", async () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
 		const verdict = passVerdict(kernel.snapshot);
 		const bytes = `${JSON.stringify(verdict)}\n`;
-		onPath(fakeReviewer(heredoc(JSON.stringify(verdict))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		const command = reviewReadyCommand(ready as { state: string; review_command?: string });
+		const session = reviewSessionOf(ready);
 
-		expect(readFileSync(packetPathOf(command), "utf8")).toContain(`review_contract_hash: ${currentReviewContractHash()}`);
-		runReview(command);
+		expect(readFileSync(packetPathOfSession(session), "utf8")).toContain(`review_contract_hash: ${currentReviewContractHash()}`);
+		writeFileSync(session.output_path, bytes);
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "completed" });
@@ -576,10 +406,10 @@ describe("cli review settlement", () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
 		const verdict = reworkVerdict(kernel.snapshot);
-		onPath(fakeReviewer(heredoc(JSON.stringify(verdict))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		const command = reviewReadyCommand(ready as { state: string; review_command?: string });
-		runReview(command);
+		writeFileSync(reviewSessionOf(ready).output_path, JSON.stringify(verdict));
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled.state).toBe("rework");
@@ -587,14 +417,15 @@ describe("cli review settlement", () => {
 		expect(reviewsOf(kernel)[0].decision).toBe("rework");
 	});
 
-	test("a relayed verdict that differs from the output keeps the reservation", async () => {
+	test("a relayed verdict that differs from the receipt keeps the reservation", async () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
 		const printed = passVerdict(kernel.snapshot);
 		const relayed = reworkVerdict(kernel.snapshot);
-		onPath(fakeReviewer(heredoc(JSON.stringify(printed))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
+		writeFileSync(reviewSessionOf(ready).output_path, JSON.stringify(printed));
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, relayed, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "blocked", reason: "parent verdict does not match reviewer receipt" });
@@ -602,11 +433,11 @@ describe("cli review settlement", () => {
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
 
-	test("submitting before the process exits keeps the reservation and records no round", async () => {
+	test("submitting before the session writes its receipt keeps the reservation and records no round", async () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
-		const verdict = passVerdict(kernel.snapshot);
-		onPath(fakeReviewer(heredoc(JSON.stringify(verdict))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		await kernel.coordinator.advance(TASK, ctx(root));
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
@@ -620,24 +451,37 @@ describe("cli review settlement", () => {
 	});
 
 	test.each([
-		["a non-zero exit", "exit 3", "review_process_failed"],
-		["empty output", "exit 0", "review_process_failed"],
-		["a contract mismatch line", `printf '%s\\n' 'REVIEW_CONTRACT_MISMATCH sha256:0'`, "review_contract_mismatch"],
-		["output that is not a verdict", "printf '%s\\n' 'not json'", "reviewer receipt is not a valid verdict"],
-	])("%s releases without a Review round", async (_label, body, reason) => {
+		["an empty receipt", "", "review_output_invalid"],
+		["a receipt that is not one JSON object", "not json\n", "review_output_invalid"],
+		["surrounding lines around the verdict", "thinking out loud\n{}\n", "review_output_invalid"],
+	])("%s releases without a Review round", async (_label, bytes, reason) => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
-		onPath(fakeReviewer(body));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
+		writeFileSync(reviewSessionOf(ready).output_path, bytes);
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "blocked" });
 		expect((settled as { reason: string }).reason).toContain(reason);
-		if (reason === "review_contract_mismatch") {
-			expect((settled as { reason: string }).reason).toContain("sha256:0");
-			expect((settled as { reason: string }).reason).toContain(currentReviewContractHash());
-		}
+		expect(kernel.coordinator.active(TASK)).toBeNull();
+		expect(reviewsOf(kernel)).toHaveLength(0);
+	});
+
+	test("a contract mismatch in the receipt ends the round", async () => {
+		const root = reviewRepo();
+		const kernel = kernelFor(root);
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		writeFileSync(reviewSessionOf(ready).output_path, "REVIEW_CONTRACT_MISMATCH sha256:0\n");
+
+		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect(settled).toMatchObject({ state: "blocked" });
+		expect((settled as { reason: string }).reason).toContain("review_contract_mismatch");
+		expect((settled as { reason: string }).reason).toContain("sha256:0");
+		expect((settled as { reason: string }).reason).toContain(currentReviewContractHash());
 		expect(kernel.coordinator.active(TASK)).toBeNull();
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
@@ -646,23 +490,26 @@ describe("cli review settlement", () => {
 // --- AC4: tree guard -------------------------------------------------------
 
 describe("review tree guard", () => {
-	const verdictBody = (s: SnapshotDescriptor) => heredoc(JSON.stringify(passVerdict(s)));
+	const gitIn = (root: string, argv: string[]) =>
+		execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", ...argv], { cwd: root, encoding: "utf8" });
 
 	test.each([
-		["editing a tracked file", "src.ts", (body: string) => `printf '%s\\n' 'mutated' >> src.ts\n${body}`],
-		["creating a commit", "src.ts", (body: string) => `printf '%s\\n' 'mutated' >> src.ts\ngit commit -qam mutated\n${body}`],
-		["staging a change", "src.ts", (body: string) => `printf '%s\\n' 'mutated' >> src.ts\ngit add src.ts\n${body}`],
-	])("the reviewer %s releases with the touched path", async (_label, path, script) => {
+		["edits a tracked file", (root: string) => writeFileSync(join(root, "src.ts"), "export const value = 2;\n")],
+		["creates a commit", (root: string) => { writeFileSync(join(root, "src.ts"), "export const value = 2;\n"); gitIn(root, ["commit", "-qam", "mutated"]); }],
+		["stages a change", (root: string) => { writeFileSync(join(root, "src.ts"), "export const value = 2;\n"); gitIn(root, ["add", "src.ts"]); }],
+	])("a round whose tree %s releases with the touched path", async (_label, mutate) => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
-		onPath(fakeReviewer(script(verdictBody(kernel.snapshot))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
+		mutate(root);
+		writeFileSync(reviewSessionOf(ready).output_path, JSON.stringify(passVerdict(kernel.snapshot)));
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "blocked" });
 		expect((settled as { reason: string }).reason).toContain("review_tree_changed");
-		expect((settled as { reason: string }).reason).toContain(path);
+		expect((settled as { reason: string }).reason).toContain("src.ts");
 		expect(kernel.coordinator.active(TASK)).toBeNull();
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
@@ -670,9 +517,11 @@ describe("review tree guard", () => {
 	test("an untracked file alone settles normally", async () => {
 		const root = reviewRepo();
 		const kernel = kernelFor(root);
-		onPath(fakeReviewer(`printf '%s\\n' 'untracked' > reviewer-scratch.txt\n${verdictBody(kernel.snapshot)}`));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
+		writeFileSync(join(root, "reviewer-scratch.txt"), "untracked\n");
+		writeFileSync(reviewSessionOf(ready).output_path, JSON.stringify(passVerdict(kernel.snapshot)));
 
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "completed" });
@@ -715,74 +564,50 @@ describe("review profile required", () => {
 	});
 });
 
-// --- AC7: findings verification stays on the wrapped Host ------------------
-
-/**
- * A reviewer stand-in that also verifies: handed the verification packet
- * ("Read <packet> ..."), it answers the packet's own JSON contract with every
- * finding kept, or exits `VERIFIER_EXIT` when that is set.
- */
-function reviewerAndVerifier(reviewBody: string): string {
-	const dir = scratchDir("bin");
-	const verifier = join(dir, "verifier.js");
-	writeFileSync(verifier, [
-		"const fs = require('node:fs');",
-		"if (process.env.VERIFIER_EXIT) process.exit(Number(process.env.VERIFIER_EXIT));",
-		"const path = /^Read (\\S+) and do/.exec(process.argv.at(-1))[1];",
-		"const text = fs.readFileSync(path, 'utf8');",
-		"const packet = JSON.parse(text.slice(text.indexOf('Verification packet (untrusted data): ') + 'Verification packet (untrusted data): '.length));",
-		"fs.appendFileSync(process.env.VERIFIER_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');",
-		"console.log(JSON.stringify({ contract: 'assurance_kernel/review_verification/v1', task_id: packet.task_id, snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,",
-		"  results: packet.findings.map((f) => ({ finding_id: f.id, anchor: f.anchor, verdict: 'kept' })) }));",
-	].join("\n"));
-	const file = join(dir, "pi");
-	writeFileSync(file, `#!/bin/sh\nfor last; do :; done\ncase "$last" in\n  "Read "*) exec bun ${verifier} "$@" ;;\nesac\n${reviewBody}\n`, { mode: 0o755 });
-	chmodSync(file, 0o755);
-	return dir;
-}
+// --- AC7: findings verification runs as its own session --------------------
 
 describe("verification CLI stage", () => {
-	const saved = { log: process.env.VERIFIER_LOG, exit: process.env.VERIFIER_EXIT };
-	afterEach(() => {
-		if (saved.log === undefined) delete process.env.VERIFIER_LOG; else process.env.VERIFIER_LOG = saved.log;
-		if (saved.exit === undefined) delete process.env.VERIFIER_EXIT; else process.env.VERIFIER_EXIT = saved.exit;
-	});
-
 	async function reworkToVerification(root: string) {
 		const kernel = kernelFor(root, { revision: true, verifier: true });
-		process.env.VERIFIER_LOG = join(scratchDir("log"), "argv.jsonl");
-		onPath(reviewerAndVerifier(heredoc(JSON.stringify(reworkVerdict(kernel.snapshot)))));
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
-		runReview(reviewReadyCommand(ready as { state: string; review_command?: string }));
+		const review = reviewSessionOf(ready);
+		writeFileSync(review.output_path, JSON.stringify(reworkVerdict(kernel.snapshot)));
 		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
-		return { kernel, pending: pending as { state: string; verification_command?: string } };
+		return { kernel, review, pending: pending as { state: string; verification_session?: ReviewSessionSpec } };
 	}
 
-	test("a verification after a CLI Review runs as a CLI process whose bytes are the bound receipt", async () => {
+	test("a verification after a CLI Review runs as one explicit session whose receipt is the bound bytes", async () => {
 		const root = reviewRepo();
-		const { kernel, pending } = await reworkToVerification(root);
+		const { kernel, review, pending } = await reworkToVerification(root);
 		expect(pending.state).toBe("verification_ready");
-		expect(pending.verification_command).toMatch(/^sh \S+imm-cli-verify-\S+\/verify\.sh$/);
+		const session = pending.verification_session!;
+		expect(session.create_command).toMatch(/'create' '--provider' 'herdr' '--cwd' '\S+' '--label' 'verify cli-review-task' '--host' 'pi' '--entry'/);
+		expect(session.output_path).not.toBe(review.output_path);
+		expect((pending as { verification_command?: string }).verification_command).toBeUndefined();
 		expect(kernel.calls.prepareVerification).toBe(0);
 		// Still running: the reservation is kept and nothing is applied.
 		expect(await kernel.coordinator.submitVerification(TASK, ctx(root))).toMatchObject({ state: "blocked", reason: "verification result pending" });
 
-		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		writeFileSync(session.output_path, verificationJsonFor(session));
 		const settled = await kernel.coordinator.submitVerification(TASK, ctx(root));
 		expect(settled.state).toBe("rework");
-		const review = reviewsOf(kernel).at(-1)!;
-		expect(review.decision).toBe("rework");
-		expect(review.verification).toMatchObject({ verifier_actor: expect.stringMatching(/^cli-verifier:pi:/), result_sha256: expect.stringMatching(/^sha256:/), model_relation: "same" });
-		expect(review.verification).not.toHaveProperty("failure");
+		const reviewRound = reviewsOf(kernel).at(-1)!;
+		expect(reviewRound.decision).toBe("rework");
+		expect(reviewRound.verification).toMatchObject({
+			verifier_actor: expect.stringMatching(/^cli-verifier:pi:/), result_sha256: expect.stringMatching(/^sha256:/), model_relation: "same",
+		});
+		expect(reviewRound.verification).not.toHaveProperty("failure");
 		expect(kernel.calls.inspectVerification).toBe(0);
-		expect(readdirSync(tmpdir()).filter((name) => pending.verification_command!.includes(name))).toEqual([]);
+		// A consumed verification releases its session directory with the receipt.
+		expect(existsSync(dirname(session.output_path))).toBe(false);
 	});
 
-	test("a failed verifier process keeps every finding and never weakens Review", async () => {
+	test("a verifier output that is not the JSON contract keeps every finding and never weakens Review", async () => {
 		const root = reviewRepo();
 		const { kernel, pending } = await reworkToVerification(root);
-		process.env.VERIFIER_EXIT = "3";
-		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		writeFileSync(pending.verification_session!.output_path, "not json\n");
 		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null, result_sha256: null });
 	});
@@ -790,11 +615,35 @@ describe("verification CLI stage", () => {
 	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {
 		const root = reviewRepo("pi", { review_model: "reviewer-m", review_verifier_model: "verifier-m" });
 		const { kernel, pending } = await reworkToVerification(root);
-		spawnSync("sh", ["-c", pending.verification_command!], { encoding: "utf8" });
+		const session = pending.verification_session!;
+		// The model reaches the session's Host arguments; the sentinel never does.
+		expect(session.create_command).toContain("'--' '--model' 'verifier-m'");
+		writeFileSync(session.output_path, verificationJsonFor(session));
 		await kernel.coordinator.submitVerification(TASK, ctx(root));
-		const argv = JSON.parse(readFileSync(process.env.VERIFIER_LOG!, "utf8").trim().split("\n").at(-1)!);
-		expect(argv.slice(0, 4)).toEqual(["--print", "--no-session", "--model", "verifier-m"]);
-		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ reviewer_model: "reviewer-m", verifier_model: "verifier-m", model_relation: "different", verifier_actor: expect.stringMatching(/^cli-verifier:/) });
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({
+			reviewer_model: "reviewer-m", verifier_model: "verifier-m", model_relation: "different",
+			verifier_actor: expect.stringMatching(/^cli-verifier:/),
+		});
+	});
+
+	test("outside Herdr a Verification preparation fails closed instead of falling back to a process", async () => {
+		const root = reviewRepo();
+		const kernel = kernelFor(root, { revision: true, verifier: true });
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		writeFileSync(reviewSessionOf(ready).output_path, JSON.stringify(reworkVerdict(kernel.snapshot)));
+		delete process.env.HERDR_ENV;
+
+		// The stage itself refuses: no temp directory, no hidden `--print` process.
+		expect(() => kernel.cli.prepareVerification({ taskId: TASK, operationId: "op-outside-herdr", prompt: "p", model: "m", writePacket: writeTestReviewPacket }))
+			.toThrow(expect.objectContaining({ code: "review_transport_unavailable" }) as never);
+
+		// So the round keeps every finding and approves nothing.
+		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect(settled.state).toBe("rework");
+		expect(reviewsOf(kernel)).toHaveLength(1);
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null, result_sha256: null });
 	});
 
 	test("a verification that follows no CLI Review still goes to the wrapped Host", () => {
@@ -802,6 +651,7 @@ describe("verification CLI stage", () => {
 		const cli = new CliReviewHost(host);
 		const reservation = cli.prepareVerification({ taskId: "other", operationId: "op-1", prompt: "p", model: "m", writePacket: writeTestReviewPacket });
 		expect(reservation.verification_command).toBeUndefined();
+		expect(reservation.verification_session).toBeUndefined();
 		expect(calls.prepareVerification).toBe(1);
 		expect(cli.inspectVerification(reservation)).toMatchObject({ ok: false, release: true });
 		expect(calls.inspectVerification).toBe(1);
@@ -811,35 +661,32 @@ describe("verification CLI stage", () => {
 // --- S3 AC1/AC2: the composition root's default ----------------------------
 
 /** The Claude composition root is where the dispatch default is read (D8). */
-const ROOT_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual" };
+const ROOT_ENV = { CLAUDE_CODE_VERSION: "2.1.236", CLAUDE_CODE_PERMISSION_MODE: "manual", HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent" };
 
 async function claudeAdvance(
 	root: string,
 	env: Record<string, string | undefined>,
 	risk: Risk = "material",
-): Promise<{ state: string; review_command?: string; review_profile?: { host: string; model?: string }; agent_params?: unknown; code?: string; recovery_action?: string }> {
+): Promise<{ state: string; review_session?: ReviewSessionSpec; review_profile?: { host: string; model?: string }; agent_params?: unknown; code?: string; recovery_action?: string }> {
 	const fixture = fixtureFor(root, { risk });
 	const runtime = new ClaudeRuntime({ cwd: root, env, ports: fixture.ports, authorityOverrides: fixture.ports as never });
 	return await runtime.advance(TASK) as never;
 }
 
 describe("default cli dispatch", () => {
-	test("an unset environment reserves the project's CLI reviewer and names its profile", async () => {
+	test("an unset environment reserves the project's CLI reviewer as one explicit session", async () => {
 		const root = reviewRepo("pi", { review_model: "model-x" });
 		onPath(fakeReviewer("exit 0"));
 		const ready = await claudeAdvance(root, ROOT_ENV);
 
 		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
-		// One command, not a dispatch list: the Parent runs this exact `sh <script>`.
-		expect(typeof ready.review_command).toBe("string");
-		const script = reviewScriptPath(ready.review_command!);
-		expect(existsSync(script)).toBe(true);
-		const scriptContent = readFileSync(script, "utf8");
-		expect(scriptContent).toContain("--no-extensions");
-		expect(scriptContent).toContain("--no-skills");
-		expect(scriptContent).toContain("--no-mcp");
-		expect(scriptContent).toContain("'--tools' 'read,grep,find,ls,bash'");
-		expect(scriptContent.match(/authority-review/g)).toHaveLength(2);
+		// One explicit session, not a dispatch list: the Parent creates, awaits and stops it.
+		const session = reviewSessionOf(ready);
+		expect(session.create_command).toContain("'--host' 'pi'");
+		expect(session.create_command).toContain("'--model' 'model-x'");
+		expect(session.create_command).toContain("authority-review");
+		expect(session.await_command).toContain("'await'");
+		expect(ready).not.toHaveProperty("review_command");
 		expect(ready).not.toHaveProperty("agent_params");
 	});
 });
@@ -871,7 +718,7 @@ describe("cli only dispatch", () => {
 		const env = { ...ROOT_ENV, [RETIRED_SWITCH]: "subagent" };
 		for (const ready of [await piAdvance(root, env), await claudeAdvance(root, env), await antigravityAdvance(root, env)]) {
 			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi", model: "model-x" } });
-			expect(typeof ready.review_command).toBe("string");
+			expect(reviewSessionOf(ready).transport).toBe("herdr");
 			expect(ready).not.toHaveProperty("agent_params");
 		}
 	});
@@ -898,44 +745,19 @@ describe("default profile required", () => {
 // --- Spec explicit-port-review-session D1/D2/D3: the explicit session ------
 
 describe("explicit review session", () => {
-	const HERDR_KEYS = ["HERDR_ENV", "HERDR_WORKSPACE_ID", "FAKE_HERDR_STATE", "VERIFIER_LOG"] as const;
-	const saved = Object.fromEntries(HERDR_KEYS.map((key) => [key, process.env[key]]));
-	afterEach(() => { for (const key of HERDR_KEYS) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; } });
-
-	/** Herdr is present, its stand-in records every call, and one entry settles as idle. */
-	function enterHerdr(): string {
-		const state = join(scratchDir("herdr"), "state.json");
-		writeFileSync(state, JSON.stringify({ protocol: 22, panes: {}, after_prompt: "idle" }));
-		Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state });
-		return state;
-	}
-
-	/** Run one emitted session verb as the Parent does; `<handle>` stands for create's handle. */
-	function runSessionVerb(command: string, handle?: string): Record<string, unknown> {
-		const run = spawnSync("sh", ["-c", handle === undefined ? command : command.replace("<handle>", handle)], { encoding: "utf8" });
-		return JSON.parse(run.stdout) as Record<string, unknown>;
-	}
-
-	/** The verification the session owes, built from the packet the emitted entry names. */
-	function verificationJsonFor(session: ReviewSessionSpec): string {
-		const packetPath = /(\S*\/verify-packet\.md)/.exec(session.create_command)![1]!;
-		const text = readFileSync(packetPath, "utf8");
-		const packet = JSON.parse(text.slice(text.indexOf("Verification packet (untrusted data): ") + "Verification packet (untrusted data): ".length));
-		return JSON.stringify({
-			contract: "assurance_kernel/review_verification/v1", task_id: packet.task_id,
-			snapshot_digest: packet.snapshot_digest, verdict_sha256: packet.verdict_sha256,
-			results: packet.findings.map((finding: { id: string; anchor: string }) => ({ finding_id: finding.id, anchor: finding.anchor, verdict: "kept" })),
-		});
-	}
-
-	test("outside Herdr a herdr transport fails closed with one recovery action, after QA", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
+	test("outside Herdr any Review fails closed with one same-Host recovery action, after QA", async () => {
+		const root = reviewRepo();
 		const kernel = kernelFor(root);
 		onPath(fakeReviewer("exit 0"));
 		delete process.env.HERDR_ENV;
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_transport_unavailable" });
-		expect((ready as { recovery_action: string }).recovery_action).toContain("lanes.review_transport");
+		const recovery = (ready as { recovery_action: string }).recovery_action;
+		expect(recovery).toContain("Herdr");
+		// The retired process fallback is never offered again.
+		expect(recovery).not.toContain("lanes.review_transport");
+		expect(recovery).not.toContain("process");
+		// QA stays earned: the round resumes from it once the Host is inside Herdr.
 		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
@@ -1037,31 +859,6 @@ describe("explicit review session", () => {
 		expect(panes.every((pane) => pane.closed)).toBe(true);
 	});
 
-	test("the findings verifier runs as an explicit session and its double-read bytes settle the verification", async () => {
-		const root = reviewRepo("pi", { review_transport: "herdr" });
-		const kernel = kernelFor(root, { revision: true, verifier: true });
-		const verdict = reworkVerdict(kernel.snapshot);
-		const state = enterHerdr();
-		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
-		const ready = await kernel.coordinator.advance(TASK, ctx(root)) as { review_session?: ReviewSessionSpec };
-		const review = ready.review_session!;
-		runSessionVerb(review.create_command);
-		writeFileSync(review.output_path, `${JSON.stringify(verdict)}\n`);
-		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK)) as { state: string; verification_session?: ReviewSessionSpec; verification_command?: string };
-		expect(pending.state).toBe("verification_ready");
-		expect(pending).not.toHaveProperty("verification_command");
-		const session = pending.verification_session!;
-		expect(session.create_command).toMatch(/'create' '--provider' 'herdr' '--cwd' '\S+' '--label' 'verify cli-review-task' '--host' 'pi' '--entry'/);
-		expect(session.output_path).not.toBe(review.output_path);
-
-		expect(await kernel.coordinator.submitVerification(TASK, ctx(root))).toMatchObject({ state: "blocked", reason: "verification result pending" });
-		writeFileSync(session.output_path, verificationJsonFor(session));
-		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
-		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({
-			verifier_actor: expect.stringMatching(/^cli-verifier:pi:/), result_sha256: expect.stringMatching(/^sha256:/), model_relation: "same",
-		});
-		expect(JSON.parse(readFileSync(state, "utf8")).calls.map((call: string[]) => call.slice(0, 2).join(" "))).toContain("agent start");
-	});
 });
 
 // --- Spec D1/D3: the session's Host arguments and profile -------------------
@@ -1093,9 +890,12 @@ describe("explicit session launch arguments", () => {
 
 	test("the layered transport reaches the profile, and a Lane batch keeps it", () => {
 		expect(resolveReviewProfile(reviewRepo("pi", { review_transport: "herdr" }))).toMatchObject({ host: "pi", transport: "herdr" });
-		expect(resolveReviewProfile(reviewRepo("pi"))).toMatchObject({ host: "pi", transport: "process" });
+		expect(resolveReviewProfile(reviewRepo("pi"))).toMatchObject({ host: "pi", transport: "herdr" });
 		const { lane } = laneBatch({ review_profile: { host: "pi", model: "model-x" }, lanes: { review_transport: "herdr" } });
 		expect(resolveReviewProfile(lane)).toEqual({ host: "pi", model: "model-x", transport: "herdr" });
+		// A batch carries no transport of its own, so no recorded batch can select the retired process.
+		expect(resolveReviewProfile(laneBatch({ review_profile: { host: "pi" } }).lane)).toEqual({ host: "pi", transport: "herdr" });
+		expect(() => parseBatchReviewProfile({ host: "pi", transport: "process" })).toThrow("invalid review_profile");
 	});
 });
 

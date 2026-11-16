@@ -23,13 +23,12 @@ architecture exploration uses the Host's own read-only research agent, and a
 second definition would fork a boundary the Host owns.
 
 `code-review` is not in this table. The authoritative Review is not an
-in-process agent: the Parent runs the returned `review_command` in its own
-shell, in the task's working directory, and that process loads the packaged
+in-process agent: the Parent runs the returned `review_session` in the task's
+working directory, one explicit Code Agent session that loads the packaged
 `authority-review` skill (ADR 0037). Findings verification after such a Review
-is a CLI process as well (ADR 0039): the Parent runs the returned
-`verification_command` the same way. It keeps the verifier's read-only boundary
-on Claude Code (`Read, Grep, Glob, Bash` with only read-only Git commands
-allowed, as `immune-brain:immune-brain-review-verifier` does) because it must run
+is an explicit session as well (ADR 0039): the Parent runs the returned
+`verification_session` the same way. It keeps the verifier's read-only boundary
+because it must run
 read-only Git commands against the immutable revision. A verification that
 follows no CLI Review keeps that Host subagent dispatch.
 
@@ -154,26 +153,27 @@ Agent:
   schedule: ""
 ```
 
-Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and prompt contract enforce the read-only boundary. The Parent starts one foreground Agent at a time and consumes its direct result before deciding whether another child is needed. Advisory and discovery work does not poll for deferred results or depend on completion notifications or host `followUp`. Kernel findings verification uses `subagent_type: "Review"`; its structured result is submitted by the Parent and validated against the current immutable snapshot. Authority Review is not an Agent dispatch: the Parent runs its `review_command` process instead. Loop `arch-explorer` uses `subagent_type: "Explore"`; other advisory/discovery and Loop internal roles use `general-purpose`.
+Pi `Agent` has no `readonly` parameter; the empty tool policy, child type, and prompt contract enforce the read-only boundary. The Parent starts one foreground Agent at a time and consumes its direct result before deciding whether another child is needed. Advisory and discovery work does not poll for deferred results or depend on completion notifications or host `followUp`. Kernel findings verification uses `subagent_type: "Review"`; its structured result is submitted by the Parent and validated against the current immutable snapshot. Authority Review is not an Agent dispatch: the Parent runs its `review_session` instead. Loop `arch-explorer` uses `subagent_type: "Explore"`; other advisory/discovery and Loop internal roles use `general-purpose`.
 
 Authority Review runs no Agent dispatch. The Parent runs the returned
-`review_command` (`sh <script>`) in the task's working directory and calls
-`submit_review` after the process exits. Under `lanes.review_transport: herdr`
-the reservation carries a `review_session` instead: the Parent runs
-`create_command`, awaits the printed handle once, and stops it only after the
-Kernel consumed a valid receipt. The runtime writes
+`review_session`: `create_command` opens one interactive reviewer in the task's
+working directory, `await_command` waits once for the printed handle, and
+`submit_review` follows the receipt. `stop_command` runs only after the Kernel
+consumed a valid receipt. Outside Herdr preparation fails closed with
+`review_transport_unavailable` and one same-Host recovery action; there is no
+hidden process fallback. The runtime writes
 `review-packet-<operation>.md` beside `evidence.json` without changing the
-manifest bytes, and the script writes the reviewer's output under a temporary
-name and its exit status last, so a present exit file marks a complete output.
+manifest bytes, and the reviewer writes its whole JSON receipt to the
+reservation's out-of-tree `output_path`.
 The packet's first line is `review_contract_hash: <hash>`; the `authority-review`
-skill compares it with the hash it carries and replies exactly
+skill compares it with the hash it carries and answers exactly
 `REVIEW_CONTRACT_MISMATCH <hash>` instead of reviewing when the two differ.
 Reservation release removes the packet and output with the evidence directory; a
-new reservation writes a new operation-named packet. A running process retains
-the reservation; a non-zero exit or empty output (`review_process_failed`), a
-contract mismatch (`review_contract_mismatch`), or a changed tree
-(`review_tree_changed`, over HEAD, the index and tracked content) releases it
-without a Review round.
+new reservation writes a new operation-named packet. A session that has not
+written `output_path` retains the reservation; a receipt that is not one strict
+JSON object (`review_output_invalid`), a contract mismatch
+(`review_contract_mismatch`), or a changed tree (`review_tree_changed`, over HEAD,
+the index and tracked content) releases it without a Review round.
 
 ## Advisory Child In A Supervised Session
 
@@ -222,12 +222,12 @@ Review verdict or a workflow write.
 
 1. Planning、repository exploration、specialist advisory Review 和 work probe 必须 foreground 执行。Parent launches one child at a time，消费 direct terminal result，并在每个结果后 re-evaluates the remaining dispatch budget；不得把多个 foreground Agent 假定为并发 batch。
 2. 普通 interactive advisory 不建立 acknowledgement deadline、后台 progress UI、completion push 或 late-notification recovery。活跃 Agent 使用 Pi 原生 foreground Tool row、host cancellation 和 steer。Footer 保持严格为空；No defined-value `setStatus` call is allowed。
-3. Kernel Assurance runs in the foreground Tool call. `advance_assurance` awaits deterministic QA, emits bounded native updates, and returns `review_ready` with `review_command` and `review_profile`. The Parent runs that command in its own shell, then calls `submit_review`: omitting the verdict applies the reviewer process's output bytes, or the Parent may relay the reviewer's structured verdict for fingerprint comparison. Findings verification keeps its foreground `Agent` parameters. `request_authorization` is the only literal-user confirmation path. AbortSignal cancellation before authority commit and snapshot/CAS revalidation remain mandatory.
+3. Kernel Assurance runs in the foreground Tool call. `advance_assurance` awaits deterministic QA, emits bounded native updates, and returns `review_ready` with `review_session` and `review_profile`. The Parent runs that session's create and await commands from its own shell, then calls `submit_review`: omitting the verdict applies the session's out-of-tree receipt bytes, or the Parent may relay the reviewer's structured verdict for fingerprint comparison. Findings verification keeps its foreground `Agent` parameters. `request_authorization` is the only literal-user confirmation path. AbortSignal cancellation before authority commit and snapshot/CAS revalidation remain mandatory.
 4. Kernel Assurance chat uses native Tool rendering only. It does not publish completion messages or wake a later parent turn; the direct Tool result is the continuation boundary. `awaiting_user` remains valid until the host-built authorization operation is confirmed and the immutable snapshot is revalidated.
 5. Child 不得再次派发 child，nested delegation 一律禁止。Parent 保留综合与最终判断责任。
 6. Kernel authority Review 对每个 immutable snapshot 恰好一个 primary reviewer，turn 预算按 workload 缩放（Quick 12 / Standard 16 / Heavy 24），并使用该 snapshot 对应的 Quick/Standard/Heavy 执行档位；不存在从 initial dispatch 起算的单一端到端总预算。Reviewer 必须先验证 immutable v5 manifest 的 `base_head`、`review_commit`、单一 parent、`review_tree` 与 `manifest_digest`，再用只读 Git 命令从 synthetic revision 获取源码；manifest 只有 metadata，不复制 source bytes，也不枚举 neighborhood files。审查只围绕 acceptance assertions 与 `changed_paths`，未变更路径只有在 acceptance、changed caller 或同一 state machine 直接需要时按需读取并注明理由；Reviewer 不探索无关 repository paths。对 settlement-class change，Reviewer 必须先枚举 immutable revision 内每条 terminal、cancellation、timeout 与 race path，再对全部路径给出判断；finding summary 必须以受影响路径开头。每个 acceptance 的执行结果已由 deterministic QA 在 review 前验证并内嵌于 manifest 的 `outcomes` 字段（acceptance_id -> {status, summary}）；Reviewer 不得重跑 descriptor，也不得把本地没有测试运行当作 finding——Review 只审 revision provenance、代码正确性、回归、安全与缺失测试。除该 reviewer 外，同一触发点最多两个相互独立的 advisory/discovery children；它们只能并行读，不能写 workflow state、关闭 QA 或产生 authority。
 7. Foreground assurance never sleeps, polls, or schedules a completion callback. One Tool call owns QA; one Parent turn obtains and submits the reviewer verdict. User authorization is reserved for unresolved decisions, explicit stop, and breaking Intent revisions; no risk tier adds a generic final confirmation.
-8. `submit_review` validates the verdict contract, task identity, immutable snapshot digest, and fresh record/Intent/workspace/diff revisions before applying Review authority. An omitted verdict applies the reviewer process's output bytes (ADR 0037); a relayed verdict must fingerprint-match them. Findings verification keeps the host-observed receipt edge of ADR 0017 — the Claude host observes its dispatch hook log and the Pi host its generic `Agent` tool events correlated by the reserved prompt — and a submission with no recorded observation fails closed. Malformed verdicts are retryable without rebuilding evidence. Stale verdicts leave the TaskRecord unchanged and release the stale reservation.
+8. `submit_review` validates the verdict contract, task identity, immutable snapshot digest, and fresh record/Intent/workspace/diff revisions before applying Review authority. An omitted verdict applies the reviewer session's receipt bytes (ADR 0037); a relayed verdict must fingerprint-match them. Findings verification keeps the host-observed receipt edge of ADR 0017 — the Claude host observes its dispatch hook log and the Pi host its generic `Agent` tool events correlated by the reserved prompt — and a submission with no recorded observation fails closed. Malformed verdicts are retryable without rebuilding evidence. Stale verdicts leave the TaskRecord unchanged and release the stale reservation.
 9. The assurance Tool checks the immutable snapshot before each phase and returns a terminal structured state directly: `cancelled`, `rework`, `review_ready`, `awaiting_user`, `blocked`, or `settlement_unknown`. The commit boundary is non-cancellable. No silent task, status timer, completion notification, or result retrieval path is permitted.
 
 ## Result Synthesis
@@ -246,7 +246,7 @@ Parent workflow role 必须：
 If the Kernel Review process fails, the Parent does not call `submit_review` with a substitute verdict; the existing Review reservation and immutable evidence remain available for a later retry. A malformed verdict may be corrected and resubmitted. A stale snapshot, explicit release, successful settlement, or session shutdown removes the reservation and evidence. There is no retry counter or provider-specific recovery path; the only observation record is the reviewer output bound to the reservation for receipt-bound submission.
 
 Review isolation is a stop-rule, not a fallback: a Kernel Review runs only in a
-fresh reviewer process that carries no Parent conversation. If the Host cannot
+fresh reviewer session that carries no Parent conversation. If the Host cannot
 start one (the configured executable is absent), Review preparation fails closed
 with `review_host_unavailable` and one recovery action — never fall back to
 reviewing in the Parent's own session, and never treat the Parent's own judgment

@@ -36,11 +36,7 @@ export interface ReviewRequest {
 export interface HostReviewReservation {
 	id: string;
 	dispatch: unknown;
-	/** Set by a Host that dispatches Review to a CLI process instead of an in-process agent. */
-	review_command?: string;
-	/** Set by a Host that dispatches findings verification to a CLI process (verification CLI stage). */
-	verification_command?: string;
-	/** Set instead of the command pair when the round runs as an explicit supervised session. */
+	/** Set by a Host that dispatches Review to an explicit supervised session instead of an in-process agent. */
 	review_session?: ReviewSessionSpec;
 	verification_session?: ReviewSessionSpec;
 	review_profile?: ReviewProfile;

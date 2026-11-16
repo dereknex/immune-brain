@@ -1265,7 +1265,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 			);
 			expect(JSON.parse(ready.content[0].text)).toMatchObject({
 				state: "review_ready",
-				next_action: "run review_command in your shell, then submit_review",
+				next_action: "run review_session.create_command, await its handle, then submit_review",
 			});
 
 			// Spec branch-boundary-r2 D23: another task's sidecar is not this task's
@@ -1406,7 +1406,7 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		}
 	});
 
-	test("advance emits bounded foreground updates and returns one CLI Review command", { timeout: 15000 }, async () => {
+	test("advance emits bounded foreground updates and returns one CLI Review session", { timeout: 15000 }, async () => {
 	const root = makeEnrolledRoot();
 	try {
 		const updates: unknown[] = [];
@@ -1432,9 +1432,9 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 		const result = await tool.execute("advance", { task_id: TASK, action: { op: "advance_assurance" } }, undefined, (update: unknown) => updates.push(update), makeCtx(root, makeUI()));
 		const parsed = JSON.parse(result.content[0].text);
 		expect(parsed.state).toBe("review_ready");
-		expect(parsed.next_action).toBe("run review_command in your shell, then submit_review");
+		expect(parsed.next_action).toBe("run review_session.create_command, await its handle, then submit_review");
 		expect(parsed.task_state).toMatchObject({ lifecycle: "active", artifact_state: "frozen", record_revision: expect.any(String) });
-		expect(typeof parsed.review_command).toBe("string");
+		expect(typeof parsed.review_session.create_command).toBe("string");
 		expect(parsed).not.toHaveProperty("agent_params");
 		const progressUpdate = updates.find((item) =>
 			(item as { details?: { acceptance_id?: string } }).details?.acceptance_id === "A1"

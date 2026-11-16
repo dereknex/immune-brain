@@ -1,0 +1,273 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "retire-process-review-transport",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "retire-process-review-transport",
+    "goal": "Enforce global mandatory SupervisedSessionPort herdr transport for Authority Review and CLI Findings Verification, failing closed outside Herdr with review_preparation_failed (code review_transport_unavailable) and one same-Host recovery action while preserving QA attestation, retiring the hidden background --print process transport default/fallback across layered config, batch state, cli_review, Loop contracts, reference docs/mirrors, ADRs 0037/0039, and conformance tests per docs/specs/retire-process-review-transport.spec.md (BR-DEC-1, BR-REQ-1, BR-OUT-1, BR-SCN-2).",
+    "acceptance": [
+      {
+        "id": "AC1",
+        "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC1 and BR-SCN-2, writeProcessScript and all hidden background --print process review/verification execution fallbacks are retired from cli_review.ts; outside Herdr (no admitted herdr provider), Review and Verification preparation fails closed with state review_preparation_failed, code review_transport_unavailable, one same-Host Herdr recovery action (with no suggestion of lanes.review_transport process), preserves prior QA attestation intact across hosts, and maintains zero imports from runtime/session/ inside runtime/assurance/, Kernel, and Host adapters (BR-DEC-1, BR-OUT-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\",\n      \"tests/dual-host-assurance-conformance.test.ts\",\n      \"tests/supervised-session-boundary.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC2",
+        "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC2, LANE_DEFAULTS.review_transport defaults to herdr, validateLane in layered_config.ts rejects process, and batch_state.ts (parseBatchReviewProfile, reviewProfileFromArgs, laneBatchReviewProfile) propagates only admitted herdr transport without process fallback (BR-DEC-1, BR-REQ-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "AC3",
+        "assertion": "Per docs/specs/retire-process-review-transport.spec.md AC3, docs/reference/immune-brain-config.md and docs/reference/supervised-session-port.md match their plugins/immune-brain/dist/docs/reference/* packaged mirrors byte-for-byte, dist/drive.md and dist/drive-batch.md retire process fallback prose, docs/adr/0037-authority-review-cli-stage.md and docs/adr/0039-verification-cli-stage.md record explicit Port retirement notes, and docs/adr/0038-supervised-session-port.md remains intact.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/dist-docs-sync-contract.test.ts\",\n      \"tests/skill-dist-consistency.test.ts\",\n      \"tests/loop-daemon-contracts.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 196608\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      "docs/adr/0037-authority-review-cli-stage.md",
+      "docs/adr/0039-verification-cli-stage.md",
+      "docs/reference/immune-brain-config.md",
+      "docs/reference/supervised-session-port.md",
+      "docs/specs/retire-process-review-transport.spec.md",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/docs/reference/supervised-session-port.md",
+      "plugins/immune-brain/dist/drive-batch.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/unattended/batch_state.ts",
+      "tests/cli-review-dispatch.test.ts",
+      "tests/dual-host-assurance-conformance.test.ts",
+      "tests/helpers/cli-reviewer.ts",
+      "tests/layered-config.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/retire-process-review-transport.intent.json",
+    "content_hash": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668",
+  "git_base_head": "0c8b31ca437a12f66e8af67be0736125fbd724b8",
+  "attestations": [
+    {
+      "id": "approval-qa-b2042121",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668",
+      "diff_hash": "sha256:c103186384f13b1675b1108517d8a87392e8bd0066cb80f17a569b8ca3e5dfb4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:1cb3b01b155e75c4293aac4b869ca310e05220434cd5895668ba9403ecae812c",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1cb3b01b155e75c4293aac4b869ca310e05220434cd5895668ba9403ecae812c"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1cb3b01b155e75c4293aac4b869ca310e05220434cd5895668ba9403ecae812c"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:1cb3b01b155e75c4293aac4b869ca310e05220434cd5895668ba9403ecae812c"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-f56054c7",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668",
+      "diff_hash": "sha256:81b4343a5d4109c9995bdabffd775c19364eef549173c369e08e0b1dec6c83b5",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:f77dabfdd788d16ceed0c140924daf8094c7ee3ea8052c513dc2d8ffeb10f7c4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f77dabfdd788d16ceed0c140924daf8094c7ee3ea8052c513dc2d8ffeb10f7c4"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f77dabfdd788d16ceed0c140924daf8094c7ee3ea8052c513dc2d8ffeb10f7c4"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:f77dabfdd788d16ceed0c140924daf8094c7ee3ea8052c513dc2d8ffeb10f7c4"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-54a7b0f4",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668",
+      "diff_hash": "sha256:99cb3fd0056e5f17bb96056a798d4b8182aa44a1da4c5c0d738e13ec1662cef3",
+      "actor_id": "deterministic-qa",
+      "summary": "all 4 project verification check(s) passed; execution=sha256:d583badd504bb2fb011bb539ace16393ca0246ac98191ab3924951c31db75c32",
+      "acceptance_results": [
+        {
+          "acceptance_id": "AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d583badd504bb2fb011bb539ace16393ca0246ac98191ab3924951c31db75c32"
+        },
+        {
+          "acceptance_id": "AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d583badd504bb2fb011bb539ace16393ca0246ac98191ab3924951c31db75c32"
+        },
+        {
+          "acceptance_id": "AC3",
+          "status": "passed",
+          "summary": "host-attested QA: all 4 project verification check(s) passed; execution=sha256:d583badd504bb2fb011bb539ace16393ca0246ac98191ab3924951c31db75c32"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-868cfaa4",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:491794a1906422ba0dec0ce5ce6fdbede916a3a3a38a3cd78748c6c32ad8a668",
+      "diff_hash": "sha256:99cb3fd0056e5f17bb96056a798d4b8182aa44a1da4c5c0d738e13ec1662cef3",
+      "actor_id": "cli:claude-code:bfe49d74-3ecf-4a8b-8cf2-9ee7d9c48c7a",
+      "summary": "Process --print review/verification transport retired: cli_review prepares only Herdr sessions and fails closed with review_transport_unavailable and a Herdr-only recovery, layered_config defaults to herdr and rejects process, coordinator and host_port drop review_command/verification_command, docs, mirrors and ADR 0037/0039 amendments match, and both bundles mirror the source; blast radius high (cli_review.ts, coordinator.ts, layered_config.ts, generated mcp-server bundles).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "0c8b31ca437a12f66e8af67be0736125fbd724b8",
+        "review_commit": "bd6051af2ad149764e32f64e22a723e2f63a76b5",
+        "review_tree": "47f82c29ac01c196334090125c14f10f1656bd10",
+        "manifest_digest": "sha256:58bfae9f6624edf0c7d3094cd780200af9b4346e1d4e11d47b7897eb0d277291"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-9343c438fb48-1-review-1",
+          "acceptance_id": "AC1",
+          "summary": "prepareReview/prepareVerification check reviewBinary before reviewSessionRunner, so a Host outside Herdr without the review executable fails with review_host_unavailable instead of review_transport_unavailable; the Herdr recovery appears only after the binary is installed.",
+          "anchor": "sha256:041f7f855e3bf89d5cb74978ff5a7c5ea79b20b149f658771b64a105788c052e",
+          "evidence": {
+            "trigger": "HERDR_ENV unset and the review_host binary missing from PATH → review_preparation_failed carries code review_host_unavailable, not review_transport_unavailable",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.prepareReview",
+              "reviewBinary",
+              "reviewSessionRunner"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "AC1"
+            }
+          }
+        },
+        {
+          "id": "review-9343c438fb48-2-review-2",
+          "acceptance_id": "AC1",
+          "summary": "The retired Claude --print argv carried a read-only tool allow-list, dontAsk and disableAllHooks; the remaining Herdr session host arguments (from S1, unchanged here) depend on the tree-change guard rather than equivalent tool restrictions.",
+          "anchor": "sha256:34bc0e8562c0c35aa8522bb0bc8f214bc4a70c9d8a04a2c850710494b0861572",
+          "evidence": {
+            "trigger": "claude-code review_host in a Herdr session → the reviewer runs without the REVIEW_GIT_ALLOWED_TOOLS/dontAsk boundary the process path enforced; only treeChanged release detects a mutation",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/assurance/cli_review.ts:CliReviewHost.prepareReview",
+              "sessionHostArguments",
+              "CliReviewHost.inspectReview:treeChanged"
+            ],
+            "violated": {
+              "kind": "security_boundary",
+              "ref": "read-only reviewer tool boundary"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:0cb08ece1e6fb74708035fbb13865bab66cc0373be8009eede788c2378edf8c6"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:retire-process-review-transport:2026-11-15T15:56:14.657Z",
+      "at": "2026-11-15T15:56:14.657Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/retire-process-review-transport.intent.json"
+    },
+    {
+      "id": "record_approval:retire-process-review-transport:2026-11-15T15:58:28.514Z",
+      "at": "2026-11-15T15:58:28.514Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-b2042121\naction_v2_sha256:493cfa8934dfe0a5e39cb92f063606cf6cacfc54668763c1f8537e8580b818d1",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T15:58:28.514Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-process-review-transport:2026-11-15T16:07:22.604Z",
+      "at": "2026-11-15T16:07:22.604Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-f56054c7\naction_v2_sha256:165b597bffdd68b60a2cd0ab8aa0ac4e820c6e1f4f30a0582868250130a958c3",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T16:07:22.604Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-process-review-transport:2026-11-16T01:32:10.310Z",
+      "at": "2026-11-16T01:32:10.310Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-54a7b0f4\naction_v2_sha256:5e4dc6f3da86d6d054bbda3dbfea4a112476a8bab93ba81ef527fb8c7310b424",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-16T01:32:10.310Z"
+      }
+    },
+    {
+      "id": "record_approval:retire-process-review-transport:2026-11-16T01:35:58.414Z",
+      "at": "2026-11-16T01:35:58.414Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-868cfaa4\naction_v2_sha256:d5ad496e933d5818b230504ad182e04fdf9a89033aa700317400dcf2272a7644",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:bfe49d74-3ecf-4a8b-8cf2-9ee7d9c48c7a",
+        "confirmation_ref": "pi:cli:claude-code:bfe49d74-3ecf-4a8b-8cf2-9ee7d9c48c7a",
+        "issued_at": "2026-11-16T01:35:58.414Z"
+      },
+      "review_started_at": "2026-11-16T01:32:17.651Z",
+      "review_submitted_at": "2026-11-16T01:35:56.415Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:retire-process-review-transport:2026-11-16T01:36:04.226Z",
+      "at": "2026-11-16T01:36:04.226Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:482b8898620457b5ff2963a24a2014fbd512c6175f0355666c9a492ef3c84a6b"
+    }
+  ]
+}

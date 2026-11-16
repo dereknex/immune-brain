@@ -113,11 +113,11 @@ for (const operation of ["advance", "submitReview"] as const) {
 	}
 }
 
-test("QA continuation hands one CLI Review command to the Parent turn", async () => {
+test("QA continuation hands one explicit Review session to the Parent turn", async () => {
 	const h = makeAssuranceHarness();
 	const ready = await h.progression.advance(TASK, ctx);
 	expect(ready.state).toBe("review_ready");
-	expect(typeof (ready as { review_command?: string }).review_command).toBe("string");
+	expect(typeof (ready as { review_session?: { create_command?: string } }).review_session?.create_command).toBe("string");
 	expect(ready).not.toHaveProperty("agent_params");
 });
 

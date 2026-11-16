@@ -31,7 +31,7 @@ async function submitObserved(progression: ReturnType<typeof makeHarness>["progr
 }
 
 describe("foreground assurance progression", () => {
-	test("runs QA synchronously and returns one foreground Review command", async () => {
+	test("runs QA synchronously and returns one foreground Review session", async () => {
 		let released!: () => void;
 		const gate = new Promise<void>((resolve) => { released = resolve; });
 		let qaFinished = false;
@@ -43,13 +43,14 @@ describe("foreground assurance progression", () => {
 		released();
 		const result = await advancing;
 		expect(result.state).toBe("review_ready");
-		// One command the Parent runs in its own shell, never an Agent envelope.
-		const command = (result as { review_command?: string }).review_command;
-		expect(typeof command).toBe("string");
+		// One explicit session the Parent creates, awaits and stops, never an Agent envelope.
+		const session = (result as { review_session?: { create_command: string; output_path: string } }).review_session;
+		expect(typeof session?.create_command).toBe("string");
+		expect(result).toHaveProperty("review_session");
+		expect(result).not.toHaveProperty("review_command");
 		expect(result).not.toHaveProperty("agent_params");
 		// The packet carries the complete prompt: role contract plus every static rule.
-		const script = readFileSync(command!.slice(3), "utf8");
-		const packetPath = /authority-review ([^']*\/packet\.md)/.exec(script)![1];
+		const packetPath = /authority-review (\S*\/packet\.md)/.exec(session!.create_command)![1]!;
 		const prompt = readFileSync(packetPath, "utf8");
 		// The skill carries the role contract and the static rules; the packet
 		// carries the contract stamp and this dispatch's snapshot facts (D12).

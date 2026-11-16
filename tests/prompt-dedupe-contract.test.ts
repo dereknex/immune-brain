@@ -81,7 +81,7 @@ const KEPT: Anchor[] = [
   { source: "drive", id: "I29", phrase: "Missing tools, credentials, invalid projections, or repeated unchanged failures stop with a concrete cause" },
   { source: "drive", id: "I30", phrase: "Reviewers are read-only and bound to the frozen snapshot" },
   { source: "drive", id: "K5", phrase: "A gate failure preserves the candidate and reports its stable reason plus exactly one same-Host recovery action" },
-  { source: "skill", id: "SKILL H10", phrase: "If it differs, reply with exactly `REVIEW_CONTRACT_MISMATCH" },
+  { source: "skill", id: "SKILL H10", phrase: "If it differs, answer with exactly `REVIEW_CONTRACT_MISMATCH" },
 ]
 
 function normalize(text: string): string {

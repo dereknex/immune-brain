@@ -1,50 +1,51 @@
-// A stand-in CLI reviewer for tests (Spec review-cli-stage D11).
+// An admitted-Herdr reviewer for tests (Spec review-cli-stage D11).
 //
-// The reserved script runs a Host binary whose last argument is the Review
-// packet path. This stand-in prints the verdict a test placed beside that
-// packet, so the receipt is per reservation and no test has to win a race for a
-// shared output file or PATH entry.
+// Every Authority Review and findings Verification is prepared as an explicit
+// supervised session (Spec retire-process-review-transport D2), so a fixture
+// needs three things: a Host inside Herdr, the reviewer executable on PATH, and
+// the receipt the reviewer agent would write. `installCliReviewer` supplies the
+// first two once per test file; `runReservedReview` publishes the verdict bytes
+// to the reservation's out-of-tree `output_path`. No reviewer process runs.
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-
-/** Matches the reserved script's prompt argument whatever Host name it uses. */
-const REVIEWER_SCRIPT = `#!/bin/sh
-for packet in "$@"; do :; done
-packet=\${packet##* }
-cat "$(dirname "$packet")/verdict.txt"
-`;
+import { join } from "node:path";
 
 const BIN = mkdtempSync(join(tmpdir(), "imm-cli-reviewer-bin-"));
+/** The Herdr provider stand-in; `imm-session` resolves `herdr` from PATH. */
+const HERDR_BIN = join(import.meta.dir, "..", "fixtures", "fake-herdr");
+
+/** A receipt-backed Review session reservation's out-of-tree JSON file. */
+export function reservedReviewSession(ready: unknown): { output_path: string; create_command: string } {
+	const session = (ready as { review_session?: { output_path: string; create_command: string } }).review_session;
+	if (!session) throw new Error(`expected an explicit review session, got ${JSON.stringify(ready)}`);
+	return session;
+}
 
 /**
- * Make the stand-in reviewer resolvable under the `pi` profile binary name these
- * fixtures configure. Only that name is shadowed: a real `claude` or `agy`
- * install stays reachable for the suites that probe it.
+ * Make this process an admitted Herdr workspace with the `pi` reviewer
+ * executable on PATH, so Review preparation succeeds without a real Host.
  */
 export function installCliReviewer(): void {
-	writeFileSync(join(BIN, "pi"), REVIEWER_SCRIPT, { mode: 0o755 });
+	const state = join(mkdtempSync(join(tmpdir(), "imm-cli-reviewer-herdr-")), "state.json");
+	writeFileSync(state, JSON.stringify({ protocol: 22, panes: {}, after_prompt: "idle" }));
+	Object.assign(process.env, { HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent", FAKE_HERDR_STATE: state });
+	// Only the `pi` name is shadowed: a real `claude` or `agy` install stays reachable.
+	writeFileSync(join(BIN, "pi"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
 	const path = process.env.PATH ?? "";
-	if (!path.split(":").includes(BIN)) process.env.PATH = `${BIN}:${path}`;
+	const entries = [BIN, HERDR_BIN, ...path.split(":")].filter((entry) => entry !== "");
+	process.env.PATH = [...new Set(entries)].join(":");
 }
 
-/** The packet path the reserved script passes to the reviewer. */
+/** The packet path the prepared session's entry names. */
 export function reservedPacketPath(ready: unknown): string {
-	const command = (ready as { review_command?: string }).review_command;
-	if (!command) throw new Error(`expected a CLI review command, got ${JSON.stringify(ready)}`);
-	const script = readFileSync(command.replace(/^sh /, ""), "utf8");
-	const packet = /authority-review ([^']*\/packet\.md)/.exec(script);
-	if (!packet) throw new Error("the reserved script names no Review packet");
-	return packet[1];
+	const packet = /(\S*\/packet\.md)/.exec(reservedReviewSession(ready).create_command);
+	if (!packet) throw new Error("the reserved session names no Review packet");
+	return packet[1]!;
 }
 
-/** Publish these bytes as the reviewer's output, then run the reserved script. */
+/** Publish these bytes as the reviewer's receipt for the prepared session. */
 export function runReservedReview(ready: unknown, bytes: unknown): void {
-	const command = (ready as { review_command?: string }).review_command;
-	if (!command) throw new Error(`expected a CLI review command, got ${JSON.stringify(ready)}`);
-	const packet = reservedPacketPath(ready);
-	writeFileSync(join(dirname(packet), "verdict.txt"), typeof bytes === "string" ? bytes : JSON.stringify(bytes));
-	execFileSync("sh", [command.replace(/^sh /, "")], { encoding: "utf8" });
+	const session = reservedReviewSession(ready);
+	writeFileSync(session.output_path, typeof bytes === "string" ? bytes : JSON.stringify(bytes));
 }

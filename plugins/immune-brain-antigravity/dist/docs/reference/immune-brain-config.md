@@ -108,11 +108,12 @@ request; the Parent or the Planner applies them on top of the resolved files.
   `review_host`. When it differs from the reviewer model, findings verification
   runs on it (ADR 0039, #284 D1); without it the verifier runs on the reviewer's
   model.
-- `review_transport` is `process` (default) or `herdr`; `advisory_transport` is
-  `subagent` (default) or `herdr`. Each names a Supervised Session Port provider
-  (ADR 0038, #426 S4 and S2): `herdr` runs the authority Review's script, or an
-  advisory child, in a Herdr tab. Nothing is detected: the default stays in
-  effect until a layer sets `herdr`, and `herdr` outside Herdr fails closed.
+- `review_transport` is `herdr`, the only value: an Authority Review and the
+  findings verification that follows it run in an explicit supervised session
+  (ADR 0038, #426 S4 and S3). The retired `process` value is rejected at
+  validation, and a Host outside Herdr fails closed with
+  `review_transport_unavailable`. `advisory_transport` is `subagent` (default) or
+  `herdr`: `herdr` runs an advisory child in a Herdr tab. Nothing is detected.
 
 ## Inspecting the Effective Configuration
 

@@ -48,16 +48,18 @@ describe("loop contract v4 alignment", () => {
 		expect(dist).not.toContain("immune-brain:immune-brain-arch-explorer");
 	});
 
-	test("packaged loop contract runs the CLI reviewer and keeps Agent envelopes unchanged", () => {
+	test("packaged loop contract runs the Review session and keeps Agent envelopes unchanged", () => {
 		const dist = read("plugins/immune-brain/dist/drive.md").replace(/\s+/g, " ");
 		expect(dist).toContain("Pass the returned Agent envelope through unchanged");
-		expect(dist).toContain("Authority Review is a separate CLI process, not an Agent call");
-		expect(dist).toContain("run the returned `review_command` from your own shell");
-		expect(dist).toContain("in the background when that shell tool would otherwise time out");
-		// ADR 0039: verification after a CLI Review is a CLI process; otherwise it keeps the Host subagent.
-		expect(dist).toContain("Findings verification after a CLI Review is a CLI process too (ADR 0039)");
+		expect(dist).toContain("Authority Review is a separate explicit Code Agent session, not an Agent call");
+		expect(dist).toContain("run the returned `review_session` once");
+		// The retired hidden `--print` process transport is not offered again.
+		expect(dist).not.toContain("review_command");
+		expect(dist).toContain("`await_command` waits once for that handle");
+		// ADR 0039: verification after a CLI Review is an explicit session; otherwise it keeps the Host subagent.
+		expect(dist).toContain("Findings verification after a CLI Review is an explicit session too (ADR 0039)");
 		expect(dist).toContain("A verification that follows no CLI Review keeps its Host subagent dispatch through `agent_params`");
-		expect(dist).toContain("On `verification_ready` with a `verification_command`, run it exactly as `review_command`");
+		expect(dist).toContain("On `verification_ready` run its `verification_session` through the same create, await, submit and stop sequence");
 		expect(dist).toContain("A blocked `submit_review` is recovered only through its returned `recovery_action`");
 		expect(dist).not.toContain("The reserved prompt is dispatched verbatim");
 		expect(dist).not.toContain("All internal Agent envelopes use `run_in_background: false`");

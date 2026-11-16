@@ -100,7 +100,7 @@ describe("authority review cli contract", () => {
 		"plugins/immune-brain-antigravity/dist/docs/reference/subagent-dispatch-protocol.md",
 	];
 
-	test("the drive contracts run review_command and name the missing-profile stop", () => {
+	test("the drive contracts run the Review session and name the missing-profile stop", () => {
 		for (const path of [
 			"plugins/immune-brain/dist/drive.md",
 			"plugins/immune-brain/dist/drive-batch.md",
@@ -108,7 +108,7 @@ describe("authority review cli contract", () => {
 			"plugins/immune-brain-antigravity/dist/drive-batch.md",
 		]) {
 			const contract = read(path);
-			expect({ path, statement: contract.includes("review_command") }).toEqual({ path, statement: true });
+			expect({ path, statement: contract.includes("review_session") }).toEqual({ path, statement: true });
 			expect({ path, statement: contract.includes("review_profile_required") }).toEqual({ path, statement: true });
 		}
 	});

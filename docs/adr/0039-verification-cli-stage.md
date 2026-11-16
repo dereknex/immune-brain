@@ -10,6 +10,15 @@ Decision 9, which kept findings verification on its Host subagent. It keeps
 unchanged: the verifier's output bytes are read twice and must agree before they
 count. Source: #426 S3, decided 2026-11-11.
 
+**Amendment (retire process review transport S2):** Decision 1's generated
+script is retired with ADR 0037's: findings verification after a CLI Review runs
+only as an explicit supervised session (`verification_session`), whose
+out-of-tree JSON file is the receipt. `verification_ready` no longer carries a
+`verification_command`. A session that writes nothing keeps the reservation; a
+file that is not one strict JSON object releases it with no receipt
+(`verification_output_invalid`), which keeps every finding. Source:
+`docs/specs/retire-process-review-transport.spec.md` (BR-DEC-1, BR-OUT-1).
+
 ## Context
 
 ADR 0037 moved the authority Review to a CLI process the Parent runs, so the

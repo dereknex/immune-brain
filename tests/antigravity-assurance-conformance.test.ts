@@ -2288,6 +2288,9 @@ describe("verifier via real hook dispatch", () => {
 	}
 
 	/** One real Git repository: the CLI reviewer's tree guard needs HEAD and tracked bytes. */
+	/** A Review and its verification are prepared only inside Herdr (Spec retire-process-review-transport D2). */
+	const HERDR_ENV = { ...process.env, HERDR_ENV: "1", HERDR_WORKSPACE_ID: "w-parent" };
+
 	function repo(): string {
 		const root = scratchDir("repo");
 		execFileSync("git", ["init", "-q"], { cwd: root });
@@ -2462,20 +2465,23 @@ describe("verifier via real hook dispatch", () => {
 		fakeReviewer(bytes);
 		const fixture = fixturePorts(root, applied);
 		const runtime = new AntigravityRuntime({ cwd: root, interactive: false, host: host.host, ports: fixture.ports,
-			authorityOverrides: fixture.authority });
+			authorityOverrides: fixture.authority, env: HERDR_ENV });
 		const ready = await runtime.coordinator.advance(TASK, { cwd: root });
-		if (ready.state !== "review_ready" || !ready.review_command) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
-		execFileSync("sh", [ready.review_command.slice(3)]);
+		const session = (ready as { review_session?: { output_path: string } }).review_session;
+		if (ready.state !== "review_ready" || !session) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
+		writeFileSync(session.output_path, bytes);
 		const verification = await runtime.submitReview(TASK, undefined);
 		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
 		return { root, cache, host, runtime, applied, bytes, verification: verification as unknown as Record<string, unknown> };
 	}
 
-	// ADR 0039 D1: a verification that follows a CLI Review is one more CLI process,
-	// so the Antigravity Parent runs a command instead of dispatching `invoke_subagent`.
-	it("hands an Antigravity Parent a verification command after a CLI Review", async () => {
+	// ADR 0039 D1: a verification that follows a CLI Review is one more explicit
+	// session, so the Antigravity Parent creates a tab instead of dispatching.
+	it("hands an Antigravity Parent a verification session after a CLI Review", async () => {
 		const current = await setup();
-		expect(current.verification.verification_command).toEqual(expect.stringMatching(/^sh .*verify\.sh$/));
+		const session = current.verification.verification_session as { create_command: string; output_path: string } | undefined;
+		expect(session?.create_command).toContain("'--provider' 'herdr'");
+		expect(current.verification).not.toHaveProperty("verification_command");
 		expect(current.verification.agent_params).not.toHaveProperty("TypeName");
 	});
 
@@ -2592,13 +2598,14 @@ describe("verifier via real hook dispatch", () => {
 		fakeReviewer(bytes);
 		const fixture = fixturePorts(root, applied);
 		const runtime = new AntigravityRuntime({ cwd: root, interactive: false, host: host.host, ports: fixture.ports,
-			authorityOverrides: fixture.authority });
+			authorityOverrides: fixture.authority, env: HERDR_ENV });
 		// Exercise the wrapped subagent verification path (ADR 0039 D6) through the full runtime.
 		const reviewHost = (runtime.runtime as unknown as { reviewHost: { prepareVerification: typeof host.host.prepareVerification } }).reviewHost;
 		reviewHost.prepareVerification = (req) => host.host.prepareVerification!(req);
 		const ready = await runtime.coordinator.advance(TASK, { cwd: root });
-		if (ready.state !== "review_ready" || !ready.review_command) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
-		execFileSync("sh", [ready.review_command.slice(3)]);
+		const session = (ready as { review_session?: { output_path: string } }).review_session;
+		if (ready.state !== "review_ready" || !session) throw new Error(`expected review_ready, got ${JSON.stringify(ready)}`);
+		writeFileSync(session.output_path, bytes);
 		const verification = await runtime.submitReview(TASK, undefined);
 		if (verification.state !== "verification_ready") throw new Error(`expected verification_ready, got ${JSON.stringify(verification)}`);
 		return { root, cache, host, runtime, applied, bytes, dispatch: verification.agent_params as { TypeName: string; Prompt: string; Model: string } };

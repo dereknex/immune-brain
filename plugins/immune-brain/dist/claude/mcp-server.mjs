@@ -8581,7 +8581,7 @@ function resolveConfig(root, options = {}) {
   const validateLane = (o, file, path) => {
     validKeys(o, laneKeys, file, path, "lanes");
     for (const [k, v] of Object.entries(o)) {
-      const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : k === "review_transport" ? v === "process" || v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
+      const ok = k === "max_parallel" ? Number.isSafeInteger(v) && v > 0 : k.endsWith("_host") ? v === "pi" || v === "claude-code" || v === "antigravity" : k.endsWith("_model") || k.endsWith("_effort") ? typeof v === "string" && v.length > 0 : k === "review_transport" ? v === "herdr" : k === "advisory_transport" ? v === "subagent" || v === "herdr" : true;
       if (!ok) {
         invalid(file, `${path}.${k}`, "invalid value");
         failed.add("lanes");
@@ -8874,7 +8874,7 @@ var init_layered_config = __esm(() => {
   init_thresholds();
   init_project_identity();
   envName = /^[A-Z_][A-Z0-9_]*$/;
-  LANE_DEFAULTS = { max_parallel: 1, review_transport: "process", advisory_transport: "subagent" };
+  LANE_DEFAULTS = { max_parallel: 1, review_transport: "herdr", advisory_transport: "subagent" };
   LOOP_MODES = ["off", "observe", "assist", "autonomous"];
   LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
   LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
@@ -11646,9 +11646,7 @@ function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
 function reviewReadyDispatch(reservation) {
   if (reservation.review_session)
     return { review_session: reservation.review_session, review_profile: reservation.review_profile };
-  if (!reservation.review_command)
-    return { agent_params: reservation.dispatch };
-  return { review_command: reservation.review_command, review_profile: reservation.review_profile };
+  return { agent_params: reservation.dispatch };
 }
 function reviewDispatchFailure(error) {
   return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
@@ -12653,7 +12651,7 @@ class AssuranceCoordinator {
         evidence
       };
       this.reviewReservations.set(taskId, reservation);
-      progress("review_ready", hostReservation.review_session ? `QA passed; create the review session with ${hostReservation.review_session.create_command}, await it, then call submit_review` : hostReservation.review_command ? `QA passed; run ${hostReservation.review_command} in your shell, then call submit_review` : "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
+      progress("review_ready", hostReservation.review_session ? `QA passed; create the review session with ${hostReservation.review_session.create_command}, await it, then call submit_review` : "QA passed; invoke the reserved foreground Agent, then call submit_review", { snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) });
       return { state: "review_ready", operation: "review", operation_id: operationId, snapshot_digest: snapshotDigest(review.snapshot), review_bundle_digest: review.snapshot.review_bundle_digest ?? "", ...reviewReadyDispatch(hostReservation) };
     } catch (error) {
       if (!initialProjectionAvailable && !aborted() && !(error instanceof VerificationAbortedError))
@@ -13114,7 +13112,6 @@ Counter-path: ${exhaustedDispute.counter_path}`
       operation_id: reservation.id,
       snapshot_digest: snapshotDigest(pending.review.snapshot),
       agent_params: reservation.dispatch,
-      ...reservation.verification_command ? { verification_command: reservation.verification_command } : {},
       ...reservation.verification_session ? { verification_session: reservation.verification_session } : {}
     };
   }
@@ -23117,7 +23114,7 @@ init_verdict_authority();
 init_layered_config();
 import { existsSync as existsSync20, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname20, join as join37, resolve as resolve17 } from "node:path";
+import { dirname as dirname20, join as join37, resolve as resolve16 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -23914,7 +23911,7 @@ import { execFileSync as execFileSync15 } from "node:child_process";
 import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants10, existsSync as existsSync19, mkdtempSync as mkdtempSync6, readFileSync as readFileSync23, realpathSync as realpathSync24, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
 import { createHash as createHash27 } from "node:crypto";
 import { tmpdir as tmpdir9 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname19, join as join36, resolve as resolve16 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname19, join as join36 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -23922,36 +23919,6 @@ var REVIEW_BINARY = {
   pi: "pi",
   antigravity: "agy"
 };
-var REVIEW_GIT_ALLOWED_TOOLS = Object.freeze([
-  "Bash(git show:*)",
-  "Bash(git diff:*)",
-  "Bash(git log:*)",
-  "Bash(git cat-file:*)",
-  "Bash(git rev-parse:*)",
-  "Bash(git ls-tree:*)",
-  "Bash(git --no-pager show:*)",
-  "Bash(git --no-pager diff:*)",
-  "Bash(git --no-pager log:*)",
-  "Bash(git --no-pager cat-file:*)",
-  "Bash(git --no-pager rev-parse:*)",
-  "Bash(git --no-pager ls-tree:*)"
-]);
-var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
-  disableAllHooks: true,
-  env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
-});
-function resolveAuthorityReviewSkillPath(moduleDir = dirname19(fileURLToPath4(import.meta.url))) {
-  const candidates = [
-    resolve16(moduleDir, "../../skills/authority-review/SKILL.md"),
-    resolve16(moduleDir, "../skills/authority-review/SKILL.md"),
-    resolve16(moduleDir, "skills/authority-review/SKILL.md")
-  ];
-  for (const candidate of candidates) {
-    if (existsSync19(candidate))
-      return candidate;
-  }
-  throw new Error(`authority-review skill not found from ${moduleDir}`);
-}
 function reviewSkillPrompt(profile, packetPath) {
   if (profile.host === "claude-code")
     return `/immune-brain:authority-review ${packetPath}`;
@@ -23962,81 +23929,7 @@ function reviewSkillPrompt(profile, packetPath) {
 function verificationInstruction(packetPath) {
   return `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
 }
-function reviewArguments(profile, packetPath, turnBudget, readDirs = [], pluginDir = null, skillPath) {
-  const model = profile.model ? ["--model", profile.model] : [];
-  if (profile.host === "claude-code") {
-    return [
-      "--print",
-      "--no-session-persistence",
-      "--settings",
-      CLAUDE_REVIEW_SETTINGS,
-      ...pluginDir ? ["--plugin-dir", pluginDir] : [],
-      ...readDirs.length ? ["--add-dir", ...readDirs] : [],
-      "--max-turns",
-      String(turnBudget),
-      "--tools",
-      "Read,Grep,Glob,Bash",
-      "--allowedTools",
-      ...REVIEW_GIT_ALLOWED_TOOLS,
-      "--permission-mode",
-      "dontAsk",
-      ...model,
-      ...profile.effort ? ["--effort", profile.effort] : [],
-      reviewSkillPrompt(profile, packetPath)
-    ];
-  }
-  if (profile.host === "pi") {
-    const explicitSkill = skillPath ?? resolveAuthorityReviewSkillPath();
-    return [
-      "--print",
-      "--no-session",
-      "--no-extensions",
-      "--no-skills",
-      "--no-mcp",
-      "--skill",
-      explicitSkill,
-      "--tools",
-      "read,grep,find,ls,bash",
-      ...model,
-      ...profile.effort ? ["--thinking", profile.effort] : [],
-      reviewSkillPrompt(profile, packetPath)
-    ];
-  }
-  return [
-    ...model,
-    ...profile.effort ? ["--effort", profile.effort] : [],
-    "--print",
-    reviewSkillPrompt(profile, packetPath)
-  ];
-}
 var HOST_DEFAULT_MODEL = "host-default";
-function verificationArguments(profile, model, packetPath, turnBudget) {
-  const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
-  const instruction = verificationInstruction(packetPath);
-  if (profile.host === "claude-code") {
-    return [
-      "--print",
-      "--no-session-persistence",
-      "--add-dir",
-      dirname19(packetPath),
-      "--max-turns",
-      String(turnBudget),
-      "--tools",
-      "Read,Grep,Glob,Bash",
-      "--allowedTools",
-      ...REVIEW_GIT_ALLOWED_TOOLS,
-      "--permission-mode",
-      "dontAsk",
-      "--settings",
-      CLAUDE_REVIEW_SETTINGS,
-      ...modelFlag,
-      instruction
-    ];
-  }
-  if (profile.host === "pi")
-    return ["--print", "--no-session", ...modelFlag, instruction];
-  return [...modelFlag, "--print", instruction];
-}
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
   return (process.env.PATH ?? "").split(delimiter5).map((dir) => join36(dir || ".", name)).find((path) => {
@@ -24050,7 +23943,7 @@ function reviewBinary(host) {
 }
 function reviewSessionRunner(env = process.env) {
   if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
-    throw new ReviewPreparationError("review_transport_unavailable", "lanes.review_transport is herdr but this Review is not prepared inside Herdr", "Run the Lane inside Herdr, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+    throw new ReviewPreparationError("review_transport_unavailable", "an Authority Review or findings Verification needs an explicit Herdr session and this Host is not inside Herdr", "Run this Lane inside Herdr, then call `advance_assurance`");
   }
   let dir = dirname19(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
@@ -24059,7 +23952,7 @@ function reviewSessionRunner(env = process.env) {
       return candidate;
     dir = dirname19(dir);
   }
-  throw new ReviewPreparationError("review_transport_unavailable", "imm-session is not shipped beside this runtime", "Reinstall the plugin, or set `lanes.review_transport` to `process`, then call `advance_assurance`");
+  throw new ReviewPreparationError("review_transport_unavailable", "imm-session is not shipped beside this runtime", "Reinstall the plugin, then call `advance_assurance`");
 }
 function git10(root, argv) {
   return execFileSync15("git", argv, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
@@ -24095,9 +23988,6 @@ function resolveReviewProfile(root) {
     return chooseReviewer(lanes);
   const transport = lanes.review_transport?.value;
   return { ...batch, ...transport ? { transport } : {} };
-}
-function profileTransport(profile) {
-  return profile.transport ?? "process";
 }
 function sessionSpec(runner, label, input) {
   const command = (verb, ...argv) => [runner, verb, "--provider", "herdr", ...argv].map(shellQuote).join(" ");
@@ -24139,23 +24029,6 @@ function strictJsonObject(bytes) {
     return null;
   }
 }
-var VERIFICATION_TURNS = 16;
-function writeProcessScript(script, root, command, output, exitFile) {
-  writeFileSync13(script, [
-    "#!/bin/sh",
-    `cd ${shellQuote(root)} || exit 1`,
-    `out=${shellQuote(output)}`,
-    `tmp="$out.part"`,
-    `${command.map(shellQuote).join(" ")} >"$tmp" 2>&1`,
-    "status=$?",
-    `mv -f "$tmp" "$out"`,
-    `printf '%s\\n' "$status" > ${shellQuote(exitFile)}`,
-    `exit "$status"`,
-    ""
-  ].join(`
-`), { encoding: "utf8", mode: 493 });
-  chmodSync5(script, 493);
-}
 
 class CliReviewHost {
   wrapped;
@@ -24176,11 +24049,9 @@ class CliReviewHost {
       return this.wrapped.prepareVerification(request);
     }
     const profile = request.profile ?? review.profile;
-    const executable = reviewBinary(profile.host);
-    if (!executable)
+    if (!reviewBinary(profile.host))
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
-    const transport = profileTransport(profile);
-    const sessionRunner = transport === "herdr" ? reviewSessionRunner(this.env) : null;
+    const sessionRunner = reviewSessionRunner(this.env);
     const directory = realpathSync24(mkdtempSync6(join36(tmpdir9(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
     const packet = join36(directory, "verify-packet.md");
@@ -24188,34 +24059,20 @@ class CliReviewHost {
     const label = `verify ${request.taskId}`.slice(0, 32);
     writeFileSync13(packet, request.prompt, { encoding: "utf8", mode: 420 });
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
-    if (sessionRunner) {
-      const session = sessionSpec(sessionRunner, label, {
-        root: review.root,
-        host: profile.host,
-        entry: `${verificationInstruction(packet)}
+    const session = sessionSpec(sessionRunner, label, {
+      root: review.root,
+      host: profile.host,
+      entry: `${verificationInstruction(packet)}
 
 ${writeToOutput(output)}`,
-        hostArgs: sessionHostArguments(profile, { outputPath: output, model: request.model, readDirs: [directory] }),
-        output
-      });
-      this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, exitFile: null, session });
-      return {
-        id: request.operationId,
-        dispatch: { verification_session: session, verifier_model: request.model },
-        verification_session: session,
-        review_profile: profile,
-        review_actor_id: actorId
-      };
-    }
-    const script = join36(directory, "verify.sh");
-    const exitFile = join36(directory, `verify-exit-${request.operationId}`);
-    writeProcessScript(script, review.root, [executable, ...verificationArguments(profile, request.model, packet, VERIFICATION_TURNS)], output, exitFile);
-    const command = `sh ${script}`;
-    this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, exitFile, session: null });
+      hostArgs: sessionHostArguments(profile, { outputPath: output, model: request.model, readDirs: [directory] }),
+      output
+    });
+    this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output });
     return {
       id: request.operationId,
-      dispatch: { verification_command: command, verifier_model: request.model },
-      verification_command: command,
+      dispatch: { verification_session: session, verifier_model: request.model },
+      verification_session: session,
       review_profile: profile,
       review_actor_id: actorId
     };
@@ -24227,21 +24084,14 @@ ${writeToOutput(output)}`,
         return { ok: false, release: true, reason: "no verification reservation" };
       return this.wrapped.inspectVerification(reservation);
     }
-    if (owned.exitFile && !existsSync19(owned.exitFile))
-      return { ok: false, release: false, reason: "verification process still running; wait for its exit, then submit_verification once — do not poll submit_verification" };
-    const status = owned.exitFile ? Number.parseInt(readFileSync23(owned.exitFile, "utf8").trim(), 10) : 0;
-    if (status !== 0)
-      return { ok: false, release: true, reason: `verification_process_failed: verifier exited ${status}` };
     if (!existsSync19(owned.output))
-      return owned.session ? {
+      return {
         ok: false,
         release: false,
         reason: `verification session still running; the verifier writes ${owned.output} when it finishes — await it with \`imm-session await\`, then submit_verification once`
-      } : { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
+      };
     const bytes = readFileSync23(owned.output, "utf8");
-    if (!bytes.trim())
-      return { ok: false, release: true, reason: "verification_process_failed: verifier produced no output" };
-    if (owned.session && !strictJsonObject(bytes))
+    if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
     return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
   }
@@ -24252,10 +24102,9 @@ ${writeToOutput(output)}`,
     const profile = request.profile ?? resolveReviewProfile(root);
     if (!profile)
       throw new ReviewPreparationError("review_profile_required", "Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
-    const executable = reviewBinary(profile.host);
-    if (!executable)
+    if (!reviewBinary(profile.host))
       throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
-    const sessionRunner = profileTransport(profile) === "herdr" ? reviewSessionRunner(this.env) : null;
+    const sessionRunner = reviewSessionRunner(this.env);
     const tree = reviewTreeState(root);
     const directory = realpathSync24(mkdtempSync6(join36(tmpdir9(), "imm-cli-review-")));
     chmodSync5(directory, 493);
@@ -24267,41 +24116,15 @@ ${writeToOutput(output)}`,
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const readDirs = [...new Set([directory, dirname19(request.evidencePath)])];
     const actorId = `cli:${profile.host}:${request.operationId}`;
-    if (sessionRunner) {
-      const session = sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
-        root,
-        host: profile.host,
-        entry: `${reviewSkillPrompt(profile, packet)}
+    const session = sessionSpec(sessionRunner, `review ${request.taskId}`.slice(0, 32), {
+      root,
+      host: profile.host,
+      entry: `${reviewSkillPrompt(profile, packet)}
 
 ${writeToOutput(output, true)}`,
-        hostArgs: sessionHostArguments(profile, { outputPath: output, readDirs, pluginDir: runtimeClaudePluginDir() }),
-        output
-      });
-      this.reservations.set(request.operationId, {
-        taskId: request.taskId,
-        operationId: request.operationId,
-        root,
-        profile,
-        actorId,
-        directory,
-        output,
-        exitFile: null,
-        session,
-        tree
-      });
-      return {
-        id: request.operationId,
-        dispatch: { review_session: session, review_profile: profile },
-        review_session: session,
-        review_profile: profile,
-        review_actor_id: actorId
-      };
-    }
-    const script = join36(directory, "review.sh");
-    const exitFile = join36(directory, `review-exit-${request.operationId}`);
-    const argv = reviewArguments(profile, packet, request.maxTurns, readDirs, runtimeClaudePluginDir());
-    writeProcessScript(script, root, [executable, ...argv], output, exitFile);
-    const reviewCommand = `sh ${script}`;
+      hostArgs: sessionHostArguments(profile, { outputPath: output, readDirs, pluginDir: runtimeClaudePluginDir() }),
+      output
+    });
     this.reservations.set(request.operationId, {
       taskId: request.taskId,
       operationId: request.operationId,
@@ -24310,14 +24133,12 @@ ${writeToOutput(output, true)}`,
       actorId,
       directory,
       output,
-      exitFile,
-      session: null,
       tree
     });
     return {
       id: request.operationId,
-      dispatch: { review_command: reviewCommand, review_profile: profile },
-      review_command: reviewCommand,
+      dispatch: { review_session: session, review_profile: profile },
+      review_session: session,
       review_profile: profile,
       review_actor_id: actorId
     };
@@ -24326,8 +24147,6 @@ ${writeToOutput(output, true)}`,
     const reservation = [...this.reservations.values()].reverse().find((item) => item.taskId === taskId);
     if (!reservation)
       return { ok: false, release: true, reason: "no CLI Review reservation for this task" };
-    if (reservation.exitFile && !existsSync19(reservation.exitFile))
-      return { ok: false, release: false, reason: "review process still running; wait for its exit, then submit_review once — do not poll submit_review" };
     let changed;
     try {
       changed = treeChanged(reservation.root, reservation.tree);
@@ -24340,22 +24159,17 @@ ${writeToOutput(output, true)}`,
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    const status = reservation.exitFile ? Number.parseInt(readFileSync23(reservation.exitFile, "utf8").trim(), 10) : 0;
-    if (status !== 0)
-      return { ok: false, release: true, reason: `review_process_failed: reviewer exited ${status}` };
     if (!existsSync19(reservation.output))
-      return reservation.session ? {
+      return {
         ok: false,
         release: false,
         reason: `review session still running; the reviewer writes ${reservation.output} when it finishes — await it with \`imm-session await\`, then submit_review once`
-      } : { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
+      };
     const bytes = readFileSync23(reservation.output, "utf8");
-    if (!bytes.trim())
-      return { ok: false, release: true, reason: "review_process_failed: reviewer produced no output" };
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
     if (mismatch)
       return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
-    if (reservation.session && !strictJsonObject(bytes))
+    if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "review_output_invalid: the reviewer's receipt is not one strict JSON object" };
     const verifierModel = resolveConfig(reservation.root).lanes.review_verifier_model?.value;
     return {
@@ -24743,7 +24557,7 @@ class HostRuntime {
         applied: (result) => !(result && typeof result === "object" && ("state" in result) && result.state === "replan_selected"),
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve17(dirname20(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal
       });
@@ -25330,7 +25144,7 @@ class HostRuntime {
       ...options.plan_source ? { supervision: {
         supervisor: this.laneSupervisor,
         parentHost: this.parentHost,
-        pluginDir: resolve17(dirname20(fileURLToPath5(import.meta.url)), "../.."),
+        pluginDir: resolve16(dirname20(fileURLToPath5(import.meta.url)), "../.."),
         waitMs: laneWaitMs(this.env),
         signal: meta.signal,
         stop: options.stop,
