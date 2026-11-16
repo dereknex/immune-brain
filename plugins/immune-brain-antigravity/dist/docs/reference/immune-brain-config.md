@@ -131,9 +131,9 @@ preset with `agents.active`.
   `roles.<role>` → active `roles."*"` → `default` `roles."*"`. `max_parallel`:
   active preset → `default` preset → project `lanes.max_parallel` → `1`; a value
   outside 1..8 is `config_invalid`.
-- Transports: `executor` and `code-review` run `process` (default) or `herdr`;
-  `review-verifier` and the loop roles run `process`; `advisory-reviewer` runs
-  `subagent` (default) or `herdr`. A profile transport a role does not allow is
+- Transports: `executor` runs `process` (default) or `herdr`; `code-review` and
+  `review-verifier` run only `herdr`; the loop roles run `process`;
+  `advisory-reviewer` runs `subagent` (default) or `herdr`. A profile transport a role does not allow is
   `transport_invalid_for_role`.
 - `review-verifier` must run on `code-review`'s host
   (`review_verifier_host_mismatch`); only its model may differ.
