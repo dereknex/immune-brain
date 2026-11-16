@@ -35,8 +35,9 @@ import {
 	type DecisionRelayOutcome,
 	type RelayInputFactory,
 } from "../decision_relay.ts";
+import { decisionId, type LoopDecisionRecord } from "../decision_record.ts";
 import type { GuardFacts } from "../guards.ts";
-import type { LoopLease } from "../types.ts";
+import { LOOP_DECISION_RECORD_CONTRACT, type LoopLease } from "../types.ts";
 import {
 	INTERACTION_REQUEST_CONTRACT,
 	changedBindingFields,
@@ -378,4 +379,40 @@ export async function applyLocalLaneDecisionAnswers(deps: LocalAnswerDeps): Prom
 		});
 	}
 	return outcomes;
+}
+
+/**
+ * D8 with the `local` channel: an Issue waiting on its clarify question resumes
+ * when the user answered the request in their own Host. Each answered request
+ * becomes one `apply_clarify_reply` decision on the Issue; the handler polls
+ * the answer through the channel, so a stale or unconfirmed file resumes
+ * nothing. `pending` is the Issue → interaction map the work items hold.
+ */
+export function localClarifyAnswerDecisions(
+	stateDir: string,
+	pending: Readonly<Record<number, string>>,
+	options: { recorded_at: string; dry_run: boolean },
+): LoopDecisionRecord[] {
+	const decisions: LoopDecisionRecord[] = [];
+	for (const [issue, interactionId] of Object.entries(pending)) {
+		const request = readLocalRequest(stateDir, interactionId);
+		if (!request || request.kind !== "clarify_question" || !readLocalAnswer(stateDir, interactionId)) continue;
+		const eventId = `local-interaction:${interactionId}`;
+		decisions.push({
+			contract: LOOP_DECISION_RECORD_CONTRACT,
+			decision_id: decisionId(eventId, "apply_clarify_reply", 0),
+			recorded_at: options.recorded_at,
+			event_id: eventId,
+			event_kind: "E3_OWNER_COMMENT",
+			target: { kind: "issue", id: issue },
+			tier: 0,
+			handler: "apply_clarify_reply",
+			reason: `issue #${issue} clarify ${interactionId} answered in the local Host`,
+			guard: null,
+			classification: null,
+			dry_run: options.dry_run,
+			mutations: [],
+		});
+	}
+	return decisions;
 }

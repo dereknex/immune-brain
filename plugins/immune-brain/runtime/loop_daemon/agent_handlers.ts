@@ -72,7 +72,8 @@ import {
 import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
 import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
-import { clarifyQuestionRequest } from "./interaction/protocol.ts";
+import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
+import { clarifyQuestionRequest, type InteractionChannel } from "./interaction/protocol.ts";
 import { startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import { isVerifiedActor, type GuardFacts } from "./guards.ts";
@@ -641,13 +642,20 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		return { kind: "framing", findings: parsed.framing, cached: false };
 	}
 
-	/** The `github` Interaction channel bound to one Issue's current revision. */
+	/**
+	 * The configured Interaction channel bound to one Issue's current revision:
+	 * `local` writes the question under the daemon state directory and reads the
+	 * answer the user confirmed in their own Host; `github` posts one comment.
+	 */
 	function clarifyChannel(
 		context: AgentHandlerContext,
 		issue: IssueFacts,
 		comments: RawComment[],
-	): { channel: ReturnType<typeof createGithubInteractionChannel>; issue_revision: string } {
+	): { channel: InteractionChannel; issue_revision: string } {
 		const issueRevision = createHash("sha256").update(`${issue.title}\n${issue.body}`).digest("hex").slice(0, 12);
+		const binding = () => ({ issue_revision: issueRevision });
+		if (context.loopConfig.interaction?.channel === "local")
+			return { issue_revision: issueRevision, channel: createLocalInteractionChannel({ stateDir: context.stateDir, binding }) };
 		return {
 			issue_revision: issueRevision,
 			channel: createGithubInteractionChannel({
@@ -656,14 +664,14 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					editComment: (commentId, body) => context.gitHubPort.editComment(commentId, body),
 				},
 				comments: () => comments,
-				binding: () => ({ issue_revision: issueRevision }),
+				binding,
 				guardFacts: context.guardFacts,
 			}),
 		};
 	}
 
 	/**
-	 * Post this Issue's questions once through the `github` Interaction channel and
+	 * Post this Issue's questions once through the configured Interaction channel and
 	 * park the work item in `awaiting_input`. The channel's idempotency key is the
 	 * question set, so a tick that observes no answer posts nothing new.
 	 */
@@ -715,6 +723,8 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 
 		const answered = await clarifyThenPlan(context, [polled.value]);
 		if (answered.outcome !== "executed") return answered;
+		// A local answer is consumed once; a GitHub answer stays in the comment stream.
+		if (channel.id === "local") retireLocalRequest(context.stateDir, interactionId);
 		return { outcome: "executed", detail: `clarify ${interactionId} answered by ${polled.actor}; ${answered.detail}` };
 	}
 

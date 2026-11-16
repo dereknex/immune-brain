@@ -49,6 +49,11 @@ import {
 	type RawIssue,
 } from "../plugins/immune-brain/runtime/loop_daemon/types.ts";
 import { readWorkItem } from "../plugins/immune-brain/runtime/loop_daemon/work_items.ts";
+import {
+	readLocalRequest,
+	readLocalRequests,
+	writeLocalAnswer,
+} from "../plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts";
 
 const TS = "2026-11-12T10:00:00.000Z";
 const ONE_TASK = "s7-single-task";
@@ -64,7 +69,7 @@ interface Workspace {
 	loopConfig: LoopConfig;
 }
 
-function makeWorkspace(): Workspace {
+function makeWorkspace(options: { channel?: "github" | "local" } = {}): Workspace {
 	const root = mkdtempSync(join(tmpdir(), "imm-clarify-plan-"));
 	git(root, ["init", "-q"]);
 	git(root, ["config", "user.name", "Immune Test"]);
@@ -106,6 +111,7 @@ function makeWorkspace(): Workspace {
 					auto_enroll_max_risk: loopConfig.auto_enroll_max_risk,
 					allowed_actors: loopConfig.allowed_actors,
 					allowed_associations: loopConfig.allowed_associations,
+					...(options.channel ? { interaction: { channel: options.channel } } : {}),
 				},
 			},
 			null,
@@ -428,8 +434,8 @@ describe("S7 clarify and plan", () => {
 		cleanups = [];
 	});
 
-	function workspaceWithCleanup(): Workspace {
-		const workspace = makeWorkspace();
+	function workspaceWithCleanup(options: { channel?: "github" | "local" } = {}): Workspace {
+		const workspace = makeWorkspace(options);
 		cleanups.push(() => rmSync(workspace.root, { recursive: true, force: true }));
 		return workspace;
 	}
@@ -494,6 +500,43 @@ describe("S7 clarify and plan", () => {
 		expect(plan!.task_id).toBe(ONE_TASK);
 		expect(plan!.published_at).not.toBeNull();
 		expect(readWorkItem(workspace.stateDir, "issue-10")?.state).toBe("plan_published");
+	});
+
+	it("asks through the local channel and resumes only on a locally confirmed answer (S7-AC1, D4)", async () => {
+		const workspace = workspaceWithCleanup({ channel: "local" });
+		const harness = makeHarness(workspace, [ONE_TASK], { askQuestion: true });
+		const body = "Add the S7 fixture behaviour";
+
+		const first = await tick(harness, { issues: [issue(10, body)], choice: "needs_clarification" });
+		expect(jsonPayload(first.stdout).dispatches[0]).toMatchObject({ handler: "clarify_issue", outcome: "executed" });
+		// The question is a local request file, not a GitHub comment.
+		expect(clarifyComments(harness, 10)).toHaveLength(0);
+		const [request] = readLocalRequests(workspace.stateDir);
+		expect(request?.kind).toBe("clarify_question");
+		expect(readWorkItem(workspace.stateDir, "issue-10")?.pending_interactions).toEqual([request!.interaction_id]);
+
+		// No answer yet: nothing resumes.
+		const waiting = await tick(harness, { issues: [issue(10, body)] });
+		expect(jsonPayload(waiting.stdout).dispatches).toHaveLength(0);
+		expect(harness.sessions.requests.map((r) => r.kind)).toEqual(["clarify"]);
+
+		writeLocalAnswer(workspace.stateDir, {
+			interaction_id: request!.interaction_id,
+			kind: request!.kind,
+			subject: request!.subject,
+			binding: request!.binding,
+			value: "Extend src/seed.ts, it is the only seam.",
+			confirmation: { tool: "answer_loop_interaction", confirmed_at: TS, confirmation_ref: "fixture" },
+		});
+		const answered = await tick(harness, { issues: [issue(10, body)] });
+		const payload = jsonPayload(answered.stdout);
+		expect(payload.dispatches).toHaveLength(1);
+		expect(payload.dispatches[0]).toMatchObject({ handler: "apply_clarify_reply", outcome: "executed" });
+		expect(harness.sessions.requests.map((r) => r.kind)).toEqual(["clarify", "clarify", "planning"]);
+		expect(harness.sessions.requests[1]!.prompt).toContain("Extend src/seed.ts");
+		expect(readWorkItem(workspace.stateDir, "issue-10")?.state).toBe("plan_published");
+		// The answer is consumed once.
+		expect(readLocalRequest(workspace.stateDir, request!.interaction_id)).toBeNull();
 	});
 
 	it("parks a draft_plan question in awaiting_input and resumes it (S7-AC1)", async () => {

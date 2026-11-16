@@ -39,7 +39,11 @@ import { createDefaultRelayInputFactory, dispatchDecisions, type LaneRuntimeFact
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
-import { applyLocalLaneDecisionAnswers, localDecisionRecordRevision } from "./interaction/local_channel.ts";
+import {
+	applyLocalLaneDecisionAnswers,
+	localClarifyAnswerDecisions,
+	localDecisionRecordRevision,
+} from "./interaction/local_channel.ts";
 import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
@@ -1104,9 +1108,18 @@ Options:
 			const decisions = judged.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
 			);
+			// Spec loop-agent-scheduling D8 with the `local` channel: no GitHub comment
+			// resumes a clarify question, the answer the user confirmed locally does.
+			const localClarify =
+				loopConfig.interaction?.channel === "local"
+					? localClarifyAnswerDecisions(stateDir, facts.pending_clarify ?? {}, {
+							recorded_at: recordedAt,
+							dry_run: isDryRun,
+						})
+					: [];
 
 			if (!isDryRun) {
-				for (const decision of decisions) {
+				for (const decision of [...decisions, ...localClarify]) {
 					appendLoopDecision(stateDir, decision);
 				}
 				recordJudgedEvents(judged, stateDir, recordedAt);
@@ -1148,7 +1161,7 @@ Options:
 				stateDir,
 				loopConfig,
 				events: judged.events,
-				decisions,
+				decisions: [...decisions, ...localClarify],
 				snapshot: obs.snapshot,
 				state,
 				gitHubPort,
