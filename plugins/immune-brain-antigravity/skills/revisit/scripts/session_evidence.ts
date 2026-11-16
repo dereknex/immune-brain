@@ -10,9 +10,19 @@ const CLAUDE_KERNEL_TOOL = /^mcp__.*immune[-_]brain.*__([a-z0-9_]+)$/;
 const MAX_REPR_BYTES = 512 * 1024;
 const MAX_REPR_DEPTH = 64;
 
-// Host-injected pseudo-user frames (F3): a whole envelope with no human text, or fixed Host preamble text.
+// Host-injected pseudo-user frames (F3): whole envelopes and fixed Host notices with no
+// human text left once they are removed. A notice is matched whole, so a human line
+// typed after it keeps the turn human.
 const HOST_ENVELOPE = /<(task-notification|system-reminder|local-command-[a-z-]+|command-name)\b[^>]*>[\s\S]*?<\/\1>/gi;
-const HOST_PREAMBLE = /^(?:Tool loaded\.|Base directory for this skill:|Your claude\.ai usage limit has reset\.|\[plan review)/i;
+const HOST_NOTICE = new RegExp([
+	String.raw`Tool loaded\.`,
+	String.raw`Your claude\.ai usage limit has reset\.(?:[ \t]*Continue the task you were working on when the limit was reached; do not repeat work that is already complete\.)?`,
+	String.raw`\[Earlier usage-limit notes no longer apply\.[^\]\n]*\]`,
+	String.raw`\[plan review[^\]\n]*\]`,
+].join("|"), "gi");
+// A Claude Code skill expansion: the skill's own text, then the human's `ARGUMENTS:` when any.
+const SKILL_PREAMBLE = /^Base directory for this skill:/i;
+const SKILL_ARGUMENTS = "\nARGUMENTS:";
 
 const EDIT_TOOLS_BY_HOST: Record<Host, ReadonlySet<string>> = {
 	pi: new Set(["edit", "write", "multiedit", "apply_patch"]),
@@ -20,12 +30,18 @@ const EDIT_TOOLS_BY_HOST: Record<Host, ReadonlySet<string>> = {
 	antigravity: new Set(["edit_file", "write_file", "replace_file_content", "write_to_file"]),
 };
 
-/** A `/skill` block or any text outside a Host envelope means a human wrote the turn. */
+/**
+ * A `/skill` block, a skill expansion carrying `ARGUMENTS:`, or any text outside a
+ * Host envelope or notice means a human wrote the turn.
+ */
 function isSyntheticInput(text: string): boolean {
 	if (/<skill\b/i.test(text)) return false;
 	const trimmed = text.trim();
-	if (HOST_PREAMBLE.test(trimmed)) return true;
-	const remainder = trimmed.replace(HOST_ENVELOPE, "").trim();
+	if (SKILL_PREAMBLE.test(trimmed)) {
+		const at = trimmed.lastIndexOf(SKILL_ARGUMENTS);
+		return at < 0 || !trimmed.slice(at + SKILL_ARGUMENTS.length).trim();
+	}
+	const remainder = trimmed.replace(HOST_ENVELOPE, "").replace(HOST_NOTICE, "").trim();
 	return remainder !== trimmed && !remainder;
 }
 

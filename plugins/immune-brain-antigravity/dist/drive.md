@@ -155,13 +155,18 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    opens one interactive reviewer in the task's working directory with the
    profile it names (`review_profile`), the JSON it prints carries the `handle`,
    and `await_command` waits once for that handle to finish writing the strict
-   JSON verdict to its out-of-tree `output_path`. Then call `submit_review`
-   once. The receipt is a file, never terminal text, and `submit_review` is
+   JSON verdict to its out-of-tree `output_path`. When `create_command` prints
+   `entry_submitted: false`, a startup dialog (such as workspace trust) held the
+   entry back: relay it to the user, send nothing into the tab, and after they
+   answered run `resume_command` with that handle once, then `await_command`.
+   Then call `submit_review` once. The receipt is a file, never terminal text, and `submit_review` is
    never polled. Never dispatch the authority Review as an Agent, and do not
    replace this snapshot-bound reviewer with a generic role dispatch. The Parent
-   cannot issue its own QA or Review pass. Run `stop_command` with the same
-   handle only after `submit_review` consumed a valid receipt; after any failure
-   the tab stays open for inspection. A `review_preparation_failed`
+   cannot issue its own QA or Review pass. Run the `stop_command` that the
+   consuming `submit_review` result returns, with the same handle; a result
+   without `stop_command` is a failure and the tab stays open for inspection.
+   A session that stopped without writing the file returns
+   `review_session_aborted` and releases the round. A `review_preparation_failed`
    result with `review_profile_required` means no `lanes.review_host` resolves:
    set it in the active user lane profile or in `.imm/config.json`, then call
    `advance_assurance`; QA settlement is retained. `review_transport_unavailable`
@@ -372,9 +377,13 @@ a receipt, and the same tree guard covers the interactive session. The hidden
 background `--print` process transport is retired: outside Herdr both Review and
 Verification preparation fail with `review_transport_unavailable` and one
 same-Host recovery action that never falls back to a hidden process.
-`stop_command` closes the single round once the Kernel consumed a
-valid receipt into a pass, a rework, `verification_ready` or `awaiting_user`; a
-failed round, a contract mismatch, a changed tree or a non-JSON output keeps the
+`await_command` also copies its result to `session-await.json` beside the
+receipt, so a session that ended or went idle without writing `output_path`
+releases the round as `review_session_aborted` / `verification_session_aborted`
+instead of reading as still running. `stop_command` closes the single round
+once the Kernel consumed a valid receipt into a pass, a rework,
+`verification_ready` or `awaiting_user`, and that consuming result carries it; a
+failed round, an aborted session, a contract mismatch, a changed tree or a non-JSON output keeps the
 tab open and runs no stop.
 Releasing the reservation removes the packet and the output with the
 session directory; the manifest bytes remain unchanged. A finished review

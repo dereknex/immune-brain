@@ -13235,6 +13235,9 @@ function reviewReadyDispatch(reservation) {
 function reviewDispatchFailure(error) {
   return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
 }
+function withSessionStop(result, session) {
+  return session && RECEIPT_CONSUMED_STATES.has(result.state) ? { ...result, stop_command: session.stop_command } : result;
+}
 function deliveryOf(diffHash, settleCommit) {
   return {
     content_hash: diffHash,
@@ -14289,7 +14292,9 @@ class AssuranceCoordinator {
     }
   }
   async submitReview(taskId, ctx, verdictInput, options) {
-    return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput, options));
+    const session = this.reviewReservations.get(taskId)?.hostReservation.review_session;
+    const result = await this.submitReviewOnce(taskId, ctx, verdictInput, options);
+    return this.withRecovery(taskId, ctx, withSessionStop(result, session));
   }
   async submitReviewOnce(taskId, ctx, verdictInput, options) {
     const unknown = this.unknownOperations.get(taskId);
@@ -14599,7 +14604,9 @@ Counter-path: ${counterPath}`
       };
     this.verificationReservations.delete(taskId);
     this.removeEvidence(pending.review);
-    return this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+    const result = await this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+    const session = pending.dispatch.reservation.verification_session;
+    return session && consumed.attestation.valid && result.state !== "blocked" && result.state !== "settlement_unknown" ? { ...result, stop_command: session.stop_command } : result;
   }
   async applyVerifiedReview(taskId, ctx, review, verdict, verdictSha256, attestation, dispatchedAt) {
     const refutations = attestation.results.filter((result) => result.verdict === "refuted").map((result) => ({
@@ -14799,7 +14806,7 @@ function boundedAssuranceError(error) {
   const normalized = raw.replace(/\s+/g, " ").trim() || "unknown error";
   return normalized.length <= 300 ? normalized : `${normalized.slice(0, 299)}...`;
 }
-var TRACKER_PROJECTION_FAILURE, REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, request_authorization may offer one snapshot-bound retry under a changed Review contract (legacy unknown contract requires explicit disclosure); otherwise reduce the change or revise the TaskIntent. Never redispatch without Kernel authorization.", QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, HEAVY_REVIEW_BASE_TURNS = 12, HEAVY_REVIEW_MIN_TURNS = 24, HEAVY_REVIEW_MAX_TURNS = 48, consumedVerifierReservations, invocationRegistry;
+var TRACKER_PROJECTION_FAILURE, REVIEW_INCOMPLETE_RECOVERY = "Inspect the incomplete Review coverage, request_authorization may offer one snapshot-bound retry under a changed Review contract (legacy unknown contract requires explicit disclosure); otherwise reduce the change or revise the TaskIntent. Never redispatch without Kernel authorization.", QA_STAGES, QA_OUTCOMES, QA_DRIFT_PATH_LIMIT = 64, QA_PREPARE_STDERR_TAIL_BYTES = 2048, QA_PREPARE_REPRODUCTION_NOTE = "a reproduction in the live worktree is not equivalent: this run used an isolated delivery with no worktree node_modules", QA_DRIFT_NOTE = "in-scope tracked content of the working directory differs from the frozen snapshot; see prepare_observation.drift_paths", QA_PREPARE_REASONS, QA_TAIL_CONTROL, QaPreparationError, RECEIPT_CONSUMED_STATES, QA_MIN_JOB_TIMEOUT_SECONDS, QA_MAX_JOB_TIMEOUT_SECONDS, QA_JOB_OVERHEAD_SECONDS, QA_JOB_TIMEOUT_SECONDS, QA_MAX_IDENTICAL_FAILURES = 2, REVIEW_TIMING_PROFILES, QUICK_REVIEW_MAX_ACCEPTANCE = 3, QUICK_REVIEW_MAX_FILES = 5, QUICK_REVIEW_MAX_BYTES, HEAVY_REVIEW_MIN_ACCEPTANCE = 9, HEAVY_REVIEW_MIN_BYTES, HEAVY_REVIEW_MIN_FILES = 12, HEAVY_REVIEW_BASE_TURNS = 12, HEAVY_REVIEW_MIN_TURNS = 24, HEAVY_REVIEW_MAX_TURNS = 48, consumedVerifierReservations, invocationRegistry;
 var init_coordinator = __esm(() => {
   init_layered_config();
   init_git_integration_preference();
@@ -14864,6 +14871,7 @@ var init_coordinator = __esm(() => {
       this.name = "QaPreparationError";
     }
   };
+  RECEIPT_CONSUMED_STATES = new Set(["verification_ready", "rework", "awaiting_user", "completed", "review_incomplete"]);
   QA_MIN_JOB_TIMEOUT_SECONDS = 15 * 60;
   QA_MAX_JOB_TIMEOUT_SECONDS = 60 * 60;
   QA_JOB_OVERHEAD_SECONDS = 2 * 60;
@@ -23028,6 +23036,27 @@ function verificationInstruction(packetPath) {
   return `Read ${packetPath} and do exactly what it says. Reply with only the JSON it asks for.`;
 }
 var HOST_DEFAULT_MODEL = "host-default";
+var REVIEW_GIT_ALLOWED_TOOLS = Object.freeze([
+  "Bash(git show:*)",
+  "Bash(git diff:*)",
+  "Bash(git log:*)",
+  "Bash(git cat-file:*)",
+  "Bash(git rev-parse:*)",
+  "Bash(git ls-tree:*)",
+  "Bash(git --no-pager show:*)",
+  "Bash(git --no-pager diff:*)",
+  "Bash(git --no-pager log:*)",
+  "Bash(git --no-pager cat-file:*)",
+  "Bash(git --no-pager rev-parse:*)",
+  "Bash(git --no-pager ls-tree:*)"
+]);
+var CLAUDE_REVIEW_SETTINGS = JSON.stringify({
+  disableAllHooks: true,
+  env: { BASH_MAX_OUTPUT_LENGTH: "150000" }
+});
+function claudeOutputWriteRule(outputPath) {
+  return `Edit(/${outputPath})`;
+}
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
   return (process.env.PATH ?? "").split(delimiter5).map((dir) => join34(dir || ".", name)).find((path) => {
@@ -23038,6 +23067,11 @@ function reviewBinary(host) {
       return false;
     }
   }) ?? null;
+}
+function requireReviewBinary(profile) {
+  if (reviewBinary(profile.host))
+    return;
+  throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
 }
 function reviewSessionRunner(env = process.env) {
   if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
@@ -23089,13 +23123,40 @@ function resolveReviewProfile(root) {
 }
 function sessionSpec(runner, label, input) {
   const command = (verb, ...argv) => [runner, verb, "--provider", "herdr", ...argv].map(shellQuote).join(" ");
+  const create = (...resume) => command("create", "--cwd", input.root, "--label", label, "--host", input.host, "--entry", input.entry, ...resume, ...input.hostArgs.length ? ["--", ...input.hostArgs] : []);
   return {
     transport: "herdr",
     output_path: input.output,
-    create_command: command("create", "--cwd", input.root, "--label", label, "--host", input.host, "--entry", input.entry, ...input.hostArgs.length ? ["--", ...input.hostArgs] : []),
-    await_command: command("await", "<handle>"),
+    create_command: create(),
+    resume_command: create("--resume", "<handle>"),
+    await_command: `${command("await", "<handle>")} | tee ${shellQuote(input.awaitRecord)}`,
     stop_command: command("stop", "<handle>")
   };
+}
+function sessionAwaitOutcome(awaitRecord) {
+  let record;
+  try {
+    record = JSON.parse(readFileSync23(awaitRecord, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!record || typeof record !== "object")
+    return null;
+  const { ok, transition, state } = record;
+  if (ok !== true)
+    return null;
+  if (transition === "exited")
+    return { ended: `exited, state ${typeof state === "string" ? state : "unknown"}` };
+  if (transition !== "changed")
+    return null;
+  if (state === "idle" || state === "done")
+    return { ended: `changed, state ${state}` };
+  return state === "blocked" ? { blocked: true } : null;
+}
+function sessionPending(outcome, role, output, submit) {
+  if (outcome && "blocked" in outcome)
+    return `${role} session is blocked on a dialog: relay it to the user; once they answered it in the session's tab, run \`resume_command\` once if \`create_command\` printed \`entry_submitted: false\` (the entry was never delivered), then \`await_command\` again, then ${submit} once`;
+  return `${role === "reviewer" ? "review" : "verification"} session still running; the ${role} writes ${output} when it finishes — await it with \`imm-session await\`, then ${submit} once`;
 }
 function writeToOutput(output, mismatchLine = false) {
   return `Write the one JSON object you owe to ${output} as that file's whole content, then stop.` + (mismatchLine ? " A review contract mismatch goes there instead, as the whole content, in the exact form the instruction names." : "") + " It is outside the reviewed worktree and is the only path you may create; print no verdict.";
@@ -23105,15 +23166,22 @@ function sessionHostArguments(profile, options) {
   const modelFlag = model && model !== HOST_DEFAULT_MODEL ? ["--model", model] : [];
   if (profile.host === "claude-code")
     return [
+      "--settings",
+      CLAUDE_REVIEW_SETTINGS,
       ...options.pluginDir ? ["--plugin-dir", options.pluginDir] : [],
       ...options.readDirs?.length ? ["--add-dir", ...options.readDirs] : [],
+      "--tools",
+      "Read,Grep,Glob,Bash,Write",
       "--allowedTools",
-      `Write(${options.outputPath})`,
+      ...REVIEW_GIT_ALLOWED_TOOLS,
+      claudeOutputWriteRule(options.outputPath),
+      "--permission-mode",
+      "dontAsk",
       ...modelFlag,
       ...profile.effort ? ["--effort", profile.effort] : []
     ];
   if (profile.host === "pi")
-    return [...modelFlag, ...profile.effort ? ["--thinking", profile.effort] : []];
+    return ["--tools", "read,grep,find,ls,bash,write", ...modelFlag, ...profile.effort ? ["--thinking", profile.effort] : []];
   return [...modelFlag, ...profile.effort ? ["--effort", profile.effort] : []];
 }
 function strictJsonObject(bytes) {
@@ -23147,13 +23215,13 @@ class CliReviewHost {
       return this.wrapped.prepareVerification(request);
     }
     const profile = request.profile ?? review.profile;
-    if (!reviewBinary(profile.host))
-      throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const sessionRunner = reviewSessionRunner(this.env);
+    requireReviewBinary(profile);
     const directory = realpathSync20(mkdtempSync6(join34(tmpdir7(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
     const packet = join34(directory, "verify-packet.md");
     const output = join34(directory, `verify-output-${request.operationId}.json`);
+    const awaitRecord = join34(directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
     writeFileSync13(packet, request.prompt, { encoding: "utf8", mode: 420 });
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
@@ -23164,9 +23232,10 @@ class CliReviewHost {
 
 ${writeToOutput(output)}`,
       hostArgs: sessionHostArguments(profile, { outputPath: output, model: request.model, readDirs: [directory] }),
-      output
+      output,
+      awaitRecord
     });
-    this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output });
+    this.verifications.set(request.operationId, { taskId: request.taskId, actorId, model: request.model, directory, output, awaitRecord });
     return {
       id: request.operationId,
       dispatch: { verification_session: session, verifier_model: request.model },
@@ -23182,12 +23251,16 @@ ${writeToOutput(output)}`,
         return { ok: false, release: true, reason: "no verification reservation" };
       return this.wrapped.inspectVerification(reservation);
     }
-    if (!existsSync18(owned.output))
-      return {
-        ok: false,
-        release: false,
-        reason: `verification session still running; the verifier writes ${owned.output} when it finishes — await it with \`imm-session await\`, then submit_verification once`
-      };
+    if (!existsSync18(owned.output)) {
+      const outcome = sessionAwaitOutcome(owned.awaitRecord);
+      if (outcome && "ended" in outcome)
+        return {
+          ok: false,
+          release: true,
+          reason: `verification_session_aborted: the verifier session ended (${outcome.ended}) without writing ${owned.output}; its tab stays open for inspection`
+        };
+      return { ok: false, release: false, reason: sessionPending(outcome, "verifier", owned.output, "submit_verification") };
+    }
     const bytes = readFileSync23(owned.output, "utf8");
     if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
@@ -23200,14 +23273,14 @@ ${writeToOutput(output)}`,
     const profile = request.profile ?? resolveReviewProfile(root);
     if (!profile)
       throw new ReviewPreparationError("review_profile_required", "Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
-    if (!reviewBinary(profile.host))
-      throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
     const sessionRunner = reviewSessionRunner(this.env);
+    requireReviewBinary(profile);
     const tree = reviewTreeState(root);
     const directory = realpathSync20(mkdtempSync6(join34(tmpdir7(), "imm-cli-review-")));
     chmodSync5(directory, 493);
     const packet = join34(directory, "packet.md");
     const output = join34(directory, `review-output-${request.operationId}.json`);
+    const awaitRecord = join34(directory, "session-await.json");
     const contractHash = currentReviewContractHash();
     writeFileSync13(packet, `review_contract_hash: ${contractHash}
 
@@ -23221,7 +23294,8 @@ ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
 
 ${writeToOutput(output, true)}`,
       hostArgs: sessionHostArguments(profile, { outputPath: output, readDirs, pluginDir: runtimeClaudePluginDir() }),
-      output
+      output,
+      awaitRecord
     });
     this.reservations.set(request.operationId, {
       taskId: request.taskId,
@@ -23231,6 +23305,7 @@ ${writeToOutput(output, true)}`,
       actorId,
       directory,
       output,
+      awaitRecord,
       tree
     });
     return {
@@ -23257,12 +23332,16 @@ ${writeToOutput(output, true)}`,
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    if (!existsSync18(reservation.output))
-      return {
-        ok: false,
-        release: false,
-        reason: `review session still running; the reviewer writes ${reservation.output} when it finishes — await it with \`imm-session await\`, then submit_review once`
-      };
+    if (!existsSync18(reservation.output)) {
+      const outcome = sessionAwaitOutcome(reservation.awaitRecord);
+      if (outcome && "ended" in outcome)
+        return {
+          ok: false,
+          release: true,
+          reason: `review_session_aborted: the reviewer session ended (${outcome.ended}) without writing ${reservation.output}; its tab stays open for inspection`
+        };
+      return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", reservation.output, "submit_review") };
+    }
     const bytes = readFileSync23(reservation.output, "utf8");
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
     if (mismatch)

@@ -516,7 +516,20 @@ type AssuranceRecoveryFields = {
 	environment_failure?: boolean;
 	recovery?: AssuranceRecovery;
 	recovery_error?: "fresh_kernel_projection_unavailable";
+	/**
+	 * Set only when a submission consumed a valid receipt from an explicit session:
+	 * run it with that session's handle to close the single round (Spec
+	 * explicit-port-review-session D5). A failed round never carries it.
+	 */
+	stop_command?: string;
 };
+
+/** The states a submission reaches only by consuming the session's receipt (D5). */
+const RECEIPT_CONSUMED_STATES: ReadonlySet<string> = new Set(["verification_ready", "rework", "awaiting_user", "completed", "review_incomplete"]);
+
+function withSessionStop<T extends { state: string }>(result: T, session: ReviewSessionSpec | undefined): T {
+	return session && RECEIPT_CONSUMED_STATES.has(result.state) ? { ...result, stop_command: session.stop_command } : result;
+}
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
 	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile }
@@ -1799,7 +1812,9 @@ export class AssuranceCoordinator {
 	}
 
 	async submitReview(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
-		return this.withRecovery(taskId, ctx, await this.submitReviewOnce(taskId, ctx, verdictInput, options));
+		const session = this.reviewReservations.get(taskId)?.hostReservation.review_session;
+		const result = await this.submitReviewOnce(taskId, ctx, verdictInput, options);
+		return this.withRecovery(taskId, ctx, withSessionStop(result, session));
 	}
 
 	private async submitReviewOnce(taskId: string, ctx: HostContext, verdictInput: unknown, options?: ReviewSubmissionOptions): Promise<AssuranceSubmitReviewResult> {
@@ -2036,7 +2051,12 @@ export class AssuranceCoordinator {
 				: "Await the reserved verifier, then call submit_verification once; do not poll submit_verification" };
 		this.verificationReservations.delete(taskId);
 		this.removeEvidence(pending.review);
-		return this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+		const result = await this.applyVerifiedReview(taskId, ctx, pending.review, pending.verdict, pending.verdictSha256, consumed.attestation, pending.dispatchedAt);
+		// A valid verification is consumed whatever the Kernel does next; a failed one keeps
+		// every finding, and its tab stays open for inspection (D5).
+		const session = pending.dispatch.reservation.verification_session;
+		return session && consumed.attestation.valid && result.state !== "blocked" && result.state !== "settlement_unknown"
+			? { ...result, stop_command: session.stop_command } : result;
 	}
 
 	private async applyVerifiedReview(taskId: string, ctx: HostContext, review: ReviewReservation, verdict: AssuranceVerdict, verdictSha256: string,

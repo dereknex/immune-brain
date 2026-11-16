@@ -15,7 +15,7 @@ import { ClaudeRuntime } from "../plugins/immune-brain/runtime/claude/kernel_por
 import { AntigravityRuntime } from "../plugins/immune-brain/runtime/antigravity/kernel_ports";
 import { PiRuntime } from "../plugins/immune-brain/.pi-extension/pi-host-runtime";
 import { runtimeClaudePluginDir } from "../plugins/immune-brain/runtime/plugin_source_skew";
-import { CliReviewHost, resolveAuthorityReviewSkillPath, resolveReviewProfile, reviewArguments, sessionHostArguments, verificationArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
+import { CLAUDE_REVIEW_SETTINGS, CliReviewHost, REVIEW_GIT_ALLOWED_TOOLS, resolveReviewProfile, sessionHostArguments } from "../plugins/immune-brain/runtime/assurance/cli_review";
 import type { AssuranceHostPort, HostReviewReservation, ReviewRequest, ReviewSessionSpec, VerificationRequest } from "../plugins/immune-brain/runtime/assurance/host_port";
 import { submitMediatedReview } from "../plugins/immune-brain/runtime/assurance/review_mediation";
 import { digestOfReviewerBytes } from "../plugins/immune-brain/runtime/assurance/review_mediation";
@@ -612,12 +612,22 @@ describe("verification CLI stage", () => {
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null, result_sha256: null });
 	});
 
+	test("a verifier session that stopped without writing its receipt keeps every finding instead of reading as pending", async () => {
+		const root = reviewRepo();
+		const { kernel, pending } = await reworkToVerification(root);
+		const session = pending.verification_session!;
+		// The Parent's await recorded that the session ended; no output file exists.
+		writeFileSync(join(dirname(session.output_path), "session-await.json"), JSON.stringify({ ok: true, transition: "exited" }));
+		expect((await kernel.coordinator.submitVerification(TASK, ctx(root))).state).toBe("rework");
+		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({ failure: "dispatch_failed", verifier_actor: null });
+	});
+
 	test("a configured verifier model is offered and used, so the verifier runs on a different model (#284 D1)", async () => {
 		const root = reviewRepo("pi", { review_model: "reviewer-m", review_verifier_model: "verifier-m" });
 		const { kernel, pending } = await reworkToVerification(root);
 		const session = pending.verification_session!;
 		// The model reaches the session's Host arguments; the sentinel never does.
-		expect(session.create_command).toContain("'--' '--model' 'verifier-m'");
+		expect(session.create_command).toContain("'--model' 'verifier-m'");
 		writeFileSync(session.output_path, verificationJsonFor(session));
 		await kernel.coordinator.submitVerification(TASK, ctx(root));
 		expect(reviewsOf(kernel).at(-1)!.verification).toMatchObject({
@@ -776,7 +786,10 @@ describe("explicit review session", () => {
 		const session = ready.review_session!;
 		expect(session.transport).toBe("herdr");
 		expect(session.create_command).toMatch(/bin\/imm-session' 'create' '--provider' 'herdr' '--cwd' '\S+' '--label' 'review cli-review-task' '--host' 'pi' '--entry' /);
-		expect(session.await_command).toMatch(/'await' '--provider' 'herdr' '<handle>'$/);
+		// `await` copies its result beside the receipt, so a stopped session is told from a running one.
+		expect(session.await_command).toMatch(/'await' '--provider' 'herdr' '<handle>' \| tee '\S+\/session-await\.json'$/);
+		// A startup dialog holds the entry back; resume submits it in the same session, before the Host arguments.
+		expect(session.resume_command).toBe(session.create_command.replace(" '--' ", " '--resume' '<handle>' '--' "));
 		expect(session.stop_command).toMatch(/'stop' '--provider' 'herdr' '<handle>'$/);
 		// The receipt channel is out of tree and is one JSON file.
 		expect(session.output_path.endsWith(".json")).toBe(true);
@@ -816,6 +829,7 @@ describe("explicit review session", () => {
 		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
 		expect(settled).toMatchObject({ state: "blocked" });
 		expect((settled as { reason: string }).reason).toContain("review_output_invalid");
+		expect(settled).not.toHaveProperty("stop_command");
 		expect(kernel.coordinator.active(TASK)).toBeNull();
 		expect(reviewsOf(kernel)).toHaveLength(0);
 		// Preparation launches nothing itself (BR-OUT-1), and a failed round runs no stop.
@@ -852,11 +866,61 @@ describe("explicit review session", () => {
 		const created = runSessionVerb(session.create_command);
 		writeFileSync(session.output_path, `${JSON.stringify(verdict)}\n`);
 		runSessionVerb(session.await_command, String(created.handle));
-		expect(await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK)))
-			.toMatchObject({ state: "rework" });
-		expect(runSessionVerb(session.stop_command, String(created.handle))).toMatchObject({ ok: true });
+		const consumed = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		// The consumed result itself names the stop, so the Parent need not carry it from review_ready.
+		expect(consumed).toMatchObject({ state: "rework", stop_command: session.stop_command });
+		expect(runSessionVerb(consumed.stop_command!, String(created.handle))).toMatchObject({ ok: true });
 		const panes = Object.values(JSON.parse(readFileSync(state, "utf8")).panes) as Array<{ closed: boolean }>;
 		expect(panes.every((pane) => pane.closed)).toBe(true);
+	});
+
+	test("a session that stopped without writing its receipt ends the round instead of reading as still running", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		const state = enterHerdr();
+		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root)) as { review_session?: ReviewSessionSpec };
+		const session = ready.review_session!;
+		const created = runSessionVerb(session.create_command);
+		// The agent goes idle without writing output_path; the Parent's await returns.
+		expect(runSessionVerb(session.await_command, String(created.handle))).toMatchObject({ ok: true, transition: "changed" });
+
+		const settled = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect(settled).toMatchObject({ state: "blocked" });
+		expect((settled as { reason: string }).reason).toContain("review_session_aborted");
+		expect((settled as { reason: string }).reason).not.toContain("still running");
+		expect(settled).not.toHaveProperty("stop_command");
+		// The reservation is released, so the next advance prepares a fresh round; the tab is left open.
+		expect(kernel.coordinator.active(TASK)).toBeNull();
+		expect(reviewsOf(kernel)).toHaveLength(0);
+		const panes = Object.values(JSON.parse(readFileSync(state, "utf8")).panes) as Array<{ closed: boolean }>;
+		expect(panes.some((pane) => !pane.closed)).toBe(true);
+	});
+
+	test("a session blocked on a dialog keeps the round open and points at the user instead of aborting", async () => {
+		const root = reviewRepo("pi", { review_transport: "herdr" });
+		const kernel = kernelFor(root);
+		enterHerdr();
+		onPath([fakeReviewer("exit 0"), join(__dirname, "fixtures/fake-herdr")].join(":"));
+		const ready = await kernel.coordinator.advance(TASK, ctx(root)) as { review_session?: ReviewSessionSpec };
+		const session = ready.review_session!;
+		// A startup dialog (workspace trust) ends the await with `changed` to `blocked`.
+		writeFileSync(join(dirname(session.output_path), "session-await.json"), JSON.stringify({ ok: true, transition: "changed", state: "blocked" }));
+
+		const pending = await submitMediatedReview(kernel.coordinator, ctx(root), TASK, undefined, () => kernel.cli.inspectReview(TASK));
+		expect((pending as { reason: string }).reason).toContain("blocked on a dialog");
+		expect((pending as { reason: string }).reason).not.toContain("review_session_aborted");
+		expect(kernel.coordinator.active(TASK)).not.toBeNull();
+	});
+
+	test("outside Herdr the transport is refused before the reviewer executable is looked up", async () => {
+		const root = reviewRepo();
+		const kernel = kernelFor(root);
+		onPath(scratchDir("empty-path"));
+		delete process.env.HERDR_ENV;
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_transport_unavailable" });
+		expect((ready as { recovery_action: string }).recovery_action).toContain("Herdr");
 	});
 
 });
@@ -866,26 +930,34 @@ describe("explicit review session", () => {
 describe("explicit session launch arguments", () => {
 	const output = "/tmp/imm-cli-review-x/review-output-op-1.json";
 
-	test("claude-code allowlists Write for the reservation's single out-of-tree file", () => {
+	test("claude-code keeps the read-only reviewer boundary and allows one write: the reservation's out-of-tree file", () => {
 		const argv = sessionHostArguments({ host: "claude-code", model: "m", effort: "high" }, { outputPath: output, readDirs: ["/tmp/imm-cli-review-x"] });
-		expect(argv[argv.indexOf("--allowedTools") + 1]).toBe(`Write(${output})`);
-		expect(argv.filter((arg) => arg.startsWith("Write("))).toHaveLength(1);
+		// Hooks off, so no user rewrite (`rtk git ...`) escapes the git allowlist (#426 F11).
+		expect(argv[argv.indexOf("--settings") + 1]).toBe(CLAUDE_REVIEW_SETTINGS);
+		expect(JSON.parse(CLAUDE_REVIEW_SETTINGS)).toMatchObject({ disableAllHooks: true });
+		expect(argv[argv.indexOf("--tools") + 1]).toBe("Read,Grep,Glob,Bash,Write");
+		expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+		// Variadic allowlist: the git rules, then the single write rule, then the next flag.
+		const allowed = argv.slice(argv.indexOf("--allowedTools") + 1, argv.indexOf("--permission-mode"));
+		// Claude Code governs Write through Edit rules, and an absolute path takes a leading `//`.
+		expect(allowed).toEqual([...REVIEW_GIT_ALLOWED_TOOLS, `Edit(/${output})`]);
+		expect(allowed.filter((rule) => !rule.startsWith("Bash(git "))).toEqual([`Edit(//tmp/imm-cli-review-x/review-output-op-1.json)`]);
 		expect(argv.slice(argv.indexOf("--add-dir") + 1, argv.indexOf("--add-dir") + 2)).toEqual(["/tmp/imm-cli-review-x"]);
 		expect(argv[argv.indexOf("--model") + 1]).toBe("m");
 		expect(argv[argv.indexOf("--effort") + 1]).toBe("high");
 		expect(argv).not.toContain("--print");
 	});
 
-	test("pi and antigravity carry the profile's model and effort, and no write allowlist", () => {
+	test("pi runs its read-only tools plus write, and antigravity carries only the profile's model and effort", () => {
 		expect(sessionHostArguments({ host: "pi", model: "m", effort: "high" }, { outputPath: output }))
-			.toEqual(["--model", "m", "--thinking", "high"]);
+			.toEqual(["--tools", "read,grep,find,ls,bash,write", "--model", "m", "--thinking", "high"]);
 		expect(sessionHostArguments({ host: "antigravity", model: "m", effort: "high" }, { outputPath: output }))
 			.toEqual(["--model", "m", "--effort", "high"]);
-		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "verifier-m" })).toEqual(["--model", "verifier-m"]);
+		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "verifier-m" }))
+			.toEqual(["--tools", "read,grep,find,ls,bash,write", "--model", "verifier-m"]);
 		// A host with no configured model keeps its own default; the sentinel is never a model flag.
-		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "host-default" })).toEqual([]);
-		expect(sessionHostArguments({ host: "claude-code" }, { outputPath: output, model: "host-default" }))
-			.toEqual(["--allowedTools", `Write(${output})`]);
+		expect(sessionHostArguments({ host: "pi" }, { outputPath: output, model: "host-default" })).toEqual(["--tools", "read,grep,find,ls,bash,write"]);
+		expect(sessionHostArguments({ host: "claude-code" }, { outputPath: output, model: "host-default" })).not.toContain("--model");
 	});
 
 	test("the layered transport reaches the profile, and a Lane batch keeps it", () => {

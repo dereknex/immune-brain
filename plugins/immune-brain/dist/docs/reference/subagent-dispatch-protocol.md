@@ -159,7 +159,8 @@ Authority Review runs no Agent dispatch. The Parent runs the returned
 `review_session`: `create_command` opens one interactive reviewer in the task's
 working directory, `await_command` waits once for the printed handle, and
 `submit_review` follows the receipt. `stop_command` runs only after the Kernel
-consumed a valid receipt. Outside Herdr preparation fails closed with
+consumed a valid receipt, and the consuming result returns it; a session that
+ended without writing its receipt returns `review_session_aborted`. Outside Herdr preparation fails closed with
 `review_transport_unavailable` and one same-Host recovery action; there is no
 hidden process fallback. The runtime writes
 `review-packet-<operation>.md` beside `evidence.json` without changing the

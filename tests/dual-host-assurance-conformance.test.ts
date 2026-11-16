@@ -889,18 +889,18 @@ describe("dual-host assurance conformance", () => {
 	test("Claude independently completes routine, material, and critical projections", async () => {
 		const routine = sharedKernel("routine");
 		const r = routine.claude();
-		expect(await r.coordinator.advance(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await r.coordinator.advance(TASK, ctx)).toMatchObject({ state: "completed" });
 
 		const material = sharedKernel("material");
 		const m = material.claude();
 		const ready = await m.coordinator.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		expect(await settleCli(m.coordinator, ready, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
+		expect(await settleCli(m.coordinator, ready, passVerdict(snapshot("review", "material")))).toMatchObject({ state: "completed" });
 
 		const critical = sharedKernel("critical");
 		const c = critical.claude();
 		const critReady = await c.coordinator.advance(TASK, ctx);
-		expect(await settleCli(c.coordinator, critReady, passVerdict(snapshot("review", "critical")))).toEqual({ state: "completed" });
+		expect(await settleCli(c.coordinator, critReady, passVerdict(snapshot("review", "critical")))).toMatchObject({ state: "completed" });
 	});
 
 	test("Pi resumes a Claude-frozen run_review task without handoff state", async () => {
@@ -913,7 +913,7 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
@@ -927,7 +927,7 @@ describe("dual-host assurance conformance", () => {
 		const claude = kernel.claude();
 		const resumed = await claude.coordinator.advance(TASK, ctx);
 		expect(resumed.state).toBe("review_ready");
-		expect(await settleCli(claude.coordinator, resumed as { operation_id: string }, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, resumed as { operation_id: string }, passVerdict(snapshot("review", "material")))).toMatchObject({ state: "completed" });
 		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 
@@ -939,7 +939,7 @@ describe("dual-host assurance conformance", () => {
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx); // freezes artifacts, runs QA
 		expect(ready.state).toBe("review_ready");
-		expect(await settleCli(claude.coordinator, ready as { operation_id: string }, passVerdict(snapshot("review", "material")))).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, ready as { operation_id: string }, passVerdict(snapshot("review", "material")))).toMatchObject({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(2);
 	});
 
@@ -965,7 +965,7 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 	});
 
 	test("session disconnect mid-QA aborts in-flight work and the other host resumes", async () => {
@@ -989,23 +989,23 @@ describe("dual-host assurance conformance", () => {
 		const pi = kernel.pi();
 		const resumed = await pi.advance(TASK, ctx as never);
 		expect(resumed.state).toBe("review_ready");
-		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 	});
 
 	test("critical Review completes on the originating host", async () => {
 		const kernel = sharedKernel("critical");
 		const claude = kernel.claude();
 		const ready = await claude.coordinator.advance(TASK, ctx);
-		expect(await settleCli(claude.coordinator, ready, passVerdict(snapshot("review", "critical")))).toEqual({ state: "completed" });
+		expect(await settleCli(claude.coordinator, ready, passVerdict(snapshot("review", "critical")))).toMatchObject({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(2);
 	});
 
 	test("terminal projections reconcile idempotently on both hosts", async () => {
 		const kernel = sharedKernel("material");
 		kernel.done();
-		expect(await kernel.pi().advance(TASK, ctx as never)).toEqual({ state: "completed" });
+		expect(await kernel.pi().advance(TASK, ctx as never)).toMatchObject({ state: "completed" });
 		kernel.releaseClaim();
-		expect(await kernel.claude().coordinator.advance(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await kernel.claude().coordinator.advance(TASK, ctx)).toMatchObject({ state: "completed" });
 		expect(kernel.applyCounts.value).toBe(0); // no re-settlement of a terminal task
 		expect(kernel.executionCounts).toEqual({ qa: 0, completion: 0 });
 	});
@@ -1020,7 +1020,7 @@ describe("dual-host assurance conformance", () => {
 		const resumed = await pi.advance(TASK, ctx as never); // reconciles run_review without re-running QA
 		expect(resumed.state).toBe("review_ready");
 		expect(kernel.applyCounts.value).toBe(1);
-		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await pi.submitReview(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 		expect(kernel.executionCounts).toEqual({ qa: 1, completion: 1 });
 	});
 

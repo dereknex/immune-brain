@@ -66,7 +66,7 @@ describe("foreground assurance progression", () => {
 
 	test("routine completes after deterministic QA without reserving Review", async () => {
 		const h = makeHarness({ risk: "routine" });
-		expect(await h.progression.advance(TASK, ctx)).toEqual({ state: "completed" });
+		expect(await h.progression.advance(TASK, ctx)).toMatchObject({ state: "completed" });
 		expect(h.progression.active(TASK)).toBeNull();
 		expect(h.counts()).toEqual({ applyCount: 1, removeCount: 0, evidenceCount: 0 });
 	});
@@ -307,7 +307,7 @@ describe("foreground assurance progression", () => {
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
 		const submitted = await submitObserved(h.progression, TASK, passVerdict(snapshot("review")));
-		expect(submitted).toEqual({ state: "completed" });
+		expect(submitted).toMatchObject({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 		const duplicate = await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")));
 		expect(duplicate).toMatchObject({ state: "blocked" });
@@ -317,7 +317,7 @@ describe("foreground assurance progression", () => {
 		const h = makeHarness({ risk: "critical" });
 		const ready = await h.progression.advance(TASK, ctx);
 		expect(ready.state).toBe("review_ready");
-		expect(await submitObserved(h.progression, TASK, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await submitObserved(h.progression, TASK, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
@@ -337,7 +337,7 @@ describe("foreground assurance progression", () => {
 		expect((omitted as { reason: string }).reason).toContain("omits reviewed changed paths");
 		expect(h.counts().applyCount).toBe(1);
 		// Positive control: the exact change set settles through the same reservation.
-		expect(await h.progression.submitMediated(TASK, ctx, claim(["src/change.ts"]))).toEqual({ state: "completed" });
+		expect(await h.progression.submitMediated(TASK, ctx, claim(["src/change.ts"]))).toMatchObject({ state: "completed" });
 		expect(h.counts().applyCount).toBe(2);
 	});
 
@@ -352,7 +352,7 @@ describe("foreground assurance progression", () => {
 			findings: [{ id: "note-1", kind: "advisory", acceptance_id: null, summary: "note", severity: "low",
 				evidence: { trigger: "the note is advisory", caller_chain: ["src/change.ts"], violated: { kind: "acceptance", ref: "A1" } } }] };
 		runReservedReview(ready, noisy);
-		expect(await h.progression.submitMediated(TASK, ctx, noisy)).toEqual({ state: "completed" });
+		expect(await h.progression.submitMediated(TASK, ctx, noisy)).toMatchObject({ state: "completed" });
 	});
 
 	test("malformed Parent verdict is retryable without a Review authority write", async () => {
@@ -367,7 +367,7 @@ describe("foreground assurance progression", () => {
 		const repeatedAdvance = await h.progression.advance(TASK, ctx);
 		expect(repeatedAdvance).toMatchObject({ state: "blocked", code: "verdict_invalid" });
 		expect(repeatedAdvance).not.toHaveProperty("agent_params");
-		expect(await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).toEqual({ state: "completed" });
+		expect(await h.progression.submitMediated(TASK, ctx, passVerdict(snapshot("review")))).toMatchObject({ state: "completed" });
 	});
 	test("discards a stale Review reservation when Kernel no longer requires Review", async () => {
 		let qaSettled = false;
