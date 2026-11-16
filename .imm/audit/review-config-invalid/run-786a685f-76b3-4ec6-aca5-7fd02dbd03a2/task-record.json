@@ -1,0 +1,217 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "review-config-invalid",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "review-config-invalid",
+    "goal": "Issue #455 (Spec docs/specs/review-config-invalid.spec.md, D1-D7). Review preparation reports an invalid user agents table as review_config_invalid naming the file and key path, warns on review_ready when it runs on the legacy lanes fallback, and its recovery texts name agents.profiles/agents.presets instead of lanes.review_host; drive.md and the config reference follow. Execution posture: test-first on tests/cli-review-dispatch.test.ts.",
+    "acceptance": [
+      {
+        "id": "RCI-A1",
+        "assertion": "In tests/cli-review-dispatch.test.ts, a user agents table whose only code-review profile has host \"codex\" and no project lanes makes coordinator.advance return review_preparation_failed with code review_config_invalid, a reason naming the user config file and agents.profiles.review.host, and a recovery_action naming agents.profiles.review.host and advance_assurance, with QA settlement retained; the same table with a valid host returns review_ready (Spec D1, BR-SCN-1).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RCI-A2",
+        "assertion": "In tests/cli-review-dispatch.test.ts, the same invalid agents table plus project lanes.review_host pi makes coordinator.advance return review_ready on host pi with exactly one warnings entry of code review_legacy_profile whose message names lanes and agents; a valid agents table and a legacy-only config each return review_ready without warnings (Spec D4, BR-SCN-2).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RCI-A3",
+        "assertion": "In tests/cli-review-dispatch.test.ts, a config with no review profile still returns review_profile_required, and both its recovery_action and the review_host_unavailable recovery_action contain agents.profiles and do not contain lanes.review_host (Spec D2, D3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RCI-A4",
+        "assertion": "plugins/immune-brain/dist/drive.md and docs/reference/immune-brain-config.md both name review_config_invalid, and the dist mirror of the config reference stays byte-identical per bun scripts/sync-dist-docs.ts --check (Spec D6).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q review_config_invalid plugins/immune-brain/dist/drive.md && grep -q review_config_invalid docs/reference/immune-brain-config.md && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "RCI-A5",
+        "assertion": "bun run typecheck passes over the whole repository, so the widened ReviewPreparationError code union and the optional warnings fields are consistent for every Host (Spec section 3).",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/review-config-invalid.md",
+      "docs/plans/review-config-invalid.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/review-config-invalid.spec.md",
+      "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+      "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain-antigravity/dist/drive.md",
+      "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain-antigravity/runtime/assurance/host_port.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/dist/drive.md",
+      "plugins/immune-brain/runtime/assurance/cli_review.ts",
+      "plugins/immune-brain/runtime/assurance/coordinator.ts",
+      "plugins/immune-brain/runtime/assurance/host_port.ts",
+      "tests/cli-review-dispatch.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/review-config-invalid.intent.json",
+    "content_hash": "sha256:65b3cad23ea12f771fdcd96d380ca14b7fa2d89457532f3e35a8cc3e921c0d08"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:65b3cad23ea12f771fdcd96d380ca14b7fa2d89457532f3e35a8cc3e921c0d08",
+  "git_base_head": "8e0350f40e7c302c7199a52dc07e9add0ec07cfe",
+  "attestations": [
+    {
+      "id": "approval-qa-e7407a0d",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:65b3cad23ea12f771fdcd96d380ca14b7fa2d89457532f3e35a8cc3e921c0d08",
+      "diff_hash": "sha256:7ab8f7d9b4af25be7e80be561d074d12a00133fe2a168316fe26a2564743e6b4",
+      "actor_id": "deterministic-qa",
+      "summary": "all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4",
+      "acceptance_results": [
+        {
+          "acceptance_id": "RCI-A1",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4"
+        },
+        {
+          "acceptance_id": "RCI-A2",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4"
+        },
+        {
+          "acceptance_id": "RCI-A3",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4"
+        },
+        {
+          "acceptance_id": "RCI-A4",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4"
+        },
+        {
+          "acceptance_id": "RCI-A5",
+          "status": "passed",
+          "summary": "host-attested QA: all 6 project verification check(s) passed; execution=sha256:fdeffc26b05de7bd17677358d1a6aa98f9f397f2603994e018dd2e3e1c6645a4"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-ec26860c",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:65b3cad23ea12f771fdcd96d380ca14b7fa2d89457532f3e35a8cc3e921c0d08",
+      "diff_hash": "sha256:7ab8f7d9b4af25be7e80be561d074d12a00133fe2a168316fe26a2564743e6b4",
+      "actor_id": "cli:claude-code:99625660-4336-424b-9c11-bb088f73df41",
+      "summary": "prepareReview now raises review_config_invalid with file+key_path from agents diagnostics when no profile resolves and agents.valid is false, adds a review_legacy_profile warning only for config-resolved legacy fallback (not request/batch), reviewReadyDispatch forwards warnings on both fresh and replayed review_ready, recovery texts name agents.profiles, docs/dist mirrors and both bundles match source (antigravity copies share blob OIDs); tests at the coordinator.advance seam cover RCI-A1..A3 with negative controls; blast radius medium: runtime/assurance/cli_review.ts prepareReview and the additive review_ready/ReviewPreparationError contract in coordinator.ts/host_port.ts, no persisted shape change.",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "8e0350f40e7c302c7199a52dc07e9add0ec07cfe",
+        "review_commit": "010dc1e10cc2524528656b5f6a6825d644cffc09",
+        "review_tree": "3ab31bf3ccee48bc3df6f5ee54eb671cc098a79f",
+        "manifest_digest": "sha256:223ff66509fbd7f0b16c8b128623777bac1eabbe0b9b1caae9cef102b9362852"
+      },
+      "reviewer_verdict_sha256": "sha256:0817dc944e92ce42529f9b0507f413da36f10840881f2aa39f0741c839100166"
+    }
+  ],
+  "findings": [
+    {
+      "id": "qa-RCI-A4-9f66f963-c72430",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "RCI-A4",
+      "source": "execution",
+      "review_round": null,
+      "summary": "verification failed (exit 1) stdout=0B stderr=0B",
+      "anchor": null,
+      "evidence": null,
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:review-config-invalid:2026-11-16T14:33:18.017Z",
+      "at": "2026-11-16T14:33:18.017Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-config-invalid.intent.json"
+    },
+    {
+      "id": "request_rework:review-config-invalid:2026-11-16T14:33:48.029Z",
+      "at": "2026-11-16T14:33:48.029Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:c2d0bdcabbef6ec1770af84a13bc0301cefafe74c6d6bbe996c463c5d5d34e58",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-16T14:33:48.029Z"
+      }
+    },
+    {
+      "id": "resolve_finding:review-config-invalid:2026-11-16T14:43:15.502Z",
+      "at": "2026-11-16T14:43:15.502Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "qa-RCI-A4-9f66f963-c72430\naction_v2_sha256:059aa172abc8695a7d5375d0e34f943f8f5079f38c7c22f33020e7808c5353ca"
+    },
+    {
+      "id": "freeze_artifacts:review-config-invalid:2026-11-16T14:43:25.236Z",
+      "at": "2026-11-16T14:43:25.236Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/review-config-invalid.intent.json"
+    },
+    {
+      "id": "record_approval:review-config-invalid:2026-11-16T14:43:57.285Z",
+      "at": "2026-11-16T14:43:57.285Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-e7407a0d\naction_v2_sha256:d89c6a19c487667eac569ae4c9fcc0874299c8d50aed69418856f1d608d058a4",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-16T14:43:57.285Z"
+      }
+    },
+    {
+      "id": "record_approval:review-config-invalid:2026-11-16T14:45:46.460Z",
+      "at": "2026-11-16T14:45:46.460Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-ec26860c\naction_v2_sha256:c844ec3798934b5a37806ae0ccda6750d228f63d4425bcb52d557da669e82456",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:99625660-4336-424b-9c11-bb088f73df41",
+        "confirmation_ref": "pi:cli:claude-code:99625660-4336-424b-9c11-bb088f73df41",
+        "issued_at": "2026-11-16T14:45:46.460Z"
+      },
+      "review_started_at": "2026-11-16T14:44:00.985Z",
+      "review_submitted_at": "2026-11-16T14:45:45.585Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:review-config-invalid:2026-11-16T14:45:49.063Z",
+      "at": "2026-11-16T14:45:49.063Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:0d71bd983e7421afd5ab020c47949c23aeadc9fcaacf552c494770683fa0eeeb"
+    }
+  ]
+}

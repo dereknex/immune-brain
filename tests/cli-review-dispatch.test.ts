@@ -546,7 +546,9 @@ describe("review profile required", () => {
 		const kernel = kernelFor(root);
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_profile_required" });
-		expect((ready as { recovery_action: string }).recovery_action).toContain("lanes.review_host");
+		const recovery = (ready as { recovery_action: string }).recovery_action;
+		expect(recovery).toContain("agents.profiles");
+		expect(recovery).not.toContain("lanes.review_host");
 		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
 		expect(reviewsOf(kernel)).toHaveLength(0);
 	});
@@ -562,6 +564,9 @@ describe("review profile required", () => {
 		process.env.PATH = bin;
 		const ready = await kernel.coordinator.advance(TASK, ctx(root));
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_host_unavailable" });
+		const recovery = (ready as { recovery_action: string }).recovery_action;
+		expect(recovery).toContain("agents.profiles");
+		expect(recovery).not.toContain("lanes.review_host");
 		expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
 	});
 
@@ -570,6 +575,71 @@ describe("review profile required", () => {
 		const kernel = kernelFor(root, { risk: "routine" });
 		expect(await kernel.coordinator.advance(TASK, ctx(root))).toMatchObject({ state: "completed" });
 		expect(kernel.applied.map((entry) => entry.role)).toEqual(["qa"]);
+	});
+});
+
+// --- review-config-invalid: an invalid `agents` table ----------------------
+
+const userConfigPath = () => join(process.env.XDG_CONFIG_HOME!, "immune-brain", "config.json");
+/** The S1-AC3 table shape, with one code-review host the user got wrong. */
+const invalidAgents = { profiles: { review: { host: "codex" } }, presets: { default: { roles: { "*": "review" } } } };
+const validAgents = { profiles: { review: { host: "pi" } }, presets: { default: { roles: { "*": "review" } } } };
+
+describe("invalid agents configuration", () => {
+	test("an invalid user agents table names the file and key path instead of review_profile_required (RCI-A1)", async () => {
+		const root = reviewRepo(null);
+		const kernel = kernelFor(root);
+		const cleanup = homeAgents(invalidAgents);
+		try {
+			const ready = await kernel.coordinator.advance(TASK, ctx(root));
+			expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_config_invalid" });
+			const failure = ready as { reason: string; recovery_action: string };
+			expect(failure.reason).toContain(userConfigPath());
+			expect(failure.reason).toContain("agents.profiles.review.host");
+			expect(failure.recovery_action).toContain("agents.profiles.review.host");
+			expect(failure.recovery_action).toContain("advance_assurance");
+			// QA stays earned: the same revision resumes once the table is fixed.
+			expect(kernel.applied.filter((entry) => entry.role === "qa")).toHaveLength(1);
+			expect(reviewsOf(kernel)).toHaveLength(0);
+		} finally { cleanup(); }
+	});
+
+	test("the same table with a valid host reaches review_ready without warnings (RCI-A1 control)", async () => {
+		const root = reviewRepo(null);
+		const kernel = kernelFor(root);
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
+		const cleanup = homeAgents(validAgents);
+		try {
+			const ready = await kernel.coordinator.advance(TASK, ctx(root));
+			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi" } });
+			expect(ready).not.toHaveProperty("warnings");
+		} finally { cleanup(); }
+	});
+
+	test("the legacy lanes profile still reviews, and review_ready says why (RCI-A2)", async () => {
+		const root = reviewRepo("pi");
+		const kernel = kernelFor(root);
+		onPath(fakeReviewer("exit 0"));
+		enterHerdr();
+		const cleanup = homeAgents(invalidAgents);
+		try {
+			const ready = await kernel.coordinator.advance(TASK, ctx(root));
+			expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi" } });
+			const warnings = (ready as { warnings: Array<{ code: string; paths: string[]; message: string }> }).warnings;
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toMatchObject({ code: "review_legacy_profile", paths: [userConfigPath()] });
+			expect(warnings[0]!.message).toContain("lanes");
+			expect(warnings[0]!.message).toContain("agents");
+		} finally { cleanup(); }
+	});
+
+	test("a legacy-only config reviews without a warning (RCI-A2 control)", async () => {
+		const root = reviewRepo("pi");
+		const kernel = kernelFor(root);
+		const ready = await kernel.coordinator.advance(TASK, ctx(root));
+		expect(ready).toMatchObject({ state: "review_ready", review_profile: { host: "pi" } });
+		expect(ready).not.toHaveProperty("warnings");
 	});
 });
 
@@ -767,7 +837,8 @@ describe("default profile required", () => {
 
 		expect(ready).toMatchObject({ state: "review_preparation_failed", code: "review_profile_required" });
 		expect(typeof ready.recovery_action).toBe("string");
-		expect(ready.recovery_action).toContain("lanes.review_host");
+		expect(ready.recovery_action).toContain("agents.profiles");
+		expect(ready.recovery_action).not.toContain("lanes.review_host");
 	});
 
 	test("a routine task completes after QA without a profile", async () => {

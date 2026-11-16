@@ -138,9 +138,12 @@ preset with `agents.active`.
 - `review-verifier` must run on `code-review`'s host
   (`review_verifier_host_mismatch`); only its model may differ.
 - Any error in the section falls the whole `agents` section back to the legacy
-  `lanes` mapping, else to built-in resolution: Review keeps
-  `review_profile_required`, the Lane executor keeps the Parent Host, and the loop
-  roles keep `claude-code`.
+  `lanes` mapping, else to built-in resolution. Review then reports
+  `review_config_invalid` naming the file and key path to fix; when the legacy
+  `lanes` mapping provides the profile, `review_ready` carries a
+  `review_legacy_profile` warning instead. With no `code-review` binding and a
+  valid section Review keeps `review_profile_required`. The Lane executor keeps
+  the Parent Host, and the loop roles keep `claude-code`.
 - A request may name a preset for one batch; it overrides `active` for that batch
   alone.
 

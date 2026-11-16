@@ -13544,9 +13544,10 @@ function deriveAssuranceRecovery(taskId, fresh, result, findings = []) {
   };
 }
 function reviewReadyDispatch(reservation) {
+  const warnings = reservation.warnings?.length ? { warnings: reservation.warnings } : {};
   if (reservation.review_session)
-    return { review_session: reservation.review_session, review_profile: reservation.review_profile };
-  return { agent_params: reservation.dispatch };
+    return { review_session: reservation.review_session, review_profile: reservation.review_profile, ...warnings };
+  return { agent_params: reservation.dispatch, ...warnings };
 }
 function reviewDispatchFailure(error) {
   return error instanceof ReviewPreparationError ? { code: error.code, recovery_action: error.recovery_action } : undefined;
@@ -23581,7 +23582,7 @@ import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
 import { delimiter as delimiter5, dirname as dirname18, join as join37 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
-var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
+var REVIEW_PROFILE_RECOVERY = "Set the `code-review` role on a profile in the user `agents.profiles` / `agents.presets` table, then call `advance_assurance`";
 var REVIEW_BINARY = {
   "claude-code": "claude",
   pi: "pi",
@@ -23633,7 +23634,7 @@ function reviewBinary(host) {
 function requireReviewBinary(profile) {
   if (reviewBinary(profile.host))
     return;
-  throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+  throw new ReviewPreparationError("review_host_unavailable", `review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`, `Install ${REVIEW_BINARY[profile.host]} on PATH or bind another host in \`agents.profiles\` in the user config, then call \`advance_assurance\``);
 }
 function reviewSessionRunner(env = process.env) {
   if (env.HERDR_ENV !== "1" || !env.HERDR_WORKSPACE_ID) {
@@ -23675,14 +23676,14 @@ function treeChanged(root, recorded) {
 function shellQuote(value) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
-function resolveReviewProfile(root) {
-  const batch = laneBatchReviewProfile(root);
-  if (batch)
-    return { ...batch, transport: "herdr" };
-  const role = agentRole(resolveConfig(root).agents, "code-review");
+function agentReviewProfile(agents) {
+  const role = agentRole(agents, "code-review");
   if (!role?.host)
     return null;
   return { host: role.host, ...role.model ? { model: role.model } : {}, ...role.effort ? { effort: role.effort } : {}, transport: "herdr" };
+}
+function isAgentKeyPath(keyPath) {
+  return keyPath === "agents" || keyPath.startsWith("agents.") || /^projects\.[^.]+\.agents(\.|$)/.test(keyPath);
 }
 function sessionSpec(runner, label, input) {
   const command = (verb, ...argv) => [runner, verb, "--provider", "herdr", ...argv].map(shellQuote).join(" ");
@@ -23833,9 +23834,16 @@ ${writeToOutput(output)}`,
     if (!request.root)
       throw new Error("CLI Review requires the task's working directory");
     const root = request.root;
-    const profile = request.profile ?? resolveReviewProfile(root);
-    if (!profile)
+    const config = resolveConfig(root);
+    const batch = request.profile ? null : laneBatchReviewProfile(root);
+    const configured = request.profile || batch ? null : agentReviewProfile(config.agents);
+    const profile = request.profile ?? (batch ? { ...batch, transport: "herdr" } : configured);
+    const agentErrors = config.diagnostics.filter((item) => item.severity === "error" && isAgentKeyPath(item.key_path));
+    if (!profile) {
+      if (!config.agents.valid && agentErrors.length)
+        throw new ReviewPreparationError("review_config_invalid", `the \`agents\` configuration is invalid: ${agentErrors.map((item) => `${item.file}: ${item.key_path} (${item.message})`).join("; ")}`, `Fix ${agentErrors.map((item) => `\`${item.key_path}\` in ${item.file}`).join(", ")}, then call \`advance_assurance\``);
       throw new ReviewPreparationError("review_profile_required", "Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
+    }
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
     const tree = reviewTreeState(root);
@@ -23876,7 +23884,12 @@ ${writeToOutput(output, true)}`,
       dispatch: { review_session: session, review_profile: profile },
       review_session: session,
       review_profile: profile,
-      review_actor_id: actorId
+      review_actor_id: actorId,
+      ...configured && !config.agents.valid && config.agents.source.value === "legacy" ? { warnings: [{
+        code: "review_legacy_profile",
+        paths: [...new Set(agentErrors.map((item) => item.file))],
+        message: `Review uses the legacy \`lanes\` profile because the \`agents\` configuration is invalid: ${agentErrors[0]?.key_path ?? "agents"}`
+      }] } : {}
     };
   }
   inspectReview(taskId) {

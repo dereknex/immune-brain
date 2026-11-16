@@ -167,9 +167,16 @@ from the [batch contract](drive-batch.md#unattended-batch-opt-in).
    without `stop_command` is a failure and the tab stays open for inspection.
    A session that stopped without writing the file returns
    `review_session_aborted` and releases the round. A `review_preparation_failed`
-   result with `review_profile_required` means no `lanes.review_host` resolves:
-   set it in the active user lane profile or in `.imm/config.json`, then call
-   `advance_assurance`; QA settlement is retained. `review_transport_unavailable`
+   result with `review_profile_required` means no profile binds `code-review`:
+   set that role in the user `agents.profiles` / `agents.presets` table, then call
+   `advance_assurance`; QA settlement is retained. The same result with
+   `review_config_invalid` means the user `agents` table itself is invalid: its
+   `reason` names the file and key path to fix, `recovery_action` names the same
+   value, and QA settlement is retained. A `review_ready` result carrying a
+   `warnings` entry of code `review_legacy_profile` means Review runs on the
+   deprecated `lanes` profile because the `agents` configuration is invalid:
+   relay the warning, and fix the named key to leave the fallback.
+   `review_transport_unavailable`
    means this Host is not inside Herdr: run the Lane inside Herdr, then call
    `advance_assurance`, which reuses the retained QA. On `verification_ready`
    run its `verification_session` through the same create, await, submit and
