@@ -252,6 +252,7 @@
         "plugins/immune-brain-antigravity/runtime/session/marked_result.ts",
         "plugins/immune-brain-antigravity/runtime/session/supervised_session_port.ts",
         "plugins/immune-brain-antigravity/runtime/staged_intent.ts",
+        "plugins/immune-brain-antigravity/runtime/temp_directory.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/batch_disposition.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/batch_final_report.ts",
         "plugins/immune-brain-antigravity/runtime/unattended/batch_final_verification.ts",

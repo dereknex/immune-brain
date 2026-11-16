@@ -6,10 +6,9 @@
 // index; the only ref it moves is the hidden ref the batch already owns.
 // Defined by docs/specs/parallel-batch-lanes.spec.md (Temporal sequence, step 2).
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noTouchPaths, readNoTouchAt } from "../no_touch";
+import { withTempDirectory } from "../temp_directory";
 import { materializeDeliveryWorkspace } from "../assurance/delivery_workspace";
 import { DERIVED_FILES_PATH, parseDerivedFiles, readDerivedFilesAt, runDerivedCommand, type DerivedFile } from "../derived_files";
 import type { SnapshotDescriptor } from "../assurance/coordinator";
@@ -173,8 +172,7 @@ function withDeclaration(root: string, tree: string, text: string): string {
 	const mode = gitOut(root, ["ls-tree", tree, "--", DERIVED_FILES_PATH], "read declaration mode").split(" ")[0];
 	const blob = git(root, ["hash-object", "-w", "--stdin"], { input: text });
 	if (blob.status !== 0 || !mode) throw new Error("write merged derived-files declaration failed");
-	const directory = mkdtempSync(join(tmpdir(), "imm-batch-declaration-"));
-	try {
+	return withTempDirectory("imm-batch-declaration-", (directory) => {
 		const env = { GIT_INDEX_FILE: join(directory, "index") };
 		const step = (args: string[]) => {
 			const result = git(root, args, { env });
@@ -184,9 +182,7 @@ function withDeclaration(root: string, tree: string, text: string): string {
 		step(["read-tree", tree]);
 		step(["update-index", "--cacheinfo", `${mode},${blob.stdout.trim()},${DERIVED_FILES_PATH}`]);
 		return step(["write-tree"]).trim();
-	} finally {
-		rmSync(directory, { recursive: true, force: true });
-	}
+	});
 }
 
 /**
