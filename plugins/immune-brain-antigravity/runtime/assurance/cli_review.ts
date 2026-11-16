@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveConfig, type ReviewProfile } from "../config/layered_config";
-import { agentRole } from "../config/agent_roles";
+import { agentRole, type AgentsSection } from "../config/agent_roles";
 import { runtimeClaudePluginDir } from "../plugin_source_skew";
 import { laneBatchReviewProfile } from "../unattended/batch_state";
 import { currentReviewContractHash } from "../role_prompt_bridge";
@@ -33,7 +33,7 @@ import {
 import type { ReviewObservation } from "./review_mediation";
 
 const REVIEW_PROFILE_RECOVERY =
-	"Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
+	"Set the `code-review` role on a profile in the user `agents.profiles` / `agents.presets` table, then call `advance_assurance`";
 
 const REVIEW_BINARY: Record<ReviewProfile["host"], string> = {
 	"claude-code": "claude",
@@ -101,7 +101,7 @@ function requireReviewBinary(profile: ReviewProfile): void {
 	if (reviewBinary(profile.host)) return;
 	throw new ReviewPreparationError("review_host_unavailable",
 		`review_host ${profile.host} executable ${REVIEW_BINARY[profile.host]} is not on PATH`,
-		`Install ${REVIEW_BINARY[profile.host]} on PATH or set another \`lanes.review_host\`, then call \`advance_assurance\``);
+		`Install ${REVIEW_BINARY[profile.host]} on PATH or bind another host in \`agents.profiles\` in the user config, then call \`advance_assurance\``);
 }
 
 interface ReviewTreeState {
@@ -170,9 +170,19 @@ function shellQuote(value: string): string {
 export function resolveReviewProfile(root: string): ReviewProfile | null {
 	const batch = laneBatchReviewProfile(root);
 	if (batch) return { ...batch, transport: "herdr" };
-	const role = agentRole(resolveConfig(root).agents, "code-review");
+	return agentReviewProfile(resolveConfig(root).agents);
+}
+
+/** The `code-review` role's own profile, or null while no preset binds one. */
+function agentReviewProfile(agents: AgentsSection): ReviewProfile | null {
+	const role = agentRole(agents, "code-review");
 	if (!role?.host) return null;
 	return { host: role.host, ...(role.model ? { model: role.model } : {}), ...(role.effort ? { effort: role.effort } : {}), transport: "herdr" };
+}
+
+/** A diagnostic key path under an `agents` table, in any layer (Spec review-config-invalid D1). */
+function isAgentKeyPath(keyPath: string): boolean {
+	return keyPath === "agents" || keyPath.startsWith("agents.") || /^projects\.[^.]+\.agents(\.|$)/.test(keyPath);
 }
 
 /**
@@ -393,11 +403,21 @@ export class CliReviewHost implements AssuranceHostPort {
 	prepareReview(request: ReviewRequest): HostReviewReservation {
 		if (!request.root) throw new Error("CLI Review requires the task's working directory");
 		const root: string = request.root;
+		const config = resolveConfig(root);
 		// A Lane Review runs on the profile its batch fixed at confirmation, so a
 		// request-selected Lane profile reaches Review (#426 F14).
-		const profile = request.profile ?? resolveReviewProfile(root);
-		if (!profile) throw new ReviewPreparationError("review_profile_required",
-			"Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
+		const batch = request.profile ? null : laneBatchReviewProfile(root);
+		const configured = request.profile || batch ? null : agentReviewProfile(config.agents);
+		const profile = request.profile ?? (batch ? { ...batch, transport: "herdr" } : configured);
+		const agentErrors = config.diagnostics.filter((item) => item.severity === "error" && isAgentKeyPath(item.key_path));
+		if (!profile) {
+			// D1: the user's own `agents` table is why nothing resolved, so name it.
+			if (!config.agents.valid && agentErrors.length) throw new ReviewPreparationError("review_config_invalid",
+				`the \`agents\` configuration is invalid: ${agentErrors.map((item) => `${item.file}: ${item.key_path} (${item.message})`).join("; ")}`,
+				`Fix ${agentErrors.map((item) => `\`${item.key_path}\` in ${item.file}`).join(", ")}, then call \`advance_assurance\``);
+			throw new ReviewPreparationError("review_profile_required",
+				"Review dispatch requires a review profile and none resolves", REVIEW_PROFILE_RECOVERY);
+		}
 		// The transport comes first: outside Herdr nothing can run, whatever is installed.
 		const sessionRunner = reviewSessionRunner(this.env);
 		requireReviewBinary(profile);
@@ -432,6 +452,12 @@ export class CliReviewHost implements AssuranceHostPort {
 			review_session: session,
 			review_profile: profile,
 			review_actor_id: actorId,
+			// D4: the legacy table still reviews, but the round says so.
+			...(configured && !config.agents.valid && config.agents.source.value === "legacy" ? { warnings: [{
+				code: "review_legacy_profile" as const,
+				paths: [...new Set(agentErrors.map((item) => item.file))],
+				message: `Review uses the legacy \`lanes\` profile because the \`agents\` configuration is invalid: ${agentErrors[0]?.key_path ?? "agents"}`,
+			}] } : {}),
 		};
 	}
 

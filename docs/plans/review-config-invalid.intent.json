@@ -1,0 +1,54 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "review-config-invalid",
+  "owner": "user",
+  "goal": "Issue #455 (Spec docs/specs/review-config-invalid.spec.md, D1-D7). Review preparation reports an invalid user agents table as review_config_invalid naming the file and key path, warns on review_ready when it runs on the legacy lanes fallback, and its recovery texts name agents.profiles/agents.presets instead of lanes.review_host; drive.md and the config reference follow. Execution posture: test-first on tests/cli-review-dispatch.test.ts.",
+  "acceptance": [
+    {
+      "id": "RCI-A1",
+      "assertion": "In tests/cli-review-dispatch.test.ts, a user agents table whose only code-review profile has host \"codex\" and no project lanes makes coordinator.advance return review_preparation_failed with code review_config_invalid, a reason naming the user config file and agents.profiles.review.host, and a recovery_action naming agents.profiles.review.host and advance_assurance, with QA settlement retained; the same table with a valid host returns review_ready (Spec D1, BR-SCN-1).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RCI-A2",
+      "assertion": "In tests/cli-review-dispatch.test.ts, the same invalid agents table plus project lanes.review_host pi makes coordinator.advance return review_ready on host pi with exactly one warnings entry of code review_legacy_profile whose message names lanes and agents; a valid agents table and a legacy-only config each return review_ready without warnings (Spec D4, BR-SCN-2).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RCI-A3",
+      "assertion": "In tests/cli-review-dispatch.test.ts, a config with no review profile still returns review_profile_required, and both its recovery_action and the review_host_unavailable recovery_action contain agents.profiles and do not contain lanes.review_host (Spec D2, D3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 240000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RCI-A4",
+      "assertion": "plugins/immune-brain/dist/drive.md and docs/reference/immune-brain-config.md both name review_config_invalid, and the dist mirror of the config reference stays byte-identical per bun scripts/sync-dist-docs.ts --check (Spec D6).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"grep -q review_config_invalid plugins/immune-brain/dist/drive.md && grep -q review_config_invalid docs/reference/immune-brain-config.md && bun scripts/sync-dist-docs.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 60000,\n    \"max_output_bytes\": 65536\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "RCI-A5",
+      "assertion": "bun run typecheck passes over the whole repository, so the widened ReviewPreparationError code union and the optional warnings fields are consistent for every Host (Spec section 3).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"run\",\n      \"typecheck\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 300000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/review-config-invalid.md",
+    "docs/plans/review-config-invalid.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/specs/review-config-invalid.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain-antigravity/dist/drive.md",
+    "plugins/immune-brain-antigravity/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/host_port.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/drive.md",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/assurance/coordinator.ts",
+    "plugins/immune-brain/runtime/assurance/host_port.ts",
+    "tests/cli-review-dispatch.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -1,5 +1,5 @@
 import type { ReviewProfile } from "../config/layered_config";
-import type { SnapshotDescriptor } from "./coordinator";
+import type { SnapshotDescriptor, StatusProjectionWarning } from "./coordinator";
 import type { ReviewPacket } from "./review_packet";
 
 export type ConfirmationReferenceSource = (input: {
@@ -42,6 +42,8 @@ export interface HostReviewReservation {
 	review_profile?: ReviewProfile;
 	/** The actor identity the Kernel records for this reservation's verdict. */
 	review_actor_id?: string;
+	/** Set when this round runs on something the user should know about (Spec review-config-invalid D4). */
+	warnings?: StatusProjectionWarning[];
 }
 
 /**
@@ -72,7 +74,7 @@ export interface ReviewSessionSpec {
  */
 export class ReviewPreparationError extends Error {
 	constructor(
-		readonly code: "review_profile_required" | "review_host_unavailable" | "review_transport_unavailable",
+		readonly code: "review_profile_required" | "review_config_invalid" | "review_host_unavailable" | "review_transport_unavailable",
 		message: string,
 		readonly recovery_action: string,
 	) {

@@ -389,7 +389,7 @@ export interface AssuranceRecovery {
 }
 
 export interface StatusProjectionWarning {
-	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "deprecated_git_integration" | "implementation_pending" | "config_invalid" | PluginSourceSkewWarning["code"];
+	code: "unstaged_scope_paths" | "out_of_scope_paths" | "invalid_git_integration" | "deprecated_git_integration" | "implementation_pending" | "config_invalid" | "review_legacy_profile" | PluginSourceSkewWarning["code"];
 	paths: string[];
 	message: string;
 }
@@ -491,10 +491,11 @@ export function deriveAssuranceRecovery(taskId: string, fresh: AssuranceProjecti
 
 /** The dispatch a Host reserved: an in-process agent's parameters, or one explicit session (D3/D8). */
 function reviewReadyDispatch(reservation: HostReviewReservation): {
-	agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile;
+	agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile; warnings?: StatusProjectionWarning[];
 } {
-	if (reservation.review_session) return { review_session: reservation.review_session, review_profile: reservation.review_profile };
-	return { agent_params: reservation.dispatch };
+	const warnings = reservation.warnings?.length ? { warnings: reservation.warnings } : {};
+	if (reservation.review_session) return { review_session: reservation.review_session, review_profile: reservation.review_profile, ...warnings };
+	return { agent_params: reservation.dispatch, ...warnings };
 }
 
 function reviewDispatchFailure(error: unknown): { code?: ReviewPreparationError["code"]; recovery_action?: string } | undefined {
@@ -532,7 +533,7 @@ function withSessionStop<T extends { state: string }>(result: T, session: Review
 }
 export type AssuranceAdvanceResult = AssuranceRecoveryFields & (
 	| ReviewIncompleteResult
-	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile }
+	| { state: "review_ready"; operation: "review"; operation_id: string; snapshot_digest: string; review_bundle_digest: string; agent_params?: unknown; review_session?: ReviewSessionSpec; review_profile?: ReviewProfile; warnings?: StatusProjectionWarning[] }
 	| VerificationReadyResult
 	| { state: "rework"; operation: "qa"; operation_id: string; summary: string }
 	| { state: "cancelled"; operation: "qa" | "review"; operation_id: string; reason: string }
