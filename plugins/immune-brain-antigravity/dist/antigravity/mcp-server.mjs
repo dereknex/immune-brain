@@ -1107,14 +1107,6 @@ function readTrackedDeclaration(root, path, maxBytes) {
     if (error.code !== "ENOENT" && error.code !== "ENOTDIR")
       return invalid(`${path} cannot be read`);
   }
-  let pending;
-  try {
-    pending = execFileSync("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored", "--", path], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch {
-    return present ? invalid(`${path} cannot be checked against Git`) : { kind: "absent" };
-  }
-  if (pending.length > 0)
-    return invalid(`${path} has changes that are not committed`);
   try {
     const entry = execFileSync("git", ["ls-tree", "HEAD", "--", path], { cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     if (!entry)
@@ -5933,8 +5925,11 @@ function dirtyPaths(root) {
 }
 function captureGitWorkspaceSnapshot(projectRoot) {
   const root = realpathSync7(resolve8(projectRoot));
-  const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-  const head = git(root, ["rev-parse", "HEAD"])?.trim();
+  const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD"]);
+  const mergedLines = mergedRevParse?.trim().split(`
+`) ?? [];
+  const repositoryRoot = mergedLines.length === 2 ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+  const head = mergedLines.length === 2 ? mergedLines[1]?.trim() : git(root, ["rev-parse", "HEAD"])?.trim();
   if (!repositoryRoot || !head || realpathSync7(resolve8(repositoryRoot)) !== root)
     return null;
   const paths = dirtyPaths(root);
@@ -6113,8 +6108,11 @@ function dirtyScopePaths(projectRoot, scopeHint, taskId) {
   return paths.filter((path) => !isNonDeliveryPath(path) && !isOwnPlanningSidecar(path, taskId) && taskPathMatchesScope(path, scope));
 }
 function taskSnapshotOnce(root, scope, taskId, tolerated, outOfScope) {
-  const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-  const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
+  const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD^{commit}"]);
+  const mergedLines = mergedRevParse?.trim().split(`
+`) ?? [];
+  const repositoryRoot = mergedLines.length === 2 ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+  const head = mergedLines.length === 2 ? mergedLines[1]?.trim() : git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive task snapshot outside a committed Git workspace");
   if (realpathSync7(resolve8(repositoryRoot)) !== root)
@@ -6203,8 +6201,12 @@ function gitRequired(root, args, failure) {
   return output.trim();
 }
 function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outOfScope) {
-  const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-  const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
+  const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD^{commit}", `${baseHead}^{tree}`]);
+  const mergedLines = mergedRevParse?.trim().split(`
+`) ?? [];
+  const hasMerged = mergedLines.length === 3;
+  const repositoryRoot = hasMerged ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+  const head = hasMerged ? mergedLines[1]?.trim() : git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
   if (!repositoryRoot || !head || !GIT_OBJECT_ID3.test(head))
     throw new Error("cannot derive a task revision outside a committed Git workspace");
   if (realpathSync7(resolve8(repositoryRoot)) !== root)
@@ -6213,7 +6215,7 @@ function taskRevisionSnapshotOnce(root, scope, baseHead, taskId, tolerated, outO
     throw new Error(`task revision base is not a commit: ${baseHead}`);
   if (git(root, ["merge-base", "--is-ancestor", baseHead, head]) === null)
     throw new Error(`task revision base ${baseHead} is no longer an ancestor of HEAD; rewrite the task history or re-enroll`);
-  const baseTree = gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "task revision base tree is unreadable");
+  const baseTree = hasMerged && mergedLines[2] ? mergedLines[2].trim() : gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "task revision base tree is unreadable");
   if (!GIT_OBJECT_ID3.test(baseTree))
     throw new Error("task revision base tree has invalid identity");
   const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
@@ -7550,8 +7552,17 @@ function git2(root, args) {
     throw new Error(`batch_worktree_failed: ${result.stderr.trim() || args.join(" ")}`);
   return result.stdout.trim();
 }
-function worktreeDirectory(root) {
+function gitCommonDir2(root) {
+  const resolved = realpathSync9(root);
+  const cached = gitCommonDirByRoot.get(resolved);
+  if (cached)
+    return cached;
   const common = realpathSync9(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+  gitCommonDirByRoot.set(resolved, common);
+  return common;
+}
+function worktreeDirectory(root) {
+  const common = gitCommonDir2(root);
   const directory = join10(common, "imm", "worktrees");
   mkdirSync6(directory, { recursive: true });
   if (realpathSync9(directory) !== directory)
@@ -7561,7 +7572,7 @@ function worktreeDirectory(root) {
 function assertLaneWorktreeAvailable(root, slug, taskId) {
   parentBranchRef(slug);
   parentBranchRef(taskId);
-  const common = realpathSync9(git2(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+  const common = gitCommonDir2(root);
   const path = join10(common, "imm", "worktrees", slug, taskId);
   const branch = `refs/heads/imm-lane/${slug}/${taskId}`;
   const found = spawnSync7("git", ["-C", root, "show-ref", "--verify", "--quiet", branch]);
@@ -7668,11 +7679,13 @@ async function withParentWorktree(root, head, use) {
     git2(root, ["worktree", "remove", "--force", path]);
   }
 }
+var gitCommonDirByRoot;
 var init_batch_worktrees = __esm(() => {
   init_intent();
   init_spec_binding();
   init_storage();
   init_batch_ref();
+  gitCommonDirByRoot = new Map;
 });
 
 // plugins/immune-brain/runtime/unattended/batch_final_verification.ts
@@ -15942,7 +15955,13 @@ function runBatchGitPreflight(input) {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
   });
-  const toplevelResult = git(["rev-parse", "--show-toplevel"]);
+  const mergedRevParse = git(["rev-parse", "--show-toplevel", "HEAD^{commit}", `${baseHead}^{commit}`]);
+  const mergedLines = mergedRevParse.status === 0 ? mergedRevParse.stdout.trim().split(`
+`) : [];
+  const [mergedToplevel, mergedHead, mergedBase] = mergedLines;
+  const hasMerged = mergedLines.length === 3 && mergedToplevel !== undefined && mergedHead !== undefined && mergedBase !== undefined;
+  const toplevelResult = hasMerged ? { status: 0, stdout: `${mergedToplevel}
+` } : git(["rev-parse", "--show-toplevel"]);
   if (toplevelResult.status !== 0 || !toplevelResult.stdout.trim()) {
     return {
       ok: false,
@@ -15969,7 +15988,8 @@ function runBatchGitPreflight(input) {
       message: "batch root must be the top-level repository root, not a subdirectory"
     };
   }
-  const headResult = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+  const headResult = hasMerged ? { status: 0, stdout: `${mergedHead}
+` } : git(["rev-parse", "--verify", "HEAD^{commit}"]);
   if (headResult.status !== 0 || !headResult.stdout.trim()) {
     return {
       ok: false,
@@ -15977,7 +15997,8 @@ function runBatchGitPreflight(input) {
       message: "HEAD is uncommitted or not a valid commit"
     };
   }
-  const baseResult = git(["rev-parse", "--verify", `${baseHead}^{commit}`]);
+  const baseResult = hasMerged ? { status: 0, stdout: `${mergedBase}
+` } : git(["rev-parse", "--verify", `${baseHead}^{commit}`]);
   if (baseResult.status !== 0 || baseResult.stdout.trim() !== baseHead) {
     return { ok: false, reason: "uncommitted_head", message: `base_head ${baseHead} is not a commit` };
   }

@@ -190,8 +190,12 @@ export function captureGitWorkspaceSnapshot(
 	projectRoot: string,
 ): GitWorkspaceSnapshot | null {
 	const root = realpathSync(resolve(projectRoot));
-	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-	const head = git(root, ["rev-parse", "HEAD"])?.trim();
+	// One rev-parse resolves toplevel and HEAD together; on any failure the
+	// individual calls below run instead, with the same null outcome.
+	const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD"]);
+	const mergedLines = mergedRevParse?.trim().split("\n") ?? [];
+	const repositoryRoot = mergedLines.length === 2 ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+	const head = mergedLines.length === 2 ? mergedLines[1]?.trim() : git(root, ["rev-parse", "HEAD"])?.trim();
 	if (
 		!repositoryRoot ||
 		!head ||
@@ -467,8 +471,12 @@ export function dirtyScopePaths(projectRoot: string, scopeHint: unknown, taskId?
 }
 
 function taskSnapshotOnce(root: string, scope: string[], taskId?: string, tolerated?: string[], outOfScope?: string[]): GitTaskSnapshot {
-	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
+	// One rev-parse resolves toplevel and HEAD together; on any failure the
+	// individual calls below run instead, with the same throw.
+	const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD^{commit}"]);
+	const mergedLines = mergedRevParse?.trim().split("\n") ?? [];
+	const repositoryRoot = mergedLines.length === 2 ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+	const head = mergedLines.length === 2 ? mergedLines[1]?.trim() : git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
 	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
 		throw new Error("cannot derive task snapshot outside a committed Git workspace");
 	if (realpathSync(resolve(repositoryRoot)) !== root)
@@ -611,8 +619,15 @@ function taskRevisionSnapshotOnce(
 	tolerated?: string[],
 	outOfScope?: string[],
 ): GitTaskRevisionSnapshot {
-	const repositoryRoot = git(root, ["rev-parse", "--show-toplevel"])?.trim();
-	const head = git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
+	// One rev-parse resolves toplevel, HEAD and the base tree together. The
+	// base tree is only consumed after the cat-file / merge-base checks below,
+	// so a merged failure falls back to the individual calls and those checks
+	// still produce their original errors first.
+	const mergedRevParse = git(root, ["rev-parse", "--show-toplevel", "HEAD^{commit}", `${baseHead}^{tree}`]);
+	const mergedLines = mergedRevParse?.trim().split("\n") ?? [];
+	const hasMerged = mergedLines.length === 3;
+	const repositoryRoot = hasMerged ? mergedLines[0]?.trim() : git(root, ["rev-parse", "--show-toplevel"])?.trim();
+	const head = hasMerged ? mergedLines[1]?.trim() : git(root, ["rev-parse", "--verify", "HEAD^{commit}"])?.trim();
 	if (!repositoryRoot || !head || !GIT_OBJECT_ID.test(head))
 		throw new Error("cannot derive a task revision outside a committed Git workspace");
 	if (realpathSync(resolve(repositoryRoot)) !== root)
@@ -623,7 +638,9 @@ function taskRevisionSnapshotOnce(
 		throw new Error(
 			`task revision base ${baseHead} is no longer an ancestor of HEAD; rewrite the task history or re-enroll`,
 		);
-	const baseTree = gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "task revision base tree is unreadable");
+	const baseTree = hasMerged && mergedLines[2]
+		? mergedLines[2].trim()
+		: gitRequired(root, ["rev-parse", `${baseHead}^{tree}`], "task revision base tree is unreadable");
 	if (!GIT_OBJECT_ID.test(baseTree)) throw new Error("task revision base tree has invalid identity");
 	const sparseCheckout = git(root, ["config", "--bool", "core.sparseCheckout"])?.trim();
 	const sparseIndex = git(root, ["config", "--bool", "index.sparse"])?.trim();

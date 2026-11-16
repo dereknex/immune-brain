@@ -13,9 +13,28 @@ function git(root: string, args: string[]): string {
 	return result.stdout.trim();
 }
 
+/**
+ * `rev-parse --git-common-dir` is fixed for a given repository root: the
+ * common directory does not move when refs, worktrees or the index change.
+ * Resolve it once per root. Roots are unique per task (mkdtemp worktrees),
+ * so a deleted-and-rebuilt path under the same name is not expected; a
+ * caller that reuses a path for a different repository must not share this
+ * process, or must clear the entry first.
+ */
+const gitCommonDirByRoot = new Map<string, string>();
+
+function gitCommonDir(root: string): string {
+	const resolved = realpathSync(root);
+	const cached = gitCommonDirByRoot.get(resolved);
+	if (cached) return cached;
+	const common = realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+	gitCommonDirByRoot.set(resolved, common);
+	return common;
+}
+
 /** Parent of every Lane; a checkout below it resolves dependencies as a Lane does. */
 export function worktreeDirectory(root: string): string {
-	const common = realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+	const common = gitCommonDir(root);
 	const directory = join(common, "imm", "worktrees");
 	mkdirSync(directory, { recursive: true });
 	if (realpathSync(directory) !== directory) throw new Error("batch_worktree_failed: worktree directory contains a symlink");
@@ -26,7 +45,7 @@ export function worktreeDirectory(root: string): string {
 export function assertLaneWorktreeAvailable(root: string, slug: string, taskId: string): void {
 	parentBranchRef(slug);
 	parentBranchRef(taskId);
-	const common = realpathSync(git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]));
+	const common = gitCommonDir(root);
 	const path = join(common, "imm", "worktrees", slug, taskId);
 	const branch = `refs/heads/imm-lane/${slug}/${taskId}`;
 	const found = spawnSync("git", ["-C", root, "show-ref", "--verify", "--quiet", branch]);
