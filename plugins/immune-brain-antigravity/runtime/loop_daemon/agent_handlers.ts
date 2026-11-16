@@ -45,7 +45,7 @@ import { observeEnrollmentTaskIntent } from "../kernel/intent.ts";
 import { preparePiCanary } from "../kernel/pi_canary_prepare.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import type { TaskRisk } from "../kernel/types.ts";
-import { parseVerificationDescriptor } from "../verification_descriptor.ts";
+import { parseVerificationDescriptor, type VerificationDescriptor } from "../verification_descriptor.ts";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port.ts";
 import { createDefaultBatchGitPort } from "../unattended/batch_git.ts";
 import { observeSingleTask } from "../unattended/batch_plan.ts";
@@ -590,6 +590,14 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (observed === null)
 			return { success: false, modified_paths: [], reason: "repair_paths_unobservable: the worktree changes could not be read" };
 		return { ...parsed, modified_paths: [...new Set([...parsed.modified_paths, ...observed])] };
+	}
+
+	/** What the next commit would stage: every path that differs from the worktree's HEAD. */
+	function pendingCommitPaths(context: AgentHandlerContext): (worktreePath: string) => Promise<string[] | null> {
+		return async (worktreePath) => {
+			const head = deps.head({ root: context.root, cwd: worktreePath });
+			return head === null ? null : deps.changedPaths({ worktree_path: worktreePath, base_head: head });
+		};
 	}
 
 	/**
@@ -1191,6 +1199,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
 						].join("\n"));
 				},
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
@@ -1232,6 +1241,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						].join("\n"));
 				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
 				gitForcePushWithLease: deps.gitForcePushWithLease,
 			},
@@ -1384,6 +1394,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 						].join("\n"));
 				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
@@ -1483,6 +1494,27 @@ function commitWorktree(worktreePath: string, message: string): void {
 		? git(worktreePath, ["-c", "core.editor=true", "rebase", "--continue"])
 		: git(worktreePath, ["commit", "--no-verify", "-m", message]);
 	if (commit.status !== 0) throw new Error(`git_commit_failed: ${commit.stderr.trim()}`);
+}
+
+/**
+ * Runs one acceptance command in a repair worktree. The command and the files it
+ * executes may come from the repair session, so it gets the session's
+ * environment, never the daemon's: no GitHub credential and nothing else
+ * inherited beyond PATH.
+ */
+export function runAcceptanceCommand(
+	worktreePath: string,
+	command: VerificationDescriptor["command"],
+): { exit_code: number; stdout: string; stderr: string } {
+	const res = spawnSync(command.executable, [...command.argv], {
+		cwd: join(worktreePath, command.cwd),
+		env: sessionEnvironment(null),
+		encoding: "utf8",
+		timeout: command.timeout_ms,
+		maxBuffer: command.max_output_bytes,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	return { exit_code: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 
 /** The daemon's own worktree root, mirroring the batch Lanes' placement. */
@@ -1667,15 +1699,8 @@ export function createDefaultAgentHandlerDeps(
 						stderr: `${acceptance.id}: ${error instanceof Error ? error.message : String(error)}`,
 					};
 				}
-				const res = spawnSync(command.command.executable, command.command.argv, {
-					cwd: join(worktree_path, command.command.cwd),
-					encoding: "utf8",
-					timeout: command.command.timeout_ms,
-					maxBuffer: command.command.max_output_bytes,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-				if ((res.status ?? 1) !== 0)
-					return { exit_code: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+				const res = runAcceptanceCommand(worktree_path, command.command);
+				if (res.exit_code !== 0) return res;
 			}
 			return { exit_code: 0, stdout: "acceptance verification passed", stderr: "" };
 		},

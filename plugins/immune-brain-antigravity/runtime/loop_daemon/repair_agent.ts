@@ -294,7 +294,31 @@ export function recordRepairAttempt(stateDir: string, headSha: string, failureSi
 	return count;
 }
 
+/**
+ * The uncommitted paths the next commit would stage, read right before it; null
+ * when unreadable. Verification runs after the scope check and may write files,
+ * so this is the last look before anything is committed.
+ */
+export type PendingCommitPaths = (worktreePath: string) => Promise<string[] | null>;
+
+/**
+ * Re-checks scope immediately before a commit. Null means the commit may go
+ * ahead; otherwise the reason it must not.
+ */
+async function precommitScopeViolation(
+	pendingCommitPaths: PendingCommitPaths | undefined,
+	context: RepairContext,
+): Promise<string | null> {
+	if (!pendingCommitPaths) return null;
+	const pending = await pendingCommitPaths(context.worktree_path);
+	if (pending === null) return "the changes about to be committed could not be read";
+	const check = validatePathsInScope(pending, context.scope_hint, context.worktree_path);
+	return check.valid ? null : `changes about to be committed leave the task scope: ${check.reason}`;
+}
+
 export interface RepairCiDeps {
+	/** Re-read before commit; absent skips the re-check. */
+	pendingCommitPaths?: PendingCommitPaths;
 	/** Run local verification in the isolated worktree. Exit code !== 0 means failure reproduced. */
 	runVerification: (worktreePath: string) => Promise<{ exit_code: number; stdout: string; stderr: string }>;
 	/** Read the failing check's log; null or a throw means the log is unavailable. */
@@ -464,7 +488,22 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 	// 4. Post-fix verification
 	const postFix = await input.deps.runVerification(input.context.worktree_path);
 	if (postFix.exit_code === 0) {
-		const commitMessage = `fix(pr): repair CI check ${input.check.name} [${failureSignature.slice(0, 8)}]`;
+		const violation = await precommitScopeViolation(input.deps.pendingCommitPaths, input.context);
+		if (violation) {
+			const newAttempts = stateDir
+				? recordRepairAttempt(stateDir, input.pr.head_sha, failureSignature)
+				: existingAttempts + 1;
+			return {
+				contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+				action: "escalate",
+				handler: "escalate",
+				pr_number: input.pr.number,
+				reason: `repair not committed: ${violation}`,
+				failure_signature: failureSignature,
+				attempts: newAttempts,
+			};
+		}
+		const commitMessage =`fix(pr): repair CI check ${input.check.name} [${failureSignature.slice(0, 8)}]`;
 		const { commit_sha } = await input.deps.gitCommitAndPush({
 			worktree_path: input.context.worktree_path,
 			branch,
@@ -502,6 +541,8 @@ export async function repairPrCi(input: RepairCiInput): Promise<RepairResult> {
 }
 
 export interface RepairConflictDeps {
+	/** Re-read before commit; absent skips the re-check. */
+	pendingCommitPaths?: PendingCommitPaths;
 	/** Start a rebase onto the base branch; on conflict the conflicted tree is left in place. */
 	rebaseOrMerge: (input: {
 		worktree_path: string;
@@ -630,6 +671,16 @@ export async function repairPrConflict(input: RepairConflictInput): Promise<Repa
 			reason: "verification failed after base branch rebase",
 		};
 	}
+	const conflictViolation = await precommitScopeViolation(input.deps.pendingCommitPaths, input.context);
+	if (conflictViolation) {
+		return {
+			contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+			action: "escalate",
+			handler: "escalate",
+			pr_number: input.pr.number,
+			reason: `rebase not committed: ${conflictViolation}`,
+		};
+	}
 
 	const commitMessage = `chore(pr): rebase ${baseBranch} onto ${branch}`;
 	// ADR 0039 Decision 10: a rewrite is only ever pushed back to a branch the daemon created.
@@ -674,6 +725,8 @@ export interface ReviewCommentInput {
 }
 
 export interface AddressReviewDeps {
+	/** Re-read before commit; absent skips the re-check. */
+	pendingCommitPaths?: PendingCommitPaths;
 	classifyComment?: (input: {
 		comment: ReviewCommentInput;
 		scope_hint?: string[];
@@ -823,6 +876,16 @@ export async function addressPrReview(input: AddressReviewInput): Promise<Repair
 			handler: "escalate",
 			pr_number: input.pr.number,
 			reason: "verification failed after addressing review comment; escalating to owner",
+		};
+	}
+	const reviewViolation = await precommitScopeViolation(input.deps.pendingCommitPaths, input.context);
+	if (reviewViolation) {
+		return {
+			contract: LOOP_REPAIR_DISPATCH_CONTRACT,
+			action: "escalate",
+			handler: "escalate",
+			pr_number: input.pr.number,
+			reason: `review fix not committed: ${reviewViolation}`,
 		};
 	}
 

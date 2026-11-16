@@ -10,7 +10,10 @@
  *   comments on one PR head produce one session and one push with path, line and hunk.
  * - Negative control: an unavailable check log escalates and starts no session; a
  *   branch outside the daemon prefixes is never force-pushed; a review comment whose
- *   path is outside the TaskIntent `scope_hint` escalates instead of being applied.
+ *   path is outside the TaskIntent `scope_hint` escalates instead of being applied; an
+ *   unreported out-of-scope change by a CI, conflict or review session, or one left by
+ *   verification after the scope check, escalates with no push; acceptance commands
+ *   run without the daemon's GitHub credential.
  * - Boundary control: the excerpt never exceeds its byte limit and the S7
  *   two-attempt cap per `(head_sha, failure_signature)` still holds.
  */
@@ -25,6 +28,7 @@ import type { LoopConfig } from "../plugins/immune-brain/runtime/config/layered_
 import {
 	createAgentHandlerPort,
 	observedWorktreePaths,
+	runAcceptanceCommand,
 	syncWorktreeToHead,
 	type AgentHandlerContext,
 	type AgentHandlerDeps,
@@ -124,7 +128,12 @@ interface Harness {
 }
 
 function makeHarness(
-	options: { scopeHint?: string[]; verification?: number[]; changedPaths?: string[] | null } = {},
+	options: {
+		scopeHint?: string[];
+		verification?: number[];
+		/** One answer per read, in order (the session's changes, then the pending commit); the last repeats. */
+		changedPaths?: Array<string[] | null>;
+	} = {},
 ): Harness {
 	const workspace = makeWorkspace();
 	const gitHubPort = createFakeLoopGitHubPort();
@@ -133,6 +142,7 @@ function makeHarness(
 	const pushed: Array<{ branch: string; message: string }> = [];
 	const forcePushed: Array<{ branch: string; message: string }> = [];
 	const verification = [...(options.verification ?? [1, 0])];
+	const changed = [...(options.changedPaths ?? [["src/seed.ts"]])];
 
 	const sessionProvider: AgentSessionProvider = {
 		async run(request) {
@@ -163,7 +173,7 @@ function makeHarness(
 		session_credential: "ghs_daemon_credential",
 		createWorktree: () => workspace.root,
 		// What the session really changed, read from the worktree, not from its report.
-		changedPaths: () => (options.changedPaths === undefined ? ["src/seed.ts"] : options.changedPaths),
+		changedPaths: () => (changed.length > 1 ? changed.shift()! : (changed[0] ?? null)),
 		prWorktree: ({ pr_number, branch, head_sha }) => {
 			trace.push(`worktree:${pr_number}:${branch}:${head_sha}`);
 			return workspace.root;
@@ -348,7 +358,7 @@ describe("Suite 1: CI repair inputs (S8-AC1, D9)", () => {
 
 	it("escalates without pushing when the session changed a path it did not report and scope_hint excludes", async () => {
 		// The session reports only src/seed.ts but also rewrote a workflow file.
-		const harness = makeHarness({ verification: [1, 0], changedPaths: ["src/seed.ts", ".github/workflows/ci.yml"] });
+		const harness = makeHarness({ verification: [1, 0], changedPaths: [["src/seed.ts", ".github/workflows/ci.yml"]] });
 		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
 
 		const result = await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
@@ -359,8 +369,48 @@ describe("Suite 1: CI repair inputs (S8-AC1, D9)", () => {
 		expect(harness.pushed).toHaveLength(0);
 	});
 
+	it("escalates without pushing when verification leaves an out-of-scope change behind", async () => {
+		// The session stays in scope; the acceptance command then writes a workflow file.
+		const harness = makeHarness({
+			verification: [1, 0],
+			changedPaths: [["src/seed.ts"], ["src/seed.ts", ".github/workflows/ci.yml"]],
+		});
+		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
+
+		const result = await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
+
+		expect(result.outcome).toBe("failed");
+		expect(result.detail).toContain("not committed");
+		expect(result.detail).toContain(".github/workflows/ci.yml");
+		expect(harness.pushed).toHaveLength(0);
+	});
+
+	it("runs acceptance commands without the daemon's GitHub credential", () => {
+		const saved = { GH_TOKEN: process.env.GH_TOKEN, GITHUB_TOKEN: process.env.GITHUB_TOKEN };
+		process.env.GH_TOKEN = "ghs_daemon_credential";
+		process.env.GITHUB_TOKEN = "ghs_daemon_credential";
+		try {
+			const { root } = makeWorkspace();
+			const result = runAcceptanceCommand(root, {
+				executable: "env",
+				argv: [],
+				cwd: ".",
+				timeout_ms: 10_000,
+				max_output_bytes: 65_536,
+			});
+			expect(result.exit_code).toBe(0);
+			expect(result.stdout).toContain("PATH=");
+			expect(result.stdout).not.toContain("ghs_daemon_credential");
+		} finally {
+			for (const [key, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		}
+	});
+
 	it("fails closed without pushing when the worktree changes cannot be read", async () => {
-		const harness = makeHarness({ verification: [1, 0], changedPaths: null });
+		const harness = makeHarness({ verification: [1, 0], changedPaths: [null] });
 		harness.gitHubPort.checkLogs.set(DETAILS_URL, ciLog().text);
 
 		const result = await harness.port.handle("repair_pr_ci", harness.context(checkFailedEvent()));
@@ -464,12 +514,9 @@ describe("Suite 1: CI repair inputs (S8-AC1, D9)", () => {
 });
 
 describe("Suite 2: Conflict repair (S8-AC2, D9)", () => {
-	it("keeps the conflicted tree, runs a repair session and force-pushes with lease on a daemon branch", async () => {
-		const harness = makeHarness();
-		// The production conflict deps are injected at the repair_agent seam; the handler
-		// only binds the session and the lease-guarded push.
-		const context = harness.context(conflictEvent());
-		const conflictDeps: AgentHandlerDeps = {
+	/** The handler deps of a conflicted rebase whose session reports `src/seed.ts` and really changed `changed`. */
+	function conflictDeps(harness: Harness, changed: string[]): AgentHandlerDeps {
+		return {
 			sessionProvider: {
 				async run(request) {
 					harness.sessions.push(request);
@@ -482,7 +529,7 @@ describe("Suite 2: Conflict repair (S8-AC2, D9)", () => {
 			},
 			session_credential: null,
 			createWorktree: () => harness.root,
-			changedPaths: () => ["src/seed.ts"],
+			changedPaths: () => changed,
 			prWorktree: ({ head_sha }) => {
 				harness.trace.push(`worktree:${head_sha}`);
 				return harness.root;
@@ -517,14 +564,35 @@ describe("Suite 2: Conflict repair (S8-AC2, D9)", () => {
 			}),
 			now: () => TS,
 		};
+	}
 
-		const result = await createAgentHandlerPort(conflictDeps).handle("repair_pr_conflict", context);
+	it("keeps the conflicted tree, runs a repair session and force-pushes with lease on a daemon branch", async () => {
+		const harness = makeHarness();
+		// The production conflict deps are injected at the repair_agent seam; the handler
+		// only binds the session and the lease-guarded push.
+		const result = await createAgentHandlerPort(conflictDeps(harness, ["src/seed.ts"])).handle(
+			"repair_pr_conflict",
+			harness.context(conflictEvent()),
+		);
 
 		expect(result.outcome).toBe("executed");
 		expect(harness.sessions).toHaveLength(1);
 		expect(harness.sessions[0]!.prompt).toContain("src/seed.ts");
 		expect(harness.forcePushed).toHaveLength(1);
 		expect(harness.forcePushed[0]!.branch).toBe(BRANCH);
+		expect(harness.pushed).toHaveLength(0);
+	});
+
+	it("escalates without pushing when the conflict session changed a path it did not report and scope_hint excludes", async () => {
+		const harness = makeHarness();
+		const result = await createAgentHandlerPort(conflictDeps(harness, ["src/seed.ts", ".github/workflows/ci.yml"])).handle(
+			"repair_pr_conflict",
+			harness.context(conflictEvent()),
+		);
+
+		expect(result.outcome).toBe("failed");
+		expect(result.detail).toContain(".github/workflows/ci.yml");
+		expect(harness.forcePushed).toHaveLength(0);
 		expect(harness.pushed).toHaveLength(0);
 	});
 
@@ -681,6 +749,25 @@ describe("Suite 3: Review comment batching (S8-AC3, D9)", () => {
 		expect(prompt).toContain("Review comment #9002");
 		expect(prompt).not.toContain("Review comment #9004");
 		expect(prompt).not.toContain("hunk-drive-by");
+	});
+
+	it("escalates without pushing when the review session changed a path it did not report and scope_hint excludes", async () => {
+		const harness = makeHarness({ verification: [0], changedPaths: [["src/seed.ts", ".github/workflows/ci.yml"]] });
+		harness.gitHubPort.reviewComments = comments;
+		const event = reviewEvent(9001);
+		const context: AgentHandlerContext = {
+			...harness.context(event, {
+				classification: { point: "a14_pr_comment_triage", choice: "nit", confidence: 0.9, truncation: "none" },
+			}),
+			snapshot: snapshotOf(event, daemonPr(78)),
+		};
+
+		const result = await harness.port.handle("address_pr_review", context);
+
+		expect(result.outcome).toBe("failed");
+		expect(result.detail).toContain(".github/workflows/ci.yml");
+		expect(harness.sessions).toHaveLength(1);
+		expect(harness.pushed).toHaveLength(0);
 	});
 
 	it("escalates instead of applying a comment whose path is outside scope_hint", async () => {
