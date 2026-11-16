@@ -37,18 +37,13 @@ export function readTrackedDeclaration(root: string, path: string, maxBytes: num
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTDIR")
 			return invalid(`${path} cannot be read`);
 	}
-	let pending: string;
-	try {
-		pending = execFileSync(
-			"git",
-			["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored", "--", path],
-			{ cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-		);
-	} catch {
-		// Outside a Git repository nothing vouches for the file.
-		return present ? invalid(`${path} cannot be checked against Git`) : { kind: "absent" };
-	}
-	if (pending.length > 0) return invalid(`${path} has changes that are not committed`);
+	// The trust check is the byte comparison below (ADR 0023 item 4): a file is
+	// trusted only when the bytes on disk equal the committed regular blob at
+	// HEAD. A `git status` hop used to run here; it added nothing the byte
+	// comparison does not already prove, and it refused staged-only drift
+	// (index changed, worktree bytes still equal HEAD) that does not change
+	// the parsed value. `ls-tree` still fails outside a repository, so the
+	// not-a-repository outcome below is unchanged in kind.
 	try {
 		const entry = execFileSync("git", ["ls-tree", "HEAD", "--", path],
 			{ cwd: canonicalRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });

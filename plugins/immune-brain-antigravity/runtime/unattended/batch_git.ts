@@ -105,7 +105,17 @@ export function runBatchGitPreflight(input: {
 	});
 
 	// 0. Verify root is a Git repository and is the top-level repository root
-	const toplevelResult = git(["rev-parse", "--show-toplevel"]);
+	// One rev-parse resolves toplevel, HEAD and base together (three lines, in
+	// order). `--verify` accepts only a single revision, so commit-ness is
+	// established with `^{commit}` suffixes instead. On any failure, fall back
+	// to the individual calls so each failure keeps its original reason.
+	const mergedRevParse = git(["rev-parse", "--show-toplevel", "HEAD^{commit}", `${baseHead}^{commit}`]);
+	const mergedLines = mergedRevParse.status === 0 ? mergedRevParse.stdout.trim().split("\n") : [];
+	const [mergedToplevel, mergedHead, mergedBase] = mergedLines;
+	const hasMerged = mergedLines.length === 3 && mergedToplevel !== undefined && mergedHead !== undefined && mergedBase !== undefined;
+	const toplevelResult = hasMerged
+		? { status: 0, stdout: `${mergedToplevel}\n` }
+		: git(["rev-parse", "--show-toplevel"]);
 	if (toplevelResult.status !== 0 || !toplevelResult.stdout.trim()) {
 		return {
 			ok: false,
@@ -134,7 +144,9 @@ export function runBatchGitPreflight(input: {
 	}
 
 	// 1. Committed base: the hidden ref starts here.
-	const headResult = git(["rev-parse", "--verify", "HEAD^{commit}"]);
+	const headResult = hasMerged
+		? { status: 0, stdout: `${mergedHead}\n` }
+		: git(["rev-parse", "--verify", "HEAD^{commit}"]);
 	if (headResult.status !== 0 || !headResult.stdout.trim()) {
 		return {
 			ok: false,
@@ -142,7 +154,9 @@ export function runBatchGitPreflight(input: {
 			message: "HEAD is uncommitted or not a valid commit",
 		};
 	}
-	const baseResult = git(["rev-parse", "--verify", `${baseHead}^{commit}`]);
+	const baseResult = hasMerged
+		? { status: 0, stdout: `${mergedBase}\n` }
+		: git(["rev-parse", "--verify", `${baseHead}^{commit}`]);
 	if (baseResult.status !== 0 || baseResult.stdout.trim() !== baseHead) {
 		return { ok: false, reason: "uncommitted_head", message: `base_head ${baseHead} is not a commit` };
 	}
@@ -573,6 +587,10 @@ export async function commitBatchChild(input: {
 	}
 
 	// 3. Verify symbolic HEAD branch and HEAD lineage before commit (Review Round 7 Finding 1)
+	// NOTE: the branch and HEAD cannot share one rev-parse: `--abbrev-ref`
+	// applies to every revision argument, so `rev-parse --abbrev-ref HEAD
+	// HEAD` prints the branch name twice and never the OID (verified
+	// 2026-11-16). The two calls stay separate.
 	if (expectedBranch !== undefined) {
 		const currentBranchResult = spawnSync("git", ["-C", root, "symbolic-ref", "--short", "HEAD"], {
 			encoding: "utf8",
