@@ -620,6 +620,36 @@ describe("Suite 3: Review comment batching (S8-AC3, D9)", () => {
 		}
 	});
 
+	it("starts a second batch for a comment that arrives on the same head after the first batch", async () => {
+		const harness = makeHarness({ verification: [0, 0] });
+		harness.gitHubPort.reviewComments = comments;
+		const pr = daemonPr(78);
+		const handle = (id: number) => {
+			const event = reviewEvent(id);
+			return harness.port.handle("address_pr_review", {
+				...harness.context(event, {
+					classification: { point: "a14_pr_comment_triage", choice: "nit", confidence: 0.9, truncation: "none" },
+				}),
+				snapshot: snapshotOf(event, pr),
+			});
+		};
+
+		await handle(9001);
+		expect(harness.sessions).toHaveLength(1);
+
+		const late = { ...comments[0]!, id: 9005, body: "late: also fix the docstring", diff_hunk: "@@ hunk-late" };
+		harness.gitHubPort.reviewComments = [...comments, late];
+		// A comment the first batch covered is done; the later one is the next batch.
+		expect((await handle(9002)).outcome).toBe("executed");
+		expect(harness.sessions).toHaveLength(1);
+		expect((await handle(9005)).outcome).toBe("executed");
+		expect(harness.sessions).toHaveLength(2);
+		const second = harness.sessions[1]!.prompt;
+		expect(second).toContain("Review comment #9005");
+		expect(second).not.toContain("Review comment #9001");
+		expect(harness.pushed).toHaveLength(2);
+	});
+
 	it("never lets an unvetted comment join the batch", async () => {
 		const harness = makeHarness({ verification: [0] });
 		harness.gitHubPort.reviewComments = [

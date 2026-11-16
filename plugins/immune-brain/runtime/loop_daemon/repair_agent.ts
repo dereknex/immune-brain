@@ -697,14 +697,24 @@ export interface AddressReviewInput {
 	deps: AddressReviewDeps;
 }
 
-/** True once one PR head's review comments have been batched into a session (D9). */
-export function isReviewHeadBatched(stateDir: string, headSha: string): boolean {
-	return Boolean(loadRepairRetries(stateDir)[`review:${headSha}`]);
+/**
+ * The highest review comment id of one PR head already batched into a session
+ * (D9), or 0. A comment at or below it was addressed; a later one on the same
+ * head starts the next batch instead of being dropped.
+ */
+export function reviewHeadBatchedThrough(stateDir: string, headSha: string): number {
+	const value = loadRepairRetries(stateDir)[`review:${headSha}`];
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function markReviewHeadBatched(stateDir: string, headSha: string): void {
+/** True once the comment `commentId` of this head has been batched into a session (D9). */
+export function isReviewHeadBatched(stateDir: string, headSha: string, commentId: number): boolean {
+	return reviewHeadBatchedThrough(stateDir, headSha) >= commentId;
+}
+
+export function markReviewHeadBatched(stateDir: string, headSha: string, throughCommentId: number): void {
 	const retries = loadRepairRetries(stateDir);
-	retries[`review:${headSha}`] = 1;
+	retries[`review:${headSha}`] = Math.max(reviewHeadBatchedThrough(stateDir, headSha), throughCommentId);
 	saveRepairRetries(stateDir, retries);
 }
 

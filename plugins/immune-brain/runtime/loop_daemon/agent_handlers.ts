@@ -95,6 +95,7 @@ import {
 	isDaemonBranch,
 	isReviewHeadBatched,
 	markReviewHeadBatched,
+	reviewHeadBatchedThrough,
 	repairPrCi,
 	repairPrConflict,
 	type DaemonPrInput,
@@ -1195,11 +1196,13 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const scopeHint = intent?.scope_hint ?? [];
 		const headSha = pr.head_sha;
 
-		// D9: one session and one push per PR head, however many comments arrived.
-		if (context.stateDir && isReviewHeadBatched(context.stateDir, headSha)) {
+		// D9: one session and one push per batch of a PR head's comments. A comment
+		// a batch already covered is done; a later one on the same head is the next batch.
+		const batchedThrough = context.stateDir ? reviewHeadBatchedThrough(context.stateDir, headSha) : 0;
+		if (context.stateDir && isReviewHeadBatched(context.stateDir, headSha, event.comment_id)) {
 			return {
 				outcome: "executed",
-				detail: `review comments of PR #${pr.number} head ${headSha.slice(0, 12)} already batched into one session`,
+				detail: `review comment #${event.comment_id} of PR #${pr.number} head ${headSha.slice(0, 12)} already batched into one session`,
 			};
 		}
 
@@ -1258,7 +1261,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		// sibling joins the batch only when it clears the same actor boundary its own
 		// event would have to clear (G7); the triggering comment already did.
 		const comments = facts
-			.filter((comment) => comment.id >= event.comment_id)
+			.filter((comment) => comment.id >= event.comment_id && comment.id > batchedThrough)
 			.filter(
 				(comment) =>
 					comment.id === event.comment_id ||
@@ -1330,7 +1333,12 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
-		if (result.action === "repaired" && context.stateDir) markReviewHeadBatched(context.stateDir, headSha);
+		if (result.action === "repaired" && context.stateDir)
+			markReviewHeadBatched(
+				context.stateDir,
+				headSha,
+				Math.max(event.comment_id, ...comments.map((comment) => comment.id)),
+			);
 		return mapRepairResult(result);
 	}
 
