@@ -671,7 +671,11 @@ function evaluatePreToolUseSync(
 	if (isGatedTool(call.operation)) {
 		const state = readPhaseEntryState(payload.conversationId, root);
 		const opName: PhaseOperation = { kind: "tool", name: call.operation };
-		const admission = admitPhaseOperation(opName, state);
+		// A drifted shell cwd refuses instead of silently rewriting it to the bound workspace (D4).
+		const declared = payload.workspacePaths?.[0];
+		let workspace: string | null | undefined;
+		if (declared !== undefined) { try { workspace = realpathSync(declared); } catch { workspace = null; } }
+		const admission = admitPhaseOperation(opName, state, workspace);
 		if (!admission.ok) {
 			// A call without a live drive entry is refused outright, as on Claude Code:
 			// the server refuses it anyway, so a confirmation here could authorize nothing.

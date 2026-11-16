@@ -206,7 +206,10 @@ export function phaseEntryGateHookOutput(payload: Record<string, unknown>, locat
 	const sessionId = sessionIdOf(payload);
 	let state: PhaseEntryState | null = null;
 	try { state = readPhaseEntryState(sessionId, root, locations.read); } catch { /* an unreadable store refuses */ }
-	const admission = admitPhaseOperation(operation, state);
+	// A drifted shell cwd refuses instead of silently rewriting it to the bound workspace (D4).
+	let workspace: string | null | undefined;
+	if (operation.kind === "tool") { try { workspace = realpathSync(cwdOf(payload)); } catch { workspace = null; } }
+	const admission = admitPhaseOperation(operation, state, workspace);
 	if (!admission.ok) return denyPreToolUse(phaseRefusalMessage(admission));
 	if (operation.kind === "skill") return null;
 	const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";

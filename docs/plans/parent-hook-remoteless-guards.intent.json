@@ -1,0 +1,57 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "parent-hook-remoteless-guards",
+  "owner": "user",
+  "goal": "Issue #503 (Spec docs/specs/parent-hook-remoteless-guards.spec.md, D1-D6; BR-REQ-1..3, BR-DEC-1..3, BR-SCN-1..2). Eliminate both Claude Parent Hook warnings on remote-less single-task Lane runs: (1) observeParentRun and recordParentRepair dispatch observeSingleTask when record.plan_source === 'single_task', observeParentCompletion settles completed single-task batches with unconfigured final_verification including after cleanupSingleTaskLane deletes refs/heads/imm/<task_id>, and Parent continuation advances plan_digest across contiguous lane_rebinds chains; (2) admitPhaseOperation and PreToolUse fail-closed deny start_unattended_batch and retire_stale_batch when realpathSync(payload.cwd) !== state.workspace with cd <state.workspace> recovery guidance while run_continuation_session skips tool correlations from drifted cwds so PostToolUse never emits 'batch receipt has no persisted identity'. Out: GitHub-sourced Initiative offline Stop fallback (BR-OUT-1), silent cwd rewriting (BR-OUT-2), and Pi tool schemas or unrelated #426 items (BR-OUT-3).",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "assertion": "Spec AC1 (D1, D2; BR-REQ-1, BR-DEC-1, BR-SCN-1). Done looks like: a remote-less single_task Lane batch runs Claude Stop continuation and settles silently without gh or final_verification. Seam: tests/claude-run-continuation.test.ts over a zero-remote Git repo. Positive: with no git remote and no final_verification, Stop returns { decision: 'block' } once while enrolled, null on unchanged waits, and null revoking entry_token when completed under both lane_retained and lane_removed (refs/heads/imm/<task> deleted after staged checkout delivery); recordParentRepair on a single_task batch also avoids gh. Negative: a remote-less non-single_task Initiative without docs/initiatives/<slug>.md emits systemMessage 'continuation facts could not be verified'; a single_task batch with failing configured final_verification, blocked return_to_coordinator, or missing Parent ref without lane_removed refuses settlement. Bound: repeated unchanged Stops return null without spending entry_token, and settlement revokes it once.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"remote-less single_task Parent\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC2",
+      "assertion": "Spec AC2 (D3; BR-REQ-1, BR-SCN-1). Done looks like: Parent continuation tracks approved single_task lane_rebinds plan_digest updates without false identity failure. Seam: tests/claude-run-continuation.test.ts. Positive: after rebindSingleTaskIdentity advances plan_digest from D1 to D2 in lane_rebinds, Stop does not throw 'Parent continuation has no matching persisted batch identity' or pause 'batch identity changed', blocks on the rebound progress, and updates persisted session binding.plan_digest to D2; PostToolUse of start_unattended_batch on the same rebound batch also advances binding.plan_digest. Negative: a record whose plan_digest changed without a contiguous lane_rebinds chain from binding.plan_digest fails closed on Stop with systemMessage containing 'Parent continuation has no matching persisted batch identity'. Bound: a two-step contiguous rebind chain D1 -> D2 -> D3 before Stop advances binding.plan_digest to D3 in one Stop boundary.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"lane_rebinds plan_digest\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC3",
+      "assertion": "Spec AC3 (D4; BR-REQ-2, BR-DEC-2, BR-SCN-2). Done looks like: PreToolUse denies start_unattended_batch and retire_stale_batch when shell cwd drifts from state.workspace and names cd <state.workspace> recovery. Seam: tests/phase-entry.test.ts and tests/claude-phase-entry-gate.test.ts. Positive: admitPhaseOperation and phaseEntryGateHookOutput admit both tools when cwd resolves (including via symlink) to state.workspace or workspace is omitted. Negative: when payload.cwd points to .git/imm/worktrees/<slug>/<task>, another directory, or a non-existent path, PreToolUse returns permissionDecision 'deny' with run_entry_required naming the drifted cwd, state.workspace, and 'cd <state.workspace>', writing no .admit file (consumePhaseAdmission is false, gateCalls is 0), while MCP requireRunEntry still refuses grant.workspace !== mcp.cwd when Hook ran at elsewhere. Bound: after a drifted-cwd denial, entry_token stays unspent and the next PreToolUse at state.workspace returns null.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/phase-entry.test.ts\",\n      \"tests/claude-phase-entry-gate.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC4",
+      "assertion": "Spec AC4 (D5; BR-REQ-2, BR-OUT-2, BR-SCN-2). Done looks like: drifted-cwd tool calls record no continuation correlation and PostToolUse never emits 'batch receipt has no persisted identity'. Seam: tests/claude-run-continuation.test.ts. Positive and Negative: when drive was entered at coordinator root and PreToolUse + PostToolUse for start_unattended_batch (returning state 'started' persisted only at root) or status run with cwd at root/.git/imm/worktrees/<slug>/<task>, readRunToolSession is null and PostToolUse returns null without 'batch receipt has no persisted identity'; Stop at a changed cwd still emits systemMessage containing 'workspace changed'. Bound: returning cwd to root before Stop allows PreToolUse + PostToolUse of start_unattended_batch at root to correlate and bind Parent continuation normally.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/claude-run-continuation.test.ts\",\n      \"-t\",\n      \"drifted cwd\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "AC5",
+      "assertion": "Spec AC5 (D4, D6; BR-REQ-3, Layering Rules). Done looks like: adapter-to-coordinator dependency direction holds and regenerated Claude and Antigravity plugin artifacts match source. Seam: tests/runtime-layering-boundary.test.ts, scripts/build-claude-plugin.ts --check, and scripts/build-antigravity-plugin.ts --check. Positive: all three checks exit 0 with Adapter -> Coordinator -> Unattended direction preserved and zero source-to-bundle skew. Negative: any unregenerated runtime edit causes the --check scripts to exit non-zero.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"sh\",\n    \"argv\": [\n      \"-c\",\n      \"bun test tests/runtime-layering-boundary.test.ts && bun scripts/build-claude-plugin.ts --check && bun scripts/build-antigravity-plugin.ts --check\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 120000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/parent-hook-remoteless-guards.md",
+    "docs/plans/parent-hook-remoteless-guards.intent.json",
+    "docs/specs/parent-hook-remoteless-guards.spec.md",
+    "plugins/immune-brain-antigravity/dist/antigravity/mcp-server.mjs",
+    "plugins/immune-brain-antigravity/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain-antigravity/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain-antigravity/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain-antigravity/runtime/host-core/run_continuation_session.ts",
+    "plugins/immune-brain-antigravity/runtime/unattended/batch_git.ts",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/antigravity/lane_guard.ts",
+    "plugins/immune-brain/runtime/assurance/phase_entry.ts",
+    "plugins/immune-brain/runtime/assurance/run_continuation.ts",
+    "plugins/immune-brain/runtime/claude/lane_guard.ts",
+    "plugins/immune-brain/runtime/host-core/run_continuation_session.ts",
+    "plugins/immune-brain/runtime/unattended/batch_git.ts",
+    "tests/claude-phase-entry-gate.test.ts",
+    "tests/claude-run-continuation.test.ts",
+    "tests/phase-entry.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

@@ -245,4 +245,33 @@ describe("phase entry admission", () => {
 			}
 		}
 	});
+
+	test("a resolved cwd equal to the bound workspace or absent admits both batch tools", () => {
+		const bound = applyPrompt(NO_PHASE_ENTRY, "run", MINT);
+		for (const operation of [batch, retire]) {
+			expect(admitPhaseOperation(operation, bound, MINT.workspace)).toEqual({ ok: true });
+			// An unbound workspace and a 2-argument call keep admitting.
+			expect(admitPhaseOperation(operation, bound)).toEqual({ ok: true });
+			expect(admitPhaseOperation(operation, LIVE, "/anywhere")).toEqual({ ok: true });
+		}
+	});
+
+	test("a resolved cwd that drifted from the bound workspace is refused with cd recovery", () => {
+		const bound = applyPrompt(NO_PHASE_ENTRY, "run", MINT);
+		const drifted = `${MINT.workspace}/.git/imm/worktrees/slug/task`;
+		for (const operation of [batch, retire]) {
+			const refusal = admitPhaseOperation(operation, bound, drifted);
+			expect(refusal).toMatchObject({ ok: false, reason_code: RUN_ENTRY_REQUIRED });
+			const refused = refusal as Extract<typeof refusal, { ok: false }>;
+			expect(refused.detail).toContain(drifted);
+			expect(refused.detail).toContain(`bound to ${MINT.workspace}`);
+			expect(refused.recovery_action).toStartWith(`cd ${MINT.workspace} to return to the bound workspace, or `);
+			expect(refused.recovery_action).toContain("ask the user to enter /drive");
+			// An unresolvable cwd is refused by the same rule, not admitted by omission.
+			expect(admitPhaseOperation(operation, bound, null)).toMatchObject({ ok: false,
+				detail: expect.stringContaining("an unresolvable cwd") });
+			// A drifted cwd never overrides a missing run entry.
+			expect(admitPhaseOperation(operation, NO_PHASE_ENTRY, drifted)).toMatchObject({ ok: false, reason_code: RUN_ENTRY_REQUIRED });
+		}
+	});
 });

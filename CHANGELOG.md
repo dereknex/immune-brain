@@ -1,5 +1,29 @@
 # Changelog
 
+## 8.5.0
+
+### Minor Changes
+
+- [`d3f6b93`](https://github.com/dereknex/immune-brain/commit/d3f6b93eef2984572220c04730fae3e06964526e) - Extend `revisit` (`review_retro.ts` / `session_evidence.ts`) to discover and parse Claude Code and Antigravity CLI session transcripts alongside Pi, add `--host` scope filtering, and emit additive `host` and `scope.hosts` fields on `immune_brain/revisit_evidence/v2`.
+
+### Patch Changes
+
+- [#533](https://github.com/dereknex/immune-brain/pull/533) [`71d9195`](https://github.com/dereknex/immune-brain/commit/71d9195da51dfbfbd65d8a3d94bd7e1ddfd4bc95) Thanks [@dereknex](https://github.com/dereknex)! - Stop emitting the two Claude Parent Hook warnings on remote-less `single_task` Lane runs. `observeParentRun` and `recordParentRepair` now dispatch `observeSingleTask` for a `single_task` batch instead of the GitHub Initiative reader, so `Stop` continuation and settlement need neither `gh` nor a configured `final_verification`, including after `cleanupSingleTaskLane` deletes `refs/heads/imm/<task_id>`, and Parent continuation advances `plan_digest` across contiguous approved `lane_rebinds` chains. `PreToolUse` now denies `start_unattended_batch` and `retire_stale_batch` when the resolved `cwd` drifted from the bound `drive` workspace, naming `cd <state.workspace>` as the recovery, and a drifted `cwd` records no continuation correlation so `PostToolUse` never reports `"batch receipt has no persisted identity"`.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`113842d`](https://github.com/dereknex/immune-brain/commit/113842d3023237a53f17f31b64ce269ad5ea061c) Thanks [@dereknex](https://github.com/dereknex)! - Delete Kernel and store exports no production path reaches, including the whole `runtime/kernel/canary_eligibility.ts` module, together with the tests that only protected them. Observable behavior is unchanged.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`476bb14`](https://github.com/dereknex/immune-brain/commit/476bb145d6919fbe7f0528209cc215219d2f2385) Thanks [@dereknex](https://github.com/dereknex)! - Delete production-unreachable exports from the assurance, batch, tracker and workspace-scope modules — `verifyReviewBundle`, `deleteReviewRef`, `qaEvidenceFreshnessId`, `describeQaFailure`, `replaceBatchRunState`, `assertKernelInvariantsV2`, `assertIsolatedTaskPrerequisites`, `workspaceDiffHash`, `replacementChangedFilesSinceSnapshot`, `changedFilesSinceSnapshot` and `assertCheckCommandsCiteExistingTests` — together with the test cases whose only subject they were. Observable behavior is unchanged.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`391e1d6`](https://github.com/dereknex/immune-brain/commit/391e1d64785b026abc25ad49cb12a91fe6dc4bfd) Thanks [@dereknex](https://github.com/dereknex)! - Delete Claude host and loop-contract code that no production path reaches: `parsePermissionMode`, `CLAUDE_NATIVE_AGENT_ROLES`, `normalizeArchitectureExplorerOutput` and `normalizeAdvisoryReviewerOutput`, together with their now-unreferenced private helpers, types and the test cases that only protected them.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`8ab09fb`](https://github.com/dereknex/immune-brain/commit/8ab09fb4fc3b67c6beff5a1501ffb08c463865b5) Thanks [@dereknex](https://github.com/dereknex)! - Delete loop-daemon and decision-model code that no production path reaches: `clearRepairAttempt`, `dispatchRepair`, `heartbeatLoopLease`, `reclaimExpiredLeases`, `parsePlanDigest`, `capabilityRefusal`, `getCachedDaemonGithubLogin`, `MIN_CLASSIFIER_CONFIDENCE`, `DECISION_CHOICE_MARKER_PREFIX` and `assertApplicationPointId`, together with their now-unreferenced private helpers, types and the test cases that only protected them.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`6e96463`](https://github.com/dereknex/immune-brain/commit/6e964634b60a06d0bd50db5932f9047b010e8da0) Thanks [@dereknex](https://github.com/dereknex)! - Delete the prompt sentences that restate a rule code already enforces from `dist/drive.md`, `dist/drive-batch.md`, `skills/authority-review/SKILL.md` and `runtime/prompts/executor.md`, and keep every prompt-only rule they sat beside: the unchanged-observation stop no longer states a number, the third native-operation failure merges into the retry limit, and the regenerated mirrors carry the edited text.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`ee0d9a5`](https://github.com/dereknex/immune-brain/commit/ee0d9a5974bfe3d3664c6781b7b963fd506a1482) Thanks [@dereknex](https://github.com/dereknex)! - Delete the Review coordinator parser checks that a rebuild or a retained check already covers: unknown-field rejection on finding evidence, `evidence.violated`, an incomplete verdict, a pass approval and a finding; the rework "must omit approval" rejection; the pass approval `kind`/`authority_role` self-assertion; the empty-id trim; the duplicate verification finding identity check; and the security-boundary revalidation with its second `git show`. The child-verdict and verifier-output whitelists, a missing security boundary, the required approval summary and every required field keep their current messages.
+
+- [#535](https://github.com/dereknex/immune-brain/pull/535) [`6434018`](https://github.com/dereknex/immune-brain/commit/643401839d37c68bd030cbb55340bed2ba74e72a) Thanks [@dereknex](https://github.com/dereknex)! - Stop the unattended batch layer from re-validating `max_parallel` inside the scheduler (`parseMaxParallel` and the record check stay the authority) and merge the two topological traversals of the preflight and the plan projection into one shared helper, each caller keeping its own rejection text.
+
 ## 8.4.0
 
 ### Minor Changes

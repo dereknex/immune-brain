@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { consumePhaseAdmission, phaseEntryGateHookOutput, recordPhaseEntryPrompt, type GatedTool } from "../plugins/immune-brain/runtime/claude/lane_guard";
 import { runContinuationHookOutput } from "../plugins/immune-brain/runtime/claude/run_continuation";
 import { confirmationRef, entryTokenRequestId } from "../plugins/immune-brain/runtime/claude/interaction";
@@ -176,11 +176,15 @@ describe("Claude phase entry gate: start_unattended_batch admission", () => {
 		await s.endSession();
 		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_e"));
 		expectHookDenial(s.hook(BATCH, "toolu_e2"));
-		// A token minted in another workspace does not authorize this one.
+		// A token minted in another workspace does not authorize this one: the Hook
+		// denies the drifted cwd and the MCP server refuses the same call.
 		const elsewhere = mkdtempSync(join(tmpdir(), "imm-phase-elsewhere-"));
 		roots.push(elsewhere);
 		s.prompt("/drive gate-init", { cwd: elsewhere });
-		expect(s.hook(BATCH, "toolu_w")).toBeNull();
+		expect(s.hook(BATCH, "toolu_w")).toContain("was called from");
+		expect(JSON.parse(s.hook(BATCH, "toolu_w")!).hookSpecificOutput.permissionDecision).toBe("deny");
+		// Admitted at its own workspace, the call still refuses at the MCP server.
+		expect(s.hook(BATCH, "toolu_w", { cwd: elsewhere })).toBeNull();
 		const reply = await s.call("start_unattended_batch", START, "toolu_w");
 		expect(reply?.error?.data?.reason_code).toBe("run_entry_required");
 		expect(reply?.error?.message).toContain("workspace other than");
@@ -238,6 +242,40 @@ describe("Claude phase entry gate: start_unattended_batch admission", () => {
 		expectHookDenial(s.hook(BATCH, "toolu_1"));
 		expectRunEntryRequired(await s.call("start_unattended_batch", START, "toolu_1"));
 		expect(s.gateCalls()).toBe(0);
+	});
+
+	test("a drifted shell cwd is denied before the native gate and admitted again after cd back (D4)", async () => {
+		const s = await gateSession();
+	s.prompt("/drive gate-init");
+		const home = realpathSync(s.cwd);
+		const lane = join(home, ".git", "imm", "worktrees", "drifted-slug", "drifted-task");
+		mkdirSync(lane, { recursive: true });
+		for (const [tool, id] of [[BATCH, "toolu_drift_batch"], [RETIRE, "toolu_drift_retire"]] as const) {
+			const denial = JSON.parse(s.hook(tool, id, { cwd: lane })!) as { hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string } };
+			expect(denial.hookSpecificOutput.permissionDecision).toBe("deny");
+			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(lane);
+			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(home);
+			expect(denial.hookSpecificOutput.permissionDecisionReason).toContain(`cd ${home}`);
+			// No admission was written, so the tool side refuses and the gate never opens.
+			if (tool === BATCH) expectRunEntryRequired(await s.call("start_unattended_batch", START, id));
+			else expectRunEntryRequired(await s.call("retire_stale_batch", { initiative_slug: SLUG }, id));
+		}
+		expect(s.gateCalls()).toBe(0);
+		expect(readActiveClaimTaskId(s.cwd)).toBeNull();
+		// Re-mint the run entry at the coordinator root, then check a symlinked route to it.
+		s.prompt("/drive gate-init");
+		// A symlinked route to the same workspace is the bound workspace, not a drift.
+		const link = join(mkdtempSync(join(tmpdir(), "imm-phase-link-")), "linked-workspace");
+		roots.push(dirname(link));
+		symlinkSync(home, link);
+		expect(s.hook(BATCH, "toolu_linked", { cwd: link })).toBeNull();
+		expect((await s.call("start_unattended_batch", START, "toolu_linked"))?.error).toBeUndefined();
+		expect(s.gateCalls()).toBe(1);
+		// An unresolvable cwd is denied by the same rule.
+		const missing = join(home, ".git", "imm", "worktrees", "drifted-slug", "absent");
+		const unresolvable = JSON.parse(s.hook(BATCH, "toolu_missing", { cwd: missing })!) as { hookSpecificOutput: { permissionDecisionReason: string } };
+		expect(unresolvable.hookSpecificOutput.permissionDecisionReason).toContain("run_entry_required: ");
+		expect(unresolvable.hookSpecificOutput.permissionDecisionReason).toContain("an unresolvable cwd");
 	});
 
 	test("a live entry without the hook admission for this exact call refuses", async () => {
