@@ -74,7 +74,7 @@ import { escalationKey, planEscalation } from "./escalation.ts";
 import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
 import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
 import { clarifyQuestionRequest, type InteractionChannel } from "./interaction/protocol.ts";
-import { startLoopJob } from "./jobs.ts";
+import { type LoopJobExit, readLoopJob, recordSettledLane, startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import { isVerifiedActor, type GuardFacts } from "./guards.ts";
 import type { LoopDecisionRecord } from "./decision_record.ts";
@@ -959,7 +959,30 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		return { ok: true, input, source: "policy_auto", confirmation_ref: `policy_auto:${plan.digest}` };
 	}
 
+	/**
+	 * D6: a lost job's E12 is judged once, before dispatch, so a retry that cannot
+	 * start its job would otherwise end silently; it escalates instead.
+	 */
 	async function enrollAndDrive(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+		const result = await enrollAndDriveOnce(context);
+		const event = context.event;
+		if (
+			event?.kind !== "E12_JOB_FINISHED" ||
+			event.outcome !== "lost" ||
+			(result.outcome !== "failed" && result.outcome !== "requires_standing_daemon")
+		)
+			return result;
+		const escalated = await escalateOnce(
+			context,
+			"job_retry_failed",
+			`issue-${event.issue_number}`,
+			event.job_id,
+			`The loop could not restart lost job ${event.job_id} for #${event.issue_number}: ${result.detail}`,
+		);
+		return { outcome: "failed", detail: `${result.detail} (${escalated})` };
+	}
+
+	async function enrollAndDriveOnce(context: AgentHandlerContext): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
 		if (!issue) return { outcome: "failed", detail: "enroll_and_drive needs an Issue target" };
 		const plan = readPlanPublication(context.stateDir, issue.number);
@@ -969,10 +992,22 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 
 		// D8: every intent of the approved plan is driven; an event naming one task
 		// narrows this to that task, and `intents[0]` is no longer special.
-		const named = taskIdOfEvent(context);
+		// A lost job's retry drives the set that job held, not only the first task
+		// E12 names.
+		const lostJob =
+			context.event?.kind === "E12_JOB_FINISHED" ? readLoopJob(context.stateDir, context.event.job_id) : null;
+		const named = lostJob ? null : taskIdOfEvent(context);
 		if (named !== null && !plan.intents.some((intent) => intent.task_id === named))
 			return { outcome: "failed", detail: `task ${named} is not in the published plan for #${issue.number}` };
-		const taskIds = named === null ? plan.intents.map((intent) => intent.task_id) : [named];
+		const planned = plan.intents.map((intent) => intent.task_id);
+		const taskIds =
+			lostJob?.task_ids && lostJob.task_ids.length > 0
+				? lostJob.task_ids.filter((taskId) => planned.includes(taskId))
+				: named === null
+					? planned
+					: [named];
+		if (taskIds.length === 0)
+			return { outcome: "failed", detail: `lost job ${lostJob?.job_id} drives no task of the published plan` };
 		const taskId = taskIds[0]!;
 
 		// Driving belongs to the process that owns `loopDaemonSupervisor`.
@@ -1040,17 +1075,27 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				target_id: `issue-${issue.number}`,
 				task_id: taskId,
 				issue_number: issue.number,
+				plan_digest: plan.digest,
+				task_ids: taskIds,
 				expected_output: "executor_exit_record",
 				now: now(),
 			},
 			async () => {
 				// D8: the approved plan's intents are one batch, driven in plan order and
-				// serialized in this one job, so the first failure stops the batch.
-				// shortcut: E13 names one task, so the job carries the first Lane's exit
-				// and only its PR opens; per-intent PRs need `open_pr` to iterate the plan
-				// (D6 follow-up).
-				let firstExit: AgentDriveExit | null = null;
+				// serialized in this one job, so the first failure stops the batch. Each
+				// settled Lane is recorded on the job, so the reconciler emits one E13 per
+				// Lane (one PR per intent) and a retry of a lost attempt skips them.
+				const jobTarget = `issue-${issue.number}`;
+				const alreadySettled = new Map(
+					(readLoopJob(context.stateDir, jobTarget)?.settled_lanes ?? []).map((lane) => [lane.task_id, lane]),
+				);
+				let firstExit: LoopJobExit | null = null;
 				for (const candidateTaskId of taskIds) {
+					const prior = alreadySettled.get(candidateTaskId);
+					if (prior) {
+						firstExit ??= prior.exit;
+						continue;
+					}
 					const intent = deps.readIntent(candidateTaskId);
 					if (!intent)
 						return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
@@ -1075,7 +1120,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 							outcome: "failed" as const,
 							detail: `${candidateTaskId} did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
 							exit,
-						};
+						};					recordSettledLane(context.stateDir, jobTarget, { task_id: candidateTaskId, exit: exit ?? null });
 				}
 				return {
 					outcome: "settled" as const,

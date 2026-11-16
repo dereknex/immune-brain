@@ -28,7 +28,7 @@ import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { type LoopDecisionRecord } from "./decision_record.ts";
-import type { AgentHandlerPort } from "./agent_handlers.ts";
+import { type AgentHandlerPort, readPlanPublication } from "./agent_handlers.ts";
 import {
 	findLatestLaneDecisionQuestion,
 	handleLaneDecisionReply,
@@ -908,6 +908,22 @@ export async function dispatchDecisions(
 				const target = event ? eventTarget(event) : { kind: "issue" as const, id: "0" };
 				const issueNum = (event as any)?.issue_number ? String((event as any).issue_number) : target.id;
 				const taskId = (event as any)?.task_id || `issue-${issueNum}`;
+
+				// D6: the PR opens only for the plan that was approved and driven; a
+				// plan republished while the job ran leaves this settlement unbound.
+				const drivenDigest = event?.kind === "E13_LANE_SETTLED" ? (event.plan_digest ?? null) : null;
+				if (drivenDigest !== null) {
+					const published = readPlanPublication(stateDir, Number(issueNum));
+					if (!published || published.published_at === null || published.digest !== drivenDigest) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`plan_digest_stale: ${taskId} settled on plan ${drivenDigest.slice(0, 12)}, but #${issueNum} now publishes ${published?.digest.slice(0, 12) ?? "no plan"}`,
+						);
+						continue;
+					}
+				}
 
 				// 1. Resolve TaskIntent
 				let intentFile = join(options.root, "docs", "plans", `${taskId}.intent.json`);

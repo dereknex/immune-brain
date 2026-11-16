@@ -171,6 +171,8 @@ export interface E13LaneSettledEvent extends BaseLoopEvent {
 	issue_number: number;
 	task_id: string;
 	job_id: string;
+	/** The approved plan digest the job drove; `open_pr` refuses when it is no longer the published one. */
+	plan_digest?: string;
 	final_commit_sha: string | null;
 	verification_evidence_digest: string | null;
 }

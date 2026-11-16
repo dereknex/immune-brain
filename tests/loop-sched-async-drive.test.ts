@@ -45,7 +45,10 @@ import { recordExecutorExit, readExecutorExit } from "../plugins/immune-brain/ru
 import type { LoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import {
 	LOOP_JOB_MAX_ATTEMPTS,
+	loopJobEvents,
 	readLoopJob,
+	reconcileLoopJobs,
+	recordSettledLane,
 	startLoopJob,
 	type LoopJobExit,
 } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
@@ -449,13 +452,17 @@ describe("S6-AC3: the tick returns while a job runs", () => {
 });
 
 describe("S6-AC2: re-entry resumes an enrolled task", () => {
-	function depsFor(ws: { root: string; stateDir: string }): {
+	function depsFor(
+		ws: { root: string; stateDir: string },
+		overrides: Partial<AgentHandlerDeps> = {},
+	): {
 		deps: AgentHandlerDeps;
 		enrollments: AgentEnrollRequest[];
 		drives: AgentDriveRequest[];
 	} {
 		const enrollments: AgentEnrollRequest[] = [];
 		const drives: AgentDriveRequest[] = [];
+		const { drive: driveOverride, ...rest } = overrides;
 		const deps: AgentHandlerDeps = {
 			sessionProvider: {
 				async run() {
@@ -484,12 +491,14 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 			},
 			drive: async (input) => {
 				drives.push(input);
+				if (driveOverride) return driveOverride(input);
 				return { settled: true, exit: null, reason: "not settled in this fixture" } as AgentDriveResult;
 			},
 			runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
 			gitCommitAndPush: async () => ({ commit_sha: "e".repeat(40) }),
 			rebaseOrMerge: async () => ({ success: true }),
 			now: () => TS,
+			...rest,
 		};
 		return { deps, enrollments, drives };
 	}
@@ -532,9 +541,20 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 		};
 	}
 
-	async function runHandler(ws: { root: string; stateDir: string }, issueNumber: number) {
-		const { deps, enrollments, drives } = depsFor(ws);
-		const { event, decision } = decisionFor(issueNumber);
+	async function runHandler(
+		ws: { root: string; stateDir: string },
+		issueNumber: number,
+		options: {
+			deps?: Partial<AgentHandlerDeps>;
+			event?: NormalizedLoopEvent;
+			gitHubPort?: LoopGitHubPort;
+			standingDaemon?: boolean;
+		} = {},
+	) {
+		const { deps, enrollments, drives } = depsFor(ws, options.deps);
+		const built = decisionFor(issueNumber);
+		const event = options.event ?? built.event;
+		const decision = { ...built.decision, event_id: event.event_id, event_kind: event.kind };
 		const result = await dispatchDecisions({
 			root: ws.root,
 			stateDir: ws.stateDir,
@@ -543,7 +563,7 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 			decisions: [decision],
 			snapshot: snapshot({ issues: [readyIssue(issueNumber)] }),
 			state: initLoopState(),
-			gitHubPort: makeFakeGitHubPort(),
+			gitHubPort: options.gitHubPort ?? makeFakeGitHubPort(),
 			guardFacts: {
 				daemon_identity: "imm-bot",
 				identity_posture: "isolated",
@@ -553,7 +573,7 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 			dryRun: false,
 			now: TS,
 			agentPort: createAgentHandlerPort(deps),
-			standingDaemon: true,
+			standingDaemon: options.standingDaemon ?? true,
 		});
 		return { result, enrollments, drives };
 	}
@@ -584,6 +604,184 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 		expect(result.dispatches[0]).toMatchObject({ handler: "enroll_and_drive", outcome: "executed" });
 		expect(enrollments).toHaveLength(1);
 		expect(drives).toHaveLength(1);
+	});
+
+	/** A settled Lane exit, as the Kernel projection reports it. */
+	function settledExit(taskId: string) {
+		return {
+			settled: true,
+			reason: "settled",
+			exit: {
+				state: "exited" as const,
+				exit_code: 0,
+				generation: 1,
+				final_commit_sha: COMMIT_SHA,
+				verification_evidence_digest: `sha256:${taskId.length.toString(16).padStart(64, "0")}`,
+			},
+		} as AgentDriveResult;
+	}
+
+	function publishTwoIntentPlan(root: string, issueNumber: number, digest: string): void {
+		const intent = (taskId: string) => ({
+			path: `docs/plans/${taskId}.intent.json`,
+			task_id: taskId,
+			content_hash: `sha256:${"c".repeat(64)}`,
+			risk: "routine" as const,
+		});
+		writePlanPublication(join(root, ".imm/state/loop"), {
+			contract: LOOP_PLAN_PUBLICATION_CONTRACT,
+			issue_number: issueNumber,
+			branch: `imm-loop/issue-${issueNumber}`,
+			worktree_path: root,
+			digest,
+			requires_owner_approval: true,
+			intents: [intent("alpha-task"), intent("beta-task")],
+			task_id: "alpha-task",
+			comment_body: "plan",
+			drafted_at: TS,
+			published_at: TS,
+			published_comment_id: 4242,
+		});
+	}
+
+	function e12Lost(issueNumber: number, attempts: number): NormalizedLoopEvent {
+		return {
+			contract: LOOP_DAEMON_EVENT_CONTRACT,
+			event_id: `evt-e12-issue-${issueNumber}-${attempts}`,
+			kind: "E12_JOB_FINISHED",
+			timestamp: TS,
+			issue_number: issueNumber,
+			task_id: "alpha-task",
+			job_id: `issue-${issueNumber}`,
+			outcome: "lost",
+			attempts,
+			detail: "job process is gone with no outcome",
+		};
+	}
+
+	it("D8: a settled plan batch emits one E13 per intent, each bound to the driven plan", async () => {
+		const ws = makeWorkspace();
+		publishTwoIntentPlan(ws.root, 43, "sha256:published-plan-43");
+		const { result, drives } = await runHandler(ws, 43, {
+			deps: { drive: async (input) => settledExit(input.task_id) },
+			event: { ...decisionFor(43).event, task_id: undefined } as unknown as NormalizedLoopEvent,
+		});
+		expect(result.dispatches[0]).toMatchObject({ handler: "enroll_and_drive", outcome: "executed" });
+		await waitForTerminalJob(ws.stateDir, "issue-43");
+
+		expect(drives.map((drive) => drive.task_id)).toEqual(["alpha-task", "beta-task"]);
+		const job = readLoopJob(ws.stateDir, "issue-43")!;
+		expect(job.outcome).toBe("settled");
+		expect(job.settled_lanes?.map((lane) => lane.task_id)).toEqual(["alpha-task", "beta-task"]);
+
+		const settledEvents = loopJobEvents(ws.stateDir, { now: TS }).filter((event) => event.kind === "E13_LANE_SETTLED");
+		expect(settledEvents.map((event) => (event as { task_id: string }).task_id)).toEqual(["alpha-task", "beta-task"]);
+		expect(new Set(settledEvents.map((event) => event.event_id)).size).toBe(2);
+		for (const event of settledEvents) expect(event).toMatchObject({ plan_digest: "sha256:published-plan-43" });
+	});
+
+	it("D6: a retry of a lost batch skips the Lanes the lost attempt already settled", async () => {
+		const ws = makeWorkspace();
+		publishTwoIntentPlan(ws.root, 44, "sha256:published-plan-44");
+		startLoopJob(
+			ws.stateDir,
+			{
+				kind: "drive",
+				target_id: "issue-44",
+				task_id: "alpha-task",
+				issue_number: 44,
+				plan_digest: "sha256:published-plan-44",
+				task_ids: ["alpha-task", "beta-task"],
+				expected_output: "executor_exit_record",
+				now: TS,
+				pid: 999_999,
+			},
+			() => new Promise(() => {}),
+		);
+		recordSettledLane(ws.stateDir, "issue-44", { task_id: "alpha-task", exit: settledExit("alpha-task").exit! });
+		reconcileLoopJobs(ws.stateDir, { now: TS, is_alive: () => false });
+		expect(readLoopJob(ws.stateDir, "issue-44")?.outcome).toBe("lost");
+
+		const { result, drives } = await runHandler(ws, 44, {
+			deps: { drive: async (input) => settledExit(input.task_id) },
+			event: e12Lost(44, 1),
+		});
+		expect(result.dispatches[0]).toMatchObject({ handler: "enroll_and_drive", outcome: "executed" });
+		await waitForTerminalJob(ws.stateDir, "issue-44");
+
+		expect(drives.map((drive) => drive.task_id)).toEqual(["beta-task"]);
+		expect(readLoopJob(ws.stateDir, "issue-44")?.settled_lanes?.map((lane) => lane.task_id)).toEqual([
+			"alpha-task",
+			"beta-task",
+		]);
+	});
+
+	it("D6: a lost job's retry that cannot start escalates instead of ending silently", async () => {
+		const ws = makeWorkspace();
+		publishPlan(ws.root, 45, "sha256:published-plan-45");
+		const posted: string[] = [];
+		const gitHubPort = {
+			...makeFakeGitHubPort(),
+			async postComment(_issue: number, body: string) {
+				posted.push(body);
+				return { id: 9002 };
+			},
+		};
+		const { result } = await runHandler(ws, 45, {
+			event: { ...e12Lost(45, 1), task_id: TASK_ID },
+			deps: {
+				enroll: async () => {
+					throw new Error("kernel refused");
+				},
+			},
+			gitHubPort,
+		});
+		expect(result.dispatches[0]).toMatchObject({ handler: "enroll_and_drive", outcome: "failed" });
+		expect(result.dispatches[0]!.detail).toContain("escalated");
+		expect(posted.some((body) => body.includes("could not restart lost job issue-45"))).toBe(true);
+	});
+
+	it("D6: open_pr refuses a settlement whose plan is no longer the published one", async () => {
+		const ws = makeWorkspace();
+		publishPlan(ws.root, 46, "sha256:republished-plan-46");
+		writeIntent(ws.root);
+		const event: NormalizedLoopEvent = {
+			contract: LOOP_DAEMON_EVENT_CONTRACT,
+			event_id: "evt-e13-issue-46-1",
+			kind: "E13_LANE_SETTLED",
+			timestamp: TS,
+			issue_number: 46,
+			task_id: TASK_ID,
+			job_id: "issue-46",
+			plan_digest: "sha256:driven-plan-46",
+			final_commit_sha: COMMIT_SHA,
+			verification_evidence_digest: `sha256:${"f".repeat(64)}`,
+		};
+		const gitHubPort = makeFakeGitHubPort();
+		const dispatched = await dispatchDecisions({
+			root: ws.root,
+			stateDir: ws.stateDir,
+			loopConfig: LOOP_CONFIG,
+			events: [event],
+			decisions: [
+				{
+					...decisionFor(46).decision,
+					event_id: event.event_id,
+					event_kind: event.kind,
+					target: eventTarget(event),
+					handler: "open_pr",
+				},
+			],
+			snapshot: snapshot({ issues: [readyIssue(46)] }),
+			state: initLoopState(),
+			gitHubPort,
+			guardFacts: { daemon_identity: "imm-bot" },
+			dryRun: false,
+			now: TS,
+		});
+		expect(dispatched.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "failed" });
+		expect(dispatched.dispatches[0]!.detail).toContain("plan_digest_stale");
+		expect(gitHubPort.upserts).toHaveLength(0);
 	});
 
 	it("marks a dead-pid job lost, restarts it once, and escalates the second loss", async () => {
@@ -632,5 +830,64 @@ describe("S6-AC2: re-entry resumes an enrolled task", () => {
 		);
 		expect(judgements[0]!.handler).toBe("escalate");
 		expect(loadLoopDispatches(ws.stateDir).length).toBeGreaterThan(0);
+	});
+});
+
+describe("S6: a job's process is checked by identity and runtime", () => {
+	function runningJob(stateDir: string, startedAt = TS) {
+		return startLoopJob(
+			stateDir,
+			{
+				kind: "drive",
+				target_id: "issue-50",
+				task_id: TASK_ID,
+				issue_number: 50,
+				expected_output: "executor_exit_record",
+				now: startedAt,
+				pid: 4242,
+				process_started_at: () => "Mon 16 Nov 09:00:00 2026",
+			},
+			() => new Promise(() => {}),
+		);
+	}
+
+	it("marks the job lost when its pid now belongs to another process", () => {
+		const ws = makeWorkspace();
+		runningJob(ws.stateDir);
+		const result = reconcileLoopJobs(ws.stateDir, {
+			now: TS,
+			is_alive: () => true,
+			process_started_at: () => "Mon 16 Nov 11:30:00 2026",
+		});
+		expect(result.lost.map((job) => job.job_id)).toEqual(["issue-50"]);
+		expect(readLoopJob(ws.stateDir, "issue-50")?.detail).toContain("replaced by another process");
+	});
+
+	it("keeps a live job with its own process running", () => {
+		const ws = makeWorkspace();
+		runningJob(ws.stateDir);
+		const result = reconcileLoopJobs(ws.stateDir, {
+			now: TS,
+			is_alive: () => true,
+			process_started_at: () => "Mon 16 Nov 09:00:00 2026",
+		});
+		expect(result.terminal).toHaveLength(0);
+		expect(readLoopJob(ws.stateDir, "issue-50")?.outcome).toBeNull();
+	});
+
+	it("fails a job still running past the runtime limit, without restarting it", () => {
+		const ws = makeWorkspace();
+		runningJob(ws.stateDir);
+		const later = new Date(Date.parse(TS) + 2 * 60 * 60 * 1000).toISOString();
+		const result = reconcileLoopJobs(ws.stateDir, {
+			now: later,
+			is_alive: () => true,
+			process_started_at: () => "Mon 16 Nov 09:00:00 2026",
+			max_runtime_ms: 60 * 60 * 1000,
+		});
+		expect(result.lost).toHaveLength(0);
+		const job = readLoopJob(ws.stateDir, "issue-50");
+		expect(job?.outcome).toBe("failed");
+		expect(job?.detail).toContain("job_timed_out");
 	});
 });

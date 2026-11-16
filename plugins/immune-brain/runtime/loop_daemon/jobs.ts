@@ -16,6 +16,7 @@
  * is also where E12 `job_finished` and E13 `lane_settled` are produced.
  */
 
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	chmodSync,
@@ -37,6 +38,13 @@ export const LOOP_JOB_RECORD_CONTRACT = "assurance_kernel/loop_job_record/v1" as
 /** One retry: a lost job is restarted once, the second loss escalates. */
 export const LOOP_JOB_MAX_ATTEMPTS = 2;
 
+/**
+ * A job still running this long after it started is `failed` as timed out, so
+ * its lease is released and the owner is told; it is never restarted
+ * automatically, because its work may still be running in this process.
+ */
+export const LOOP_JOB_MAX_RUNTIME_MS = 12 * 60 * 60 * 1000;
+
 export type LoopJobKind = "drive" | "repair";
 
 export type LoopJobOutcome = "settled" | "failed" | "lost";
@@ -50,6 +58,12 @@ export interface LoopJobExit {
 	verification_evidence_digest: string | null;
 }
 
+/** One Lane of a job's plan batch that settled, with the exit it settled on. */
+export interface LoopJobLane {
+	task_id: string;
+	exit: LoopJobExit | null;
+}
+
 export interface LoopJobRecord {
 	contract: typeof LOOP_JOB_RECORD_CONTRACT;
 	/** One job per target, so the id is the target it holds. */
@@ -58,7 +72,15 @@ export interface LoopJobRecord {
 	target_id: string;
 	task_id: string;
 	issue_number: number | null;
+	/** The approved plan digest the job drives; a PR opens only while it is still the published one. */
+	plan_digest?: string | null;
+	/** Every task the job drives, in plan order; a retry of a lost job drives the same set. */
+	task_ids?: string[];
+	/** The Lanes that settled so far, in plan order; a retry skips them and each opens its own PR. */
+	settled_lanes?: LoopJobLane[];
 	pid: number;
+	/** The process start time of `pid` when the job started; a different one means the pid was reused. */
+	pid_started_at?: string | null;
 	started_at: string;
 	/** What the job must leave behind before it counts as settled. */
 	expected_output: string;
@@ -138,8 +160,25 @@ export interface StartLoopJobInput {
 	issue_number: number | null;
 	expected_output: string;
 	now: string;
+	plan_digest?: string | null;
+	task_ids?: string[];
 	/** The process that runs the work; defaults to this one. */
 	pid?: number;
+	/** Reads a pid's process start time; defaults to `ps`. */
+	process_started_at?: (pid: number) => string | null;
+}
+
+/** The start time `ps` reports for `pid`, or null when it cannot be read. */
+export function processStartedAt(pid: number): string | null {
+	try {
+		const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return out === "" ? null : out;
+	} catch {
+		return null;
+	}
 }
 
 /** What one job's work reports when it settles. */
@@ -160,6 +199,12 @@ export function startLoopJob(
 	work: () => Promise<LoopJobCompletion>,
 ): LoopJobRecord {
 	const previous = readLoopJob(stateDir, input.target_id);
+	const pid = input.pid ?? process.pid;
+	// A retry of the same plan keeps the Lanes the lost attempt already settled.
+	const carried =
+		previous && previous.outcome === "lost" && (previous.plan_digest ?? null) === (input.plan_digest ?? null)
+			? (previous.settled_lanes ?? [])
+			: [];
 	const job: LoopJobRecord = {
 		contract: LOOP_JOB_RECORD_CONTRACT,
 		job_id: input.target_id,
@@ -167,7 +212,11 @@ export function startLoopJob(
 		target_id: input.target_id,
 		task_id: input.task_id,
 		issue_number: input.issue_number,
-		pid: input.pid ?? process.pid,
+		plan_digest: input.plan_digest ?? null,
+		task_ids: input.task_ids ?? [input.task_id],
+		settled_lanes: carried,
+		pid,
+		pid_started_at: (input.process_started_at ?? processStartedAt)(pid),
 		started_at: input.now,
 		expected_output: input.expected_output,
 		attempts: (previous?.attempts ?? 0) + 1,
@@ -188,6 +237,16 @@ export function startLoopJob(
 			}),
 	);
 	return job;
+}
+
+/** Record one settled Lane of a running job, so a lost attempt's retry does not drive it again. */
+export function recordSettledLane(stateDir: string, targetId: string, lane: LoopJobLane): LoopJobRecord | null {
+	const job = readLoopJob(stateDir, targetId);
+	if (!job || isTerminalJob(job)) return job;
+	const lanes = (job.settled_lanes ?? []).filter((entry) => entry.task_id !== lane.task_id);
+	const next: LoopJobRecord = { ...job, settled_lanes: [...lanes, lane] };
+	writeLoopJob(stateDir, next);
+	return next;
 }
 
 export function finishLoopJob(
@@ -211,6 +270,8 @@ export function finishLoopJob(
 export interface ReconcileLoopJobsFacts {
 	now: string;
 	is_alive?: (pid: number) => boolean;
+	process_started_at?: (pid: number) => string | null;
+	max_runtime_ms?: number;
 }
 
 export interface ReconcileLoopJobsResult {
@@ -229,18 +290,34 @@ export function reconcileLoopJobs(
 	facts: ReconcileLoopJobsFacts,
 ): ReconcileLoopJobsResult {
 	const isAlive = facts.is_alive ?? isPidAlive;
+	const startedAt = facts.process_started_at ?? processStartedAt;
+	const maxRuntime = facts.max_runtime_ms ?? LOOP_JOB_MAX_RUNTIME_MS;
 	const terminal: LoopJobRecord[] = [];
 	const lost: LoopJobRecord[] = [];
 	for (const job of listLoopJobs(stateDir)) {
 		let observed = job;
-		if (!isTerminalJob(job) && !isAlive(job.pid)) {
-			observed =
-				finishLoopJob(stateDir, job.job_id, {
-					outcome: "lost",
-					detail: `job process ${job.pid} is gone with no outcome`,
-					now: facts.now,
-				}) ?? job;
-			lost.push(observed);
+		if (!isTerminalJob(job)) {
+			// A live pid whose start time moved is another process that reused it.
+			const reused =
+				isAlive(job.pid) && Boolean(job.pid_started_at) && startedAt(job.pid) !== job.pid_started_at;
+			if (!isAlive(job.pid) || reused) {
+				observed =
+					finishLoopJob(stateDir, job.job_id, {
+						outcome: "lost",
+						detail: reused
+							? `job process ${job.pid} was replaced by another process with no outcome`
+							: `job process ${job.pid} is gone with no outcome`,
+						now: facts.now,
+					}) ?? job;
+				lost.push(observed);
+			} else if (Date.parse(facts.now) - Date.parse(job.started_at) > maxRuntime) {
+				observed =
+					finishLoopJob(stateDir, job.job_id, {
+						outcome: "failed",
+						detail: `job_timed_out: still running ${Math.round(maxRuntime / 60000)} minutes after ${job.started_at}`,
+						now: facts.now,
+					}) ?? job;
+			}
 		}
 		if (!isTerminalJob(observed)) continue;
 		terminal.push(observed);
@@ -273,17 +350,26 @@ export function loopJobEvents(stateDir: string, facts: { now: string }): Normali
 			detail: job.detail ?? "",
 		});
 		if (job.outcome !== "settled") continue;
-		events.push({
-			contract: LOOP_DAEMON_EVENT_CONTRACT,
-			event_id: `evt-e13-${job.job_id}-${job.attempts}`,
-			kind: "E13_LANE_SETTLED",
-			timestamp: facts.now,
-			issue_number: job.issue_number,
-			task_id: job.task_id,
-			job_id: job.job_id,
-			final_commit_sha: job.exit?.final_commit_sha ?? null,
-			verification_evidence_digest: job.exit?.verification_evidence_digest ?? null,
-		});
+		// D8: every settled Lane of the plan batch opens its own PR.
+		const lanes: LoopJobLane[] =
+			job.settled_lanes && job.settled_lanes.length > 0 ? job.settled_lanes : [{ task_id: job.task_id, exit: job.exit }];
+		for (const lane of lanes) {
+			events.push({
+				contract: LOOP_DAEMON_EVENT_CONTRACT,
+				event_id:
+					lanes.length === 1 && lane.task_id === job.task_id
+						? `evt-e13-${job.job_id}-${job.attempts}`
+						: `evt-e13-${job.job_id}-${job.attempts}-${lane.task_id}`,
+				kind: "E13_LANE_SETTLED",
+				timestamp: facts.now,
+				issue_number: job.issue_number,
+				task_id: lane.task_id,
+				job_id: job.job_id,
+				...(job.plan_digest ? { plan_digest: job.plan_digest } : {}),
+				final_commit_sha: lane.exit?.final_commit_sha ?? null,
+				verification_evidence_digest: lane.exit?.verification_evidence_digest ?? null,
+			});
+		}
 	}
 	return events;
 }
