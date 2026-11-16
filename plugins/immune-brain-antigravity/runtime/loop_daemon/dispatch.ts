@@ -33,12 +33,17 @@ import {
 	findLatestLaneDecisionQuestion,
 	handleLaneDecisionReply,
 	matchOfferedOption,
+	parkLaneSlot,
 	parseDecisionReplyText,
 	publishLaneDecisionQuestion,
 	type DecisionOption,
 	type DecisionQuestionInput,
 	type RelayInputFactory,
 } from "./decision_relay.ts";
+import {
+	createLocalInteractionChannel,
+	laneDecisionInteractionRequest,
+} from "./interaction/local_channel.ts";
 export type { RelayInputFactory };
 import {
 	escalationKey,
@@ -676,6 +681,33 @@ export async function dispatchDecisions(
 					options: event.options,
 					issue_number: issueNumber,
 				};
+
+				// Spec loop-agent-scheduling D4: with the `local` channel the
+				// question is a request file in the daemon's state directory, and
+				// the user answers it through the Host's native gate.
+				if (loopConfig.interaction?.channel === "local") {
+					const request = laneDecisionInteractionRequest({
+						task_id: event.task_id,
+						run_id: event.run_id,
+						record_revision: event.record_revision,
+						question: event.question,
+						options: event.options,
+						...(issueNumber === undefined ? {} : { issue_number: issueNumber }),
+					});
+					const channel = createLocalInteractionChannel({
+						stateDir,
+						binding: () => ({ record_revision: event.record_revision }),
+					});
+					const posted = await channel.post(request);
+					if (stateDir) parkLaneSlot(stateDir, event.task_id, { host_token: lease?.host_token ?? randomUUID() });
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`published local lane decision question ${request.interaction_id} for ${event.task_id} (${posted})`,
+					);
+					continue;
+				}
 
 				const result = await publishLaneDecisionQuestion(input, {
 					postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),

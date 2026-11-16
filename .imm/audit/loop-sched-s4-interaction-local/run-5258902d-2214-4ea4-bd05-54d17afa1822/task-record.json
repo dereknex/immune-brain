@@ -1,0 +1,349 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s4-interaction-local",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s4-interaction-local",
+    "goal": "Add the local Interaction channel: the daemon writes requests under its state directory, every Host lists them through loop_interactions and answers them only through the privileged answer_loop_interaction tool's native confirmation, selected by loop.interaction.channel, per D4 of docs/specs/loop-agent-scheduling.spec.md.",
+    "acceptance": [
+      {
+        "id": "S4-AC1",
+        "assertion": "Source BR-DEC-7, BR-SCN-2; meet D4 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-interaction-local.test.ts over the local channel, the shared MCP tool runtime and the Pi tool registration. Done looks like: with loop.interaction.channel local, a pending Lane decision appears in loop_interactions, an answer confirmed through answer_loop_interaction is applied through the Lane decision relay and the Lane continues on the next tick. Negative: an answer file without the privileged tool's confirmation record is ignored; an answer to a stale request is refused; a plan_approval request is never answered by the tool and points to drive. Bound: loop.interaction.channel other than github or local is config_invalid; absent means github.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-interaction-local.test.ts\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s4-interaction-local.md",
+      "docs/adr/0040-loop-interaction-protocol.md",
+      "docs/plans/loop-sched-s4-interaction-local.intent.json",
+      "docs/reference/immune-brain-config.md",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/.pi-extension/imm-canary-work.ts",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+      "plugins/immune-brain/runtime/config/layered_config.ts",
+      "plugins/immune-brain/runtime/host-core/interaction.ts",
+      "plugins/immune-brain/runtime/host-core/mcp_runtime.ts",
+      "plugins/immune-brain/runtime/host-core/runtime.ts",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+      "tests/layered-config.test.ts",
+      "tests/loop-sched-interaction-local.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s4-interaction-local.intent.json",
+    "content_hash": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3",
+  "git_base_head": "331613d705256455bccb03301dae343a750bb476",
+  "attestations": [
+    {
+      "id": "approval-qa-3a31bd29",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3",
+      "diff_hash": "sha256:4bdb03a9562c9356b6c511d53b720952ff144d8cab33e3ef9bdca580e5e59869",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:3e7bd41a6172d38d783855f81a6d32ded1bda1a2210558f25f91ed11722a406f",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:3e7bd41a6172d38d783855f81a6d32ded1bda1a2210558f25f91ed11722a406f"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-a1aa04c6",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3",
+      "diff_hash": "sha256:b3709a9ddc1bd89cc238fde3daf9a0c3ded2c6ed446f710a778927e87405d678",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:bb722cd31f323b80407d674069fb3e73c63af783ad20129322369fea7ecb3b97",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:bb722cd31f323b80407d674069fb3e73c63af783ad20129322369fea7ecb3b97"
+        }
+      ]
+    },
+    {
+      "id": "approval-qa-9c6a7287",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3",
+      "diff_hash": "sha256:699c001d1a1edfdca0aaf43609232436c70eb77cf69508d4152d00a3e393a8cf",
+      "actor_id": "deterministic-qa",
+      "summary": "all 2 project verification check(s) passed; execution=sha256:74cc88e96e7f3ddd0bda7dc1367b7cdadbbf298adcc0d5e59794a965dc5f6088",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S4-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 2 project verification check(s) passed; execution=sha256:74cc88e96e7f3ddd0bda7dc1367b7cdadbbf298adcc0d5e59794a965dc5f6088"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-348160fb",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:256a16c843415cad33a3a307acc5e8218b4f4e8a16bf3de0ed64a4deb0ed6bc3",
+      "diff_hash": "sha256:699c001d1a1edfdca0aaf43609232436c70eb77cf69508d4152d00a3e393a8cf",
+      "actor_id": "cli:claude-code:4914f06f-76b8-44ad-8b4b-b4f960971d68",
+      "summary": "Round-3 delta resolves the record-revision owner via findLaneRelayTarget, the resolver relayLaneDecision also uses, so the stale check in answer_loop_interaction and the daemon tick reads the Lane's TaskRecord and now fails closed on an unreadable record; dist bundles mirror the source and the new Lane-owned test pins the regression; blast radius high (host-core/runtime.ts tool gate, loop_daemon/cli.ts tick, shared local_channel.ts, generated mcp-server bundles).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "331613d705256455bccb03301dae343a750bb476",
+        "review_commit": "48cc0735aa1792111169aee69c6f632316435f14",
+        "review_tree": "5a7be0080e46e2c047b10bdf3ee9f5952b351a81",
+        "manifest_digest": "sha256:6f3e3d70fe28957bf787335859fd3d28c824752f36a777e50736c1f56bf08e86"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-49cc8f5b39f7-1-review-1",
+          "acceptance_id": "S4-AC1",
+          "summary": "The new Lane-owned test stubs relayDecision, so it proves the binding resolves to the Lane's revision and that the relay gets called, but not that a real relay continues the Lane on the next tick.",
+          "anchor": "sha256:24383b16c3636a5ada8e7b71a211d00bdd50c61d7b48697a91b42d25c0639650",
+          "evidence": {
+            "trigger": "tests/loop-sched-interaction-local.test.ts Lane-owned case injects a stub relayLaneDecision → a regression in relayLaneDecision's expectedRecordRevision check against the Lane projection would not fail this test",
+            "caller_chain": [
+              "tests/loop-sched-interaction-local.test.ts",
+              "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts:applyLocalLaneDecisionAnswers",
+              "plugins/immune-brain/runtime/unattended/lane_decision.ts:relayLaneDecision"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S4-AC1"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:a84ad09fa48e0b8ca438bd12fa2ab55da92cb93ff07e7e99fb181301df3df5f9"
+    }
+  ],
+  "findings": [
+    {
+      "id": "review-72066e7ee713-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 1,
+      "summary": "The generated Antigravity copy of local_channel.ts is out of date: it lacks the step that retires a consumed answer, so it no longer matches its source and the derived-files check for antigravity-plugin-artifact would fail.",
+      "anchor": "sha256:0991d90affb9f9deb72b0839ac1114193ea5d81d645c92d4c91cd548d569eb79",
+      "evidence": {
+        "trigger": "At review_commit e14c32b7, the source plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts (oid dfb04016) retires the request inside applyLocalLaneDecisionAnswers when the outcome is 'relayed' or 'ignored'. Its generated copy plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/local_channel.ts (oid 89e71d0d) is missing exactly those 4 lines. Every other mirrored runtime file has the same oid as its source, and docs/agents/derived-files.json lists this copy as an output of antigravity-plugin-artifact, generated from plugins/immune-brain/runtime/**/*.ts. Two observable wrong results follow. First, `bun scripts/build-antigravity-plugin.ts --check` reports drift. Second, an Antigravity-shipped daemon running with loop.interaction.channel local does not consume a confirmed answer after relaying it. The answer stays on disk and is processed again on the next tick, which breaks the 'consumed once' behaviour that the S4-AC1 seam test asserts for the source copy.",
+        "caller_chain": [
+          "plugins/immune-brain-antigravity/runtime/loop_daemon/cli.ts",
+          "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/local_channel.ts#applyLocalLaneDecisionAnswers",
+          "plugins/immune-brain-antigravity/runtime/loop_daemon/interaction/local_channel.ts#retireLocalRequest",
+          "docs/agents/derived-files.json#antigravity-plugin-artifact"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    },
+    {
+      "id": "review-c04329706199-1-review-1",
+      "kind": "blocking",
+      "status": "resolved",
+      "acceptance_id": "S4-AC1",
+      "source": "review",
+      "review_round": 2,
+      "summary": "The local channel checks Lane-decision staleness against the main checkout's TaskRecord (readTaskRecordRaw(root/cwd)), not the Lane store that owns the decision's record_revision. As a result, every real single-task Lane decision is refused by answer_loop_interaction as interaction_stale, and the daemon retires the request as stale. The Lane therefore never continues on the next tick.",
+      "anchor": "sha256:594460c8146ae09d54cda26374ec83e6cee733412b3b95e7dd8af74c8d234cea",
+      "evidence": {
+        "trigger": "loop.interaction.channel=local; a single-task Lane batch whose active run exists only in the Lane store (child.lane.path) raises E6 with record_revision R. That R is the Lane projection revision that relayLaneDecision checks against target.lane_path (unchanged lane_decision.ts readFacts/expectedRecordRevision, read because it is the relay the new code calls). The root has no active run, so readTaskRecordRaw(root, task) returns MISSING_REVISION \"missing\" (unchanged kernel/storage.ts readTaskRecordRaw, read because the changed callers depend on its return value). Result: (1) HostRuntime.answerLoopInteraction compares R with \"missing\"; the value is truthy and the two differ, so it throws interaction_stale and no answer is ever written. (2) Even with an answer file present, applyLocalLaneDecisionAnswers' binding() returns \"missing\" from cli.ts recordRevision, poll() reports stale, and retireLocalRequest deletes the request. The relay is never reached. The existing cli.ts expected_record_revisions logic already resolves the revision through findLaneRelayTarget(...).lane_path first; the new local path skips that step. tests/loop-sched-interaction-local.test.ts enrolls the task at root and injects recordRevision: () => recordRevision, so no test exercises the Lane-store case. Fix: resolve the binding revision from the Lane store (findLaneRelayTarget → readTaskRecordRaw(lane_path)) in both the Host tool and the daemon, and add a test that pins a Lane-store-only record.",
+        "caller_chain": [
+          "plugins/immune-brain/runtime/loop_daemon/dispatch.ts:dispatchDecisions(relay_lane_decision_question, channel local)",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts:laneDecisionInteractionRequest",
+          "plugins/immune-brain/runtime/host-core/mcp_runtime.ts:callTool(answer_loop_interaction)",
+          "plugins/immune-brain/runtime/host-core/runtime.ts:HostRuntime.answerLoopInteraction",
+          "plugins/immune-brain/runtime/loop_daemon/cli.ts:tick recordRevision=readTaskRecordRaw(absoluteRoot)",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts:applyLocalLaneDecisionAnswers",
+          "plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts:createLocalInteractionChannel.poll"
+        ],
+        "violated": {
+          "kind": "acceptance",
+          "ref": "S4-AC1"
+        }
+      },
+      "counterevidence": null
+    }
+  ],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s4-interaction-local:2026-11-15T15:08:39.643Z",
+      "at": "2026-11-15T15:08:39.643Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s4-interaction-local.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s4-interaction-local:2026-11-15T15:08:58.406Z",
+      "at": "2026-11-15T15:08:58.406Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-3a31bd29\naction_v2_sha256:9f382e786855463c1799dbb7f126f6611f54990b88b4438587d1832b05dc9dde",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T15:08:58.406Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-sched-s4-interaction-local:2026-11-15T15:11:28.307Z",
+      "at": "2026-11-15T15:11:28.307Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_1\naction_v2_sha256:0963f1078644379d115d06e6752527ac0975290796b59f73fda5b9c01c1e6b95",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:496f2e5d-f449-4bc9-9255-0026d43fe7c9",
+        "confirmation_ref": "pi:cli:claude-code:496f2e5d-f449-4bc9-9255-0026d43fe7c9",
+        "issued_at": "2026-11-15T15:11:28.307Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "331613d705256455bccb03301dae343a750bb476",
+        "review_commit": "e14c32b71b1520d892ce6cdc80fb2f70158d0658",
+        "review_tree": "ffc7e18b40381fd236cf283c83a54c05c786512c",
+        "manifest_digest": "sha256:08ac19ff097215cd369bbfa37e9d4e84d0d6c2dc78e258bbd9e21ee2bf73a96e"
+      },
+      "review_started_at": "2026-11-15T15:09:04.433Z",
+      "review_submitted_at": "2026-11-15T15:11:26.864Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s4-interaction-local:2026-11-15T15:12:42.818Z",
+      "at": "2026-11-15T15:12:42.818Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-72066e7ee713-1-review-1\naction_v2_sha256:cf0cb4bf23bf146c19b2fa61133c3c66326a19c0df8bb7b0083dc26d5aae3fe3"
+    },
+    {
+      "id": "freeze_artifacts:loop-sched-s4-interaction-local:2026-11-15T15:12:54.123Z",
+      "at": "2026-11-15T15:12:54.123Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s4-interaction-local.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s4-interaction-local:2026-11-15T15:13:12.026Z",
+      "at": "2026-11-15T15:13:12.026Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-a1aa04c6\naction_v2_sha256:54f86f35a56a552b31541c7421706142550b101941e3abf666921bd9d2466b80",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T15:13:12.026Z"
+      }
+    },
+    {
+      "id": "request_rework:loop-sched-s4-interaction-local:2026-11-15T15:15:40.993Z",
+      "at": "2026-11-15T15:15:40.993Z",
+      "type": "request_rework",
+      "from_state": "active:frozen",
+      "to_state": "active:active",
+      "reason": "review_round_2\naction_v2_sha256:f31f46769a80772a0bd3eceee1ad7692340b6cdaa0f5421a03543e84bab3d884",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:4c18517e-464d-479a-94af-75d2da357fd1",
+        "confirmation_ref": "pi:cli:claude-code:4c18517e-464d-479a-94af-75d2da357fd1",
+        "issued_at": "2026-11-15T15:15:40.993Z"
+      },
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "331613d705256455bccb03301dae343a750bb476",
+        "review_commit": "ceeec9fec412d598cf74cda9efc7aca6934a5ab5",
+        "review_tree": "85df47eaf5ff3b512de576a17faf8b36428cd841",
+        "manifest_digest": "sha256:bf9d5c4e0776c8362e35387f02dc6920e015df502e54ce98af5c10a542be9ed1"
+      },
+      "review_started_at": "2026-11-15T15:13:18.077Z",
+      "review_submitted_at": "2026-11-15T15:15:39.262Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "resolve_finding:loop-sched-s4-interaction-local:2026-11-15T15:20:09.887Z",
+      "at": "2026-11-15T15:20:09.887Z",
+      "type": "resolve_finding",
+      "from_state": "active:active",
+      "to_state": "active:active",
+      "reason": "review-c04329706199-1-review-1\naction_v2_sha256:4d70f0a50e96f5f248576e561cc1481658e5fb174c3fb9888096e1c85d2c4557"
+    },
+    {
+      "id": "freeze_artifacts:loop-sched-s4-interaction-local:2026-11-15T15:20:22.846Z",
+      "at": "2026-11-15T15:20:22.846Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s4-interaction-local.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s4-interaction-local:2026-11-15T15:20:42.395Z",
+      "at": "2026-11-15T15:20:42.395Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-9c6a7287\naction_v2_sha256:fe820791a9046518ce32800b3a85c24f067f715c022f26084f7cf0df300c3f0f",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T15:20:42.395Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s4-interaction-local:2026-11-15T15:25:32.211Z",
+      "at": "2026-11-15T15:25:32.211Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-348160fb\naction_v2_sha256:aca013af843cf664f30e97a0e1b24b6f07f97501d595b100d73a36692110a269",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:4914f06f-76b8-44ad-8b4b-b4f960971d68",
+        "confirmation_ref": "pi:cli:claude-code:4914f06f-76b8-44ad-8b4b-b4f960971d68",
+        "issued_at": "2026-11-15T15:25:32.211Z"
+      },
+      "review_started_at": "2026-11-15T15:20:49.229Z",
+      "review_submitted_at": "2026-11-15T15:25:30.568Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s4-interaction-local:2026-11-15T15:25:37.182Z",
+      "at": "2026-11-15T15:25:37.182Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:4e7b567f2af9e1d55a5d72bbf1441ff43025a4ac16a87f88122517135fc5c74f"
+    }
+  ]
+}

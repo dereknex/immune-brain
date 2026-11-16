@@ -35,10 +35,11 @@ import {
 	loadPublishedPlanDigests,
 	type AgentHandlerPort,
 } from "./agent_handlers.ts";
-import { dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } from "./dispatch.ts";
+import { createDefaultRelayInputFactory, dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } from "./dispatch.ts";
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
+import { applyLocalLaneDecisionAnswers, localDecisionRecordRevision } from "./interaction/local_channel.ts";
 import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
@@ -1123,6 +1124,25 @@ Options:
 			}
 
 			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
+			// Spec loop-agent-scheduling D4: with the `local` channel, an answer the
+			// user confirmed in their own Host session is applied here, through the
+			// same verifier and relay a GitHub reply uses. It reaches the Lane on
+			// this tick, so the next tick starts its generation.
+			const localAnswers =
+				isDryRun || loopConfig.interaction?.channel !== "local"
+					? []
+					: await applyLocalLaneDecisionAnswers({
+							stateDir,
+							guardFacts: facts,
+							recordRevision: (taskId) => localDecisionRecordRevision(absoluteRoot, taskId),
+							relayInputFactory: (taskId) =>
+								options?.relayInputFactory ??
+								(options?.laneRuntime
+									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime })
+									: undefined),
+							...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
+						});
+
 			const dispatchRes = await dispatchDecisions({
 				root: absoluteRoot,
 				stateDir,
@@ -1152,6 +1172,8 @@ Options:
 				decisions_count: decisions.length,
 				dispatches: dispatchRes.dispatches,
 				dispatches_count: dispatchRes.dispatches.length,
+				local_answers: localAnswers,
+				local_answers_count: localAnswers.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};

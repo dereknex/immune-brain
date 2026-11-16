@@ -70,7 +70,8 @@ and subagent preferences stay in the Host's agent instruction files (see
   "decision_models": { "enabled_points": ["a14_pr_comment_triage"], "egress": { "clef": [] } },
   "agents": { "active": "default" },
   "lanes": { "max_parallel": 2, "executor_host": "pi" },
-  "batch": { "final_verification": ["bun run typecheck"] }
+  "batch": { "final_verification": ["bun run typecheck"] },
+  "loop": { "interaction": { "channel": "github" } }
 }
 ```
 
@@ -78,6 +79,11 @@ and subagent preferences stay in the Host's agent instruction files (see
 - `agents` accepts only `active`; `profiles` and `presets` are defined in the
   user file (see [Agents](#agents)).
 - `batch.final_verification` holds at most 8 plain command strings.
+- `loop.interaction.channel` is `"github"` or `"local"` and defaults to `"github"`: it selects where the Loop
+  daemon asks you a question. With `local` the daemon writes its requests under
+  `.imm/state/loop/interactions/`, your own Host session lists them with `loop_interactions` and answers one
+  through `answer_loop_interaction`, and the daemon applies the confirmed answer on its next tick. A
+  `plan_approval` is still answered by your own `drive` entry. Any other value is `config_invalid`.
 - `.imm/risk-floor.json` stays a separate file (see [Risk Floor](#risk-floor)).
 
 ## Agents

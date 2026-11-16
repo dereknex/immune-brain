@@ -564,7 +564,13 @@ async function capturedToolFailure(promise: Promise<unknown>): Promise<Record<st
 
 	test("registers assurance and Loop routing Tools plus the read-only /imm-tasks command", () => {
 		const { tools, commands } = loadSurface();
-		expect(tools.map((tool) => tool.name)).toEqual(["imm_kernel_canary", "imm_loop_action"]);
+		expect(tools.map((tool) => tool.name)).toEqual([
+			"imm_kernel_canary",
+			"imm_loop_action",
+			// Spec loop-agent-scheduling D4: the local Interaction channel's Tools.
+			"loop_interactions",
+			"answer_loop_interaction",
+		]);
 		expect(Object.keys(commands)).toEqual(["imm-tasks"]);
 	});
 

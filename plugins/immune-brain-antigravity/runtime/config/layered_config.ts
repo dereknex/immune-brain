@@ -50,6 +50,9 @@ export const LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"] as const;
 export type LoopAutoEnrollMaxRisk = (typeof LOOP_AUTO_ENROLL_MAX_RISKS)[number];
 export const LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"] as const;
 export type LoopAssociation = (typeof LOOP_ASSOCIATIONS)[number];
+/** Spec loop-agent-scheduling D4: where the daemon asks the literal user. */
+export const LOOP_INTERACTION_CHANNELS = ["github", "local"] as const;
+export type LoopInteractionChannel = (typeof LOOP_INTERACTION_CHANNELS)[number];
 export interface LoopConfig {
 	mode: LoopMode;
 	interval_seconds: number;
@@ -59,6 +62,7 @@ export interface LoopConfig {
 	auto_enroll_max_risk: LoopAutoEnrollMaxRisk;
 	allowed_actors: string[];
 	allowed_associations: LoopAssociation[];
+	interaction: { channel: LoopInteractionChannel };
 	budget: { max_ticks_per_day: number | null; max_dispatches_per_day: number | null };
 }
 export const DEFAULT_LOOP_CONFIG: LoopConfig = {
@@ -70,6 +74,7 @@ export const DEFAULT_LOOP_CONFIG: LoopConfig = {
 	auto_enroll_max_risk: "none",
 	allowed_actors: [],
 	allowed_associations: [...LOOP_ASSOCIATIONS],
+	interaction: { channel: "github" },
 	budget: { max_ticks_per_day: null, max_dispatches_per_day: null },
 };
 
@@ -127,6 +132,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	const batch = section(project?.batch, projectPath, "batch", "batch");
 	const loop = section(project?.loop, projectPath, "loop", "loop");
 	const loopBudget = section(loop.budget, projectPath, "loop.budget", "loop");
+	const loopInteraction = section(loop.interaction, projectPath, "loop.interaction", "loop");
 	validKeys(ud, ["profiles", "default_profile", "bindings", "egress"], userPath, "decision_models", "decision_models");
 	validKeys(od, ["default_profile", "bindings", "egress"], userPath, `projects.${projectKey}.decision_models`, "decision_models");
 	validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
@@ -169,8 +175,10 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (has(batch, "final_verification") && (!Array.isArray(batch.final_verification) || batch.final_verification.length > 8 || batch.final_verification.some((v: unknown) => typeof v !== "string" || !v))) { invalid(projectPath, "batch.final_verification", "expected at most eight command strings"); failed.add("batch"); }
 	const integerWithin = (v: unknown, min: number, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && (v as number) >= min && (v as number) <= max;
 	const distinctLogins = (v: unknown) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
-	validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "budget"], projectPath, "loop", "loop");
+	validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"], projectPath, "loop", "loop");
 	validKeys(loopBudget, ["max_ticks_per_day", "max_dispatches_per_day"], projectPath, "loop.budget", "loop");
+	// Spec loop-agent-scheduling D4: one channel key, `github` by default.
+	validKeys(loopInteraction, ["channel"], projectPath, "loop.interaction", "loop");
 	const loopChecks: Array<[string, boolean, string]> = [
 		["mode", !has(loop, "mode") || (LOOP_MODES as readonly unknown[]).includes(loop.mode), `expected one of ${LOOP_MODES.join(", ")}`],
 		["interval_seconds", !has(loop, "interval_seconds") || integerWithin(loop.interval_seconds, 15), "expected an integer of at least 15"],
@@ -180,6 +188,7 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 		["auto_enroll_max_risk", !has(loop, "auto_enroll_max_risk") || (LOOP_AUTO_ENROLL_MAX_RISKS as readonly unknown[]).includes(loop.auto_enroll_max_risk), "expected none or routine; material and critical require tracker_approval"],
 		["allowed_actors", !has(loop, "allowed_actors") || distinctLogins(loop.allowed_actors), "expected distinct non-empty GitHub logins"],
 		["allowed_associations", !has(loop, "allowed_associations") || (distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v: string) => (LOOP_ASSOCIATIONS as readonly string[]).includes(v))), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`],
+		["interaction.channel", !has(loopInteraction, "channel") || (LOOP_INTERACTION_CHANNELS as readonly unknown[]).includes(loopInteraction.channel), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`],
 	];
 	for (const [key, value] of Object.entries(loopBudget)) loopChecks.push([`budget.${key}`, integerWithin(value, 1), "expected a positive integer"]);
 	for (const [key, ok, message] of loopChecks) if (!ok) { invalid(projectPath, `loop.${key}`, message); failed.add("loop"); }
@@ -335,6 +344,6 @@ export function resolveConfig(root: string, options: { userConfigPath?: string; 
 	if (carrierLegacy && !has(project ?? undefined, "initiative_carrier") && !has(override, "initiative_carrier") && !has(user ?? undefined, "initiative_carrier") && !["github", "local"].includes(carrierLegacy.value)) { invalid(carrierLegacy.file, "initiative_carrier", "invalid legacy directive"); failed.add("initiative_carrier"); }
 	const decisionModels: Obj = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
 	if (options.checkEnv) decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v as string] !== undefined ? "set" : "unset"])) : {}]));
-	const resolvedLoop: LoopConfig = { ...DEFAULT_LOOP_CONFIG, ...loop, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } } as LoopConfig;
+	const resolvedLoop: LoopConfig = { ...DEFAULT_LOOP_CONFIG, ...loop, interaction: { ...DEFAULT_LOOP_CONFIG.interaction, ...loopInteraction }, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } } as LoopConfig;
 	return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, agents, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }

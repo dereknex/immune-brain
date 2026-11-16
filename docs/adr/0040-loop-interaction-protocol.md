@@ -82,6 +82,18 @@ carries.
    `escalationKey`. Their pre-protocol markers stay readable, so a question or
    an escalation posted before this change is still read by the same code.
 
+7. **`local` is the user's own Host session.** The daemon writes one request
+   file per `interaction_id` under `.imm/state/loop/interactions/` (`0600`) and
+   reads the answer back from `<id>.answer.json`. A Host lists the pending
+   requests with the non-privileged `loop_interactions` tool and records one
+   answer with the privileged `answer_loop_interaction` tool, whose native
+   confirmation shows the kind, subject, binding and answer. Only a file that
+   carries that confirmation's record is an answer: one written without it is
+   ignored, and one bound to a record revision that has since moved is refused.
+   A `plan_approval` is never answered by the tool — the user's own `drive`
+   entry on the published TaskIntent enrolls it. `loop.interaction.channel`
+   selects the channel in the project file (`github` by default).
+
 ## Consequences
 
 - "May this answer be applied?" is one predicate on one interface, so S4's

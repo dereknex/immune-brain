@@ -221,6 +221,7 @@ flowchart TD
      - `allowed_actors`: `string[]` (GitHub logins)
      - `allowed_associations`: subset of `["OWNER", "MEMBER", "COLLABORATOR"]`
      - `budget`: `{ max_ticks_per_day?: number, max_dispatches_per_day?: number }`
+     - `interaction`: `{ channel?: "github" | "local" }` (default `"github"`), which selects the Interaction channel of [`loop-agent-scheduling.spec.md`](loop-agent-scheduling.spec.md) D4
 2. **Same-UID Identity & `degraded` Mode**:
    - `identity.ts` inspects daemon UID vs worktree UID and token provenance. When running under the same OS UID without an isolated runner boundary, `identity_posture` becomes `"degraded"`, blocking `policy_auto` enrollment via guard `G10`.
 3. **In-Place Status Issue & Marker-Keyed Escalations**:

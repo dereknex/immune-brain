@@ -8551,6 +8551,7 @@ function resolveConfig(root, options = {}) {
   const batch = section(project?.batch, projectPath, "batch", "batch");
   const loop = section(project?.loop, projectPath, "loop", "loop");
   const loopBudget = section(loop.budget, projectPath, "loop.budget", "loop");
+  const loopInteraction = section(loop.interaction, projectPath, "loop.interaction", "loop");
   validKeys(ud, ["profiles", "default_profile", "bindings", "egress"], userPath, "decision_models", "decision_models");
   validKeys(od, ["default_profile", "bindings", "egress"], userPath, `projects.${projectKey}.decision_models`, "decision_models");
   validKeys(pd, ["enabled_points", "egress"], projectPath, "decision_models", "decision_models");
@@ -8639,8 +8640,9 @@ function resolveConfig(root, options = {}) {
   }
   const integerWithin = (v, min, max = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= min && v <= max;
   const distinctLogins = (v) => Array.isArray(v) && v.every((item) => typeof item === "string" && item.trim().length > 0) && new Set(v).size === v.length;
-  validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "budget"], projectPath, "loop", "loop");
+  validKeys(loop, ["mode", "interval_seconds", "max_concurrent", "max_ready_buffer", "max_pr_buffer", "auto_enroll_max_risk", "allowed_actors", "allowed_associations", "interaction", "budget"], projectPath, "loop", "loop");
   validKeys(loopBudget, ["max_ticks_per_day", "max_dispatches_per_day"], projectPath, "loop.budget", "loop");
+  validKeys(loopInteraction, ["channel"], projectPath, "loop.interaction", "loop");
   const loopChecks = [
     ["mode", !has(loop, "mode") || LOOP_MODES.includes(loop.mode), `expected one of ${LOOP_MODES.join(", ")}`],
     ["interval_seconds", !has(loop, "interval_seconds") || integerWithin(loop.interval_seconds, 15), "expected an integer of at least 15"],
@@ -8649,7 +8651,8 @@ function resolveConfig(root, options = {}) {
     ["max_pr_buffer", !has(loop, "max_pr_buffer") || integerWithin(loop.max_pr_buffer, 1, 20), "expected an integer between 1 and 20"],
     ["auto_enroll_max_risk", !has(loop, "auto_enroll_max_risk") || LOOP_AUTO_ENROLL_MAX_RISKS.includes(loop.auto_enroll_max_risk), "expected none or routine; material and critical require tracker_approval"],
     ["allowed_actors", !has(loop, "allowed_actors") || distinctLogins(loop.allowed_actors), "expected distinct non-empty GitHub logins"],
-    ["allowed_associations", !has(loop, "allowed_associations") || distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v) => LOOP_ASSOCIATIONS.includes(v)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`]
+    ["allowed_associations", !has(loop, "allowed_associations") || distinctLogins(loop.allowed_associations) && loop.allowed_associations.length > 0 && loop.allowed_associations.every((v) => LOOP_ASSOCIATIONS.includes(v)), `expected a subset of ${LOOP_ASSOCIATIONS.join(", ")}`],
+    ["interaction.channel", !has(loopInteraction, "channel") || LOOP_INTERACTION_CHANNELS.includes(loopInteraction.channel), `expected one of ${LOOP_INTERACTION_CHANNELS.join(", ")}`]
   ];
   for (const [key, value] of Object.entries(loopBudget))
     loopChecks.push([`budget.${key}`, integerWithin(value, 1), "expected a positive integer"]);
@@ -8914,10 +8917,10 @@ function resolveConfig(root, options = {}) {
   const decisionModels = { valid: !failed.has("decision_models"), profiles: leaf(profiles, has(ud, "profiles") ? "user" : Object.keys(legacyProfiles).length ? "legacy:.imm/decision-models.local.json" : "default"), default_profile: defaultProfile, bindings, egress, enabled_points: choose([pd.enabled_points, "project"], [Object.keys(registry), "default"]) };
   if (options.checkEnv)
     decisionModels.environment = Object.fromEntries(Object.entries(profiles).map(([name, profile]) => [name, object3(profile) ? Object.fromEntries(Object.entries(profile).filter(([k, v]) => k.endsWith("_env") && typeof v === "string" && envName.test(v)).map(([k, v]) => [k, process.env[v] !== undefined ? "set" : "unset"])) : {}]));
-  const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
+  const resolvedLoop = { ...DEFAULT_LOOP_CONFIG, ...loop, interaction: { ...DEFAULT_LOOP_CONFIG.interaction, ...loopInteraction }, budget: { ...DEFAULT_LOOP_CONFIG.budget, ...loopBudget } };
   return { contract: "immune_brain/effective_config/v1", project_key: projectKey, files: { user: userPath, project: projectPath }, agents, decision_models: decisionModels, lanes, git_integration: failed.has("git_integration") ? leaf("manual", "default") : choose([user?.git_integration, "user"], [project?.git_integration, "project"], [gitLegacy?.value, `legacy:${gitLegacy?.file}`], ["manual", "default"]), initiative_carrier: failed.has("initiative_carrier") ? leaf(null, "default") : choose([project?.initiative_carrier, "project"], [override.initiative_carrier, "user:project"], [user?.initiative_carrier, "user"], [carrierLegacy?.value, `legacy:${carrierLegacy?.file}`]), batch: { final_verification: failed.has("batch") ? leaf(null, "default") : choose([batch.final_verification, "project"]) }, loop: failed.has("loop") ? { valid: false, ...leaf(null, "default") } : { valid: true, ...leaf(resolvedLoop, has(project ?? undefined, "loop") ? "project" : "default") }, review_verifier: failed.has("review_verifier") ? leaf(null, "default") : choose([project?.review_verifier, "project"], ["off", "default"]), diagnostics };
 }
-var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, DEFAULT_LOOP_CONFIG;
+var object3 = (v) => v !== null && typeof v === "object" && !Array.isArray(v), leaf = (value, source) => ({ value, source }), has = (o, k) => !!o && Object.hasOwn(o, k), envName, LANE_DEFAULTS, LOOP_MODES, LOOP_AUTO_ENROLL_MAX_RISKS, LOOP_ASSOCIATIONS, LOOP_INTERACTION_CHANNELS, DEFAULT_LOOP_CONFIG;
 var init_layered_config = __esm(() => {
   init_agent_roles();
   init_config();
@@ -8929,6 +8932,7 @@ var init_layered_config = __esm(() => {
   LOOP_MODES = ["off", "observe", "assist", "autonomous"];
   LOOP_AUTO_ENROLL_MAX_RISKS = ["none", "routine"];
   LOOP_ASSOCIATIONS = ["OWNER", "MEMBER", "COLLABORATOR"];
+  LOOP_INTERACTION_CHANNELS = ["github", "local"];
   DEFAULT_LOOP_CONFIG = {
     mode: "off",
     interval_seconds: 60,
@@ -8938,6 +8942,7 @@ var init_layered_config = __esm(() => {
     auto_enroll_max_risk: "none",
     allowed_actors: [],
     allowed_associations: [...LOOP_ASSOCIATIONS],
+    interaction: { channel: "github" },
     budget: { max_ticks_per_day: null, max_dispatches_per_day: null }
   };
 });
@@ -18471,7 +18476,8 @@ var PRIVILEGED_OPERATIONS = [
   "approve_breaking_intent_revision",
   "stop",
   "start_unattended_batch",
-  "retire_stale_batch"
+  "retire_stale_batch",
+  "answer_loop_interaction"
 ];
 var RECOVERY_ACTIONS = {
   interaction_not_opened: "retry through a fresh native gate in the current Host",
@@ -20572,7 +20578,9 @@ var TOOLS = [
   { name: "retire_stale_batch", description: "Retire an Initiative's parked or drifted batch record to the terminal superseded state under the literal-user drive entry.", privileged: true },
   { name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
   { name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
-  { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false }
+  { name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
+  { name: "loop_interactions", description: "List the local Loop Interaction requests this checkout's daemon is waiting on.", privileged: false, optionalTaskId: true },
+  { name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true }
 ];
 function listMcpTools() {
   return TOOLS.map((tool) => ({
@@ -20623,6 +20631,7 @@ function listMcpTools() {
           } : {}
         } : {
           task_id: { type: "string" },
+          ...tool.name === "answer_loop_interaction" ? { interaction_id: { type: "string" }, answer: { type: "string" } } : {},
           ...tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {},
           ...tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {},
           ...tool.name === "request_authorization" ? {
@@ -20637,9 +20646,9 @@ function listMcpTools() {
           ...tool.name === "refute_finding" ? { finding_id: { type: "string" }, attestation_id: { type: "string" } } : {}
         }
       },
-      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
+      required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch" ? ["initiative_slug"] : tool.name === "loop_interactions" ? [] : tool.name === "answer_loop_interaction" ? ["interaction_id", "answer"] : tool.name === "resolve_finding" ? ["task_id", "finding_id"] : tool.name === "refute_finding" ? ["task_id", "finding_id", "attestation_id"] : tool.name === "revise_intent" ? ["task_id", "next_intent"] : ["task_id"]
     },
-    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" }
+    annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" || tool.name === "loop_interactions" }
   }));
 }
 function supportsElicitationProtocol(value) {
@@ -20829,6 +20838,26 @@ function createMcpRuntime(profile, options = {}) {
           throw new Error("initiative_slug is required");
         refuseSuppliedAuthority(args);
         return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
+      }
+      if (name === "loop_interactions") {
+        refuseSuppliedAuthority(args);
+        return runtime.listLoopInteractions(typeof args.task_id === "string" && args.task_id ? args.task_id : undefined);
+      }
+      if (name === "answer_loop_interaction") {
+        refuseSuppliedAuthority(args);
+        if (typeof args.interaction_id !== "string" || !args.interaction_id)
+          throw new Error("interaction_id is required");
+        if (typeof args.answer !== "string" || !args.answer)
+          throw new Error("answer is required");
+        requireTrustedHost(true);
+        return runtime.answerLoopInteraction(args.interaction_id, args.answer, {
+          sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+          toolCallId: meta.toolCallId ?? `call-${name}`,
+          taskId: typeof args.task_id === "string" ? args.task_id : "",
+          ...meta.workspace ? { workspace: meta.workspace } : {},
+          interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+          signal: meta.signal
+        });
       }
       const taskId = String(args.task_id ?? "");
       if (!taskId)
@@ -21070,6 +21099,27 @@ async function writeReply(output, reply) {
   });
 }
 function elicitationParams(input) {
+  if (input.interaction) {
+    const i = input.interaction;
+    return {
+      mode: "form",
+      message: `Answer this local Loop Interaction request?
+
+${[
+        `Operation: ${input.operation}`,
+        `Request: ${i.interaction_id}`,
+        `Kind: ${i.kind}`,
+        i.subject ? `Subject: ${i.subject}` : null,
+        i.binding ? `Binding: ${i.binding}` : null,
+        `Question: ${i.prompt}`,
+        `Answer: ${i.answer}`
+      ].filter(Boolean).join(`
+`)}
+
+Accepting records this answer; the daemon applies it on its next tick. Declining or cancelling writes nothing.`,
+      requestedSchema: { type: "object", properties: {} }
+    };
+  }
   if (input.operation === "retire_stale_batch") {
     const d = input.batchDisposition;
     const details = [
@@ -22155,10 +22205,10 @@ class AntigravityReviewHost {
 
 // plugins/immune-brain/runtime/antigravity/lane_guard.ts
 init_lane_workspace();
-import { existsSync as existsSync21, lstatSync as lstatSync21, readdirSync as readdirSync12, realpathSync as realpathSync23 } from "node:fs";
+import { existsSync as existsSync22, lstatSync as lstatSync21, readdirSync as readdirSync13, realpathSync as realpathSync23 } from "node:fs";
 import { randomUUID as randomUUID12 } from "node:crypto";
 import { homedir as homedir3, tmpdir as tmpdir10 } from "node:os";
-import { join as join39 } from "node:path";
+import { join as join40 } from "node:path";
 init_batch_final_verification();
 init_assurance_projection();
 
@@ -22570,9 +22620,9 @@ function isAbsent(error) {
 // plugins/immune-brain/runtime/host-core/runtime.ts
 init_verdict_authority();
 init_layered_config();
-import { existsSync as existsSync19, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync20, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
 import { execFileSync as execFileSync16 } from "node:child_process";
-import { dirname as dirname19, join as join36, resolve as resolve17 } from "node:path";
+import { dirname as dirname19, join as join37, resolve as resolve17 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 init_coordinator();
 init_verification();
@@ -22781,6 +22831,130 @@ init_coordinator();
 init_github_issue_tracker();
 init_backend_claim();
 init_batch_preflight();
+
+// plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
+init_actor_identity();
+init_storage();
+import { existsSync as existsSync17, mkdirSync as mkdirSync13, readFileSync as readFileSync23, readdirSync as readdirSync12, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join34 } from "node:path";
+
+// plugins/immune-brain/runtime/loop_daemon/guards.ts
+init_no_touch();
+
+// plugins/immune-brain/runtime/loop_daemon/leases.ts
+var DEFAULT_LEASE_TTL_MS = 15 * 60 * 1000;
+var DEFAULT_GATE_TTL_MS = 30 * 1000;
+
+// plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts
+var INTERACTION_REQUEST_CONTRACT = "immune_brain/interaction_request/v1";
+
+// plugins/immune-brain/runtime/loop_daemon/interaction/local_channel.ts
+var LOCAL_ANSWER_CONTRACT = "immune_brain/interaction_answer/v1";
+var ANSWER_LOOP_INTERACTION_TOOL = "answer_loop_interaction";
+function loopInteractionStateDir(root) {
+  return join34(root, ".imm/state/loop");
+}
+function localInteractionsDir(stateDir) {
+  return join34(stateDir, "interactions");
+}
+function requestPath(stateDir, interactionId) {
+  return join34(localInteractionsDir(stateDir), `${fileName(interactionId)}.json`);
+}
+function answerPath(stateDir, interactionId) {
+  return join34(localInteractionsDir(stateDir), `${fileName(interactionId)}.answer.json`);
+}
+function fileName(interactionId) {
+  if (!interactionId || /[/\\]/.test(interactionId) || interactionId.startsWith("."))
+    throw new Error(`interaction_id_invalid: ${interactionId} is not a local request file name`);
+  return interactionId;
+}
+function readJson(path) {
+  if (!existsSync17(path))
+    return null;
+  try {
+    return JSON.parse(readFileSync23(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function readLocalRequest(stateDir, interactionId) {
+  const record = readJson(requestPath(stateDir, interactionId));
+  if (!record || record.contract !== INTERACTION_REQUEST_CONTRACT || record.interaction_id !== interactionId)
+    return null;
+  return record;
+}
+function readLocalRequests(stateDir) {
+  const dir = localInteractionsDir(stateDir);
+  if (!existsSync17(dir))
+    return [];
+  const records = [];
+  for (const entry of readdirSync12(dir).sort()) {
+    if (!entry.endsWith(".json") || entry.endsWith(".answer.json"))
+      continue;
+    const id = entry.slice(0, -".json".length);
+    const record = readLocalRequest(stateDir, id);
+    if (record)
+      records.push(record);
+  }
+  return records;
+}
+function readLocalAnswer(stateDir, interactionId) {
+  const answer = readJson(answerPath(stateDir, interactionId));
+  if (!answer || answer.contract !== LOCAL_ANSWER_CONTRACT || answer.interaction_id !== interactionId)
+    return null;
+  if (answer.confirmation?.tool !== ANSWER_LOOP_INTERACTION_TOOL || typeof answer.confirmation.confirmed_at !== "string")
+    return null;
+  if (answer.actor !== LITERAL_USER_ACTOR_ID || typeof answer.value !== "string")
+    return null;
+  return answer;
+}
+function writeLocalAnswer(stateDir, answer, now = new Date().toISOString()) {
+  const value = { contract: LOCAL_ANSWER_CONTRACT, actor: LITERAL_USER_ACTOR_ID, answered_at: now, ...answer };
+  mkdirSync13(localInteractionsDir(stateDir), { recursive: true, mode: 448 });
+  writeFileSync13(answerPath(stateDir, value.interaction_id), `${JSON.stringify(value, null, 2)}
+`, {
+    mode: 384
+  });
+  return value;
+}
+function localDecisionAuthorityRoot(root, taskId) {
+  return findLaneRelayTarget(root, taskId)?.lane_path ?? root;
+}
+function localDecisionRecordRevision(root, taskId) {
+  const revision = readTaskRecordRaw(localDecisionAuthorityRoot(root, taskId), taskId).revision;
+  return revision && revision !== "missing" ? revision : null;
+}
+
+// plugins/immune-brain/runtime/host-core/loop_interactions.ts
+var LOOP_INTERACTIONS_CONTRACT = "immune_brain/loop_interactions/v1";
+function answerableLoopInteraction(request) {
+  return request.kind !== "plan_approval" && request.kind !== "notice";
+}
+var LOCAL_ACTION = {
+  plan_approval: "answer it by running `drive` on the published TaskIntent in your own Host session",
+  notice: "act on the notice in your own Host session"
+};
+function listPendingLoopInteractions(root, taskId) {
+  const stateDir = loopInteractionStateDir(root);
+  const pending = readLocalRequests(stateDir).filter((request) => !taskId || request.subject.task_id === taskId).map((request) => {
+    const answerable = answerableLoopInteraction(request);
+    const answer = readLocalAnswer(stateDir, request.interaction_id);
+    return {
+      interaction_id: request.interaction_id,
+      kind: request.kind,
+      authority: request.authority,
+      subject: request.subject,
+      binding: request.binding,
+      prompt: request.prompt,
+      ...request.options && request.options.length > 0 ? { options: [...request.options] } : {},
+      answer: request.answer,
+      answerable,
+      ...answerable ? {} : { local_action: LOCAL_ACTION[request.kind] ?? "" },
+      answered: answer !== null
+    };
+  });
+  return { contract: LOOP_INTERACTIONS_CONTRACT, state_dir: stateDir, pending, pending_count: pending.length };
+}
 
 // plugins/immune-brain/runtime/unattended/batch_kernel_port.ts
 init_batch_git();
@@ -23166,8 +23340,8 @@ init_storage_paths();
 init_batch_reasons();
 init_batch_preflight();
 init_batch_state();
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join34 } from "node:path";
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join35 } from "node:path";
 var SERIAL_IN_FLIGHT = new Set(["enrolled", "settled"]);
 var LANE_IN_FLIGHT = new Set(["lane_admitted", "enrolled", "settled", "lane_committed"]);
 var RETIRE_REASON = "Retired by an explicit literal-user disposition: the batch plan moved past this record, so its authorization could neither reconfirm nor continue. " + "Recorded child commits, child states and the batch branch are preserved as evidence. " + "Children this batch never executed carry no commit, no batch trailer and no approval; nothing infers their delivery from this record.";
@@ -23187,7 +23361,7 @@ function laneChildLifecycleOf(root, child) {
   if (!lane)
     return kernelLifecycleOf(root, child.task_id);
   try {
-    if (!existsSync17(join34(lane.path, KERNEL_DB_RELATIVE)))
+    if (!existsSync18(join35(lane.path, KERNEL_DB_RELATIVE)))
       return null;
     if (readActiveClaimTaskId(lane.path) === child.task_id)
       return null;
@@ -23367,10 +23541,10 @@ init_batch_state();
 init_role_prompt_bridge();
 init_host_port();
 import { execFileSync as execFileSync15 } from "node:child_process";
-import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants11, existsSync as existsSync18, mkdtempSync as mkdtempSync7, readFileSync as readFileSync23, realpathSync as realpathSync20, rmSync as rmSync13, writeFileSync as writeFileSync13 } from "node:fs";
+import { accessSync as accessSync4, chmodSync as chmodSync5, constants as constants11, existsSync as existsSync19, mkdtempSync as mkdtempSync7, readFileSync as readFileSync24, realpathSync as realpathSync20, rmSync as rmSync14, writeFileSync as writeFileSync14 } from "node:fs";
 import { createHash as createHash26 } from "node:crypto";
 import { tmpdir as tmpdir8 } from "node:os";
-import { delimiter as delimiter5, dirname as dirname18, join as join35 } from "node:path";
+import { delimiter as delimiter5, dirname as dirname18, join as join36 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var REVIEW_PROFILE_RECOVERY = "Set `lanes.review_host` in the active user lane profile or in `.imm/config.json`, then call `advance_assurance`";
 var REVIEW_BINARY = {
@@ -23412,7 +23586,7 @@ function claudeOutputWriteRule(outputPath) {
 }
 function reviewBinary(host) {
   const name = REVIEW_BINARY[host];
-  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join35(dir || ".", name)).find((path) => {
+  return (process.env.PATH ?? "").split(delimiter5).map((dir) => join36(dir || ".", name)).find((path) => {
     try {
       accessSync4(path, constants11.X_OK);
       return true;
@@ -23432,8 +23606,8 @@ function reviewSessionRunner(env = process.env) {
   }
   let dir = dirname18(fileURLToPath4(import.meta.url));
   for (let level = 0;level < 5; level++) {
-    const candidate = join35(dir, "bin", "imm-session");
-    if (existsSync18(candidate))
+    const candidate = join36(dir, "bin", "imm-session");
+    if (existsSync19(candidate))
       return candidate;
     dir = dirname18(dir);
   }
@@ -23490,7 +23664,7 @@ function sessionSpec(runner, label, input) {
 function sessionAwaitOutcome(awaitRecord) {
   let record;
   try {
-    record = JSON.parse(readFileSync23(awaitRecord, "utf8"));
+    record = JSON.parse(readFileSync24(awaitRecord, "utf8"));
   } catch {
     return null;
   }
@@ -23571,13 +23745,13 @@ class CliReviewHost {
     const profile = request.profile ?? review.profile;
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
-    const directory = realpathSync20(mkdtempSync7(join35(tmpdir8(), "imm-cli-verify-")));
+    const directory = realpathSync20(mkdtempSync7(join36(tmpdir8(), "imm-cli-verify-")));
     chmodSync5(directory, 493);
-    const packet = join35(directory, "verify-packet.md");
-    const output = join35(directory, `verify-output-${request.operationId}.json`);
-    const awaitRecord = join35(directory, "session-await.json");
+    const packet = join36(directory, "verify-packet.md");
+    const output = join36(directory, `verify-output-${request.operationId}.json`);
+    const awaitRecord = join36(directory, "session-await.json");
     const label = `verify ${request.taskId}`.slice(0, 32);
-    writeFileSync13(packet, request.prompt, { encoding: "utf8", mode: 420 });
+    writeFileSync14(packet, request.prompt, { encoding: "utf8", mode: 420 });
     const actorId = `cli-verifier:${profile.host}:${request.operationId}`;
     const session = sessionSpec(sessionRunner, label, {
       root: review.root,
@@ -23605,7 +23779,7 @@ ${writeToOutput(output)}`,
         return { ok: false, release: true, reason: "no verification reservation" };
       return this.wrapped.inspectVerification(reservation);
     }
-    if (!existsSync18(owned.output)) {
+    if (!existsSync19(owned.output)) {
       const outcome = sessionAwaitOutcome(owned.awaitRecord);
       if (outcome && "ended" in outcome)
         return {
@@ -23615,7 +23789,7 @@ ${writeToOutput(output)}`,
         };
       return { ok: false, release: false, reason: sessionPending(outcome, "verifier", owned.output, "submit_verification") };
     }
-    const bytes = readFileSync23(owned.output, "utf8");
+    const bytes = readFileSync24(owned.output, "utf8");
     if (!strictJsonObject(bytes))
       return { ok: false, release: true, reason: "verification_output_invalid: the verifier's output is not one strict JSON object" };
     return { ok: true, receipt: { actorId: owned.actorId, result: bytes, model: owned.model } };
@@ -23630,13 +23804,13 @@ ${writeToOutput(output)}`,
     const sessionRunner = reviewSessionRunner(this.env);
     requireReviewBinary(profile);
     const tree = reviewTreeState(root);
-    const directory = realpathSync20(mkdtempSync7(join35(tmpdir8(), "imm-cli-review-")));
+    const directory = realpathSync20(mkdtempSync7(join36(tmpdir8(), "imm-cli-review-")));
     chmodSync5(directory, 493);
-    const packet = join35(directory, "packet.md");
-    const output = join35(directory, `review-output-${request.operationId}.json`);
-    const awaitRecord = join35(directory, "session-await.json");
+    const packet = join36(directory, "packet.md");
+    const output = join36(directory, `review-output-${request.operationId}.json`);
+    const awaitRecord = join36(directory, "session-await.json");
     const contractHash = currentReviewContractHash();
-    writeFileSync13(packet, `review_contract_hash: ${contractHash}
+    writeFileSync14(packet, `review_contract_hash: ${contractHash}
 
 ${request.snapshotPrompt}`, { encoding: "utf8", mode: 420 });
     const readDirs = [...new Set([directory, dirname18(request.evidencePath)])];
@@ -23686,7 +23860,7 @@ ${writeToOutput(output, true)}`,
         release: true,
         reason: `review_tree_changed: ${changed.join(", ")}. Restore these paths to the reviewed state, then call advance_assurance.`
       };
-    if (!existsSync18(reservation.output)) {
+    if (!existsSync19(reservation.output)) {
       const outcome = sessionAwaitOutcome(reservation.awaitRecord);
       if (outcome && "ended" in outcome)
         return {
@@ -23696,7 +23870,7 @@ ${writeToOutput(output, true)}`,
         };
       return { ok: false, release: false, reason: sessionPending(outcome, "reviewer", reservation.output, "submit_review") };
     }
-    const bytes = readFileSync23(reservation.output, "utf8");
+    const bytes = readFileSync24(reservation.output, "utf8");
     const mismatch = /^REVIEW_CONTRACT_MISMATCH (\S+)\s*$/.exec(bytes.trim());
     if (mismatch)
       return { ok: false, release: true, reason: `review_contract_mismatch: reviewer ${mismatch[1]} vs current ${currentReviewContractHash()}` };
@@ -23720,7 +23894,7 @@ ${writeToOutput(output, true)}`,
     const verification = this.verifications.get(reservation.id);
     if (verification) {
       this.verifications.delete(reservation.id);
-      rmSync13(verification.directory, { recursive: true, force: true });
+      rmSync14(verification.directory, { recursive: true, force: true });
       return;
     }
     const owned = this.reservations.get(reservation.id);
@@ -23729,7 +23903,7 @@ ${writeToOutput(output, true)}`,
       return;
     }
     this.reservations.delete(reservation.id);
-    rmSync13(owned.directory, { recursive: true, force: true });
+    rmSync14(owned.directory, { recursive: true, force: true });
   }
 }
 
@@ -23844,12 +24018,12 @@ async function executeOrdinaryKernelOperation(input) {
   const operation = input.operation.op === "revise_intent" ? { ...input.operation, next_intent: parseProjectTaskIntent(root, input.operation.next_intent) } : input.operation;
   const priorIntent = (input.readIntent ?? readTaskIntentForRecord)(root, taskId);
   const nextScope = operation.op === "revise_intent" ? operation.next_intent.scope_hint : undefined;
-  const sidecar = join36(root, priorIntent.intent_ref.path);
-  const priorBytes = operation.op === "revise_intent" ? readFileSync24(sidecar) : null;
+  const sidecar = join37(root, priorIntent.intent_ref.path);
+  const priorBytes = operation.op === "revise_intent" ? readFileSync25(sidecar) : null;
   const priorStaged = priorBytes !== null ? captureStagedIntent(root, priorIntent.intent_ref.path) : null;
   try {
     if (priorBytes) {
-      writeFileSync14(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
+      writeFileSync15(sidecar, `${JSON.stringify(operation.next_intent, null, 2)}
 `);
       execFileSync16("git", ["add", "--", priorIntent.intent_ref.path], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
     }
@@ -24091,7 +24265,7 @@ class HostRuntime {
     try {
       if (!this.profile.selectedParent(meta.toolCallId, this.cwd, slug))
         return result;
-      if (existsSync19(join36(this.cwd, ".imm", "audit", taskId)))
+      if (existsSync20(join37(this.cwd, ".imm", "audit", taskId)))
         execFileSync16("git", ["-C", this.cwd, "add", "--", `.imm/audit/${taskId}`], { stdio: "ignore" });
       const batch = await this.startUnattendedBatch(slug, meta, { reuseOnly: true });
       return { ...result, batch, ...batch.state === "started" && batch.report?.tracker ? { tracker: batch.report.tracker } : {} };
@@ -24147,6 +24321,57 @@ class HostRuntime {
         actor_id: "executor"
       }
     });
+  }
+  async listLoopInteractions(taskId) {
+    return listPendingLoopInteractions(this.cwd, taskId);
+  }
+  async answerLoopInteraction(interactionId, answer, meta) {
+    if (!interactionId)
+      throw new Error("interaction_id is required");
+    if (!answer)
+      throw new Error("answer is required");
+    const stateDir = loopInteractionStateDir(this.cwd);
+    const request = readLocalRequest(stateDir, interactionId);
+    if (!request)
+      throw new Error(`interaction_not_pending: ${interactionId} is not a pending local request in ${stateDir}`);
+    if (request.kind === "plan_approval")
+      throw new Error(`answer_with_drive: a plan_approval is answered by your own \`drive\` entry on the published TaskIntent, not by ${ANSWER_LOOP_INTERACTION_TOOL}`);
+    if (request.kind === "notice")
+      throw new Error(`interaction_not_answerable: ${interactionId} is a notice`);
+    const taskId = request.subject.task_id ?? meta.taskId;
+    const current = request.binding.record_revision ? localDecisionRecordRevision(this.cwd, taskId) : null;
+    if (request.binding.record_revision && request.binding.record_revision !== current)
+      throw new Error(`interaction_stale: ${interactionId} was bound to record revision ${request.binding.record_revision}, the owner of ${taskId} now holds ${current ?? "an unreadable record"}; list the pending requests again`);
+    const gate = await this.gate(ANSWER_LOOP_INTERACTION_TOOL, { ...meta, taskId }, {
+      interaction: {
+        interaction_id: interactionId,
+        kind: request.kind,
+        subject: Object.entries(request.subject).map(([key, value]) => `${key}=${String(value)}`).join(" "),
+        binding: Object.entries(request.binding).filter(([, value]) => Boolean(value)).map(([key, value]) => `${key}=${String(value)}`).join(" "),
+        prompt: request.prompt,
+        answer
+      }
+    });
+    writeLocalAnswer(stateDir, {
+      interaction_id: interactionId,
+      kind: request.kind,
+      subject: request.subject,
+      binding: request.binding,
+      value: answer,
+      confirmation: {
+        tool: ANSWER_LOOP_INTERACTION_TOOL,
+        confirmed_at: new Date().toISOString(),
+        confirmation_ref: gate.confirmation_ref
+      }
+    });
+    return {
+      state: "interaction_answered",
+      interaction_id: interactionId,
+      task_id: taskId,
+      answer,
+      confirmation_ref: gate.confirmation_ref,
+      next: "The daemon applies this answer through the Lane decision relay on its next tick; do not answer it again."
+    };
   }
   async authorize(taskId, operation, meta, extra = {}) {
     if (operation === "approve_breaking_intent_revision" && this.env[LANE_EXECUTOR_ENV] === LANE_EXECUTOR_HEADLESS)
@@ -24284,7 +24509,7 @@ class HostRuntime {
       throw new Error("approve_breaking_intent_revision requires next_intent");
     const nextIntentHash = nextIntent ? canonicalIntentHash(nextIntent) : undefined;
     const nextIntentRef = nextIntent ? { path: `docs/plans/${nextIntent.task_id}.intent.json`, content_hash: nextIntentHash } : undefined;
-    const sidecar = nextIntent ? join36(this.cwd, priorIntent.intent_ref.path) : undefined;
+    const sidecar = nextIntent ? join37(this.cwd, priorIntent.intent_ref.path) : undefined;
     const stagedSnapshot = sidecar ? captureStagedIntent(this.cwd, priorIntent.intent_ref.path) : undefined;
     const restoreStagedIntent2 = () => {
       if (!stagedSnapshot)
@@ -24297,7 +24522,7 @@ class HostRuntime {
       if (sidecar && nextIntent) {
         if (op === "approve_breaking_intent_revision" && classifyIntentRevision(priorIntent.intent, nextIntent) !== "breaking")
           throw new Error("approve_breaking_intent_revision requires a breaking revision");
-        writeFileSync14(sidecar, `${JSON.stringify(nextIntent, null, 2)}
+        writeFileSync15(sidecar, `${JSON.stringify(nextIntent, null, 2)}
 `);
         execFileSync16("git", ["add", "--", priorIntent.intent_ref.path], { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"] });
         const preparedRecord = await readTaskRecordRaw(this.cwd, taskId);
@@ -25059,9 +25284,9 @@ import { tmpdir as tmpdir9 } from "node:os";
 init_coordinator();
 init_storage();
 init_batch_state();
-import { existsSync as existsSync20, lstatSync as lstatSync20, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync14 } from "node:fs";
+import { existsSync as existsSync21, lstatSync as lstatSync20, realpathSync as realpathSync21, renameSync as renameSync6, rmSync as rmSync15 } from "node:fs";
 import { randomUUID as randomUUID11 } from "node:crypto";
-import { join as join37 } from "node:path";
+import { join as join38 } from "node:path";
 var NATIVE_OPERATIONS = new Set(["start_unattended_batch", "retire_stale_batch", "request_authorization", "approve_breaking_intent_revision", "request_stop", "stop"]);
 var MAX_METADATA_BYTES = 256 * 1024;
 var NATIVE_FAILURE_LIMIT = 3;
@@ -25077,21 +25302,21 @@ var blank = () => ({
   stop_blocks: 0,
   native_failures: 0
 });
-var statePath2 = (host, sessionId, root) => join37(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
-var callPath = (host, toolId, root) => join37(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
+var statePath2 = (host, sessionId, root) => join38(cacheDir(root, host.cache_name), `${sessionHash(sessionId)}.continuation`);
+var callPath = (host, toolId, root) => join38(cacheDir(root, host.cache_name), `${sessionHash(toolId)}.continuation-call`);
 function drop(host, path, root) {
-  if (!existsSync20(path))
+  if (!existsSync21(path))
     return;
   if (!ensurePrivateDir(cacheDir(root, host.cache_name)))
     return;
   try {
     const stat = lstatSync20(path);
     if (stat.isFile() && ownedByUs(stat))
-      rmSync14(path);
+      rmSync15(path);
   } catch {}
 }
 function readLast(path, dir) {
-  if (dir && existsSync20(dir) && !ensurePrivateDir(dir))
+  if (dir && existsSync21(dir) && !ensurePrivateDir(dir))
     throw new Error("continuation directory could not be verified");
   let stat;
   try {
@@ -25698,16 +25923,16 @@ class AntigravityRuntime {
 }
 
 // plugins/immune-brain/runtime/antigravity/tool_permission.ts
-import { readFileSync as readFileSync25 } from "node:fs";
+import { readFileSync as readFileSync26 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { join as join38 } from "node:path";
+import { join as join39 } from "node:path";
 function antigravitySettingsPath(home = homedir2()) {
-  return join38(home, ".gemini", "antigravity-cli", "settings.json");
+  return join39(home, ".gemini", "antigravity-cli", "settings.json");
 }
 function readAntigravityAllowRules(home = homedir2()) {
   let parsed;
   try {
-    parsed = JSON.parse(readFileSync25(antigravitySettingsPath(home), "utf8"));
+    parsed = JSON.parse(readFileSync26(antigravitySettingsPath(home), "utf8"));
   } catch {
     return [];
   }
@@ -25904,10 +26129,10 @@ ${details.join(`
 `)}`;
 }
 function entryLogPath(sessionId, root) {
-  return join39(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
+  return join40(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(sessionId)}.entry`);
 }
 function admissionPath(toolUseId, root) {
-  return join39(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
+  return join40(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(toolUseId)}.admit`);
 }
 function parseAdmissionId(admissionId) {
   const match = /^(.+):(\d+):([a-z_]+)$/.exec(admissionId);
@@ -25922,35 +26147,35 @@ function parseAdmissionId(admissionId) {
   return { conversation, stepIdx, operation: opRaw };
 }
 function confirmationPath(conversation, admissionId, root) {
-  return join39(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
+  return join40(cacheDir(root, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversation)}.${sessionHash(admissionId)}.confirm`);
 }
 function dropConversationConfirmations(conversationId, root) {
   if (!conversationId)
     return;
   const dir = cacheDir(root, ANTIGRAVITY_CACHE_DIR);
-  if (!existsSync21(dir))
+  if (!existsSync22(dir))
     return;
   const prefix = `${sessionHash(conversationId)}.`;
   try {
-    for (const file of readdirSync12(dir)) {
+    for (const file of readdirSync13(dir)) {
       if (file.startsWith(prefix) && file.endsWith(".confirm")) {
-        dropPrivate(join39(dir, file));
+        dropPrivate(join40(dir, file));
       }
     }
   } catch {}
 }
 function antigravityLocalNames(cwd, home) {
-  const roots = [join39(cwd, ".agents"), join39(home, ".agents"), join39(home, ".gemini/config")];
+  const roots = [join40(cwd, ".agents"), join40(home, ".agents"), join40(home, ".gemini/config")];
   return {
     alias: (name) => {
       for (const root of roots) {
-        const body = readAliasFile(join39(root, "commands", `${name}.md`));
+        const body = readAliasFile(join40(root, "commands", `${name}.md`));
         if (body !== null)
           return body;
       }
       return null;
     },
-    skill: (name) => roots.some((root) => localSkillExists(join39(root, "skills"), name))
+    skill: (name) => roots.some((root) => localSkillExists(join40(root, "skills"), name))
   };
 }
 function readPhaseEntryState(sessionId, root = tmpdir10()) {
@@ -25998,7 +26223,7 @@ function recordPhaseEntryPrompt(conversationId, prompt, cwd, locations = {}) {
   const recognized = recognizePhaseEntry(prompt, antigravityLocalNames(cwd, locations.home ?? homedir3()), "antigravity");
   const entry = releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) ? "plan" : recognized;
   if (releasesRunBinding(prompt, recognized === "plan" ? "planner" : null) || recognized === "run") {
-    const contPath = join39(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
+    const contPath = join40(cacheDir(storeRoot, ANTIGRAVITY_CACHE_DIR), `${sessionHash(conversationId)}.continuation`);
     dropPrivate(contPath);
   }
   let workspace = null;
@@ -26335,7 +26560,7 @@ async function prepareRetireConfirmation(conversationId, sync, locations) {
 async function prepareTaskAuthorityConfirmation(conversationId, sync, locations) {
   const { call, cwd, root, stepIdx, admissionId } = sync;
   const taskId = String(call.opArgs.task_id ?? "");
-  if (!existsSync21(join39(cwd, ".imm")))
+  if (!existsSync22(join40(cwd, ".imm")))
     return { decision: "allow" };
   let workspaceRealpath;
   try {
