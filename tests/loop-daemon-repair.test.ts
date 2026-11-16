@@ -190,7 +190,7 @@ describe("Suite 1: Daemon PR Identification and Scope Filtering (D8.1, Negative 
 
 		const reviewResult = await addressPrReview({
 			pr: nonDaemon,
-			comment: { id: 1, body: "fix this" },
+			comments: [{ id: 1, body: "fix this" }],
 			context,
 			deps: {
 				applyReviewFix: async () => ({ success: true, modified_paths: [] }),
@@ -578,7 +578,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 		const pr = daemonPr();
 		const resultNoTouch = await addressPrReview({
 			pr,
-			comment: { id: 1, body: "update", path: "docs/agents/no-touch.json" },
+			comments: [{ id: 1, body: "update", path: "docs/agents/no-touch.json" }],
 			context: { worktree_path: "/worktree", task_id: "task-42" },
 			deps: {
 				applyReviewFix: async () => ({ success: true, modified_paths: [] }),
@@ -591,7 +591,7 @@ describe("Suite 5: Scope Enforcement and Authority/No-Touch Rejection (review-2)
 
 		const resultEmpty = await addressPrReview({
 			pr,
-			comment: { id: 2, body: "update", path: "src/foo.ts" },
+			comments: [{ id: 2, body: "update", path: "src/foo.ts" }],
 			context: { worktree_path: "/worktree", task_id: "task-42", scope_hint: [] },
 			deps: {
 				applyReviewFix: async () => ({ success: true, modified_paths: [] }),
@@ -793,7 +793,7 @@ describe("Suite 7: PR Review Comments Handling (D8.2, Positive Control 3 & Bound
 
 		const result = await addressPrReview({
 			pr,
-			comment,
+			comments: [comment],
 			context: {
 				worktree_path: "/worktree",
 				task_id: "task-42",
@@ -830,7 +830,7 @@ describe("Suite 7: PR Review Comments Handling (D8.2, Positive Control 3 & Bound
 
 		const result = await addressPrReview({
 			pr,
-			comment,
+			comments: [comment],
 			context: {
 				worktree_path: "/worktree",
 				task_id: "task-42",
@@ -858,7 +858,7 @@ describe("Suite 7: PR Review Comments Handling (D8.2, Positive Control 3 & Bound
 
 		const result = await addressPrReview({
 			pr,
-			comment,
+			comments: [comment],
 			context: {
 				worktree_path: "/worktree",
 				task_id: "task-42",

@@ -5,7 +5,7 @@
  * and S9 / D11 in docs/specs/loop-daemon.spec.md (SCN-6).
  *
  * - Positive control (SCN-6): successive ticks of the standing run process carry a
- *   new Issue through analyze_codebase, draft_plan via `imm-kernel intent author`,
+ *   new Issue through clarify, draft_plan via `imm-kernel intent author`,
  *   plan summary publication, a REST-read `/approve <digest>` comment turned into a
  *   `tracker_approval_proof`, enrollment, `dispatchLoopDrive()` to settlement with the
  *   Executor exit recorded, and open_pr on `imm/<slug>` — all against a fake session
@@ -35,10 +35,12 @@ import {
 	type AgentHandlerDeps,
 	type AgentTaskIntent,
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts";
-import type {
-	AgentSessionKind,
-	AgentSessionProvider,
-	AgentSessionRequest,
+import {
+	isReadOnlyRole,
+	sessionRole,
+	type AgentSessionKind,
+	type AgentSessionProvider,
+	type AgentSessionRequest,
 } from "../plugins/immune-brain/runtime/loop_daemon/agent_runner.ts";
 import { runLoopDaemonCli } from "../plugins/immune-brain/runtime/loop_daemon/cli.ts";
 import { type LoopDecisionRecord } from "../plugins/immune-brain/runtime/loop_daemon/decision_record.ts";
@@ -47,6 +49,7 @@ import { readExecutorExit } from "../plugins/immune-brain/runtime/loop_daemon/ex
 import { createFakeLoopGitHubPort } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
 import { eventTarget } from "../plugins/immune-brain/runtime/loop_daemon/guards.ts";
 import { setCachedDaemonGithubLogin } from "../plugins/immune-brain/runtime/loop_daemon/identity.ts";
+import { readLoopJob } from "../plugins/immune-brain/runtime/loop_daemon/jobs.ts";
 import { LOOP_PR_MARKER, repairKey, saveRepairRetries } from "../plugins/immune-brain/runtime/loop_daemon/repair_agent.ts";
 import { initLoopState, loadLoopDispatches } from "../plugins/immune-brain/runtime/loop_daemon/state.ts";
 import {
@@ -157,7 +160,7 @@ function mockGh(userLogin = "daemon-bot"): GhTransport {
 /* Fake session provider, Kernel, and GitHub fixtures                  */
 /* ------------------------------------------------------------------ */
 
-type SessionBehavior = "ok" | "missing_output" | "invalid_output" | "exit_nonzero" | "no_commit";
+type SessionBehavior = "ok" | "missing_output" | "invalid_output" | "exit_nonzero";
 
 interface FakeSessions {
 	provider: AgentSessionProvider;
@@ -165,7 +168,13 @@ interface FakeSessions {
 }
 
 function payloadFor(kind: AgentSessionKind): string {
-	if (kind === "analysis") return JSON.stringify({ scopes: ["src/"], seams: ["src/seed.ts"], questions: [] });
+	if (kind === "clarify")
+		return JSON.stringify({
+			scopes: ["src/"],
+			seams: ["src/seed.ts"],
+			risks: ["the seed fixture may drift"],
+			acceptance: ["the fixture task delivers"],
+		});
 	if (kind === "planning")
 		return JSON.stringify({
 			intents: [
@@ -197,15 +206,15 @@ function createFakeSessions(behavior: Partial<Record<AgentSessionKind, SessionBe
 			if (mode === "exit_nonzero") return { exit_code: 1, exit_signal: null, timed_out: false };
 			if (mode === "missing_output") return { exit_code: 0, exit_signal: null, timed_out: false };
 
+			const payload = mode === "invalid_output" ? "not the expected schema" : payloadFor(request.kind);
+			// A read-only session prints its result; a writable one writes the file it was given.
+			if (isReadOnlyRole(sessionRole(request.kind))) {
+				return { exit_code: 0, exit_signal: null, timed_out: false, stdout: payload };
+			}
+			if (request.output_path === undefined) throw new Error(`writable session without an output path: ${request.kind}`);
 			const target = join(request.worktree_path, request.output_path);
 			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, mode === "invalid_output" ? "not the expected schema" : payloadFor(request.kind));
-
-			if (request.kind === "planning" && mode !== "no_commit") {
-				writeFileSync(join(request.worktree_path, "plan.md"), "# fixture plan\n");
-				git(request.worktree_path, ["add", "-A"]);
-				git(request.worktree_path, ["commit", "-q", "-m", "fixture: planning session commit"]);
-			}
+			writeFileSync(target, payload);
 			return { exit_code: 0, exit_signal: null, timed_out: false };
 		},
 	};
@@ -324,6 +333,7 @@ function makeHarness(
 		sessionProvider: sessions.provider,
 		session_credential: "ghs_daemon_credential",
 		createWorktree,
+		changedPaths: () => [],
 		prWorktree: ({ root, branch, pr_number }) => {
 			const path = join(root, ".imm-worktrees", `pr-${pr_number}`);
 			mkdirSync(dirname(path), { recursive: true });
@@ -418,6 +428,7 @@ function makeHarness(
 		},
 		runVerification: async () => ({ exit_code: 0, stdout: "", stderr: "" }),
 		gitCommitAndPush: async () => ({ commit_sha: "e".repeat(40) }),
+		gitForcePushWithLease: async () => ({ commit_sha: "f".repeat(40) }),
 		rebaseOrMerge: async () => ({ success: true }),
 		now: () => TS,
 	};
@@ -457,6 +468,16 @@ function snapshotOf(issues: RawIssue[], pullRequests: RawPR[] = []): Observation
 
 function jsonPayload(stdout: string): any {
 	return JSON.parse(stdout);
+}
+
+/** Wait for the background job to write its terminal outcome (D6). */
+async function settleJob(stateDir: string, targetId: string): Promise<void> {
+	for (let attempt = 0; attempt < 200; attempt += 1) {
+		const job = readLoopJob(stateDir, targetId);
+		if (job && job.outcome !== null) return;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+	}
+	throw new Error(`job ${targetId} never reached a terminal outcome`);
 }
 
 const s9IssueClassifier = async (point: string) => {
@@ -501,15 +522,23 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(first.returncode).toBe(0);
 		const firstPayload = jsonPayload(first.stdout);
 		expect(firstPayload.dispatches).toHaveLength(1);
-		expect(firstPayload.dispatches[0]).toMatchObject({ handler: "triage_issue", outcome: "executed" });
-		expect(firstPayload.dispatches[0].detail).toContain("analysis");
+		expect(firstPayload.dispatches[0]).toMatchObject({ handler: "draft_plan", outcome: "executed" });
+		expect(firstPayload.dispatches[0].detail).toContain("framing");
 
-		// The planning session ran read-only analysis first, then drafted the plan.
-		expect(harness.sessions.requests.map((request) => request.kind)).toEqual(["analysis", "planning"]);
+		// The read-only clarify session framed the Issue first, then the plan was drafted.
+		expect(harness.sessions.requests.map((request) => request.kind)).toEqual(["clarify", "planning"]);
 		for (const request of harness.sessions.requests) {
 			// Sessions receive the daemon's GitHub credential and nothing else.
 			expect(Object.keys(request.env).sort()).toEqual(["GH_TOKEN", "GITHUB_TOKEN", "PATH"]);
 			expect(request.env.GH_TOKEN).toBe("ghs_daemon_credential");
+			// Every loop role reads its budget from the one per-role table (S2-AC1).
+			expect(request.turn_budget).toBe(40);
+			expect(request.timeout_ms).toBe(900_000);
+		}
+		// Both are read-only plans: they print their result instead of writing a file.
+		for (const request of harness.sessions.requests) {
+			expect(isReadOnlyRole(sessionRole(request.kind))).toBe(true);
+			expect(request.output_path).toBeUndefined();
 		}
 
 		// The candidate TaskIntent went through `imm-kernel intent author`.
@@ -581,10 +610,49 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		// The Lane was driven to settlement and the Executor exit was recorded.
 		expect(harness.drives).toHaveLength(1);
 		expect(harness.drives[0]!.plan_digest).toBe(plan!.digest);
+
+		// D6: the drive is a background job, so this tick returned before it settled.
+		expect(readLoopJob(workspace.stateDir, "issue-10")?.outcome).toBeNull();
+		await settleJob(workspace.stateDir, "issue-10");
+
+		// The published plan's intent is on the repository, where `open_pr` reads it.
+		mkdirSync(join(workspace.root, "docs", "plans"), { recursive: true });
+		writeFileSync(
+			join(workspace.root, "docs", "plans", `${PLAN_TASK_ID}.intent.json`),
+			JSON.stringify({
+				contract: "assurance_kernel/task_intent/v1",
+				task_id: PLAN_TASK_ID,
+				owner: "user",
+				goal: "Add the S9 fixture behaviour",
+				acceptance: [{ id: "AC1", assertion: "the fixture task delivers", verification: "{\"contract\":\"x\"}" }],
+				scope_hint: ["src/"],
+				risk: "routine",
+				revision: 1,
+			}),
+		);
+
+		// Tick 3: the settled job becomes E13 and opens the PR without a second approval.
+		const third = await runLoopDaemonCli(["tick", "--json"], workspace.root, {
+			gh: mockGh(),
+			gitHubPort: harness.gitHubPort,
+			snapshotOverride: snapshotOf([issue(10, "Add the S9 fixture behaviour", [approval])]),
+			guardFacts: { daemon_identity: "daemon-bot" },
+			classify: s9IssueClassifier,
+			agentPort: harness.port,
+			standingDaemon: true,
+		});
+		expect(third.returncode).toBe(0);
+		const thirdPayload = jsonPayload(third.stdout);
+		expect(thirdPayload.dispatches).toHaveLength(1);
+		expect(thirdPayload.dispatches[0]).toMatchObject({ handler: "open_pr", outcome: "executed" });
+		expect(thirdPayload.dispatches[0].detail).toContain("opened PR");
+		expect(harness.enrollments).toHaveLength(1);
+
 		const exitRecord = readExecutorExit(workspace.stateDir, PLAN_TASK_ID);
 		expect(exitRecord).not.toBeNull();
 		expect(exitRecord).toMatchObject({ state: "exited", exit_code: 0, run_id: "run-s9" });
 		expect(exitRecord!.verification_evidence_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(exitRecord!.final_commit_sha).toBe("d".repeat(40));
 
 		// The PR opened on `imm/<slug>`.
 		const opens = harness.gitHubPort.calls.filter((call) => call.method === "upsert");
@@ -593,11 +661,10 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 		expect(opened.head).toBe(`imm/${PLAN_TASK_ID}`);
 		expect(opened.body).toContain(LOOP_PR_MARKER);
 		expect(opened.body).toContain("Closes #10");
-		expect(secondPayload.dispatches[0].detail).toContain("opened PR");
 
-		// Both dispatches are on disk with their outcomes.
+		// Every dispatch is on disk with its outcome.
 		const dispatched = loadLoopDispatches(workspace.stateDir).map((entry) => entry.outcome);
-		expect(dispatched).toEqual(["executed", "executed"]);
+		expect(dispatched).toEqual(["executed", "executed", "executed"]);
 	});
 
 	it("does not enroll an approval whose digest is not the published one", async () => {
@@ -783,14 +850,14 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 
 	it("fails a session that leaves no expected output, wrong schema, or no moved Git head", async () => {
 		const cases: Array<{
-			handler: "analyze_codebase" | "draft_plan";
+			handler: "clarify_issue" | "draft_plan";
 			behavior: Partial<Record<AgentSessionKind, SessionBehavior>>;
 			expected: string;
 		}> = [
-			{ handler: "analyze_codebase", behavior: { analysis: "missing_output" }, expected: "expected_output_missing" },
-			{ handler: "analyze_codebase", behavior: { analysis: "invalid_output" }, expected: "expected_output_invalid" },
-			{ handler: "analyze_codebase", behavior: { analysis: "exit_nonzero" }, expected: "session_exit_nonzero" },
-			{ handler: "draft_plan", behavior: { planning: "no_commit" }, expected: "expected_git_head_unchanged" },
+			{ handler: "clarify_issue", behavior: { clarify: "missing_output" }, expected: "session_output_missing" },
+			{ handler: "clarify_issue", behavior: { clarify: "invalid_output" }, expected: "expected_output_invalid" },
+			{ handler: "clarify_issue", behavior: { clarify: "exit_nonzero" }, expected: "session_exit_nonzero" },
+			{ handler: "draft_plan", behavior: { planning: "invalid_output" }, expected: "expected_output_invalid" },
 		];
 
 		for (const testCase of cases) {
@@ -843,6 +910,11 @@ describe("Loop Daemon: Agent-Backed Handlers (S9)", () => {
 			expect(result.dispatches).toHaveLength(1);
 			expect(result.dispatches[0]!.outcome).toBe("failed");
 			expect(result.dispatches[0]!.detail).toContain(testCase.expected);
+			// A plan the daemon cannot parse writes no plan artifact at all (S2-AC2).
+			if (testCase.handler === "draft_plan") {
+				expect(readPlanPublication(workspace.stateDir, 30)).toBeNull();
+				expect(harness.kernel.calls.filter((call) => call.argv[1] === "author")).toHaveLength(0);
+			}
 			workspace.cleanup();
 		}
 	});

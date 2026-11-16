@@ -286,8 +286,8 @@ describe("closed 15-handler catalogue", () => {
 		expect(LOOP_HANDLERS.length).toBe(15);
 		expect([...LOOP_HANDLERS]).toEqual([
 			"noop_record",
-			"triage_issue",
-			"analyze_codebase",
+			"clarify_issue",
+			"apply_clarify_reply",
 			"draft_plan",
 			"publish_plan_for_approval",
 			"enroll_and_drive",
@@ -304,7 +304,7 @@ describe("closed 15-handler catalogue", () => {
 	});
 
 	it("rejects a handler name outside the catalogue", () => {
-		expect(isLoopHandler("triage_issue")).toBe(true);
+		expect(isLoopHandler("clarify_issue")).toBe(true);
 		expect(isLoopHandler("delete_repository")).toBe(false);
 	});
 
@@ -400,13 +400,25 @@ describe("Tier 0: deterministic code guards G1-G10", () => {
 describe("Tier 1: deterministic rule matchers", () => {
 	const cases: Array<{ name: string; event: Parameters<typeof judgeEvent>[0]; handler: string; facts?: GuardFacts }> = [
 		{ name: "blocked label", event: issueEvent({ labels: ["blocked"] }), handler: "noop_record" },
-		{ name: "ready-for-agent label", event: issueEvent({ labels: ["ready-for-agent"] }), handler: "enroll_and_drive" },
+		{ name: "ready-for-agent label without a published plan", event: issueEvent({ labels: ["ready-for-agent"] }), handler: "draft_plan" },
+		{
+			name: "ready-for-agent label with a published plan",
+			event: issueEvent({ labels: ["ready-for-agent"] }),
+			handler: "enroll_and_drive",
+			facts: { expected_plan_digests: { 10: "sha256:plan-a" } },
+		},
 		{ name: "edited issue marked blocked", event: editedEvent({ labels: ["blocked"] }), handler: "noop_record" },
 		{ name: "verified @imm-loop replan", event: commentEvent({ body: "@imm-loop replan please" }), handler: "draft_plan", facts: OWNER_FACTS },
 		{ name: "verified @imm-loop retry", event: commentEvent({ body: "@imm-loop retry" }), handler: "repair_pr_ci", facts: OWNER_FACTS },
 		{ name: "verified @imm-loop ignore", event: commentEvent({ body: "@imm-loop ignore" }), handler: "noop_record", facts: OWNER_FACTS },
 		{ name: "plan approval marker", event: approvalEvent(), handler: "enroll_and_drive", facts: OWNER_FACTS },
-		{ name: "ready task", event: readyEvent(), handler: "enroll_and_drive" },
+		{ name: "ready task without a published plan", event: readyEvent(), handler: "draft_plan" },
+		{
+			name: "ready task with a published plan",
+			event: readyEvent(),
+			handler: "enroll_and_drive",
+			facts: { expected_plan_digests: { 10: "sha256:plan-a" } },
+		},
 		{ name: "parked lane decision", event: laneNeededEvent(), handler: "relay_lane_decision_question" },
 		{ name: "lane decision reply", event: laneRepliedEvent(), handler: "apply_lane_decision_reply", facts: OWNER_FACTS },
 		{ name: "failed check", event: checkFailedEvent(), handler: "repair_pr_ci" },
@@ -481,22 +493,22 @@ describe("Tier 2: decision-model points", () => {
 		}
 	});
 
-	it("a18 then a15_task_granularity triage an unlabelled issue", async () => {
+	it("a18 then a15_task_granularity plan an unlabelled issue", async () => {
 		const classifier = fakeClassifier({
 			a18_event_prefilter: { choice: "actionable", confidence: 0.9 },
 			a15_task_granularity: { choice: "clear_single_task", confidence: 0.8 },
 		});
 		const judgement = await judgeEvent(issueEvent(), { classify: classifier.classify });
 		expect(judgement.tier).toBe(2);
-		expect(judgement.handler).toBe("triage_issue");
+		expect(judgement.handler).toBe("draft_plan");
 		expect(classifier.calls).toEqual(["a18_event_prefilter", "a15_task_granularity"]);
 	});
 
 	it("a15_task_granularity maps all three outcomes", async () => {
 		const expectations: Array<[string, string]> = [
-			["clear_single_task", "triage_issue"],
+			["clear_single_task", "draft_plan"],
 			["needs_initiative_decomposition", "draft_plan"],
-			["needs_clarification", "escalate"],
+			["needs_clarification", "clarify_issue"],
 		];
 		for (const [choice, handler] of expectations) {
 			const classifier = fakeClassifier({
@@ -525,7 +537,7 @@ describe("Tier 2: decision-model points", () => {
 			a15_task_granularity: { choice: "clear_single_task", confidence: 0.9 },
 		});
 		const freshJudgement = await judgeEvent(issueEvent(), { facts, classify: unrelated.classify });
-		expect(freshJudgement.handler).toBe("triage_issue");
+		expect(freshJudgement.handler).toBe("draft_plan");
 	});
 });
 
@@ -637,7 +649,7 @@ describe("loop_decision_record/v1 emission", () => {
 			expect(decision.dry_run).toBe(true);
 			expect(decision.mutations).toEqual([]);
 		}
-		expect(payload.decisions.map((entry: { handler: string }) => entry.handler)).toContain("triage_issue");
+		expect(payload.decisions.map((entry: { handler: string }) => entry.handler)).toContain("draft_plan");
 		expect(existsSync(join(root, ".imm/state/loop/decisions.jsonl"))).toBe(false);
 		expect(existsSync(join(root, ".imm/state/loop/state.json"))).toBe(false);
 	});

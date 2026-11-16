@@ -149,6 +149,8 @@ export const TOOLS = [
 	{ name: "repair_authority_state", description: "Repair a proven recoverable stale backend claim.", privileged: false },
 	{ name: "resolve_finding", description: "Resolve one open blocking or advisory finding whose cause is fixed and verified.", privileged: false },
 	{ name: "refute_finding", description: "Refute one open finding by binding the fresh passing QA attestation that contradicts it.", privileged: false },
+	{ name: "loop_interactions", description: "List the local Loop Interaction requests this checkout's daemon is waiting on.", privileged: false, optionalTaskId: true },
+	{ name: "answer_loop_interaction", description: "Answer one pending local Loop Interaction request under the native confirmation.", privileged: true, optionalTaskId: true },
 ] as const;
 
 export function listMcpTools() {
@@ -204,6 +206,9 @@ export function listMcpTools() {
 						}
 					: {
 						task_id: { type: "string" },
+						...(tool.name === "answer_loop_interaction"
+							? { interaction_id: { type: "string" }, answer: { type: "string" } }
+							: {}),
 						...(tool.name === "approve_breaking_intent_revision" || tool.name === "revise_intent" ? { next_intent: { type: "object" } } : {}),
 						...(tool.name === "stop" || tool.name === "request_authorization" ? { reason: { type: "string" } } : {}),
 						...(tool.name === "request_authorization"
@@ -223,6 +228,10 @@ export function listMcpTools() {
 			},
 			required: tool.name === "start_unattended_batch" ? [] : tool.name === "retire_stale_batch"
 				? ["initiative_slug"]
+				: tool.name === "loop_interactions"
+					? []
+					: tool.name === "answer_loop_interaction"
+						? ["interaction_id", "answer"]
 				: tool.name === "resolve_finding"
 					? ["task_id", "finding_id"]
 					: tool.name === "refute_finding"
@@ -231,7 +240,7 @@ export function listMcpTools() {
 							? ["task_id", "next_intent"]
 							: ["task_id"],
 		},
-		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" },
+		annotations: tool.privileged ? privilegedAnnotations() : { readOnlyHint: tool.name === "status" || tool.name === "loop_interactions" },
 	}));
 }
 
@@ -476,6 +485,28 @@ export function createMcpRuntime(profile: McpHostProfile, options: McpRuntimeOpt
 				if (!initiativeSlug) throw new Error("initiative_slug is required");
 				refuseSuppliedAuthority(args);
 				return runtime.retireStaleBatch(initiativeSlug, gatedToolMeta(name, initiativeSlug, workspace, meta));
+			}
+			// D4: the local Interaction channel's read surface. It changes nothing, so
+			// it needs no native gate; it lists only files in this workspace.
+			if (name === "loop_interactions") {
+				refuseSuppliedAuthority(args);
+				return runtime.listLoopInteractions(
+					typeof args.task_id === "string" && args.task_id ? args.task_id : undefined,
+				);
+			}
+			if (name === "answer_loop_interaction") {
+				refuseSuppliedAuthority(args);
+				if (typeof args.interaction_id !== "string" || !args.interaction_id) throw new Error("interaction_id is required");
+				if (typeof args.answer !== "string" || !args.answer) throw new Error("answer is required");
+				requireTrustedHost(true);
+				return runtime.answerLoopInteraction(args.interaction_id, args.answer, {
+					sessionId: hookSessionId ?? meta.sessionId ?? connectionId,
+					toolCallId: meta.toolCallId ?? `call-${name}`,
+					taskId: typeof args.task_id === "string" ? args.task_id : "",
+					...(meta.workspace ? { workspace: meta.workspace } : {}),
+					interactive: meta.interactive ?? options.interactive ?? negotiatedInteractive,
+					signal: meta.signal,
+				});
 			}
 			const taskId = String(args.task_id ?? "");
 			if (!taskId) throw new Error("task_id is required");
@@ -751,6 +782,22 @@ async function writeReply(output: Writable, reply: JsonRpc): Promise<void> {
 }
 
 export function elicitationParams(input: NativeConfirmationInput) {
+	if (input.interaction) {
+		const i = input.interaction;
+		return {
+			mode: "form",
+			message: `Answer this local Loop Interaction request?\n\n${[
+				`Operation: ${input.operation}`,
+				`Request: ${i.interaction_id}`,
+				`Kind: ${i.kind}`,
+				i.subject ? `Subject: ${i.subject}` : null,
+				i.binding ? `Binding: ${i.binding}` : null,
+				`Question: ${i.prompt}`,
+				`Answer: ${i.answer}`,
+			].filter(Boolean).join("\n")}\n\nAccepting records this answer; the daemon applies it on its next tick. Declining or cancelling writes nothing.`,
+			requestedSchema: { type: "object", properties: {} },
+		};
+	}
 	if (input.operation === "retire_stale_batch") {
 		const d = input.batchDisposition;
 		const details = [

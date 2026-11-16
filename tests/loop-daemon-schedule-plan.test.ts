@@ -100,7 +100,7 @@ function scheduleInput(overrides: Partial<ScheduleInput> = {}): ScheduleInput {
 describe("S4 continuous scheduler", () => {
 	it("dispatches by D4.1 priority order and stops at max_concurrent", () => {
 		const candidates: ScheduleCandidate[] = [
-			{ target_id: "issue-5", handler: "triage_issue", scope_hint: ["tests/a/"] },
+			{ target_id: "issue-5", handler: "clarify_issue", scope_hint: ["tests/a/"] },
 			{ target_id: "issue-6", handler: "draft_plan", scope_hint: ["docs/b/"] },
 			{ target_id: "issue-7", handler: "enroll_and_drive", scope_hint: ["src/c/"] },
 			{ target_id: "pr-9", handler: "repair_pr_ci", scope_hint: ["src/d/"] },
@@ -117,10 +117,11 @@ describe("S4 continuous scheduler", () => {
 		// Only two slots: the owner reply (class 1) and the PR repair (class 2) start.
 		expect(result.guard).toBeNull();
 		expect(result.dispatched).toEqual(["issue-8", "pr-9"]);
+		// Held in class order: the ready task, then the two planning candidates (D8: clarify then plan).
 		expect(result.entries.filter((entry) => entry.action === "hold").map((entry) => entry.target_id)).toEqual([
 			"issue-7",
-			"issue-6",
 			"issue-5",
+			"issue-6",
 		]);
 		expect(result.entries.find((entry) => entry.target_id === "issue-7")?.reason).toStartWith("max_concurrent:");
 		// The projection counts its own tick, so persisting it advances max_ticks_per_day.
@@ -129,11 +130,11 @@ describe("S4 continuous scheduler", () => {
 
 	it("ranks every class exactly once and refuses handlers the scheduler does not own", () => {
 		expect(candidatePriority({ target_id: "a", handler: "repair_pr_conflict" })).toBe("pr_repair");
-		expect(candidatePriority({ target_id: "a", handler: "analyze_codebase" })).toBe("planning");
+		expect(candidatePriority({ target_id: "a", handler: "clarify_issue" })).toBe("planning");
 		expect(candidatePriority({ target_id: "a", handler: "noop_record" })).toBeNull();
 		expect(candidatePriority({ target_id: "a", handler: "escalate" })).toBeNull();
 		expect(
-			candidatePriority({ target_id: "a", handler: "triage_issue", event_kind: "E3_OWNER_COMMENT" }),
+			candidatePriority({ target_id: "a", handler: "clarify_issue", event_kind: "E3_OWNER_COMMENT" }),
 		).toBe("owner_control");
 		// An owner event elevates a dispatchable handler; it never makes an undispatched one schedulable.
 		expect(candidatePriority({ target_id: "a", handler: "escalate", event_kind: "E3_OWNER_COMMENT" })).toBeNull();
@@ -480,10 +481,12 @@ describe("S4 atomic leases", () => {
 	});
 });
 
-describe("S4 cached read-only analysis", () => {
+describe("S7 cached clarify framing", () => {
 	const findings: CodebaseAnalysisFindings = {
 		scopes: ["plugins/immune-brain/runtime/loop_daemon/scheduler.ts"],
 		seams: ["plugins/immune-brain/runtime/unattended/batch_schedule.ts#scopesOverlap"],
+		risks: ["the framing must stay a projection of the Issue, not of a stale tree"],
+		acceptance: ["the plan reuses the batch overlap helper"],
 		questions: ["does the plan reuse the batch overlap helper?"],
 	};
 
@@ -506,6 +509,8 @@ describe("S4 cached read-only analysis", () => {
 		expect(readCachedAnalysis(dir, key)?.findings).toEqual({
 			scopes: findings.scopes,
 			seams: findings.seams,
+			risks: findings.risks,
+			acceptance: findings.acceptance,
 			questions: findings.questions!,
 		});
 

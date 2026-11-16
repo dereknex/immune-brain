@@ -542,6 +542,49 @@ export function createPiNativeConfirmation(
 			return { decision: "cancel", requestId };
 		}
 
+		if (input.interaction) {
+			const i = input.interaction;
+			const opName = "answer-loop-interaction";
+			presentTaskRail(ctx, {
+				task_id: taskId,
+				state: "Approval required",
+				result: uxText(UX_LANG, `${opName} requires your confirmation`, `${opName} 需要您的确认`),
+				next: uxText(UX_LANG, `Decide ${opName}`, `请决策 ${opName}`),
+			});
+			const attention = {
+				attention_id: randomUUID(),
+				task_id: taskId,
+				reason: "review_authorization" as const,
+				label: uxText(UX_LANG, `${opName} approval required`, `${opName} 待您批准`),
+			};
+			const actions = [
+				{ value: "authorize", label: uxText(UX_LANG, "Answer", "提交答案"), description: uxText(UX_LANG, "Record this answer for the daemon", "记录此答案供守护进程应用") },
+				{ value: "cancel", label: uxText(UX_LANG, "Cancel", "取消"), description: uxText(UX_LANG, "Record no answer", "不记录任何答案") },
+			];
+			const selected = await runDialog(() => requestAuthorityDialog(pi, ctx, attention, {
+				title: uxText(UX_LANG, `Answer this local Loop Interaction?`, `是否回答此本地交互请求？`),
+				summary: [
+					`Task: ${taskId || "none"}`,
+					`Request: ${i.interaction_id}`,
+					`Kind: ${i.kind}`,
+				].join("\n"),
+				details: [
+					`Operation: ${opName}`,
+					`Subject: ${i.subject || "none"}`,
+					`Binding: ${i.binding || "none"}`,
+					`Question: ${i.prompt}`,
+					`Answer: ${i.answer}`,
+				].join("\n"),
+				signal,
+				actions,
+			}));
+			if (selected === "authorize" || selected === "confirm") {
+				assertConfirmStillValid();
+				return { decision: "accept", requestId };
+			}
+			return { decision: "cancel", requestId };
+		}
+
 		if (input.batchDetails) {
 			const b = input.batchDetails;
 			const isParent = b.parent_final_verification !== undefined;
@@ -1380,6 +1423,91 @@ export default function (
 			);
 		},
 	});
+
+	// Spec loop-agent-scheduling D4: the local Interaction channel's two Host
+	// tools. They read and answer the daemon's own request files; neither
+	// invents a request, and only the second one writes anything.
+	for (const tool of loopInteractionToolDefinitions(runtime)) {
+		pi.registerTool(tool as Parameters<ExtensionAPI["registerTool"]>[0]);
+	}
+}
+
+/**
+ * The two D4 Tools this adapter registers, exactly as `pi.registerTool` takes
+ * them. Exported so the registration contract is testable without loading a
+ * whole Host session: the bodies only forward to the shared runtime.
+ */
+export interface LoopInteractionHost {
+	bindWorkspace(cwd: string): void;
+	runtime: {
+		listLoopInteractions(taskId?: string): Promise<unknown>;
+		answerLoopInteraction(interactionId: string, answer: string, meta: ToolMeta): Promise<unknown>;
+	};
+}
+
+export function loopInteractionToolDefinitions(host: LoopInteractionHost) {
+	return [
+		{
+			name: "loop_interactions",
+			label: "List pending Loop Interaction requests",
+			description:
+				"List the local Loop Interaction requests this checkout's Loop daemon is waiting on. This Tool changes nothing.",
+			promptGuidelines: [
+				"A plan_approval is answered by your own drive entry on the published TaskIntent, never by answer_loop_interaction.",
+				"Answer a request through answer_loop_interaction so the Host's native confirmation is what records it.",
+			],
+			parameters: Type.Object({ task_id: Type.Optional(Type.String()) }),
+			execute: async (
+				_toolCallId: string,
+				params: { task_id?: string },
+				_signal: AbortSignal | undefined,
+				_onUpdate: unknown,
+				ctx: ExtensionContext,
+			) => {
+				host.bindWorkspace(ctx.cwd);
+				const result = await host.runtime.listLoopInteractions(params.task_id);
+				return toolResult(JSON.stringify(result, null, 2), { state: "loop_interactions" });
+			},
+		},
+		{
+			name: "answer_loop_interaction",
+			label: "Answer one pending Loop Interaction request",
+			description:
+				"Answer one pending local Loop Interaction request. The Host's native confirmation shows the request and the answer, and only a confirmed answer is recorded.",
+			promptGuidelines: [
+				"Only answer a request loop_interactions lists as answerable; a plan_approval points at drive.",
+				"Do not answer the same request twice: the daemon applies one confirmed answer on its next tick.",
+			],
+			parameters: Type.Object({
+				interaction_id: Type.String(),
+				answer: Type.String(),
+				task_id: Type.Optional(Type.String()),
+			}),
+			execute: async (
+				toolCallId: string,
+				params: { interaction_id: string; answer: string; task_id?: string },
+				signal: AbortSignal | undefined,
+				_onUpdate: unknown,
+				ctx: ExtensionContext,
+			) => {
+				host.bindWorkspace(ctx.cwd);
+				if (ctx.mode !== "tui")
+					throw new Error(
+						"answer_loop_interaction needs the Host's native confirmation, which this session cannot show",
+					);
+				const effectiveSignal = signal && ctx.signal ? AbortSignal.any([signal, ctx.signal]) : (signal ?? ctx.signal);
+				const result = await host.runtime.answerLoopInteraction(params.interaction_id, params.answer, {
+					sessionId: piSessionId(ctx),
+					toolCallId,
+					workspace: ctx.cwd,
+					taskId: params.task_id ?? "",
+					interactive: true,
+					signal: effectiveSignal,
+				});
+				return toolResult(JSON.stringify(result, null, 2), { state: "interaction_answered" });
+			},
+		},
+	];
 }
 
 // ---------------------------------------------------------------------------

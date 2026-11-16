@@ -1,0 +1,33 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s9-scheduler",
+  "owner": "user",
+  "goal": "Make the scheduler's scope-overlap check and ready buffer use work item facts, emit E2 only on Issue body or title change, and include head_sha in E8 event identity, per D7 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: scheduling internals.",
+  "acceptance": [
+    {
+      "id": "S9-AC1",
+      "assertion": "Source BR-GAP-2, BR-GAP-3; meet D7 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-scheduler.test.ts over scheduleLoopWork fed from dispatch. Done looks like: two candidates whose work item scopes overlap run one and hold the other, and ready_buffer equals the number of work items in plan_published. Negative: disjoint scopes both run. Bound: reaching max_ready_buffer holds further planning candidates.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-scheduler.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S9-AC2",
+      "assertion": "Source BR-GAP-6, BR-GAP-7; meet D7 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-scheduler.test.ts and tests/loop-daemon-observe.test.ts, characterization first for E2. Done looks like: an Issue body edit emits E2 and two failures of one check on different heads get different E8 event_id values. Negative: a comment-only update that changes updated_at emits no E2. Bound: the same head and failure signature share one event_id.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-scheduler.test.ts\",\n      \"tests/loop-daemon-observe.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s9-scheduler.md",
+    "docs/plans/loop-sched-s9-scheduler.intent.json",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+    "plugins/immune-brain/runtime/loop_daemon/events.ts",
+    "plugins/immune-brain/runtime/loop_daemon/scheduler.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "tests/loop-daemon-observe.test.ts",
+    "tests/loop-daemon-schedule-plan.test.ts",
+    "tests/loop-sched-scheduler.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

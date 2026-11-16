@@ -9,6 +9,12 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+	INTERACTION_REQUEST_CONTRACT,
+	interactionAuthority,
+	type InteractionRequest,
+} from "./interaction/protocol.ts";
+import { renderInteractionBody } from "./interaction/github_channel.ts";
 import type { RawComment } from "./types.ts";
 
 export const ESCALATION_KEY_MARKER = "<!-- immune-brain:escalation-key=";
@@ -31,9 +37,13 @@ export function parseEscalationKey(body: string): string | null {
 	return match ? match[1] : null;
 }
 
-/** The comment body an escalation carries: the marker line, then the message. */
+/**
+ * The comment body an escalation carries: the key marker that `planEscalation`
+ * deduplicates on, then the `escalation` request as the `github` channel
+ * renders it (D3), so the comment is that request's record.
+ */
 export function renderEscalationBody(key: string, message: string): string {
-	return `${escalationKeyMarker(key)}\n${message.trim()}\n`;
+	return `${escalationKeyMarker(key)}\n${renderInteractionBody(escalationInteractionRequest({ key, message }))}\n`;
 }
 
 export interface EscalationPlan {
@@ -63,4 +73,32 @@ export function planEscalation(
 		return { action: "skip", key: input.key, body, comment_id: match.id };
 	}
 	return { action: "update", key: input.key, body, comment_id: match.id };
+}
+
+/**
+ * Adapter: one escalation as an `InteractionRequest` (D3 of
+ * docs/specs/loop-agent-scheduling.spec.md). The stable `escalationKey` becomes
+ * the `interaction_id`, so the `github` channel's one-comment rule replaces the
+ * key marker's dedupe for new posts, while `planEscalation()` still reads the
+ * markers of comments posted before the channel existed.
+ */
+export function escalationInteractionRequest(input: {
+	key: string;
+	message: string;
+	issue_number?: number;
+	pr_number?: number;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: `escalation:${input.key}`,
+		kind: "escalation",
+		subject: {
+			...(input.issue_number === undefined ? {} : { issue: input.issue_number }),
+			...(input.pr_number === undefined ? {} : { pr: input.pr_number }),
+		},
+		binding: {},
+		prompt: input.message.trim(),
+		answer: "none",
+		authority: interactionAuthority("escalation"),
+	};
 }

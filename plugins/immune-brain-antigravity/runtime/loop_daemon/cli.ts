@@ -25,21 +25,26 @@ import { createGhTransport, type GhTransport } from "../github_issue_tracker.ts"
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import { readNoTouch } from "../no_touch.ts";
 import { findLaneRelayTarget, type relayLaneDecision } from "../unattended/lane_decision.ts";
-import type { ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { buildDecisionRecord } from "./decision_record.ts";
 import { findLatestLaneDecisionQuestion } from "./decision_relay.ts";
 import { selectBestDuplicateCandidate } from "./duplicate_candidates.ts";
-import { createCliAgentSessionProvider } from "./agent_runner.ts";
+import { createCliAgentSessionProvider, loopRoleProfile } from "./agent_runner.ts";
 import {
 	createAgentHandlerPort,
 	createDefaultAgentHandlerDeps,
 	loadPublishedPlanDigests,
 	type AgentHandlerPort,
 } from "./agent_handlers.ts";
-import { dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } from "./dispatch.ts";
+import { createDefaultRelayInputFactory, dispatchDecisions, type LaneRuntimeFactory, type RelayInputFactory } from "./dispatch.ts";
 import { createLoopGitHubPort, type LoopGitHubPort } from "./github_port.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import { detectIdentityPosture, inspectDaemonIdentity, readAuthenticatedGithubLogin } from "./identity.ts";
+import {
+	applyLocalLaneDecisionAnswers,
+	localClarifyAnswerDecisions,
+	localDecisionRecordRevision,
+} from "./interaction/local_channel.ts";
+import { loopJobEvents, reconcileLoopJobs } from "./jobs.ts";
 import {
 	type ClassifyFn,
 	createDecisionModelClassifier,
@@ -51,6 +56,14 @@ import { acquireDaemonLock, cleanStaleDaemonLock, isPidAlive, readDaemonLock } f
 import { observeGithub } from "./observer.ts";
 import { rebuildLoopState } from "./rebuild.ts";
 import { reconcileSkippedDecisions, shouldRunScheduledReconcile } from "./reconcile.ts";
+import {
+	ensureWorkItems,
+	pendingClarifyInteractions,
+	recordJudgedEvents,
+	recordWorkItemOutcome,
+	selectUnjudgedEvents,
+	type JudgedEventSelection,
+} from "./work_items.ts";
 import { loadRepairRetries } from "./repair_agent.ts";
 import { budgetExhausted, type ScheduleBudget } from "./scheduler.ts";
 import {
@@ -878,6 +891,13 @@ Options:
 			}
 
 			const recordedAt = new Date().toISOString();
+			// D6: a background job that reached a terminal outcome releases its lease and
+			// becomes E12 `job_finished` / E13 `lane_settled` on this tick. A dead pid
+			// with no outcome is `lost`, which the judgement retries once then escalates.
+			if (!isDryRun) {
+				reconcileLoopJobs(stateDir, { now: recordedAt });
+				obs.events.push(...loopJobEvents(stateDir, { now: recordedAt }));
+			}
 			let declaredNoTouch: string[];
 			try {
 				declaredNoTouch = readNoTouch(absoluteRoot);
@@ -1008,6 +1028,7 @@ Options:
 				retry_counts: loadRepairRetries(stateDir),
 				unresolved_blockers,
 				duplicate_candidates_by_issue,
+				pending_clarify: pendingClarifyInteractions(stateDir),
 				expected_plan_digests: {
 					...loadPublishedPlanDigests(stateDir),
 					...(options?.guardFacts?.expected_plan_digests ?? {}),
@@ -1059,7 +1080,16 @@ Options:
 				},
 			};
 
-			const judgements = await judgeEvents(obs.events, {
+			// S5/D5: the rebuildable work-item store is restored before scheduling, and a
+			// level event is judged only when its fact fingerprint changed.
+			if (!isDryRun) {
+				ensureWorkItems(absoluteRoot, stateDir, obs.snapshot, loadPublishedPlanDigests(stateDir), recordedAt);
+			}
+			const judged: JudgedEventSelection = isDryRun
+				? { events: obs.events, pending: [] }
+				: selectUnjudgedEvents(obs.events, stateDir);
+
+			const judgements = await judgeEvents(judged.events, {
 				facts,
 				classify,
 				enabledPoints,
@@ -1075,23 +1105,63 @@ Options:
 					return findLatestLaneDecisionQuestion(issueComments)?.options;
 				},
 			});
-			const decisions = obs.events.map((event, index) =>
+			const decisions = judged.events.map((event, index) =>
 				buildDecisionRecord(event, judgements[index], eventTarget(event), { recorded_at: recordedAt, dry_run: isDryRun }),
 			);
+			// Spec loop-agent-scheduling D8 with the `local` channel: no GitHub comment
+			// resumes a clarify question, the answer the user confirmed locally does.
+			const localClarify =
+				loopConfig.interaction?.channel === "local"
+					? localClarifyAnswerDecisions(stateDir, facts.pending_clarify ?? {}, {
+							recorded_at: recordedAt,
+							dry_run: isDryRun,
+						})
+					: [];
 
 			if (!isDryRun) {
-				for (const decision of decisions) {
+				for (const decision of [...decisions, ...localClarify]) {
 					appendLoopDecision(stateDir, decision);
+				}
+				recordJudgedEvents(judged, stateDir, recordedAt);
+				for (let index = 0; index < judged.events.length; index += 1) {
+					const event = judged.events[index]!;
+					const issueNumber = "issue_number" in event ? event.issue_number : undefined;
+					recordWorkItemOutcome(stateDir, {
+						event,
+						handler: decisions[index]!.handler,
+						plan_digest:
+							issueNumber === undefined ? null : (facts.expected_plan_digests?.[issueNumber] ?? null),
+						now: recordedAt,
+					});
 				}
 			}
 
 			const gitHubPort = options?.gitHubPort ?? createLoopGitHubPort(gh, absoluteRoot);
+			// Spec loop-agent-scheduling D4: with the `local` channel, an answer the
+			// user confirmed in their own Host session is applied here, through the
+			// same verifier and relay a GitHub reply uses. It reaches the Lane on
+			// this tick, so the next tick starts its generation.
+			const localAnswers =
+				isDryRun || loopConfig.interaction?.channel !== "local"
+					? []
+					: await applyLocalLaneDecisionAnswers({
+							stateDir,
+							guardFacts: facts,
+							recordRevision: (taskId) => localDecisionRecordRevision(absoluteRoot, taskId),
+							relayInputFactory: (taskId) =>
+								options?.relayInputFactory ??
+								(options?.laneRuntime
+									? createDefaultRelayInputFactory(absoluteRoot, taskId, { laneRuntime: options.laneRuntime })
+									: undefined),
+							...(options?.relayDecision ? { relayDecision: options.relayDecision } : {}),
+						});
+
 			const dispatchRes = await dispatchDecisions({
 				root: absoluteRoot,
 				stateDir,
 				loopConfig,
-				events: obs.events,
-				decisions,
+				events: judged.events,
+				decisions: [...decisions, ...localClarify],
 				snapshot: obs.snapshot,
 				state,
 				gitHubPort,
@@ -1115,6 +1185,8 @@ Options:
 				decisions_count: decisions.length,
 				dispatches: dispatchRes.dispatches,
 				dispatches_count: dispatchRes.dispatches.length,
+				local_answers: localAnswers,
+				local_answers_count: localAnswers.length,
 				watermarks: obs.watermarks,
 				paused: state.paused,
 			};
@@ -1211,6 +1283,7 @@ Options:
 				daemon_identity: daemonLogin,
 				budget_exhausted: Boolean(budgetExhausted(currentBudget)),
 				retry_counts: loadRepairRetries(stateDir),
+				pending_clarify: pendingClarifyInteractions(stateDir),
 				expected_plan_digests: loadPublishedPlanDigests(stateDir),
 				...options?.guardFacts,
 			};
@@ -1406,19 +1479,16 @@ export async function runLoopDaemonExecutable(
 		: undefined;
 	let judgingAgent: JudgingAgentFn | undefined;
 	if (needsAgent) {
-		const cfg = resolveConfig(root);
-		const host = (cfg.lanes?.executor_host?.value as ExecutorHost | null) ?? null;
-		if (host === "claude-code" || host === "pi" || host === "antigravity") {
-			const model = (cfg.lanes?.executor_model?.value as string | null) ?? null;
-			const effort = (cfg.lanes?.executor_effort?.value as string | null) ?? null;
-			judgingAgent = createSessionJudgingAgent({
-				root,
-				provider: createCliAgentSessionProvider({
-					profile: { host, model, effort },
-					log_dir: join(effectiveStateDir, "session-logs"),
-				}),
-			});
-		}
+		// The judging session runs on the profile bound to the judging role; no
+		// executor Host leaf decides it (Spec D2).
+		const agents = resolveConfig(root).agents;
+		judgingAgent = createSessionJudgingAgent({
+			root,
+			provider: createCliAgentSessionProvider({
+				profileFor: (role) => loopRoleProfile(agents, role),
+				log_dir: join(effectiveStateDir, "session-logs"),
+			}),
+		});
 	}
 	return runLoopDaemonCli(argv, root, {
 		classify: createDecisionModelClassifier(root),

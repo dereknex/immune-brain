@@ -28,17 +28,30 @@ import { projectAssurance } from "../kernel/assurance_projection.ts";
 import { relayLaneDecision, type LaneRelayTarget } from "../unattended/lane_decision.ts";
 import { LaneSupervisor, type ExecutorHost } from "../unattended/lane_supervisor.ts";
 import { type LoopDecisionRecord } from "./decision_record.ts";
-import type { AgentHandlerPort } from "./agent_handlers.ts";
+import { type AgentHandlerPort, readPlanPublication } from "./agent_handlers.ts";
 import {
 	findLatestLaneDecisionQuestion,
 	handleLaneDecisionReply,
 	matchOfferedOption,
+	parkLaneSlot,
 	parseDecisionReplyText,
 	publishLaneDecisionQuestion,
+	resolveDecisionOperation,
 	type DecisionOption,
 	type DecisionQuestionInput,
+	type DecisionRelayDeps,
 	type RelayInputFactory,
 } from "./decision_relay.ts";
+import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
+import {
+	createLocalInteractionChannel,
+	laneDecisionInteractionRequest,
+} from "./interaction/local_channel.ts";
+import {
+	GITHUB_LOCAL_ONLY_LANE_OPERATIONS,
+	isGithubLocalOnlyLaneOperation,
+	localOnlyNotice,
+} from "./interaction/protocol.ts";
 export type { RelayInputFactory };
 import {
 	escalationKey,
@@ -48,6 +61,7 @@ import { readExecutorExit } from "./exit_recorder.ts";
 import { type GuardFacts, eventTarget } from "./guards.ts";
 import type { LoopHandler } from "./handlers.ts";
 import type { JudgingAgentFn } from "./judging_agent.ts";
+import { activeLoopJob } from "./jobs.ts";
 import { appendLoopLabel, loadLoopLabels } from "./labels.ts";
 import { acquireLoopLease, releaseLoopLease } from "./leases.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
@@ -74,6 +88,7 @@ import {
 	loadLoopDecisions,
 	saveLoopState,
 } from "./state.ts";
+import { plannedWorkItemCount, workItemScopeHint } from "./work_items.ts";
 import {
 	planStatusIssue,
 	type LoopStatusSnapshot,
@@ -83,6 +98,7 @@ import type {
 	LoopLease,
 	NormalizedLoopEvent,
 	ObservationInput,
+	RawComment,
 } from "./types.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 
@@ -106,8 +122,8 @@ export interface LoopDispatchRecord {
 }
 
 export const AGENT_BACKED_HANDLERS: readonly LoopHandler[] = [
-	"triage_issue",
-	"analyze_codebase",
+	"clarify_issue",
+	"apply_clarify_reply",
 	"draft_plan",
 	"publish_plan_for_approval",
 	"enroll_and_drive",
@@ -326,10 +342,46 @@ export interface DispatchDecisionsResult {
 	dispatches: LoopDispatchRecord[];
 }
 
+/**
+ * D3: a GitHub Lane reply that resolves to stop or a breaking Intent revision is
+ * not applied; one notice per (run, revision, operation) names the local action.
+ */
+function githubLocalOnlyGate(input: {
+	gitHubPort: LoopGitHubPort;
+	comments: RawComment[];
+	guardFacts: GuardFacts;
+	issue_number: number;
+	task_id: string;
+	run_id: string;
+	record_revision: string;
+}): NonNullable<DecisionRelayDeps["localOnly"]> {
+	return {
+		operations: Object.keys(GITHUB_LOCAL_ONLY_LANE_OPERATIONS) as Array<keyof typeof GITHUB_LOCAL_ONLY_LANE_OPERATIONS>,
+		async notify(operation) {
+			if (!isGithubLocalOnlyLaneOperation(operation)) return false;
+			const posted = await createGithubInteractionChannel({
+				port: input.gitHubPort,
+				comments: () => input.comments,
+				binding: () => ({ record_revision: input.record_revision }),
+				guardFacts: input.guardFacts,
+			}).post(
+				localOnlyNotice({
+					interaction_id: `lane-decision:${input.run_id}:${input.record_revision}:${operation}`,
+					operation: GITHUB_LOCAL_ONLY_LANE_OPERATIONS[operation],
+					subject: { issue: input.issue_number, task_id: input.task_id, run_id: input.run_id },
+					binding: { record_revision: input.record_revision },
+				}),
+			);
+			return posted !== "already_posted";
+		},
+	};
+}
+
 export async function dispatchDecisions(
 	options: DispatchDecisionsOptions,
 ): Promise<DispatchDecisionsResult> {
 	const {
+		root,
 		stateDir,
 		loopConfig,
 		events,
@@ -512,7 +564,8 @@ export async function dispatchDecisions(
 			target_id: targetId,
 			handler: decision.handler,
 			event_kind: evt?.kind,
-			scope_hint: (evt as any)?.scope_hint,
+			// D7: the scope the work item's TaskIntents cover, never an event field.
+			scope_hint: workItemScopeHint(root, stateDir, targetId),
 			candidate_id: candidateId,
 		};
 
@@ -534,7 +587,8 @@ export async function dispatchDecisions(
 	const scheduleResult = scheduleLoopWork({
 		candidates,
 		active_leases: listLeases(stateDir),
-		ready_buffer: 0,
+		// D7: the buffer is the number of work items awaiting execution, not a constant.
+		ready_buffer: plannedWorkItemCount(stateDir),
 		open_daemon_prs: snapshot.pull_requests.filter((pr) => isDaemonManagedPr(pr)).length,
 		limits,
 		budget: {
@@ -672,8 +726,81 @@ export async function dispatchDecisions(
 					issue_number: issueNumber,
 				};
 
+				// Spec loop-agent-scheduling D4: with the `local` channel the
+				// question is a request file in the daemon's state directory, and
+				// the user answers it through the Host's native gate.
+				if (loopConfig.interaction?.channel === "local") {
+					const request = laneDecisionInteractionRequest({
+						task_id: event.task_id,
+						run_id: event.run_id,
+						record_revision: event.record_revision,
+						question: event.question,
+						options: event.options,
+						...(issueNumber === undefined ? {} : { issue_number: issueNumber }),
+					});
+					const channel = createLocalInteractionChannel({
+						stateDir,
+						binding: () => ({ record_revision: event.record_revision }),
+					});
+					const posted = await channel.post(request);
+					if (stateDir) parkLaneSlot(stateDir, event.task_id, { host_token: lease?.host_token ?? randomUUID() });
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`published local lane decision question ${request.interaction_id} for ${event.task_id} (${posted})`,
+					);
+					continue;
+				}
+
+				// D3: the `github` channel. A Lane question every option of which
+				// resolves to an operation GitHub may not apply is posted as a notice
+				// only; otherwise the question is the `lane_decision` request.
+				const request = laneDecisionInteractionRequest({
+					task_id: event.task_id,
+					run_id: event.run_id,
+					record_revision: event.record_revision,
+					question: event.question,
+					options: event.options,
+					...(issueNumber === undefined ? {} : { issue_number: issueNumber }),
+				});
+				const localOnlyOps = event.options
+					.map((option) =>
+						resolveDecisionOperation(
+							option.id,
+							{ task_id: event.task_id, run_id: event.run_id, record_revision: event.record_revision },
+							option,
+						),
+					)
+					.filter(isGithubLocalOnlyLaneOperation);
+				if (event.options.length > 0 && localOnlyOps.length === event.options.length && issueNumber !== undefined) {
+					if (stateDir) parkLaneSlot(stateDir, event.task_id, { host_token: lease?.host_token ?? randomUUID() });
+					const posted = await createGithubInteractionChannel({
+						port: gitHubPort,
+						comments: () => existingComments,
+						binding: () => ({ record_revision: event.record_revision }),
+						guardFacts,
+					}).post(
+						localOnlyNotice({
+							interaction_id: `${request.interaction_id}:local-only`,
+							operation: GITHUB_LOCAL_ONLY_LANE_OPERATIONS[localOnlyOps[0]!],
+							subject: request.subject,
+							binding: request.binding,
+							detail: event.question,
+						}),
+					);
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`posted local-only lane decision notice for ${event.task_id} (${posted})`,
+					);
+					continue;
+				}
+
 				const result = await publishLaneDecisionQuestion(input, {
 					postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
+					wrapBody: (body) => withInteractionMarker(request, body),
 					existingComments,
 					stateDir,
 					hostToken: lease?.host_token ?? randomUUID(),
@@ -723,6 +850,15 @@ export async function dispatchDecisions(
 						{
 							postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
 							existingComments: issueComments,
+							localOnly: githubLocalOnlyGate({
+								gitHubPort,
+								comments: issueComments,
+								guardFacts,
+								issue_number: event.issue_number,
+								task_id: taskId,
+								run_id: event.run_id,
+								record_revision: event.record_revision,
+							}),
 							stateDir,
 							hostToken: lease?.host_token ?? randomUUID(),
 							guardFacts,
@@ -838,6 +974,15 @@ export async function dispatchDecisions(
 					{
 						postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
 						existingComments: issueComments,
+						localOnly: githubLocalOnlyGate({
+							gitHubPort,
+							comments: issueComments,
+							guardFacts,
+							issue_number: event.issue_number,
+							task_id: taskId,
+							run_id: expectedRunId,
+							record_revision: expectedRevision,
+						}),
 						stateDir,
 						hostToken: lease?.host_token ?? randomUUID(),
 						guardFacts,
@@ -871,6 +1016,22 @@ export async function dispatchDecisions(
 				const target = event ? eventTarget(event) : { kind: "issue" as const, id: "0" };
 				const issueNum = (event as any)?.issue_number ? String((event as any).issue_number) : target.id;
 				const taskId = (event as any)?.task_id || `issue-${issueNum}`;
+
+				// D6: the PR opens only for the plan that was approved and driven; a
+				// plan republished while the job ran leaves this settlement unbound.
+				const drivenDigest = event?.kind === "E13_LANE_SETTLED" ? (event.plan_digest ?? null) : null;
+				if (drivenDigest !== null) {
+					const published = readPlanPublication(stateDir, Number(issueNum));
+					if (!published || published.published_at === null || published.digest !== drivenDigest) {
+						emitDispatch(
+							decision.decision_id,
+							decision.handler,
+							"failed",
+							`plan_digest_stale: ${taskId} settled on plan ${drivenDigest.slice(0, 12)}, but #${issueNum} now publishes ${published?.digest.slice(0, 12) ?? "no plan"}`,
+						);
+						continue;
+					}
+				}
 
 				// 1. Resolve TaskIntent
 				let intentFile = join(options.root, "docs", "plans", `${taskId}.intent.json`);
@@ -943,6 +1104,17 @@ export async function dispatchDecisions(
 						decision.handler,
 						"failed",
 						`executor exit has no verification evidence digest for ${taskId}`,
+					);
+					continue;
+				}
+
+				// D6 negative control: a settlement with no commit digest is not a delivery.
+				if (!exitRecord.final_commit_sha) {
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"failed",
+						`executor exit has no final commit sha for ${taskId}`,
 					);
 					continue;
 				}
@@ -1087,7 +1259,14 @@ export async function dispatchDecisions(
 				error?.message || String(error),
 			);
 		} finally {
-			if (acquiredNewLease && lease && decision.handler !== "close_out") {
+			// D6: a job holds its target's lease until its record is terminal, so the
+			// next tick still counts this target as one of `max_concurrent`.
+			if (
+				acquiredNewLease &&
+				lease &&
+				decision.handler !== "close_out" &&
+				activeLoopJob(stateDir, lease.target_id) === null
+			) {
 				releaseLoopLease(stateDir, lease.target_id, { host_token: lease.host_token });
 			}
 		}

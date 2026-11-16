@@ -25,12 +25,31 @@ import {
 	type RawPR,
 } from "./types.ts";
 
+/**
+ * The content hash an Issue's own edits are compared against (D7). A comment, a
+ * label or any other field bump moves `updated_at` without moving this hash.
+ */
+const ISSUE_CONTENT_KEY_PREFIX = "issue-content:";
+
+/** The stored-hash key one Issue's body and title are compared under. */
+export function issueContentKey(issueNumber: number): string {
+	return `${ISSUE_CONTENT_KEY_PREFIX}${issueNumber}`;
+}
+
+export function issueContentHash(issue: { title?: string | null; body?: string | null }): string {
+	return createHash("sha256").update(`${issue.title ?? ""}\n${issue.body ?? ""}`).digest("hex");
+}
+
 function normalizeLabelNames(labels?: Array<{ name: string } | string>): string[] {
 	if (!labels || !Array.isArray(labels)) return [];
 	return labels.map((l) => (typeof l === "string" ? l : l.name)).filter(Boolean);
 }
 
-function parsePlanDigestFromComment(body: string): string | null {
+/**
+ * The plan digest an owner comment approves: the pre-protocol `/approve <digest>`
+ * command and its marker form both stay readable (D3).
+ */
+export function parsePlanDigestFromComment(body: string): string | null {
 	// 1. Check explicit marker: <!-- immune-brain:plan-digest=([^\s>]+) -->
 	const markerMatch = body.match(/<!--\s*immune-brain:plan-digest=([^\s>]+)\s*-->/i);
 	if (markerMatch) return markerMatch[1];
@@ -104,11 +123,16 @@ export function normalizeEvents(
 		const hasUnresolvedBlocks = Array.isArray(issue.blocked_by) && issue.blocked_by.length > 0;
 
 		const isNew = !prevIssuesWatermark || new Date(issue.created_at) > new Date(prevIssuesWatermark);
+		// D7: an Issue counts as edited only when its title or body changed, not when
+		// `updated_at` moved. A state that carries no stored hash yet (a state written
+		// before D7) keeps the timestamp rule for that one observation.
+		const storedContentHash = previousState?.watermarks.etag_by_resource?.[issueContentKey(issue.number)];
+		const contentChanged = storedContentHash === undefined || storedContentHash !== issueContentHash(issue);
 		const isEdited =
 			!isNew &&
 			prevIssuesWatermark &&
 			new Date(issue.updated_at) > new Date(prevIssuesWatermark) &&
-			issue.updated_at !== issue.created_at;
+			contentChanged;
 
 		if (isNew) {
 			const evt: E1NewIssueEvent = {
@@ -306,7 +330,7 @@ export function normalizeEvents(
 
 				const evt: E8PRCheckFailedEvent = {
 					contract: LOOP_DAEMON_EVENT_CONTRACT,
-					event_id: `evt-e8-${pr.number}-${check.name}-${signature.slice(0, 12)}`,
+					event_id: `evt-e8-${pr.number}-${pr.head_sha}-${check.name}-${signature.slice(0, 12)}`,
 					kind: "E8_PR_CHECK_FAILED",
 					timestamp: observedAt,
 					pr_number: pr.number,

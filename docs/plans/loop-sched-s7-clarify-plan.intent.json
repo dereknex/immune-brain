@@ -1,0 +1,41 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s7-clarify-plan",
+  "owner": "user",
+  "goal": "Replace analysis with a clarify stage that asks through the Interaction protocol and resumes on the answer, pass its framing to planning, correct the a15 handler mapping, and drive every intent of an approved plan as one batch, per D8 of docs/specs/loop-agent-scheduling.spec.md.",
+  "acceptance": [
+    {
+      "id": "S7-AC1",
+      "assertion": "Source BR-SCN-1, BR-DEC-6; meet D8 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts with fake GitHub and session ports. Done looks like: a clarify result with questions posts exactly one clarify_question comment, the work item waits in awaiting_input, and an allowlisted reply re-runs clarify with the answer and then plans. Negative: a non-allowlisted reply does not resume. Bound: a tick with no answer posts nothing new.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S7-AC2",
+      "assertion": "Source BR-GAP-A2, BR-GAP-A3; meet D8 mapping bullets in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts and tests/loop-daemon-schedule-plan.test.ts. Done looks like: clear_single_task goes to plan, needs_initiative_decomposition goes to plan with a decomposition instruction, needs_clarification goes to clarify, and the plan prompt contains the clarify framing (scopes, seams, risks, acceptance).",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\",\n      \"tests/loop-daemon-schedule-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S7-AC3",
+      "assertion": "Source BR-GAP-A4; meet D8 batch bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-clarify-plan.test.ts. Done looks like: a two-intent plan approved by its plan digest is enrolled and driven as one batch covering both intents. Negative: an approval whose digest differs from the published plan enrolls nothing.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-clarify-plan.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s7-clarify-plan.md",
+    "docs/plans/loop-sched-s7-clarify-plan.intent.json",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/runtime/loop_daemon/agent_handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/analysis_agent.ts",
+    "plugins/immune-brain/runtime/loop_daemon/handlers.ts",
+    "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+    "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+    "plugins/immune-brain/runtime/loop_daemon/plan_drafter.ts",
+    "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+    "tests/loop-daemon-agent-handlers.test.ts",
+    "tests/loop-daemon-schedule-plan.test.ts",
+    "tests/loop-sched-clarify-plan.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

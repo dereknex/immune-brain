@@ -25,7 +25,6 @@ import {
 } from "../plugins/immune-brain/runtime/loop_daemon/judgement.ts";
 import {
 	createSessionJudgingAgent,
-	JUDGING_OUTPUT_PATH,
 	type JudgingAgentFn,
 } from "../plugins/immune-brain/runtime/loop_daemon/judging_agent.ts";
 import {
@@ -150,6 +149,12 @@ function makeFakeGitHubPort(): {
 			return { number: 200, url: "https://example.test/pr/200" };
 		},
 		async markPrReady() {},
+		async checkLog() {
+			return null;
+		},
+		async prReviewComments() {
+			return [];
+		},
 	};
 
 	return { port, postedComments, editedComments, createdIssues, closedIssues };
@@ -293,7 +298,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 		});
 		expect(judged).toBe(0);
 		expect(result.tier).toBe(2);
-		expect(result.handler).toBe("triage_issue");
+		expect(result.handler).toBe("draft_plan");
 	});
 
 	it("routes below-threshold ignore/duplicate/granularity, truncation!=none, disabled points, and unavailable answers to S9 judging agent", async () => {
@@ -306,11 +311,12 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 			provider: {
 				async run(req) {
 					sessionCalls.push(req.kind);
-					writeFileSync(
-						join(req.worktree_path, JUDGING_OUTPUT_PATH),
-						JSON.stringify({ handler: "draft_plan", reason: "judging session resolved ambiguity" }),
-					);
-					return { exit_code: 0, exit_signal: null, timed_out: false };
+					return {
+						exit_code: 0,
+						exit_signal: null,
+						timed_out: false,
+						stdout: JSON.stringify({ handler: "draft_plan", reason: "judging session resolved ambiguity" }),
+					};
 				},
 			},
 		});
@@ -404,7 +410,7 @@ describe("S10-AC1: D12 v1 thresholds & correctable-direction gating", () => {
 			// fakeAdapter returns truncation: "unknown", so S10 routes to judging agent while keeping full Envelope on classification!
 			judgingAgent: async () => {
 				judged += 1;
-				return { handler: "triage_issue", reason: "confirmed clear single task" };
+				return { handler: "draft_plan", reason: "confirmed clear single task" };
 			},
 		});
 		expect(res.returncode).toBe(0);
@@ -492,7 +498,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 				observed_at: TS,
 			},
 			judgingAgent: async () => ({
-				handler: "triage_issue",
+				handler: "draft_plan",
 				corrected_option: "actionable",
 				reason: "issue describes an actual bug",
 			}),
@@ -502,7 +508,7 @@ describe("S10-AC1 & AC2: Reconciliation, Guards/Scheduler & labels.jsonl Corpus 
 		expect(heldPayload.checked).toBe(1);
 		expect(heldPayload.overrides).toBe(1);
 		expect(heldPayload.labels_appended).toBe(1);
-		expect(heldPayload.dispatches[0]).toMatchObject({ handler: "triage_issue", outcome: "held" });
+		expect(heldPayload.dispatches[0]).toMatchObject({ handler: "draft_plan", outcome: "held" });
 
 		// Verify labels.jsonl mode 0600 and loadCorpus() compatibility
 		const lp = labelsFilePath(ws.stateDir);
@@ -745,14 +751,15 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 		expect(ghPort.postedComments[0]!.body).toContain("a19_format_reminder:issue:10:comment:701");
 		expect(ghPort.postedComments[1]!.body).toContain("a19_format_reminder:issue:10:comment:702");
 
-		// Simulate repeating comment #701 escalation: deduplicates against existing comment holding same escalation key
+		// Simulate repeating comment #701 escalation: deduplicates against existing comment holding same escalation key.
+		// S9/D7: E2 needs an Issue body change, so a comment-only update no longer escalates.
 		const repeatSnap: ObservationInput = {
 			issues: [
 				{
 					id: 1,
 					number: 10,
 					title: "Issue 10",
-					body: "Body",
+					body: "Body edited after the reminder",
 					state: "open",
 					created_at: TS,
 					updated_at: "2026-11-13T01:05:00.000Z",
@@ -791,7 +798,14 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			guardFacts: { daemon_identity: "imm-bot" },
 			snapshotOverride: repeatSnap,
 		});
-		expect(ghPort.postedComments).toHaveLength(2);
+		// S5/D5: the already-judged comment 701 is not judged again, so no second
+		// reminder; the daemon's own reminder comment stays a noop. What does post is
+		// the E2 issue-edit escalation, which the same-target lease hold used to mask.
+		expect(
+			ghPort.postedComments.filter((c) => c.body.includes("a19_format_reminder:issue:10:comment:701")),
+		).toHaveLength(1);
+		expect(ghPort.postedComments.filter((c) => c.body.includes(":comment:9991"))).toHaveLength(0);
+		expect(ghPort.postedComments).toHaveLength(3);
 	});
 
 	it("invalid or unavailable judging agent runs nothing side-effecting, falls back to exact D12 baselines, and counts against loop.budget", async () => {
@@ -803,11 +817,12 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			provider: {
 				async run(req) {
 					// Out-of-catalogue handler `force_merge` must be rejected cleanly!
-					writeFileSync(
-						join(req.worktree_path, JUDGING_OUTPUT_PATH),
-						JSON.stringify({ handler: "force_merge", reason: "invalid" }),
-					);
-					return { exit_code: 0, exit_signal: null, timed_out: false };
+					return {
+						exit_code: 0,
+						exit_signal: null,
+						timed_out: false,
+						stdout: JSON.stringify({ handler: "force_merge", reason: "invalid" }),
+					};
 				},
 			},
 		});
@@ -985,6 +1000,8 @@ describe("S10-AC2: Safety Invariants, Judging Agent Failure Baseline, Duplicate 
 			enrollTask: () => {},
 			runDrive: () => ({ exit_code: 0, timed_out: false, run_id: "r1", verification_evidence_digest: "sha256:" + "a".repeat(64) }),
 			openPrDeps: {} as any,
+			head: () => "a".repeat(40),
+			changedPaths: () => [],
 			prWorktree: () => ws.root,
 			readIntent: () => ({
 				task_id: "t1",

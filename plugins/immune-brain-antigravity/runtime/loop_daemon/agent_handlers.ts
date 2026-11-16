@@ -6,14 +6,17 @@
  * `agent_runner.ts`, so a session's completion is decided from evidence and
  * never from its prose:
  *
- *   - `analyze_codebase` binds `CodebaseAnalysisProbe` to a read-only session
- *   - `draft_plan` binds `PlanDraftDeps` to a planning session whose candidate
- *     TaskIntents are authored by `imm-kernel intent author`
+ *   - `clarify_issue`, `draft_plan` and `apply_clarify_reply` share one chain:
+ *     the read-only `clarify` session returns the framing planning receives
+ *     (`scopes`, `seams`, `risks`, `acceptance`) or the questions the owner is
+ *     asked through the S3 Interaction protocol, after which the work item
+ *     waits in `awaiting_input` until an allowlisted answer re-runs `clarify`
+ *     with that answer appended (Spec D8)
  *   - `publish_plan_for_approval` posts that plan summary through the S8 write port
- *   - `triage_issue` analyzes an uncached key and drafts an already-cached one
  *   - `enroll_and_drive` turns a REST-read approval into a `tracker_approval_proof`,
- *     enrolls through the Kernel's single entry, drives the Lane inside the
- *     standing `imm-loop run` process and opens the PR after settlement
+ *     enrolls every intent of the approved plan and drives them as one batch
+ *     inside the standing `imm-loop run` process, then opens the PR after
+ *     settlement (Spec D8: `intents[0]` is no longer special)
  *   - `repair_pr_ci`, `repair_pr_conflict` and `address_pr_review` bind the S7
  *     deps to repair sessions in the PR's worktree, keeping the S7 attempt cap
  *
@@ -21,7 +24,7 @@
  * system and GitHub are injected seams.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -42,7 +45,7 @@ import { observeEnrollmentTaskIntent } from "../kernel/intent.ts";
 import { preparePiCanary } from "../kernel/pi_canary_prepare.ts";
 import { readTaskRecordRaw } from "../kernel/storage.ts";
 import type { TaskRisk } from "../kernel/types.ts";
-import { parseVerificationDescriptor } from "../verification_descriptor.ts";
+import { parseVerificationDescriptor, type VerificationDescriptor } from "../verification_descriptor.ts";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port.ts";
 import { createDefaultBatchGitPort } from "../unattended/batch_git.ts";
 import { observeSingleTask } from "../unattended/batch_plan.ts";
@@ -56,8 +59,11 @@ import {
 } from "./analysis_agent.ts";
 import {
 	createCliAgentSessionProvider,
+	loopRoleProfile,
+	ROLE_SESSION_LIMITS,
 	runAgentSession,
 	sessionEnvironment,
+	sessionRole,
 	type AgentSessionEvidence,
 	type AgentSessionKind,
 	type AgentSessionProvider,
@@ -65,8 +71,16 @@ import {
 } from "./agent_runner.ts";
 import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
+import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
+import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
+import {
+	clarifyQuestionRequest,
+	planApprovalInteractionRequest,
+	type InteractionChannel,
+} from "./interaction/protocol.ts";
+import { type LoopJobExit, readLoopJob, recordSettledLane, startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
-import type { GuardFacts } from "./guards.ts";
+import { isVerifiedActor, type GuardFacts } from "./guards.ts";
 import type { LoopDecisionRecord } from "./decision_record.ts";
 import type { LoopHandler } from "./handlers.ts";
 import { parseOwnerCommand } from "./owner_commands.ts";
@@ -78,17 +92,21 @@ import {
 	type PlanIntentDraft,
 	type PlanIntentSummary,
 } from "./plan_drafter.ts";
-import { openLoopPullRequest } from "./pr_opener.ts";
 import {
 	DEFAULT_REPAIR_RETRY_CAP,
 	addressPrReview,
 	computeFailureSignature,
+	isDaemonBranch,
+	isReviewHeadBatched,
+	markReviewHeadBatched,
+	reviewHeadBatchedThrough,
 	repairPrCi,
 	repairPrConflict,
 	type DaemonPrInput,
 	type RepairResult,
 } from "./repair_agent.ts";
 import { ensureLoopStateDir, loadLoopDecisions } from "./state.ts";
+import { markPlanPublished, parkOnClarifyQuestion, readWorkItem, releaseClarifyWait } from "./work_items.ts";
 import type { NormalizedLoopEvent, ObservationInput, RawComment, RawPR } from "./types.ts";
 
 /** The plan one Issue's planning chain recorded; published by the handler that owns the write. */
@@ -218,13 +236,13 @@ export interface AgentHandlerDeps {
 	sessionProvider: AgentSessionProvider;
 	/** The daemon's own GitHub credential, the only one a session receives. */
 	session_credential: string | null;
-	turn_budget?: number;
-	timeout_ms?: number;
 	/** Create a daemon-owned worktree (`branch: null` is detached) and return its path. */
 	createWorktree(input: { root: string; branch: string | null; name: string }): string;
-	/** The PR's own worktree, created on first use. */
-	prWorktree(input: { root: string; pr_number: number; branch: string }): string;
+	/** The PR's own worktree, created on first use and reset to the PR head before any repair. */
+	prWorktree(input: { root: string; pr_number: number; branch: string; head_sha: string }): string;
 	head(input: { root: string; cwd?: string; branch?: string | null }): string | null;
+	/** Every path the worktree changed since `base_head`, committed or not; null when unreadable. */
+	changedPaths(input: { worktree_path: string; base_head: string }): string[] | null;
 	baseBranch(root: string): string;
 	runKernel(input: { argv: string[]; cwd: string; stdin?: string }): KernelIntentResult;
 	readIntent(task_id: string): AgentTaskIntent | null;
@@ -237,6 +255,8 @@ export interface AgentHandlerDeps {
 		task_id: string | null;
 	}): Promise<{ exit_code: number; stdout: string; stderr: string }>;
 	gitCommitAndPush(input: { worktree_path: string; branch: string; message: string }): Promise<{ commit_sha: string }>;
+	/** Commit a resolved rebase and push it back with `--force-with-lease` (D9). */
+	gitForcePushWithLease(input: { worktree_path: string; branch: string; message: string }): Promise<{ commit_sha: string }>;
 	rebaseOrMerge(input: {
 		worktree_path: string;
 		base_branch: string;
@@ -244,11 +264,36 @@ export interface AgentHandlerDeps {
 	now?: () => string;
 }
 
-const DEFAULT_TURN_BUDGET = 40;
-const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
+/** The `git` invocation a worktree sync runs through; the seam tests replace. */
+export type WorktreeGitRunner = (
+	cwd: string,
+	argv: string[],
+) => { status: number; stdout: string; stderr: string };
 
-const ANALYSIS_OUTPUT = ".imm-loop/analysis.json";
-const PLAN_OUTPUT = ".imm-loop/plan.json";
+/**
+ * D9: before any repair the PR worktree fetches and resets to the PR head, so a
+ * session never repairs a stale tree the daemon left behind. A rebase an escalated
+ * conflict repair left in progress is aborted first: `reset --hard` alone moves the
+ * head but keeps the rebase state, which a later commit would then continue.
+ */
+export function syncWorktreeToHead(
+	input: { worktree_path: string; branch: string; head_sha: string },
+	run: WorktreeGitRunner,
+): void {
+	const rebasing = run(input.worktree_path, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]);
+	if (rebasing.status === 0) {
+		const aborted = run(input.worktree_path, ["rebase", "--abort"]);
+		if (aborted.status !== 0)
+			throw new Error(`loop_worktree_failed: rebase --abort: ${aborted.stderr.trim()}`);
+	}
+	const fetched = run(input.worktree_path, ["fetch", "origin", input.branch]);
+	if (fetched.status !== 0)
+		throw new Error(`loop_worktree_failed: fetch ${input.branch}: ${fetched.stderr.trim()}`);
+	const reset = run(input.worktree_path, ["reset", "--hard", input.head_sha]);
+	if (reset.status !== 0)
+		throw new Error(`loop_worktree_failed: reset ${input.head_sha}: ${reset.stderr.trim()}`);
+}
+
 const REPAIR_OUTPUT = ".imm-loop/repair.json";
 
 /* ------------------------------------------------------------------ */
@@ -259,17 +304,31 @@ function stringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function parseAnalysisFindings(bytes: string): CodebaseAnalysisFindings | null {
+/** The one schema a `clarify` session returns: questions, or the D8 framing. */
+interface ClarifyResult {
+	questions: string[];
+	framing: CodebaseAnalysisFindings;
+}
+
+function parseClarifyResult(bytes: string): ClarifyResult | null {
 	try {
 		const value = JSON.parse(bytes) as Record<string, unknown>;
 		if (!value || typeof value !== "object") return null;
-		if (!stringArray(value.scopes) || !stringArray(value.seams)) return null;
-		if (value.questions !== undefined && !stringArray(value.questions)) return null;
-		return {
-			scopes: value.scopes,
-			seams: value.seams,
-			questions: (value.questions as string[] | undefined) ?? [],
+		const questions = value.questions === undefined ? [] : value.questions;
+		if (!stringArray(questions)) return null;
+		const fields = ["scopes", "seams", "risks", "acceptance"] as const;
+		for (const field of fields) {
+			if (value[field] !== undefined && !stringArray(value[field])) return null;
+		}
+		const framing: CodebaseAnalysisFindings = {
+			scopes: (value.scopes as string[] | undefined) ?? [],
+			seams: (value.seams as string[] | undefined) ?? [],
+			risks: (value.risks as string[] | undefined) ?? [],
+			acceptance: (value.acceptance as string[] | undefined) ?? [],
 		};
+		// Neither a question nor a framing is not a clarification result.
+		if (questions.length === 0 && framing.scopes.length === 0) return null;
+		return { questions: [...questions], framing };
 	} catch {
 		return null;
 	}
@@ -391,6 +450,11 @@ function issueOf(context: AgentHandlerContext): IssueFacts | null {
 	return Number.isFinite(resolved) ? { number: resolved, title: "", body: "" } : null;
 }
 
+/** The work item this decision moves, in the store's own target vocabulary. */
+function workItemTargetOf(context: AgentHandlerContext): string {
+	return `${context.decision.target.kind}-${context.decision.target.id}`;
+}
+
 function taskIdOfEvent(context: AgentHandlerContext): string | null {
 	const event = context.event;
 	if (event && "task_id" in event && typeof event.task_id === "string" && event.task_id) return event.task_id;
@@ -471,114 +535,254 @@ function requireSession(
 
 export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort {
 	const now = deps.now ?? (() => new Date().toISOString());
-	const turnBudget = deps.turn_budget ?? DEFAULT_TURN_BUDGET;
-	const timeoutMs = deps.timeout_ms ?? DEFAULT_TIMEOUT_MS;
 
 	async function runSession(
 		context: AgentHandlerContext,
 		input: {
 			kind: AgentSessionKind;
 			worktree_path: string;
-			output_path: string;
+			output_path?: string;
 			prompt: string;
 			evidence?: AgentSessionEvidence;
 		},
 	): Promise<AgentSessionRecord> {
+		// The role owns the budget: one per-role table, never a caller's default (Spec D2).
+		const limits = ROLE_SESSION_LIMITS[sessionRole(input.kind)];
 		return runAgentSession(
 			{
 				kind: input.kind,
 				worktree_path: input.worktree_path,
 				prompt: input.prompt,
-				output_path: input.output_path,
-				turn_budget: turnBudget,
-				timeout_ms: timeoutMs,
-				env: sessionEnvironment(deps.session_credential),
+				...(input.output_path === undefined ? {} : { output_path: input.output_path }),
+				turn_budget: limits.turn_budget,
+				timeout_ms: limits.timeout_ms,
+				// A repair session writes a PR branch; only the daemon pushes it, so it holds no GitHub credential.
+				env: sessionEnvironment(input.kind === "repair" ? null : deps.session_credential),
 			},
 			deps.sessionProvider,
 			input.evidence ?? {},
 		);
 	}
 
-	async function analyze(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * A repair session's result, with its scope taken from what the session
+	 * actually changed: the paths it reports are joined with every path that
+	 * differs from the head it started at, including commits it made and
+	 * untracked files, so an unreported write still meets the scope check.
+	 */
+	async function runRepairSession(
+		context: AgentHandlerContext,
+		worktreePath: string,
+		branch: string,
+		prompt: string,
+	): Promise<RepairSessionResult> {
+		const startHead = deps.head({ root: context.root, cwd: worktreePath });
+		const session = await runSession(context, {
+			kind: "repair",
+			worktree_path: worktreePath,
+			output_path: REPAIR_OUTPUT,
+			prompt,
+			evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch },
+		});
+		const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
+		if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
+		const observed = startHead === null ? null : deps.changedPaths({ worktree_path: worktreePath, base_head: startHead });
+		if (observed === null)
+			return { success: false, modified_paths: [], reason: "repair_paths_unobservable: the worktree changes could not be read" };
+		return { ...parsed, modified_paths: [...new Set([...parsed.modified_paths, ...observed])] };
+	}
+
+	/** What the next commit would stage: every path that differs from the worktree's HEAD. */
+	function pendingCommitPaths(context: AgentHandlerContext): (worktreePath: string) => Promise<string[] | null> {
+		return async (worktreePath) => {
+			const head = deps.head({ root: context.root, cwd: worktreePath });
+			return head === null ? null : deps.changedPaths({ worktree_path: worktreePath, base_head: head });
+		};
+	}
+
+	/**
+	 * D8: the read-only `clarify` session answers either with questions for the
+	 * owner or with the framing planning receives. A framing is cached under its
+	 * cache key, so the same Issue with the same answers never probes twice.
+	 */
+	async function runClarify(
+		context: AgentHandlerContext,
+		answers: readonly string[],
+	): Promise<
+		| { kind: "framing"; findings: CodebaseAnalysisFindings; cached: boolean }
+		| { kind: "questions"; questions: string[] }
+		| { kind: "failed"; detail: string }
+	> {
 		const issue = issueOf(context);
-		if (!issue) return { outcome: "failed", detail: "analyze_codebase needs an Issue target" };
+		if (!issue) return { kind: "failed", detail: "clarify needs an Issue target" };
 		const baseTreeSha = deps.head({ root: context.root, cwd: context.root });
-		if (!baseTreeSha) return { outcome: "failed", detail: "analyze_codebase could not read the repository HEAD" };
+		if (!baseTreeSha) return { kind: "failed", detail: "clarify could not read the repository HEAD" };
 
 		const probeInput = {
 			issue_number: issue.number,
 			issue_body: issue.body,
 			base_tree_sha: baseTreeSha,
+			answers,
 		};
-		const cacheKey = analysisCacheKey(probeInput);
-		const cached = readCachedAnalysis(context.stateDir, cacheKey);
-		if (cached) {
-			return {
-				outcome: "executed",
-				detail: `analysis ${cacheKey.slice(0, 12)} cached scopes=${cached.findings.scopes.join(",") || "none"}`,
-			};
-		}
+		const cached = readCachedAnalysis(context.stateDir, analysisCacheKey(probeInput));
+		if (cached) return { kind: "framing", findings: cached.findings, cached: true };
 
-		const worktree = deps.createWorktree({ root: context.root, branch: null, name: `analysis-${issue.number}` });
+		const worktree = deps.createWorktree({ root: context.root, branch: null, name: `clarify-${issue.number}` });
 		const session = await runSession(context, {
-			kind: "analysis",
+			kind: "clarify",
 			worktree_path: worktree,
-			output_path: ANALYSIS_OUTPUT,
 			prompt: [
-				`Read-only codebase analysis for Issue #${issue.number}: ${issue.title}`,
+				`Read-only clarification for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
+				...(answers.length > 0
+					? ["", "The owner answered the clarification question:", ...answers.map((answer) => `- ${answer}`)]
+					: []),
 				"",
-				'Write JSON {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "questions": ["facts the plan must settle"]}.',
-				"Do not modify any file in this worktree.",
+				'If a fact the plan must settle is missing, print JSON {"questions": ["one question per missing fact"]}.',
+				'Otherwise print the framing planning receives: {"scopes": ["repository-relative paths the plan will touch"], "seams": ["existing modules the plan should extend"], "risks": ["what the plan risks getting wrong"], "acceptance": ["what the plan will have to prove"]}.',
+				"Do not modify any file: this session has no write tools.",
 			].join("\n"),
-			evidence: { validate: (bytes) => parseAnalysisFindings(bytes) !== null },
+			evidence: { validate: (bytes) => parseClarifyResult(bytes) !== null },
 		});
 		const refused = requireSession(session);
-		if (refused) return refused;
-		const findings = parseAnalysisFindings(session.output ?? "");
-		if (!findings) return { outcome: "failed", detail: `analysis session produced no valid findings: ${session.output_path}` };
+		if (refused) return { kind: "failed", detail: refused.detail };
+		const parsed = parseClarifyResult(session.output ?? "");
+		if (!parsed) return { kind: "failed", detail: `clarify session produced no valid result: ${session.reason}` };
+		if (parsed.questions.length > 0) return { kind: "questions", questions: parsed.questions };
 
-		const result = analyzeCodebase({
-			...probeInput,
-			stateDir: context.stateDir,
-			probe: () => findings,
-			now: context.now,
-		});
+		analyzeCodebase({ ...probeInput, stateDir: context.stateDir, probe: () => parsed.framing, now: context.now });
+		return { kind: "framing", findings: parsed.framing, cached: false };
+	}
+
+	/**
+	 * The configured Interaction channel bound to one Issue's current revision:
+	 * `local` writes the question under the daemon state directory and reads the
+	 * answer the user confirmed in their own Host; `github` posts one comment.
+	 */
+	function clarifyChannel(
+		context: AgentHandlerContext,
+		issue: IssueFacts,
+		comments: RawComment[],
+	): { channel: InteractionChannel; issue_revision: string } {
+		const issueRevision = createHash("sha256").update(`${issue.title}\n${issue.body}`).digest("hex").slice(0, 12);
+		const binding = () => ({ issue_revision: issueRevision });
+		if (context.loopConfig.interaction?.channel === "local")
+			return { issue_revision: issueRevision, channel: createLocalInteractionChannel({ stateDir: context.stateDir, binding }) };
 		return {
-			outcome: "executed",
-			detail: `analysis ${result.entry.cache_key.slice(0, 12)} cached=false scopes=${result.entry.findings.scopes.join(",") || "none"}`,
+			issue_revision: issueRevision,
+			channel: createGithubInteractionChannel({
+				port: {
+					postComment: (issueNumber, body) => context.gitHubPort.postComment(issueNumber, body),
+					editComment: (commentId, body) => context.gitHubPort.editComment(commentId, body),
+				},
+				comments: () => comments,
+				binding,
+				guardFacts: context.guardFacts,
+			}),
 		};
 	}
 
-	async function draftPlan(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * Post this Issue's questions once through the configured Interaction channel and
+	 * park the work item in `awaiting_input`. The channel's idempotency key is the
+	 * question set, so a tick that observes no answer posts nothing new.
+	 */
+	async function askClarify(
+		context: AgentHandlerContext,
+		issue: IssueFacts,
+		questions: string[],
+	): Promise<AgentHandlerResult> {
+		const comments = [...existingCommentsOf(context, issue.number)];
+		const { channel, issue_revision } = clarifyChannel(context, issue, comments);
+		const request = clarifyQuestionRequest({ issue_number: issue.number, questions, issue_revision });
+		// One marker comment per interaction id: a tick that observed the answer
+		// posts nothing, and a re-asked question set posts nothing either.
+		const posted = await channel.post(request);
+		const parked = parkOnClarifyQuestion(
+			context.stateDir,
+			workItemTargetOf(context),
+			request.interaction_id,
+			context.now,
+		);
+		if (parked.state !== "awaiting_input" || parked.pending_interactions[0] !== request.interaction_id)
+			return {
+				outcome: "failed",
+				detail: `clarify question ${request.interaction_id} could not park the work item (state ${parked.state}); the answer would not resume`,
+			};
+		return {
+			outcome: "executed",
+			detail: `clarify question ${request.interaction_id} ${posted === "posted" ? "posted" : "already posted"}; asked ${questions.length} question(s), work item awaits the answer`,
+		};
+	}
+
+	/**
+	 * D8: an allowlisted reply re-runs `clarify` with the answer appended and then
+	 * plans. A reply the channel does not accept for this request resumes nothing.
+	 */
+	async function applyClarifyReply(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+		const issue = issueOf(context);
+		if (!issue) return { outcome: "failed", detail: "apply_clarify_reply needs an Issue target" };
+		const interactionId = readWorkItem(context.stateDir, workItemTargetOf(context))?.pending_interactions[0];
+		if (!interactionId) return { outcome: "failed", detail: `issue #${issue.number} waits on no clarify question` };
+
+		const { channel } = clarifyChannel(context, issue, [...existingCommentsOf(context, issue.number)]);
+		const polled = await channel.poll(interactionId);
+		if (polled.state !== "answered")
+			return {
+				outcome: "failed",
+				detail: `clarify ${interactionId} is ${polled.state}: the reply is not an allowlisted answer`,
+			};
+
+		const answered = await clarifyThenPlan(context, [polled.value]);
+		if (answered.outcome !== "executed") return answered;
+		// A local answer is consumed once; a GitHub answer stays in the comment stream.
+		if (channel.id === "local") retireLocalRequest(context.stateDir, interactionId);
+		return { outcome: "executed", detail: `clarify ${interactionId} answered by ${polled.actor}; ${answered.detail}` };
+	}
+
+	async function planFromFraming(
+		context: AgentHandlerContext,
+		findings: CodebaseAnalysisFindings,
+	): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
 		if (!issue) return { outcome: "failed", detail: "draft_plan needs an Issue target" };
 		const branch = planBranchName(issue.number);
 		const worktree = deps.createWorktree({ root: context.root, branch, name: `plan-${issue.number}` });
+		// D8: the plan receives the clarify framing, not only the Issue body's first 4000 chars.
+		const framing = [
+			"Clarify framing:",
+			`- scopes: ${findings.scopes.join(", ") || "none"}`,
+			`- seams: ${findings.seams.join(", ") || "none"}`,
+			`- risks: ${findings.risks.join(", ") || "none"}`,
+			`- acceptance: ${findings.acceptance.join(", ") || "none"}`,
+		];
+		// D8: a15 `needs_initiative_decomposition` asks for a decomposition instruction.
+		const decomposition =
+			context.decision.classification?.choice === "needs_initiative_decomposition"
+				? ["", "Decompose the Issue into an Initiative: one TaskIntent per Slice, in dependency order, each small enough to land alone."]
+				: [];
 		const session = await runSession(context, {
 			kind: "planning",
 			worktree_path: worktree,
-			output_path: PLAN_OUTPUT,
 			prompt: [
 				`Draft the plan for Issue #${issue.number}: ${issue.title}`,
 				"",
 				issue.body.slice(0, 4000),
 				"",
-				'Write JSON {"intents": [{"path": "docs/plans/<task-id>.intent.json", "intent": {<TaskIntent body>}}], "spec": null}.',
-				"The daemon authors every intent through `imm-kernel intent author`; you supply the candidate bodies only.",
-				`Commit the Spec you draft, if any, on the current branch (${branch}).`,
+				...framing,
+				...decomposition,
+				"",
+				'Print JSON {"intents": [{"path": "docs/plans/<task-id>.intent.json", "intent": {<TaskIntent body>}}], "spec": {"path": "docs/specs/<name>.spec.md", "content": "<Spec markdown>"} | null}.',
+				"Do not modify any file: this session has no write tools. The daemon writes every artifact.",
+				"The daemon authors each intent through `imm-kernel intent author`; you supply the candidate bodies only.",
 			].join("\n"),
-			evidence: {
-				validate: (bytes) => parsePlanCandidate(bytes) !== null,
-				branch,
-				expect_head_change: true,
-			},
+			evidence: { validate: (bytes) => parsePlanCandidate(bytes) !== null },
 		});
 		const refused = requireSession(session);
 		if (refused) return refused;
 		const candidate = parsePlanCandidate(session.output ?? "");
-		if (!candidate) return { outcome: "failed", detail: `planning session produced no valid candidate: ${session.output_path}` };
+		if (!candidate) return { outcome: "failed", detail: `planning session produced no valid candidate: ${session.reason}` };
 
 		let draft: PlanDraft;
 		try {
@@ -625,6 +829,7 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		// summary, and an owner cannot approve a plan they cannot see.
 		const published = await publishPlan(context);
 		if (published.outcome !== "executed") return published;
+		markPlanPublished(context.stateDir, workItemTargetOf(context), draft.digest, context.now);
 
 		return {
 			outcome: "executed",
@@ -638,15 +843,20 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const plan = readPlanPublication(context.stateDir, issue.number);
 		if (!plan) return { outcome: "failed", detail: `no drafted plan for #${issue.number}` };
 
+		// D3: the plan summary is the `plan_approval` request's comment, bound to its digest.
+		const body = withInteractionMarker(
+			planApprovalInteractionRequest({ issue_number: issue.number, plan_digest: plan.digest, prompt: plan.comment_body }),
+			plan.comment_body,
+		);
 		if (plan.published_comment_id !== null) {
-			await context.gitHubPort.editComment(plan.published_comment_id, plan.comment_body);
+			await context.gitHubPort.editComment(plan.published_comment_id, body);
 			return {
 				outcome: "executed",
 				detail: `updated plan ${plan.digest.slice(0, 12)} for #${issue.number} in comment #${plan.published_comment_id}`,
 			};
 		}
 
-		const posted = await context.gitHubPort.postComment(issue.number, plan.comment_body);
+		const posted = await context.gitHubPort.postComment(issue.number, body);
 		writePlanPublication(context.stateDir, {
 			...plan,
 			published_at: plan.published_at ?? now(),
@@ -658,22 +868,27 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		};
 	}
 
-	async function triage(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+	/**
+	 * D8: the one chain the planning handlers share. The framing is a precondition
+	 * of every plan, so `clarify_issue`, `draft_plan` and `apply_clarify_reply` all
+	 * run `clarify` first; only the questions path stops before planning, and it
+	 * stops in `awaiting_input` with exactly one posted question.
+	 */
+	async function clarifyThenPlan(
+		context: AgentHandlerContext,
+		answers: readonly string[],
+	): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
-		if (!issue) return { outcome: "failed", detail: "triage_issue needs an Issue target" };
-		const baseTreeSha = deps.head({ root: context.root, cwd: context.root });
-		if (!baseTreeSha) return { outcome: "failed", detail: "triage_issue could not read the repository HEAD" };
-		const cached = readCachedAnalysis(
-			context.stateDir,
-			analysisCacheKey({ issue_number: issue.number, issue_body: issue.body, base_tree_sha: baseTreeSha }),
-		);
-		if (!cached) {
-			const analyzed = await analyze(context);
-			if (analyzed.outcome !== "executed") return analyzed;
-		}
-		const drafted = await draftPlan(context);
+		if (!issue) return { outcome: "failed", detail: `clarify needs an Issue target` };
+		const clarified = await runClarify(context, answers);
+		if (clarified.kind === "failed") return { outcome: "failed", detail: clarified.detail };
+		if (clarified.kind === "questions") return askClarify(context, issue, clarified.questions);
+
+		releaseClarifyWait(context.stateDir, workItemTargetOf(context), context.now);
+		const drafted = await planFromFraming(context, clarified.findings);
 		if (drafted.outcome !== "executed") return drafted;
-		return { outcome: "executed", detail: `${cached ? "analysis cached" : "analysis probed"}; ${drafted.detail}` };
+		const source = clarified.cached ? "framing cached" : answers.length > 0 ? `framing from ${answers.length} answer(s)` : "framing probed";
+		return { outcome: "executed", detail: `${source}; ${drafted.detail}` };
 	}
 
 	function approvalCommentOf(context: AgentHandlerContext): { issue_number: number; comment_id: number } | null {
@@ -761,7 +976,30 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		return { ok: true, input, source: "policy_auto", confirmation_ref: `policy_auto:${plan.digest}` };
 	}
 
+	/**
+	 * D6: a lost job's E12 is judged once, before dispatch, so a retry that cannot
+	 * start its job would otherwise end silently; it escalates instead.
+	 */
 	async function enrollAndDrive(context: AgentHandlerContext): Promise<AgentHandlerResult> {
+		const result = await enrollAndDriveOnce(context);
+		const event = context.event;
+		if (
+			event?.kind !== "E12_JOB_FINISHED" ||
+			event.outcome !== "lost" ||
+			(result.outcome !== "failed" && result.outcome !== "requires_standing_daemon")
+		)
+			return result;
+		const escalated = await escalateOnce(
+			context,
+			"job_retry_failed",
+			`issue-${event.issue_number}`,
+			event.job_id,
+			`The loop could not restart lost job ${event.job_id} for #${event.issue_number}: ${result.detail}`,
+		);
+		return { outcome: "failed", detail: `${result.detail} (${escalated})` };
+	}
+
+	async function enrollAndDriveOnce(context: AgentHandlerContext): Promise<AgentHandlerResult> {
 		const issue = issueOf(context);
 		if (!issue) return { outcome: "failed", detail: "enroll_and_drive needs an Issue target" };
 		const plan = readPlanPublication(context.stateDir, issue.number);
@@ -769,91 +1007,152 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (plan.published_at === null)
 			return { outcome: "failed", detail: `plan ${plan.digest.slice(0, 12)} for #${issue.number} is not published yet` };
 
-		const taskId = taskIdOfEvent(context) ?? plan.task_id;
-		if (!plan.intents.some((intent) => intent.task_id === taskId))
-			return { outcome: "failed", detail: `task ${taskId} is not in the published plan for #${issue.number}` };
-		const intent = deps.readIntent(taskId);
-		if (!intent) return { outcome: "failed", detail: `task intent is not readable: ${taskId}` };
-
-		const confirmation = await resolveConfirmation(context, issue, plan, intent);
-		if (!confirmation.ok) {
-			const escalated = await escalateOnce(
-				context,
-				"enroll_rejected",
-				`issue-${issue.number}`,
-				confirmation.reason,
-				`Enrollment refused for #${issue.number}: ${confirmation.reason}`,
-			);
-			return { outcome: "failed", detail: `${confirmation.reason} (${escalated})` };
-		}
+		// D8: every intent of the approved plan is driven; an event naming one task
+		// narrows this to that task, and `intents[0]` is no longer special.
+		// A lost job's retry drives the set that job held, not only the first task
+		// E12 names.
+		const lostJob =
+			context.event?.kind === "E12_JOB_FINISHED" ? readLoopJob(context.stateDir, context.event.job_id) : null;
+		const named = lostJob ? null : taskIdOfEvent(context);
+		if (named !== null && !plan.intents.some((intent) => intent.task_id === named))
+			return { outcome: "failed", detail: `task ${named} is not in the published plan for #${issue.number}` };
+		const planned = plan.intents.map((intent) => intent.task_id);
+		const taskIds =
+			lostJob?.task_ids && lostJob.task_ids.length > 0
+				? lostJob.task_ids.filter((taskId) => planned.includes(taskId))
+				: named === null
+					? planned
+					: [named];
+		if (taskIds.length === 0)
+			return { outcome: "failed", detail: `lost job ${lostJob?.job_id} drives no task of the published plan` };
+		const taskId = taskIds[0]!;
 
 		// Driving belongs to the process that owns `loopDaemonSupervisor`.
 		if (!context.standing_daemon)
 			return {
 				outcome: "requires_standing_daemon",
-				detail: `enroll_and_drive drives ${taskId} only inside imm-loop run (${confirmation.source} verified)`,
+				detail: `enroll_and_drive drives ${taskIds.join(", ")} only inside imm-loop run`,
 			};
+
+		// D6 re-entry: an enrolled, nonterminal TaskRecord resumes; re-entry never
+		// mints a second nonce for a task the Kernel already holds.
+		const confirmationRefs = new Map<string, string>();
+		let confirmationSource: string | null = null;
+		let recordRevision = "";
+		for (const candidateTaskId of taskIds) {
+			const intent = deps.readIntent(candidateTaskId);
+			if (!intent) return { outcome: "failed", detail: `task intent is not readable: ${candidateTaskId}` };
+
+			const enrolled = readTaskRecordRaw(context.root, candidateTaskId);
+			recordRevision = enrolled.revision;
+			confirmationRefs.set(candidateTaskId, `resume:${candidateTaskId}`);
+			if (enrolled.record) continue;
+
+			const resolved = await resolveConfirmation(context, issue, plan, intent);
+			if (!resolved.ok) {
+				const escalated = await escalateOnce(
+					context,
+					"enroll_rejected",
+					`issue-${issue.number}`,
+					resolved.reason,
+					`Enrollment refused for #${issue.number}: ${resolved.reason}`,
+				);
+				return { outcome: "failed", detail: `${resolved.reason} (${escalated})` };
+			}
+			confirmationSource = resolved.source;
+			confirmationRefs.set(candidateTaskId, resolved.confirmation_ref);
+			try {
+				const record = await deps.enroll({
+					root: context.root,
+					task_id: candidateTaskId,
+					intent,
+					plan_digest: plan.digest,
+					confirmation_ref: resolved.confirmation_ref,
+					confirmation: resolved.input,
+					now: now(),
+				});
+				recordRevision = record.record_revision;
+			} catch (error) {
+				return {
+					outcome: "failed",
+					detail: `enrollment failed for ${candidateTaskId}: ${error instanceof Error ? error.message : String(error)}`,
+				};
+			}
+		}
 
 		const baseHead = deps.head({ root: context.root, cwd: context.root });
 		if (!baseHead) return { outcome: "failed", detail: "enroll_and_drive could not read the repository HEAD" };
 
-		let recordRevision: string;
-		try {
-			const enrolled = await deps.enroll({
-				root: context.root,
-				task_id: taskId,
-				intent,
-				plan_digest: plan.digest,
-				confirmation_ref: confirmation.confirmation_ref,
-				confirmation: confirmation.input,
-				now: now(),
-			});
-			recordRevision = enrolled.record_revision;
-		} catch (error) {
-			return {
-				outcome: "failed",
-				detail: `enrollment failed for ${taskId}: ${error instanceof Error ? error.message : String(error)}`,
-			};
-		}
-
-		const driven = await deps.drive({
-			root: context.root,
-			task_id: taskId,
-			intent,
-			plan_digest: plan.digest,
-			confirmation_ref: confirmation.confirmation_ref,
-			base_head: baseHead,
-			now: now(),
-		});
-		if (!driven.settled) return { outcome: "failed", detail: `lane did not settle: ${driven.reason}` };
-		const exit = driven.exit;
-		if (!exit || exit.state !== "exited" || exit.exit_code !== 0)
-			return {
-				outcome: "failed",
-				detail: `executor exit is not a delivery: ${exit ? `state=${exit.state} exit_code=${exit.exit_code}` : "no exit recorded"}`,
-			};
-		if (!exit.verification_evidence_digest)
-			return { outcome: "failed", detail: `executor exit carries no verification evidence for ${taskId}` };
-
-		const opened = await openLoopPullRequest(
+		// D6: the drive runs as a background job that holds its lease until the
+		// record is terminal; the tick returns here and `open_pr` runs on E13.
+		const job = startLoopJob(
+			context.stateDir,
 			{
-				slug: taskId,
+				kind: "drive",
+				target_id: `issue-${issue.number}`,
 				task_id: taskId,
 				issue_number: issue.number,
-				risk: intent.risk,
-				base: deps.baseBranch(context.root),
-				title: `imm(${taskId}): deliver #${issue.number}`,
-				verification_summary: [
-					`Verification evidence digest: \`${exit.verification_evidence_digest}\``,
-					`Commit SHA: \`${exit.final_commit_sha ?? "unknown"}\``,
-				].join("\n"),
+				plan_digest: plan.digest,
+				task_ids: taskIds,
+				expected_output: "executor_exit_record",
+				now: now(),
 			},
-			context.gitHubPort,
+			async () => {
+				// D8: the approved plan's intents are one batch, driven in plan order and
+				// serialized in this one job, so the first failure stops the batch. Each
+				// settled Lane is recorded on the job, so the reconciler emits one E13 per
+				// Lane (one PR per intent) and a retry of a lost attempt skips them.
+				const jobTarget = `issue-${issue.number}`;
+				const alreadySettled = new Map(
+					(readLoopJob(context.stateDir, jobTarget)?.settled_lanes ?? []).map((lane) => [lane.task_id, lane]),
+				);
+				let firstExit: LoopJobExit | null = null;
+				for (const candidateTaskId of taskIds) {
+					const prior = alreadySettled.get(candidateTaskId);
+					if (prior) {
+						firstExit ??= prior.exit;
+						continue;
+					}
+					const intent = deps.readIntent(candidateTaskId);
+					if (!intent)
+						return { outcome: "failed" as const, detail: `task intent disappeared: ${candidateTaskId}`, exit: firstExit };
+					const driven = await deps.drive({
+						root: context.root,
+						task_id: candidateTaskId,
+						intent,
+						plan_digest: plan.digest,
+						confirmation_ref: confirmationRefs.get(candidateTaskId) ?? `resume:${candidateTaskId}`,
+						base_head: baseHead,
+						now: now(),
+					});
+					const exit = driven.exit;
+					firstExit ??= exit ?? null;
+					const settled =
+						driven.settled &&
+						exit?.state === "exited" &&
+						exit.exit_code === 0 &&
+						Boolean(exit.verification_evidence_digest);
+					if (!settled)
+						return {
+							outcome: "failed" as const,
+							detail: `${candidateTaskId} did not settle: ${driven.reason}${exit ? ` (state=${exit.state} exit_code=${exit.exit_code})` : " (no exit recorded)"}`,
+							exit,
+						};					recordSettledLane(context.stateDir, jobTarget, { task_id: candidateTaskId, exit: exit ?? null });
+				}
+				return {
+					outcome: "settled" as const,
+					detail:
+						taskIds.length === 1
+							? `lane settled (generation ${firstExit?.generation}, commit ${firstExit?.final_commit_sha ?? "unknown"}, digest ${firstExit?.verification_evidence_digest})`
+							: `batch settled ${taskIds.length} lanes: ${taskIds.join(", ")} (first commit ${firstExit?.final_commit_sha ?? "unknown"})`,
+					exit: firstExit,
+				};
+			},
 		);
 
 		return {
 			outcome: "executed",
-			detail: `enrolled ${taskId} via ${confirmation.source} (record ${recordRevision}); drove the Lane to settlement (generation ${exit.generation}, exit ${exit.exit_code}); opened PR #${opened.number} on ${opened.branch}`,
+			detail: `started drive job ${job.job_id} for ${taskIds.join(", ")} (${confirmationSource ?? "resume"}, record ${recordRevision}); the PR opens when the lane settles`,
 		};
 	}
 
@@ -865,7 +1164,12 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: pr.head_sha,
+		});
 
 		const result = await repairPrCi({
 			pr: daemonPrInput(pr),
@@ -883,23 +1187,19 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				retry_cap: DEFAULT_REPAIR_RETRY_CAP,
 			},
 			deps: {
+				fetchCheckLog: (input) => context.gitHubPort.checkLog(input),
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
 				applyFix: async (input) => {
-					const session = await runSession(context, {
-						kind: "repair",
-						worktree_path: input.worktree_path,
-						output_path: REPAIR_OUTPUT,
-						prompt: [
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
 							`Reproduce and fix the failing check ${input.check_name} (signature ${input.failure_signature.toLowerCase()}).`,
+							...(input.details_url ? [`Details: ${input.details_url}`] : []),
+							"Failing check log:",
+							input.log_excerpt || "(the check carried no log)",
 							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
-						].join("\n"),
-						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
-					});
-					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
-					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
-					return parsed;
+						].join("\n"));
 				},
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
@@ -914,20 +1214,36 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: pr.head_sha,
+		});
+		const scopeHint = intent?.scope_hint;
 
 		const result = await repairPrConflict({
 			pr: daemonPrInput(pr),
 			context: {
 				worktree_path: worktree,
 				task_id: taskId,
-				scope_hint: intent?.scope_hint,
+				scope_hint: scopeHint,
 				state_dir: context.stateDir,
 			},
 			deps: {
 				rebaseOrMerge: deps.rebaseOrMerge,
+				applyConflictFix: async (input) => {
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
+							`Resolve the rebase of this branch onto ${input.base_branch} in the conflicted tree, keeping both sides' intent.`,
+							`Conflicted paths: ${input.conflicting_paths.join(", ") || "unknown"}.`,
+							`Stay inside the task scope: ${(input.scope_hint ?? []).join(", ") || "unknown"}.`,
+							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
+						].join("\n"));
+				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
+				gitForcePushWithLease: deps.gitForcePushWithLease,
 			},
 		});
 		return mapRepairResult(result);
@@ -941,8 +1257,25 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		if (!pr) return { outcome: "failed", detail: `PR #${event.pr_number} not found` };
 		const taskId = taskIdOfBranch(pr.head_ref_name) ?? `pr-${pr.number}`;
 		const intent = deps.readIntent(taskId);
-		const worktree = deps.prWorktree({ root: context.root, pr_number: pr.number, branch: pr.head_ref_name });
 		const scopeHint = intent?.scope_hint ?? [];
+		const headSha = pr.head_sha;
+
+		// D9: one session and one push per batch of a PR head's comments. A comment
+		// a batch already covered is done; a later one on the same head is the next batch.
+		const batchedThrough = context.stateDir ? reviewHeadBatchedThrough(context.stateDir, headSha) : 0;
+		if (context.stateDir && isReviewHeadBatched(context.stateDir, headSha, event.comment_id)) {
+			return {
+				outcome: "executed",
+				detail: `review comment #${event.comment_id} of PR #${pr.number} head ${headSha.slice(0, 12)} already batched into one session`,
+			};
+		}
+
+		const worktree = deps.prWorktree({
+			root: context.root,
+			pr_number: pr.number,
+			branch: pr.head_ref_name,
+			head_sha: headSha,
+		});
 
 		const recordedChoice = (() => {
 			if (context.decision.corrected_option) {
@@ -962,16 +1295,61 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 			return prior?.corrected_option ?? prior?.classification?.choice ?? null;
 		})();
 
+		// Sibling triage answers the same tick already recorded, keyed by their event id.
+		const triageByEvent = new Map<string, string>();
+		for (const row of loadLoopDecisions(context.stateDir)) {
+			if (row?.classification?.point !== "a14_pr_comment_triage") continue;
+			const choice = row.corrected_option ?? row.classification.choice;
+			if (choice) triageByEvent.set(row.event_id, choice);
+		}
+
+		// A review body carries no diff hunk and no sibling inline comments, so only an
+		// inline comment reads the PR's comment list to batch its head's comments.
+		let facts: Awaited<ReturnType<LoopGitHubPort["prReviewComments"]>> = [];
+		if (event.review_id === undefined) {
+			try {
+				facts = await context.gitHubPort.prReviewComments(pr.number);
+			} catch (error: any) {
+				await escalateOnce(
+					context,
+					"review_comments_unavailable",
+					`pr-${pr.number}`,
+					headSha,
+					`Could not read the review comments of PR #${pr.number}: ${error?.message || String(error)}`,
+				);
+				return { outcome: "failed", detail: `review comments unreadable: ${error?.message || String(error)}` };
+			}
+		}
+
+		// This comment and the ones created after it share the head being repaired. A
+		// sibling joins the batch only when it clears the same actor boundary its own
+		// event would have to clear (G7); the triggering comment already did.
+		const comments = facts
+			.filter((comment) => comment.id >= event.comment_id && comment.id > batchedThrough)
+			.filter(
+				(comment) =>
+					comment.id === event.comment_id ||
+					isVerifiedActor(
+						comment.author ?? "",
+						comment.author_association ?? "",
+						context.guardFacts,
+					),
+			);
+
 		const result = await addressPrReview({
 			pr: daemonPrInput(pr),
-			comment: {
-				id: event.comment_id,
-				body: event.body,
-				path: event.path,
-				line: event.line,
-				author: event.author,
-				author_association: event.author_association,
-			},
+			comments: comments.length > 0
+				? comments
+				: [
+						{
+							id: event.comment_id,
+							body: event.body,
+							path: event.path,
+							line: event.line,
+							author: event.author,
+							author_association: event.author_association,
+						},
+					],
 			context: {
 				worktree_path: worktree,
 				task_id: taskId,
@@ -982,10 +1360,13 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 				// Reuse the recorded `a14_pr_comment_triage` answer (`blocking`/`nit` -> in scope,
 				// `out_of_scope` -> escalate); only fall back to path heuristics when unavailable.
 				classifyComment: async ({ comment }) => {
-					if (recordedChoice === "blocking" || recordedChoice === "nit") {
+					const choice = comment.id === event.comment_id
+						? recordedChoice
+						: (triageByEvent.get(`evt-e10-${pr.number}-${comment.id}`) ?? null);
+					if (choice === "blocking" || choice === "nit") {
 						return { is_scope_changing: false };
 					}
-					if (recordedChoice === "out_of_scope") {
+					if (choice === "out_of_scope") {
 						return {
 							is_scope_changing: true,
 							reason: "a14_pr_comment_triage classified review comment as out_of_scope",
@@ -999,39 +1380,43 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 					};
 				},
 				applyReviewFix: async (input) => {
-					const session = await runSession(context, {
-						kind: "repair",
-						worktree_path: input.worktree_path,
-						output_path: REPAIR_OUTPUT,
-						prompt: [
-							`Apply this review comment (${input.comment.path ?? "no path"}): ${input.comment.body}`,
+					return runRepairSession(context, input.worktree_path, pr.head_ref_name, [
+							`Address these ${input.comments.length} review comments on PR #${pr.number} in one pass:`,
+							...input.comments.flatMap((comment) => [
+								"",
+								`Review comment #${comment.id} (${comment.path || "no path"}${comment.line === undefined ? "" : `:${comment.line}`}):`,
+								...(comment.diff_hunk ? ["```diff", comment.diff_hunk, "```"] : []),
+								comment.body,
+							]),
+							"",
 							`Stay inside the task scope: ${scopeHint.join(", ") || "unknown"}.`,
 							'Write JSON {"success": bool, "modified_paths": ["repository-relative paths"], "reason": "..."}.',
-						].join("\n"),
-						evidence: { validate: (bytes) => parseRepairResult(bytes) !== null, branch: pr.head_ref_name },
-					});
-					const parsed = session.status === "completed" ? parseRepairResult(session.output ?? "") : null;
-					if (!parsed) return { success: false, modified_paths: [], reason: `${session.kind} session failed: ${session.reason}` };
-					return parsed;
+						].join("\n"));
 				},
 				runVerification: (path) => deps.runVerification({ root: context.root, worktree_path: path, task_id: intent?.task_id ?? null }),
+				pendingCommitPaths: pendingCommitPaths(context),
 				gitCommitAndPush: deps.gitCommitAndPush,
 			},
 		});
+		if (result.action === "repaired" && context.stateDir)
+			markReviewHeadBatched(
+				context.stateDir,
+				headSha,
+				Math.max(event.comment_id, ...comments.map((comment) => comment.id)),
+			);
 		return mapRepairResult(result);
 	}
 
 	return {
 		async handle(handler: LoopHandler, context: AgentHandlerContext): Promise<AgentHandlerResult> {
 			switch (handler) {
-				case "analyze_codebase":
-					return analyze(context);
+				case "clarify_issue":
 				case "draft_plan":
-					return draftPlan(context);
+					return clarifyThenPlan(context, []);
+				case "apply_clarify_reply":
+					return applyClarifyReply(context);
 				case "publish_plan_for_approval":
 					return publishPlan(context);
-				case "triage_issue":
-					return triage(context);
 				case "enroll_and_drive":
 					return enrollAndDrive(context);
 				case "repair_pr_ci":
@@ -1081,6 +1466,57 @@ function git(root: string, argv: string[]): { status: number; stdout: string; st
 	return { status: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
 }
 
+/** Session result files live here and never reach a commit or a scope check. */
+const SESSION_SCRATCH_DIR = ".imm-loop";
+
+/**
+ * Every repository path that differs from `baseHead`: tracked changes (committed,
+ * staged or not) plus untracked files, without session scratch. Null when git
+ * cannot answer, so a caller fails closed.
+ */
+export function observedWorktreePaths(worktreePath: string, baseHead: string): string[] | null {
+	const tracked = git(worktreePath, ["diff", "--name-only", "-z", baseHead, "--"]);
+	const untracked = git(worktreePath, ["ls-files", "--others", "--exclude-standard", "-z"]);
+	if (tracked.status !== 0 || untracked.status !== 0) return null;
+	const paths = `${tracked.stdout}\0${untracked.stdout}`.split("\0").filter((path) => path.length > 0);
+	return [...new Set(paths)].filter((path) => path !== SESSION_SCRATCH_DIR && !path.startsWith(`${SESSION_SCRATCH_DIR}/`));
+}
+
+/**
+ * Stages and records the worktree's changes. A rebase the repair session resolved
+ * is continued instead of committed, because git refuses a plain commit mid-rebase.
+ */
+function commitWorktree(worktreePath: string, message: string): void {
+	const staged = git(worktreePath, ["add", "--all", "--", ".", `:(exclude)${SESSION_SCRATCH_DIR}`]);
+	if (staged.status !== 0) throw new Error(`git_add_failed: ${staged.stderr.trim()}`);
+	const rebasing = git(worktreePath, ["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]).status === 0;
+	const commit = rebasing
+		? git(worktreePath, ["-c", "core.editor=true", "rebase", "--continue"])
+		: git(worktreePath, ["commit", "--no-verify", "-m", message]);
+	if (commit.status !== 0) throw new Error(`git_commit_failed: ${commit.stderr.trim()}`);
+}
+
+/**
+ * Runs one acceptance command in a repair worktree. The command and the files it
+ * executes may come from the repair session, so it gets the session's
+ * environment, never the daemon's: no GitHub credential and nothing else
+ * inherited beyond PATH.
+ */
+export function runAcceptanceCommand(
+	worktreePath: string,
+	command: VerificationDescriptor["command"],
+): { exit_code: number; stdout: string; stderr: string } {
+	const res = spawnSync(command.executable, [...command.argv], {
+		cwd: join(worktreePath, command.cwd),
+		env: sessionEnvironment(null),
+		encoding: "utf8",
+		timeout: command.timeout_ms,
+		maxBuffer: command.max_output_bytes,
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	return { exit_code: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+}
+
 /** The daemon's own worktree root, mirroring the batch Lanes' placement. */
 export function loopWorktreeDirectory(root: string): string {
 	const common = git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
@@ -1091,8 +1527,6 @@ export function loopWorktreeDirectory(root: string): string {
 export interface DefaultAgentHandlerDepsOptions {
 	gh?: GhTransport;
 	stateDir?: string;
-	/** Decision-model seam is not used here; the Executor Host profile is. */
-	executorProfile?: { host: ExecutorHost; model?: string | null; effort?: string | null };
 	/** The daemon's GitHub token; read from the environment when absent. */
 	githubToken?: string | null;
 }
@@ -1112,19 +1546,26 @@ export function createDefaultAgentHandlerDeps(
 	const credential =
 		options.githubToken ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? null;
 	const config = resolveConfig(root);
-	const activeName = config.lanes.active.value;
-	const active = activeName ? config.lanes.profiles.value[activeName] : undefined;
-	const profile = options.executorProfile ?? {
-		host: (active?.executor_host ?? config.lanes.executor_host.value ?? "claude-code") as ExecutorHost,
-		model: active?.executor_model ?? config.lanes.executor_model.value ?? null,
-		effort: active?.executor_effort ?? config.lanes.executor_effort.value ?? null,
-	};
+	// Each session runs on the profile bound to its own loop role; the Lane it may
+	// drive runs on the executor role. Neither reads a `lanes` leaf any more (D2).
+	const executor: { host: ExecutorHost; model?: string | null; effort?: string | null } = loopRoleProfile(config.agents, "executor");
 	const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 	const createWorktree: AgentHandlerDeps["createWorktree"] = ({ root: repository, branch, name }) => {
 		const directory = loopWorktreeDirectory(repository);
 		mkdirSync(directory, { recursive: true });
 		const path = join(directory, name);
+		// A read-only probe re-runs for the same Issue (D8: every answer re-runs
+		// clarify), so its detached tree is reused at the current HEAD instead of
+		// failing `worktree add`. A branch worktree keeps the tree it already has.
+		if (existsSync(path)) {
+			if (branch !== null) return path;
+			const head = git(repository, ["rev-parse", "HEAD"]);
+			const reset = head.status === 0 ? git(path, ["checkout", "--detach", head.stdout.trim()]) : head;
+			if (reset.status !== 0)
+				throw new Error(`loop_worktree_failed: ${reset.stderr.trim() || `${name} at HEAD`}`);
+			return path;
+		}
 		const argv = branch === null
 			? ["worktree", "add", "--detach", path, "HEAD"]
 			: ["worktree", "add", path, branch];
@@ -1133,15 +1574,21 @@ export function createDefaultAgentHandlerDeps(
 		return path;
 	};
 
-	const prWorktree: AgentHandlerDeps["prWorktree"] = ({ root: repository, pr_number, branch }) => {
+	const prWorktree: AgentHandlerDeps["prWorktree"] = ({ root: repository, pr_number, branch, head_sha }) => {
 		const directory = loopWorktreeDirectory(repository);
 		mkdirSync(directory, { recursive: true });
 		const path = join(directory, `pr-${pr_number}`);
-		if (existsSync(path)) return path;
-		const res = git(repository, ["worktree", "add", path, branch]);
-		if (res.status !== 0) throw new Error(`loop_worktree_failed: ${res.stderr.trim() || `pr-${pr_number} ${branch}`}`);
+		if (!existsSync(path)) {
+			const res = git(repository, ["worktree", "add", path, branch]);
+			if (res.status !== 0) throw new Error(`loop_worktree_failed: ${res.stderr.trim() || `pr-${pr_number} ${branch}`}`);
+		}
+		// D9: a reused worktree is never repaired from where the last session left it.
+		syncWorktreeToHead({ worktree_path: path, branch, head_sha }, (cwd, argv) => git(cwd, argv));
 		return path;
 	};
+
+	const changedPaths: AgentHandlerDeps["changedPaths"] = ({ worktree_path, base_head }) =>
+		observedWorktreePaths(worktree_path, base_head);
 
 	const readIntent: AgentHandlerDeps["readIntent"] = (taskId) => {
 		try {
@@ -1161,12 +1608,13 @@ export function createDefaultAgentHandlerDeps(
 
 	return {
 		sessionProvider: createCliAgentSessionProvider({
-			profile,
+			profileFor: (role) => loopRoleProfile(config.agents, role),
 			log_dir: join(stateDir, "sessions"),
 		}),
 		session_credential: credential,
 		createWorktree,
 		prWorktree,
+		changedPaths,
 		head: ({ root: repository, cwd, branch }) => {
 			const res = git(cwd ?? repository, ["rev-parse", "--verify", "--quiet", branch ? `refs/heads/${branch}` : "HEAD"]);
 			const sha = res.stdout.trim();
@@ -1231,7 +1679,7 @@ export function createDefaultAgentHandlerDeps(
 			if (!result.record) throw new Error("enrollment returned no record");
 			return { record_revision: readTaskRecordRaw(input.root, input.task_id).revision };
 		},
-		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile, pluginRoot }),
+		drive: async (input) => driveSingleTaskLane(input, { stateDir, profile: executor, pluginRoot }),
 		runVerification: async ({ root: repository, worktree_path, task_id }) => {
 			if (!task_id) return { exit_code: 1, stdout: "", stderr: "verification_needs_task: no TaskIntent is bound to this PR" };
 			let intent: ReturnType<typeof observeEnrollmentTaskIntent>;
@@ -1251,36 +1699,37 @@ export function createDefaultAgentHandlerDeps(
 						stderr: `${acceptance.id}: ${error instanceof Error ? error.message : String(error)}`,
 					};
 				}
-				const res = spawnSync(command.command.executable, command.command.argv, {
-					cwd: join(worktree_path, command.command.cwd),
-					encoding: "utf8",
-					timeout: command.command.timeout_ms,
-					maxBuffer: command.command.max_output_bytes,
-					stdio: ["ignore", "pipe", "pipe"],
-				});
-				if ((res.status ?? 1) !== 0)
-					return { exit_code: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+				const res = runAcceptanceCommand(worktree_path, command.command);
+				if (res.exit_code !== 0) return res;
 			}
 			return { exit_code: 0, stdout: "acceptance verification passed", stderr: "" };
 		},
 		gitCommitAndPush: async ({ worktree_path, branch, message }) => {
-			const staged = git(worktree_path, ["add", "--all"]);
-			if (staged.status !== 0) throw new Error(`git_add_failed: ${staged.stderr.trim()}`);
-			const commit = git(worktree_path, ["commit", "--no-verify", "-m", message]);
-			if (commit.status !== 0) throw new Error(`git_commit_failed: ${commit.stderr.trim()}`);
+			commitWorktree(worktree_path, message);
 			const push = git(worktree_path, ["push", "origin", `HEAD:refs/heads/${branch}`]);
 			if (push.status !== 0) throw new Error(`git_push_failed: ${push.stderr.trim()}`);
 			const head = git(worktree_path, ["rev-parse", "HEAD"]);
 			if (head.status !== 0) throw new Error(`git_head_unreadable: ${head.stderr.trim()}`);
 			return { commit_sha: head.stdout.trim() };
 		},
+		gitForcePushWithLease: async ({ worktree_path, branch, message }) => {
+			// ADR 0039 Decision 10: a rewritten history only goes back to a daemon branch.
+			if (!isDaemonBranch(branch)) throw new Error(`force_push_refused: ${branch} is not a daemon-created branch`);
+			commitWorktree(worktree_path, message);
+			const push = git(worktree_path, ["push", "--force-with-lease", "origin", `HEAD:refs/heads/${branch}`]);
+			if (push.status !== 0) throw new Error(`git_force_push_failed: ${push.stderr.trim()}`);
+			const head = git(worktree_path, ["rev-parse", "HEAD"]);
+			if (head.status !== 0) throw new Error(`git_head_unreadable: ${head.stderr.trim()}`);
+			return { commit_sha: head.stdout.trim() };
+		},
 		rebaseOrMerge: async ({ worktree_path, base_branch }) => {
+			// `syncWorktreeToHead` cleared any leftover rebase before this handler ran.
 			const fetch = git(worktree_path, ["fetch", "origin", base_branch]);
 			if (fetch.status !== 0) return { success: false, error: fetch.stderr.trim() };
 			const rebase = git(worktree_path, ["rebase", `origin/${base_branch}`]);
 			if (rebase.status === 0) return { success: true };
+			// D9: keep the conflicted tree so a repair session can resolve it.
 			const conflicting = git(worktree_path, ["diff", "--name-only", "--diff-filter=U"]);
-			git(worktree_path, ["rebase", "--abort"]);
 			return {
 				success: false,
 				conflicting_paths: conflicting.stdout.split("\n").map((line) => line.trim()).filter(Boolean),
@@ -1380,8 +1829,31 @@ async function driveSingleTaskLane(
 					: {}),
 			},
 			run_id: input.task_id,
-			final_commit_sha: null,
-			verification_evidence: null,
+			// D6: the exit record carries what the settled Kernel projection reports,
+			// not the `null` the drive used to record before it knew.
+			settled_facts: async (settledReport, laneExit) => {
+				if (settledReport.batch_state !== "completed") return { final_commit_sha: null, verification_evidence: null };
+				const lanePath = (laneExit as { lane_path?: string } | null)?.lane_path;
+				const head = lanePath ? git(lanePath, ["rev-parse", "HEAD"]) : null;
+				const final_commit_sha = head?.status === 0 && /^[0-9a-f]{40,64}$/.test(head.stdout.trim()) ? head.stdout.trim() : null;
+				let projection: Awaited<ReturnType<typeof projectAssurance>>["projection"] | null = null;
+				try {
+					projection = (await projectAssurance(lanePath ?? input.root, input.task_id)).projection;
+				} catch {
+					projection = null;
+				}
+				return {
+					final_commit_sha,
+					verification_evidence: projection
+						? JSON.stringify({
+							lifecycle: projection.lifecycle,
+							record_revision: projection.record_revision,
+							fresh_acceptance_ids: projection.fresh_acceptance_ids,
+							completion_ready: projection.completion_ready,
+						})
+						: null,
+				};
+			},
 			state_dir: context.stateDir,
 		});
 		return {

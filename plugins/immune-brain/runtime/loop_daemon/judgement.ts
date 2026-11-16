@@ -31,6 +31,7 @@ import {
 	firstBlock,
 } from "./guards.ts";
 import { isLoopHandler, type LoopHandler } from "./handlers.ts";
+import { LOOP_JOB_MAX_ATTEMPTS } from "./jobs.ts";
 import type { JudgingAgentFn, JudgingContext, JudgingDecision } from "./judging_agent.ts";
 import { resolveOwnerCommand } from "./owner_commands.ts";
 import type { NormalizedLoopEvent } from "./types.ts";
@@ -286,22 +287,39 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 		classification: null,
 	});
 
+	/**
+	 * D5 / BR-GAP-A1: `ready-for-agent` is the approval signal only once a plan is
+	 * published; without one it routes to planning and never skips to enrollment.
+	 */
+	const readyTask = (issueNumber: number): Judgement => {
+		const published = facts.expected_plan_digests?.[issueNumber] ?? null;
+		return published
+			? decided("enroll_and_drive", "ready-for-agent with a published plan is the approval signal")
+			: decided("draft_plan", "ready-for-agent without a published plan routes to planning");
+	};
+
 	switch (event.kind) {
 		case "E1_NEW_ISSUE":
 		case "E2_ISSUE_EDITED":
 			if (event.labels.includes("blocked")) return decided("noop_record", "label transitioned to blocked");
-			if (event.labels.includes("ready-for-agent")) return decided("enroll_and_drive", "label transitioned to ready-for-agent");
+			if (event.labels.includes("ready-for-agent")) return readyTask(event.issue_number);
 			return null;
 		case "E3_OWNER_COMMENT": {
 			const resolved = resolveOwnerCommand(event, facts);
-			if (resolved.command === null) return null;
+			if (resolved.command === null) {
+				// D8: a comment on an Issue that waits on its clarify question is the answer.
+				const pending = facts.pending_clarify?.[event.issue_number];
+				return pending
+					? decided("apply_clarify_reply", `issue #${event.issue_number} waits on clarify ${pending}`)
+					: null;
+			}
 			if (resolved.handler !== null) return decided(resolved.handler, resolved.reason);
 			return decided("noop_record", `rejected @imm-loop ${resolved.command}: ${resolved.reason}`);
 		}
 		case "E4_PLAN_APPROVED":
 			return decided("enroll_and_drive", "verified plan approval marker");
 		case "E5_READY_TASK":
-			return decided("enroll_and_drive", "ready-for-agent task with no unresolved blocker");
+			return readyTask(event.issue_number);
 		case "E6_LANE_DECISION_NEEDED":
 			return decided("relay_lane_decision_question", "lane parked on a literal-user decision");
 		case "E7_LANE_DECISION_REPLIED":
@@ -316,6 +334,16 @@ function matchTier1(event: NormalizedLoopEvent, facts: GuardFacts): Judgement | 
 			return event.status === "merged"
 				? decided("close_out", "daemon PR merged")
 				: decided("mark_pr_ready", "daemon PR ready for owner merge");
+		case "E12_JOB_FINISHED":
+			// D6: a lost job is restarted once; the second loss is owner-visible.
+			if (event.outcome === "lost")
+				return event.attempts < LOOP_JOB_MAX_ATTEMPTS
+					? decided("enroll_and_drive", `job ${event.job_id} was lost; restarting it once`)
+					: decided("escalate", `job ${event.job_id} was lost ${event.attempts} times`);
+			if (event.outcome === "settled") return decided("noop_record", `job ${event.job_id} settled; E13 opens the PR`);
+			return decided("escalate", `job ${event.job_id} failed: ${event.detail}`);
+		case "E13_LANE_SETTLED":
+			return decided("open_pr", "lane settled with a Kernel projection");
 		default:
 			return null;
 	}
@@ -416,8 +444,8 @@ async function triageIssue(
 			case "clear_single_task":
 				return {
 					tier: 2,
-					handler: "triage_issue",
-					reason: "a15_task_granularity judged the issue one clear task",
+					handler: "draft_plan",
+					reason: "a15_task_granularity judged the issue one clear task; planning one intent",
 					guard: null,
 					classification: granularity.classification,
 				};
@@ -425,18 +453,23 @@ async function triageIssue(
 				return {
 					tier: 2,
 					handler: "draft_plan",
-					reason: "issue must be split into an initiative before it can be driven",
+					reason: "issue must be split into an initiative before it can be driven; planning a decomposition",
 					guard: null,
 					classification: granularity.classification,
 				};
-			default:
+			case "needs_clarification":
 				return {
 					tier: 2,
-					handler: "escalate",
+					handler: "clarify_issue",
 					reason: "issue needs clarification before it can be planned",
 					guard: null,
 					classification: granularity.classification,
 				};
+			default:
+				return escalated(
+					`a15_task_granularity returned an unknown choice: ${granularity.choice}`,
+					granularity.classification,
+				);
 		}
 	}
 

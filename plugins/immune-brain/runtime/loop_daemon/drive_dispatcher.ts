@@ -69,6 +69,15 @@ export interface LoopDriveInput {
 	final_commit_sha?: string | null;
 	/** The Lane's raw verification evidence; its digest is bound into the exit record. */
 	verification_evidence?: string | null;
+	/**
+	 * Resolves what the settled Kernel projection reports, after the driver returns
+	 * and before the exit record is written. This is how D6 stops the exit record
+	 * from carrying `null` where the delivery's commit and verification belong.
+	 */
+	settled_facts?: (
+		report: BatchRunReport,
+		exit: LaneSupervision["exit"],
+	) => Promise<{ final_commit_sha: string | null; verification_evidence: string | null }>;
 	/** Defaults to `<root>/.imm/state/loop`. */
 	state_dir?: string;
 	/** Seam for tests; the daemon always uses the shared driver. */
@@ -137,14 +146,20 @@ export async function dispatchLoopDrive(input: LoopDriveInput): Promise<LoopDriv
 
 	const exit = (report as BatchRunReport & { lane_supervision?: LaneSupervision }).lane_supervision?.exit ?? null;
 	if (!exit) return { report, exit_record: null };
+	const settled = input.settled_facts
+		? await input.settled_facts(report, exit)
+		: {
+				final_commit_sha: input.final_commit_sha ?? null,
+				verification_evidence: input.verification_evidence ?? null,
+			};
 	const exit_record = recordExecutorExit(input.state_dir ?? loopStateDir(input.root), {
 		run_id: input.run_id,
 		task_id: input.initiative_slug,
 		batch_id: input.batch_id,
 		lane: exit,
 		state: exitStateOf((report as BatchRunReport & { lane_supervision?: LaneSupervision }).lane_supervision),
-		final_commit_sha: input.final_commit_sha ?? null,
-		verification_evidence: input.verification_evidence ?? null,
+		final_commit_sha: settled.final_commit_sha,
+		verification_evidence: settled.verification_evidence,
 		recorded_at: new Date().toISOString(),
 	});
 	return { report, exit_record };

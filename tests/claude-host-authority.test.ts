@@ -1430,6 +1430,10 @@ describe("claude host resolve_finding", () => {
 				"repair_authority_state",
 				"resolve_finding",
 				"refute_finding",
+				// Spec loop-agent-scheduling D4: the two local Interaction Tools are
+				// appended after every pre-existing Tool, so no prior surface moves.
+				"loop_interactions",
+				"answer_loop_interaction",
 			]);
 			expect([...PRIVILEGED_OPERATIONS]).toEqual([
 				"request_authorization",
@@ -1437,6 +1441,7 @@ describe("claude host resolve_finding", () => {
 				"stop",
 				"start_unattended_batch",
 				"retire_stale_batch",
+				"answer_loop_interaction",
 			]);
 			const submitReview = listMcpTools().find((tool) => tool.name === "submit_review");
 			expect(submitReview?.inputSchema.required).toEqual(["task_id"]);

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { GhTransport } from "../github_issue_tracker.ts";
 import { createGhTransport } from "../github_issue_tracker.ts";
-import { normalizeEvents } from "./events.ts";
+import { issueContentHash, issueContentKey, normalizeEvents } from "./events.ts";
 import {
 	type LoopDaemonState,
 	type LoopDaemonWatermarks,
@@ -474,6 +474,11 @@ export function calculateNewWatermarks(
 	}
 	if ((snapshot.pull_requests as any)?.etag) {
 		updatedEtags.pull_requests = (snapshot.pull_requests as any).etag;
+	}
+	// D7: remember each Issue's title+body hash so E2 fires on content, not on
+	// `updated_at` moving under a comment.
+	for (const issue of snapshot.issues) {
+		updatedEtags[issueContentKey(issue.number)] = issueContentHash(issue);
 	}
 
 	return {

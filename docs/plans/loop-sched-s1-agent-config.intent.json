@@ -1,0 +1,46 @@
+{
+  "contract": "assurance_kernel/task_intent/v1",
+  "task_id": "loop-sched-s1-agent-config",
+  "owner": "user",
+  "goal": "Unify Host profile selection for every agent role into agents.{profiles, presets, active} with an implicit default preset, keep legacy lanes configuration readable with deprecation diagnostics, and route Lane executor, Review and advisory consumers through one role resolver, per D1 of docs/specs/loop-agent-scheduling.spec.md.",
+  "acceptance": [
+    {
+      "id": "S1-AC1",
+      "assertion": "Source BR-DEC-2, BR-DEC-3, BR-DEC-9; meet D1 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts and tests/layered-config.test.ts over resolveConfig and imm-kernel config --json. Done looks like: with the BR-DEC-3 fixture, imm-kernel config --json lists every role (executor, code-review, review-verifier, advisory-reviewer, judging, clarify, plan, repair) with host, model, effort, transport, preset and layer, following the lookup order active roles[r], default roles[r], active roles[*], default roles[*]. Negative: a preset naming an unknown profile reports unknown_profile; active naming a missing preset reports unknown_preset; a default preset without '*' reports preset_incomplete; review-verifier bound to a host other than code-review's reports review_verifier_host_mismatch; profiles or presets in the project file report config_invalid; each error falls the agents section back to legacy or built-in resolution. Bound: max_parallel 0 and 9 are rejected, 1 and 8 accepted.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\",\n      \"tests/layered-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC2",
+      "assertion": "Source BR-DEC-5; meet D1 legacy mapping in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts over resolveConfig. Done looks like: a user file with only lanes.profiles and lanes.active resolves executor, code-review and max_parallel to the same values as before plus a deprecated_config_source diagnostic. Negative: a layer holding both agents and lanes uses agents and reports legacy_source_ignored. Bound: with neither agents nor lanes every role resolves unset and Lane executor selection still falls back to the Parent Host.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    },
+    {
+      "id": "S1-AC3",
+      "assertion": "Source repository evidence unattended/batch_runner.ts:228 and assurance/cli_review.ts:307,353,360,422; meet D1 consumer list in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/agent-roles-config.test.ts and tests/cli-review-dispatch.test.ts. Done looks like: laneExecutorChoice, the batch Review profile, the Review transport and the review-verifier model read the resolved roles, and a request that names a preset overrides active for that batch. Negative: a resolved executor role never mixes host from one layer with model from another.",
+      "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/agent-roles-config.test.ts\",\n      \"tests/cli-review-dispatch.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+    }
+  ],
+  "scope_hint": [
+    ".changeset/loop-sched-s1-agent-config.md",
+    "docs/adr/0034-layered-configuration.md",
+    "docs/plans/loop-sched-s1-agent-config.intent.json",
+    "docs/reference/immune-brain-config.md",
+    "docs/reference/subagent-dispatch-protocol.md",
+    "docs/specs/loop-agent-scheduling.spec.md",
+    "plugins/immune-brain/dist/claude/mcp-server.mjs",
+    "plugins/immune-brain/dist/docs/reference/immune-brain-config.md",
+    "plugins/immune-brain/dist/docs/reference/subagent-dispatch-protocol.md",
+    "plugins/immune-brain/runtime/assurance/cli_review.ts",
+    "plugins/immune-brain/runtime/config/agent_roles.ts",
+    "plugins/immune-brain/runtime/config/layered_config.ts",
+    "plugins/immune-brain/runtime/host-core/runtime.ts",
+    "plugins/immune-brain/runtime/unattended/batch_runner.ts",
+    "plugins/immune-brain/runtime/unattended/batch_state.ts",
+    "plugins/immune-brain/runtime/v4_runtime.ts",
+    "tests/agent-roles-config.test.ts",
+    "tests/cli-review-dispatch.test.ts",
+    "tests/layered-config.test.ts"
+  ],
+  "risk": "material",
+  "revision": 1
+}

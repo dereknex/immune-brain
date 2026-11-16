@@ -13,6 +13,7 @@ import { exitProofCondition, retainedLaneReason } from "./lane_cleanup";
 import { laneDecisionFacts, type LaneDecisionFacts } from "./lane_decision";
 import { chooseExecutor, LaneSupervisor, superviseLane, type ExecutorChoice, type ExecutorHost, type ExecutorPreferences } from "./lane_supervisor";
 import { resolveConfig } from "../config/layered_config";
+import { agentRole } from "../config/agent_roles";
 import { readTaskTombstone } from "../kernel/backend_claim";
 import { observeInitiative } from "./batch_plan";
 import { observeParentCompletion, withBatchEvidence } from "./batch_git";
@@ -222,7 +223,7 @@ function afterExecutorExit(advanced: BatchLaneRunReport, observed: BatchLaneRunR
 /**
  * The Executor of a supervised Lane generation (#426 F16). `preferences` are the batch's recorded Executor
  * preferences, else the request's: the Parent resolved them from the request-selected Lane profile, so when they
- * name an Executor Host `lanes.active` is not consulted and its model or effort is not reported as `not_applied`.
+ * name an Executor Host `agents.active` is not consulted and its model or effort is not reported as `not_applied`.
  * Null when the `lanes` section is invalid.
  */
 export function laneExecutorChoice(root: string, preferences: ExecutorPreferences | undefined, parentHost: ExecutorHost): ExecutorChoice | null {
@@ -230,9 +231,11 @@ export function laneExecutorChoice(root: string, preferences: ExecutorPreference
 	if (!config.lanes.valid) return null;
 	const project = config.lanes.project_defaults.value as ExecutorPreferences;
 	if (preferences?.executor_host) return chooseExecutor([preferences, project], parentHost);
-	const active = config.lanes.active.value;
-	const profile = active ? config.lanes.profiles.value[active] ?? {} : {};
-	return chooseExecutor([preferences ?? {}, profile, project], parentHost);
+	// Spec loop-agent-scheduling D1: the resolved executor role is one whole profile, so a host from one
+	// layer never meets a model from another.
+	const role = agentRole(config.agents, "executor");
+	const resolved: ExecutorPreferences = role?.host ? { executor_host: role.host, ...(role.model ? { executor_model: role.model } : {}), ...(role.effort ? { executor_effort: role.effort } : {}) } : {};
+	return chooseExecutor([preferences ?? {}, resolved, project], parentHost);
 }
 
 async function superviseSingle(input: StartBatchInput, report: BatchLaneRunReport): Promise<BatchLaneRunReport> {

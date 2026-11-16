@@ -93,6 +93,16 @@ import {
 	type BatchTrackerPort,
 } from "../unattended/batch_runner";
 import { findLaneRelayTarget, relayLaneDecision, type LaneDecisionOperation } from "../unattended/lane_decision";
+import {
+	ANSWER_LOOP_INTERACTION_TOOL,
+	listPendingLoopInteractions,
+} from "./loop_interactions";
+import {
+	localDecisionRecordRevision,
+	loopInteractionStateDir,
+	readLocalRequest,
+	writeLocalAnswer,
+} from "../loop_daemon/interaction/local_channel";
 import { LANE_EXECUTOR_ENV, LANE_EXECUTOR_HEADLESS, writeLaneDecisionRequest } from "../unattended/lane_decision_request";
 import { createBatchKernelPort } from "../unattended/batch_kernel_port";
 import { createBatchTrackerPort, laneRuntimeContractRefusal, type LaneInstructionRequest, type LaneOffer, type LaneSessionCloseRequest } from "../unattended/batch_lanes";
@@ -536,6 +546,7 @@ export class HostRuntime {
 		reworkExits?: ReworkExitsReadiness;
 		verifierDispute?: NativeConfirmationInput["verifierDispute"];
 		reviewRetryNotice?: string;
+		interaction?: NativeConfirmationInput["interaction"];
 	} = {}): Promise<{ confirmation_ref: string; reworkChoice?: ReworkChoice; verifierChoice?: NativeConfirmationResult["verifierChoice"] }> {
 		throwIfCancelled(meta.signal);
 		const probe = this.probeHost();
@@ -711,6 +722,76 @@ export class HostRuntime {
 				actor_id: "executor",
 			},
 		});
+	}
+
+	/**
+	 * D4: the requests this checkout's daemon is waiting on. A read: it lists the
+	 * daemon's request files and changes nothing.
+	 */
+	async listLoopInteractions(taskId?: string) {
+		return listPendingLoopInteractions(this.cwd, taskId);
+	}
+
+	/**
+	 * D4: answer one pending local request under the native gate. The answer file
+	 * carries this confirmation's reference, which is what the daemon requires
+	 * before it applies the answer through the Lane decision relay.
+	 */
+	async answerLoopInteraction(interactionId: string, answer: string, meta: ToolMeta) {
+		if (!interactionId) throw new Error("interaction_id is required");
+		if (!answer) throw new Error("answer is required");
+		const stateDir = loopInteractionStateDir(this.cwd);
+		const request = readLocalRequest(stateDir, interactionId);
+		if (!request)
+			throw new Error(`interaction_not_pending: ${interactionId} is not a pending local request in ${stateDir}`);
+		if (request.kind === "plan_approval")
+			throw new Error(
+				`answer_with_drive: a plan_approval is answered by your own \`drive\` entry on the published TaskIntent, not by ${ANSWER_LOOP_INTERACTION_TOOL}`,
+			);
+		if (request.kind === "notice") throw new Error(`interaction_not_answerable: ${interactionId} is a notice`);
+		const taskId = request.subject.task_id ?? meta.taskId;
+		// The binding belongs to the store that owns the task: a Lane decision is
+		// bound to the Lane's TaskRecord, not to this checkout's.
+		const current = request.binding.record_revision ? localDecisionRecordRevision(this.cwd, taskId) : null;
+		if (request.binding.record_revision && request.binding.record_revision !== current)
+			throw new Error(
+				`interaction_stale: ${interactionId} was bound to record revision ${request.binding.record_revision}, the owner of ${taskId} now holds ${current ?? "an unreadable record"}; list the pending requests again`,
+			);
+		const gate = await this.gate(ANSWER_LOOP_INTERACTION_TOOL, { ...meta, taskId }, {
+			interaction: {
+				interaction_id: interactionId,
+				kind: request.kind,
+				subject: Object.entries(request.subject)
+					.map(([key, value]) => `${key}=${String(value)}`)
+					.join(" "),
+				binding: Object.entries(request.binding)
+					.filter(([, value]) => Boolean(value))
+					.map(([key, value]) => `${key}=${String(value)}`)
+					.join(" "),
+				prompt: request.prompt,
+				answer,
+			},
+		});
+		writeLocalAnswer(stateDir, {
+			interaction_id: interactionId,
+			kind: request.kind,
+			subject: request.subject,
+			binding: request.binding,
+			value: answer,
+			confirmation: {
+				tool: ANSWER_LOOP_INTERACTION_TOOL,
+				confirmed_at: new Date().toISOString(),
+				confirmation_ref: gate.confirmation_ref,
+			},
+		});
+		return {
+			state: "interaction_answered",
+			interaction_id: interactionId,
+			task_id: taskId,
+			answer,
+			confirmation_ref: gate.confirmation_ref,
+			next: "The daemon applies this answer through the Lane decision relay on its next tick; do not answer it again.",
+		};
 	}
 
 	/**

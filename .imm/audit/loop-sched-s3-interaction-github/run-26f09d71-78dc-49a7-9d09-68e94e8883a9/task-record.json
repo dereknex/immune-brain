@@ -1,0 +1,180 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s3-interaction-github",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s3-interaction-github",
+    "goal": "Introduce the Interaction protocol (InteractionRequest, InteractionChannel post/poll/withdraw) and move clarify questions, /approve plan approval, Lane decisions and escalations onto its github channel, which applies only the literal-user answers ADR 0039 Decisions 9 and 12 grant and posts every other literal-user operation as notice only, per D3 of docs/specs/loop-agent-scheduling.spec.md.",
+    "acceptance": [
+      {
+        "id": "S3-AC1",
+        "assertion": "Source BR-DEC-6; meet D3 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-interaction-github.test.ts and tests/loop-daemon-decisions.test.ts with a fake GitHub port. Done looks like: each interaction_id produces exactly one marker comment and a repost returns already_posted; a request whose binding (plan_digest, record_revision or issue_revision) changed is reported stale and its comment edited to a withdrawn notice. Bound: a Lane decision or /approve marker posted in the pre-protocol format is still parsed.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-interaction-github.test.ts\",\n      \"tests/loop-daemon-decisions.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S3-AC2",
+        "assertion": "Source BR-DEC-8, BR-DEC-10, BR-SCN-3; meet D3 github.accepts in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-interaction-github.test.ts. Done looks like: /approve <digest> and a Lane decision reply are applied with today's checks; a breaking Intent revision, stop and authorization request is posted as notice_only naming the local action, and a GitHub reply to it is not applied. Negative: replies from a non-allowlisted author, from the daemon identity, edited after creation, or carrying a different digest or record_revision are ignored.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-interaction-github.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s3-interaction-github.md",
+      "CONTEXT.md",
+      "docs/adr/0039-loop-daemon.md",
+      "docs/adr/0040-loop-interaction-protocol.md",
+      "docs/plans/loop-sched-s3-interaction-github.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/decision_relay.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/escalation.ts",
+      "plugins/immune-brain/runtime/loop_daemon/events.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts",
+      "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts",
+      "tests/loop-daemon-config-comms.test.ts",
+      "tests/loop-daemon-decisions.test.ts",
+      "tests/loop-sched-interaction-github.test.ts"
+    ],
+    "risk": "critical",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s3-interaction-github.intent.json",
+    "content_hash": "sha256:e163bb7115acccc48b165206e9e714e7b92deebe10bc37d92dfed5a2ddac1e0e"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:e163bb7115acccc48b165206e9e714e7b92deebe10bc37d92dfed5a2ddac1e0e",
+  "git_base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+  "attestations": [
+    {
+      "id": "approval-qa-5468969f",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e163bb7115acccc48b165206e9e714e7b92deebe10bc37d92dfed5a2ddac1e0e",
+      "diff_hash": "sha256:11b48dfac6ebc9e4ec1bfd85575bdf90f1ac59ac29d7a1cb21aa8702723f1e93",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:3ec2cdb4257ac474fa6e7beb26feeb889b03da1df37f49146c3074f283b50594",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S3-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3ec2cdb4257ac474fa6e7beb26feeb889b03da1df37f49146c3074f283b50594"
+        },
+        {
+          "acceptance_id": "S3-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:3ec2cdb4257ac474fa6e7beb26feeb889b03da1df37f49146c3074f283b50594"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-4c9ef4d3",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:e163bb7115acccc48b165206e9e714e7b92deebe10bc37d92dfed5a2ddac1e0e",
+      "diff_hash": "sha256:11b48dfac6ebc9e4ec1bfd85575bdf90f1ac59ac29d7a1cb21aa8702723f1e93",
+      "actor_id": "cli:claude-code:157279a0-4b3f-4670-86ee-3977d78b99a0",
+      "summary": "S3-AC1/AC2 met: one marker comment per interaction_id with already_posted on repost, moved plan_digest/record_revision/issue_revision reported stale and edited to a withdrawn notice, /approve and Lane replies applied only through verifyTrackerApproval/verifyLaneDecisionReply, local-only operations and escalations posted notice_only and never answered, pre-protocol markers still parsed; the antigravity mirrors have the same blob OIDs as the reviewed plugin files; blast radius medium (new interaction/ module plus additive escalation.ts/events.ts exports, no caller wired yet, no persisted shape).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+        "review_commit": "c2b1e8462974e0df069da73f20ccfbe6aaa02698",
+        "review_tree": "7b6d25dd525ce550b892872457597dda0bd7e76f",
+        "manifest_digest": "sha256:7733cc9bbc6b53747d45df4b59041f795c6e6b755f45c566e6caf6c76e79e7af"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-76496762772a-1-review-1",
+          "acceptance_id": "S3-AC1",
+          "summary": "changedBindingFields treats a field the request was never posted with as moved, but the test titled 'treats an absent binding field as unchanged' only compares a present field with itself, so the absent-field case is untested.",
+          "anchor": "sha256:e48561f8a37ba6ed66a8eaed6d9c6ba478d48ba9c5e5e9a5548a9c2eb06e75c6",
+          "evidence": {
+            "trigger": "An escalation or clarify request is posted with binding {} or {issue_revision}, and the channel's binding() returns a subject-wide {plan_digest, issue_revision} → poll reports stale and edits the comment to a withdrawn notice even though no field of that request's own binding moved",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts:createGithubInteractionChannel.poll",
+              "plugins/immune-brain/runtime/loop_daemon/interaction/protocol.ts:changedBindingFields",
+              "tests/loop-sched-interaction-github.test.ts"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC1"
+            }
+          }
+        },
+        {
+          "id": "review-76496762772a-2-review-2",
+          "acceptance_id": "S3-AC2",
+          "summary": "find() accepts an interaction marker from a comment by any author, so a non-allowlisted commenter can pre-empt or pre-withdraw a request with a predictable id; this follows the pre-existing marker-from-any-author pattern in decision_relay.ts and planEscalation, and owner replies are still verified.",
+          "anchor": "sha256:480bdc36afb2a5f4bea92d81910118c71a4a8672d197a93c3ea36455cf46f895",
+          "evidence": {
+            "trigger": "A non-allowlisted user posts '<!-- immune-brain:interaction=escalation:<key>|kind=escalation -->' (optionally with the withdrawn marker) before the daemon posts → post returns already_posted and the daemon never posts, or poll returns withdrawn",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts:createGithubInteractionChannel.find",
+              "plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts:parseInteractionMarker"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S3-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:b2c2a17edee6a1dce9285964785a43e36650803dc9e0465e63ad4a4e5645a4f0"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s3-interaction-github:2026-11-15T04:43:14.855Z",
+      "at": "2026-11-15T04:43:14.855Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s3-interaction-github.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s3-interaction-github:2026-11-15T04:43:33.768Z",
+      "at": "2026-11-15T04:43:33.768Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-5468969f\naction_v2_sha256:d8ee41c4aedc7110a84060440b1bb7182c7d033d4651d0affb82e7600095334e",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:43:33.769Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s3-interaction-github:2026-11-15T04:46:08.365Z",
+      "at": "2026-11-15T04:46:08.365Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-4c9ef4d3\naction_v2_sha256:76b3d156b1da0b9902431e05235eaf144c7627ac4a6575c2fff07cbe8472476d",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:157279a0-4b3f-4670-86ee-3977d78b99a0",
+        "confirmation_ref": "pi:cli:claude-code:157279a0-4b3f-4670-86ee-3977d78b99a0",
+        "issued_at": "2026-11-15T04:46:08.365Z"
+      },
+      "review_started_at": "2026-11-15T04:43:37.794Z",
+      "review_submitted_at": "2026-11-15T04:46:07.517Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s3-interaction-github:2026-11-15T04:46:10.688Z",
+      "at": "2026-11-15T04:46:10.688Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:9b84324dd71e7395465e9339ebff438dfaf6c535cddb25ba263aa458beada49b"
+    }
+  ]
+}

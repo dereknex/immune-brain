@@ -176,8 +176,27 @@ describe("loop configuration block", () => {
 			auto_enroll_max_risk: "routine",
 			allowed_actors: ["owner"],
 			allowed_associations: ["OWNER", "MEMBER"],
+			interaction: { channel: "github" },
 			budget: { max_ticks_per_day: null, max_dispatches_per_day: 12 },
 		});
+	});
+
+	it("admits the local Interaction channel and refuses any other value", () => {
+		const local = fixture();
+		local.project({ loop: { interaction: { channel: "local" } } });
+		expect(local.read().loop).toEqual({
+			valid: true,
+			source: "project",
+			value: { ...DEFAULT_LOOP_CONFIG, interaction: { channel: "local" } },
+		});
+
+		const invalid = fixture();
+		invalid.project({ loop: { interaction: { channel: "slack" } } });
+		const config = invalid.read();
+		expect(config.loop.valid).toBe(false);
+		expect(config.diagnostics).toContainEqual(
+			expect.objectContaining({ code: "config_invalid", key_path: "loop.interaction.channel" }),
+		);
 	});
 
 	it("falls back to the off-by-default loop configuration", () => {

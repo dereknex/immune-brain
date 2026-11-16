@@ -258,6 +258,9 @@ describe("claude host package", () => {
       "repair_authority_state",
       "resolve_finding",
       "refute_finding",
+      // Spec loop-agent-scheduling D4: appended after every pre-existing Tool.
+      "loop_interactions",
+      "answer_loop_interaction",
     ]);
     const init = await handleJsonRpc({ jsonrpc: "2.0", id: 1, method: "initialize" });
     expect(init?.result).toMatchObject({

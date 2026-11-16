@@ -29,12 +29,27 @@ export interface PrReadyResult {
 	error?: string;
 }
 
+/** One inline review comment with the diff hunk the repair prompt carries (D9). */
+export interface ReviewCommentFact {
+	id: number;
+	path: string;
+	line?: number;
+	body: string;
+	diff_hunk?: string;
+	author?: string;
+	author_association?: string;
+}
+
 export interface LoopGitHubPort extends LoopPullRequestPort {
 	postComment(issueNumber: number, body: string): Promise<CommentWriteResult>;
 	editComment(commentId: number, body: string): Promise<CommentWriteResult>;
 	createIssue(title: string, body: string): Promise<IssueWriteResult>;
 	editIssue(issueNumber: number, body: string): Promise<IssueWriteResult>;
 	markPrReady(prNumber: number): Promise<PrReadyResult>;
+	/** The failing check's own log; null when the check names no readable run. */
+	checkLog(input: { check_name: string; details_url?: string }): Promise<string | null>;
+	/** Every inline review comment of a PR, with path, line and diff hunk. */
+	prReviewComments(prNumber: number): Promise<ReviewCommentFact[]>;
 }
 
 export function createLoopGitHubPort(gh: GhTransport, cwd: string): LoopGitHubPort {
@@ -132,6 +147,36 @@ export function createLoopGitHubPort(gh: GhTransport, cwd: string): LoopGitHubPo
 			}
 			return { success: true };
 		},
+
+		async checkLog(input: { check_name: string; details_url?: string }): Promise<string | null> {
+			const runId = input.details_url?.match(/\/actions\/runs\/(\d+)/)?.[1];
+			if (!runId) return null;
+			const res = await gh.run(["run", "view", runId, "--log-failed"], { cwd });
+			if (res.exit_code !== 0) {
+				throw new Error(`Failed to read the log of ${input.check_name}: ${res.stderr || `exit code ${res.exit_code}`}`);
+			}
+			return res.stdout;
+		},
+
+		async prReviewComments(prNumber: number): Promise<ReviewCommentFact[]> {
+			const res = await gh.run(["api", `repos/{owner}/{repo}/pulls/${prNumber}/comments`], { cwd });
+			if (res.exit_code !== 0) {
+				throw new Error(`Failed to read review comments of PR #${prNumber}: ${res.stderr || `exit code ${res.exit_code}`}`);
+			}
+			const data = JSON.parse(res.stdout);
+			if (!Array.isArray(data)) return [];
+			return data.map((comment: any) => ({
+				id: comment.id,
+				path: comment.path ?? "",
+				...(comment.line ?? comment.original_line) === undefined
+					? {}
+					: { line: comment.line ?? comment.original_line },
+				body: comment.body ?? "",
+				...(typeof comment.diff_hunk === "string" ? { diff_hunk: comment.diff_hunk } : {}),
+				author: comment.user?.login ?? "unknown",
+				author_association: comment.author_association ?? "NONE",
+			}));
+		},
 	};
 }
 
@@ -145,6 +190,9 @@ export interface FakeLoopGitHubPort extends LoopGitHubPort {
 	comments: Map<number, { id: number; issueNumber: number; body: string }>;
 	issues: Map<number, { number: number; title: string; body: string }>;
 	prs: Map<number, { number: number; head: string; base: string; title: string; body: string; draft: boolean }>;
+	/** Check logs keyed by details URL (falling back to the check name). */
+	checkLogs: Map<string, string>;
+	reviewComments: ReviewCommentFact[];
 	nextCommentId: number;
 	nextIssueNumber: number;
 }
@@ -154,6 +202,8 @@ export function createFakeLoopGitHubPort(): FakeLoopGitHubPort {
 	const comments = new Map<number, { id: number; issueNumber: number; body: string }>();
 	const issues = new Map<number, { number: number; title: string; body: string }>();
 	const prs = new Map<number, { number: number; head: string; base: string; title: string; body: string; draft: boolean }>();
+	const checkLogs = new Map<string, string>();
+	const reviewComments: ReviewCommentFact[] = [];
 	let nextCommentId = 1000;
 	let nextIssueNumber = 500;
 
@@ -162,6 +212,13 @@ export function createFakeLoopGitHubPort(): FakeLoopGitHubPort {
 		comments,
 		issues,
 		prs,
+		checkLogs,
+		get reviewComments() {
+			return reviewComments;
+		},
+		set reviewComments(value: ReviewCommentFact[]) {
+			reviewComments.splice(0, reviewComments.length, ...value);
+		},
 		get nextCommentId() {
 			return nextCommentId;
 		},
@@ -236,6 +293,17 @@ export function createFakeLoopGitHubPort(): FakeLoopGitHubPort {
 			const existing = prs.get(prNumber);
 			if (existing) existing.draft = false;
 			return { success: true };
+		},
+
+		async checkLog(input: { check_name: string; details_url?: string }): Promise<string | null> {
+			calls.push({ method: "checkLog", args: [input] });
+			const key = input.details_url ?? input.check_name;
+			return checkLogs.get(key) ?? null;
+		},
+
+		async prReviewComments(prNumber: number): Promise<ReviewCommentFact[]> {
+			calls.push({ method: "prReviewComments", args: [prNumber] });
+			return reviewComments.map((comment) => ({ ...comment }));
 		},
 	};
 }

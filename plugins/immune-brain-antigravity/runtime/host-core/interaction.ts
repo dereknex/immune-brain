@@ -22,6 +22,8 @@ export const PRIVILEGED_OPERATIONS = [
 	"stop",
 	"start_unattended_batch",
 	"retire_stale_batch",
+	// Spec loop-agent-scheduling D4: one local Interaction answer is a literal-user act.
+	"answer_loop_interaction",
 ] as const;
 
 export type PrivilegedOperation = (typeof PRIVILEGED_OPERATIONS)[number];
@@ -86,6 +88,16 @@ export function evaluateNativeGate(input: NativeGateInput): NativeGateResult {
 	return { ok: true };
 }
 
+/** What one local Interaction answer binds, as the native gate shows it (D4). */
+export interface InteractionConfirmationFacts {
+	interaction_id: string;
+	kind: string;
+	subject: string;
+	binding: string;
+	prompt: string;
+	answer: string;
+}
+
 export interface NativeConfirmationInput {
 	operation: PrivilegedOperation;
 	taskId?: string;
@@ -103,6 +115,8 @@ export interface NativeConfirmationInput {
 	planDigest?: string;
 	/** Present only for a replan boundary: the exits the user chooses between. */
 	reworkExits?: ReworkExitsReadiness;
+	/** Present only for one local Interaction answer (D4). */
+	interaction?: InteractionConfirmationFacts;
 	verifierDispute?: { claim: string; trigger: string; caller_chain: string[]; counter_path: string };
 	reviewRetryNotice?: string;
 	batchDetails?: {

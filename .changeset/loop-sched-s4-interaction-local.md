@@ -1,0 +1,5 @@
+---
+"immune-brain": minor
+---
+
+Add the `local` Interaction channel: the Loop daemon writes one request file per interaction under `.imm/state/loop/interactions/` (`0600`) and reads the answer back from `<id>.answer.json`. Every Host ships two tools — `loop_interactions` lists the pending requests, and the privileged `answer_loop_interaction` records one answer whose native confirmation shows the kind, subject, binding and answer. An answer file that does not carry that confirmation's record is ignored, an answer bound to a record revision that has since moved is refused, and a `plan_approval` is never answered by the tool: it stays a `drive` entry on the published TaskIntent. A confirmed Lane decision is applied through the same Lane decision relay a GitHub reply uses, so the Lane continues on the next tick. `loop.interaction.channel` selects the channel in `.imm/config.json` (`github` by default; any other value is `config_invalid`). With the `local` channel, a `clarify` question is a local request as well, and the Issue resumes planning on the next tick after the user answers it in their Host.

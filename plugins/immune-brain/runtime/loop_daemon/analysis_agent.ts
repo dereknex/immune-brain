@@ -1,12 +1,15 @@
 /**
- * Loop Daemon: Cached Read-Only Codebase Analysis (S4)
+ * Loop Daemon: Cached Read-Only Clarify Framing (S4, S7)
  *
- * Implements D4.2 of docs/specs/loop-daemon.spec.md. The planning probes run
- * read-only and are keyed by `(issue_number, issue_body_digest, base_tree_sha)`,
- * so an unchanged Issue on an unchanged tree reuses the structured scope/seam
- * findings at `.imm/state/loop/analysis/<key>.json` instead of probing again.
- * The cache is rebuildable state: an unreadable or foreign entry is ignored and
- * the probe runs again.
+ * Implements D8 of docs/specs/loop-agent-scheduling.spec.md: `clarify` replaces
+ * the S4 analysis probe and returns either questions for the owner or the
+ * framing planning receives (`scopes`, `seams`, `risks`, `acceptance`). The
+ * framing probes read-only and is keyed by
+ * `(issue_number, issue_body_digest, base_tree_sha, answers_digest)`, so an
+ * unchanged Issue with the same owner answers reuses the framing at
+ * `.imm/state/loop/analysis/<key>.json` instead of probing again. The cache is
+ * rebuildable state: an unreadable or foreign entry is ignored and the probe
+ * runs again.
  */
 
 import { createHash } from "node:crypto";
@@ -17,10 +20,14 @@ import { LOOP_ANALYSIS_CONTRACT } from "./types.ts";
 
 /** What the read-only probe may conclude. Paths are repository-relative. */
 export interface CodebaseAnalysisFindings {
-	/** Areas the plan expects to touch. */
+	/** D8 framing: areas the plan expects to touch. */
 	scopes: string[];
-	/** Existing modules and seams the plan should extend. */
+	/** D8 framing: existing modules and seams the plan should extend. */
 	seams: string[];
+	/** D8 framing: what the plan risks getting wrong. */
+	risks: string[];
+	/** D8 framing: what the plan will have to prove. */
+	acceptance: string[];
 	/** Facts the plan must settle before it can enroll. */
 	questions?: string[];
 }
@@ -29,6 +36,8 @@ export interface CodebaseAnalysisProbeInput {
 	issue_number: number;
 	issue_body: string;
 	base_tree_sha: string;
+	/** The owner answers already given to this Issue's clarify question, in order. */
+	answers?: readonly string[];
 }
 
 export type CodebaseAnalysisProbe = (input: CodebaseAnalysisProbeInput) => CodebaseAnalysisFindings;
@@ -47,9 +56,10 @@ function digest(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
 
-/** Stable cache key: the same Issue body on the same tree always maps to one entry. */
+/** Stable cache key: the same Issue body, tree and answers always map to one entry. */
 export function analysisCacheKey(input: CodebaseAnalysisProbeInput): string {
-	return digest(`${input.issue_number}\n${digest(input.issue_body)}\n${input.base_tree_sha}`);
+	const answers = (input.answers ?? []).join("\n");
+	return digest(`${input.issue_number}\n${digest(input.issue_body)}\n${input.base_tree_sha}\n${digest(answers)}`);
 }
 
 function analysisPath(stateDir: string, cacheKey: string): string {
@@ -96,7 +106,13 @@ export function analyzeCodebase(input: AnalyzeCodebaseInput): AnalyzeCodebaseRes
 		issue_number: input.issue_number,
 		issue_body_digest: digest(input.issue_body),
 		base_tree_sha: input.base_tree_sha,
-		findings: { scopes: [...found.scopes], seams: [...found.seams], questions: [...(found.questions ?? [])] },
+		findings: {
+			scopes: [...found.scopes],
+			seams: [...found.seams],
+			risks: [...found.risks],
+			acceptance: [...found.acceptance],
+			questions: [...(found.questions ?? [])],
+		},
 		analyzed_at: input.now ?? new Date().toISOString(),
 	};
 

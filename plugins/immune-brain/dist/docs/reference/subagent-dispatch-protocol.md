@@ -127,8 +127,9 @@ model tiers, provider mapping, cost routing, or provider fallback.
 
 Agent defaults to the current Pi session model. Only an explicit Parent requirement
 selects another Pi-configured model through host-native `Agent.model`. Kernel
-authority Review instead takes its model from `review_profile`, which resolves
-`lanes.review_host`, `lanes.review_model` and `lanes.review_effort` (ADR 0037).
+authority Review instead takes its host and model from `review_profile`, which a
+Lane batch fixes at confirmation, else from the resolved `code-review` role of
+the `agents` table (ADR 0037, [configuration](immune-brain-config.md#agents)).
 Findings verification returns a complete foreground `Agent` envelope with empty
 `name`, `model`, `thinking`, `resume`, and `schedule` fields so Pi Host resolves
 the verifier's agent configuration. A compatible foreground Agent adapter must expose the reserved
@@ -179,8 +180,8 @@ the index and tracked content) releases it without a Review round.
 ## Advisory Child In A Supervised Session
 
 Supervised Session Port (ADR 0038, #426 S2). This applies only when
-`lanes.advisory_transport` resolves to `herdr` and `imm-session probe --provider
-herdr` succeeds; otherwise the in-process dispatch above applies, and nothing is
+the resolved `advisory-reviewer` role carries the `herdr` transport and
+`imm-session probe --provider herdr` succeeds; otherwise the in-process dispatch above applies, and nothing is
 detected or substituted. It applies to `advisory-reviewer` and `arch-explorer`
 alone: `qa`, `ui-review`, findings verification and the authority Review keep
 their own transports. Eligibility, authorization, trigger matching, the

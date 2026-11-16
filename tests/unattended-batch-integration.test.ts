@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	BatchIntegrationError,
+	buildCandidate,
 	findIntegratedCandidate,
 	integrateGuardedLaneCommit,
 	laneCandidateMatches,
@@ -600,6 +601,57 @@ describe("lane integration on a hidden batch ref", () => {
 			expect(readFileSync(join(fx.repo, "task-c.txt"), "utf8")).toBe("c\n");
 		} finally {
 			fx.cleanup();
+		}
+	});
+});
+
+describe("derived-files declaration merge during integration", () => {
+	const declaration = (outputs: string[], argv = ["-e", "0"]) => `${JSON.stringify({
+		contract: "immune_brain/derived_files/v1",
+		entries: [{ id: "mirror", sources: ["src/**"], outputs, generate: { executable: "bun", argv }, check: { executable: "bun", argv } }],
+	}, null, 2)}\n`;
+
+	/** A base declaring mirror outputs a and d; the sibling and the Lane each rewrite the declaration from it. */
+	function declarationFixture(sibling: string, lane: string) {
+		const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-declaration-")));
+		const write = (body: string) => {
+			mkdirSync(join(dir, "docs/agents"), { recursive: true });
+			writeFileSync(join(dir, "docs/agents/derived-files.json"), body);
+			git(dir, "add", "-A");
+			git(dir, "commit", "-q", "-m", "change");
+			return git(dir, "rev-parse", "HEAD");
+		};
+		git(dir, "init", "-q", "-b", "main");
+		const base = write(declaration(["out/a", "out/d"]));
+		const head = write(sibling);
+		git(dir, "checkout", "-q", "-b", "lane", base);
+		const lane_commit = write(lane);
+		return { dir, input: { root: dir, batch_head: head, lane_base: base, lane_commit, declaration_head: base } };
+	}
+
+	it("unions outputs both sides added next to each other and keeps them sorted", () => {
+		const fx = declarationFixture(declaration(["out/a", "out/b", "out/d"]), declaration(["out/a", "out/c", "out/d"]));
+		try {
+			const candidate = buildCandidate(fx.input);
+			expect(git(fx.dir, "show", `${candidate}:docs/agents/derived-files.json`) + "\n").toBe(declaration(["out/a", "out/b", "out/c", "out/d"]));
+			expect(git(fx.dir, "rev-parse", `${candidate}^`)).toBe(fx.input.batch_head);
+		} finally {
+			rmSync(fx.dir, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps any other declaration divergence a batch_integration_conflict", () => {
+		const fx = declarationFixture(declaration(["out/a", "out/b", "out/d"]), declaration(["out/a", "out/c", "out/d"], ["-e", "1"]));
+		try {
+			let reason = "";
+			try {
+				buildCandidate(fx.input);
+			} catch (error) {
+				reason = (error as BatchIntegrationError).reason;
+			}
+			expect(reason).toBe("batch_integration_conflict");
+		} finally {
+			rmSync(fx.dir, { recursive: true, force: true });
 		}
 	});
 });

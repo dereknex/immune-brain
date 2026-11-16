@@ -1,0 +1,178 @@
+{
+  "contract": "assurance_kernel/task_record/v4",
+  "task_id": "loop-sched-s5-work-items",
+  "intent_snapshot": {
+    "contract": "assurance_kernel/task_intent/v1",
+    "task_id": "loop-sched-s5-work-items",
+    "goal": "Keep one rebuildable work item per Loop target with the D5 state machine, route ready-for-agent Issues without a plan to planning, and judge level events only when their fact fingerprint changed, per D5 of docs/specs/loop-agent-scheduling.spec.md. No user-visible change: the state lives in .imm/state/loop/.",
+    "acceptance": [
+      {
+        "id": "S5-AC1",
+        "assertion": "Source BR-DEC-1, BR-GAP-A1; meet D5 in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-work-items.test.ts over tick with fake ports. Done looks like: a ready-for-agent Issue with no published plan moves to planning and never selects enroll_and_drive; with a published plan the label counts as approval. Negative: a handler result that would make an illegal transition is refused and recorded. Bound: an empty state directory is rebuilt from GitHub and Kernel fixtures before scheduling.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-work-items.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      },
+      {
+        "id": "S5-AC2",
+        "assertion": "Source BR-GAP-4; meet D5 fingerprint bullet in docs/specs/loop-agent-scheduling.spec.md. Agreed seam: tests/loop-sched-work-items.test.ts and tests/loop-daemon-judge.test.ts. Done looks like: a level event (E5, E6, E8, E9, E11) whose fact changed is judged once. Negative: the same unchanged level fact across two ticks writes no second decision. Bound: edge events still deduplicate by event_id.",
+        "verification": "{\n  \"contract\": \"assurance_kernel/verification_descriptor/v2\",\n  \"command\": {\n    \"executable\": \"bun\",\n    \"argv\": [\n      \"test\",\n      \"tests/loop-sched-work-items.test.ts\",\n      \"tests/loop-daemon-judge.test.ts\"\n    ],\n    \"cwd\": \".\",\n    \"timeout_ms\": 180000,\n    \"max_output_bytes\": 131072\n  },\n  \"environment\": {\n    \"prepare\": null,\n    \"writable_paths\": []\n  }\n}\n"
+      }
+    ],
+    "scope_hint": [
+      ".changeset/loop-sched-s5-work-items.md",
+      "docs/plans/loop-sched-s5-work-items.intent.json",
+      "docs/specs/loop-agent-scheduling.spec.md",
+      "plugins/immune-brain/dist/claude/mcp-server.mjs",
+      "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+      "plugins/immune-brain/runtime/loop_daemon/dispatch.ts",
+      "plugins/immune-brain/runtime/loop_daemon/judgement.ts",
+      "plugins/immune-brain/runtime/loop_daemon/rebuild.ts",
+      "plugins/immune-brain/runtime/loop_daemon/state.ts",
+      "plugins/immune-brain/runtime/loop_daemon/types.ts",
+      "plugins/immune-brain/runtime/loop_daemon/work_items.ts",
+      "tests/loop-daemon-judge.test.ts",
+      "tests/loop-daemon-observe.test.ts",
+      "tests/loop-sched-work-items.test.ts"
+    ],
+    "risk": "material",
+    "revision": 1,
+    "owner": "user"
+  },
+  "intent_ref": {
+    "path": "docs/plans/loop-sched-s5-work-items.intent.json",
+    "content_hash": "sha256:4e17f29dc8fbb4d50f8709045bf0369517f0a75aafee4b77c65151c73d5cf877"
+  },
+  "lifecycle": "done",
+  "artifact_state": "frozen",
+  "baseline": "sha256:4e17f29dc8fbb4d50f8709045bf0369517f0a75aafee4b77c65151c73d5cf877",
+  "git_base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+  "attestations": [
+    {
+      "id": "approval-qa-2cc84d18",
+      "kind": "qa",
+      "authority_role": "qa",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4e17f29dc8fbb4d50f8709045bf0369517f0a75aafee4b77c65151c73d5cf877",
+      "diff_hash": "sha256:5aa6f8a9519f82dd85f2be2e00e89bc840233020d7b23a11c70812999cbe8836",
+      "actor_id": "deterministic-qa",
+      "summary": "all 3 project verification check(s) passed; execution=sha256:ae32ad52fddbc67afe491afad53bfc982a3c6dbb357d4e1e4ae2120a0d7e1fa1",
+      "acceptance_results": [
+        {
+          "acceptance_id": "S5-AC1",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ae32ad52fddbc67afe491afad53bfc982a3c6dbb357d4e1e4ae2120a0d7e1fa1"
+        },
+        {
+          "acceptance_id": "S5-AC2",
+          "status": "passed",
+          "summary": "host-attested QA: all 3 project verification check(s) passed; execution=sha256:ae32ad52fddbc67afe491afad53bfc982a3c6dbb357d4e1e4ae2120a0d7e1fa1"
+        }
+      ]
+    },
+    {
+      "id": "approval-review-9785cf2b",
+      "kind": "review",
+      "authority_role": "reviewer",
+      "task_revision": 1,
+      "intent_content_hash": "sha256:4e17f29dc8fbb4d50f8709045bf0369517f0a75aafee4b77c65151c73d5cf877",
+      "diff_hash": "sha256:5aa6f8a9519f82dd85f2be2e00e89bc840233020d7b23a11c70812999cbe8836",
+      "actor_id": "cli:claude-code:fc08fc93-541d-42ef-86dc-5397d0a9c73d",
+      "summary": "Provenance checked: review commit c2583dfa has the single parent 1e6d3308 and tree 75d5a5c4, and each antigravity mirror has the same blob OID as its immune-brain file. S5-AC1 holds: the readyTask matcher in judgement.ts sends ready-for-agent without a published plan to draft_plan and with a plan to enroll_and_drive. advanceWorkItem refuses and records illegal transitions, and ensureWorkItems rebuilds an empty store from snapshot plus .imm/runs before judging. S5-AC2 holds: selectUnjudgedEvents gives E5/E6/E8/E9/E11 a fact fingerprint without timestamp or event_id, and edge events still deduplicate by event_id. The tests at the agreed seams (loop-sched-work-items.test.ts tick, loop-daemon-judge.test.ts) cover the positive, negative and bound cases. Blast radius medium: loop_daemon/cli.ts tick path and judgement.ts Tier-1 routing, plus a new persisted shape .imm/state/loop/work_items/<target>.json (assurance_kernel/loop_work_item/v1).",
+      "acceptance_results": [],
+      "review_revision": {
+        "contract": "assurance_kernel/review_revision_identity/v1",
+        "base_head": "1e6d330871c9e06eaa5650df9283c8f65b14f3e8",
+        "review_commit": "c2583dfa12ad510839ad9ce8cb2c69628aac29ae",
+        "review_tree": "75d5a5c4f0fbcbd8383dd757f9b33e4a9c9da3fb",
+        "manifest_digest": "sha256:708d07e65289855c98a37c93d5040ebca372d392cdb3777b668385871e98d121"
+      },
+      "advisory_findings": [
+        {
+          "id": "review-6ed70a336ea3-1-review-1",
+          "acceptance_id": "S5-AC2",
+          "summary": "recordJudgedEvents saves level-event fingerprints before dispatch runs. If dispatch defers a judged level decision (budget or lease), the event is not judged again until its fact changes; this is safe only if reconcileSkippedDecisions re-drives skipped decisions, which this review did not check.",
+          "anchor": "sha256:260732c7845cc79ae9115ebd8623adc606a9d1a507a1b12b72d3fb469cfb32eb",
+          "evidence": {
+            "trigger": "An E5_READY_TASK is judged draft_plan, then dispatch skips it because the budget is exhausted, and the next tick sees the same fact. Expected: the event is retried. Observed: selectUnjudgedEvents drops it, so the issue may wait until some fact changes.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/cli.ts",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:recordJudgedEvents",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:selectUnjudgedEvents"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC2"
+            }
+          }
+        },
+        {
+          "id": "review-6ed70a336ea3-2-review-2",
+          "acceptance_id": "S5-AC2",
+          "summary": "Each edge event adds a permanent last_judged entry keyed by event_id, so a work item file grows without bound over a long-lived target.",
+          "anchor": "sha256:6df62d13e12fc49d4874546705c317e4f800530039782d37080b4274f9590a81",
+          "evidence": {
+            "trigger": "An issue gets many E3 owner comments or E2 edits over months. Expected: the file stays small. Observed: every event_id stays in last_judged forever, so the file grows on every tick that reads or writes it.",
+            "caller_chain": [
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:judgedKeyAndValue",
+              "plugins/immune-brain/runtime/loop_daemon/work_items.ts:recordJudgedEvents"
+            ],
+            "violated": {
+              "kind": "acceptance",
+              "ref": "S5-AC2"
+            }
+          }
+        }
+      ],
+      "reviewer_verdict_sha256": "sha256:0b9d9ba6c29b2a82bead11ad0ac470d09fd95ae39771fcab01106a8f52388ed4"
+    }
+  ],
+  "findings": [],
+  "history": [
+    {
+      "id": "freeze_artifacts:loop-sched-s5-work-items:2026-11-15T04:26:57.160Z",
+      "at": "2026-11-15T04:26:57.160Z",
+      "type": "freeze_artifacts",
+      "from_state": "active:active",
+      "to_state": "active:frozen",
+      "reason": "TaskIntent frozen in place at docs/plans/loop-sched-s5-work-items.intent.json"
+    },
+    {
+      "id": "record_approval:loop-sched-s5-work-items:2026-11-15T04:27:06.884Z",
+      "at": "2026-11-15T04:27:06.884Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-qa-2cc84d18\naction_v2_sha256:e6a237a7e002f50a57678765834fae2132c897dcce01f7863dcefa86d98fee0c",
+      "authority": {
+        "authority_kind": "qa",
+        "actor_id": "deterministic-qa",
+        "confirmation_ref": "pi:deterministic-qa",
+        "issued_at": "2026-11-15T04:27:06.885Z"
+      }
+    },
+    {
+      "id": "record_approval:loop-sched-s5-work-items:2026-11-15T04:28:46.460Z",
+      "at": "2026-11-15T04:28:46.460Z",
+      "type": "record_approval",
+      "from_state": "active:frozen",
+      "to_state": "active:frozen",
+      "reason": "approval-review-9785cf2b\naction_v2_sha256:dca802caa5a72781ab538251fcb309ab3dfdeca50ee64abfe159e13fcecc23dc",
+      "authority": {
+        "authority_kind": "review",
+        "actor_id": "cli:claude-code:fc08fc93-541d-42ef-86dc-5397d0a9c73d",
+        "confirmation_ref": "pi:cli:claude-code:fc08fc93-541d-42ef-86dc-5397d0a9c73d",
+        "issued_at": "2026-11-15T04:28:46.460Z"
+      },
+      "review_started_at": "2026-11-15T04:27:09.883Z",
+      "review_submitted_at": "2026-11-15T04:28:45.798Z",
+      "reviewer_model": "claude-opus-5-5"
+    },
+    {
+      "id": "complete:loop-sched-s5-work-items:2026-11-15T04:28:48.374Z",
+      "at": "2026-11-15T04:28:48.374Z",
+      "type": "complete",
+      "from_state": "active:frozen",
+      "to_state": "done:frozen",
+      "reason": "action_v2_sha256:efbedcb7fce54254a744cb3037d02586974f8052e498bf9c48081479e9e42797"
+    }
+  ]
+}
