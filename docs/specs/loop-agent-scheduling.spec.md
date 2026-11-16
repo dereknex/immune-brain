@@ -365,6 +365,15 @@ Source: `BR-GAP-C1` – `C4`.
 - Review comments of one PR head are batched into one session with path, line
   and diff hunk; one push per batch.
 - Before any repair the PR worktree fetches and resets to the PR head.
+- Repair is autonomous. E8, E9 and E10 start a repair job on the Loop agent's
+  own judgment; no person confirms a repair before it runs. Its bounds are code
+  guards, not a confirmation: the two-attempt cap per head and failure
+  signature, the scope check against the paths the session changed, the
+  scrubbed session and verification environment, force-push only to a daemon
+  branch, and no merge (ADR 0039 Decisions 10, 11). `loop.budget` has no
+  default cap; an owner who wants one sets it. A failure the agent cannot
+  repair within these bounds escalates to the owner (ADR 0039 Decision 12).
+  Decided by the owner on PR #542.
 
 ### Trade-offs and false-compromise check
 
