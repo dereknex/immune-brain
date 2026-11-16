@@ -19244,6 +19244,10 @@ function decideLaneAdmission(input) {
     return "batch_lane_occupied";
   return null;
 }
+function refuseUnknownChildOffer(offerTaskId, children, startable) {
+  const child = children.find((c) => c.task_id === offerTaskId);
+  return !child || child.state !== "pending" || !startable.has(child.task_id);
+}
 function laneGitOf(input) {
   return input.git?.lane ?? createDefaultLaneGitPort();
 }
@@ -20042,7 +20046,7 @@ async function runLaneBatch(input, persisted) {
   for (const offer of offers) {
     const startable = new Set(startableChildren(scheduleView(input, record), limit));
     const child = record.children.find((c) => c.task_id === offer.task_id);
-    if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
+    if (refuseUnknownChildOffer(offer.task_id, record.children, startable)) {
       refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
       continue;
     }
