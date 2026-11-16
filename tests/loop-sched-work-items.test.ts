@@ -29,6 +29,7 @@ import type { ObservationInput } from "../plugins/immune-brain/runtime/loop_daem
 import {
 	LOOP_WORK_ITEM_CONTRACT,
 	advanceWorkItem,
+	ensureWorkItems,
 	isLegalWorkItemTransition,
 	newWorkItem,
 	readWorkItem,
@@ -263,6 +264,41 @@ describe("S5-AC1: one rebuildable work item per target with the D5 state machine
 		});
 		// Rebuilt before scheduling: the ready Issue without a plan still plans.
 		expect(result.decisions.map((decision) => decision.handler)).toContain("draft_plan");
+	});
+
+	it("rebuilds one lost target from its published plan or active run without touching the others", () => {
+		const ws = makeWorkspace();
+		const kept = advanceWorkItem(newWorkItem("issue-5", "triage", TS), "clarifying", { now: TS }).item;
+		writeWorkItem(ws.stateDir, kept);
+		publishPlan(ws.root, 9, "sha256:plan-nine");
+		mkdirSync(join(ws.root, ".imm/runs/run-a"), { recursive: true });
+		writeFileSync(
+			join(ws.root, ".imm/runs/run-a/run.json"),
+			`${JSON.stringify({ lifecycle: "active", task_id: "lane-task-a", issue_number: 7, run_id: "run-a" })}\n`,
+		);
+
+		ensureWorkItems(
+			ws.root,
+			ws.stateDir,
+			snapshot({
+				issues: [
+					readyIssue({ id: 5, number: 5 }),
+					readyIssue({ id: 9, number: 9 }),
+					readyIssue({ id: 11, number: 11 }),
+				],
+			}),
+			{ 9: "sha256:plan-nine" },
+			TS,
+		);
+
+		expect(readWorkItem(ws.stateDir, "issue-5")).toEqual(kept);
+		expect(readWorkItem(ws.stateDir, "issue-9")).toMatchObject({
+			state: "plan_published",
+			binding: { plan_digest: "sha256:plan-nine" },
+		});
+		expect(readWorkItem(ws.stateDir, "issue-7")).toMatchObject({ state: "driving", binding: { run_id: "run-a" } });
+		// Nothing shows where Issue 11 was, so it is left to the normal triage path.
+		expect(readWorkItem(ws.stateDir, "issue-11")).toBeNull();
 	});
 
 	it("keeps the D5 transition table closed", () => {

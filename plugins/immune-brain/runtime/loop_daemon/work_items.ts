@@ -488,8 +488,9 @@ export function rebuildWorkItems(
 		if (existing.has(target)) continue;
 		const labels = normalizeLabels(issue.labels);
 		const digest = publishedPlanDigests[issue.number] ?? null;
+		// A published plan is where the Issue was: it waits on the owner's approval.
 		const state: WorkItemState =
-			issue.state === "closed" ? "closed" : isReadyIssue(labels) ? "planning" : "triage";
+			issue.state === "closed" ? "closed" : digest ? "plan_published" : isReadyIssue(labels) ? "planning" : "triage";
 		const item = newWorkItem(target, state, now);
 		item.binding.plan_digest = digest;
 		writeWorkItem(stateDir, item);
@@ -524,7 +525,10 @@ export function rebuildWorkItems(
 
 /**
  * Ensure the store exists before scheduling: an absent or empty directory is
- * rebuilt from GitHub and the Kernel instead of being scheduled empty.
+ * rebuilt from GitHub and the Kernel instead of being scheduled empty. In a
+ * store that has items, a target whose file is missing is rebuilt alone when
+ * GitHub or the Kernel still shows where it was (a published plan, an active
+ * run), so losing one file does not reset that target to `triage`.
  */
 export function ensureWorkItems(
 	root: string,
@@ -533,10 +537,15 @@ export function ensureWorkItems(
 	publishedPlanDigests: Record<number, string>,
 	now: string,
 ): WorkItem[] {
-	if (existsSync(workItemsDir(stateDir)) && readdirSync(workItemsDir(stateDir)).some((f) => f.endsWith(".json"))) {
-		return [];
-	}
-	return rebuildWorkItems(stateDir, snapshot, scanKernelWorkItems(root), publishedPlanDigests, now);
+	const populated =
+		existsSync(workItemsDir(stateDir)) && readdirSync(workItemsDir(stateDir)).some((f) => f.endsWith(".json"));
+	if (!populated) return rebuildWorkItems(stateDir, snapshot, scanKernelWorkItems(root), publishedPlanDigests, now);
+	const recoverable: ObservationInput = {
+		...snapshot,
+		issues: snapshot.issues.filter((issue) => publishedPlanDigests[issue.number] !== undefined),
+		pull_requests: [],
+	};
+	return rebuildWorkItems(stateDir, recoverable, scanKernelWorkItems(root), publishedPlanDigests, now);
 }
 
 /** Active Kernel runs are the rebuild fixture: `.imm/runs/<id>/{run,task-record}.json`. */
