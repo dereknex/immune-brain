@@ -161,3 +161,40 @@ export function changedBindingFields(posted: InteractionBinding, current: Intera
 	const keys: ReadonlyArray<keyof InteractionBinding> = ["plan_digest", "record_revision", "issue_revision"];
 	return keys.filter((key) => (posted[key] ?? "") !== (current[key] ?? "")).join(", ");
 }
+
+/**
+ * The `plan_approval` request of one published plan (D3): bound to the plan
+ * digest, answered on GitHub only by `/approve <digest>` under ADR 0039
+ * Decision 9.
+ */
+export function planApprovalInteractionRequest(input: {
+	issue_number: number;
+	plan_digest: string;
+	prompt: string;
+}): InteractionRequest {
+	return {
+		contract: INTERACTION_REQUEST_CONTRACT,
+		interaction_id: `plan-approval:issue-${input.issue_number}`,
+		kind: "plan_approval",
+		subject: { issue: input.issue_number },
+		binding: { plan_digest: input.plan_digest },
+		prompt: input.prompt,
+		answer: "approve_digest",
+		authority: interactionAuthority("plan_approval"),
+	};
+}
+
+/**
+ * The Lane decision operations the `github` channel may post but never apply
+ * (BR-DEC-10): a Lane choice that resolves to one of these is a notice.
+ */
+export const GITHUB_LOCAL_ONLY_LANE_OPERATIONS = {
+	stop: "stop",
+	approve_breaking_intent_revision: "breaking_intent_revision",
+} as const satisfies Record<string, LocalOnlyOperation>;
+
+export type GithubLocalOnlyLaneOperation = keyof typeof GITHUB_LOCAL_ONLY_LANE_OPERATIONS;
+
+export function isGithubLocalOnlyLaneOperation(operation: string): operation is GithubLocalOnlyLaneOperation {
+	return Object.hasOwn(GITHUB_LOCAL_ONLY_LANE_OPERATIONS, operation);
+}

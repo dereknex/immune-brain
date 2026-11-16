@@ -76,6 +76,20 @@ export function interactionMarker(req: InteractionRequest): string {
 	});
 }
 
+/**
+ * Adapter for a body a pre-protocol renderer owns (a plan summary, a Lane
+ * question): the request's marker line goes first, so the comment is that
+ * request's record, and the legacy body stays readable by its own parser.
+ */
+export function withInteractionMarker(req: InteractionRequest, body: string): string {
+	const marker = interactionMarker(req);
+	const existing = parseInteractionMarker(body);
+	if (existing?.interaction_id === req.interaction_id) {
+		return body.replace(INTERACTION_MARKER_PATTERN, marker);
+	}
+	return `${marker}\n${body}`;
+}
+
 export function parseInteractionMarker(body: string): InteractionMarker | null {
 	const match = body.match(INTERACTION_MARKER_PATTERN);
 	if (!match) return null;

@@ -71,9 +71,13 @@ import {
 } from "./agent_runner.ts";
 import { dispatchLoopDrive } from "./drive_dispatcher.ts";
 import { escalationKey, planEscalation } from "./escalation.ts";
-import { createGithubInteractionChannel } from "./interaction/github_channel.ts";
+import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
 import { createLocalInteractionChannel, retireLocalRequest } from "./interaction/local_channel.ts";
-import { clarifyQuestionRequest, type InteractionChannel } from "./interaction/protocol.ts";
+import {
+	clarifyQuestionRequest,
+	planApprovalInteractionRequest,
+	type InteractionChannel,
+} from "./interaction/protocol.ts";
 import { type LoopJobExit, readLoopJob, recordSettledLane, startLoopJob } from "./jobs.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 import { isVerifiedActor, type GuardFacts } from "./guards.ts";
@@ -831,15 +835,20 @@ export function createAgentHandlerPort(deps: AgentHandlerDeps): AgentHandlerPort
 		const plan = readPlanPublication(context.stateDir, issue.number);
 		if (!plan) return { outcome: "failed", detail: `no drafted plan for #${issue.number}` };
 
+		// D3: the plan summary is the `plan_approval` request's comment, bound to its digest.
+		const body = withInteractionMarker(
+			planApprovalInteractionRequest({ issue_number: issue.number, plan_digest: plan.digest, prompt: plan.comment_body }),
+			plan.comment_body,
+		);
 		if (plan.published_comment_id !== null) {
-			await context.gitHubPort.editComment(plan.published_comment_id, plan.comment_body);
+			await context.gitHubPort.editComment(plan.published_comment_id, body);
 			return {
 				outcome: "executed",
 				detail: `updated plan ${plan.digest.slice(0, 12)} for #${issue.number} in comment #${plan.published_comment_id}`,
 			};
 		}
 
-		const posted = await context.gitHubPort.postComment(issue.number, plan.comment_body);
+		const posted = await context.gitHubPort.postComment(issue.number, body);
 		writePlanPublication(context.stateDir, {
 			...plan,
 			published_at: plan.published_at ?? now(),

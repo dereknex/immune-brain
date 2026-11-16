@@ -15,6 +15,7 @@
  * - Boundary control: a tick that observes no answer posts nothing new.
  */
 
+import { parseInteractionMarker } from "../plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -654,6 +655,11 @@ describe("S7 clarify and plan", () => {
 		expect(planning.prompt).toContain("seams: src/seed.ts#seed");
 		expect(planning.prompt).toContain("risks: the plan could extend a seam that does not exist");
 		expect(planning.prompt).toContain("acceptance: the plan names the seam it extends");
+		// D3: the published plan summary is the plan_approval request, bound to its digest.
+		const planComment = [...harness.gitHubPort.comments.values()].find((c) => c.issueNumber === 13)!;
+		const planMarker = parseInteractionMarker(planComment.body);
+		expect(planMarker).toMatchObject({ kind: "plan_approval", authority: "literal_user" });
+		expect(planMarker?.binding.plan_digest).toMatch(/^[0-9a-f]{64}$|^sha256:/);
 
 		// The decomposition instruction reaches the same prompt on a15's word.
 		const decomposed = workspaceWithCleanup();

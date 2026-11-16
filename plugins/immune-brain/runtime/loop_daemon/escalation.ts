@@ -14,6 +14,7 @@ import {
 	interactionAuthority,
 	type InteractionRequest,
 } from "./interaction/protocol.ts";
+import { renderInteractionBody } from "./interaction/github_channel.ts";
 import type { RawComment } from "./types.ts";
 
 export const ESCALATION_KEY_MARKER = "<!-- immune-brain:escalation-key=";
@@ -36,9 +37,13 @@ export function parseEscalationKey(body: string): string | null {
 	return match ? match[1] : null;
 }
 
-/** The comment body an escalation carries: the marker line, then the message. */
+/**
+ * The comment body an escalation carries: the key marker that `planEscalation`
+ * deduplicates on, then the `escalation` request as the `github` channel
+ * renders it (D3), so the comment is that request's record.
+ */
 export function renderEscalationBody(key: string, message: string): string {
-	return `${escalationKeyMarker(key)}\n${message.trim()}\n`;
+	return `${escalationKeyMarker(key)}\n${renderInteractionBody(escalationInteractionRequest({ key, message }))}\n`;
 }
 
 export interface EscalationPlan {

@@ -69,6 +69,7 @@ import { LaneSupervisor } from "../plugins/immune-brain/runtime/unattended/lane_
 import {
 	createFakeLoopGitHubPort,
 } from "../plugins/immune-brain/runtime/loop_daemon/github_port.ts";
+import { parseInteractionMarker } from "../plugins/immune-brain/runtime/loop_daemon/interaction/github_channel.ts";
 import {
 	evaluateGuards,
 	type GuardFacts,
@@ -2909,5 +2910,155 @@ describe("Loop Daemon: Tick Dispatch Core (S8)", () => {
 			expect(crossE7Decision.handler).toBe("noop_record");
 			expect(crossE7Decision.guard?.id).toBe("G8");
 		});
+	});
+});
+
+describe("S3-AC2: the github channel applies only verifiable literal-user answers in production dispatch", () => {
+	let cleanupFns: Array<() => void> = [];
+	afterEach(() => {
+		setCachedDaemonGithubLogin(null);
+		for (const fn of cleanupFns) fn();
+		cleanupFns = [];
+	});
+
+	function setup(issueNumber: number) {
+		const ws = makeWorkspace({ loopConfig: { mode: "assist" } });
+		cleanupFns.push(ws.cleanup);
+		const snapshot: ObservationInput = {
+			issues: [
+				{
+					number: issueNumber,
+					title: `Task ${issueNumber}`,
+					body: "Task description",
+					state: "open",
+					labels: [],
+					comments: [],
+					created_at: TS,
+					updated_at: TS,
+				},
+			],
+			pull_requests: [],
+			lane_decisions: [],
+		};
+		const guardFacts: GuardFacts = {
+			allowed_actors: ws.loopConfig.allowed_actors,
+			allowed_associations: ws.loopConfig.allowed_associations,
+			daemon_identity: "daemon-bot",
+			budget_exhausted: false,
+			retry_counts: {},
+			unresolved_blockers: {},
+			shutdown_requested: false,
+		};
+		return { ...ws, snapshot, guardFacts, fakePort: createFakeLoopGitHubPort(), state: initLoopState() };
+	}
+
+	function decisionFor(event: NormalizedLoopEvent, handler: string, issueNumber: number): LoopDecisionRecord {
+		return {
+			contract: "assurance_kernel/loop_decision_record/v1",
+			decision_id: `dec-${event.event_id}`,
+			event_id: event.event_id,
+			event_kind: event.kind,
+			target: { kind: "issue", id: String(issueNumber) },
+			handler: handler as LoopDecisionRecord["handler"],
+			tier: 1,
+			reason: "s3",
+			guards_passed: ["G1", "G7", "G8"],
+			mutations: [],
+			dry_run: false,
+			recorded_at: TS,
+		};
+	}
+
+	it("posts a GitHub Lane question carrying the lane_decision Interaction marker", async () => {
+		const s = setup(120);
+		const event: E6LaneDecisionNeededEvent = {
+			contract: LOOP_DAEMON_EVENT_CONTRACT,
+			event_id: "evt-e6-s3",
+			kind: "E6_LANE_DECISION_NEEDED",
+			timestamp: TS,
+			task_id: "issue-120",
+			run_id: "run-120",
+			record_revision: "sha256:rev-120",
+			question: "Proceed with the widened scope?",
+			options: [{ id: "opt-1", label: "Approve expansion" }],
+		};
+		const res = await dispatchDecisions({
+			root: s.root, stateDir: s.stateDir, loopConfig: s.loopConfig,
+			events: [event], decisions: [decisionFor(event, "relay_lane_decision_question", 120)],
+			snapshot: s.snapshot, state: s.state, gitHubPort: s.fakePort, guardFacts: s.guardFacts,
+			dryRun: false, now: TS,
+		});
+		expect(res.dispatches[0].outcome).toBe("executed");
+		const posted = [...s.fakePort.comments.values()].filter((c) => c.issueNumber === 120);
+		expect(posted).toHaveLength(1);
+		const marker = parseInteractionMarker(posted[0].body);
+		expect(marker?.kind).toBe("lane_decision");
+		expect(marker?.authority).toBe("literal_user");
+		expect(marker?.binding.record_revision).toBe("sha256:rev-120");
+		expect(posted[0].body).toContain("Approve expansion");
+	});
+
+	it("posts a notice_only request when every offered option is a local-only operation", async () => {
+		const s = setup(121);
+		const event: E6LaneDecisionNeededEvent = {
+			contract: LOOP_DAEMON_EVENT_CONTRACT,
+			event_id: "evt-e6-s3-local",
+			kind: "E6_LANE_DECISION_NEEDED",
+			timestamp: TS,
+			task_id: "issue-121",
+			run_id: "run-121",
+			record_revision: "sha256:rev-121",
+			question: "Stop this run?",
+			options: [{ id: "stop", label: "stop" }],
+		};
+		await dispatchDecisions({
+			root: s.root, stateDir: s.stateDir, loopConfig: s.loopConfig,
+			events: [event], decisions: [decisionFor(event, "relay_lane_decision_question", 121)],
+			snapshot: s.snapshot, state: s.state, gitHubPort: s.fakePort, guardFacts: s.guardFacts,
+			dryRun: false, now: TS,
+		});
+		const posted = [...s.fakePort.comments.values()].filter((c) => c.issueNumber === 121);
+		expect(posted).toHaveLength(1);
+		expect(parseInteractionMarker(posted[0].body)?.kind).toBe("notice");
+		expect(posted[0].body).toContain("not applied");
+	});
+
+	it.each([
+		["stop", "stop"],
+		["replan", "approve_breaking_intent_revision"],
+	])("does not relay a verified GitHub reply that resolves to %s; it posts the local-action notice", async (option, operation) => {
+		const s = setup(122);
+		const event: E7LaneDecisionRepliedEvent = {
+			contract: LOOP_DAEMON_EVENT_CONTRACT,
+			event_id: `evt-e7-s3-${option}`,
+			kind: "E7_LANE_DECISION_REPLIED",
+			timestamp: TS,
+			issue_number: 122,
+			comment_id: 5001,
+			author: "human-owner",
+			author_association: "OWNER",
+			run_id: "run-122",
+			record_revision: "sha256:rev-122",
+			selected_option: option,
+			reply_body: option,
+			task_id: "issue-122",
+		};
+		let relayCalled = false;
+		const res = await dispatchDecisions({
+			root: s.root, stateDir: s.stateDir, loopConfig: s.loopConfig,
+			events: [event], decisions: [decisionFor(event, "apply_lane_decision_reply", 122)],
+			snapshot: s.snapshot, state: s.state, gitHubPort: s.fakePort, guardFacts: s.guardFacts,
+			dryRun: false, now: TS, laneRuntime: stubLaneRuntime,
+			relayDecision: async () => {
+				relayCalled = true;
+				return { relayed: true };
+			},
+		});
+		expect(relayCalled).toBe(false);
+		expect(res.dispatches[0].detail).toContain(`local_only_operation: ${operation}`);
+		const posted = [...s.fakePort.comments.values()].filter((c) => c.issueNumber === 122);
+		expect(posted).toHaveLength(1);
+		expect(parseInteractionMarker(posted[0].body)?.kind).toBe("notice");
+		expect(listLeases(s.stateDir)).toHaveLength(0);
 	});
 });

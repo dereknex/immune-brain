@@ -294,6 +294,8 @@ export function resumeLaneSlot(
 
 export interface PublishQuestionDeps {
 	postComment: (input: { issue_number: number; body: string }) => Promise<unknown> | unknown;
+	/** Wraps the rendered question, e.g. with the Interaction request's marker line. */
+	wrapBody?: (body: string) => string;
 	existingComments?: readonly RawComment[];
 	stateDir?: string;
 	hostToken?: string;
@@ -319,7 +321,8 @@ export async function publishLaneDecisionQuestion(
 		lease = parkLaneSlot(deps.stateDir, input.task_id, { host_token: deps.hostToken });
 	}
 
-	const comment_body = renderLaneDecisionQuestion(input);
+	const rendered = renderLaneDecisionQuestion(input);
+	const comment_body = deps.wrapBody ? deps.wrapBody(rendered) : rendered;
 
 	// Deduplication: check if already posted on the issue
 	const alreadyPosted = (deps.existingComments || []).some((c) => {
@@ -516,6 +519,15 @@ export interface DecisionRelayDeps {
 	hostToken?: string;
 	resumeLease?: (targetId: string) => LoopLease | null;
 	guardFacts?: GuardFacts;
+	/**
+	 * Operations this channel may not apply (BR-DEC-10). A verified reply that
+	 * resolves to one is not relayed; `notify` posts the local-action notice and
+	 * reports whether it posted one.
+	 */
+	localOnly?: {
+		operations: readonly LaneDecisionOperation[];
+		notify: (operation: LaneDecisionOperation, choice: VerifiedDecisionChoice) => Promise<boolean>;
+	};
 }
 
 export interface DecisionRelayOutcome {
@@ -574,6 +586,17 @@ export async function handleLaneDecisionReply<R = unknown>(
 			action: "rejected_stale",
 			replied_revision: verification.replied_revision,
 			current_revision: verification.current_revision,
+			notice_posted,
+		};
+	}
+
+	// D3: a verified reply whose operation this channel may not apply is a notice, not a decision.
+	if (deps.localOnly?.operations.includes(verification.operation)) {
+		const notice_posted = await deps.localOnly.notify(verification.operation, verification.choice);
+		return {
+			action: "ignored",
+			reason: `local_only_operation: ${verification.operation}`,
+			choice: verification.choice,
 			notice_posted,
 		};
 	}

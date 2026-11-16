@@ -36,14 +36,22 @@ import {
 	parkLaneSlot,
 	parseDecisionReplyText,
 	publishLaneDecisionQuestion,
+	resolveDecisionOperation,
 	type DecisionOption,
 	type DecisionQuestionInput,
+	type DecisionRelayDeps,
 	type RelayInputFactory,
 } from "./decision_relay.ts";
+import { createGithubInteractionChannel, withInteractionMarker } from "./interaction/github_channel.ts";
 import {
 	createLocalInteractionChannel,
 	laneDecisionInteractionRequest,
 } from "./interaction/local_channel.ts";
+import {
+	GITHUB_LOCAL_ONLY_LANE_OPERATIONS,
+	isGithubLocalOnlyLaneOperation,
+	localOnlyNotice,
+} from "./interaction/protocol.ts";
 export type { RelayInputFactory };
 import {
 	escalationKey,
@@ -90,6 +98,7 @@ import type {
 	LoopLease,
 	NormalizedLoopEvent,
 	ObservationInput,
+	RawComment,
 } from "./types.ts";
 import type { LoopGitHubPort } from "./github_port.ts";
 
@@ -331,6 +340,41 @@ function recordOwnerReversalLabel(
 
 export interface DispatchDecisionsResult {
 	dispatches: LoopDispatchRecord[];
+}
+
+/**
+ * D3: a GitHub Lane reply that resolves to stop or a breaking Intent revision is
+ * not applied; one notice per (run, revision, operation) names the local action.
+ */
+function githubLocalOnlyGate(input: {
+	gitHubPort: LoopGitHubPort;
+	comments: RawComment[];
+	guardFacts: GuardFacts;
+	issue_number: number;
+	task_id: string;
+	run_id: string;
+	record_revision: string;
+}): NonNullable<DecisionRelayDeps["localOnly"]> {
+	return {
+		operations: Object.keys(GITHUB_LOCAL_ONLY_LANE_OPERATIONS) as Array<keyof typeof GITHUB_LOCAL_ONLY_LANE_OPERATIONS>,
+		async notify(operation) {
+			if (!isGithubLocalOnlyLaneOperation(operation)) return false;
+			const posted = await createGithubInteractionChannel({
+				port: input.gitHubPort,
+				comments: () => input.comments,
+				binding: () => ({ record_revision: input.record_revision }),
+				guardFacts: input.guardFacts,
+			}).post(
+				localOnlyNotice({
+					interaction_id: `lane-decision:${input.run_id}:${input.record_revision}:${operation}`,
+					operation: GITHUB_LOCAL_ONLY_LANE_OPERATIONS[operation],
+					subject: { issue: input.issue_number, task_id: input.task_id, run_id: input.run_id },
+					binding: { record_revision: input.record_revision },
+				}),
+			);
+			return posted !== "already_posted";
+		},
+	};
 }
 
 export async function dispatchDecisions(
@@ -709,8 +753,54 @@ export async function dispatchDecisions(
 					continue;
 				}
 
+				// D3: the `github` channel. A Lane question every option of which
+				// resolves to an operation GitHub may not apply is posted as a notice
+				// only; otherwise the question is the `lane_decision` request.
+				const request = laneDecisionInteractionRequest({
+					task_id: event.task_id,
+					run_id: event.run_id,
+					record_revision: event.record_revision,
+					question: event.question,
+					options: event.options,
+					...(issueNumber === undefined ? {} : { issue_number: issueNumber }),
+				});
+				const localOnlyOps = event.options
+					.map((option) =>
+						resolveDecisionOperation(
+							option.id,
+							{ task_id: event.task_id, run_id: event.run_id, record_revision: event.record_revision },
+							option,
+						),
+					)
+					.filter(isGithubLocalOnlyLaneOperation);
+				if (event.options.length > 0 && localOnlyOps.length === event.options.length && issueNumber !== undefined) {
+					if (stateDir) parkLaneSlot(stateDir, event.task_id, { host_token: lease?.host_token ?? randomUUID() });
+					const posted = await createGithubInteractionChannel({
+						port: gitHubPort,
+						comments: () => existingComments,
+						binding: () => ({ record_revision: event.record_revision }),
+						guardFacts,
+					}).post(
+						localOnlyNotice({
+							interaction_id: `${request.interaction_id}:local-only`,
+							operation: GITHUB_LOCAL_ONLY_LANE_OPERATIONS[localOnlyOps[0]!],
+							subject: request.subject,
+							binding: request.binding,
+							detail: event.question,
+						}),
+					);
+					emitDispatch(
+						decision.decision_id,
+						decision.handler,
+						"executed",
+						`posted local-only lane decision notice for ${event.task_id} (${posted})`,
+					);
+					continue;
+				}
+
 				const result = await publishLaneDecisionQuestion(input, {
 					postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
+					wrapBody: (body) => withInteractionMarker(request, body),
 					existingComments,
 					stateDir,
 					hostToken: lease?.host_token ?? randomUUID(),
@@ -760,6 +850,15 @@ export async function dispatchDecisions(
 						{
 							postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
 							existingComments: issueComments,
+							localOnly: githubLocalOnlyGate({
+								gitHubPort,
+								comments: issueComments,
+								guardFacts,
+								issue_number: event.issue_number,
+								task_id: taskId,
+								run_id: event.run_id,
+								record_revision: event.record_revision,
+							}),
 							stateDir,
 							hostToken: lease?.host_token ?? randomUUID(),
 							guardFacts,
@@ -875,6 +974,15 @@ export async function dispatchDecisions(
 					{
 						postComment: async (inComment) => gitHubPort.postComment(inComment.issue_number, inComment.body),
 						existingComments: issueComments,
+						localOnly: githubLocalOnlyGate({
+							gitHubPort,
+							comments: issueComments,
+							guardFacts,
+							issue_number: event.issue_number,
+							task_id: taskId,
+							run_id: expectedRunId,
+							record_revision: expectedRevision,
+						}),
 						stateDir,
 						hostToken: lease?.host_token ?? randomUUID(),
 						guardFacts,
