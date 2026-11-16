@@ -482,6 +482,21 @@ export function decideLaneAdmission(input: {
 	return null;
 }
 
+/**
+ * The offer-loop guard: an offer is refused when it names no child of this
+ * batch, when that child is no longer pending, or when the scheduler cannot
+ * start it on this tick. Pure: the same three conditions the inline guard
+ * checked, so the call site keeps its exact behaviour.
+ */
+export function refuseUnknownChildOffer(
+	offerTaskId: string,
+	children: BatchLaneRunStateRecord["children"],
+	startable: ReadonlySet<string>,
+): boolean {
+	const child = children.find((c) => c.task_id === offerTaskId);
+	return !child || child.state !== "pending" || !startable.has(child.task_id);
+}
+
 function laneGitOf(input: StartBatchInput): BatchLaneGitPort {
 	return (input.git as (BatchRunnerGitPort & { lane?: BatchLaneGitPort }) | undefined)?.lane ?? createDefaultLaneGitPort();
 }
@@ -1415,7 +1430,7 @@ export async function runLaneBatch(
 	for (const offer of offers) {
 		const startable = new Set(startableChildren(scheduleView(input, record), limit));
 		const child = record.children.find((c) => c.task_id === offer.task_id);
-		if (!child || child.state !== "pending" || !startable.has(child.task_id)) {
+		if (refuseUnknownChildOffer(offer.task_id, record.children, startable)) {
 			refusals.push({ ...offer, reason: "batch_lane_unknown_child" });
 			continue;
 		}
@@ -1428,7 +1443,7 @@ export async function runLaneBatch(
 		const reason = decideLaneAdmission({
 			facts,
 			coordinator_real_path: coordinatorReal,
-			expected_branch: laneBranchName(record.initiative_slug, child.task_id),
+			expected_branch: laneBranchName(record.initiative_slug, child!.task_id),
 			batch_head: head,
 			bound_paths: record.children.flatMap((c) => (c.lane && c.state !== "released" ? [c.lane.path] : [])),
 		});
@@ -1438,14 +1453,14 @@ export async function runLaneBatch(
 		}
 		// The child budget stops new admissions only; in-flight Lanes finish.
 		if (consumedSlots(record) >= record.budget.max_children) break;
-		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child.task_id), base_head: head, lane_commit: null };
+		const lane = { path: facts.real_path!, branch: laneBranchName(record.initiative_slug, child!.task_id), base_head: head, lane_commit: null };
 		record.children = record.children.map((c) => {
-			if (c.task_id !== child.task_id) return c;
+			if (c.task_id !== child!.task_id) return c;
 			const { lane_reservation: _reserved, ...rest } = c;
 			return { ...rest, state: "lane_admitted", lane, ...(skewAcknowledged ? { runtime_skew_acknowledged: skewAcknowledged } : {}) };
 		});
 		persist();
-		const failed = await enrollInLane(child.task_id);
+		const failed = await enrollInLane(child!.task_id);
 		if (failed) return failed;
 	}
 

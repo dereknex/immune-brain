@@ -21,19 +21,28 @@ import {
 import {
 	createDefaultLaneGitPort,
 	decideLaneAdmission,
+	decideLaneInstruction,
+	decideLaneSessionClose,
 	laneBranchName,
+	laneRuntimeContractRefusal,
+	parseLaneInstruction,
+	parseLaneSessionClose,
 	parseLaneOffers,
 	parseMaxParallel,
+	refuseUnknownChildOffer,
 	resolveLaneParallel,
 	runLaneBatch,
 	laneRejectionReport,
+	type BatchLaneGitPort,
 	type LaneFacts,
 	type LaneOffer,
 } from "../plugins/immune-brain/runtime/unattended/batch_lanes";
 import type { BatchRunnerKernelPort, StartBatchInput } from "../plugins/immune-brain/runtime/unattended/batch_runner";
 import { completedParentReport, startBatch } from "../plugins/immune-brain/runtime/unattended/batch_runner";
+import { planLaneLeakRestore } from "../plugins/immune-brain/runtime/unattended/batch_leak_restore";
+import { startableChildren } from "../plugins/immune-brain/runtime/unattended/batch_schedule";
 import { recoverKernelStoreFollowUps } from "../plugins/immune-brain/runtime/kernel/storage";
-import { readAnyBatchRunState, prepareBatchLaneRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord, type BatchLaneRunReport } from "../plugins/immune-brain/runtime/unattended/batch_state";
+import { readAnyBatchRunState, prepareBatchLaneRunState, writeBatchLaneRunState, type AnyBatchRunStateRecord, type BatchLaneRunReport, type BatchLaneRunStateRecord } from "../plugins/immune-brain/runtime/unattended/batch_state";
 import { retireStaleBatch } from "../plugins/immune-brain/runtime/unattended/batch_disposition";
 import type { BatchPlanChild } from "../plugins/immune-brain/runtime/unattended/types";
 
@@ -257,6 +266,173 @@ function request(
 }
 
 const lanes = (report: unknown) => report as BatchLaneRunReport;
+
+/** Pilot Batch 1 L1/L2 harness: crafted records + fake ports drive runLaneBatch directly. */
+const FAKE_COMMIT = "c".repeat(40);
+const FAKE_BASE = "a".repeat(40);
+
+function tempDir(): { dir: string; cleanup(): void } {
+	const dir = realpathSync(mkdtempSync(join(tmpdir(), "imm-l2-")));
+	return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+function fakeGitPort(commit: string = FAKE_COMMIT): BatchRunnerGitPort {
+	return {
+		preflight: () => ({ ok: true, branch: BATCH_BRANCH }),
+		async lookupBatchCommit(_root: string, _taskId: string, _batchId: string, _expectedHead: string) {
+			return null;
+		},
+		async commitChild(_root: string, _taskId: string, _batchId: string) {
+			return { commit };
+		},
+	};
+}
+
+interface FakeLanePortState {
+	head: string;
+	commit: string;
+	auditReachable: boolean | ((taskId: string) => boolean);
+	overrides: Map<string, Partial<LaneFacts>>;
+}
+
+function fakeLanePort(state: FakeLanePortState): BatchLaneGitPort {
+	return {
+		resolveRoot: (root: string) => {
+			try {
+				return realpathSync(root);
+			} catch {
+				return root;
+			}
+		},
+		inspectLane(_root: string, lanePath: string): LaneFacts {
+			const taskId = lanePath.split("/").pop()!.replace(/^lane-/, "");
+			const override = state.overrides.get(lanePath);
+			const real = existsSync(lanePath) ? realpathSync(lanePath) : null;
+			let claim: string | null = null;
+			try {
+				claim = readActiveClaimTaskId(lanePath);
+			} catch {
+				claim = null;
+			}
+			return {
+				exists: real !== null,
+				real_path: real,
+				same_repository: true,
+				is_worktree_root: true,
+				branch: laneBranchName(SLUG, taskId),
+				head: state.head,
+				clean: !existsSync(join(lanePath, "scratch.txt")),
+				active_claim_task_id: claim,
+				...override,
+			};
+		},
+		integrate: () => ({ commit: state.commit }),
+		findIntegrated: () => null,
+		auditReachable: ({ task_id }: { root: string; head: string; task_id: string }) =>
+			typeof state.auditReachable === "function" ? state.auditReachable(task_id) : state.auditReachable,
+	};
+}
+
+function fakeLaneDir(parent: string, taskId: string): string {
+	const path = join(parent, `lane-${taskId}`);
+	mkdirSync(path, { recursive: true });
+	return realpathSync(path);
+}
+
+function laneBinding(path: string, taskId: string, baseHead: string, laneCommit: string | null = null, runId: string | null = "run-1") {
+	return { path, branch: laneBranchName(SLUG, taskId), base_head: baseHead, lane_commit: laneCommit, run_id: runId };
+}
+
+function laneInput(root: string, children: BatchPlanChild[], kernel: BatchRunnerKernelPort, overrides: Partial<StartBatchInput> = {}): StartBatchInput {
+	const registry = createBatchAuthorityRegistry();
+	const planDigest = computeBatchPlanDigest(children);
+	const budget = overrides.budget ?? { max_children: children.length, qa_failure_limit: 3 };
+	const capability = registry.issue(
+		{
+			batch_id: BATCH_ID,
+			initiative_slug: SLUG,
+			plan_digest: planDigest,
+			branch: "main",
+			base_head: overrides.base_head ?? FAKE_BASE,
+			budget,
+			actor_id: "user",
+			confirmation_ref: "confirm",
+			nonce: "n",
+		},
+		children,
+		overrides.confirmation_time ?? CONFIRMED_AT,
+	);
+	return {
+		root,
+		batch_id: BATCH_ID,
+		initiative_slug: SLUG,
+		registry,
+		capability,
+		children,
+		plan_digest: planDigest,
+		base_head: overrides.base_head ?? FAKE_BASE,
+		confirmation_time: CONFIRMED_AT,
+		budget,
+		now: FAR_FUTURE,
+		kernel,
+		git: fakeGitPort(),
+		max_parallel: 1,
+		...overrides,
+	};
+}
+
+function laneRecord(root: string, input: StartBatchInput, mutate: (r: BatchLaneRunStateRecord) => void): BatchLaneRunStateRecord {
+	const record = prepareBatchLaneRunState({
+		batch_id: input.batch_id,
+		initiative_slug: input.initiative_slug,
+		children: input.children,
+		plan_digest: input.plan_digest,
+		base_head: input.base_head,
+		confirmation_time: input.confirmation_time,
+		budget: input.budget,
+		max_parallel: input.max_parallel ?? 1,
+		now: input.now,
+		...(input.final_verification ? { final_verification: input.final_verification } : {}),
+	});
+	record.batch_state = "running";
+	mutate(record);
+	return writeBatchLaneRunState(root, record);
+}
+
+function writeTombstone(root: string, taskId: string): void {
+	const dir = join(root, ".imm/audit", taskId, "run-1");
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, "task-record.json"), "{}\n");
+	writeFileSync(join(dir, "terminal-proof.json"), `${JSON.stringify({
+		contract: "assurance_kernel/task_tombstone/v2", task_id: taskId, lifecycle_status: "terminal",
+		terminal_lifecycle: "done", terminal_event_id: `ev-${taskId}`, final_record_hash: `sha256:${"c".repeat(64)}`,
+		terminalized_at: "2026-10-10T00:00:00.000Z",
+	})}\n`);
+}
+
+function l2RecordingTracker(failFirst = false) {
+	const calls: Array<{ task_id: string; terminal_event_id: string }> = [];
+	let failures = failFirst ? 1 : 0;
+	return {
+		calls,
+		port: {
+			async markTerminal(_root: string, input: { task_id: string; phase: "done"; terminal_event_id: string }) {
+				calls.push({ task_id: input.task_id, terminal_event_id: input.terminal_event_id });
+				if (failures-- > 0) return { status: "retryable_failure", message: "gh unavailable" };
+				return { status: "updated", message: "terminal Task Issue closure confirmed" };
+			},
+		},
+	};
+}
+
+function deliveryCommit(fx: Fixture, taskId: string, file: string, body: string, proof = false): string {
+	writeFileSync(join(fx.repo, file), body);
+	if (proof) writeTombstone(fx.repo, taskId);
+	git(fx.repo, "add", "-A");
+	git(fx.repo, "commit", "-q", "-m", `imm(${taskId}): deliver`);
+	return git(fx.repo, "rev-parse", "HEAD");
+}
+
 
 describe("runtime-owned Parent Lane lifecycle", () => {
 	function ownedFixture() {
@@ -809,30 +985,60 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 		}
 	});
 
-	it("refuses offers with a stable reason and writes nothing for them", async () => {
-		const fx = fixture();
-		try {
-			const kernel = laneKernel();
-			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
-			await startBatch(args);
-			const wrongBranch = join(fx.dir, "wrong");
-			git(fx.repo, "worktree", "add", "-q", "-b", "scratch", wrongBranch, "HEAD");
-			const offers: LaneOffer[] = [
-				{ task_id: "task-a", path: wrongBranch },
-				{ task_id: "task-b", path: fx.lane("task-b") },
-				{ task_id: "task-a", path: fx.repo },
-			];
-			const report = lanes(await startBatch({ ...args, lane_offers: offers.slice(0, 1) }));
-			expect(report.lane_refusals).toEqual([{ task_id: "task-a", path: wrongBranch, reason: "batch_lane_branch_mismatch" }]);
-			expect(report.children.map((c) => c.state)).toEqual(["pending", "pending"]);
-			const blocked = lanes(await startBatch({ ...args, lane_offers: [offers[1]!] }));
-			expect(blocked.lane_refusals?.[0]?.reason).toBe("batch_lane_unknown_child");
-			const coordinator = lanes(await startBatch({ ...args, lane_offers: [offers[2]!] }));
-			expect(coordinator.lane_refusals?.[0]?.reason).toBe("batch_lane_is_coordinator");
-			expect(kernel.enrolled.size).toBe(0);
-		} finally {
-			fx.cleanup();
-		}
+	it("refuses offers with a stable reason and writes nothing for them", () => {
+		// L1: the refusal reasons are the pure admission decision plus the
+		// offer-loop guard, over hand-built facts in the shapes the lane
+		// admission tests verify; no driver runs, so nothing is written.
+		const facts = (overrides: Partial<LaneFacts> = {}): LaneFacts => ({
+			exists: true,
+			real_path: "/lane",
+			same_repository: true,
+			is_worktree_root: true,
+			branch: laneBranchName(SLUG, "task-a"),
+			head: FAKE_BASE,
+			clean: true,
+			active_claim_task_id: null,
+			...overrides,
+		});
+		const decide = (f: LaneFacts, taskId = "task-a") =>
+			decideLaneAdmission({
+				facts: f,
+				coordinator_real_path: "/coordinator",
+				expected_branch: laneBranchName(SLUG, taskId),
+				batch_head: FAKE_BASE,
+				bound_paths: [],
+			});
+		const kids = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+		const record = prepareBatchLaneRunState({
+			batch_id: BATCH_ID, initiative_slug: SLUG, children: kids,
+			plan_digest: computeBatchPlanDigest(kids),
+			base_head: FAKE_BASE, confirmation_time: CONFIRMED_AT,
+			budget: { max_children: 2, qa_failure_limit: 3 }, max_parallel: 1, now: FAR_FUTURE,
+		});
+		const before = JSON.stringify(record);
+		const schedule = (states: Array<"pending" | "enrolled">) =>
+			["task-a", "task-b"].map((id, i) => ({ task_id: id, state: states[i]!, blocked_by: i === 1 ? ["task-a"] : [], scope_hint: [[ "a.txt" ], ["b.txt"]][i]! }));
+		const startable = new Set(startableChildren(schedule(["pending", "pending"]), 1));
+		const reasonFor = (taskId: string, f: LaneFacts): string | null =>
+			refuseUnknownChildOffer(taskId, record.children, startable) ? "batch_lane_unknown_child" : decide(f, taskId);
+		// The three offers, in order, refuse with one stable reason each.
+		expect([
+			{ task_id: "task-a", reason: reasonFor("task-a", facts({ branch: "scratch" })) },
+			{ task_id: "task-b", reason: reasonFor("task-b", facts({ branch: laneBranchName(SLUG, "task-b") })) },
+			{ task_id: "task-a", reason: reasonFor("task-a", facts({ real_path: "/coordinator" })) },
+		]).toEqual([
+			{ task_id: "task-a", reason: "batch_lane_branch_mismatch" },
+			{ task_id: "task-b", reason: "batch_lane_unknown_child" },
+			{ task_id: "task-a", reason: "batch_lane_is_coordinator" },
+		]);
+		// The guard fires for each of its three conditions, and passes the admissible offer.
+		expect(refuseUnknownChildOffer("task-z", record.children, startable)).toBe(true);
+		expect(refuseUnknownChildOffer("task-b", record.children, startable)).toBe(true);
+		const enrolled = { ...record, children: record.children.map((c) => c.task_id === "task-a" ? { ...c, state: "enrolled" as const } : c) };
+		expect(refuseUnknownChildOffer("task-a", enrolled.children, startable)).toBe(true);
+		expect(refuseUnknownChildOffer("task-a", record.children, startable)).toBe(false);
+		expect(decide(facts())).toBeNull();
+		expect(JSON.stringify(record)).toBe(before);
 	});
 
 	it("refuses foreign, moved-base, dirty and occupied Lanes through startBatch with zero writes", async () => {
@@ -986,29 +1192,37 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 	});
 
 	it("defaults omitted and explicit max_parallel 1 to a v2 Lane batch", async () => {
+		// L2: the parallel resolution is the pure function on a temp dir; the
+		// record creation still goes through startBatch on a fixture repo.
+		const tmp = tempDir();
+		try {
+			expect(resolveLaneParallel(tmp.dir, SLUG, parseMaxParallel(1), undefined)).toBe(1);
+			expect(resolveLaneParallel(tmp.dir, SLUG, parseMaxParallel(2), undefined)).toBe(2);
+			// New batches create their own Lanes; external offers remain retired.
+			expect(() => resolveLaneParallel(tmp.dir, "other-initiative", parseMaxParallel(1), [])).toThrow(/lane_offers_retired/);
+		} finally {
+			tmp.cleanup();
+		}
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
-			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), undefined);
-			expect(resolved).toBe(1);
-			expect(resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(2), undefined)).toBe(2);
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
-			const report = await startBatch({ ...serial, ...(resolved !== undefined ? { max_parallel: resolved } : {}) });
+			const report = await startBatch({ ...serial, max_parallel: 1 });
 			expect(report).toMatchObject({ max_parallel: 1 });
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.contract).toBe("assurance_kernel/batch_run_state/v2");
-			// New batches create their own Lanes; external offers remain retired.
-			expect(() => resolveLaneParallel(fx.repo, "other-initiative", parseMaxParallel(1), [])).toThrow(/lane_offers_retired/);
 		} finally {
 			fx.cleanup();
 		}
 	});
 
 	it("refuses an explicit max_parallel change when resuming a recorded two-Lane batch", async () => {
+		// L2: the record is crafted with max_parallel 2; the resume goes
+		// through startBatch so the mismatch check still builds the report.
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const args = { ...request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel), max_parallel: 2 };
-			await startBatch(args);
+			laneRecord(fx.repo, args, () => {});
 			const resolved = resolveLaneParallel(fx.repo, SLUG, parseMaxParallel(1), []);
 			expect(resolved).toBe(1);
 			const before = readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`));
@@ -1034,12 +1248,14 @@ describe("max_parallel 1 end to end through a real second worktree", () => {
 	});
 
 	it("resumes an omitted-parameter Lane record with explicit max_parallel 1", async () => {
+		// L2: the record is crafted without max_parallel; the resume drives
+		// runLaneBatch directly on the stored record.
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const { max_parallel: _omitted, ...serial } = request(fx, [child("task-a", "S1")], kernel);
-			await startBatch(serial);
-			const report = lanes(await runLaneBatch({ ...serial, max_parallel: 1 }, readAnyBatchRunState(fx.repo, BATCH_ID)));
+			const stored = laneRecord(fx.repo, serial, () => {});
+			const report = lanes(await runLaneBatch({ ...serial, max_parallel: 1 }, stored));
 			expect(report.batch_state).toBe("running");
 			expect(report.max_parallel).toBe(1);
 		} finally {
@@ -1121,17 +1337,32 @@ describe("max_parallel above 1", () => {
 	});
 
 	it("makes a child whose scope overlaps an in-flight Lane wait and never exceeds max_parallel", async () => {
-		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"], "task-c": ["a.txt"] });
+		// L2: the driver runs on a crafted record with fake ports on a temp
+		// dir. The wait is the max_parallel: 2 slot limit: scope hints never
+		// constrain starts, so the pure core is asserted directly too.
+		const tmp = tempDir();
 		try {
 			const kernel = laneKernel();
-			const args = wide(fx, kernel, ["task-a", "task-b", "task-c"]);
-			const first = lanes(await startBatch(args));
+			const children = [child("task-a", "S1"), child("task-b", "S2"), child("task-c", "S3")];
+			const state: FakeLanePortState = { head: FAKE_BASE, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
+			const input = laneInput(tmp.dir, children, kernel, {
+				max_parallel: 2,
+				git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort,
+			});
+			const laneA = fakeLaneDir(tmp.dir, "task-a");
+			const laneB = fakeLaneDir(tmp.dir, "task-b");
+			let record = laneRecord(tmp.dir, input, () => {});
+			const first = lanes(await runLaneBatch(input, record));
 			expect(first.handoffs?.map((h) => h.task_id)).toEqual(["task-a", "task-b"]);
-			const offers = offer(fx, ["task-a", "task-b"]);
-			await startBatch({ ...args, lane_offers: offers });
-			writeFileSync(join(offers[0]!.path, "a.txt"), "a\n");
+			record = readAnyBatchRunState(tmp.dir, BATCH_ID) as BatchLaneRunStateRecord;
+			const second = lanes(
+				await runLaneBatch({ ...input, lane_offers: [{ task_id: "task-a", path: laneA }, { task_id: "task-b", path: laneB }] }, record),
+			);
+			expect(second.children.map((c) => c.state)).toEqual(["enrolled", "enrolled", "pending"]);
+			writeFileSync(join(laneA, "a.txt"), "a\n");
 			kernel.frozen.add("task-a");
-			const next = lanes(await startBatch(args));
+			record = readAnyBatchRunState(tmp.dir, BATCH_ID) as BatchLaneRunStateRecord;
+			const next = lanes(await runLaneBatch(input, record));
 			// task-a integrated; task-c overlapped it and can now be provisioned from the new head.
 			expect(next.children.map((c) => c.state)).toEqual(["integrated", "enrolled", "pending"]);
 			expect(next.handoffs?.map((h) => [h.role, h.task_id])).toEqual([
@@ -1139,8 +1370,14 @@ describe("max_parallel above 1", () => {
 				["lane-steward", "task-c"],
 			]);
 			expect(next.children.filter((c) => ["lane_admitted", "enrolled", "settled", "lane_committed"].includes(c.state))).toHaveLength(1);
+			// The pure core: two in flight fill both slots, so c waits; once a
+			// integrates, one slot frees and c is startable.
+			const schedule = (states: Array<"integrated" | "enrolled" | "pending">) =>
+				states.map((s, i) => ({ task_id: ["task-a", "task-b", "task-c"][i]!, state: s, blocked_by: [], scope_hint: [["a.txt"], ["b.txt"], ["a.txt"]][i]! }));
+			expect(startableChildren(schedule(["enrolled", "enrolled", "pending"]), 2)).toEqual([]);
+			expect(startableChildren(schedule(["integrated", "enrolled", "pending"]), 2)).toEqual(["task-c"]);
 		} finally {
-			fx.cleanup();
+			tmp.cleanup();
 		}
 	});
 
@@ -1169,18 +1406,31 @@ describe("max_parallel above 1", () => {
 	});
 
 	it("applies qa_failure_limit to each child separately", async () => {
-		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		// L2: the driver runs on a crafted record with fake ports on a temp dir.
+		const tmp = tempDir();
 		try {
 			const kernel = laneKernel();
-			const args = wide(fx, kernel, ["task-a", "task-b"], { budget: { max_children: 2, qa_failure_limit: 1 } });
-			await startBatch(args);
-			const offers = offer(fx, ["task-a", "task-b"]);
-			await startBatch({ ...args, lane_offers: offers });
+			const children = [child("task-a", "S1"), child("task-b", "S2")];
+			const state: FakeLanePortState = { head: FAKE_BASE, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
+			const input = laneInput(tmp.dir, children, kernel, {
+				max_parallel: 2,
+				budget: { max_children: 2, qa_failure_limit: 1 },
+				git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort,
+			});
+			const laneA = fakeLaneDir(tmp.dir, "task-a");
+			const laneB = fakeLaneDir(tmp.dir, "task-b");
+			kernel.enrolled.set("task-a", laneA);
+			kernel.enrolled.set("task-b", laneB);
+			const record = laneRecord(tmp.dir, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", FAKE_BASE);
+				r.children[1]!.state = "enrolled";
+				r.children[1]!.lane = laneBinding(laneB, "task-b", FAKE_BASE);
+			});
 			kernel.reworking.add("task-a");
-			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
 			kernel.frozen.add("task-a");
 			kernel.frozen.add("task-b");
-			const report = lanes(await startBatch(args));
+			const report = lanes(await runLaneBatch(input, record));
 			// task-a exhausted its own limit and waits for a coordinator correction
 			// (#196) while task-b, under its own count, integrates.
 			expect(report.children.map((c) => c.state)).toEqual(["enrolled", "integrated"]);
@@ -1189,7 +1439,7 @@ describe("max_parallel above 1", () => {
 			expect(report.children[1]!.qa_failures).toBe(0);
 			expect(report.batch_state).toBe("running");
 		} finally {
-			fx.cleanup();
+			tmp.cleanup();
 		}
 	});
 
@@ -1241,11 +1491,29 @@ async function integrateTaskA(fx: Fixture, gitPort: BatchRunnerGitPort) {
 
 describe("lane release", () => {
 	it("keeps safe release handoffs on a read-only store rejection without granting provision or execution", async () => {
+		// L2: the record is crafted (task-a integrated on a real delivery
+		// commit, task-b enrolled); the rejection goes through startBatch so
+		// the store-error catch still builds the report. Lineage stays OK
+		// throughout: the foreign-task case is proved by the seeded claim,
+		// not by a broken lineage (the original's git reset --hard).
 		const fx = fixture();
 		try {
-			const { args, kernel, laneA } = await integrateTaskA(fx, laneGitWithAudit());
-			const laneB = fx.lane("task-b");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-b", path: laneB }] });
+			const kernel = laneKernel();
+			const commit = deliveryCommit(fx, "task-a", "a.txt", "a\n");
+			const state: FakeLanePortState = { head: commit, commit, auditReachable: true, overrides: new Map() };
+			const laneA = fakeLaneDir(fx.dir, "task-a");
+			const laneB = fakeLaneDir(fx.dir, "task-b");
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const args = request(fx, children, kernel, { git: { ...fakeGitPort(commit), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			laneRecord(fx.repo, args, (r) => {
+				r.children[0]!.state = "integrated";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base, commit);
+				r.children[0]!.commit = commit;
+				r.children[1]!.state = "enrolled";
+				r.children[1]!.lane = laneBinding(laneB, "task-b", fx.base);
+				r.commits = [commit];
+			});
+			kernel.enrolled.set("task-b", laneB);
 			kernel.frozen.add("task-b");
 			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
 			const before = readFileSync(statePath, "utf8");
@@ -1262,20 +1530,17 @@ describe("lane release", () => {
 			expect(lanes(await reject()).handoffs).toEqual([]);
 			rmSync(join(laneA, "scratch.txt"));
 			const foreignIntent = parseTaskIntentV1(JSON.parse(intentJson("foreign-task")));
-			const integratedHead = git(fx.repo, "rev-parse", "HEAD");
-			git(fx.repo, "reset", "--hard", fx.base);
-			const persisted = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (persisted.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
-			expect(laneRejectionReport(args, persisted, "kernel store is busy", "retry").handoffs).toEqual([]);
-			expect(readFileSync(statePath, "utf8")).toBe(before);
-			git(fx.repo, "reset", "--hard", integratedHead);
 			seedKernelRunForTest(laneA, { task_id: "foreign-task", record: {
 				contract: "assurance_kernel/task_record/v4", task_id: "foreign-task",
 				intent_snapshot: foreignIntent,
 				intent_ref: { path: "docs/plans/foreign-task.intent.json", content_hash: canonicalIntentHash(foreignIntent) },
 				lifecycle: "active", artifact_state: "active", baseline: `sha256:${"a".repeat(64)}`,
-				git_base_head: git(laneA, "rev-parse", "HEAD"), attestations: [], findings: [], history: [],
+				git_base_head: commit, attestations: [], findings: [], history: [],
 			} });
+			const persisted = readAnyBatchRunState(fx.repo, BATCH_ID)!;
+			if (persisted.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
+			expect(laneRejectionReport(args, persisted, "kernel store is busy", "retry").handoffs).toEqual([]);
+			expect(readFileSync(statePath, "utf8")).toBe(before);
 			expect(lanes(await reject()).handoffs).toEqual([]);
 			expect(readFileSync(statePath, "utf8")).toBe(before);
 		} finally {
@@ -1336,9 +1601,23 @@ describe("lane release", () => {
 	});
 
 	it("offers no release when the audit pair is not on the batch branch", async () => {
+		// L2: the record is crafted (task-a integrated on a real delivery
+		// commit); the audit pair is absent because the lane port says so.
 		const fx = fixture();
 		try {
-			const { report, laneA } = await integrateTaskA(fx, laneGit());
+			const kernel = laneKernel();
+			const commit = deliveryCommit(fx, "task-a", "a.txt", "a\n");
+			const state: FakeLanePortState = { head: commit, commit, auditReachable: false, overrides: new Map() };
+			const laneA = fakeLaneDir(fx.dir, "task-a");
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(commit), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "integrated";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base, commit);
+				r.children[0]!.commit = commit;
+				r.commits = [commit];
+			});
+			const report = lanes(await runLaneBatch(input, record));
 			expect(report.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
 			expect(existsSync(laneA)).toBe(true);
 			expect(releases(report)).toEqual([]);
@@ -1348,24 +1627,40 @@ describe("lane release", () => {
 	});
 
 	it("offers no release while the Lane is dirty or switched off its branch, and offers it again once restored", async () => {
+		// L2: the record is crafted (task-a integrated on a real delivery
+		// commit); the fake lane port's facts move between ticks.
 		const fx = fixture();
 		try {
-			const { args, laneA, report } = await integrateTaskA(fx, laneGitWithAudit());
-			expect(releases(report)).toHaveLength(1);
+			const kernel = laneKernel();
+			const commit = deliveryCommit(fx, "task-a", "a.txt", "a\n");
+			const state: FakeLanePortState = { head: commit, commit, auditReachable: true, overrides: new Map() };
+			const laneA = fakeLaneDir(fx.dir, "task-a");
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(commit), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "integrated";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base, commit);
+				r.children[0]!.commit = commit;
+				r.commits = [commit];
+			});
+			const readRecord = () => readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord;
+			const tick = async () => lanes(await runLaneBatch(input, readRecord()));
+			const offered = await tick();
+			expect(releases(offered)).toHaveLength(1);
 
 			writeFileSync(join(laneA, "scratch.txt"), "unsaved\n");
-			const dirty = lanes(await startBatch(args));
+			const dirty = await tick();
 			expect(dirty.children[0]!.state).toBe("integrated");
 			expect(releases(dirty)).toEqual([]);
 			rmSync(join(laneA, "scratch.txt"));
 
-			git(laneA, "checkout", "-q", "-b", "scratch-branch");
-			const switched = lanes(await startBatch(args));
+			state.overrides.set(laneA, { branch: "scratch-branch" });
+			const switched = await tick();
 			expect(switched.children[0]!.state).toBe("integrated");
 			expect(releases(switched)).toEqual([]);
-			git(laneA, "checkout", "-q", laneBranchName(SLUG, "task-a"));
+			state.overrides.delete(laneA);
 
-			const restored = lanes(await startBatch(args));
+			const restored = await tick();
 			expect(releases(restored)).toHaveLength(1);
 		} finally {
 			fx.cleanup();
@@ -1380,9 +1675,22 @@ describe("lane release", () => {
 		}) as BatchRunnerGitPort;
 
 	it("offers no release for a parked child even when its audit pair looks reachable", async () => {
-		const fx = fixture({ "task-a": 'process.exit(require("node:fs").existsSync("never.txt") ? 0 : 1)' });
+		// L2: the record is crafted with the child already parked.
+		const fx = fixture();
 		try {
-			const { report, laneA } = await integrateTaskA(fx, auditAlwaysReachable());
+			const kernel = laneKernel();
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: true, overrides: new Map() };
+			const laneA = fakeLaneDir(fx.dir, "task-a");
+			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "needs_human";
+				r.children[0]!.reason = "batch_integration_check_failed: the delivery fails its own check";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+				r.children[1]!.state = "skipped_blocked";
+				r.children[1]!.reason = "dependency task-a parked";
+			});
+			const report = lanes(await runLaneBatch(input, record));
 			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "skipped_blocked"]);
 			expect(existsSync(laneA)).toBe(true);
 			expect(releases(report)).toEqual([]);
@@ -1392,16 +1700,22 @@ describe("lane release", () => {
 	});
 
 	it("offers no release for an enrolled Lane even when its audit pair looks reachable", async () => {
+		// L2: the record is crafted with the child enrolled.
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: true, overrides: new Map() };
+			const laneA = fakeLaneDir(fx.dir, "task-a");
 			const children = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
-			const args = request(fx, children, kernel, { git: auditAlwaysReachable() });
-			await startBatch(args);
-			const laneA = fx.lane("task-a");
-			const enrolled = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] }));
-			expect(enrolled.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
-			expect(releases(enrolled)).toEqual([]);
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			kernel.enrolled.set("task-a", laneA);
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
+			const report = lanes(await runLaneBatch(input, record));
+			expect(report.children.map((c) => c.state)).toEqual(["enrolled", "pending"]);
+			expect(releases(report)).toEqual([]);
 		} finally {
 			fx.cleanup();
 		}
@@ -1780,21 +2094,32 @@ describe("Child Issue closure after integration (#197)", () => {
 	});
 
 	it("retries a failed close on the next tick without changing batch state", async () => {
+		// L2: the record is crafted (task-a integrated on a real delivery
+		// commit carrying the audit pair); the tracker fails the first close
+		// and the retry runs through runLaneBatch directly.
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
-			const tracker = recordingTracker(true);
-			const args = request(fx, [child("task-a", "S1")], kernel, { git: laneGitWithProof(), tracker: tracker.port });
-			await startBatch(args);
-			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			writeFileSync(join(laneA, "a.txt"), "a\n");
-			kernel.frozen.add("task-a");
-			const done = lanes(await startBatch(args));
+			const tracker = l2RecordingTracker(true);
+			const commit = deliveryCommit(fx, "task-a", "a.txt", "a\n", true);
+			const state: FakeLanePortState = { head: commit, commit, auditReachable: true, overrides: new Map() };
+			const input = request(fx, [child("task-a", "S1")], kernel, {
+				tracker: tracker.port,
+				git: { ...fakeGitPort(commit), lane: fakeLanePort(state) } as BatchRunnerGitPort,
+			});
+			const laneA = fakeLaneDir(fx.dir, "task-a");
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "integrated";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base, commit);
+				r.children[0]!.commit = commit;
+				r.commits = [commit];
+				r.head = commit;
+			});
+			const done = lanes(await runLaneBatch(input, record));
 			expect(done.batch_state).toBe("completed");
 			expect(done.children[0]!.tracker_closed).toBeUndefined();
 			expect(done.tracker_observations?.[0]).toMatchObject({ task_id: "task-a", status: "retryable_failure" });
-			const retried = lanes(await startBatch(args));
+			const retried = lanes(await runLaneBatch(input, readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord));
 			expect(retried.batch_state).toBe("completed");
 			expect(retried.children[0]!.tracker_closed).toBe(true);
 			expect(tracker.calls).toHaveLength(2);
@@ -1804,22 +2129,35 @@ describe("Child Issue closure after integration (#197)", () => {
 	});
 
 	it("keeps the Child open when the child is parked as batch_lane_lost", async () => {
-		const fx = fixture({}, { "task-a": ["a.txt"], "task-b": ["b.txt"] });
+		// L2: the driver runs on a crafted record with fake ports on a temp
+		// dir; the integrated child's tombstone is a real file under the root.
+		const tmp = tempDir();
 		try {
 			const kernel = laneKernel();
-			const tracker = recordingTracker();
-			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2")], kernel, { git: laneGitWithProof(), tracker: tracker.port, max_parallel: 2 });
-			await startBatch(args);
-			const offers = ["task-a", "task-b"].map((id) => ({ task_id: id, path: fx.lane(id) }));
-			await startBatch({ ...args, lane_offers: offers });
-			kernel.enrolled.delete("task-a");
-			writeFileSync(join(offers[1]!.path, "b.txt"), "b\n");
-			kernel.frozen.add("task-b");
-			const report = lanes(await startBatch(args));
+			const tracker = l2RecordingTracker();
+			const children = [child("task-a", "S1"), child("task-b", "S2")];
+			const state: FakeLanePortState = { head: FAKE_BASE, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
+			const input = laneInput(tmp.dir, children, kernel, {
+				max_parallel: 2,
+				tracker: tracker.port,
+				git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort,
+			});
+			const laneA = fakeLaneDir(tmp.dir, "task-a");
+			const laneB = fakeLaneDir(tmp.dir, "task-b");
+			writeTombstone(tmp.dir, "task-b");
+			const record = laneRecord(tmp.dir, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", FAKE_BASE);
+				r.children[1]!.state = "integrated";
+				r.children[1]!.lane = laneBinding(laneB, "task-b", FAKE_BASE, FAKE_COMMIT);
+				r.children[1]!.commit = FAKE_COMMIT;
+				r.commits = [FAKE_COMMIT];
+			});
+			const report = lanes(await runLaneBatch(input, record));
 			expect(report.children.map((c) => c.state)).toEqual(["needs_human", "integrated"]);
 			expect(tracker.calls.map((c) => c.task_id)).toEqual(["task-b"]);
 		} finally {
-			fx.cleanup();
+			tmp.cleanup();
 		}
 	});
 
@@ -1885,10 +2223,17 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 	});
 
 	it("refuses a new lane batch before any Lane exists when the Lane runtime writes another TaskRecord contract, naming both sources", async () => {
+		// L1: the refusal is the pure runtime-contract check over a lane
+		// runtime dir; the startBatch call keeps the entry-point wiring.
 		const fx = fixture();
 		try {
 			// Same plugin version on both sides is irrelevant: only identifiers are compared.
 			const lane = runtimeDir(fx, { task_record: "assurance_kernel/task_record/v3" });
+			const refusal = laneRuntimeContractRefusal(fx.repo, lane);
+			expect(refusal).toStartWith("batch_runtime_contract_mismatch:");
+			expect(refusal).toContain("task_record: assurance_kernel/task_record/v4 != assurance_kernel/task_record/v3");
+			expect(refusal).toContain(join(lane, "runtime_contracts.json"));
+			expect(refusal).toContain("plugins/immune-brain/runtime/kernel");
 			const kernel = laneKernel();
 			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], kernel, { executor_runtime: lane })));
 			expect(report.batch_state).toBe("rejected");
@@ -1917,9 +2262,6 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 
 	it.each([
 		["contract must equal assurance_kernel/task_record/v3; secret parse bytes", "batch_lane_contract_mismatch", false, false],
-		["EIO private exception bytes", "batch_lane_unreadable", false, false],
-		["EIO private exception bytes", "batch_lane_unreadable", true, false],
-		["EIO private exception bytes", "batch_lane_unreadable", false, true],
 	])("parks an unreadable Lane safely: %s", async (parseError, category, throws, done) => {
 		const fx = fixture();
 		try {
@@ -1955,24 +2297,77 @@ describe("runtime contract preflight and mismatch park reason (#199)", () => {
 			fx.cleanup();
 		}
 	});
+
+	it.each([
+		["EIO private exception bytes", "batch_lane_unreadable", false, false],
+		["EIO private exception bytes", "batch_lane_unreadable", true, false],
+		["EIO private exception bytes", "batch_lane_unreadable", false, true],
+	])("parks an unreadable Lane safely (L2): %s", async (parseError, category, throws, done) => {
+		// L2: the record is crafted (task-a enrolled on a real worktree lane);
+		// the unreadable projection is stubbed on the kernel, and the resume
+		// replays through runLaneBatch directly.
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
+			const laneA = fx.lane("task-a");
+			const children = [child("task-a", "S1")];
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			kernel.enrolled.set("task-a", laneA);
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
+			writeFileSync(join(laneA, "a.txt"), "lane implementation\n");
+			const project = kernel.projectTask;
+			kernel.projectTask = async (root, taskId) => {
+				if (throws) throw new Error(parseError);
+				return { ...(await project(root, taskId)), error: parseError };
+			};
+			const report = lanes(await runLaneBatch(input, record));
+			expect(report.children[0]!.state).toBe("needs_human");
+			const reason = report.children[0]!.reason!;
+			expect(reason).toStartWith(`${category}: `);
+			expect(reason).not.toContain(parseError);
+			expect(JSON.parse(reason.slice(reason.indexOf(": ") + 2))).toEqual({
+				stage: "project_task", task_id: "task-a", run_id: "run-1",
+			});
+			expect(report.children[0]!.reason).not.toBe("batch_lane_lost");
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)?.children[0]?.reason).toBe(reason);
+			// A fresh native authorization recovers the original active/done run.
+			kernel.projectTask = project;
+			if (done) kernel.settled.add("task-a");
+			const restored = lanes(await runLaneBatch(
+				request(fx, children, kernel, { confirmation_time: "2026-06-01T00:00:00.000Z", git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort }),
+				readAnyBatchRunState(fx.repo, BATCH_ID) as BatchLaneRunStateRecord,
+			));
+			expect(restored.children[0]!.lane?.run_id).toBe("run-1");
+			expect(restored.children[0]!.state).toBe(done ? "integrated" : "enrolled");
+			expect(kernel.enrolled.size).toBe(1);
+		} finally {
+			fx.cleanup();
+		}
+	});
 });
 
 describe("Lane write guard and leak restore (#200)", () => {
 	it("does not count a user's revert to a path the Lane never changed as a Lane write", async () => {
-		const { planLaneLeakRestore } = await import("../plugins/immune-brain/runtime/unattended/batch_leak_restore");
+		// L2: the record is crafted (task-a enrolled on a real worktree
+		// lane); the plan is the pure leak-restore function, called directly.
 		const fx = fixture();
 		try {
 			const kernel = laneKernel();
 			const args = request(fx, [child("task-a", "S1")], kernel);
-			await startBatch(args);
 			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const record = laneRecord(fx.repo, args, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
 			// The batch branch moves on (a sibling's integration); Lane A still holds the old base bytes.
 			writeFileSync(join(fx.repo, "base.txt"), "integrated by a sibling\n");
 			git(fx.repo, "commit", "-q", "-am", "sibling");
 			// The user deliberately reverts the file in the coordinator checkout.
 			writeFileSync(join(fx.repo, "base.txt"), "base\n");
-			const record = readAnyBatchRunState(fx.repo, BATCH_ID) as never;
 			const plan = planLaneLeakRestore(fx.repo, record, [{ code: " M", path: "base.txt" }]);
 			expect(plan).toMatchObject({ kind: "unprovable", path: "base.txt" });
 		} finally {
@@ -2056,24 +2451,32 @@ describe("Lane write guard and leak restore (#200)", () => {
 	});
 
 	it("touches no file when any change has unknown origin, and never restores the user's own staged work", async () => {
+		// L2: the record is crafted (task-a enrolled on a real worktree
+		// lane); the plan is the pure leak-restore function, called directly.
+		// The preflight-level assertions (ok, reason, recovery_action) stay
+		// in the keeper that runs the preflight.
 		const fx = fixture();
-		fx_root = fx.repo;
 		try {
-			const { laneA } = await enrolledLane(fx);
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel);
+			const laneA = fx.lane("task-a");
+			const record = laneRecord(fx.repo, args, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
 			writeFileSync(join(laneA, "a.txt"), "lane a\n");
 			writeFileSync(join(fx.repo, "a.txt"), "lane a\n");
 			writeFileSync(join(fx.repo, "notes.txt"), "the user's own notes\n");
-			const mixed = await preflight();
-			expect(mixed.ok).toBe(false);
-			expect((mixed as { reason: string }).reason).toContain("notes.txt: its bytes match no Lane of this batch");
-			expect((mixed as { recovery_action: string }).recovery_action).not.toContain("git add");
+			const mixed = planLaneLeakRestore(fx.repo, record, [{ code: "??", path: "a.txt" }, { code: "??", path: "notes.txt" }]);
+			expect(mixed).toMatchObject({ kind: "unprovable", path: "notes.txt", detail: "its bytes match no Lane of this batch" });
 			expect(readFileSync(join(fx.repo, "a.txt"), "utf8")).toBe("lane a\n");
 			expect(readFileSync(join(fx.repo, "notes.txt"), "utf8")).toBe("the user's own notes\n");
 			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: unknown }).restores).toBeUndefined();
 
 			rmSync(join(fx.repo, "notes.txt"));
 			git(fx.repo, "add", "a.txt"); // staged: a user act, not a Lane write
-			await preflight();
+			const staged = planLaneLeakRestore(fx.repo, record, [{ code: "A ", path: "a.txt" }]);
+			expect(staged.kind).toBe("unprovable");
 			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { restores?: unknown }).restores).toBeUndefined();
 			expect(git(fx.repo, "diff", "--cached", "--name-only")).toBe("a.txt");
 			expect(existsSync(join(fx.repo, "a.txt"))).toBe(true);
@@ -2084,19 +2487,55 @@ describe("Lane write guard and leak restore (#200)", () => {
 });
 
 describe("final verification in the completion report (#201)", () => {
-	for (const [label, commands, passed] of [["passes", ["git status"], true], ["fails", ["git status", "git no-such-subcommand"], false], ["does not run", [], undefined]] as const) {
-		it(`runs the recorded commands on the batch branch once every child is integrated and ${label}`, async () => {
+	it("runs the recorded commands on the batch branch once every child is integrated and passes", async () => {
+		const commands = ["git status"];
+		const passed = true;
+		const fx = fixture();
+		try {
+			const kernel = laneKernel();
+			const args = request(fx, [child("task-a", "S1")], kernel, { final_verification: [...commands] });
+			await startBatch(args);
+			const laneA = fx.lane("task-a");
+			// A resume never replaces the recorded commands.
+			await startBatch({ ...args, final_verification: ["git no-such-subcommand"], lane_offers: [{ task_id: "task-a", path: laneA }] });
+			writeFileSync(join(laneA, "a.txt"), "a\n");
+			kernel.frozen.add("task-a");
+			const done = lanes(await startBatch(args));
+			expect(done.batch_state).toBe("completed");
+			expect(done.final_verification?.passed).toBe(passed);
+			expect(done.final_verification?.results.map((r) => r.command)).toEqual(commands.length ? [...commands] : undefined);
+			expect(done.final_verification?.head).toBe(commands.length ? done.commits[0] : undefined);
+			if (passed === undefined) expect(done.reason).toBe("final verification not run");
+			else if (passed) expect(done.reason).toBe("all enrollable children integrated");
+			if (passed === false) expect(done.reason).toContain("final verification did not pass: git no-such-subcommand");
+			// Integrated commits stay.
+			expect(git(fx.repo, "rev-parse", "HEAD")).toBe(done.commits[0]!);
+			const persisted = JSON.parse(readFileSync(join(fx.repo, `.imm/state/batches/${BATCH_ID}.report.json`), "utf8"));
+			expect(persisted.final_verification?.passed).toBe(passed);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	for (const [label, commands, passed] of [["fails", ["git status", "git no-such-subcommand"], false], ["does not run", [], undefined]] as const) {
+		it(`runs the recorded commands on the batch branch once every child is integrated and ${label} (L2)`, async () => {
+			// L2: the record is crafted (task-a integrated on a real delivery
+			// commit); the completion tick runs runLaneBatch directly, with a
+			// differing input list proving the recorded commands win.
 			const fx = fixture();
 			try {
 				const kernel = laneKernel();
+				const commit = deliveryCommit(fx, "task-a", "a.txt", "a\n");
 				const args = request(fx, [child("task-a", "S1")], kernel, { final_verification: [...commands] });
-				await startBatch(args);
-				const laneA = fx.lane("task-a");
+				const record = laneRecord(fx.repo, args, (r) => {
+					r.children[0]!.state = "integrated";
+					r.children[0]!.lane = laneBinding(fakeLaneDir(fx.dir, "task-a"), "task-a", fx.base, commit);
+					r.children[0]!.commit = commit;
+					r.commits = [commit];
+					r.head = commit;
+				});
 				// A resume never replaces the recorded commands.
-				await startBatch({ ...args, final_verification: ["git no-such-subcommand"], lane_offers: [{ task_id: "task-a", path: laneA }] });
-				writeFileSync(join(laneA, "a.txt"), "a\n");
-				kernel.frozen.add("task-a");
-				const done = lanes(await startBatch(args));
+				const done = lanes(await runLaneBatch({ ...args, final_verification: ["git no-such-subcommand"] }, record));
 				expect(done.batch_state).toBe("completed");
 				expect(done.final_verification?.passed).toBe(passed);
 				expect(done.final_verification?.results.map((r) => r.command)).toEqual(commands.length ? [...commands] : undefined);
@@ -2146,72 +2585,66 @@ describe("coordinator instruction to a Lane session (#195)", () => {
 		}
 	});
 
-	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane, and accepts a done session", async () => {
-		const { parseLaneInstruction } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
-		const fx = fixture();
-		try {
-			const kernel = laneKernel();
-			const args = request(fx, [child("task-a", "S1"), child("task-b", "S2", ["task-a"])], kernel);
-			await startBatch(args);
-			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			const ask = async (task_id: string, session_state: string) =>
-				lanes(await startBatch({ ...args, lane_instruction: parseLaneInstruction({ task_id, text: "fix it", session_state }) })).lane_instruction!;
-			const blocked = await ask("task-a", "blocked");
-			expect(blocked.accepted).toBe(false);
-			expect(blocked.reason).toContain("blocked on a dialog only the user may answer");
-			expect((await ask("task-a", "working")).accepted).toBe(false);
-			expect((await ask("task-b", "idle")).reason).toContain("task-b has no Lane");
-			expect((readAnyBatchRunState(fx.repo, BATCH_ID) as { interventions?: unknown }).interventions).toBeUndefined();
-			expect(() => parseLaneInstruction({ task_id: "task-a", text: "", session_state: "idle" })).toThrow();
-			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "asleep" })).toThrow();
-			expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle", keys: "y" })).toThrow(/unknown/);
-			// A finished turn not yet seen is ready for input; Herdr and herdr-core report it as `done`.
-			expect((await ask("task-a", "done")).accepted).toBe(true);
-		} finally {
-			fx.cleanup();
-		}
+	it("refuses and records nothing while the Lane session is blocked, working, or the child is not running in its Lane, and accepts a done session", () => {
+		// L1: the instruction decision is pure over a prepared record; the
+		// driver wiring stays in the keeper that records an instruction.
+		const kids = [child("task-a", "S1"), child("task-b", "S2", ["task-a"])];
+		const record = prepareBatchLaneRunState({
+			batch_id: BATCH_ID, initiative_slug: SLUG, children: kids,
+			plan_digest: computeBatchPlanDigest(kids),
+			base_head: FAKE_BASE, confirmation_time: CONFIRMED_AT,
+			budget: { max_children: 2, qa_failure_limit: 3 }, max_parallel: 1, now: FAR_FUTURE,
+		});
+		record.children[0]!.state = "enrolled";
+		record.children[0]!.lane = laneBinding("/lane-task-a", "task-a", FAKE_BASE);
+		const before = JSON.stringify(record);
+		const ask = (task_id: string, session_state: string) =>
+			decideLaneInstruction(record, parseLaneInstruction({ task_id, text: "fix it", session_state })!);
+		const blocked = ask("task-a", "blocked");
+		expect(blocked).toContain("blocked on a dialog only the user may answer");
+		expect(ask("task-a", "working")).not.toBeNull();
+		expect(ask("task-b", "idle")).toContain("task-b has no Lane");
+		expect((record as { interventions?: unknown }).interventions).toBeUndefined();
+		expect(() => parseLaneInstruction({ task_id: "task-a", text: "", session_state: "idle" })).toThrow();
+		expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "asleep" })).toThrow();
+		expect(() => parseLaneInstruction({ task_id: "task-a", text: "x", session_state: "idle", keys: "y" })).toThrow(/unknown/);
+		// A finished turn not yet seen is ready for input; Herdr and herdr-core report it as `done`.
+		expect(ask("task-a", "done")).toBeNull();
+		expect(JSON.stringify(record)).toBe(before);
 	});
 });
 
 describe("Executor close rule for Lane sessions (#426 S1)", () => {
-	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", async () => {
-		const { decideLaneSessionClose, parseLaneSessionClose } = await import("../plugins/immune-brain/runtime/unattended/batch_lanes");
-		const fx = fixture();
-		try {
-			const kernel = laneKernel();
-			const args = request(fx, [child("task-a", "S1")], kernel, { git: laneGitWithAudit() });
-			await startBatch(args);
-			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			const close = async (task_id: string) =>
-				lanes(await startBatch({ ...args, lane_session_close: parseLaneSessionClose({ task_id }) }));
-			const running = await close("task-a");
-			expect(running.lane_session_close).toMatchObject({ task_id: "task-a", accepted: false, recorded_at: null });
-			expect(running.lane_session_close!.reason).toContain("not integrated; its session stays for the user");
-			expect((await close("task-z")).lane_session_close!.reason).toContain("task-z has no Lane");
-			expect(running.session_closes).toBeUndefined();
-
-			writeFileSync(join(laneA, "a.txt"), "a\n");
-			kernel.frozen.add("task-a");
-			const integrated = lanes(await startBatch(args));
-			expect(integrated.children[0]!.state).toBe("integrated");
-			// F6: the integrating tick records the close itself; a finished batch needs no further entry.
-			expect(integrated.session_closes).toEqual([{ at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/), task_id: "task-a" }]);
-			// Without the audit pair on the batch head the rule refuses, whatever the child state says.
-			expect(decideLaneSessionClose({ ...integrated, session_closes: undefined } as never, { task_id: "task-a" }, () => false))
-				.toBe("task-a's audit pair is not reachable from the batch head");
-			// Asking again returns the same record; nothing is recorded twice.
-			const again = await close("task-a");
-			expect(again.lane_session_close).toEqual({ task_id: "task-a", accepted: true, reason: null, recorded_at: integrated.session_closes![0]!.at });
-			expect(again.session_closes).toEqual(integrated.session_closes);
-			// Closing a session removes no Lane.
-			expect(existsSync(laneA)).toBe(true);
-			expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
-			expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
-		} finally {
-			fx.cleanup();
-		}
+	it("records a session close at the tick that integrates the child with its audit pair on the batch head, once, and leaves the Lane in place", () => {
+		// L1: the close rule is the pure decision over a prepared record; the
+		// driver wiring (recording the close, the idempotent re-ask) stays in
+		// the close-rule tests that run the driver.
+		const kids = [child("task-a", "S1")];
+		const record = prepareBatchLaneRunState({
+			batch_id: BATCH_ID, initiative_slug: SLUG, children: kids,
+			plan_digest: computeBatchPlanDigest(kids),
+			base_head: FAKE_BASE, confirmation_time: CONFIRMED_AT,
+			budget: { max_children: 1, qa_failure_limit: 3 }, max_parallel: 1, now: FAR_FUTURE,
+		});
+		record.children[0]!.state = "enrolled";
+		record.children[0]!.lane = laneBinding("/lane-task-a", "task-a", FAKE_BASE);
+		const before = JSON.stringify(record);
+		const ask = (task_id: string, reachable: boolean) =>
+			decideLaneSessionClose(record, parseLaneSessionClose({ task_id })!, () => reachable);
+		// Still running: the session stays for the user.
+		expect(ask("task-a", true) ?? "").toContain("not integrated; its session stays for the user");
+		expect(ask("task-z", true) ?? "").toContain("task-z has no Lane");
+		expect((record as { session_closes?: unknown }).session_closes).toBeUndefined();
+		expect(JSON.stringify(record)).toBe(before);
+		// Integrated with the audit pair reachable: allowed.
+		record.children[0]!.state = "integrated";
+		const integrated = JSON.stringify(record);
+		expect(ask("task-a", true)).toBeNull();
+		// Without the audit pair on the batch head the rule refuses, whatever the child state says.
+		expect(ask("task-a", false)).toBe("task-a's audit pair is not reachable from the batch head");
+		expect(() => parseLaneSessionClose({ task_id: "task-a", handle: "x" })).toThrow(/unknown field/);
+		expect(() => parseLaneSessionClose({ task_id: "../x" })).toThrow(/task id/);
+		expect(JSON.stringify(record)).toBe(integrated);
 	});
 });
 
@@ -2324,8 +2757,6 @@ describe("Lane batch authority subject", () => {
 
 	it.each([
 		["acceptance assertion", newAssertion, "before"],
-		["verification argv", newArgv, "before"],
-		["acceptance assertion", newAssertion, "after"],
 	] as const)(
 		"AC4: a changed %s %s Lane enrollment parks only that child and its dependents",
 		async (_label, edit, when) => {
@@ -2353,7 +2784,7 @@ describe("Lane batch authority subject", () => {
 				const laneC = fx.lane("task-c");
 				const offered = lanes(await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }, { task_id: "task-c", path: laneC }] }));
 				if (when === "after") {
-					expect(offered.children.map((c) => c.state)).toEqual(["enrolled", "pending", "enrolled"]);
+					expect(offered.children.map((c) => c.state)).toEqual(["enrolled", "enrolled", "pending"]);
 					reviseIn(laneA, "task-a", edit);
 				}
 				writeFileSync(join(laneC, "c.txt"), "c\n");
@@ -2376,88 +2807,163 @@ describe("Lane batch authority subject", () => {
 		30000,
 	);
 
+	it.each([
+		["verification argv", newArgv, "before"],
+		["acceptance assertion", newAssertion, "after"],
+	] as const)(
+		"AC4: a changed %s %s Lane enrollment parks only that child and its dependents (L2)",
+		async (_label, edit, when) => {
+			// L2: the record is crafted (task-a and task-c enrolled on real
+			// worktree lanes); the revision is applied exactly where the
+			// original applies it, and the tick runs runLaneBatch directly.
+			// The batch branch never moves in this test, so the two git log
+			// assertions are replaced by the record's own commits array.
+			const fx = fixture({}, SCOPES);
+			try {
+				const kernel = laneKernel();
+				const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]], ["task-c", []]]);
+				const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
+				let reviseHead = fx.base;
+				if (when === "before") {
+					// Revised on the batch branch after confirmation, so the Lane is provisioned with it.
+					reviseIn(fx.repo, "task-a", edit);
+					git(fx.repo, "commit", "-qam", "revise task-a");
+					reviseHead = git(fx.repo, "rev-parse", "HEAD");
+					state.head = reviseHead;
+				}
+				const laneA = fx.lane("task-a");
+				const laneC = fx.lane("task-c");
+				const input = request(fx, children, kernel, { max_parallel: 2, git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+				if (when === "after") kernel.enrolled.set("task-a", laneA);
+				kernel.enrolled.set("task-c", laneC);
+				const record = laneRecord(fx.repo, input, (r) => {
+					r.children[0]!.state = "enrolled";
+					r.children[0]!.lane = laneBinding(laneA, "task-a", when === "before" ? reviseHead : fx.base);
+					r.children[2]!.state = "enrolled";
+					r.children[2]!.lane = laneBinding(laneC, "task-c", fx.base);
+					if (when === "before") r.adopted_heads = [{ from: fx.base, to: reviseHead }];
+				});
+				if (when === "after") {
+					expect(record.children.map((c) => c.state)).toEqual(["enrolled", "pending", "enrolled"]);
+					reviseIn(laneA, "task-a", edit);
+				}
+				writeFileSync(join(laneC, "c.txt"), "c\n");
+				kernel.frozen.add("task-c");
+				const done = lanes(await runLaneBatch(input, record));
+				expect(done.children.map((c) => [c.task_id, c.state, c.reason])).toEqual([
+					["task-a", "needs_human", "batch_child_authority_changed: task-a"],
+					["task-b", "skipped_blocked", "dependency task-a parked"],
+					["task-c", "integrated", null],
+				]);
+				expect([...kernel.enrolled.keys()]).toEqual(when === "before" ? ["task-c"] : ["task-a", "task-c"]);
+				expect(done.batch_state).toBe("needs_human");
+				expect(done.reason).not.toContain("plan_changed");
+				expect(done.commits).toEqual([FAKE_COMMIT]);
+				expect(done.children[0]!.commit).toBeNull();
+			} finally {
+				fx.cleanup();
+			}
+		},
+		30000,
+	);
+
 	for (const mode of ["tick", "resume"] as const) it.each([
 		["unchanged", null],
 		["acceptance assertion", newAssertion],
 		["verification argv", newArgv],
-	] as const)(`committed authority recheck on ${mode}: %s`, async (_label, edit) => {
+	] as const)(`committed authority recheck on ${mode}: %s (L2)`, async (_label, edit) => {
+		// L2: the record is crafted (task-a lane_committed or parked, on a
+		// real worktree lane); the recheck runs through runLaneBatch
+		// directly. Edit rows never integrate, so the batch branch stays at
+		// the base and the recorded lane commit is a placeholder; unchanged
+		// rows carry a real delivery commit on the batch branch.
 		const fx = fixture({}, SCOPES);
 		try {
 			const kernel = laneKernel();
 			const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]]]);
-			const args = request(fx, children, kernel);
-			await startBatch(args);
+			const commit = edit ? null : deliveryCommit(fx, "task-a", "a.txt", "a\n");
+			const state: FakeLanePortState = { head: commit ?? fx.base, commit: commit ?? FAKE_COMMIT, auditReachable: false, overrides: new Map() };
 			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			writeFileSync(join(laneA, "a.txt"), "a\n");
-			kernel.settled.add("task-a");
-			const { commit } = await args.git!.commitChild(laneA, "task-a", BATCH_ID);
-			const stored = readAnyBatchRunState(fx.repo, BATCH_ID)!;
-			if (stored.contract !== "assurance_kernel/batch_run_state/v2") throw new Error("expected Lane record");
-			writeBatchLaneRunState(fx.repo, { ...stored,
-				batch_state: mode === "resume" ? "needs_human" : "running",
-				children: stored.children.map(c => c.task_id === "task-a"
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(commit ?? FAKE_COMMIT), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.batch_state = mode === "resume" ? "needs_human" : "running";
+				r.children = r.children.map((c) => c.task_id === "task-a"
 					? { ...c, state: mode === "resume" ? "needs_human" : "lane_committed",
-						reason: mode === "resume" ? "integration interrupted" : null, lane: { ...c.lane!, lane_commit: commit } }
+						reason: mode === "resume" ? "integration interrupted" : null, lane: { ...laneBinding(laneA, "task-a", fx.base, edit ? FAKE_COMMIT : commit) } }
 					: { ...c, state: mode === "resume" ? "skipped_blocked" : "pending",
-						reason: mode === "resume" ? "dependency task-a parked" : null }),
+						reason: mode === "resume" ? "dependency task-a parked" : null });
 			});
 			if (edit) reviseIn(laneA, "task-a", edit);
-			const input = mode === "resume"
-				? request(fx, children, kernel, { confirmation_time: "2026-06-01T00:00:00.000Z" }) : args;
-			const report = lanes(await startBatch(input));
+			if (mode === "resume") kernel.settled.add("task-a");
+			const resumeInput = mode === "resume"
+				? request(fx, children, kernel, { confirmation_time: "2026-06-01T00:00:00.000Z", git: { ...fakeGitPort(commit ?? FAKE_COMMIT), lane: fakeLanePort(state) } as BatchRunnerGitPort }) : input;
+			const report = lanes(await runLaneBatch(resumeInput, record));
 			const durable = readAnyBatchRunState(fx.repo, BATCH_ID)!;
 			if (edit) {
 				expect(report.batch_state).toBe("needs_human");
-				expect(report.children.map(c => [c.state, c.reason])).toEqual([
+				expect(report.children.map((c) => [c.state, c.reason])).toEqual([
 					["needs_human", "batch_child_authority_changed: task-a"],
 					["skipped_blocked", "dependency task-a parked"],
 				]);
 				expect(durable.children).toEqual(report.children);
 				expect(report.commits).toEqual([]);
 				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(fx.base);
-				if (mode === "resume") expect(durable.confirmation_time).toBe(input.confirmation_time);
+				if (mode === "resume") expect(durable.confirmation_time).toBe(resumeInput.confirmation_time);
 			} else {
-				expect(report.children.map(c => c.state)).toEqual(["integrated", "pending"]);
+				expect(report.children.map((c) => c.state)).toEqual(["integrated", "pending"]);
 				expect(report.commits).toEqual([commit]);
 				expect(git(fx.repo, "rev-parse", "HEAD")).toBe(commit);
 			}
-			expect(report.children[0]!.lane?.lane_commit).toBe(commit);
+			expect(report.children[0]!.lane?.lane_commit).toBe(edit ? FAKE_COMMIT : commit);
 		} finally {
 			fx.cleanup();
 		}
 	}, 30000);
 
-	it("AC4: a changed child order or dependency still refuses the Lane batch as a different plan", async () => {
-		const fx = fixture({}, SCOPES);
-		try {
-			const kernel = laneKernel();
-			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
-			for (const children of [[...args.children].reverse(), args.children.map((c) => ({ ...c, blocked_by: [] }))]) {
-				const report = lanes(await startBatch({ ...args, children, plan_digest: computeBatchPlanDigest(children) }));
-				expect(report.batch_state).toBe("rejected");
-				expect(report.reason).toContain("plan_digest mismatch");
-			}
-			expect(kernel.enrolled.size).toBe(0);
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)).toBeNull();
-		} finally {
-			fx.cleanup();
+	it("AC4: a changed child order or dependency still refuses the Lane batch as a different plan", () => {
+		// L1: the refusal is the registry's plan-digest check over hand-built
+		// children; no batch runs, so nothing enrolls and no record exists.
+		const registry = createBatchAuthorityRegistry();
+		const children = [
+			{ ...child("task-a", "S1"), intent_authority_hash: `sha256:${"a".repeat(64)}` },
+			{ ...child("task-b", "S2", ["task-a"]), intent_authority_hash: `sha256:${"b".repeat(64)}` },
+		];
+		const planDigest = computeBatchPlanDigest(children);
+		const budget = { max_children: 2, qa_failure_limit: 3 };
+		const capability = registry.issue(
+			{ batch_id: BATCH_ID, initiative_slug: SLUG, plan_digest: planDigest, branch: "main", base_head: FAKE_BASE,
+				budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" },
+			children, CONFIRMED_AT,
+		);
+		const binding = { batch_id: BATCH_ID, initiative_slug: SLUG, plan_digest: planDigest, branch: "main", base_head: FAKE_BASE,
+			budget, actor_id: "user", confirmation_ref: "confirm", nonce: "n" };
+		for (const changed of [[...children].reverse(), children.map((c) => ({ ...c, blocked_by: [] }))]) {
+			expect(() => registry.inspect(capability, { ...binding, plan_digest: computeBatchPlanDigest(changed) })).toThrow("plan_digest mismatch");
 		}
+		expect(registry.consumedChildren(capability)).toEqual([]);
 	});
 
 	it("AC5: scope-only drift in a Lane keeps the batch running, with no reseal and an unchanged digest", async () => {
+		// L2: the record is crafted (task-a enrolled on a real worktree
+		// lane); the tick runs runLaneBatch directly, and the preflight
+		// check stays a direct call as in the original.
 		const fx = fixture({}, SCOPES);
 		try {
 			const kernel = laneKernel();
-			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
-			await startBatch(args);
+			const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]]]);
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
 			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
-			const before = readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest;
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			kernel.enrolled.set("task-a", laneA);
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
+			const before = record.plan_digest;
 			reviseIn(laneA, "task-a", (intent) => ({ ...intent, revision: 2, scope_hint: [...intent.scope_hint, "docs/plans/task-a.notes.md"] }));
 			writeFileSync(join(laneA, "a.txt"), "a\n");
 			kernel.frozen.add("task-a");
-			const next = lanes(await startBatch(args));
+			const next = lanes(await runLaneBatch(input, record));
 			expect(next.batch_state).toBe("running");
 			expect(next.children.map((c) => [c.state, c.reason])).toEqual([["integrated", null], ["pending", null]]);
 			expect(next.handoffs?.map((h) => [h.role, h.task_id])).toEqual([["lane-steward", "task-b"]]);
@@ -2465,7 +2971,7 @@ describe("Lane batch authority subject", () => {
 			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(before);
 			// The next resume's preflight computes the same digest from the revised sidecar.
 			const outcome = await projectBatchPreflight({ root: fx.repo, initiative_slug: SLUG, now: FAR_FUTURE,
-				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: args.children }) });
+				readInitiative: async () => ({ contract: "immune_brain/local_initiative_observation/v1", initiative_id: SLUG, tasks: input.children }) });
 			expect(outcome.ok).toBe(true);
 			expect((outcome as { projection: { plan_digest: string } }).projection.plan_digest).toBe(before);
 		} finally {
@@ -2474,48 +2980,60 @@ describe("Lane batch authority subject", () => {
 	}, 30000);
 
 	it("D20: a legacy delegated acceptance change parks without resealing", async () => {
+		// L2: the record is crafted (task-a enrolled on a real worktree
+		// lane, carrying the legacy delegation); the tick runs runLaneBatch
+		// directly.
 		const fx = fixture({}, SCOPES);
 		try {
 			const kernel = laneKernel();
-			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
-			await startBatch(args);
+			const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]]]);
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
 			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			kernel.enrolled.set("task-a", laneA);
 			const next = reviseIn(laneA, "task-a", newAssertion);
 			writeFileSync(join(laneA, "a.txt"), "a\n");
 			// Simulate a v2 record written before D20; its grant cannot authorize new changes.
-			const statePath = join(fx.repo, `.imm/state/batches/${BATCH_ID}.json`);
-			const state = JSON.parse(readFileSync(statePath, "utf8"));
-			const before = state.plan_digest;
-			state.revision_delegation = { confirmation_time: CONFIRMED_AT };
-			state.delegated_revisions = [{ at: CONFIRMED_AT, task_id: "task-a", from_revision: 1, to_revision: 2,
-				intent_content_hash: canonicalIntentHash(next), confirmation_ref: `delegated-batch:${BATCH_ID}@${CONFIRMED_AT}` }];
-			writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+				r.revision_delegation = { confirmation_time: CONFIRMED_AT };
+				r.delegated_revisions = [{ at: CONFIRMED_AT, task_id: "task-a", from_revision: 1, to_revision: 2,
+					intent_content_hash: canonicalIntentHash(next), confirmation_ref: `delegated-batch:${BATCH_ID}@${CONFIRMED_AT}` }];
+			});
+			const before = record.plan_digest;
 			kernel.frozen.add("task-a");
-			const integrated = lanes(await startBatch(args));
+			const integrated = lanes(await runLaneBatch(input, record));
 			expect(integrated.children[0]).toMatchObject({ state: "needs_human", reason: "batch_child_authority_changed: task-a" });
 			expect(integrated.commits).toEqual([]);
 			expect(integrated.reseals).toBeUndefined();
 			const after = readAnyBatchRunState(fx.repo, BATCH_ID)!;
 			expect(after.plan_digest).toBe(before);
-			expect(after).toMatchObject({ intent_identities: state.intent_identities, delegated_revisions: state.delegated_revisions });
+			expect(after).toMatchObject({ intent_identities: record.intent_identities, delegated_revisions: record.delegated_revisions });
 		} finally {
 			fx.cleanup();
 		}
 	}, 30000);
 
 	it("D20: an acceptance change parks that child before anything reaches the batch branch", async () => {
+		// L2: the record is crafted (task-a enrolled on a real worktree
+		// lane); the tick runs runLaneBatch directly.
 		const fx = fixture({}, SCOPES);
 		try {
 			const kernel = laneKernel();
-			const args = request(fx, bound(fx, [["task-a", []], ["task-b", ["task-a"]]]), kernel);
-			await startBatch(args);
+			const children = bound(fx, [["task-a", []], ["task-b", ["task-a"]]]);
+			const state: FakeLanePortState = { head: fx.base, commit: FAKE_COMMIT, auditReachable: false, overrides: new Map() };
 			const laneA = fx.lane("task-a");
-			await startBatch({ ...args, lane_offers: [{ task_id: "task-a", path: laneA }] });
+			const input = request(fx, children, kernel, { git: { ...fakeGitPort(), lane: fakeLanePort(state) } as BatchRunnerGitPort });
+			kernel.enrolled.set("task-a", laneA);
+			const record = laneRecord(fx.repo, input, (r) => {
+				r.children[0]!.state = "enrolled";
+				r.children[0]!.lane = laneBinding(laneA, "task-a", fx.base);
+			});
 			reviseIn(laneA, "task-a", newAssertion);
 			writeFileSync(join(laneA, "a.txt"), "a\n");
 			kernel.frozen.add("task-a");
-			const report = lanes(await startBatch(args));
+			const report = lanes(await runLaneBatch(input, record));
 			expect(report.children.map((c) => [c.state, c.reason])).toEqual([
 				["needs_human", "batch_child_authority_changed: task-a"],
 				["skipped_blocked", "dependency task-a parked"],
@@ -2523,7 +3041,7 @@ describe("Lane batch authority subject", () => {
 			expect(report.batch_state).toBe("needs_human");
 			expect(report.commits).toEqual([]);
 			expect(report.reseals).toBeUndefined();
-			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(args.plan_digest);
+			expect(readAnyBatchRunState(fx.repo, BATCH_ID)!.plan_digest).toBe(input.plan_digest);
 			expect(git(fx.repo, "rev-parse", BATCH_BRANCH)).toBe(fx.base);
 		} finally {
 			fx.cleanup();
@@ -2548,8 +3066,15 @@ describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
 	}
 
 	it("refuses a Lane-mode start on a differing loaded build, naming both plugin paths and a reload action", async () => {
+		// L1: the refusal is the pure plugin-source skew check; the
+		// startBatch call keeps the entry-point wiring.
 		const fx = withWorkspacePlugin(fixture(), "// another build\n");
 		try {
+			const refusal = laneRuntimeContractRefusal(fx.repo);
+			expect(refusal).toStartWith("batch_runtime_contract_mismatch:");
+			expect(refusal).toContain(loadedPlugin);
+			expect(refusal).toContain(realpathSync(join(fx.repo, "plugins", "immune-brain")));
+			expect(refusal).toContain("reload the Host with the workspace plugin");
 			const report = lanes(await startBatch(request(fx, [child("task-a", "S1")], laneKernel())));
 			expect(report.batch_state).toBe("rejected");
 			expect(report.reason).toStartWith("batch_runtime_contract_mismatch:");
@@ -2583,8 +3108,12 @@ describe("loaded plugin build preflight (Spec branch-boundary D4)", () => {
 	});
 
 	it("refuses a differing loaded build even when max_parallel is omitted", async () => {
+		// L1: the refusal is the pure plugin-source skew check; the
+		// startBatch call keeps the entry-point wiring with max_parallel omitted.
 		const fx = withWorkspacePlugin(fixture(), "// another build\n");
 		try {
+			const refusal = laneRuntimeContractRefusal(fx.repo);
+			expect(refusal).toStartWith("batch_runtime_contract_mismatch:");
 			const { max_parallel: _serial, ...serial } = request(fx, [child("task-a", "S1")], laneKernel());
 			const report = await startBatch(serial);
 			expect(report.batch_state).toBe("rejected");
